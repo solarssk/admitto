@@ -7035,76 +7035,134 @@ output.mail-field-hint {
   font-size: 1rem;
 }
 
-/* Setup checklist (#348 — merged "Needs attention" + "Event readiness") */
+/* Setup checklist: progress bar, one status notice, then a row per check that links to the page
+ * that fixes it. Status is carried by the tinted icon square AND a screen-reader word, never by
+ * colour alone. */
 .overview-readiness-score {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-checklist {
+.overview-setup {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-/* Mockup-aligned readiness row: a circular status-tinted icon (reuses @admitto/ui's shared
- * .status-circle, same class ActivityIcon already uses) beside a two-line stacked body, instead
- * of the old flat single-line "dot + label … value" table row (#G polish). */
-.overview-readiness-item {
+.overview-setup__bar {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.overview-setup__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width var(--dur-fast, 120ms);
+}
+
+.overview-setup__bar--ok > span { background: var(--status-ok); }
+.overview-setup__bar--warn > span { background: var(--status-warn); }
+.overview-setup__bar--error > span { background: var(--status-error); }
+
+.overview-checklist {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-check {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  margin: 0 calc(var(--space-2) * -1);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
 }
 
-.overview-readiness-item__body {
+.overview-check + .overview-check {
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* text-decoration: none must be repeated on :hover, not just the base rule: the global
+ * `a:hover { text-decoration: underline }` (packages/ui tokens/base.css) has higher specificity
+ * once :hover is in play, same gotcha .overview-contact__action already documents (#345). */
+.overview-check:hover {
+  background: var(--surface-sunken);
+  text-decoration: none;
+}
+
+.overview-check__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 17px;
+}
+
+.overview-check__icon--ok      { background: var(--status-ok-tint);    color: var(--status-ok-fg); }
+.overview-check__icon--warn    { background: var(--status-warn-tint);  color: var(--status-warn-fg); }
+.overview-check__icon--error   { background: var(--status-error-tint); color: var(--status-error-fg); }
+.overview-check__icon--neutral { background: var(--surface-sunken);    color: var(--text-secondary); }
+
+.overview-check__body {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.overview-readiness-item__body strong {
+.overview-check__body strong {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.overview-readiness-item__detail {
+.overview-check__detail {
   font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 
-.overview-checklist__link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-sm);
-  color: var(--primary);
-  text-decoration: none;
+.overview-check__chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--dur-fast, 120ms);
 }
-.overview-checklist__link i { transition: transform var(--dur-fast, 120ms); }
-/* text-decoration: none must be repeated here, not just on the base rule above — the global
- * `a:hover { text-decoration: underline }` (packages/ui tokens/base.css) has higher specificity
- * than a plain `.overview-checklist__link { text-decoration: none }` once :hover is in play (both
- * are class-tier 0,1,x, but a:hover's extra type selector wins the tiebreak) — same gotcha
- * .overview-contact__action's own comment already documents for the tel:/mailto: links (#345). */
-.overview-checklist__link:hover { color: var(--primary-active); text-decoration: none; }
-.overview-checklist__link:hover i { transform: translateX(2px); }
 
-/* Check-in progress (Part B) */
-.overview-progress {
+.overview-check:hover .overview-check__chevron {
+  color: var(--text-secondary);
+  transform: translateX(2px);
+}
+
+/* Check-in progress: one focal point (ring + the checked-in count), then two small facts. Centred
+ * as a group inside the stretched card so it doesn't split into a top and a bottom island. */
+.overview-checkin {
   display: flex;
-  align-items: center;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
   gap: var(--space-5);
 }
 
+.overview-checkin__hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+}
+
 .overview-ring {
-  --ring-size: 108px;
+  --ring-size: 136px;
 
   width: var(--ring-size);
   height: var(--ring-size);
@@ -7115,8 +7173,8 @@ output.mail-field-hint {
 }
 
 .overview-ring__hole {
-  width: calc(var(--ring-size) - 22px);
-  height: calc(var(--ring-size) - 22px);
+  width: calc(var(--ring-size) - 28px);
+  height: calc(var(--ring-size) - 28px);
   border-radius: 50%;
   background: var(--surface-card);
   display: grid;
@@ -7130,78 +7188,28 @@ output.mail-field-hint {
   font-variant-numeric: tabular-nums;
 }
 
-.overview-progress__legend {
+.overview-checkin__figure {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
   min-width: 0;
 }
 
-.overview-progress__legend-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.overview-progress__legend-item strong {
-  margin-left: auto;
+.overview-checkin__count {
+  font-size: 34px;
+  font-weight: var(--fw-bold);
+  line-height: 1.05;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-progress__legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.overview-tt-breakdown {
-  margin-top: var(--space-4);
-}
-
-.overview-tt-breakdown .overline {
-  display: block;
-  margin-bottom: var(--space-2);
-}
-
-.overview-tt-bar {
-  display: flex;
-  height: 8px;
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--surface-sunken);
-}
-
-.overview-tt-bar__seg {
-  height: 100%;
-}
-
-.overview-tt-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin-top: var(--space-2);
-}
-
-.overview-tt-legend__item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-xs);
+.overview-checkin__caption {
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 
-.overview-tt-legend__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.overview-tt-legend__count {
+.overview-checkin__rest {
+  margin-top: var(--space-2);
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -7209,33 +7217,68 @@ output.mail-field-hint {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
-  margin-top: var(--space-4);
 }
 
 .overview-glance__tile {
-  background: var(--surface-sunken);
-  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
   padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.overview-glance__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--primary-tint);
+  color: var(--primary-active);
+  font-size: 18px;
+}
+
+.overview-glance__icon--wallet {
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
+
+.overview-glance__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .overview-glance__label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
-.overview-glance__label .ti {
-  font-size: 0.9em;
-}
-
 .overview-glance__value {
-  display: block;
-  margin-top: 2px;
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
+}
+
+.overview-glance__aside {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+  .overview-checkin__hero {
+    flex-direction: column;
+    gap: var(--space-3);
+    text-align: center;
+  }
+
+  .overview-glance {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Email delivery */
@@ -7447,8 +7490,8 @@ output.mail-field-hint {
 }
 
 /* Links a checkin/mail activity entry to the attendee's detail view — kept low-key (inherited
- * color, no underline even on hover/focus — matches .overview-checklist__link's PO-preferred
- * treatment: a color shift instead) rather than the usual link blue, so the timeline doesn't
+ * color, no underline even on hover/focus — matches .overview-check's treatment: a background or
+ * color shift instead) rather than the usual link blue, so the timeline doesn't
  * read as more colorful/noisy than before. */
 .overview-activity__attendee-link {
   display: block;
@@ -7460,7 +7503,7 @@ output.mail-field-hint {
   text-overflow: ellipsis;
 }
 /* text-decoration: none must be repeated here, not just on the base rule above — see
- * .overview-checklist__link:hover's comment for why the global a:hover rule otherwise wins. */
+ * .overview-check:hover's comment for why the global a:hover rule otherwise wins. */
 .overview-activity__attendee-link:hover,
 .overview-activity__attendee-link:focus-visible {
   color: var(--primary);

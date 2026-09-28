@@ -23,6 +23,9 @@ const EVENT_MISSING = "evt-overview-missing";
 const EVENT_ACTIVITY = "evt-overview-activity";
 const EVENT_REVOKED_CHECKIN = "evt-overview-revoked-checkin";
 const EVENT_BOUNCE_RESOLUTION = "evt-overview-bounce-resolution";
+const EVENT_WALLET = "evt-overview-wallet";
+const EVENT_WALLET_OFF = "evt-overview-wallet-off";
+const EVENT_WALLET_NO_GOOGLE_APPLE = "evt-overview-wallet-samsung-only";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -71,10 +74,14 @@ async function seed(client: PrismaClient) {
     EVENT_ACTIVITY,
     EVENT_REVOKED_CHECKIN,
     EVENT_BOUNCE_RESOLUTION,
+    EVENT_WALLET,
+    EVENT_WALLET_OFF,
+    EVENT_WALLET_NO_GOOGLE_APPLE,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
@@ -168,6 +175,42 @@ async function seed(client: PrismaClient) {
         date: new Date("2027-04-01T12:00:00.000Z"),
         timezone: "UTC",
         organization_id: ORG_OV,
+      },
+      // Wallets in use: platform toggles default to on, plus a saved template and API key.
+      {
+        id: EVENT_WALLET,
+        title: "Overview Wallet Event",
+        slug: "overview-wallet",
+        date: new Date("2027-05-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
+        wallet_template_id: "tmpl-overview",
+        wallet_api_key_enc: "not-a-real-ciphertext",
+      },
+      // Configured, but the owner switched Wallet off.
+      {
+        id: EVENT_WALLET_OFF,
+        title: "Overview Wallet Off Event",
+        slug: "overview-wallet-off",
+        date: new Date("2027-06-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
+        wallet_enabled: false,
+        wallet_template_id: "tmpl-overview",
+        wallet_api_key_enc: "not-a-real-ciphertext",
+      },
+      // Configured, but only the (not yet real) Samsung platform is on.
+      {
+        id: EVENT_WALLET_NO_GOOGLE_APPLE,
+        title: "Overview Wallet Samsung Only Event",
+        slug: "overview-wallet-samsung-only",
+        date: new Date("2027-07-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
+        wallet_apple_enabled: false,
+        wallet_google_enabled: false,
+        wallet_template_id: "tmpl-overview",
+        wallet_api_key_enc: "not-a-real-ciphertext",
       },
     ],
   });
@@ -645,6 +688,43 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+
+  // Wallet installs. Each attendee stands for one way a pass can (not) count as installed.
+  const walletAttendees: Array<{ id: string; event_id: string; status?: string }> = [
+    { id: "att-w-confirmed", event_id: EVENT_WALLET },
+    { id: "att-w-active-apple", event_id: EVENT_WALLET },
+    { id: "att-w-removed", event_id: EVENT_WALLET },
+    { id: "att-w-never", event_id: EVENT_WALLET },
+    { id: "att-w-no-pass", event_id: EVENT_WALLET },
+    { id: "att-w-revoked", event_id: EVENT_WALLET, status: "revoked" },
+    { id: "att-w-off", event_id: EVENT_WALLET_OFF },
+    { id: "att-w-samsung", event_id: EVENT_WALLET_NO_GOOGLE_APPLE },
+  ];
+  await client.attendee.createMany({
+    data: walletAttendees.map((a) => ({
+      id: a.id,
+      event_id: a.event_id,
+      email: `${a.id}@example.com`,
+      name: a.id,
+      ...(a.status ? { status: a.status } : {}),
+    })),
+  });
+  await client.walletPass.createMany({
+    data: [
+      // Confirmed installed at some point (first_confirmed_at set).
+      { attendee_id: "att-w-confirmed", first_confirmed_at: new Date("2027-05-01T08:00:00.000Z") },
+      // Installed per the provider's live registration count.
+      { attendee_id: "att-w-active-apple", apple_active_registrations: 1 },
+      // Installed once, since removed: still "ever installed".
+      { attendee_id: "att-w-removed", google_inactive_registrations: 1 },
+      // Pass issued but never added to a wallet (registration columns still null).
+      { attendee_id: "att-w-never" },
+      // Revoked attendees never count, whatever their pass says.
+      { attendee_id: "att-w-revoked", first_confirmed_at: new Date("2027-05-01T08:00:00.000Z") },
+      { attendee_id: "att-w-off", first_confirmed_at: new Date("2027-06-01T08:00:00.000Z") },
+      { attendee_id: "att-w-samsung", first_confirmed_at: new Date("2027-07-01T08:00:00.000Z") },
+    ],
+  });
 }
 
 beforeAll(async () => {
@@ -742,7 +822,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.attendees_with_ticket).toBe(0);
     expect(body.last_check_in_at).toBeNull();
     expect(body.busiest_hour).toBeNull();
-    expect(body.ticket_type_breakdown).toEqual([]);
+    expect(body.wallet_installed).toBeNull();
     expect(body.recent_activity).toEqual([]);
   });
 
@@ -897,17 +977,23 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.busiest_hour).toBeNull();
   });
 
-  it("returns ticket_type_breakdown for active attendees only, zero-count types omitted", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_ACTIVITY}/overview`, {
-      headers: { Cookie: adminCookie },
-    });
+  async function overviewFor(eventId: string): Promise<EventOverviewResponse> {
+    const res = await app.request(`/api/admin/events/${eventId}/overview`, { headers: { Cookie: adminCookie } });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as EventOverviewResponse;
-    // "press" has 0 attendees (omitted); the revoked "standard" attendee doesn't count.
-    expect(body.ticket_type_breakdown).toEqual([
-      { key: "standard", label: "Standard", color: "gray", count: 2 },
-      { key: "vip", label: "VIP", color: "purple", count: 1 },
-    ]);
+    return (await res.json()) as EventOverviewResponse;
+  }
+
+  it("returns wallet_installed as the active attendees whose pass was ever confirmed installed", async () => {
+    // confirmed + live registration + removed-since = 3. Not counted: a pass never added to a
+    // wallet, an attendee with no pass, and a revoked attendee whose pass says installed.
+    expect((await overviewFor(EVENT_WALLET)).wallet_installed).toBe(3);
+  });
+
+  it("returns wallet_installed as null when the event has wallets off, no Apple or Google platform, or no saved template and key", async () => {
+    expect((await overviewFor(EVENT_WALLET_OFF)).wallet_installed).toBeNull();
+    expect((await overviewFor(EVENT_WALLET_NO_GOOGLE_APPLE)).wallet_installed).toBeNull();
+    // EVENT_MAIN has the default platform toggles on but never saved a template or API key.
+    expect((await overviewFor(EVENT_MAIN)).wallet_installed).toBeNull();
   });
 
   it("returns recent_activity merged newest-first across check-ins, mail failures, imports, attendee adds, and item issue/return", async () => {

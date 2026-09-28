@@ -1,10 +1,11 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
-import { loadEventTicketTypes } from "@admitto/tickets";
+import { enabledWalletPlatforms } from "@admitto/shared";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
 import { loadRecentImportBatches } from "./import-api-routes.js";
+import { buildEverInstalledWalletFilter } from "./wallet-lifecycle-filter.js";
 
 export interface EventContactData {
   id: string;
@@ -54,8 +55,11 @@ export interface EventOverviewResponse {
   /** Hour-of-day (event timezone) with the most still-current admissions, or null if nobody is
    * checked in. */
   busiest_hour: { hour: string; count: number } | null;
-  /** Active attendees per catalog ticket type (batch 04), catalog order, zero-count types omitted. */
-  ticket_type_breakdown: Array<{ key: string; label: string; color: string; count: number }>;
+  /** Active attendees whose wallet pass was ever confirmed installed on a device (the same
+   * "ever installed" fact the Wallets report's `adoption.confirmed` counts), or null when wallets
+   * are not in use for the event (no platform on, or no template and API key saved), so the
+   * Overview shows no wallet tile at all. */
+  wallet_installed: number | null;
   /** Newest-first merged feed of check-ins, mail delivery failures, import batches, attendees
    * added, and item issue/return. */
   recent_activity: EventRecentActivityEntry[];
@@ -158,25 +162,28 @@ async function loadCheckInTimingStats(
   };
 }
 
-/** Active attendees per catalog ticket type - same catalog/active-attendee scope as
- * ticket_type_breakdown's callers use elsewhere (reports-routes.ts, attendees list), just
- * omitting zero-count types instead of the "(none)"/unmatched-key trailing rows reports adds. */
-async function loadTicketTypeBreakdown(
+/** Active attendees whose pass was ever confirmed installed (`buildEverInstalledWalletFilter`, the
+ * definition the Wallets report's `adoption.confirmed` uses), or null when wallets are not in use
+ * for this event: no Apple or Google platform switched on, or no template and API key saved yet
+ * (every event defaults to the platform toggles being on, so the toggles alone would show a
+ * permanent "0 installed" tile on events that never set wallets up). A saved key that no longer
+ * decrypts is not checked here; that edge only shows a 0 instead of hiding the tile. */
+async function loadWalletInstalledCount(
   db: PrismaClient,
   eventId: string,
-): Promise<EventOverviewResponse["ticket_type_breakdown"]> {
-  const [catalog, counts] = await Promise.all([
-    loadEventTicketTypes(db, eventId),
-    db.attendee.groupBy({
-      by: ["ticket_type"],
-      where: { event_id: eventId, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
-      _count: { _all: true },
-    }),
-  ]);
-  const countByKey = new Map(counts.map((c) => [c.ticket_type, c._count._all]));
-  return catalog
-    .map((t) => ({ key: t.key, label: t.label, color: t.color, count: countByKey.get(t.key) ?? 0 }))
-    .filter((t) => t.count > 0);
+  wallet: Parameters<typeof enabledWalletPlatforms>[0] & {
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+  },
+): Promise<number | null> {
+  if (!enabledWalletPlatforms(wallet).any || !wallet.wallet_template_id || !wallet.wallet_api_key_enc) return null;
+  return db.attendee.count({
+    where: {
+      event_id: eventId,
+      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+      AND: [buildEverInstalledWalletFilter()],
+    },
+  });
 }
 
 /** CheckIn has no client_timezone column of its own. Session.timezone is captured at *login*, not
@@ -381,6 +388,12 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       archived_at: true,
       organization_id: true,
       pinned_note: true,
+      wallet_enabled: true,
+      wallet_template_id: true,
+      wallet_api_key_enc: true,
+      wallet_apple_enabled: true,
+      wallet_google_enabled: true,
+      wallet_samsung_enabled: true,
     },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
@@ -398,7 +411,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     contacts,
     resources,
     checkInTimingStats,
-    ticketTypeBreakdown,
+    walletInstalled,
     recentActivity,
   ] = await Promise.all([
     countActiveAttendees(db, eventId),
@@ -459,7 +472,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       select: { id: true, title: true, type: true, url: true, description: true, sort_order: true },
     }),
     loadCheckInTimingStats(db, eventId, timeZone),
-    loadTicketTypeBreakdown(db, eventId),
+    loadWalletInstalledCount(db, eventId, event),
     loadRecentActivity(db, eventId),
   ]);
 
@@ -500,7 +513,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     attendees_with_ticket: attendeesWithTicketRows.length,
     last_check_in_at: checkInTimingStats.lastCheckInAt,
     busiest_hour: checkInTimingStats.busiestHour,
-    ticket_type_breakdown: ticketTypeBreakdown,
+    wallet_installed: walletInstalled,
     recent_activity: recentActivity,
     contacts,
     resources,
