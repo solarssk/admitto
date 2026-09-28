@@ -7,7 +7,7 @@
 import type { Context } from "hono";
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, constants, unlink, writeFile, stat } from "node:fs/promises";
+import { access, constants, mkdir, unlink, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import {
@@ -431,14 +431,18 @@ function setupToInstanceUrlRow(check: SetupCheckResult, checkedAt: string): Heal
     };
   }
   if (check.warn) {
+    // Same tone as data_encryption's own "optional in development" branch just above: this is
+    // not a real problem, so it must not count toward the overall verdict (worstHealthStatus()
+    // already skips not_configured and planned rows for that). "configured" is "no" here, not
+    // "yes": BASE_URL is not actually set, only allowed to be unset in development.
     return {
       id: "instance_url",
       label,
-      status: "degraded",
+      status: "not_configured",
       summary: "Optional in development",
       details: detailsFromEntries([
-        ["status", "degraded"],
-        ["configured", "yes"],
+        ["status", "not_configured"],
+        ["configured", "no"],
         ["last_checked", checkedAt],
       ]),
     };
@@ -1201,9 +1205,87 @@ async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthChe
 }
 
 /**
+ * Writes then removes a uniquely named probe file under `dir`, shared by canCreateUploadDir()
+ * below and the "already exists" live write-probe further down in fileStorageRow() (SonarCloud
+ * flagged the near-identical write+unlink pair as new-code duplication). Reports the write and
+ * the cleanup separately: a failed write means `dir` is not writable, but a failed cleanup
+ * afterwards is harmless on its own - the write already proved the capability being tested.
+ */
+async function probeWrite(dir: string): Promise<{ wrote: boolean }> {
+  const probePath = join(dir, `.admitto-health-probe-${randomUUID()}`);
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await writeFile(probePath, "ok");
+  } catch {
+    return { wrote: false };
+  }
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await unlink(probePath);
+  } catch {
+    // Best effort only - see the doc comment above.
+  }
+  return { wrote: true };
+}
+
+/**
+ * True when `dir` can be created and written into - mirrors what `LocalStorageAdapter.put()`'s
+ * `mkdir(recursive)` + write will really do on the next upload.
+ *
+ * Never removes `dir` itself: `dir` is the real, shared upload path, and this runs exactly when
+ * a genuinely fresh instance is most likely to also be receiving its first real upload at the
+ * same time. `mkdir(recursive)` is idempotent (a no-op if `dir` already exists), so a concurrent
+ * upload racing to create the same path is harmless either way - but removing `dir` here could
+ * delete it out from under that upload while it is still writing, and can itself throw ENOTEMPTY
+ * if the upload has already added a file.
+ */
+export async function canCreateUploadDir(dir: string): Promise<boolean> {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await mkdir(dir, { recursive: true });
+  } catch {
+    return false;
+  }
+  const { wrote } = await probeWrite(dir);
+  return wrote;
+}
+
+/**
+ * A `file_storage` row for one of the local-path failure states below, which all share the same
+ * six detail keys and differ only in their values (SonarCloud flagged the four near-identical
+ * object literals as new-code duplication once "Cannot create the upload folder" became a
+ * fourth copy of the same shape).
+ */
+function fileStorageIssueRow(
+  label: string,
+  checkedAt: string,
+  uploadPath: string,
+  status: "down" | "not_configured",
+  summary: string,
+  writable: string,
+  reason: string,
+): HealthCheckRow {
+  return {
+    id: "file_storage",
+    label,
+    status,
+    summary,
+    details: detailsFromEntries([
+      ["status", status],
+      ["provider", "local"],
+      ["path", uploadPath],
+      ["writable", writable],
+      ["reason", reason],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
+/**
  * Local branding upload volume (`UPLOAD_DIR` / `@admitto/storage`).
  * Passive: path must be an existing directory that is readable, writable, and searchable
- * (`R_OK|W_OK|X_OK`). Missing root is degraded (adapter `mkdir` on first put), not an outage.
+ * (`R_OK|W_OK|X_OK`). A missing root is not_configured (adapter `mkdir` on first put), not an
+ * outage, unless a live check finds it cannot actually be created (see `canCreateUploadDir`).
  * Live: write+unlink a tiny probe file under that root.
  */
 export async function fileStorageRow(
@@ -1258,20 +1340,7 @@ export async function fileStorageRow(
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     const st = await stat(uploadPath);
     if (!st.isDirectory()) {
-      return {
-        id: "file_storage",
-        label,
-        status: "down",
-        summary: "Not a directory",
-        details: detailsFromEntries([
-          ["status", "down"],
-          ["provider", "local"],
-          ["path", uploadPath],
-          ["writable", "no"],
-          ["reason", "not_a_directory"],
-          ["last_checked", checkedAt],
-        ]),
-      };
+      return fileStorageIssueRow(label, checkedAt, uploadPath, "down", "Not a directory", "no", "not_a_directory");
     }
     // X_OK: directory must be searchable so children can be created (Unix).
      
@@ -1279,46 +1348,43 @@ export async function fileStorageRow(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      // LocalStorageAdapter.put mkdir(recursive) on first branding save - not an outage.
-      return {
-        id: "file_storage",
+      // Passive: LocalStorageAdapter.put mkdir(recursive) on first branding save - a fresh
+      // install with no branding uploaded yet is expected to have no upload directory, so on
+      // its own this must not count toward the overall verdict (worstHealthStatus() already
+      // skips not_configured and planned rows for that).
+      //
+      // Live: a missing directory can ALSO mean its parent cannot actually be created into (for
+      // example a read-only parent), in which case every real upload will fail the same
+      // mkdir(recursive) call - reporting not_configured for that would tell an operator the
+      // instance is healthy when uploads are already broken. A live check verifies this
+      // directly instead of assuming the benign case.
+      if (live && !(await canCreateUploadDir(uploadPath))) {
+        return fileStorageIssueRow(
+          label,
+          checkedAt,
+          uploadPath,
+          "down",
+          "Cannot create the upload folder",
+          "no",
+          "cannot_create_directory",
+        );
+      }
+      return fileStorageIssueRow(
         label,
-        status: "degraded",
-        summary: "Missing directory · created on first upload",
-        details: detailsFromEntries([
-          ["status", "degraded"],
-          ["provider", "local"],
-          ["path", uploadPath],
-          ["writable", "unknown"],
-          ["reason", "missing_directory"],
-          ["last_checked", checkedAt],
-        ]),
-      };
+        checkedAt,
+        uploadPath,
+        "not_configured",
+        "Missing directory · created on first upload",
+        "unknown",
+        "missing_directory",
+      );
     }
-    return {
-      id: "file_storage",
-      label,
-      status: "down",
-      summary: "Not writable",
-      details: detailsFromEntries([
-        ["status", "down"],
-        ["provider", "local"],
-        ["path", uploadPath],
-        ["writable", "no"],
-        ["reason", "not_writable"],
-        ["last_checked", checkedAt],
-      ]),
-    };
+    return fileStorageIssueRow(label, checkedAt, uploadPath, "down", "Not writable", "no", "not_writable");
   }
 
   if (live) {
-    const probePath = join(uploadPath, `.admitto-health-probe-${randomUUID()}`);
-    try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await writeFile(probePath, "ok");
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await unlink(probePath);
-    } catch {
+    const { wrote } = await probeWrite(uploadPath);
+    if (!wrote) {
       return {
         id: "file_storage",
         label,
