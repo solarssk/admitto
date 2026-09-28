@@ -93,6 +93,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
 }));
 
 import {
+  ApiError,
   patchEventNote,
   createEventContact,
   updateEventContact,
@@ -1383,6 +1384,42 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     const href = mail.getAttribute("href") ?? "";
     expect(href).toBe("mailto:victim@example.com%3Fsubject%3DHi%26body%3DSend%2520your%2520password");
     expect(href).not.toMatch(/[?&]/);
+  });
+
+  it("holds an email to the server's 254 character limit, in the field and inline, so the server never has to refuse it", async () => {
+    const dialog = await openAddContactDialog();
+    const emailField = within(dialog).getByLabelText("Email") as HTMLInputElement;
+    expect(emailField.maxLength).toBe(254);
+
+    // A syntactically valid address that is one character too long (a paste can bypass maxLength).
+    fireEvent.change(emailField, { target: { value: `${"a".repeat(243)}@example.com` } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(within(dialog).getByRole("alert").textContent).toBe("Enter a valid email address.");
+    expect(mockCreateEventContact).not.toHaveBeenCalled();
+
+    fireEvent.change(emailField, { target: { value: `${"a".repeat(242)}@example.com` } });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the server's own reason when it still refuses a contact, instead of a generic failure", async () => {
+    mockCreateEventContact.mockRejectedValueOnce(new ApiError(400, "invalid_email", "invalid_email"));
+    const dialog = await openAddContactDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("Enter a valid email address.")).toBeTruthy();
+    expect(screen.queryByText("Failed to add contact.")).toBeNull();
+    // The modal stays open so the value can be fixed.
+    expect(screen.getByRole("dialog", { name: "Add contact" })).toBeTruthy();
+  });
+
+  it("falls back to the generic message when the failure carries no known reason", async () => {
+    mockCreateEventContact.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    const dialog = await openAddContactDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("Failed to add contact.")).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
   it("does not flag a contact's saved phone or email that predates these checks unless it is changed", async () => {

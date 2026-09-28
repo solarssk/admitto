@@ -61,7 +61,12 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
-import { CONTACT_PHONE_MAX_LENGTH, isValidContactPhone, sanitizeContactPhoneInput } from "@admitto/shared";
+import {
+  CONTACT_EMAIL_MAX_LENGTH,
+  CONTACT_PHONE_MAX_LENGTH,
+  isValidContactPhone,
+  sanitizeContactPhoneInput,
+} from "@admitto/shared";
 import { isValidEmailFormat } from "../utils/email.js";
 import { mailtoHref, telHref } from "../utils/contactLinks.js";
 
@@ -872,7 +877,9 @@ function ContactModal({
   // A value that did not change is never flagged, so a contact saved before these checks existed
   // can still have its name or role edited (the server applies the same rule).
   const emailError =
-    emailValue && emailValue !== (contact?.email ?? "") && !isValidEmailFormat(emailValue)
+    emailValue &&
+    emailValue !== (contact?.email ?? "") &&
+    (emailValue.length > CONTACT_EMAIL_MAX_LENGTH || !isValidEmailFormat(emailValue))
       ? INVALID_EMAIL_MESSAGE
       : null;
   const phoneError =
@@ -1009,6 +1016,7 @@ function ContactModal({
         inputMode="email"
         icon={<i className="ti ti-mail" aria-hidden="true" />}
         value={form.email}
+        maxLength={CONTACT_EMAIL_MAX_LENGTH}
         error={touched.email && emailError ? emailError : undefined}
         onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
         onBlur={() => setTouched((t) => ({ ...t, email: true }))}
@@ -1652,7 +1660,7 @@ export function EventOverviewPage() {
       if (currentEventIdRef.current !== capturedEventId) return;
       setContacts((prev) => [...prev, created]);
     } catch (err) {
-      addToast("Failed to add contact.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to add contact."), "error");
       throw err;
     }
   }, [event.id, addToast]);
@@ -1664,7 +1672,7 @@ export function EventOverviewPage() {
       if (currentEventIdRef.current !== capturedEventId) return;
       setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
     } catch (err) {
-      addToast("Failed to update contact.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to update contact."), "error");
       throw err;
     }
   }, [event.id, addToast]);
