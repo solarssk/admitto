@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { WALLET_RELEVANT_ATTENDEE_FIELDS } from "@admitto/shared";
+import { WALLET_RELEVANT_ATTENDEE_FIELDS, isWalletAddClosed, type EventEndInput } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
@@ -2100,6 +2100,23 @@ async function deleteWalletPassesBestEffort(
   }
 }
 
+/** isWalletAddClosed for an event row as Prisma returns it. */
+function isEventWalletAddClosed(event: {
+  date: Date;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
+  timezone: string;
+  archived_at: Date | null;
+}): boolean {
+  return isWalletAddClosed({
+    date: event.date,
+    eventHoursStart: event.event_hours_start,
+    eventHoursEnd: event.event_hours_end,
+    timezone: event.timezone,
+    archivedAt: event.archived_at,
+  });
+}
+
 /** Best-effort void/restore of an attendee's wallet pass at the provider to match a revoke/
  * restore of their Admitto pass status - previously these could drift apart (revoking someone's
  * pass on our side left their wallet pass showing as valid, PO review 2026-08-13). No-op when
@@ -2116,7 +2133,16 @@ async function syncWalletPassOnStatusChangeBestEffort(
   const [event, walletPass] = await Promise.all([
     db.event.findUnique({
       where: { id: eventId },
-      select: { wallet_enabled: true, wallet_template_id: true, wallet_api_key_enc: true },
+      select: {
+        wallet_enabled: true,
+        wallet_template_id: true,
+        wallet_api_key_enc: true,
+        date: true,
+        event_hours_start: true,
+        event_hours_end: true,
+        timezone: true,
+        archived_at: true,
+      },
     }),
     db.walletPass.findUnique({
       where: { attendee_id: attendeeId },
@@ -2126,6 +2152,8 @@ async function syncWalletPassOnStatusChangeBestEffort(
   if (!event || !walletPass?.provider_pass_id) return;
   // Nothing left at the provider to void or restore for a removed pass.
   if (walletPass.provider_removed_at) return;
+  // Same rule as the Restore route: a pass is never made valid again once the event is over.
+  if (statusChange === "registered" && isEventWalletAddClosed(event)) return;
   if (statusChange === "revoked" && walletPass.status !== "active") return;
   if (statusChange === "registered" && walletPass.status !== "voided") return;
 
@@ -4156,6 +4184,9 @@ async function loadWalletActionContext(
       userProvidedId: string | null;
       providerCommandedAt: Date | null;
       providerRemovedAt: Date | null;
+      /** When the event is over, and whether it is archived (isWalletAddClosed) - what the Restore
+       * gate needs. */
+      eventEnd: EventEndInput & { archivedAt: Date | null };
       provider: WalletPassProvider;
     }
 > {
@@ -4192,6 +4223,11 @@ async function loadWalletActionContext(
         wallet_template_id: true,
         wallet_api_key_enc: true,
         wallet_field_mapping: true,
+        date: true,
+        event_hours_start: true,
+        event_hours_end: true,
+        timezone: true,
+        archived_at: true,
       },
     }),
   ]);
@@ -4219,6 +4255,13 @@ async function loadWalletActionContext(
     userProvidedId: attendee.wallet_pass.user_provided_id,
     providerCommandedAt: attendee.wallet_pass.provider_commanded_at,
     providerRemovedAt: attendee.wallet_pass.provider_removed_at,
+    eventEnd: {
+      date: event.date,
+      eventHoursStart: event.event_hours_start,
+      eventHoursEnd: event.event_hours_end,
+      timezone: event.timezone,
+      archivedAt: event.archived_at,
+    },
     provider,
   };
 }
@@ -4292,7 +4335,8 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
   return c.json(serializeWalletPassAction(updated));
 }
 
-/** POST /api/admin/events/:eventId/attendees/:id/wallet/restore */
+/** POST /api/admin/events/:eventId/attendees/:id/wallet/restore - 409 once the event is over or archived
+ * (`wallet_restore_closed`), and 409 `wallet_pass_removed` for a pass removed at the provider. */
 export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -4302,6 +4346,9 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
   if (ctx instanceof Response) return ctx;
   const removed = requireNotRemoved(c, ctx);
   if (removed) return removed;
+  // The server decides, whatever the UI showed: once the event is over (or archived) nothing may
+  // make a pass valid again.
+  if (isWalletAddClosed(ctx.eventEnd)) return c.json({ error: "wallet_restore_closed" }, 409);
 
   try {
     await ctx.provider.restorePass(ctx.providerPassId);

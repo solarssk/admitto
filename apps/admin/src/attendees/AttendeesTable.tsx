@@ -713,7 +713,7 @@ function BulkMoreActionsMenu({
         {isDesktop ? "More actions" : "More"}
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+        <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
           {/* Below 768px only — "Send tickets" doesn't fit as its own button next to the
            * count and "Check in" (attendees.css), so it lives here instead on mobile, first
            * in the list since it's still one of the two most common bulk actions. */}

@@ -49,6 +49,25 @@ function TestMenu() {
   );
 }
 
+/** Right-aligned menu (every More actions style consumer). */
+function EndAlignedMenu() {
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
+  return (
+    <div ref={rootRef}>
+      <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+        Trigger
+      </button>
+      {open && (
+        <div ref={panelRef} role="menu" style={panelStyle}>
+          <button role="menuitem">Item</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** matchTriggerWidth without a minWidth floor (SearchableSelect/PhoneCountrySelect always pass
  * one, but the option itself is optional) - the panel should just track the trigger's own
  * width, not fall back to some nonzero default. */
@@ -382,6 +401,33 @@ describe("useDropdownMenu", () => {
     const left = Number.parseFloat(menu.style.left);
     expect(left).toBeGreaterThanOrEqual(0);
     expect(left + 260).toBeLessThanOrEqual(375);
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("places a right-aligned panel using its width including the scrollbar it gets from the height clamp", () => {
+    // A tall menu is clamped to the space below and starts scrolling, which makes it wider by the
+    // scrollbar. Measuring the width before the clamp put `left` off by that much for one paint
+    // (the panel stuck out past the trigger, then jumped), a visible flash on the bulk actions menu.
+    vi.stubGlobal("innerWidth", 1200);
+    vi.stubGlobal("innerHeight", 400);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.getAttribute("role") === "menu") {
+        const clamped = this.style.overflowY === "auto";
+        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: clamped ? 308 : 300, height: 900, toJSON() {} };
+      }
+      return { left: 900, right: 1000, top: 100, bottom: 130, x: 0, y: 0, width: 100, height: 30, toJSON() {} };
+    });
+
+    render(<EndAlignedMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu.style.overflowY).toBe("auto");
+    expect(menu.style.left).toBe("692px"); // 1000 (trigger right edge) - 308 (width with scrollbar)
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

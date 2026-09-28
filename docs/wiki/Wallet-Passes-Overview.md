@@ -22,6 +22,12 @@ works; Admitto never signs or hosts pass files itself.
 - **On-demand creation.** A pass is created the first time an attendee taps "Add to Apple/Google
   Wallet" on their ticket page - not eagerly at ticket issuance, not in bulk. Repeat taps reuse the
   same pass.
+  - **When the buttons go away:** the Add to Wallet buttons are hidden, and an old link does
+    nothing (it just returns to the ticket, with no error), once the event is over (its end time,
+    or the end of its day when it has none, in the event's own time zone) or archived, when the
+    attendee's ticket is no longer valid, and when their wallet pass is voided, expired or removed.
+    Tapping never brings a voided pass back to life; only an admin's **Restore wallet pass** does,
+    and only until the event is over.
 - **Field mapping.** Every PassCreator template defines its own custom field names, chosen by an
   admin when building the template in PassCreator's own dashboard; Admitto has no say in what
   they're called.
