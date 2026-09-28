@@ -112,9 +112,20 @@ describe("formatEventHoursRange", () => {
   it("returns null when neither bound is set", () => {
     expect(formatEventHoursRange(null, null, null, "UTC", new Date("2026-09-24T12:00:00.000Z"))).toBeNull();
   });
+
+  it("labels a zone without a letter abbreviation as UTC+N, not GMT+N", () => {
+    const range = formatEventHoursRange("09:00", "18:00", null, "Europe/Warsaw", new Date("2026-07-15T12:00:00.000Z"));
+    expect(range?.tzAbbr).toBe("UTC+2");
+  });
 });
 
 describe("formatEventHoursRangeText", () => {
+  it("writes the offset as UTC+N in the folded text used by mail placeholders", () => {
+    expect(
+      formatEventHoursRangeText("09:00", "18:00", null, "Europe/Warsaw", new Date("2026-07-15T12:00:00.000Z")),
+    ).toBe("09:00 - 18:00 UTC+2");
+  });
+
   it("folds the zone abbreviation into the same string", () => {
     const text = formatEventHoursRangeText(
       "09:00",
