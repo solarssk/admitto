@@ -328,9 +328,24 @@ describe("fileStorageRow", () => {
     await expect(fileStorageRow({ STORAGE_PROVIDER: "s3" }, checkedAt, false)).resolves.toMatchObject(
       { status: "degraded", summary: "S3 not implemented" },
     );
-    await expect(
-      fileStorageRow({ STORAGE_PROVIDER: "azure", UPLOAD_DIR: uploadFixture.dir }, checkedAt, false),
-    ).resolves.toMatchObject({ status: "degraded", summary: "Unknown provider (azure)" });
+    // An arbitrary, unconstrained STORAGE_PROVIDER value (anything that is not "local" or
+    // "s3") must never reach a whitelisted detail: "provider" is on the Markdown export
+    // whitelist (ADR 0037) and is emitted verbatim, unlike every other check's "provider"
+    // value, which the code itself chooses from a fixed set. The real value lives under
+    // "provider_raw" instead, which stays off the whitelist and so off the export, and is
+    // visible only in the Superadmin tab (which shows every detail regardless of the
+    // whitelist).
+    const azureRow = await fileStorageRow(
+      { STORAGE_PROVIDER: "azure-with-a-secret-abc123", UPLOAD_DIR: uploadFixture.dir },
+      checkedAt,
+      false,
+    );
+    expect(azureRow).toMatchObject({ status: "degraded", summary: "Unknown provider" });
+    expect(azureRow.summary).not.toContain("azure");
+    expect(azureRow.details.find((d) => d.key === "provider")?.value).toBe("unknown");
+    expect(azureRow.details.find((d) => d.key === "provider_raw")?.value).toBe(
+      "azure-with-a-secret-abc123",
+    );
   });
 
   it("reports degraded when the live write probe fails", async () => {
@@ -884,6 +899,42 @@ describe("collectAdminHealth", () => {
     const unreachable = report.groups[1]!.checks.find((c) => c.id === "weather");
     expect(unreachable?.status).toBe("down");
     expect(unreachable?.summary).toBe("Unreachable");
+    expect(unreachable?.details.find((d) => d.key === "live_check")?.value).toBe("timeout");
+  });
+
+  it("maps an unexpected live weather probe error to the closed live_check set, not the raw message", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    // weather-service.ts#probeErrorMessage() falls back to the raw Error.message for anything
+    // it does not itself wrap in WeatherProviderError - simulate that here to prove the health
+    // check row never repeats it into the whitelisted live_check export detail (ADR 0037).
+    createWeatherServiceFromDb.mockResolvedValue({
+      probeLive: vi.fn(async () => ({
+        ok: false,
+        latencyMs: 3,
+        error: "connect ECONNREFUSED 10.0.0.5:443",
+      })),
+    });
+    const report = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(weather?.status).toBe("down");
+    expect(weather?.summary).toBe("Unreachable");
+    expect(weather?.details.find((d) => d.key === "live_check")?.value).toBe("failed");
+    expect(
+      weather?.details.some((d) => d.value.includes("10.0.0.5")),
+      "the raw probe error must not reach any detail value",
+    ).toBe(false);
   });
 
   it("emits one Identity provider row per configured IDP", async () => {
