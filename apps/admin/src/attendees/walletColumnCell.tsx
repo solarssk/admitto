@@ -73,14 +73,15 @@ export function WalletColumnCell({
   // No WalletPass row at all reads as "Not added", not "Status unknown" - the latter is reserved
   // for a pass that does exist but the periodic sync worker hasn't checked yet (both counts null
   // on an existing row), a genuinely different state from never having added one.
+  const removed = !!status?.provider_removed_at;
   const appleLabel = status
-    ? walletRegistrationLabel(status.apple_active_registrations, status.apple_inactive_registrations)
+    ? walletRegistrationLabel(status.apple_active_registrations, status.apple_inactive_registrations, removed)
     : "Not added";
   const googleLabel = status
-    ? walletRegistrationLabel(status.google_active_registrations, status.google_inactive_registrations)
+    ? walletRegistrationLabel(status.google_active_registrations, status.google_inactive_registrations, removed)
     : "Not added";
   const samsungLabel = status
-    ? walletRegistrationLabel(status.samsung_active_registrations, status.samsung_inactive_registrations)
+    ? walletRegistrationLabel(status.samsung_active_registrations, status.samsung_inactive_registrations, removed)
     : "Not added";
   return (
     <span className="attendees-table-v2__wallet">

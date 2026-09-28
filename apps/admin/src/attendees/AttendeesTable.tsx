@@ -267,6 +267,8 @@ export interface AttendeesTableProps {
   bulkRefreshWalletStatusBusy: boolean;
   onBulkDeleteWallet: () => void;
   bulkDeleteWalletBusy: boolean;
+  onBulkRemoveWallet: () => void;
+  bulkRemoveWalletBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -479,6 +481,8 @@ interface BulkItemPassWalletActions {
   bulkRefreshWalletStatusBusy: boolean;
   onBulkDeleteWallet: () => void;
   bulkDeleteWalletBusy: boolean;
+  onBulkRemoveWallet: () => void;
+  bulkRemoveWalletBusy: boolean;
   /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
    * act on (may still include an already-voided pass for Void, resolved server-side). */
   canBulkWallet: boolean;
@@ -529,6 +533,8 @@ function BulkMoreActionsMenu({
   bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
   canBulkWallet,
   walletPassCount,
   walletPlatforms,
@@ -784,6 +790,27 @@ function BulkMoreActionsMenu({
                     }}
                   />
               )}
+              {/* Not gated on walletPlatforms.any, unlike Void/Push/Delete below - Remove is
+               * archive/switched-off-exempt at the API layer (plan v4.2 PR 3 business rules
+               * table), same posture as Refresh status just above: only the event's credentials
+               * are required. Irreversible at the provider, but unlike Delete below it keeps the
+               * local row and its Reports history - the exact selection can still include an
+               * active or already-removed pass (skipped server-side and reported in the result
+               * toast), same "nothing to do" gate as Void/Reissue/Delete. */}
+              {walletConfigured && (
+                <MoreActionsMenuItem
+                  icon="cloud-off"
+                  variant="danger"
+                  label={bulkRemoveWalletBusy ? "Removing from provider…" : "Remove from provider"}
+                  hint={`Delete at the provider for ${attendeeCount(walletPassCount)}, keep their history`}
+                  disabled={bulkRemoveWalletBusy || !canBulkWallet}
+                  tooltip={bulkWalletTooltip(false, canBulkWallet)}
+                  onClick={() => {
+                    setOpen(false);
+                    onBulkRemoveWallet();
+                  }}
+                />
+              )}
               {walletPlatforms.any && (
                 <>
                   {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
@@ -893,6 +920,8 @@ function BulkBar({
   bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
   canBulkWallet,
   walletPassCount,
   walletPlatforms,
@@ -1033,6 +1062,8 @@ function BulkBar({
           bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
           onBulkDeleteWallet={onBulkDeleteWallet}
           bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+          onBulkRemoveWallet={onBulkRemoveWallet}
+          bulkRemoveWalletBusy={bulkRemoveWalletBusy}
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
@@ -1578,6 +1609,8 @@ export function AttendeesTable({
   bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1695,6 +1728,8 @@ export function AttendeesTable({
           bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
           onBulkDeleteWallet={onBulkDeleteWallet}
           bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+          onBulkRemoveWallet={onBulkRemoveWallet}
+          bulkRemoveWalletBusy={bulkRemoveWalletBusy}
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}

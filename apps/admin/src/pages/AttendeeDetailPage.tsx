@@ -30,6 +30,7 @@ import {
   reissueWalletPass,
   refreshWalletPassStatus,
   deleteWalletPass,
+  removeWalletPassFromProvider,
   resendTicket,
   fetchTicketLink,
   restoreWalletPass,
@@ -116,7 +117,7 @@ function attendeeTabFromSearch(searchParams: URLSearchParams): TabId {
   return TAB_IDS.find((id) => id === raw) ?? "overview";
 }
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
-type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
+type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | "remove" | null;
 
 /** Secondary actions that don't need their own header button - Resend ticket always, plus Edit
  * once folded in here below the mobile breakpoint (see `showEdit`) and Revoke check-in/items/pass
@@ -156,6 +157,7 @@ function MoreActionsMenu({
   onReissueWallet,
   onRefreshStatusWallet,
   onDeleteWallet,
+  onRemoveWallet,
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
@@ -189,6 +191,7 @@ function MoreActionsMenu({
   onReissueWallet: () => void;
   onRefreshStatusWallet: () => void;
   onDeleteWallet: () => void;
+  onRemoveWallet: () => void;
 }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -197,6 +200,9 @@ function MoreActionsMenu({
   // still active - and nothing else (not the Wallet switch). Without credentials every click would
   // 409 wallet_not_configured (bot review).
   const refreshAvailable = walletConfigured && walletPass?.status === "active";
+  // Same posture as refreshAvailable above - Remove is archive/switched-off-exempt, so it needs
+  // the event's credentials and a removable pass, not the Wallet switch (walletPlatforms.any).
+  const removeAvailable = walletConfigured && canRemoveWalletPass(walletPass);
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -314,15 +320,16 @@ function MoreActionsMenu({
               wallet pass yet (bot review). Void/restore/push/delete need the event to still offer a
               wallet platform: an admin who turns Wallet off shouldn't still change a pass through
               this menu even though the Wallet card itself is now hidden (bot review). Refresh
-              status only reads from the provider, so an active pass keeps it whenever the event's
-              credentials are configured, switch or not (bot review). */}
-          {(walletPlatforms.any ? hasAnyWalletMenuAction(walletPass) : refreshAvailable) && (
+              status and Remove only need the event's credentials configured, switch or not (bot
+              review; Remove is archive/switched-off-exempt the same way, plan v4.2 PR 3). */}
+          {(walletPlatforms.any ? hasAnyWalletMenuAction(walletPass) : refreshAvailable || removeAvailable) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
                 event={event}
                 platformActions={walletPlatforms.any}
                 refreshAvailable={refreshAvailable}
+                removeAvailable={removeAvailable}
                 walletPass={walletPass}
                 walletBusy={walletBusy}
                 onVoid={() => {
@@ -344,6 +351,10 @@ function MoreActionsMenu({
                 onDelete={() => {
                   setOpen(false);
                   onDeleteWallet();
+                }}
+                onRemove={() => {
+                  setOpen(false);
+                  onRemoveWallet();
                 }}
               />
             </>
@@ -496,6 +507,7 @@ function WalletActionMenuItems({
   event,
   platformActions,
   refreshAvailable,
+  removeAvailable,
   walletPass,
   walletBusy,
   onVoid,
@@ -503,13 +515,17 @@ function WalletActionMenuItems({
   onReissue,
   onRefreshStatus,
   onDelete,
+  onRemove,
 }: Readonly<{
   event: ArchivedGuardEvent;
   /** False when the event no longer offers any wallet platform: only the read-only Refresh
-   * status is left, for an active pass. */
+   * status and Remove are left. */
   platformActions: boolean;
   /** Refresh status is offered: the event has credentials configured and the pass is active. */
   refreshAvailable: boolean;
+  /** Remove from provider is offered: the event has credentials configured and the pass is
+   * voided or expired and not already removed. */
+  removeAvailable: boolean;
   walletPass: WalletPassActionDto | null;
   walletBusy: boolean;
   onVoid: () => void;
@@ -517,6 +533,7 @@ function WalletActionMenuItems({
   onReissue: () => void;
   onRefreshStatus: () => void;
   onDelete: () => void;
+  onRemove: () => void;
 }>) {
   if (!walletPass) return null;
 
@@ -593,6 +610,26 @@ function WalletActionMenuItems({
           </span>
         </button>
       )}
+      {/* Deliberately not ArchivedGuard'd, and not gated on platformActions - Remove is archive/
+        * switched-off-exempt (plan v4.2 PR 3 business rules table), same as Void and Delete
+        * already are at the API layer. This is what actually stops the provider counting a
+        * voided/expired pass towards its own registration plan; Delete below only wipes the local
+        * row and Reports history along with it. */}
+      {removeAvailable && (
+        <button
+          type="button"
+          role="menuitem"
+          className="more-actions-menu__item more-actions-menu__item--danger"
+          disabled={walletBusy}
+          onClick={onRemove}
+        >
+          <i className="ti ti-cloud-off" aria-hidden="true" />
+          <span className="more-actions-menu__item-text">
+            <span>Remove from provider</span>
+            <span className="more-actions-menu__item-hint">Delete at the provider, keep this attendee&rsquo;s history</span>
+          </span>
+        </button>
+      )}
       {platformActions && hasAnyWalletMenuAction(walletPass) && (
         <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
           {(guard) => (
@@ -606,7 +643,7 @@ function WalletActionMenuItems({
               <i className="ti ti-trash" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Delete wallet pass</span>
-                <span className="more-actions-menu__item-hint">Permanently deletes the pass record</span>
+                <span className="more-actions-menu__item-hint">Permanently deletes the pass record and its history</span>
               </span>
             </button>
           )}
@@ -738,6 +775,15 @@ function hasWalletLifecycleActions(pass: WalletPassActionDto | null): pass is Wa
  * today (Codex review, 2026-09-27). */
 function hasAnyWalletMenuAction(pass: WalletPassActionDto | null): pass is WalletPassActionDto {
   return !!pass && (pass.status === "active" || pass.status === "voided" || pass.status === "expired");
+}
+
+/** Gates "Remove from provider": voided or expired, and not already removed at the provider.
+ * Deliberately not combined with platformActions (walletPlatforms.any) the way Void/Reissue/Delete
+ * above are - Remove is archive/switched-off-exempt per the plan's business rules table, same as
+ * the API route itself (ignoreWalletEnabled), so the caller only ANDs this with walletConfigured,
+ * the same posture as Refresh status. */
+function canRemoveWalletPass(pass: WalletPassActionDto | null): pass is WalletPassActionDto {
+  return !!pass && (pass.status === "voided" || pass.status === "expired") && !pass.provider_removed_at;
 }
 
 function walletTone(pass: WalletPassActionDto | null): ChipTone {
@@ -984,6 +1030,7 @@ function AttendeeOverviewTab({
                       {walletRegistrationLabel(
                         detail.wallet_pass.apple_active_registrations,
                         detail.wallet_pass.apple_inactive_registrations,
+                        !!detail.wallet_pass.provider_removed_at,
                       )}
                     </span>
                   </div>
@@ -995,6 +1042,7 @@ function AttendeeOverviewTab({
                       {walletRegistrationLabel(
                         detail.wallet_pass.google_active_registrations,
                         detail.wallet_pass.google_inactive_registrations,
+                        !!detail.wallet_pass.provider_removed_at,
                       )}
                     </span>
                   </div>
@@ -1011,6 +1059,7 @@ function AttendeeOverviewTab({
                       {walletRegistrationLabel(
                         detail.wallet_pass.samsung_active_registrations,
                         detail.wallet_pass.samsung_inactive_registrations,
+                        !!detail.wallet_pass.provider_removed_at,
                       )}
                     </span>
                   </div>
@@ -1060,6 +1109,16 @@ function AttendeeOverviewTab({
                     <span>Voided</span>
                     <span className="mono">
                       {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {/* Set once "Remove from provider" has run (PR 3) - status above stays whatever
+                    it was (voided/expired); this is a separate, provider-presence fact. */}
+                {detail.wallet_pass.provider_removed_at && (
+                  <div className="attendee-detail-row">
+                    <span>Removed from provider</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.provider_removed_at, getBrowserTimeZone())}
                     </span>
                   </div>
                 )}
@@ -2318,6 +2377,29 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Permanently removes a voided/expired pass at the provider while keeping the local WalletPass
+   * row and its history (Reports, registration counts) - unlike handleWalletDelete above, which
+   * wipes the row. This is what actually stops the provider counting the pass towards its own
+   * registration plan. Irreversible. */
+  async function handleWalletRemove() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setWalletBusy(true);
+    setWalletError(null);
+    try {
+      await removeWalletPassFromProvider(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setActiveWalletAction(null);
+      addToast("Wallet pass removed from the provider.", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setWalletError(operatorApiErrorMessage(err, "Could not remove the wallet pass from the provider."));
+    } finally {
+      if (isStillSelected(target)) setWalletBusy(false);
+    }
+  }
+
   /** Adds a staff note from the Notes tab - same AttendeeNote model as check-in's note
    * composer, so the response's full detail DTO (incl. the new note) replaces local state
    * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
@@ -2582,6 +2664,10 @@ export function AttendeeDetailPage() {
               onDeleteWallet={() => {
                 setWalletError(null);
                 setActiveWalletAction("delete");
+              }}
+              onRemoveWallet={() => {
+                setWalletError(null);
+                setActiveWalletAction("remove");
               }}
             />
             <Button variant="secondary" onClick={handleBack}>
@@ -3045,6 +3131,33 @@ export function AttendeeDetailPage() {
           <li>Apple/Google Wallet gives us no way to remove it from their phone - only they can do that</li>
           <li>Doesn't affect check-in - use Revoke pass to block entry</li>
           <li>They'd need to add it again from their ticket page for a fresh pass</li>
+          <li>
+            Also erases this pass from Reports (installs, registrations) - use Remove from
+            provider instead to stop it being counted at the provider while keeping that history
+          </li>
+        </ul>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={activeWalletAction === "remove"}
+        title="Remove from provider?"
+        message={`Permanently deletes ${detail.name}'s pass at the provider. Unlike Delete, this keeps the local record and its Reports history (installs, registrations) - it just stops the provider counting this pass towards its own plan.`}
+        confirmLabel="Remove"
+        confirmVariant="danger"
+        loading={walletBusy}
+        errorMessage={walletError ?? undefined}
+        onConfirm={() => void handleWalletRemove()}
+        onCancel={() => {
+          if (!walletBusy) {
+            setActiveWalletAction(null);
+            setWalletError(null);
+          }
+        }}
+      >
+        <ul className="confirm-dialog__list">
+          <li>Irreversible at the provider - there is no way to bring the pass back there</li>
+          <li>Only meaningful once the pass is already voided or expired</li>
+          <li>Doesn't affect check-in, and doesn't touch this attendee's Reports history</li>
         </ul>
       </ConfirmDialog>
 
