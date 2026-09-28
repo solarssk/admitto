@@ -11,7 +11,7 @@ const CONTACT_PHONE_MAX_LENGTH = 40;
  * first character, and only when `allowLeadingPlus` is set: the country picker already supplies the
  * code, so its national-number field has no use for one. */
 export function sanitizeContactPhoneInput(value: string, allowLeadingPlus = false): string {
-  const withoutPlus = value.replace(/[^\d\s().+-]/g, "").replace(/\+/g, "");
+  const withoutPlus = value.replaceAll(/[^\d\s().+-]/g, "").replaceAll("+", "");
   return allowLeadingPlus && value.trimStart().startsWith("+") ? `+${withoutPlus}` : withoutPlus;
 }
 
@@ -21,6 +21,6 @@ export function sanitizeContactPhoneInput(value: string, allowLeadingPlus = fals
 export function isValidContactPhone(value: string): boolean {
   const trimmed = value.trim();
   if (trimmed.length > CONTACT_PHONE_MAX_LENGTH || !/^\+?[\d\s().-]+$/.test(trimmed)) return false;
-  const digits = trimmed.replace(/\D/g, "").length;
+  const digits = trimmed.replaceAll(/\D/g, "").length;
   return digits >= CONTACT_PHONE_MIN_DIGITS && digits <= CONTACT_PHONE_MAX_DIGITS;
 }
