@@ -60,6 +60,7 @@ import { reportBulkActionError, type BulkActionErrorReporters } from "../attende
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
+import { useEventScopedConfirm } from "../attendees/useEventScopedConfirm.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { useWalletVoidActive } from "../attendees/useWalletVoidActive.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
@@ -1124,11 +1125,9 @@ export function AttendeesPage() {
   const [bulkRemoveWalletConfirmOpen, setBulkRemoveWalletConfirmOpen] = useState(false);
   const [bulkRemoveWalletError, setBulkRemoveWalletError] = useState<string | null>(null);
   const [eventWidePushBusy, setEventWidePushBusy] = useState(false);
-  const [eventWidePushConfirmOpen, setEventWidePushConfirmOpen] = useState(false);
-  const [eventWidePushError, setEventWidePushError] = useState<string | null>(null);
+  const eventWidePushConfirm = useEventScopedConfirm(eventId);
   const [eventWideRefreshStatusBusy, setEventWideRefreshStatusBusy] = useState(false);
-  const [eventWideRefreshStatusConfirmOpen, setEventWideRefreshStatusConfirmOpen] = useState(false);
-  const [eventWideRefreshStatusError, setEventWideRefreshStatusError] = useState<string | null>(null);
+  const eventWideRefreshStatusConfirm = useEventScopedConfirm(eventId);
   const [reloadToken, setReloadToken] = useState(0);
   const eventWideVoidActive = useWalletVoidActive({
     eventId,
@@ -1474,17 +1473,18 @@ export function AttendeesPage() {
    * already-issued active pass under the event is a target, resolved by the job itself. Guards
    * its success/error side effects against the operator navigating to a different event before
    * the request resolves, same isStillOnEvent pattern as handleTriggerEventWideRefreshStatus
-   * (CodeRabbit review) - busy cleanup stays unconditional. */
+   * (CodeRabbit review) - busy cleanup stays unconditional. It acts on the event its confirmation
+   * was opened on (useEventScopedConfirm), never on whichever event the route shows by then. */
   const handleTriggerEventWidePush = async () => {
-    if (!eventId) return;
-    const initiatingEventId = eventId;
+    const initiatingEventId = eventWidePushConfirm.target();
+    if (!initiatingEventId) return;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setEventWidePushBusy(true);
-    setEventWidePushError(null);
+    eventWidePushConfirm.setError(null);
     try {
       const result = await triggerEventWideWalletPush(initiatingEventId);
       if (!isStillOnEvent()) return;
-      setEventWidePushConfirmOpen(false);
+      eventWidePushConfirm.close();
       addToast("Push queued - you'll see a summary once it finishes.", "info");
       walletPushPollRef.current?.abort();
       const ac = new AbortController();
@@ -1497,7 +1497,7 @@ export function AttendeesPage() {
       if (isStillOnEvent()) {
         reportBulkActionError(err, {
           reportApiError,
-          setError: setEventWidePushError,
+          setError: eventWidePushConfirm.setError,
           addToast,
           apiErrorFallback: "Push failed.",
           genericFallback: "Failed to push updates.",
@@ -1514,17 +1514,18 @@ export function AttendeesPage() {
    * pass with a known device-registration id is a target, resolved by the job itself. Guards its
    * success/error side effects against the operator navigating to a different event before the
    * request resolves, same isStillOnEvent pattern as runBulkAction (CodeRabbit review) - busy
-   * cleanup stays unconditional. */
+   * cleanup stays unconditional. It acts on the event its confirmation was opened on
+   * (useEventScopedConfirm), never on whichever event the route shows by then. */
   const handleTriggerEventWideRefreshStatus = async () => {
-    if (!eventId) return;
-    const initiatingEventId = eventId;
+    const initiatingEventId = eventWideRefreshStatusConfirm.target();
+    if (!initiatingEventId) return;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setEventWideRefreshStatusBusy(true);
-    setEventWideRefreshStatusError(null);
+    eventWideRefreshStatusConfirm.setError(null);
     try {
       const result = await triggerEventWideWalletRefreshStatus(initiatingEventId);
       if (!isStillOnEvent()) return;
-      setEventWideRefreshStatusConfirmOpen(false);
+      eventWideRefreshStatusConfirm.close();
       addToast("Refresh queued - you'll see a summary once it finishes.", "info");
       walletRefreshStatusPollRef.current?.abort();
       const ac = new AbortController();
@@ -1540,7 +1541,7 @@ export function AttendeesPage() {
       if (isStillOnEvent()) {
         reportBulkActionError(err, {
           reportApiError,
-          setError: setEventWideRefreshStatusError,
+          setError: eventWideRefreshStatusConfirm.setError,
           addToast,
           apiErrorFallback: "Refresh failed.",
           genericFallback: "Failed to refresh wallet status.",
@@ -2160,15 +2161,9 @@ export function AttendeesPage() {
               onExport={(format) => void handleExport(format)}
               walletPlatforms={walletPlatforms}
               walletConfigured={event.wallet_configured}
-              onTriggerEventWidePush={() => {
-                setEventWidePushError(null);
-                setEventWidePushConfirmOpen(true);
-              }}
+              onTriggerEventWidePush={eventWidePushConfirm.request}
               eventWidePushBusy={eventWidePushBusy}
-              onTriggerEventWideRefreshStatus={() => {
-                setEventWideRefreshStatusError(null);
-                setEventWideRefreshStatusConfirmOpen(true);
-              }}
+              onTriggerEventWideRefreshStatus={eventWideRefreshStatusConfirm.request}
               eventWideRefreshStatusBusy={eventWideRefreshStatusBusy}
               onTriggerEventWideVoidActive={eventWideVoidActive.requestConfirm}
               eventWideVoidActiveBusy={eventWideVoidActive.busy}
@@ -2431,36 +2426,30 @@ export function AttendeesPage() {
       />
 
       <ConfirmDialog
-        open={eventWidePushConfirmOpen}
+        open={eventWidePushConfirm.open}
         title="Push updates to every installed wallet pass?"
         message="This sends each attendee's current name, ticket type, and event details to the pass on their phone, for the whole event. Attendees with no pass are not changed."
-        errorMessage={eventWidePushError}
+        errorMessage={eventWidePushConfirm.error}
         confirmLabel="Push updates"
         confirmVariant="primary"
         loading={eventWidePushBusy}
         onConfirm={() => void handleTriggerEventWidePush()}
         onCancel={() => {
-          if (!eventWidePushBusy) {
-            setEventWidePushConfirmOpen(false);
-            setEventWidePushError(null);
-          }
+          if (!eventWidePushBusy) eventWidePushConfirm.close();
         }}
       />
 
       <ConfirmDialog
-        open={eventWideRefreshStatusConfirmOpen}
+        open={eventWideRefreshStatusConfirm.open}
         title="Refresh the wallet status for every active wallet pass?"
         message="This checks the current status of every active wallet pass in the wallet service, for the whole event. If the wallet service says a pass is voided or expired, it is marked Voided here. Passes that are already voided or expired, and attendees with no pass, are not changed."
-        errorMessage={eventWideRefreshStatusError}
+        errorMessage={eventWideRefreshStatusConfirm.error}
         confirmLabel="Refresh status"
         confirmVariant="primary"
         loading={eventWideRefreshStatusBusy}
         onConfirm={() => void handleTriggerEventWideRefreshStatus()}
         onCancel={() => {
-          if (!eventWideRefreshStatusBusy) {
-            setEventWideRefreshStatusConfirmOpen(false);
-            setEventWideRefreshStatusError(null);
-          }
+          if (!eventWideRefreshStatusBusy) eventWideRefreshStatusConfirm.close();
         }}
       />
 

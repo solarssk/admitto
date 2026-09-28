@@ -3236,8 +3236,8 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
 
     expect(addToast).not.toHaveBeenCalledWith("Push queued - you'll see a summary once it finishes.", "info");
     expect(pollWalletPushCompletion).not.toHaveBeenCalled();
-    // The stale-event dialog never got its close/success side effects, so it's still showing.
-    expect(screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeTruthy();
+    // The confirmation belonged to evt-1, so it closed with the navigation instead of lingering on evt-2.
+    expect(screen.queryByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeNull();
   });
 
   it("ignores a stale trigger error after navigating to a different event mid-request (CodeRabbit review)", async () => {
@@ -3273,8 +3273,13 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
       await Promise.resolve();
     });
 
-    // The stale-event dialog never got an error surfaced onto it.
-    expect(within(dialog).queryByRole("alert")).toBeNull();
+    // The dialog closed with the navigation, and the failed evt-1 request must not put its error onto a
+    // dialog the operator opens for evt-2.
+    expect(screen.queryByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Push updates/ }));
+    const evt2Dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    expect(within(evt2Dialog).queryByRole("alert")).toBeNull();
   });
 });
 
@@ -3460,10 +3465,8 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
 
     expect(addToast).not.toHaveBeenCalledWith("Refresh queued - you'll see a summary once it finishes.", "info");
     expect(pollWalletRefreshStatusCompletion).not.toHaveBeenCalled();
-    // The stale-event dialog never got its close/success side effects, so it's still showing.
-    expect(
-      screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" }),
-    ).toBeTruthy();
+    // The confirmation belonged to evt-1, so it closed with the navigation instead of lingering on evt-2.
+    expect(screen.queryByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" })).toBeNull();
   });
 
   it("ignores a stale trigger error after navigating to a different event mid-request (CodeRabbit review)", async () => {
@@ -3499,10 +3502,121 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
       await Promise.resolve();
     });
 
-    // The stale-event dialog never got an error surfaced onto it.
-    expect(within(dialog).queryByRole("alert")).toBeNull();
+    // The dialog closed with the navigation, and the failed evt-1 request must not put its error onto a
+    // dialog the operator opens for evt-2.
+    expect(screen.queryByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Refresh status/ }));
+    const evt2Dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
+    expect(within(evt2Dialog).queryByRole("alert")).toBeNull();
   });
 });
+
+/** The two event-wide wallet confirmations behind the header's "More actions", one table for both. The
+ * page stays mounted when the route's `:eventId` changes, so each confirmation has to be tied to the event
+ * it was opened on: a dialog left over from evt-1 must never be able to queue a job for evt-2. */
+describe.each([
+  {
+    action: "Push updates",
+    trigger: triggerEventWideWalletPush,
+    poll: pollWalletPushCompletion,
+    menuItem: /^Push updates/,
+    dialogTitle: "Push updates to every installed wallet pass?",
+    confirmLabel: "Push updates",
+    queuedToast: "Push queued - you'll see a summary once it finishes.",
+  },
+  {
+    action: "Refresh status",
+    trigger: triggerEventWideWalletRefreshStatus,
+    poll: pollWalletRefreshStatusCompletion,
+    menuItem: /^Refresh status/,
+    dialogTitle: "Refresh the wallet status for every active wallet pass?",
+    confirmLabel: "Refresh status",
+    queuedToast: "Refresh queued - you'll see a summary once it finishes.",
+  },
+])(
+  "AttendeesPage header '$action' confirmation follows the event it was opened on",
+  ({ trigger, poll, menuItem, dialogTitle, confirmLabel, queuedToast }) => {
+    function renderOnRouter() {
+      const router = createMemoryRouter(
+        [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+        { initialEntries: ["/admin/events/evt-1/attendees"] },
+      );
+      render(<RouterProvider router={router} />);
+      return router;
+    }
+
+    /** Navigates and waits until the page has loaded that event's attendees. */
+    async function navigateTo(router: ReturnType<typeof createMemoryRouter>, eventId: string) {
+      const callsBefore = fetchEventAttendees.mock.calls.length;
+      await act(async () => router.navigate(`/admin/events/${eventId}/attendees`));
+      await waitFor(() => {
+        expect(fetchEventAttendees.mock.calls.slice(callsBefore).some((call) => call[0] === eventId)).toBe(true);
+      });
+    }
+
+    function openConfirmation() {
+      fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: menuItem }));
+      return screen.getByRole("dialog", { name: dialogTitle });
+    }
+
+    beforeEach(() => {
+      trigger.mockReset().mockResolvedValue({ jobId: "job-1" });
+      poll.mockReset().mockResolvedValue(undefined);
+      fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    });
+
+    it("closes when the route moves to another event, so confirming cannot queue a job for it", async () => {
+      const router = renderOnRouter();
+      await screen.findByText("Jane Doe");
+      openConfirmation();
+
+      await navigateTo(router, "evt-2");
+
+      expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+      expect(screen.queryByRole("button", { name: confirmLabel })).toBeNull();
+      expect(trigger).not.toHaveBeenCalled();
+      expect(poll).not.toHaveBeenCalled();
+      expect(addToast).not.toHaveBeenCalledWith(queuedToast, "info");
+
+      // Opening it again on evt-2 is a fresh confirmation: only now, and only for evt-2, is a job queued.
+      const evt2Dialog = openConfirmation();
+      expect(trigger).not.toHaveBeenCalled();
+      fireEvent.click(within(evt2Dialog).getByRole("button", { name: confirmLabel }));
+      await waitFor(() => expect(trigger).toHaveBeenCalledTimes(1));
+      expect(trigger).toHaveBeenCalledWith("evt-2");
+    });
+
+    it("does not come back when the operator returns to the event it was opened on", async () => {
+      const router = renderOnRouter();
+      await screen.findByText("Jane Doe");
+      openConfirmation();
+
+      await navigateTo(router, "evt-2");
+      await navigateTo(router, "evt-1");
+
+      expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+      expect(trigger).not.toHaveBeenCalled();
+    });
+
+    it("takes its inline error along: neither evt-2 nor a return to evt-1 shows the failed confirmation again", async () => {
+      trigger.mockRejectedValueOnce(new Error("network down"));
+      const router = renderOnRouter();
+      await screen.findByText("Jane Doe");
+      const dialog = openConfirmation();
+      fireEvent.click(within(dialog).getByRole("button", { name: confirmLabel }));
+      await within(dialog).findByRole("alert");
+
+      await navigateTo(router, "evt-2");
+      expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+
+      await navigateTo(router, "evt-1");
+      expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+      expect(trigger).toHaveBeenCalledTimes(1);
+    });
+  },
+);
 
 describe("AttendeesPage header 'Void active passes' (event-wide, wallet configured)", () => {
   const DIALOG = "Void every active wallet pass for this event?";
