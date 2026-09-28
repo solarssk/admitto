@@ -133,6 +133,19 @@ describe("distributePdfColumnWidths", () => {
     const total = plan.slotWidths.reduce((a, b) => a + b, 0);
     expect(total).toBeLessThanOrEqual(PDF_A3_PRINTABLE_WIDTH);
   });
+
+  it("shaves the single extra point from the first of several equally widest columns", () => {
+    // Scaled floors are [190, 190, 190, 142, 20] = 732, one point over the 731.89 available, so
+    // exactly one column loses a point - and it must be the first widest one, not the last.
+    const metrics: PdfColumnMetrics[] = [200, 200, 200, 150, 20].map((w) => ({
+      minWidth: w,
+      maxWidth: w,
+    }));
+    const plan = distributePdfColumnWidths(metrics, PDF_A4_PRINTABLE_WIDTH);
+    expect(plan.mode).toBe("ellipsis-fallback");
+    expect(plan.contentWidths).toEqual([189, 190, 190, 142, 20]);
+    expect(plan.slotWidths).toEqual([195, 196, 196, 148, 26]);
+  });
 });
 
 describe("buildExportPdfBuffer", () => {

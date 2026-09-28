@@ -27,6 +27,9 @@ export type PdfColumnWidthPlan = {
   mode: "wrap" | "ellipsis-fallback";
 };
 
+/** A column's slot on the page: its text box plus the reserved gap after it. */
+const slotWidthOf = (contentWidth: number): number => contentWidth + PDF_CELL_PADDING;
+
 function exportRowCells(row: SanitizedExportRow): string[] {
   return [
     row.check_off,
@@ -66,10 +69,10 @@ export function measurePdfColumnMetrics(
   doc.font(PDF_FONT).fontSize(PDF_FONT_SIZE);
   for (const row of exportRows) {
     const cells = exportRowCells(row);
-    for (let i = 0; i < metrics.length; i++) {
-      const value = cells[i] ?? "";
-      metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));
-      metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));
+    for (const [i, metric] of metrics.entries()) {
+      const value = cells.at(i) ?? "";
+      metric.maxWidth = Math.max(metric.maxWidth, doc.widthOfString(value));
+      metric.minWidth = Math.max(metric.minWidth, widestTokenWidth(doc, value));
     }
   }
 
@@ -95,22 +98,18 @@ function clampToFloor(widths: number[], maxTotal: number): number[] {
   const total = widths.reduce((sum, w) => sum + w, 0);
   if (total <= maxTotal) return widths;
   const scale = maxTotal / total;
-  const scaled = widths.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
-  let scaledTotal = scaled.reduce((sum, w) => sum + w, 0);
+  const columns = widths.map((w) => ({ width: Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)) }));
+  let scaledTotal = columns.reduce((sum, column) => sum + column.width, 0);
   while (scaledTotal > maxTotal) {
-    let widest = -1;
-    let widestWidth = PDF_MIN_COLUMN_WIDTH;
-    for (let i = 0; i < scaled.length; i++) {
-      if (scaled[i]! > widestWidth) {
-        widestWidth = scaled[i]!;
-        widest = i;
-      }
+    let widest: { width: number } | undefined;
+    for (const column of columns) {
+      if (column.width > (widest?.width ?? PDF_MIN_COLUMN_WIDTH)) widest = column;
     }
-    if (widest < 0) break;
-    scaled[widest]!--;
+    if (!widest) break;
+    widest.width--;
     scaledTotal--;
   }
-  return scaled;
+  return columns.map((column) => column.width);
 }
 
 export function distributePdfColumnWidths(
@@ -151,7 +150,7 @@ export function distributePdfColumnWidths(
 
   return {
     contentWidths,
-    slotWidths: contentWidths.map((w) => w + PDF_CELL_PADDING),
+    slotWidths: contentWidths.map((w) => slotWidthOf(w)),
     mode,
   };
 }
@@ -166,8 +165,8 @@ function measureRowHeight(
   maxHeight: number,
 ): number {
   let height = PDF_MIN_ROW_HEIGHT;
-  for (let i = 0; i < cells.length; i++) {
-    height = Math.max(height, doc.heightOfString(cells[i] ?? "", { width: contentWidths[i]! }));
+  for (const [i, width] of contentWidths.entries()) {
+    height = Math.max(height, doc.heightOfString(cells.at(i) ?? "", { width }));
   }
   return Math.min(height, Math.max(maxHeight, PDF_MIN_ROW_HEIGHT));
 }
@@ -227,9 +226,9 @@ export async function buildExportPdfBuffer(
         ? measureRowHeight(doc, exportColumns, plan.contentWidths, printableHeight)
         : PDF_MIN_ROW_HEIGHT;
     let x = PDF_MARGIN;
-    for (let i = 0; i < exportColumns.length; i++) {
-      doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));
-      x += plan.slotWidths[i]!;
+    for (const [i, contentWidth] of plan.contentWidths.entries()) {
+      doc.text(exportColumns.at(i) ?? "", x, y, cellOptions(contentWidth, headerHeight));
+      x += slotWidthOf(contentWidth);
     }
     y += headerHeight;
     doc.font(PDF_FONT);
@@ -252,9 +251,9 @@ export async function buildExportPdfBuffer(
     }
 
     let x = PDF_MARGIN;
-    for (let i = 0; i < cells.length; i++) {
-      doc.text(cells[i] ?? "", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));
-      x += plan.slotWidths[i]!;
+    for (const [i, contentWidth] of plan.contentWidths.entries()) {
+      doc.text(cells.at(i) ?? "", x, y, cellOptions(contentWidth, rowHeight));
+      x += slotWidthOf(contentWidth);
     }
     y += rowHeight;
   }
