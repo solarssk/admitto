@@ -1987,7 +1987,7 @@ describe("EventSettingsPage tabs", () => {
     // the field "won't be sent" (that was a real bug: the wallet pass already sent an open-ended
     // "from"/"until" range for this case), and the abbreviation matches what the real pass sends.
     await waitFor(() => {
-      expect(screen.getByRole("tooltip").textContent).toBe("from 18:00 GMT+2");
+      expect(screen.getByRole("tooltip").textContent).toBe("from 18:00 UTC+2");
     });
   });
 
