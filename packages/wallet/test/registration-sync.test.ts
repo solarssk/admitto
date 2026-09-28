@@ -153,8 +153,10 @@ describe("runWalletRegistrationSync", () => {
 
     const stamped = db.walletPass.updateMany.mock.calls[0][0].data.registration_sync_attempted_at as Date;
     expect(stamped.getTime()).toBeGreaterThanOrEqual(before);
-    // Started before the 40ms provider call, not after it.
-    expect(Date.now() - stamped.getTime()).toBeGreaterThanOrEqual(40);
+    // Started before the 40ms provider call, not after it. Slack under 40ms because a setTimeout
+    // can fire ~1ms early relative to Date.now() on a loaded CI runner; a stamp taken after the call
+    // would be ~0ms, so 30ms still tells the two apart.
+    expect(Date.now() - stamped.getTime()).toBeGreaterThanOrEqual(30);
   });
 
   it("same as above, for a resolved-null (no match) result, not just a thrown error", async () => {
@@ -168,7 +170,7 @@ describe("runWalletRegistrationSync", () => {
     await runWalletRegistrationSync(db);
 
     const stamped = db.walletPass.updateMany.mock.calls[0][0].data.registration_sync_attempted_at as Date;
-    expect(Date.now() - stamped.getTime()).toBeGreaterThanOrEqual(40);
+    expect(Date.now() - stamped.getTime()).toBeGreaterThanOrEqual(30);
   });
 
   it("groups candidates by event, resolving the provider once per event not once per pass", async () => {
