@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
@@ -115,6 +115,7 @@ import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
 import {
+  canCreateUploadDir,
   collectAdminHealth,
   fileStorageRow,
   handleAdminHealth,
@@ -305,11 +306,51 @@ describe("fileStorageRow", () => {
 
   it("reports not_configured (not down) on a live check when the missing directory can actually be created", async () => {
     const missingChild = join(uploadFixture.dir, "not-created-yet");
-    const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
-    expect(row.status).toBe("not_configured");
-    expect(row.summary).toBe("Missing directory · created on first upload");
-    // canCreateUploadDir() must leave no trace of its own probe on success.
-    await expect(stat(missingChild)).rejects.toMatchObject({ code: "ENOENT" });
+    try {
+      const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
+      expect(row.status).toBe("not_configured");
+      expect(row.summary).toBe("Missing directory · created on first upload");
+      // canCreateUploadDir() leaves the directory itself in place - a concurrent real upload
+      // could be creating or writing into that same shared path at the same time - and removes
+      // only its own probe file from inside it.
+      expect(await readdir(missingChild)).toEqual([]);
+    } finally {
+      await rm(missingChild, { recursive: true, force: true });
+    }
+  });
+
+  it("does not disturb a directory a concurrent upload already created (and does not remove it)", async () => {
+    // Simulates the race Codex flagged: by the time the probe runs, a real upload has already
+    // created the directory and dropped its own file in it. canCreateUploadDir() must not
+    // remove the directory (which would risk deleting it out from under that upload) and must
+    // not treat the pre-existing file as a reason to fail.
+    const racingDir = join(uploadFixture.dir, "racing-upload");
+    await mkdir(racingDir, { recursive: true });
+    const concurrentFile = join(racingDir, "already-uploaded-by-someone-else.png");
+    await writeFile(concurrentFile, "concurrent upload content");
+    try {
+      expect(await canCreateUploadDir(racingDir)).toBe(true);
+      expect(await readdir(racingDir)).toEqual(["already-uploaded-by-someone-else.png"]);
+      await expect(stat(racingDir)).resolves.toMatchObject({});
+    } finally {
+      await rm(racingDir, { recursive: true, force: true });
+    }
+  });
+
+  it("succeeds even when its own probe file cannot be removed afterwards", async () => {
+    // Best-effort cleanup: a failed unlink of the probe file must not turn a successful
+    // mkdir+write into a reported failure (Codex: "do not let cleanup failure override the
+    // successful create/write result").
+    const dir = join(uploadFixture.dir, "cleanup-fails");
+    const unlinkSpy = vi.spyOn(await import("node:fs/promises"), "unlink");
+    unlinkSpy.mockRejectedValueOnce(new Error("EBUSY"));
+    try {
+      expect(await canCreateUploadDir(dir)).toBe(true);
+      expect(unlinkSpy).toHaveBeenCalled();
+    } finally {
+      unlinkSpy.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("reports down on a live check when the missing directory's parent cannot be written into", async () => {

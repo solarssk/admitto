@@ -7,7 +7,7 @@
 import type { Context } from "hono";
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, constants, mkdir, rmdir, unlink, writeFile, stat } from "node:fs/promises";
+import { access, constants, mkdir, unlink, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import {
@@ -1205,27 +1205,49 @@ async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthChe
 }
 
 /**
- * True when `dir` can be created and written into - mirrors what `LocalStorageAdapter.put()`'s
- * `mkdir(recursive)` + write will really do on the next upload. Creates then removes its own
- * probe file and, if it had to create `dir` itself, `dir` too, leaving no trace on success. If
- * `mkdir(recursive)` also had to create parent directories that did not exist yet, those are
- * left in place (removing them risks deleting an ancestor something else created concurrently).
+ * Writes then removes a uniquely named probe file under `dir`, shared by canCreateUploadDir()
+ * below and the "already exists" live write-probe further down in fileStorageRow() (SonarCloud
+ * flagged the near-identical write+unlink pair as new-code duplication). Reports the write and
+ * the cleanup separately: a failed write means `dir` is not writable, but a failed cleanup
+ * afterwards is harmless on its own - the write already proved the capability being tested.
  */
-async function canCreateUploadDir(dir: string): Promise<boolean> {
+async function probeWrite(dir: string): Promise<{ wrote: boolean }> {
+  const probePath = join(dir, `.admitto-health-probe-${randomUUID()}`);
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await writeFile(probePath, "ok");
+  } catch {
+    return { wrote: false };
+  }
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await unlink(probePath);
+  } catch {
+    // Best effort only - see the doc comment above.
+  }
+  return { wrote: true };
+}
+
+/**
+ * True when `dir` can be created and written into - mirrors what `LocalStorageAdapter.put()`'s
+ * `mkdir(recursive)` + write will really do on the next upload.
+ *
+ * Never removes `dir` itself: `dir` is the real, shared upload path, and this runs exactly when
+ * a genuinely fresh instance is most likely to also be receiving its first real upload at the
+ * same time. `mkdir(recursive)` is idempotent (a no-op if `dir` already exists), so a concurrent
+ * upload racing to create the same path is harmless either way - but removing `dir` here could
+ * delete it out from under that upload while it is still writing, and can itself throw ENOTEMPTY
+ * if the upload has already added a file.
+ */
+export async function canCreateUploadDir(dir: string): Promise<boolean> {
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     await mkdir(dir, { recursive: true });
-    const probePath = join(dir, `.admitto-health-probe-${randomUUID()}`);
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await writeFile(probePath, "ok");
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await unlink(probePath);
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await rmdir(dir);
-    return true;
   } catch {
     return false;
   }
+  const { wrote } = await probeWrite(dir);
+  return wrote;
 }
 
 /**
@@ -1366,13 +1388,8 @@ export async function fileStorageRow(
   }
 
   if (live) {
-    const probePath = join(uploadPath, `.admitto-health-probe-${randomUUID()}`);
-    try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await writeFile(probePath, "ok");
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await unlink(probePath);
-    } catch {
+    const { wrote } = await probeWrite(uploadPath);
+    if (!wrote) {
       return {
         id: "file_storage",
         label,
