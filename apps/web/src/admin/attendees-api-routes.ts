@@ -83,6 +83,7 @@ import {
   resolveWalletCustomFieldPlaceholders,
   reissueOneWalletPass,
   removeOneWalletPassFromProvider,
+  type RemoveWalletPassOutcome,
   resolveEventWalletProvider,
   issueTicket,
 } from "@admitto/tickets";
@@ -2119,10 +2120,12 @@ async function syncWalletPassOnStatusChangeBestEffort(
     }),
     db.walletPass.findUnique({
       where: { attendee_id: attendeeId },
-      select: { provider_pass_id: true, status: true },
+      select: { provider_pass_id: true, status: true, provider_removed_at: true },
     }),
   ]);
   if (!event || !walletPass?.provider_pass_id) return;
+  // Nothing left at the provider to void or restore for a removed pass.
+  if (walletPass.provider_removed_at) return;
   if (statusChange === "revoked" && walletPass.status !== "active") return;
   if (statusChange === "registered" && walletPass.status !== "voided") return;
 
@@ -2137,14 +2140,14 @@ async function syncWalletPassOnStatusChangeBestEffort(
   try {
     if (statusChange === "revoked") {
       await provider.voidPass(walletPass.provider_pass_id);
-      await db.walletPass.update({
-        where: { attendee_id: attendeeId },
+      await db.walletPass.updateMany({
+        where: { attendee_id: attendeeId, provider_removed_at: null },
         data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
       });
     } else {
       await provider.restorePass(walletPass.provider_pass_id);
-      await db.walletPass.update({
-        where: { attendee_id: attendeeId },
+      await db.walletPass.updateMany({
+        where: { attendee_id: attendeeId, provider_removed_at: null },
         data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
       });
     }
@@ -3415,11 +3418,15 @@ async function voidOneWalletPass(
   // nothing left at the provider to void.
   if (target.status !== "active" || target.providerRemovedAt) return "skipped";
   await provider.voidPass(target.providerPassId);
-  await db.$transaction(async (tx) => {
-    await tx.walletPass.update({
-      where: { attendee_id: target.attendeeId },
-      data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
+  return db.$transaction(async (tx) => {
+    const row = await updateWalletPassUnlessRemoved(tx, target.attendeeId, {
+      status: "voided",
+      voided_at: new Date(),
+      provider_commanded_at: new Date(),
+      last_error_code: null,
     });
+    // Removed by someone else while this selection was being processed: nothing left to mark.
+    if (!row) return "skipped";
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: target.attendeeId,
@@ -3427,8 +3434,8 @@ async function voidOneWalletPass(
       audit,
       metadata: { bulk: true },
     });
+    return "voided";
   });
-  return "voided";
 }
 
 /** Pulls one selected attendee's current device-registration status from the provider, via the
@@ -4216,6 +4223,24 @@ async function loadWalletActionContext(
   };
 }
 
+/** Applies a validity change to the WalletPass row only while it has not been removed at the
+ * provider, in the same statement (`provider_removed_at: null` in the where clause). The routes
+ * that call this read the row before their provider call, so a Remove that completed in between
+ * would otherwise be overwritten with an `active`/`voided` status on a pass that no longer exists
+ * at the provider. Returns the updated row, or null when the pass was removed meanwhile. */
+async function updateWalletPassUnlessRemoved(
+  tx: Prisma.TransactionClient,
+  attendeeId: string,
+  data: Prisma.WalletPassUpdateManyMutationInput,
+): Promise<Prisma.WalletPassGetPayload<object> | null> {
+  const { count } = await tx.walletPass.updateMany({
+    where: { attendee_id: attendeeId, provider_removed_at: null },
+    data,
+  });
+  if (count === 0) return null;
+  return tx.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
+}
+
 /** A pass Admitto has removed from the provider (PR 3) can no longer be void/restore/push'd -
  * there is nothing left there to command. Shared by the three single-attendee actions below that
  * still need this rejected explicitly (Refresh reads `providerRemovedAt` itself and Delete/Remove
@@ -4247,10 +4272,13 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
   }
 
   const updated = await db.$transaction(async (tx) => {
-    const row = await tx.walletPass.update({
-      where: { attendee_id: ctx.attendeeId },
-      data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
+    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
+      status: "voided",
+      voided_at: new Date(),
+      provider_commanded_at: new Date(),
+      last_error_code: null,
     });
+    if (!row) return null;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,
@@ -4260,6 +4288,7 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
     });
     return row;
   });
+  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4281,10 +4310,13 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
   }
 
   const updated = await db.$transaction(async (tx) => {
-    const row = await tx.walletPass.update({
-      where: { attendee_id: ctx.attendeeId },
-      data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
+    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
+      status: "active",
+      voided_at: null,
+      provider_commanded_at: new Date(),
+      last_error_code: null,
     });
+    if (!row) return null;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,
@@ -4294,6 +4326,7 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
     });
     return row;
   });
+  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4486,8 +4519,9 @@ export async function handleRemoveAttendeeWalletPass(c: Context, db: PrismaClien
     return c.json({ error: "wallet_provider_remove_unsupported" }, 409);
   }
 
+  let outcome: RemoveWalletPassOutcome;
   try {
-    await removeOneWalletPassFromProvider(
+    outcome = await removeOneWalletPassFromProvider(
       db,
       eventId,
       {
@@ -4504,6 +4538,10 @@ export async function handleRemoveAttendeeWalletPass(c: Context, db: PrismaClien
   } catch (err) {
     return walletProviderErrorResponse(c, err, "handleRemoveAttendeeWalletPass");
   }
+  // The pass was deleted at the provider but the row could not be stamped: erased in between
+  // (GDPR), or deleted and re-added as a different pass. Nothing left here to report as removed.
+  if (outcome === "not_found") return c.json({ error: "no_wallet_pass" }, 404);
+  if (outcome === "changed") return c.json({ error: "wallet_pass_changed" }, 409);
 
   const updated = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: ctx.attendeeId } });
   return c.json(serializeWalletPassAction(updated));
