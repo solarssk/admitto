@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
@@ -115,6 +115,7 @@ import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
 import {
+  canCreateUploadDir,
   collectAdminHealth,
   fileStorageRow,
   handleAdminHealth,
@@ -290,15 +291,95 @@ describe("fileStorageRow", () => {
     expect(row.status).toBe("ok");
   });
 
-  it("reports degraded when the directory is missing (adapter creates it on first put)", async () => {
+  it("reports not_configured when the directory is missing (adapter creates it on first put)", async () => {
+    // A fresh install with no branding uploaded yet is expected to have no upload directory, so
+    // this must not count toward the overall verdict (worstHealthStatus() skips not_configured).
     const row = await fileStorageRow(
       { UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") },
       checkedAt,
       false,
     );
-    expect(row.status).toBe("degraded");
+    expect(row.status).toBe("not_configured");
     expect(row.summary).toBe("Missing directory · created on first upload");
     expect(row.details.find((d) => d.key === "reason")?.value).toBe("missing_directory");
+  });
+
+  it("reports not_configured (not down) on a live check when the missing directory can actually be created", async () => {
+    const missingChild = join(uploadFixture.dir, "not-created-yet");
+    try {
+      const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
+      expect(row.status).toBe("not_configured");
+      expect(row.summary).toBe("Missing directory · created on first upload");
+      // canCreateUploadDir() leaves the directory itself in place - a concurrent real upload
+      // could be creating or writing into that same shared path at the same time - and removes
+      // only its own probe file from inside it.
+      expect(await readdir(missingChild)).toEqual([]);
+    } finally {
+      await rm(missingChild, { recursive: true, force: true });
+    }
+  });
+
+  it("does not disturb a directory a concurrent upload already created (and does not remove it)", async () => {
+    // Simulates the race Codex flagged: by the time the probe runs, a real upload has already
+    // created the directory and dropped its own file in it. canCreateUploadDir() must not
+    // remove the directory (which would risk deleting it out from under that upload) and must
+    // not treat the pre-existing file as a reason to fail.
+    const racingDir = join(uploadFixture.dir, "racing-upload");
+    await mkdir(racingDir, { recursive: true });
+    const concurrentFile = join(racingDir, "already-uploaded-by-someone-else.png");
+    await writeFile(concurrentFile, "concurrent upload content");
+    try {
+      expect(await canCreateUploadDir(racingDir)).toBe(true);
+      expect(await readdir(racingDir)).toEqual(["already-uploaded-by-someone-else.png"]);
+      await expect(stat(racingDir)).resolves.toMatchObject({});
+    } finally {
+      await rm(racingDir, { recursive: true, force: true });
+    }
+  });
+
+  it("succeeds even when its own probe file cannot be removed afterwards", async () => {
+    // Best-effort cleanup: a failed unlink of the probe file must not turn a successful
+    // mkdir+write into a reported failure (Codex: "do not let cleanup failure override the
+    // successful create/write result").
+    const dir = join(uploadFixture.dir, "cleanup-fails");
+    const unlinkSpy = vi.spyOn(await import("node:fs/promises"), "unlink");
+    unlinkSpy.mockRejectedValueOnce(new Error("EBUSY"));
+    try {
+      expect(await canCreateUploadDir(dir)).toBe(true);
+      expect(unlinkSpy).toHaveBeenCalled();
+    } finally {
+      unlinkSpy.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports down on a live check when the missing directory's parent cannot be written into", async () => {
+    const readOnlyParent = await mkdtemp(join(tmpdir(), "admitto-health-readonly-parent-"));
+    const missingChild = join(readOnlyParent, "uploads");
+    try {
+      await chmod(readOnlyParent, 0o555);
+      const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
+      expect(row.status).toBe("down");
+      expect(row.summary).toBe("Cannot create the upload folder");
+      expect(row.details.find((d) => d.key === "reason")?.value).toBe("cannot_create_directory");
+    } finally {
+      await chmod(readOnlyParent, 0o755);
+      await rm(readOnlyParent, { recursive: true, force: true });
+    }
+  });
+
+  it("does not probe creatability on a passive check, even under a read-only parent", async () => {
+    const readOnlyParent = await mkdtemp(join(tmpdir(), "admitto-health-readonly-parent-"));
+    const missingChild = join(readOnlyParent, "uploads");
+    try {
+      await chmod(readOnlyParent, 0o555);
+      const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, false);
+      expect(row.status).toBe("not_configured");
+      expect(row.summary).toBe("Missing directory · created on first upload");
+    } finally {
+      await chmod(readOnlyParent, 0o755);
+      await rm(readOnlyParent, { recursive: true, force: true });
+    }
   });
 
   it("reports down when UPLOAD_DIR is a regular file", async () => {
@@ -1107,6 +1188,32 @@ describe("collectAdminHealth", () => {
     expect(report.overall).toBe("ok");
   });
 
+  it("keeps overall healthy on a fresh development install (instance URL unset, upload folder not created yet)", async () => {
+    // The two benign, dev-only amber states together: neither must flip the overall verdict.
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      base_url: { ok: true, warn: true, detail: "optional in development" },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") }),
+    });
+
+    const core = report.groups[0]!.checks;
+    expect(core.find((c) => c.id === "instance_url")?.status).toBe("not_configured");
+    expect(core.find((c) => c.id === "file_storage")?.status).toBe("not_configured");
+    expect(report.overall).toBe("ok");
+  });
+
   it("reports wallet as ok when at least one event has it fully configured", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
@@ -1371,7 +1478,12 @@ describe("collectAdminHealth", () => {
     );
     expect(core.find((c) => c.id === "rate_limit_storage")?.status).toBe("degraded");
     expect(core.find((c) => c.id === "rate_limit_storage")?.summary).toMatch(/900 ms/);
-    expect(core.find((c) => c.id === "instance_url")?.status).toBe("degraded");
+    // Same reasoning as file storage's missing directory: optional in development must not
+    // count toward the overall verdict, and "configured" reflects that BASE_URL is not actually
+    // set (not "yes", which the row wrote before this fix).
+    const instanceUrl = core.find((c) => c.id === "instance_url");
+    expect(instanceUrl?.status).toBe("not_configured");
+    expect(instanceUrl?.details.find((d) => d.key === "configured")?.value).toBe("no");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.status).toBe("degraded");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.summary).toMatch(
       /Queue empty · 3 retryable/,
