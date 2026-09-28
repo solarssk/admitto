@@ -550,7 +550,7 @@ function BulkWalletMenuItems({
           icon="wallet-off"
           variant="warning"
           label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
-          hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
+          hint={`Make the pass invalid for ${attendeeCount(walletPassCount)}`}
           disabled={bulkVoidWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
           onClick={() => {
@@ -563,7 +563,7 @@ function BulkWalletMenuItems({
         <MoreActionsMenuItem
           icon="refresh-dot"
           label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
-          hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
+          hint={`Send the latest details to ${attendeeCount(walletPassCount)}`}
           disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(archived, canBulkWallet)}
           onClick={() => {
@@ -576,7 +576,7 @@ function BulkWalletMenuItems({
         <MoreActionsMenuItem
           icon="cloud-download"
           label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
-          hint={`Pull the latest status for ${attendeeCount(walletPassCount)}`}
+          hint={`Get the latest status for ${attendeeCount(walletPassCount)}`}
           disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
           onClick={() => {
@@ -590,7 +590,7 @@ function BulkWalletMenuItems({
           icon="cloud-off"
           variant="danger"
           label={bulkRemoveWalletBusy ? "Removing from provider…" : "Remove from provider"}
-          hint="Voided or expired passes only, history is kept"
+          hint="Delete voided or expired passes, keep the history"
           disabled={bulkRemoveWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
           onClick={() => {
@@ -604,7 +604,7 @@ function BulkWalletMenuItems({
           icon="trash"
           variant="danger"
           label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
-          hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
+          hint={`Delete the pass and its history for ${attendeeCount(walletPassCount)}`}
           disabled={bulkDeleteWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
           onClick={() => {

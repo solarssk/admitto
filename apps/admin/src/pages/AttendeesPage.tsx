@@ -245,14 +245,14 @@ function notifyBulkWalletActionResult(
  * that will be removed: only the voided or expired ones among them are. */
 function bulkRemoveDialogMessage(selected: number): string {
   const attendees = selected === 1 ? "attendee" : "attendees";
-  return `Permanently deletes the voided or expired passes among the ${selected} selected ${attendees} at the provider. Unlike Delete, this keeps the local record and its Reports history - it just stops the provider counting these passes towards its own plan.`;
+  return `This deletes the voided or expired passes among the ${selected} selected ${attendees} from the wallet service. Unlike Delete, it keeps the pass record and its history in Reports. It only stops the wallet service from counting these passes in its plan.`;
 }
 
 /** Inline hint of the bulk Remove dialog after some removals failed - a repeat only retries what is
  * left, since passes that were already removed are skipped. */
 function bulkRemoveRetryMessage(errored: number): string {
   const passes = errored === 1 ? "pass" : "passes";
-  return `${errored} ${passes} could not be removed. Try again - passes that were already removed are skipped.`;
+  return `${errored} ${passes} could not be removed. Try again. Passes that were already removed are not tried again.`;
 }
 
 /** Outcome of a bulk Remove: always the summary toast, then either the retry hint (some removals
@@ -877,7 +877,7 @@ function HeaderMoreMenu({
                 <MoreActionsMenuItem
                   icon="refresh-dot"
                   label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
-                  hint="Push the latest details to every installed wallet pass"
+                  hint="Send the latest details to every installed pass"
                   disabled={archived || eventWidePushBusy}
                   tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
                   onClick={() => {
@@ -890,7 +890,7 @@ function HeaderMoreMenu({
                 <MoreActionsMenuItem
                   icon="cloud-download"
                   label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
-                  hint="Pull the latest status for every active wallet pass"
+                  hint="Get the latest status of every active pass"
                   disabled={eventWideRefreshStatusBusy}
                   onClick={() => {
                     setOpen(false);
@@ -2448,7 +2448,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={eventWidePushConfirmOpen}
         title="Push updates to every installed wallet pass?"
-        message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass, across the whole event. Attendees with no pass are left untouched."
+        message="This sends each attendee's current name, ticket type, and event details to the pass on their phone, for the whole event. Attendees with no pass are not changed."
         errorMessage={eventWidePushError}
         confirmLabel="Push updates"
         confirmVariant="primary"
@@ -2465,7 +2465,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={eventWideRefreshStatusConfirmOpen}
         title="Refresh the wallet status for every active wallet pass?"
-        message="Pulls the current status of every active wallet pass from the provider, across the whole event. A pass the provider reports as voided or expired is marked Voided. Passes that are already voided or expired, and attendees with no pass, are left untouched."
+        message="This checks the current status of every active wallet pass in the wallet service, for the whole event. If the wallet service says a pass is voided or expired, it is marked Voided here. Passes that are already voided or expired, and attendees with no pass, are not changed."
         errorMessage={eventWideRefreshStatusError}
         confirmLabel="Refresh status"
         confirmVariant="primary"
@@ -2593,7 +2593,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkVoidWalletConfirmOpen}
         title={`Void the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
-        message="Their pass stays installed on their phone but shows as invalid in their wallet. Attendees with no pass, or one already voided, are left untouched."
+        message="Voiding makes the pass show as invalid on the attendee's phone. The pass stays on the phone and the ticket is not changed. Attendees with no pass, or a pass that is already voided, are not changed."
         errorMessage={bulkVoidWalletError}
         confirmLabel="Void"
         confirmVariant="danger"
@@ -2610,7 +2610,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkReissueWalletConfirmOpen}
         title={`Push updates to the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
-        message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass. Attendees with no pass are left untouched."
+        message="This sends each attendee's current name, ticket type, and event details to the pass on their phone. Attendees with no pass are not changed."
         errorMessage={bulkReissueWalletError}
         confirmLabel="Push updates"
         confirmVariant="primary"
@@ -2627,7 +2627,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkDeleteWalletConfirmOpen}
         title={`Delete the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
-        message="Permanently deletes each attendee's pass record at the provider."
+        message="This deletes each selected attendee's wallet pass from the wallet service and erases its record here."
         errorMessage={bulkDeleteWalletError}
         confirmLabel="Delete"
         confirmVariant="danger"
@@ -2641,12 +2641,12 @@ export function AttendeesPage() {
         }}
       >
         <ul className="confirm-dialog__list">
-          <li>Apple/Google Wallet gives us no way to remove it from their phones - only they can do that</li>
-          <li>Doesn't affect check-in - use Revoke pass to block entry</li>
-          <li>Attendees with no pass are left untouched</li>
+          <li>The pass stays on the attendee's phone. Only the attendee can remove it there (Apple and Google do not let us)</li>
+          <li>Check-in is not affected. Use Revoke pass to block entry</li>
+          <li>Attendees with no pass are not changed</li>
           <li>
-            Also erases these passes from Reports (installs, registrations) - use Remove from
-            provider instead to stop them being counted at the provider while keeping that history
+            This also erases the passes from Reports (installs and registrations). Use Remove from
+            provider instead to keep that history
           </li>
         </ul>
       </ConfirmDialog>
@@ -2671,10 +2671,10 @@ export function AttendeesPage() {
         }}
       >
         <ul className="confirm-dialog__list">
-          <li>Irreversible at the provider - there is no way to bring these passes back there</li>
-          <li>Only meaningful for a pass that is already voided or expired</li>
-          <li>Attendees with no pass, an active pass, or an already-removed pass are left untouched</li>
-          <li>Doesn't affect check-in, and doesn't touch attendees' Reports history</li>
+          <li>You cannot undo this. The passes cannot be brought back in the wallet service</li>
+          <li>It only works on passes that are already voided or expired</li>
+          <li>Attendees with no pass, an active pass, or a pass that was already removed are not changed</li>
+          <li>Check-in is not affected, and the history in Reports stays</li>
         </ul>
       </ConfirmDialog>
     </>
