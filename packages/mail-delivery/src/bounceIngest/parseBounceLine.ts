@@ -13,34 +13,40 @@ import type { ParsedBounceLine } from "./types.js";
 const MAX_EMAIL_LEN = 320;
 const MAX_REASON_LEN = 500;
 
+/**
+ * A regex source known at build time. Only these can be interpolated into a pattern built by
+ * compilePattern(), so a bounce body, a header value, or any other runtime string cannot reach
+ * `new RegExp` without an explicit, reviewable `fragment(...)` call.
+ */
+type PatternFragment = string & { readonly __patternFragment: true };
+const fragment = (source: string): PatternFragment => source as PatternFragment;
+
 /** Bounded local + domain (no nested quantifiers) for Sonar S5843 / ReDoS safety. */
-const EMAIL_RE = String.raw`([A-Z0-9][A-Z0-9._%+-]{0,62}@[A-Z0-9][A-Z0-9.-]{0,253}\.[A-Z]{2,63})`;
-const HOST_SAID = String.raw`host\s+\S+(?:\s+\([^)]*\))?\s+said:\s+`;
-const REPLY_TAIL = String.raw`(?:\s+\(in reply to\s+[^)]+\))?$`;
+const EMAIL_RE = fragment(String.raw`([A-Z0-9][A-Z0-9._%+-]{0,62}@[A-Z0-9][A-Z0-9.-]{0,253}\.[A-Z]{2,63})`);
+const HOST_SAID = fragment(String.raw`host\s+\S+(?:\s+\([^)]*\))?\s+said:\s+`);
+const REPLY_TAIL = fragment(String.raw`(?:\s+\(in reply to\s+[^)]+\))?$`);
 
 /**
- * The only place in this module that builds a RegExp from a string. Every caller passes a
- * template made purely of this module's own constant fragments (EMAIL_RE, HOST_SAID, REPLY_TAIL)
- * and fixed text, never part of a bounce body or any other runtime input, so the pattern cannot
- * be steered from outside; composing them keeps each dialect readable instead of repeating the
- * ~100-character address pattern in every literal. Do not pass anything else through here.
+ * Tagged template that builds a RegExp from fixed text plus PatternFragment values only (this
+ * module's own EMAIL_RE, HOST_SAID and REPLY_TAIL), so the pattern cannot be steered from outside:
+ * any other interpolated value is a type error. Composing them keeps each MTA dialect readable
+ * instead of repeating the roughly 100-character address pattern in every literal. The template
+ * text is taken raw, exactly like String.raw, so regex escapes read as they do in a literal.
  */
-function compileFragmentPattern(source: string, flags: string): RegExp {
-  // eslint-disable-next-line security/detect-non-literal-regexp
-  return new RegExp(source, flags);
+function compilePattern(flags: string) {
+  return (strings: TemplateStringsArray, ...fragments: PatternFragment[]): RegExp =>
+    // eslint-disable-next-line security/detect-non-literal-regexp
+    new RegExp(String.raw(strings, ...fragments), flags);
 }
 
-const RE_ANGLE_EMAIL = compileFragmentPattern(`<${EMAIL_RE}>`, "i");
-const RE_BARE_EMAIL = compileFragmentPattern(`^${EMAIL_RE}$`, "i");
-const RE_ANY_EMAIL = compileFragmentPattern(EMAIL_RE, "i");
+const RE_ANGLE_EMAIL = compilePattern("i")`<${EMAIL_RE}>`;
+const RE_BARE_EMAIL = compilePattern("i")`^${EMAIL_RE}$`;
+const RE_ANY_EMAIL = compilePattern("i")`${EMAIL_RE}`;
 const RE_STATUS = /^(\d)\.(\d+)\.(\d+)/;
 const RE_DIAG_SMTP = /\b(\d{3})\b/;
 const RE_DIAG_ENHANCED = /\b(\d\.\d\.\d)\b/;
-const RE_NEAR_ORPHAN = compileFragmentPattern(
-  String.raw`${EMAIL_RE}\s*(?:\n[^\n]*){0,6}\nfailed:\s+host\s+`,
-  "i",
-);
-const RE_ANGLE_EMAIL_GI = compileFragmentPattern(`<${EMAIL_RE}>`, "gi");
+const RE_NEAR_ORPHAN = compilePattern("i")`${EMAIL_RE}\s*(?:\n[^\n]*){0,6}\nfailed:\s+host\s+`;
+const RE_ANGLE_EMAIL_GI = compilePattern("gi")`<${EMAIL_RE}>`;
 
 function normalizeReason(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().replace(/^:\s*/, "").slice(0, MAX_REASON_LEN);
@@ -231,10 +237,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
 }> = [
   {
     id: "postfix-enhanced",
-    pattern: compileFragmentPattern(
-      String.raw`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
-      "gim",
-    ),
+    pattern: compilePattern("gim")`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
     extract: (match) => ({
       email: match[1],
       code: match[2],
@@ -245,10 +248,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
   {
     // mailhop/Synology-style "<address>failed: host …" with optional brackets / enhanced code.
     id: "failed-host-said",
-    pattern: compileFragmentPattern(
-      String.raw`<?${EMAIL_RE}>?\s*failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:\S+:\s+)?(.+?)${REPLY_TAIL}`,
-      "gim",
-    ),
+    pattern: compilePattern("gim")`<?${EMAIL_RE}>?\s*failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:\S+:\s+)?(.+?)${REPLY_TAIL}`,
     extract: (match) => ({
       email: match[1],
       code: match[2],
@@ -258,10 +258,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
   },
   {
     id: "postfix-angle-bracket",
-    pattern: compileFragmentPattern(
-      String.raw`<${EMAIL_RE}>:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:<[^>]+>:\s+)?(.+?)${REPLY_TAIL}`,
-      "gim",
-    ),
+    pattern: compilePattern("gim")`<${EMAIL_RE}>:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:<[^>]+>:\s+)?(.+?)${REPLY_TAIL}`,
     extract: (match) => ({
       email: match[1],
       code: match[2],
@@ -271,10 +268,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
   },
   {
     id: "orphan-failed",
-    pattern: compileFragmentPattern(
-      String.raw`(?:^|\n)failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?:?\s*(.+?)${REPLY_TAIL}`,
-      "gim",
-    ),
+    pattern: compilePattern("gim")`(?:^|\n)failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?:?\s*(.+?)${REPLY_TAIL}`,
     extract: (match, inferredEmail) => ({
       email: inferredEmail ?? undefined,
       code: match[1],
