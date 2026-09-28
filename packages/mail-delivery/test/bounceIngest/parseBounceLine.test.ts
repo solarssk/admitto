@@ -432,10 +432,13 @@ describe("parseRfc3464DsnBlocks block separators and hostile input", () => {
   });
 
   it("does not split on a newline that is only followed by indentation", () => {
-    // No blank line: the second field is a continuation-looking line of the same group.
+    // No blank line: the indented line is a folded continuation of the Diagnostic-Code value.
     const body = [block("one@example.org"), "  X-Extra: kept in the same group"].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
 
-    expect(parseRfc3464DsnBlocks(body).map((l) => l.recipientEmail)).toEqual(["one@example.org"]);
+    expect(lines.map((l) => l.recipientEmail)).toEqual(["one@example.org"]);
+    // Had the indentation started a new block, the continuation would be lost from the reason.
+    expect(lines[0]!.reason).toContain("kept in the same group");
   });
 
   it("stays fast on a very long run of blank-looking lines", () => {
