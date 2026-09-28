@@ -6968,13 +6968,12 @@ output.mail-field-hint {
 
 /* Overview card sizing standard. Both rows of cards are equal-height rows: grid items default to
  * `align-items: stretch`, but the base `.overview-row` above opts every row out so a card normally
- * keeps its natural height, and `--stretch` opts one back in. Stretching alone leaves blank space
- * inside the shorter card, so every card follows the same two rules: its main block grows to fill
- * the card (`flex: 1`), and that block gives the extra room to its items evenly (each checklist
- * row, each Notes section and its empty add tile grows equally), never by pushing items apart with
- * `space-between` and fixed gaps, which is what made Notes & contacts look scattered. The top row's
- * height comes from Check-in progress's own content; Recent activity's list scrolls inside it
- * (`.overview-card--timeline` below) instead of setting a height of its own. */
+ * keeps its natural height, and `--stretch` opts one back in. Only the card is equalised. Its
+ * content keeps natural sizes and stays at the top, so any leftover room is one calm blank strip
+ * under the content of the shorter card. Content is never stretched or spread to fill it (rows
+ * grown to fit, `space-between` with fixed gaps): both looked scattered, with holes under short
+ * text. The top row's height comes from Check-in progress's own content; Recent activity's list
+ * scrolls inside it (`.overview-card--timeline` below) instead of setting a height of its own. */
 .overview-row--stretch {
   align-items: stretch;
 }
@@ -7002,64 +7001,6 @@ output.mail-field-hint {
  * instead of `space-between`'s single-child default of pinning it to the top. */
 .overview-card--header-fixed.overview-card--empty .at-card__body {
   justify-content: center;
-}
-
-/* Setup checklist and Notes & contacts: the lower equal-height row (see the sizing standard above). */
-.overview-card--fill {
-  display: flex;
-  flex-direction: column;
-}
-
-.overview-card--fill .at-card__body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-}
-
-.overview-card--fill .overview-setup,
-.overview-card--fill .overview-checklist {
-  flex: 1;
-}
-
-.overview-card--fill .overview-check {
-  flex: 1 1 auto;
-}
-
-.overview-card--fill .overview-notes-section {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-
-.overview-card--fill .overview-note-empty {
-  flex: 1;
-}
-
-/* Recent activity's list fills the card body without contributing to its height: absolutely
- * positioned inside the padded body, so the row's height is set by the neighbouring Check-in
- * progress card and the list scrolls inside it, instead of a fixed pixel height that left
- * Check-in progress stretched with empty space. The min-height keeps the list usable when the
- * card has no taller neighbour (one-column layout, or Check-in progress showing its empty state).
- * The right offset is 8px short of the body padding so the scrollbar sits in that gutter, the
- * same trick the list's own padding-right/margin-right pair used before. */
-.overview-card--timeline .at-card__body {
-  position: relative;
-  min-height: calc(220px + 2 * var(--pad-card));
-}
-
-.overview-card--timeline .overview-timeline {
-  position: absolute;
-  top: var(--pad-card);
-  bottom: var(--pad-card);
-  left: var(--pad-card);
-  right: calc(var(--pad-card) - 8px);
-  margin-right: 0;
-}
-
-@media (max-width: 900px) {
-  .overview-card--timeline .at-card__body {
-    min-height: calc(312px + 2 * var(--pad-card));
-  }
 }
 
 .overview-muted {
@@ -7121,7 +7062,7 @@ output.mail-field-hint {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-2);
   margin: 0 calc(var(--space-2) * -1);
   border-radius: var(--radius-md);
   color: inherit;
