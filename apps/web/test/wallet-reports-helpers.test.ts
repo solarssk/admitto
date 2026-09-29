@@ -521,7 +521,7 @@ describe("aggregateWalletPasses — passValidityCounts and providerStateCounts",
       ],
       BOTH_ENABLED,
     );
-    expect(result.passValidityCounts).toEqual({ active: 1, voided: 2, expired: 1 });
+    expect(result.passValidityCounts).toEqual({ active: 1, voided: 2, expired: 1, failed: 0 });
   });
 
   it("splits a mixed batch by WalletPass.provider_removed_at, independent of status", () => {
@@ -548,7 +548,7 @@ describe("aggregateWalletPasses — passValidityCounts and providerStateCounts",
     });
     const result = aggregateWalletPasses([removedButStillCountedElsewhere], BOTH_ENABLED);
     expect(result.lifecycleCounts).toEqual({ active: 1, removed: 0, never_installed: 0 });
-    expect(result.passValidityCounts).toEqual({ active: 0, voided: 1, expired: 0 });
+    expect(result.passValidityCounts).toEqual({ active: 0, voided: 1, expired: 0, failed: 0 });
     expect(result.providerStateCounts).toEqual({ managed: 0, removed: 1 });
   });
 
@@ -567,13 +567,20 @@ describe("aggregateWalletPasses — passValidityCounts and providerStateCounts",
     expect(sum(result.providerStateCounts)).toBe(passes.length);
   });
 
-  it("silently drops a pass whose status is none of active/voided/expired from passValidityCounts (should not occur for an issued pass - issued_at is only ever set alongside status: active, see markActive in apps/web/src/app.ts - documented here so a future caller that violates that invariant fails loudly via a count mismatch, not a thrown error)", () => {
+  it("counts a pass whose status is none of active/voided/expired as failed, not silently dropped (regression: bot review on PR #1478 found a real path to this - two app instances racing to create one attendee's pass can leave a row issued (issued_at set) but status: 'failed', since markFailed's own upsert doesn't guard against a concurrent markActive winning first - see pass_validity's own DTO doc comment)", () => {
     const result = aggregateWalletPasses([pass({ status: "pending" })], BOTH_ENABLED);
-    expect(result.passValidityCounts).toEqual({ active: 0, voided: 0, expired: 0 });
-    // Still counted in the other two axes - only the pass_validity if/else-if chain has no bucket
-    // for an unexpected status, by design (no runtime assertion for an invariant enforced entirely
-    // by write-path discipline elsewhere in the codebase).
+    expect(result.passValidityCounts).toEqual({ active: 0, voided: 0, expired: 0, failed: 1 });
+    // Still counted normally in the other two axes - this bucket exists so pass_validity's own
+    // "always sums to adoption.got_pass" promise holds unconditionally, not just in the common case.
     expect(result.providerStateCounts).toEqual({ managed: 1, removed: 0 });
+  });
+
+  it("still sums to the total pass count when a failed-but-issued pass is in the batch", () => {
+    const passes = [pass({ status: "active" }), pass({ status: "voided" }), pass({ status: "failed" })];
+    const result = aggregateWalletPasses(passes, BOTH_ENABLED);
+    expect(result.passValidityCounts).toEqual({ active: 1, voided: 1, expired: 0, failed: 1 });
+    const sum = Object.values(result.passValidityCounts).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(passes.length);
   });
 });
 

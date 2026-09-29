@@ -116,18 +116,25 @@ const LIFECYCLE_COLORS: Record<WalletLifecycleKey, string> = {
 };
 
 type PassValidityKey = keyof EventWalletReportsResponse["pass_validity"];
+// "Failed" should always read 0 - see pass_validity's own DTO doc comment for the narrow
+// concurrency race in wallet-pass issuance it exists to catch instead of silently dropping a pass
+// from this card's own "always sums to Issued" promise.
 const PASS_VALIDITY_LABELS: Record<PassValidityKey, string> = {
   active: "Active",
   voided: "Voided",
   expired: "Expired",
+  failed: "Failed (unexpected)",
 };
 // Yellow for voided (reversible via Restore, a caution rather than a hard stop) vs. red for
 // expired (permanent) - same "how worried should this make you" gradient DANGER_RED/yellow/gray
-// already carries elsewhere in this file (BUCKET_COLORS, REGISTRATION_COUNT_COLORS).
+// already carries elsewhere in this file (BUCKET_COLORS, REGISTRATION_COUNT_COLORS). Purple for
+// "failed" - not a normal validity outcome at all (should always be 0), same "doesn't fit the
+// normal categories" role MULTI_PURPLE already plays for platform's own "more than one wallet".
 const PASS_VALIDITY_COLORS: Record<PassValidityKey, string> = {
   active: STATUS_OK,
   voided: "#f59f00", // --at-yellow
   expired: DANGER_RED,
+  failed: MULTI_PURPLE,
 };
 
 type ProviderStateKey = keyof EventWalletReportsResponse["provider_state"];

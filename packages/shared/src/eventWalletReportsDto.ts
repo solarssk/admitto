@@ -136,13 +136,23 @@ export interface EventWalletReportsResponse {
    * naturally `expired`, while still being `managed` in `provider_state` (removing it there is a
    * separate, later step) and while still showing as `active`/`removed` in `wallet_lifecycle`
    * (whether it's still on a device is a different question from whether it's still valid) - the
-   * three axes are deliberately independent, not nested. `failed` (a createPass attempt that
-   * never actually issued a pass) never sets `issued_at`, so it's outside this population
-   * entirely, not a fourth bucket here (architect review, plan v4.2 step 4). */
+   * three normal axes are deliberately independent, not nested.
+   *
+   * `failed` should read 0 - a `createPass` attempt that never actually issued a pass normally
+   * never sets `issued_at` (see `markActive`/`markFailed`, apps/web/src/app.ts), so it would
+   * ordinarily be outside this population entirely, not a bucket here. It exists only to catch a
+   * known, narrow concurrency race in that same issuance code (two app instances racing to create
+   * one attendee's pass: the winner's `markActive` sets `issued_at`, and if the loser's own
+   * duplicate-recovery search then also misses due to provider search-index lag, its `markFailed`
+   * call can clobber `status` back to `"failed"` on that same, already-issued row without clearing
+   * `issued_at` - `markFailed`'s upsert has no guard against this). Kept as its own bucket, not
+   * silently dropped, so this field's own "always sums to `adoption.got_pass`" promise holds
+   * unconditionally rather than quietly failing whenever that race is hit (bot review). */
   pass_validity: {
     active: number;
     voided: number;
     expired: number;
+    failed: number;
   };
   /** Whether Admitto has permanently deleted every issued pass at the wallet provider (`removed`,
    * via "Remove from provider" or "Remove inactive passes" - see Wallet-Passes-Overview.md) or not

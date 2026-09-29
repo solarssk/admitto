@@ -234,7 +234,7 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     wallet_lifecycle: { active: 6, removed: 3, never_installed: 6 },
     // Independent of wallet_lifecycle above (a voided/removed pass can still read as
     // active/registered there) - both also sum to adoption.got_pass=15.
-    pass_validity: { active: 10, voided: 3, expired: 2 },
+    pass_validity: { active: 10, voided: 3, expired: 2, failed: 0 },
     provider_state: { managed: 13, removed: 2 },
     ...overrides,
   };
@@ -487,14 +487,18 @@ describe("WalletsReportsTab", () => {
     expect(lifecycleCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
     expect(lifecycleCard.querySelector(".wallets-gauge-overlay__label")?.textContent).toBe("issued");
 
-    // Pass validity donut: active/voided/expired (fixture's 10/3/2), independent of Registration
-    // state above - both sum to adoption.got_pass=15 but answer different questions.
+    // Pass validity donut: active/voided/expired/failed (fixture's 10/3/2/0), independent of
+    // Registration state above - all sum to adoption.got_pass=15 but answer different questions.
+    // "Failed" always renders as its own row (0 here) - it's a diagnostic bucket for a concurrency
+    // race (see pass_validity's own DTO doc comment), not something worth hiding at zero the way
+    // Samsung Wallet's own 0-until-activated slice isn't hidden elsewhere on this tab either.
     const validityCard = cardByTitle("Pass validity");
-    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([10, 3, 2]);
+    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([10, 3, 2, 0]);
     expect(breakdownRows(validityCard)).toEqual([
       { name: "Active", meta: "10 · 66.7%" },
       { name: "Voided", meta: "3 · 20%" },
       { name: "Expired", meta: "2 · 13.3%" },
+      { name: "Failed (unexpected)", meta: "0 · 0%" },
     ]);
     expect(validityCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
 
@@ -509,6 +513,26 @@ describe("WalletsReportsTab", () => {
 
     // No truncation notice for this (default) fixture.
     expect(document.querySelector(".wallets-truncated-notice")).toBeNull();
+  });
+
+  it("renders a nonzero Failed (unexpected) count in Pass validity - the concurrency-race bucket, not hidden or folded into another status", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({ pass_validity: { active: 8, voided: 3, expired: 2, failed: 2 } }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const validityCard = cardByTitle("Pass validity");
+    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([8, 3, 2, 2]);
+    expect(breakdownRows(validityCard)).toEqual([
+      { name: "Active", meta: "8 · 53.3%" },
+      { name: "Voided", meta: "3 · 20%" },
+      { name: "Expired", meta: "2 · 13.3%" },
+      { name: "Failed (unexpected)", meta: "2 · 13.3%" },
+    ]);
   });
 
   it("shows the down-arrow delta when the wallet group's admission rate trails the no-wallet group's", async () => {

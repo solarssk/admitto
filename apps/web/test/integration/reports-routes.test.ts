@@ -3452,7 +3452,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
       wallet_lifecycle: { active: number; removed: number; never_installed: number };
-      pass_validity: { active: number; voided: number; expired: number };
+      pass_validity: { active: number; voided: number; expired: number; failed: number };
       provider_state: { managed: number; removed: number };
     };
     expect(body.adoption.got_pass).toBe(5);
@@ -3478,12 +3478,12 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // other's fields (plan v4.2 step 4's own regression - a Remove must not silently change these
     // historical/registration-state numbers, only its own provider_state bucket). Every other
     // fixture pass stays status: "active", provider_removed_at: null.
-    expect(body.pass_validity).toEqual({ active: 4, voided: 1, expired: 0 });
+    expect(body.pass_validity).toEqual({ active: 4, voided: 1, expired: 0, failed: 0 });
     expect(body.provider_state).toEqual({ managed: 4, removed: 1 });
     // Both sum to adoption.got_pass=5, same as wallet_lifecycle does.
-    expect(body.pass_validity.active + body.pass_validity.voided + body.pass_validity.expired).toBe(
-      body.adoption.got_pass,
-    );
+    expect(
+      body.pass_validity.active + body.pass_validity.voided + body.pass_validity.expired + body.pass_validity.failed,
+    ).toBe(body.adoption.got_pass);
     expect(body.provider_state.managed + body.provider_state.removed).toBe(body.adoption.got_pass);
   });
 
@@ -4166,6 +4166,7 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(html).toContain("<td>Active</td><td>4</td><td>80%</td>");
     expect(html).toContain("<td>Voided</td><td>1</td><td>20%</td>");
     expect(html).toContain("<td>Expired</td><td>0</td><td>0%</td>");
+    expect(html).toContain("<td>Failed (unexpected)</td><td>0</td><td>0%</td>");
     expect(html).toContain("<td>Managed</td><td>4</td><td>80%</td>");
     expect(html).toContain("<td>Removed from provider</td><td>1</td><td>20%</td>");
   });

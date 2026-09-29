@@ -856,8 +856,9 @@ interface WalletPassAggregates {
   totalActiveRegistrations: number;
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
   /** Pass validity axis (WalletPass.status among issued passes) - independent of lifecycleCounts
-   * above, see pass_validity's own DTO doc comment. */
-  passValidityCounts: Record<"active" | "voided" | "expired", number>;
+   * above, see pass_validity's own DTO doc comment. `failed` should read 0 - see that field's own
+   * doc comment for the narrow concurrency race it exists to catch instead of silently dropping. */
+  passValidityCounts: Record<"active" | "voided" | "expired" | "failed", number>;
   /** Provider-presence axis (WalletPass.provider_removed_at among issued passes) - independent of
    * both lifecycleCounts and passValidityCounts, see provider_state's own DTO doc comment. */
   providerStateCounts: Record<"managed" | "removed", number>;
@@ -1033,12 +1034,15 @@ function applyWalletPassToAggregates(
   ]++;
 
   // Independent axes, not gated on enabledPlatforms/platform/everInstalled like the counters
-  // above - status and provider_removed_at aren't platform-specific facts. A status other than
-  // active/voided/expired can't occur in this population (issued_at is only ever set alongside
-  // status: "active" - see markActive, apps/web/src/app.ts), so nothing else to fall through to.
+  // above - status and provider_removed_at aren't platform-specific facts. Every status other
+  // than active/voided/expired falls to `failed` (see pass_validity's own DTO doc comment for the
+  // narrow concurrency race that is this bucket's one real cause) rather than being silently
+  // dropped - this is the only counter on this whole aggregate with a catch-all, since it is the
+  // one place a value this codebase's own write paths are supposed to prevent could still surface.
   if (pass.status === "active") acc.passValidityCounts.active++;
   else if (pass.status === "voided") acc.passValidityCounts.voided++;
   else if (pass.status === "expired") acc.passValidityCounts.expired++;
+  else acc.passValidityCounts.failed++;
   acc.providerStateCounts[pass.provider_removed_at ? "removed" : "managed"]++;
 }
 
@@ -1067,7 +1071,7 @@ export function aggregateWalletPasses(
     registrationsByBucket: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
     totalActiveRegistrations: 0,
     lifecycleCounts: { active: 0, removed: 0, never_installed: 0 },
-    passValidityCounts: { active: 0, voided: 0, expired: 0 },
+    passValidityCounts: { active: 0, voided: 0, expired: 0, failed: 0 },
     providerStateCounts: { managed: 0, removed: 0 },
   };
 
@@ -2504,6 +2508,7 @@ async function exportWalletReportsPdf(
     active: "Active",
     voided: "Voided",
     expired: "Expired",
+    failed: "Failed (unexpected)",
   };
   const passValidityRows =
     aggregates.adoption.got_pass === 0
