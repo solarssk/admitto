@@ -61,6 +61,21 @@ describe("formatHealthDisplayValue", () => {
   });
 
   it.each([
+    ["__proto__", "  proto  "],
+    ["constructor", "Constructor"],
+    ["toString", "ToString"],
+    ["hasOwnProperty", "HasOwnProperty"],
+  ])(
+    "falls through reason=%s to the plain humanized string, not an inherited Object property",
+    (code, expected) => {
+      // A plain object literal's ["__proto__"]/["constructor"]/etc. returns a real (truthy)
+      // built-in instead of undefined, which would bypass the humanizeUnknownCode fallback
+      // entirely and return a non-string - this only passes because the lookup is a Map.
+      expect(formatHealthDisplayValue("reason", code, TZ)).toBe(expected);
+    },
+  );
+
+  it.each([
     ["ok", "Passed"],
     ["failed", "Did not pass"],
     ["skipped", "Not tested this run"],
@@ -137,27 +152,56 @@ describe("visibleHealthDetails", () => {
     });
     expect(visibleHealthDetails(check, TZ, false)).toEqual([{ key: "latency_ms", value: "4" }]);
   });
+
+  it("keeps a detail with an empty value instead of treating it as a duplicate of everything", () => {
+    // An unset worker hostname is emitted as `beat.hostname ?? ""` - an empty string is a
+    // substring of every string, so without a guard this would look like it duplicates any
+    // summary and silently disappear instead of showing blank.
+    const check = checkRow({
+      id: "background_worker",
+      summary: "Worker heartbeat is fresh",
+      details: [{ key: "hostname", value: "" }],
+    });
+    expect(visibleHealthDetails(check, TZ, false)).toEqual([{ key: "hostname", value: "" }]);
+  });
 });
 
 describe("workerLastSeenFact", () => {
   const generatedAt = "2026-08-03T12:54:24.000Z";
 
   it("returns null when there is no last_beat_at detail", () => {
-    expect(workerLastSeenFact(checkRow(), generatedAt)).toBeNull();
+    expect(workerLastSeenFact(checkRow({ id: "background_worker" }), generatedAt)).toBeNull();
+  });
+
+  it("returns null for a check other than background_worker, even with a last_beat_at detail", () => {
+    const check = checkRow({
+      id: "some_other_check",
+      details: [{ key: "last_beat_at", value: "2026-08-03T12:42:24.000Z" }],
+    });
+    expect(workerLastSeenFact(check, generatedAt)).toBeNull();
   });
 
   it("returns null when the heartbeat is under a minute old", () => {
-    const check = checkRow({ details: [{ key: "last_beat_at", value: "2026-08-03T12:54:00.000Z" }] });
+    const check = checkRow({
+      id: "background_worker",
+      details: [{ key: "last_beat_at", value: "2026-08-03T12:54:00.000Z" }],
+    });
     expect(workerLastSeenFact(check, generatedAt)).toBeNull();
   });
 
   it("returns null for an invalid last_beat_at", () => {
-    const check = checkRow({ details: [{ key: "last_beat_at", value: "not-a-date" }] });
+    const check = checkRow({
+      id: "background_worker",
+      details: [{ key: "last_beat_at", value: "not-a-date" }],
+    });
     expect(workerLastSeenFact(check, generatedAt)).toBeNull();
   });
 
   it("reports the age before the report when a minute or older", () => {
-    const check = checkRow({ details: [{ key: "last_beat_at", value: "2026-08-03T12:42:24.000Z" }] });
+    const check = checkRow({
+      id: "background_worker",
+      details: [{ key: "last_beat_at", value: "2026-08-03T12:42:24.000Z" }],
+    });
     expect(workerLastSeenFact(check, generatedAt)).toBe("Last seen 12 min before this report");
   });
 });

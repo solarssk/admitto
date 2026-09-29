@@ -6,24 +6,29 @@ import { formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckM
  * `last_checked` is a bookkeeping timestamp with no operator value on its own. */
 const ALWAYS_HIDDEN_DETAIL_KEYS = new Set(["status", "last_checked"]);
 
-const REASON_SENTENCES: Record<string, string> = {
-  lookup_failed: "Status could not be read",
-  never_ran: "Never ran",
-  stale: "Stale",
-  not_implemented: "Not implemented",
-  unknown_provider: "Unknown provider",
-  write_probe_failed: "Write test did not pass",
-  mail_secret_decryption_failed: "Could not decrypt the stored mail secret",
-};
+/** `Map`, not a plain object: `reason`/`live_check` are server-controlled today (a closed set
+ * of literals), but this module has no way to enforce that stays true, and a plain object's
+ * `["__proto__"]`/`["constructor"]` lookup returns a real (truthy) value instead of undefined,
+ * which would silently render the wrong thing instead of falling through to the fallback below -
+ * the same class of bug `detect-object-injection` already guards against elsewhere in this repo. */
+const REASON_SENTENCES = new Map<string, string>([
+  ["lookup_failed", "Status could not be read"],
+  ["never_ran", "Never ran"],
+  ["stale", "Stale"],
+  ["not_implemented", "Not implemented"],
+  ["unknown_provider", "Unknown provider"],
+  ["write_probe_failed", "Write test did not pass"],
+  ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
+]);
 
-const LIVE_CHECK_SENTENCES: Record<string, string> = {
-  ok: "Passed",
-  failed: "Did not pass",
-  skipped: "Not tested this run",
-  timeout: "Timed out",
-  unavailable: "Provider unavailable",
-  support_contact_required: "Needs a support contact",
-};
+const LIVE_CHECK_SENTENCES = new Map<string, string>([
+  ["ok", "Passed"],
+  ["failed", "Did not pass"],
+  ["skipped", "Not tested this run"],
+  ["timeout", "Timed out"],
+  ["unavailable", "Provider unavailable"],
+  ["support_contact_required", "Needs a support contact"],
+]);
 
 /** A code this module doesn't recognise yet: readable, but not hand-picked. */
 function humanizeUnknownCode(value: string): string {
@@ -48,8 +53,8 @@ export function formatHealthDisplayValue(key: string, value: string, timezone: s
     const ms = Number(value);
     return Number.isFinite(ms) ? `${Math.round(ms / 60_000)} min` : value;
   }
-  if (key === "reason") return REASON_SENTENCES[value] ?? humanizeUnknownCode(value);
-  if (key === "live_check") return LIVE_CHECK_SENTENCES[value] ?? humanizeUnknownCode(value);
+  if (key === "reason") return REASON_SENTENCES.get(value) ?? humanizeUnknownCode(value);
+  if (key === "live_check") return LIVE_CHECK_SENTENCES.get(value) ?? humanizeUnknownCode(value);
   if (key === "last_beat_at") return formatEventDateTime(value, timezone);
   if (value === "yes") return "Yes";
   if (value === "no") return "No";
@@ -73,6 +78,10 @@ export function visibleHealthDetails(
     if (ALWAYS_HIDDEN_DETAIL_KEYS.has(d.key)) return false;
     if (d.key === "last_beat_at" && workerFactShown) return false;
     const displayValue = formatHealthDisplayValue(d.key, d.value, timezone);
+    // An empty display value (e.g. an unset worker hostname, `beat.hostname ?? ""`) is a
+    // substring of every string, so without this guard it would look like a duplicate of the
+    // summary and vanish instead of showing blank.
+    if (displayValue === "") return true;
     return !check.summary.includes(displayValue);
   });
 }
@@ -80,10 +89,14 @@ export function visibleHealthDetails(
 /**
  * "Last seen 12 min before this report", measured from the worker's `last_beat_at` detail
  * against the report's own `generated_at` (never live wall-clock time, so it does not tick
- * between renders). Omitted when the worker has no `last_beat_at` (never ran), the age is under
- * a minute, or the date is invalid.
+ * between renders). Worker only (background_worker is the only check id that ever carries
+ * `last_beat_at` today, but this pins the fact to that check by id rather than incidentally by
+ * key, so a future unrelated check reusing the same detail name doesn't inherit this wording).
+ * Omitted when the worker has no `last_beat_at` (never ran), the age is under a minute, or the
+ * date is invalid.
  */
 export function workerLastSeenFact(check: HealthCheckRowDto, generatedAt: string): string | null {
+  if (check.id !== "background_worker") return null;
   const lastBeatAt = check.details.find((d) => d.key === "last_beat_at")?.value;
   if (!lastBeatAt) return null;
   const magnitude = formatRelativeMagnitude(lastBeatAt, new Date(generatedAt));
