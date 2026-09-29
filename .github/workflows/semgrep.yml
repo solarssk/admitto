@@ -24,6 +24,7 @@ permissions:
 
 jobs:
   semgrep:
+    name: Code security scan (Semgrep)
     runs-on: ubuntu-latest
     permissions:
       contents: read
