@@ -142,7 +142,9 @@
 .health-check__row-btn {
   display: flex;
   width: 100%;
-  align-items: center;
+  /* flex-start, not center: a 3-4 line wrapped row (long label + badge + summary) would
+     otherwise float the status circle mid-block instead of pinning it to the first line. */
+  align-items: flex-start;
   gap: var(--space-2);
   padding: 0.7rem 0.9rem;
   border: 0;
@@ -180,20 +182,18 @@
   color: var(--text-primary, var(--tblr-body-color));
 }
 
-.health-check__row-text span {
+/* Not configured rows read as a quiet, inactive state rather than a problem. */
+.health-check__row--quiet .health-check__row-text strong {
+  color: var(--text-secondary, var(--tblr-secondary));
+}
+
+/* The server's own summary text: always muted, never coloured by row severity - the status
+ * circle, badge and border already carry that. Its own class (not a bare `span` selector)
+ * so it can't accidentally also style the Badge, which is a sibling `<span>` here. */
+.health-check__summary {
   font-size: var(--fs-sm);
   font-weight: 400;
   color: var(--text-muted, var(--tblr-secondary));
-}
-
-.health-check__row--warn .health-check__row-text span {
-  color: var(--status-warn-fg, var(--tblr-warning));
-  font-weight: 500;
-}
-
-.health-check__row--err .health-check__row-text span {
-  color: var(--status-error-fg, var(--tblr-danger));
-  font-weight: 500;
 }
 
 .health-check__chevron {
@@ -201,43 +201,14 @@
   flex-shrink: 0;
 }
 
-/* Explicit hex fallbacks — Tabler CSS vars are not always present on every surface.
- * Colour lives only on background/box-shadow (empty status dots have no text). */
-.health-check__dot {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: #64748b;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #64748b 12%, transparent);
-}
-
-.health-check__dot--ok {
-  background: #2fb344;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #2fb344 12%, transparent);
-}
-
-.health-check__dot--warn {
-  background: #f59f00;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #f59f00 12%, transparent);
-}
-
-.health-check__dot--err {
-  background: #d63939;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #d63939 12%, transparent);
-}
-
-.health-check__dot--muted,
-.health-check__dot--planned {
-  background: #64748b;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #64748b 12%, transparent);
-}
-
 .health-check__details {
   display: grid;
   gap: 0.35rem;
   margin: 0;
-  padding: 0 0.9rem 0.85rem 2.4rem;
+  /* Aligned under the label, not the old dot: row-btn's own 0.9rem padding + the 1.75rem
+     status circle + one gap (--space-2) = 3.15rem, matching where text starts once the
+     720px rule below hides the category icon. */
+  padding: 0 0.9rem 0.85rem 3.15rem;
   border-top: 1px solid var(--border, var(--tblr-border-color));
   padding-top: 0.65rem;
 }
@@ -286,5 +257,11 @@
   .health-check__detail {
     grid-template-columns: 1fr;
     gap: 0.1rem;
+  }
+
+  /* Below this width the row already carries the status circle, badge and label; the
+     category icon (database, mail, etc.) is decoration that can be dropped first. */
+  .health-check__row-icon {
+    display: none;
   }
 }
