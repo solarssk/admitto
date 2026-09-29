@@ -20,7 +20,7 @@ This README is the current technical reference for how the wallet integration wo
 
 ```
 apps/web (on-demand create/redirect routes, admin wallet action routes, webhook receiver)
-apps/cli (background worker: registration-sync, wallet_push job drain)
+apps/cli (background worker: wallet_sync, and the wallet_push, wallet_message, wallet_refresh_status and wallet_cleanup job drains, plus the wallet_expire sweep)
         │
         ▼
 packages/tickets  buildWalletPassInput()  - Event/Attendee → provider-neutral WalletPassInput
@@ -185,7 +185,7 @@ implementation.
 
 `apps/web/src/wallet-webhook.ts` receives `first_pushnotification_registered`,
 `pushnotification_registered`, `pushnotification_unregistered`, and `pass_voided`, verified via the
-EC public key above. `apps/cli`'s `registration-sync` job polls `getPassSnapshot()` as a
+EC public key above. `apps/cli`'s `wallet_sync` job polls `getPassSnapshot()` as a
 fallback for events the webhook may have missed. `wallet_push` (`AdminJob`) is the background job
 that re-syncs already-issued passes when a wallet-relevant event field changes (title, date, hours,
 timezone, event type, or the Apple Wallet toggle), see `walletRelevantEventFieldsChanged` in

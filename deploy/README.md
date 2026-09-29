@@ -61,7 +61,7 @@ Without these, containers exit or Health stays red. **None of them are set from 
 
 | What | Where | Notes |
 |------|--------|--------|
-| `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). App refuses to start in production without it. |
+| `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). Recommended in production: without it (and without an Instance URL in Settings → General) ticket and mail links fail, and the Setup checklist stays red. |
 | `ENCRYPTION_KEY` | `.env` | `openssl rand -base64 32`. Losing it loses encrypted mail/OIDC secrets. |
 | `POSTGRES_*` + `DATABASE_URL` | `.env` | Passwords must match. |
 | `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |

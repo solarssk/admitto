@@ -119,6 +119,17 @@ Settings → Security warns inline when either an absolute lifetime or an idle t
 sane threshold, and the API rejects a save where the idle timeout would exceed that role's own
 absolute lifetime.
 
+**Operator "Keep me signed in" (v0.7.4+).** An exception to the table above, for check-in tablets
+that sit idle between shifts. An operator-only account that ticks **Keep me signed in** on the
+password sign-in form gets one session whose absolute lifetime is `operator_remember_me_days`
+(system setting or `OPERATOR_REMEMBER_ME_DAYS`; 0 to 14, default 3) and which has **no shorter
+inactivity window**: the lifetime itself is the only limit, and the session cookie is persistent
+rather than a browser-session cookie. It does not apply to any account holding an Admin or
+Superadmin role (their limits above stay fixed, even if the box is ticked), never to passkey or
+SSO sign-in, and setting the days to 0 hides the checkbox. Sign-out and **Active sessions** revoke
+work as for any other session. Accepted risk: operator accounts have no MFA by design, so a lost
+or stolen remembered tablet stays signed in for up to that many days until someone revokes it.
+
 **Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
 change, self-service Account change, admin-initiated create/reset) now rejects the ~250 most common
 passwords and trivial patterns (a single repeated character, a simple ascending/descending run) -

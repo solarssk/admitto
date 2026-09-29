@@ -39,11 +39,11 @@
     {
       "name": "BASE_URL",
       "group": "boot",
-      "boot": "required",
+      "boot": "recommended",
       "consumers": ["app", "worker"],
       "secret": false,
       "ui": "Settings → General (Instance URL, read-only while set)",
-      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development, so the Instance URL field in Settings → General is read-only there."
+      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Recommended in production: the app still starts without it and falls back to the Instance URL saved in Settings → General, but the Setup checklist and Health check flag it as missing, and ticket and mail links fail outright when neither is set. While it is set, the Instance URL field in Settings → General is read-only."
     },
     {
       "name": "ENCRYPTION_KEY",
