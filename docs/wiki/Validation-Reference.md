@@ -323,7 +323,7 @@ The active provider (Microsoft 365 Graph, SMTP, or Power Automate) determines wh
 
 ### General / Instance URL
 
-The Instance URL must be a real `https://` address with no trailing slash, no query string, and no embedded credentials. If it's set by the `BASE_URL` environment variable, the field becomes read-only in the UI. If neither the environment variable nor this setting is configured, sending a ticket email (or anything else needing an absolute link) fails outright rather than guessing at one: "Set the Instance URL in Settings → General before sending ticket emails."
+The Instance URL must be a real `https://` address with no trailing slash, no query string, and no embedded credentials. If it's set by the `BASE_URL` environment variable, the field becomes read-only in the UI. In production, `BASE_URL` is required at boot; setting only the Settings → General value does not satisfy that requirement there. In development, if neither the environment variable nor this setting is configured, sending a ticket email (or anything else needing an absolute link) fails outright rather than guessing at one: "Set the Instance URL in Settings → General before sending ticket emails."
 
 ## Related pages
 

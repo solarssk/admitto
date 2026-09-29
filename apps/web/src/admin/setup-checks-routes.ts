@@ -160,7 +160,7 @@ async function checkInstanceUrl(
 
   return {
     ok: false,
-    detail: "Instance URL is required in production (Settings → General or BASE_URL env)",
+    detail: "BASE_URL environment variable is required in production; Settings alone is not sufficient",
   };
 }
 

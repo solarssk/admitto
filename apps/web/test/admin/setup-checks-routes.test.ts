@@ -177,3 +177,33 @@ describe("collectSetupChecks — redis latency", () => {
     expect(checks.redis.detail).toContain("slow");
   });
 });
+
+describe("collectSetupChecks — base_url production fallback", () => {
+  it("does not offer Settings as a sufficient alternative when nothing is configured in production", async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevBaseUrl = process.env.BASE_URL;
+    process.env.NODE_ENV = "production";
+    delete process.env.BASE_URL;
+    try {
+      const db = {
+        $queryRaw: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+        systemSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+      };
+      checkMigrationsStatus.mockResolvedValueOnce("ok");
+      checkRedis.mockResolvedValueOnce({ status: "ok", latency_ms: 1 });
+
+      // No injectedBaseUrl: exercises the real fallback path (no env, no persisted URL).
+      const checks = await collectSetupChecks(db as never, {} as never);
+
+      expect(checks.base_url.ok).toBe(false);
+      expect(checks.base_url.detail).not.toMatch(/Settings.*or BASE_URL/);
+      expect(checks.base_url.detail).toContain("BASE_URL");
+      expect(checks.base_url.detail).toContain("not sufficient");
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+      if (prevBaseUrl === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBaseUrl;
+    }
+  });
+});
