@@ -312,6 +312,13 @@ function appendUnsavedWarning(message: string, pageDirty: boolean): string {
  * server's own walletRelevantEventFieldsChanged - it isn't sent via an Additional Property at all,
  * so any patch that touches it is always relevant (in practice only "none" -> "event_end": the
  * server refuses the other direction once passes are issued). */
+// Mirrors event-settings-routes.ts's own EVENT_END_DATE_FIELDS - these four all feed
+// eventEndsAtLocal/eventEndsAtUtc's computation of the canonical expires_at (plan v4.2 step 6),
+// unconditionally on field mapping, so a reschedule under event_end mode must warn regardless of
+// whether an admin has also mapped event_hours/event_date to a card-content placeholder
+// (CodeRabbit review).
+const EVENT_END_DATE_FIELDS = new Set(["date", "event_hours_start", "event_hours_end", "timezone"]);
+
 function patchTouchesWalletRelevantField(patch: SettingsPatch, event: EventSettingsDto): boolean {
   const effectiveMapping = patch.wallet_field_mapping !== undefined ? patch.wallet_field_mapping : event.wallet_field_mapping;
   const relevantDateAffected = isRelevantDateAffected(
@@ -321,9 +328,11 @@ function patchTouchesWalletRelevantField(patch: SettingsPatch, event: EventSetti
       eventHoursStart: patch.event_hours_start !== undefined ? patch.event_hours_start : event.event_hours_start,
     },
   );
+  const expirationModeIsEventEnd = (patch.wallet_expiration_mode ?? event.wallet_expiration_mode) === "event_end";
   return Object.keys(patch).some((key) => {
     if (!(WALLET_RELEVANT_EVENT_FIELDS as readonly string[]).includes(key)) return false;
     if (key === "wallet_expiration_mode") return true;
+    if (expirationModeIsEventEnd && EVENT_END_DATE_FIELDS.has(key)) return true;
     if ((key === "date" || key === "event_hours_start" || key === "wallet_apple_enabled") && relevantDateAffected) {
       return true;
     }

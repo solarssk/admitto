@@ -1464,6 +1464,45 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    // Regression (CodeRabbit review, P1): event_hours_end/date/event_hours_start/timezone all feed
+    // eventEndsAtLocal/eventEndsAtUtc's own computation of the canonical expires_at, independent
+    // of PUSH_EVENT's own field mapping (name -> event_name, kind -> event_type - neither maps
+    // event_hours/event_date). Without this fix, rescheduling under event_end mode left every
+    // already-issued pass on the previous expirationDate/expires_at.
+    it("enqueues an event-wide wallet_push job when event_hours_end changes under event_end mode, even though event_hours isn't mapped", async () => {
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_expiration_mode: "event_end" } });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_hours_end: "23:00" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: { wallet_expiration_mode: "none", event_hours_end: null },
+        });
+      }
+    });
+
+    it("does not enqueue a job for the same event_hours_end change when wallet_expiration_mode is 'none' and event_hours isn't mapped", async () => {
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_hours_end: "23:00" }),
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { event_hours_end: null } });
+    });
+
     it("does not enqueue a job when wallet_apple_enabled is toggled on an event with no start time (relevantDate absent on both sides)", async () => {
       await prisma.event.update({ where: { id: PUSH_EVENT }, data: { event_hours_start: null } });
       try {

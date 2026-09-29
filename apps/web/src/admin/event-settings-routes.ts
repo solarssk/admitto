@@ -931,6 +931,16 @@ type WalletRelevantEventSnapshot = {
  * also never gated on fieldMapping - it isn't sent via an Additional Property at all, so any real
  * change to it (in practice only "none" -> "event_end": guardWalletExpirationModeChange above
  * blocks the other direction once passes are issued) is unconditionally relevant. */
+/** date/event_hours_start/event_hours_end/timezone all feed eventEndsAtLocal/eventEndsAtUtc's own
+ * computation (packages/shared/src/eventEnd.ts) - the canonical expires_at plan v4.2 step 6 gives
+ * an already-issued pass once wallet_expiration_mode is "event_end". That computation has nothing
+ * to do with EVENT_FIELD_PLACEHOLDERS' own card-content mapping gate (an event_hours placeholder
+ * can be entirely unmapped while event_end mode is still on), so a reschedule under event_end mode
+ * must count as relevant regardless of field mapping - otherwise every already-issued pass keeps
+ * the *previous* expirationDate/expires_at after the event moves, expiring early or staying valid
+ * past the new end time (CodeRabbit review). */
+const EVENT_END_DATE_FIELDS = new Set(["date", "event_hours_start", "event_hours_end", "timezone"]);
+
 function walletRelevantEventFieldsChanged(
   existing: WalletRelevantEventSnapshot,
   updated: WalletRelevantEventSnapshot,
@@ -940,12 +950,14 @@ function walletRelevantEventFieldsChanged(
     { walletAppleEnabled: existing.wallet_apple_enabled, eventHoursStart: existing.event_hours_start },
     { walletAppleEnabled: updated.wallet_apple_enabled, eventHoursStart: updated.event_hours_start },
   );
+  const expirationModeIsEventEnd = updated.wallet_expiration_mode === "event_end";
   return WALLET_RELEVANT_EVENT_FIELDS.some((field) => {
     const a = existing[field];
     const b = updated[field];
     const changed = a instanceof Date && b instanceof Date ? a.getTime() !== b.getTime() : a !== b;
     if (!changed) return false;
     if (field === "wallet_expiration_mode") return true;
+    if (expirationModeIsEventEnd && EVENT_END_DATE_FIELDS.has(field)) return true;
     if ((field === "date" || field === "event_hours_start" || field === "wallet_apple_enabled") && relevantDateAffected) {
       return true;
     }
@@ -1040,15 +1052,22 @@ async function guardWalletCredentialChange(
   }
 }
 
-/** Blocks "event_end" -> "none" for an event with already-issued passes (no live-verified way to
- * clear `expirationDate` at the provider, so the safe default is to refuse rather than leave a
- * stale date behind - plan v4.2 step 6), and blocks "none" -> "event_end" unless a live
- * describeTemplate() probe confirms the template actually supports a per-pass expiration date -
- * PassCreator otherwise silently ignores `expirationDate` on create/update whenever the
- * template's own "Different for each pass" setting is off (2026-09-28 live-account finding, see
- * PassCreatorClient.describeTemplate's own doc comment), so enabling this mode without the check
- * would look like it worked while doing nothing. Returns null when nothing needs blocking (not
- * changing, or the new value already matches what's saved). */
+/** Blocks "none" -> "event_end" unless a live describeTemplate() probe confirms the template
+ * actually supports a per-pass expiration date - PassCreator otherwise silently ignores
+ * `expirationDate` on create/update whenever the template's own "Different for each pass" setting
+ * is off (2026-09-28 live-account finding, see PassCreatorClient.describeTemplate's own doc
+ * comment), so enabling this mode without the check would look like it worked while doing
+ * nothing. Returns null when nothing needs blocking (not changing, the new value already matches
+ * what's saved, or this is the "event_end" -> "none" direction).
+ *
+ * The "event_end" -> "none" direction is deliberately *not* blocked here - a read here and the
+ * actual event.update happening later in handlePatchEvent's own transaction would still be two
+ * separate, unsynchronized statements an in-flight issuance could land between (mirrors
+ * guardWalletCredentialChange's own reasoning for the Template ID case, CodeRabbit review: a
+ * pass whose own createPass call is already carrying a real `expirationDate` could commit between
+ * this read and the actual write). That direction is authoritatively enforced by
+ * guardWalletExpirationModeDisableInTx below instead, inside that transaction, under the same
+ * advisory lock issuance's own markActive takes for this event. */
 async function guardWalletExpirationModeChange(
   c: Context,
   db: PrismaClient,
@@ -1058,14 +1077,10 @@ async function guardWalletExpirationModeChange(
 ): Promise<Response | null> {
   if (
     patch.wallet_expiration_mode === undefined ||
-    patch.wallet_expiration_mode === existing.wallet_expiration_mode
+    patch.wallet_expiration_mode === existing.wallet_expiration_mode ||
+    patch.wallet_expiration_mode === "none"
   ) {
     return null;
-  }
-
-  if (patch.wallet_expiration_mode === "none") {
-    const issuedCount = await loadIssuedWalletPassCount(db, eventId);
-    return issuedCount > 0 ? c.json({ error: "wallet_expiration_mode_locked" }, 409) : null;
   }
 
   const templateId = patch.wallet_template_id !== undefined ? patch.wallet_template_id : existing.wallet_template_id;
@@ -1123,6 +1138,30 @@ async function guardWalletTemplateChangeInTx(
   const issuedCount = await loadIssuedWalletPassCount(tx, eventId);
   if (issuedCount > 0) {
     throw new TransactionResponseError(c.json({ error: "wallet_template_locked" }, 409));
+  }
+}
+
+/** Authoritative block for an "event_end" -> "none" change on an event with issued passes - see
+ * guardWalletExpirationModeChange's own doc comment for why this half moved into
+ * handlePatchEvent's transaction instead of running there (CodeRabbit review: the pre-transaction
+ * count check alone could read zero just before an in-flight issuance commits a pass with a real
+ * `expirationDate` already sent to the provider, letting the disable through anyway). Acquires
+ * the same per-event advisory lock issuance's own markActive (apps/web/src/app.ts) takes before
+ * its own recheck - same lock guardWalletTemplateChangeInTx above already uses, reentrant within
+ * one transaction - so whichever request starts first fully commits before the other's own
+ * recheck runs. Throws a TransactionResponseError carrying the 409 response for the transaction's
+ * own catch to surface. No-op when the mode isn't disabling. */
+async function guardWalletExpirationModeDisableInTx(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  disablingExpirationMode: boolean,
+): Promise<void> {
+  if (!disablingExpirationMode) return;
+  await acquireWalletTemplateLock(tx, eventId);
+  const issuedCount = await loadIssuedWalletPassCount(tx, eventId);
+  if (issuedCount > 0) {
+    throw new TransactionResponseError(c.json({ error: "wallet_expiration_mode_locked" }, 409));
   }
 }
 
@@ -1245,10 +1284,13 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   const changedFields = Object.keys(data);
   const templateChanging =
     patch.wallet_template_id !== undefined && patch.wallet_template_id !== existing.wallet_template_id;
+  const disablingExpirationMode =
+    patch.wallet_expiration_mode === "none" && existing.wallet_expiration_mode !== "none";
 
   try {
     const updated = await db.$transaction(async (tx) => {
       await guardWalletTemplateChangeInTx(c, tx, eventId, templateChanging);
+      await guardWalletExpirationModeDisableInTx(c, tx, eventId, disablingExpirationMode);
 
       const row = await tx.event.update({
         where: { id: eventId },

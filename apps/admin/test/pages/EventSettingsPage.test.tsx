@@ -2522,6 +2522,59 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     });
   });
 
+  // Regression (CodeRabbit review, P1): event_hours_end/date/event_hours_start/timezone all feed
+  // eventEndsAtLocal/eventEndsAtUtc's own computation of the canonical expires_at (plan v4.2 step
+  // 6) - unconditionally on field mapping, unlike the "title"/relevantDate tests above. No
+  // event_hours mapping here at all, proving the bypass, not the fieldMapping path.
+  it("confirms before saving event_hours_end when wallet_expiration_mode is event_end and installed passes exist (event-end-date bypass)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      wallet_expiration_mode: "event_end",
+      wallet_field_mapping: { other: "event_type" },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event hours (end)");
+
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), { target: { value: "23:00" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_hours_end: "23:00" });
+    });
+  });
+
+  it("saves directly, without confirming, when the same event_hours_end change is made with wallet_expiration_mode 'none'", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      wallet_field_mapping: { other: "event_type" },
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({ event: { ...activeEvent, event_hours_end: "23:00" } });
+    renderSettings();
+    await screen.findByLabelText("Event hours (end)");
+
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), { target: { value: "23:00" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_hours_end: "23:00" });
+    });
+    expect(screen.queryByRole("dialog", { name: "Push this update to installed wallet passes?" })).toBeNull();
+  });
+
   it("saves directly, without confirming, when the changed field's placeholder isn't mapped to a PassCreator field", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,

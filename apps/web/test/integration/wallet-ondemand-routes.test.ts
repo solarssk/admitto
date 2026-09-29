@@ -1085,6 +1085,52 @@ describe("On-demand wallet routes", () => {
     }
   });
 
+  // Regression (CodeRabbit review, P2): the disable-direction guard's own issued-pass-count check
+  // used to run before any transaction/lock - genuinely concurrent with issuance, no mocked
+  // timing, same pattern as the Template ID race test above (mirrors event-custom-fields-
+  // routes.test.ts's identical advisory-lock race tests). Whichever side wins the lock race, the
+  // event must never end up with wallet_expiration_mode disabled while an active pass carries a
+  // real, now-orphaned expirationDate the disable can't confirm was ever cleared.
+  it("never disables wallet_expiration_mode while an issuance racing it commits a pass with a real expirationDate (advisory lock)", async () => {
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    try {
+      const [walletRes, patchRes] = await Promise.all([
+        app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" }),
+        app.request(`/api/admin/events/${EVENT_ID}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "none" }),
+        }),
+      ]);
+
+      expect(walletRes.status).toBe(302);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
+
+      if (patchRes.status === 200) {
+        // The admin's disable won the lock race and committed - issuance's own recheck (inside
+        // its own, separately-locked transaction) must then have seen the fresh "none" mode and
+        // refused to persist a pass whose own createPass call already carried an expirationDate
+        // computed from the stale "event_end" snapshot.
+        expect(row.wallet_expiration_mode).toBe("none");
+        expect(saved?.status).toBe("failed");
+        expect(saved?.last_error_code).toBe("wallet_expiration_mode_changed");
+      } else {
+        // Issuance won the lock race and committed first - the admin's own recheck must then
+        // have seen the freshly-issued pass and refused the disable outright.
+        expect(patchRes.status).toBe(409);
+        expect(row.wallet_expiration_mode).toBe("event_end");
+        expect(saved?.status).toBe("active");
+        expect(saved?.expires_at).not.toBeNull();
+      }
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
+    }
+  });
+
   it("marks failed when a duplicate error can't be recovered (findByUserProvidedId finds nothing)", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(
