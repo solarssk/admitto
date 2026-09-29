@@ -10376,8 +10376,8 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     // Newest finished_at first: no-request, event_wide/no-reason, event_wide/location, attendee_ids/3.
     expect(body.items.map((item) => item.scope)).toEqual([
       null,
-      { kind: "event_wide", reason: null },
-      { kind: "event_wide", reason: "location" },
+      { kind: "event_wide", reason: null, includeVoided: false },
+      { kind: "event_wide", reason: "location", includeVoided: false },
       { kind: "attendee_ids", count: 3 },
     ]);
   });
