@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.3
+**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.7
 
 ## What this page helps you do
 
