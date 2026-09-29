@@ -968,8 +968,10 @@ export function createApp(options: CreateAppOptions = {}) {
     async function markActive(
       userProvidedId: string,
       result: WalletPassResult,
+      hadExpirationDate: boolean,
     ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
       let templateChanged = false;
+      let expirationModeChanged = false;
       let expiresAt: Date | null = null;
       try {
         await db.$transaction(async (tx) => {
@@ -990,6 +992,18 @@ export function createApp(options: CreateAppOptions = {}) {
           // enabling or disabling this mode can land during the provider round-trip this
           // function is called after, and the snapshot would otherwise silently win the race.
           expiresAt = currentEvent.wallet_expiration_mode === "event_end" ? eventEndsAtUtc(event) : null;
+          // The provider call already happened (createOrRecoverPass, before this transaction) with
+          // whatever expirationDate the *stale* snapshot computed - unlike wallet_template_id,
+          // there's no way to undo that call. Detecting a mismatch here and refusing to persist
+          // "active" (same recovery as templateChanged: mark failed, let the next tap create a
+          // fresh pass with a consistent createPass call) is still worth it, because the dangerous
+          // direction (a provider-side expirationDate now stale because the mode was disabled) has
+          // no confirmed way to be cleared later - see guardWalletExpirationModeChange's own doc
+          // comment (CodeRabbit review).
+          if (hadExpirationDate !== (expiresAt !== null)) {
+            expirationModeChanged = true;
+            return;
+          }
           await tx.walletPass.upsert({
             where: { attendee_id: attendee.id },
             create: {
@@ -1037,16 +1051,26 @@ export function createApp(options: CreateAppOptions = {}) {
         });
         return markFailed("wallet_credential_changed");
       }
+      if (expirationModeChanged) {
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_expiration_mode_changed_mid_issuance",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return markFailed("wallet_expiration_mode_changed");
+      }
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
     }
 
     /** Marks the pass "failed" after an unrecoverable createPass error - split out of
      * createOrRecoverPass to keep its cognitive complexity under the SonarCloud threshold
      * (S3776). Never throws: a DB error here must still land on the retry redirect below.
-     * "wallet_credential_changed" (markActive's own mid-request Template ID race guard above) is
-     * not a real WalletProviderErrorCode - PassCreator never rejected anything, Admitto is the
-     * one refusing to keep this result - but it's stored in the same last_error_code column and
-     * shown the same way, so accepting it here avoids a second, near-identical write path.
+     * "wallet_credential_changed"/"wallet_expiration_mode_changed" (markActive's own mid-request
+     * Template ID / expiration-mode race guards above) are not real WalletProviderErrorCodes -
+     * PassCreator never rejected anything, Admitto is the one refusing to keep this result - but
+     * they're stored in the same last_error_code column and shown the same way, so accepting them
+     * here avoids a second, near-identical write path.
      *
      * walletCreateLocks (above) only serializes calls within this one `app` instance - a second,
      * horizontally-scaled instance racing the same attendee can still reach this function after
@@ -1058,7 +1082,9 @@ export function createApp(options: CreateAppOptions = {}) {
      * plain upsert here would otherwise overwrite a winner's row with status "failed" while
      * leaving its issued_at set, a combination no other write path in this codebase produces
      * (bot review, PR #1478). */
-    async function markFailed(code: WalletProviderErrorCode | "wallet_credential_changed"): Promise<null> {
+    async function markFailed(
+      code: WalletProviderErrorCode | "wallet_credential_changed" | "wallet_expiration_mode_changed",
+    ): Promise<null> {
       try {
         const { count } = await db.walletPass.updateMany({
           where: { attendee_id: attendee.id, status: { not: "active" } },
@@ -1123,14 +1149,19 @@ export function createApp(options: CreateAppOptions = {}) {
     async function createOrRecoverPass(
       input: WalletPassInput,
     ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      // Whether the provider call this function is about to make (or already made, on the
+      // duplicate-recovery path below) actually carried an expirationDate - markActive compares
+      // this against the event's *fresh* wallet_expiration_mode to detect a settings save landing
+      // mid-request (plan v4.2 step 6, CodeRabbit review).
+      const hadExpirationDate = input.expirationDate !== undefined;
       try {
         const result = await provider.createPass(input);
-        return await markActive(input.userProvidedId, result);
+        return await markActive(input.userProvidedId, result, hadExpirationDate);
       } catch (err) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
         const recovered =
           code === "wallet_provider_duplicate" ? await recoverDuplicatePass(input.userProvidedId) : null;
-        if (recovered) return markActive(input.userProvidedId, recovered);
+        if (recovered) return markActive(input.userProvidedId, recovered, hadExpirationDate);
 
         console.error("PassCreator createPass failed:", err);
         recordSystemLog({

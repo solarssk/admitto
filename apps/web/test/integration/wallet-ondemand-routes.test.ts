@@ -852,13 +852,17 @@ describe("On-demand wallet routes", () => {
     }
   });
 
-  // Regression (self-review, plan v4.2 step 6): markActive originally computed expires_at from
-  // the outer event snapshot resolveTicket took at the top of the request, not the fresh row read
-  // under the same advisory lock/recheck as wallet_template_id above - an admin's settings save
-  // enabling wallet_expiration_mode while this request's own createPass call is in flight would
-  // otherwise silently persist a pass with no expires_at at all, and PassCreator would never even
-  // have been sent an expirationDate for it.
-  it("computes expires_at from the event's current wallet_expiration_mode, not the request's initial snapshot, when a settings save lands while createPass is in flight", async () => {
+  // Regression (self-review + CodeRabbit review, plan v4.2 step 6): the provider's own
+  // createPass call happens before markActive's lock/recheck, with whatever expirationDate the
+  // *stale* pre-request snapshot computed - there is no way to un-send that call. markActive
+  // detects a mismatch between what was actually sent and what the event's fresh
+  // wallet_expiration_mode now says, and marks the pass failed rather than silently persisting a
+  // local record inconsistent with what the provider was just told (mirrors the existing
+  // Template ID mid-issuance race guard immediately above). The attendee's next tap re-resolves
+  // the event fresh and creates a new pass with a createPass call consistent with current
+  // settings, instead of a pass whose provider-side expiration (or lack of one) Admitto can no
+  // longer see or fix.
+  it("marks failed, not active, when the event's wallet_expiration_mode is enabled while this request's own createPass call is in flight", async () => {
     const provider = stubProvider();
     provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
@@ -875,10 +879,44 @@ describe("On-demand wallet routes", () => {
       const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
       expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
-      // event_hours_end "22:00", timezone "UTC" (fixture default) - the same computation the
-      // dedicated "expires_at" describe block above already proves in the non-racing case.
-      expect(saved?.expires_at).toEqual(new Date("2099-09-01T22:00:00.000Z"));
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_expiration_mode_changed");
+      expect(saved?.expires_at).toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
+    }
+  });
+
+  // The dangerous direction: expirationDate was already sent to the provider (computed from the
+  // stale "event_end" snapshot) when the settings save disables the mode mid-request - the
+  // provider now has a real expiration date Admitto has no confirmed way to clear later. Refusing
+  // to persist "active" here (same guard as above) stops that stale date from ever being recorded
+  // as if nothing had been sent, which the automatic-push self-heal this event_end -> none
+  // disable relies on elsewhere cannot detect on its own.
+  it("marks failed, not active, when the event's wallet_expiration_mode is disabled while this request's own createPass call is in flight", async () => {
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+    const app = makeApp(provider);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_expiration_mode_changed");
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
     }

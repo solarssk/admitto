@@ -2930,6 +2930,46 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    it("rejects enabling event_end with 409 wallet_expiration_mode_requires_template when the event has no API key saved and this patch doesn't set one either", async () => {
+      // Template ID freshly set by this same request - only the key is missing, so the guard
+      // must fall through to "no key to verify with" rather than the earlier "no template" check.
+      const describeSpy = vi.spyOn(PassCreatorClient.prototype, "describeTemplate");
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end", wallet_template_id: "tmpl-expiration" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_requires_template" });
+        expect(describeSpy).not.toHaveBeenCalled();
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("rejects enabling event_end with 409 wallet_expiration_mode_requires_template when the saved API key can't be decrypted", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_template_id: "tmpl-expiration", wallet_api_key_enc: "not-valid-ciphertext" },
+      });
+      const describeSpy = vi.spyOn(PassCreatorClient.prototype, "describeTemplate");
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_requires_template" });
+        expect(describeSpy).not.toHaveBeenCalled();
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
     it("rejects disabling event_end with 409 wallet_expiration_mode_locked once a pass has been issued", async () => {
       await prisma.event.update({
         where: { id: EVENT_SET },

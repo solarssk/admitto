@@ -293,6 +293,26 @@ describe("toPassCreatorData", () => {
     });
   });
 
+  // plan v4.2 step 6 - same top-level, mapping-independent convention as relevantDate above, not
+  // a template Additional Property.
+  describe("expirationDate", () => {
+    it("omits the expirationDate key entirely when input.expirationDate is unset (wallet_expiration_mode was 'none')", () => {
+      const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("expirationDate");
+    });
+
+    it("sends expirationDate as a top-level sibling of base fields when present, regardless of fieldMapping", () => {
+      const data = toPassCreatorData(
+        { ...baseInput, expirationDate: "2026-09-24 22:00" },
+        "tmpl-1",
+        { mappedDate: "event_date" },
+        true,
+      );
+      expect(data.mappedDate).toBe("10 August 2026");
+      expect(data.expirationDate).toBe("2026-09-24 22:00");
+      expect(data.templateId).toBe("tmpl-1");
+    });
+  });
 });
 
 describe("isWalletFieldMappingRelevant", () => {

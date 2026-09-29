@@ -180,6 +180,7 @@ const activeEvent = {
   wallet_google_enabled: false,
   wallet_samsung_enabled: false,
   wallet_field_mapping: null as Record<string, string> | null,
+  wallet_expiration_mode: "none",
 };
 
 const archivedEvent = {
@@ -2273,6 +2274,99 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByRole("button", { name: "Test connection" }).hasAttribute("disabled")).toBe(
       true,
     );
+  });
+
+  it("enables 'Expire when the event ends' only after Test connection confirms per-pass expiration, then saves it (plan v4.2 step 6)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({
+      ok: true,
+      message: 'Connected - template "Gala Pass".',
+      perPassExpirationReady: true,
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_template_id: "tmpl-1", wallet_expiration_mode: "event_end" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const eventEndRadio = screen.getByLabelText("Expire when the event ends") as HTMLInputElement;
+    expect(eventEndRadio.disabled).toBe(true);
+    expect(screen.getByText(/Test connection to confirm/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(testWalletConnection).toHaveBeenCalledWith("evt-1", { templateId: "tmpl-1" });
+    });
+    await waitFor(() => {
+      expect(eventEndRadio.disabled).toBe(false);
+    });
+
+    fireEvent.click(eventEndRadio);
+    expect(eventEndRadio.checked).toBe(true);
+
+    // Not locked yet (no issued passes) - flips straight back without needing a fresh Test
+    // connection, since "none" never requires the capability check.
+    const noneRadio = screen.getByLabelText("Do not expire automatically") as HTMLInputElement;
+    fireEvent.click(noneRadio);
+    expect(noneRadio.checked).toBe(true);
+    expect(eventEndRadio.checked).toBe(false);
+
+    fireEvent.click(eventEndRadio);
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_expiration_mode: "event_end" });
+    });
+  });
+
+  it("keeps 'Expire when the event ends' disabled when Test connection reports the template can't do per-pass expiration", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({
+      ok: true,
+      message: 'Connected - template "Gala Pass".',
+      perPassExpirationReady: false,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(testWalletConnection).toHaveBeenCalledWith("evt-1", { templateId: "tmpl-1" });
+    });
+
+    expect((screen.getByLabelText("Expire when the event ends") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/Test connection to confirm/)).toBeTruthy();
+  });
+
+  it("locks 'Do not expire automatically' once wallet_expiration_mode is already event_end and passes have been issued", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_expiration_mode: "event_end",
+      issued_wallet_pass_count: 2,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const noneRadio = screen.getByLabelText("Do not expire automatically") as HTMLInputElement;
+    const eventEndRadio = screen.getByLabelText("Expire when the event ends") as HTMLInputElement;
+    expect(noneRadio.disabled).toBe(true);
+    expect(eventEndRadio.checked).toBe(true);
+    // Already the saved value - no fresh Test connection needed to keep it selected.
+    expect(eventEndRadio.disabled).toBe(false);
+    expect(screen.getByText(/Can't be turned off once wallet passes have been issued/)).toBeTruthy();
   });
 
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {
