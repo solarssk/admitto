@@ -209,16 +209,43 @@
   flex-shrink: 0;
 }
 
+/* Shared wrapper for the expanded body (guidance, then the detail list) so the divider line
+ * and indent apply once regardless of which of the two is present. */
+.health-check__body {
+  /* Aligned under the label, not the old dot: row-btn's own 0.9rem padding + the 1.75rem
+     status circle + one gap (--space-2) = 3.15rem, matching where text starts once the
+     720px rule below hides the category icon. */
+  padding: 0.65rem 0.9rem 0.85rem 3.15rem;
+  border-top: 1px solid var(--border, var(--tblr-border-color));
+}
+
+.health-check__guidance {
+  margin: 0 0 0.65rem;
+}
+
+.health-check__guidance p {
+  margin: 0 0 0.35rem;
+  font-size: var(--fs-sm);
+  color: var(--text-primary, var(--tblr-body-color));
+}
+
+.health-check__guidance p:last-child {
+  margin-bottom: 0;
+}
+
+.health-check__guidance-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--primary, var(--tblr-primary));
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .health-check__details {
   display: grid;
   gap: 0.35rem;
   margin: 0;
-  /* Aligned under the label, not the old dot: row-btn's own 0.9rem padding + the 1.75rem
-     status circle + one gap (--space-2) = 3.15rem, matching where text starts once the
-     720px rule below hides the category icon. */
-  padding: 0 0.9rem 0.85rem 3.15rem;
-  border-top: 1px solid var(--border, var(--tblr-border-color));
-  padding-top: 0.65rem;
 }
 
 .health-check__detail {
