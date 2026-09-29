@@ -33,11 +33,14 @@ const ROW_CHECK_ICON: Record<RowState, string> = {
 
 /** Plain-language only — no product/vendor names (PostgreSQL, Redis, ENCRYPTION_KEY). An
  * event manager needs to know "is it working", not what runs it; the technical detail
- * still lives in System logs (Settings → Security) for whoever needs it. */
-const PLAIN_DETAIL: Record<"database" | "redis" | "encryption", Record<ResolvedRowState, string>> = {
+ * still lives in System logs (Settings → Security) for whoever needs it. `worker` never
+ * actually reaches `down` (see `checkWorker` in setup-checks-routes.ts), but the table
+ * stays total rather than a partial keyed only on the two states that occur. */
+const PLAIN_DETAIL: Record<"database" | "redis" | "encryption" | "worker", Record<ResolvedRowState, string>> = {
   database: { ok: "Connected", degraded: "Responding slowly", down: "Not reachable" },
   redis: { ok: "Connected", degraded: "Responding slowly", down: "Not reachable" },
   encryption: { ok: "Active", degraded: "Needs attention", down: "Not configured" },
+  worker: { ok: "Running", degraded: "Needs attention", down: "Not reachable" },
 };
 
 const TRIGGER_META: Record<ResolvedRowState, { dot: string; label: string; shortLabel: string }> = {
@@ -53,7 +56,7 @@ const TRIGGER_META: Record<ResolvedRowState, { dot: string; label: string; short
  * so it survives the remount; a short TTL keeps it from ever showing very stale data. Use
  * `resetSystemStatusCache()` between tests to avoid leaking state across cases. */
 const CHECKS_CACHE_MS = 30_000;
-let checksCache: { data: SetupChecksResponse["checks"]; expiresAt: number } | null = null;
+let checksCache: { data: SetupChecksResponse; expiresAt: number } | null = null;
 
 type EventMailSummary = { configured: boolean; hasEventOverride: boolean; failedDeliveries: number };
 
@@ -137,7 +140,7 @@ function resolveCheckState(result: SetupCheckResult | undefined): ResolvedRowSta
 }
 
 function setupCheckRow(
-  key: "database" | "redis" | "encryption",
+  key: "database" | "redis" | "encryption" | "worker",
   icon: string,
   label: string,
   result: SetupCheckResult | undefined,
@@ -182,16 +185,19 @@ function worstRowState(rows: StatusRow[]): ResolvedRowState {
 }
 
 /** Topbar system-health dropdown, trimmed to what's actionable day-to-day: Database/Session
- * storage/Data encryption are superadmin-only, matching `GET /api/admin/setup/checks`'s own
- * server-side authorization (the endpoint also returns a `base_url` check, used by the setup
- * wizard, but this component doesn't render or factor it into `worst` — Instance URL is a
- * one-time-setup concern, not an ongoing health signal). Email sending isn't gated by
- * anything and shows for every role, since operators and admins rely on it too. Check-in
- * connection state has its own dedicated banner on the Check-in page and operator picker
- * instead of a row here — see `checkin/ConnectionBanner.tsx`. When there's nothing to show
- * (e.g. a non-superadmin on a route where mailer status hasn't reached this session either),
- * the trigger renders nothing rather than a misleading "All systems normal" over an empty
- * panel. */
+ * storage/Data encryption/Background worker are superadmin-only, matching `GET
+ * /api/admin/setup/checks`'s own server-side authorization (the endpoint also returns a
+ * `base_url` check, used by the setup wizard, but this component doesn't render or factor it
+ * into `worst` — Instance URL is a one-time-setup concern, not an ongoing health signal).
+ * Background worker *is* rendered and does factor into `worst` — unlike Instance URL, it's an
+ * ongoing signal the Health check tab already tracks, and leaving it off here is exactly what
+ * let this pill show "All systems normal" while that tab showed a stale worker. Email sending
+ * isn't gated by anything and shows for every role, since operators and admins rely on it too.
+ * Check-in connection state has its own dedicated banner on the Check-in page and operator
+ * picker instead of a row here — see `checkin/ConnectionBanner.tsx`. When there's nothing to
+ * show (e.g. a non-superadmin on a route where mailer status hasn't reached this session
+ * either), the trigger renders nothing rather than a misleading "All systems normal" over an
+ * empty panel. */
 export function SystemStatus({
   assignments,
   mailerStatus,
@@ -210,7 +216,7 @@ export function SystemStatus({
     gap: 8,
   });
   const superadmin = isSuperadmin(assignments);
-  const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(
+  const [checks, setChecks] = useState<SetupChecksResponse | null>(
     checksCache && checksCache.expiresAt > Date.now() ? checksCache.data : null,
   );
   const [checksFailed, setChecksFailed] = useState(false);
@@ -242,9 +248,9 @@ export function SystemStatus({
       try {
         const data = await fetchSetupChecks(ac.signal);
         if (ac.signal.aborted) return;
-        setChecks(data.checks);
+        setChecks(data);
         setChecksFailed(false);
-        checksCache = { data: data.checks, expiresAt: Date.now() + CHECKS_CACHE_MS };
+        checksCache = { data, expiresAt: Date.now() + CHECKS_CACHE_MS };
       } catch {
         if (!ac.signal.aborted && !silent) setChecksFailed(true);
       }
@@ -300,9 +306,17 @@ export function SystemStatus({
   let rows: StatusRow[];
   if (superadmin) {
     rows = [
-      setupCheckRow("database", "database", "Database", checks?.database, checks !== null, checksFailed),
-      setupCheckRow("redis", "server-2", "Session storage", checks?.redis, checks !== null, checksFailed),
-      setupCheckRow("encryption", "lock", "Data encryption", checks?.encryption, checks !== null, checksFailed),
+      setupCheckRow("database", "database", "Database", checks?.checks.database, checks !== null, checksFailed),
+      setupCheckRow("redis", "server-2", "Session storage", checks?.checks.redis, checks !== null, checksFailed),
+      setupCheckRow(
+        "encryption",
+        "lock",
+        "Data encryption",
+        checks?.checks.encryption,
+        checks !== null,
+        checksFailed,
+      ),
+      setupCheckRow("worker", "cpu", "Background worker", checks?.worker, checks !== null, checksFailed),
       ...(mailer ? [mailer] : []),
     ];
   } else {

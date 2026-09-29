@@ -28,6 +28,8 @@ const OK_CHECKS = {
   base_url: { ok: true, detail: "https://tickets.example.com" },
 };
 
+const OK_WORKER = { ok: true, detail: "Worker heartbeat is fresh (last seen 2026-01-01T00:00:00.000Z)" };
+
 function SettingsPageProbe() {
   const loc = useLocation();
   return <div data-testid="settings-page">{loc.search}</div>;
@@ -65,8 +67,8 @@ afterEach(() => {
 });
 
 describe("SystemStatus", () => {
-  it("shows all 4 rows and 'All systems normal' for a superadmin once checks pass", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+  it("shows all 5 rows and 'All systems normal' for a superadmin once checks pass", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN);
     await screen.findByRole("button", { name: /All systems normal/ });
@@ -76,6 +78,7 @@ describe("SystemStatus", () => {
     expect(screen.getByText("Session storage")).toBeTruthy();
     expect(screen.getByText("Email sending")).toBeTruthy();
     expect(screen.getByText("Data encryption")).toBeTruthy();
+    expect(screen.getByText("Background worker")).toBeTruthy();
     expect(screen.queryByText("Instance URL")).toBeNull();
     expect(screen.queryByText("Check-in connection")).toBeNull();
     // Database, Session storage, and Email sending all report the same plain "Connected"
@@ -83,11 +86,13 @@ describe("SystemStatus", () => {
     // logs), and no long explanatory sentence next to the other rows' one-word status.
     expect(screen.getAllByText("Connected")).toHaveLength(3);
     expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
   });
 
   it("does not flip to 'Action needed' when only the (hidden) instance-URL check fails", async () => {
     fetchSetupChecks.mockResolvedValueOnce({
       checks: { ...OK_CHECKS, base_url: { ok: false, detail: "BASE_URL env is required in production" } },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
@@ -97,8 +102,36 @@ describe("SystemStatus", () => {
     expect(screen.queryByText("Instance URL")).toBeNull();
   });
 
+  it("shows 'Degraded performance' and a 'Needs attention' worker row when the worker heartbeat is stale (the topbar/Health check tab inconsistency this row exists to fix)", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({
+      checks: OK_CHECKS,
+      worker: { ok: true, warn: true, detail: "Worker heartbeat is stale (last seen 2026-01-01T00:00:00.000Z)" },
+    });
+
+    renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /Degraded performance/ });
+
+    openMenu();
+    expect(screen.getByText("Background worker")).toBeTruthy();
+    expect(screen.getByText("Needs attention")).toBeTruthy();
+  });
+
+  it("shows a 'Needs attention' worker row (not 'Not reachable') when the worker has never reported a heartbeat", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({
+      checks: OK_CHECKS,
+      worker: { ok: true, warn: true, detail: "Worker has never reported a heartbeat." },
+    });
+
+    renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /Degraded performance/ });
+
+    openMenu();
+    expect(screen.getByText("Needs attention")).toBeTruthy();
+    expect(screen.queryByText("Not reachable")).toBeNull();
+  });
+
   it("does not flash 'Action needed' while checks are still loading", async () => {
-    let resolveChecks!: (value: { checks: typeof OK_CHECKS }) => void;
+    let resolveChecks!: (value: { checks: typeof OK_CHECKS; worker: typeof OK_WORKER }) => void;
     fetchSetupChecks.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveChecks = resolve;
@@ -111,7 +144,7 @@ describe("SystemStatus", () => {
     openMenu();
     expect(screen.getAllByText("Checking…").length).toBeGreaterThan(0);
 
-    resolveChecks({ checks: OK_CHECKS });
+    resolveChecks({ checks: OK_CHECKS, worker: OK_WORKER });
     await waitFor(() => {
       expect(screen.queryByText("Checking…")).toBeNull();
     });
@@ -120,6 +153,7 @@ describe("SystemStatus", () => {
   it("shows 'Action needed' when a check is down", async () => {
     fetchSetupChecks.mockResolvedValueOnce({
       checks: { ...OK_CHECKS, database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
@@ -141,6 +175,7 @@ describe("SystemStatus", () => {
           detail: "PostgreSQL connected · migrations pending",
         },
       },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
@@ -154,6 +189,7 @@ describe("SystemStatus", () => {
   it("shows 'Degraded performance' when a check passes with a warning", async () => {
     fetchSetupChecks.mockResolvedValueOnce({
       checks: { ...OK_CHECKS, redis: { ok: true, warn: true, detail: "Redis unreachable, using in-memory fallback" } },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
@@ -175,7 +211,7 @@ describe("SystemStatus", () => {
   });
 
   it("caches a successful setup-checks result across remounts within the TTL", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     const { unmount } = renderStatus(SUPERADMIN);
     await screen.findByRole("button", { name: /All systems normal/ });
@@ -188,7 +224,7 @@ describe("SystemStatus", () => {
   });
 
   it("omits the Email sending row (no false alarm) when mailerStatus hasn't reached this session yet", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN, null);
     await screen.findByRole("button", { name: /All systems normal/ });
@@ -215,7 +251,7 @@ describe("SystemStatus", () => {
   });
 
   it("labels Email sending 'Connected · event' for a superadmin viewing an event with its own dedicated transport", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("graph", true));
 
     renderStatus(SUPERADMIN, { configured: false, provider: null }, "evt-1");
@@ -227,7 +263,7 @@ describe("SystemStatus", () => {
   });
 
   it("labels Email sending 'Connected · organization' for a superadmin viewing an event with no override of its own", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", false));
 
     renderStatus(SUPERADMIN, null, "evt-1");
@@ -238,7 +274,7 @@ describe("SystemStatus", () => {
   });
 
   it("caches a successful event-level mail result across remounts within the TTL", async () => {
-    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true));
 
     const { unmount } = renderStatus(SUPERADMIN, null, "evt-1");
@@ -255,7 +291,7 @@ describe("SystemStatus", () => {
   });
 
   it("falls back to org-level mailerStatus when the initial event-level fetch fails", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockRejectedValueOnce(new Error("network error"));
 
     renderStatus(SUPERADMIN, { configured: true, provider: "smtp" }, "evt-1");
@@ -270,7 +306,7 @@ describe("SystemStatus", () => {
   });
 
   it("ignores a resolved event-mail fetch for an eventId that's no longer current (abort branch)", async () => {
-    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
     let resolveFirst!: (value: ReturnType<typeof eventMailSettings>) => void;
     fetchEventMailSettings.mockImplementationOnce(
       () => new Promise((resolve) => { resolveFirst = resolve; }),
@@ -302,11 +338,11 @@ describe("SystemStatus", () => {
   });
 
   it("ignores a resolved checks fetch for a stale effect instance (superadmin toggled off then on)", async () => {
-    let resolveFirst!: (value: { checks: typeof OK_CHECKS }) => void;
+    let resolveFirst!: (value: { checks: typeof OK_CHECKS; worker: typeof OK_WORKER }) => void;
     fetchSetupChecks.mockImplementationOnce(
       () => new Promise((resolve) => { resolveFirst = resolve; }),
     );
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     const { rerender } = render(
       <MemoryRouter>
@@ -328,14 +364,14 @@ describe("SystemStatus", () => {
     await act(async () => {});
 
     // The stale first request resolving late must not clobber the second effect instance.
-    resolveFirst({ checks: { ...OK_CHECKS, database: { ok: false, detail: "stale response" } } });
+    resolveFirst({ checks: { ...OK_CHECKS, database: { ok: false, detail: "stale response" } }, worker: OK_WORKER });
     await act(async () => {});
 
     expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
   });
 
   it("shows Email sending as degraded (not a flat 'ok') when the event's transport is configured but has unresolved failed deliveries", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true, 2));
 
     renderStatus(SUPERADMIN, null, "evt-1");
@@ -347,7 +383,7 @@ describe("SystemStatus", () => {
   });
 
   it("shows the event-level Email sending row for a superadmin even when org-level mailerStatus hasn't reached this session (e.g. an operator route)", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("export_only", true));
 
     renderStatus(SUPERADMIN, null, "evt-1");
@@ -369,7 +405,7 @@ describe("SystemStatus", () => {
   });
 
   it("uses role=menu for a superadmin, who has an actionable 'View system logs' item", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN);
     await screen.findByRole("button", { name: /All systems normal/ });
@@ -387,7 +423,7 @@ describe("SystemStatus", () => {
   });
 
   it("navigates to Settings → Logs when 'View system logs' is clicked", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN);
     await screen.findByRole("button", { name: /All systems normal/ });
@@ -399,7 +435,7 @@ describe("SystemStatus", () => {
   });
 
   it("navigates to Settings → Health check when 'View health check' is clicked", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN);
     await screen.findByRole("button", { name: /All systems normal/ });
@@ -444,9 +480,10 @@ describe("SystemStatus", () => {
 describe("SystemStatus polling", () => {
   it("re-fetches checks automatically ~30s after the initial load, without a remount", async () => {
     vi.useFakeTimers();
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchSetupChecks.mockResolvedValueOnce({
       checks: { ...OK_CHECKS, database: { ok: false, detail: "Cannot connect to PostgreSQL", reason: "unreachable" } },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
@@ -464,7 +501,7 @@ describe("SystemStatus polling", () => {
 
   it("keeps the last-known checks state when a background poll tick fails, instead of flipping to Unavailable", async () => {
     vi.useFakeTimers();
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchSetupChecks.mockRejectedValueOnce(new Error("transient network error"));
 
     renderStatus(SUPERADMIN);
@@ -481,7 +518,7 @@ describe("SystemStatus polling", () => {
 
   it("re-fetches the event-level mail status automatically, reflecting a newly-appeared delivery failure without a remount", async () => {
     vi.useFakeTimers();
-    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true, 0));
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true, 1));
 
@@ -500,7 +537,7 @@ describe("SystemStatus polling", () => {
 
   it("stops polling once unmounted — no further fetch calls after the component is gone", async () => {
     vi.useFakeTimers();
-    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
 
     const { unmount } = renderStatus(SUPERADMIN);
     await act(async () => {});
@@ -517,7 +554,7 @@ describe("SystemStatus polling", () => {
 
 describe("SystemStatus trigger label weight", () => {
   it("does not add a degraded/down modifier class to the trigger label when all-clear", async () => {
-    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN);
     const trigger = await screen.findByRole("button", { name: /All systems normal/ });
@@ -528,6 +565,7 @@ describe("SystemStatus trigger label weight", () => {
   it("adds the down modifier class to the trigger label when a check is down", async () => {
     fetchSetupChecks.mockResolvedValueOnce({
       checks: { ...OK_CHECKS, database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
@@ -539,6 +577,7 @@ describe("SystemStatus trigger label weight", () => {
   it("adds the degraded modifier class to the trigger label when a check is degraded", async () => {
     fetchSetupChecks.mockResolvedValueOnce({
       checks: { ...OK_CHECKS, redis: { ok: true, warn: true, detail: "Redis unreachable, using in-memory fallback" } },
+      worker: OK_WORKER,
     });
 
     renderStatus(SUPERADMIN);
