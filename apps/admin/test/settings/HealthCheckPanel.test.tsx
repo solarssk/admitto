@@ -296,18 +296,22 @@ describe("HealthCheckPanel", () => {
     await screen.findByText("Database");
 
     const rowBtn = screen.getByRole("button", { name: /Database/ });
+    // The details list is a sibling of the button, not a descendant, and `rate_limit_storage`
+    // (degraded) auto-opens its own "Latency" detail by default - scope to the row wrapper so
+    // Database's own detail values are asserted, not the first match anywhere on the page.
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
     expect(within(rowBtn).getByText("Status: Healthy")).toBeTruthy();
     expect(screen.getByText("Status: Down")).toBeTruthy();
     expect(rowBtn.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(rowBtn);
     expect(rowBtn.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("Latency")).toBeTruthy();
-    expect(screen.getByText("4 ms")).toBeTruthy();
-    expect(screen.getByText("PostgreSQL 16.0")).toBeTruthy();
+    expect(within(row).getByText("Latency")).toBeTruthy();
+    expect(within(row).getByText("4 ms")).toBeTruthy();
+    expect(within(row).getByText("PostgreSQL 16.0")).toBeTruthy();
 
     fireEvent.click(rowBtn);
     expect(rowBtn.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("4 ms")).toBeNull();
+    expect(within(row).queryByText("4 ms")).toBeNull();
   });
 
   it("toasts success after live checks when overall is ok", async () => {
@@ -598,5 +602,100 @@ describe("HealthCheckPanel", () => {
     const rowBtn = await screen.findByRole("button", { name: /Test check/ });
     const summary = within(rowBtn).getByText("Summary text");
     expect(summary.className).toBe("health-check__summary");
+  });
+
+  function reportWithMixedOrder(): HealthReportDto {
+    return sampleReport({
+      overall: "ok",
+      groups: [
+        {
+          id: "core",
+          label: "Core infrastructure",
+          subtitle: "Owned and run by this instance",
+          status: "ok",
+          checks: [
+            { id: "a", label: "Alpha", status: "ok", summary: "s", details: [] },
+            { id: "b", label: "Bravo", status: "not_configured", summary: "s", details: [] },
+            { id: "c", label: "Charlie", status: "degraded", summary: "s", details: [] },
+            { id: "d", label: "Delta", status: "down", summary: "s", details: [] },
+            { id: "e", label: "Echo", status: "ok", summary: "s", details: [] },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("sorts rows within a group as down, degraded, ok, not configured, stably", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithMixedOrder());
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Alpha");
+
+    const labels = screen
+      .getAllByText(/^(Alpha|Bravo|Charlie|Delta|Echo)$/)
+      .map((el) => el.textContent);
+    // Alpha before Echo: both "ok", so the stable sort keeps their original relative order.
+    expect(labels).toEqual(["Delta", "Charlie", "Alpha", "Echo", "Bravo"]);
+  });
+
+  it("auto-opens down and degraded rows, leaves healthy and not_configured collapsed", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithMixedOrder());
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Alpha");
+
+    expect(screen.getByRole("button", { name: /Delta/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /Charlie/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /Alpha/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(screen.getByRole("button", { name: /Bravo/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
+  it("remembers a manual collapse across a live re-run that keeps the same status", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithMixedOrder());
+    renderWithToast(<HealthCheckPanel />);
+    const deltaBtn = await screen.findByRole("button", { name: /Delta/ });
+    expect(deltaBtn.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(deltaBtn);
+    expect(deltaBtn.getAttribute("aria-expanded")).toBe("false");
+
+    mockLive.mockResolvedValueOnce(reportWithMixedOrder());
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Live checks finished/);
+    });
+    expect(screen.getByRole("button", { name: /Delta/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
+  it("discards a manual collapse once a live run changes that row's status", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithMixedOrder());
+    renderWithToast(<HealthCheckPanel />);
+    const charlieBtn = await screen.findByRole("button", { name: /Charlie/ });
+    expect(charlieBtn.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(charlieBtn);
+    expect(charlieBtn.getAttribute("aria-expanded")).toBe("false");
+
+    // Charlie goes from degraded to down - the override was pinned to "degraded", so it no
+    // longer applies and the row falls back to its new default (open), per the spec's own
+    // example: "a row collapsed while degraded re-opens when a later live run makes it down".
+    const nextReport = reportWithMixedOrder();
+    nextReport.groups[0]!.checks[2]!.status = "down";
+    mockLive.mockResolvedValueOnce(nextReport);
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Live checks finished/);
+    });
+    expect(screen.getByRole("button", { name: /Charlie/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
   });
 });

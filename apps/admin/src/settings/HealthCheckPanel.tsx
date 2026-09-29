@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
 import type { NoticeVariant } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
@@ -52,17 +52,20 @@ type RowStatusMeta = {
   badge: { variant: "warn" | "error" | "neutral"; word: string } | null;
   /** Row wrapper class: border tone for warn/err, a quiet label for not_configured, none for ok. */
   toneClass: string;
+  /** Stable sort order within a group: down, degraded, ok, not_configured. */
+  sortRank: number;
 };
 
 /** The server never emits `planned` (ADR 0037), so it has no entry here; `rowStatusMeta()`
  * below falls back to the `not_configured` treatment for it defensively. */
 const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta> = {
-  ok: {
-    glyph: "check",
-    circleVariant: "ok",
-    srWord: "Healthy",
-    badge: null,
-    toneClass: "",
+  down: {
+    glyph: "x",
+    circleVariant: "error",
+    srWord: "Down",
+    badge: { variant: "error", word: "Down" },
+    toneClass: "health-check__row--err",
+    sortRank: 0,
   },
   degraded: {
     glyph: "alert-triangle",
@@ -70,13 +73,15 @@ const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta
     srWord: "Degraded",
     badge: { variant: "warn", word: "Degraded" },
     toneClass: "health-check__row--warn",
+    sortRank: 1,
   },
-  down: {
-    glyph: "x",
-    circleVariant: "error",
-    srWord: "Down",
-    badge: { variant: "error", word: "Down" },
-    toneClass: "health-check__row--err",
+  ok: {
+    glyph: "check",
+    circleVariant: "ok",
+    srWord: "Healthy",
+    badge: null,
+    toneClass: "",
+    sortRank: 2,
   },
   not_configured: {
     glyph: "minus",
@@ -84,12 +89,28 @@ const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta
     srWord: "Not configured",
     badge: { variant: "neutral", word: "Not configured" },
     toneClass: "health-check__row--quiet",
+    sortRank: 3,
   },
 };
 
 function rowStatusMeta(status: HealthRowStatus): RowStatusMeta {
   if (status === "planned") return ROW_STATUS_META.not_configured;
   return ROW_STATUS_META[status];
+}
+
+/** Down and degraded rows default to open; everything else default-collapsed. */
+function isProblemStatus(status: HealthRowStatus): boolean {
+  return status === "down" || status === "degraded";
+}
+
+/** A user's manual expand/collapse choice for one row, pinned to the status it was made
+ * against - ignored once a later report shows a different status for that row (see
+ * `isRowExpanded` below), so a row collapsed while degraded re-opens once it goes down. */
+type ExpandOverride = { status: HealthRowStatus; open: boolean };
+
+function isRowExpanded(check: HealthCheckRowDto, override: ExpandOverride | undefined): boolean {
+  if (override && override.status === check.status) return override.open;
+  return isProblemStatus(check.status);
 }
 
 function downloadTextFile(filename: string, content: string): void {
@@ -243,12 +264,12 @@ const GROUP_ICONS: Record<string, string> = {
 
 function HealthGroupSection({
   group,
-  expandedIds,
+  isExpanded,
   onToggle,
 }: Readonly<{
   group: HealthGroupDto;
-  expandedIds: ReadonlySet<string>;
-  onToggle: (id: string) => void;
+  isExpanded: (check: HealthCheckRowDto) => boolean;
+  onToggle: (check: HealthCheckRowDto) => void;
 }>) {
   const icon = GROUP_ICONS[group.id] ?? "circle-dot";
   return (
@@ -269,8 +290,8 @@ function HealthGroupSection({
           <li key={check.id}>
             <HealthCheckRowView
               check={check}
-              expanded={expandedIds.has(check.id)}
-              onToggle={() => onToggle(check.id)}
+              expanded={isExpanded(check)}
+              onToggle={() => onToggle(check)}
             />
           </li>
         ))}
@@ -356,7 +377,17 @@ export function HealthCheckPanel() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [liveLoading, setLiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandOverride, setExpandOverride] = useState<Record<string, ExpandOverride>>({});
+
+  const sortedGroups = useMemo<HealthGroupDto[]>(() => {
+    if (!report) return [];
+    return report.groups.map((group) => ({
+      ...group,
+      checks: [...group.checks].sort(
+        (a, b) => rowStatusMeta(a.status).sortRank - rowStatusMeta(b.status).sortRank,
+      ),
+    }));
+  }, [report]);
 
   const loadPassive = useCallback(async (signal?: AbortSignal) => {
     setInitialLoading(true);
@@ -381,14 +412,17 @@ export function HealthCheckPanel() {
     return () => ac.abort();
   }, [loadPassive]);
 
-  const toggleExpanded = useCallback((id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggleExpanded = useCallback((check: HealthCheckRowDto) => {
+    setExpandOverride((prev) => ({
+      ...prev,
+      [check.id]: { status: check.status, open: !isRowExpanded(check, prev[check.id]) },
+    }));
   }, []);
+
+  const isExpanded = useCallback(
+    (check: HealthCheckRowDto) => isRowExpanded(check, expandOverride[check.id]),
+    [expandOverride],
+  );
 
   const handleLive = async () => {
     setLiveLoading(true);
@@ -508,11 +542,11 @@ export function HealthCheckPanel() {
         </Notice>
 
         <div className="health-check__groups">
-          {report.groups.map((group) => (
+          {sortedGroups.map((group) => (
             <HealthGroupSection
               key={group.id}
               group={group}
-              expandedIds={expandedIds}
+              isExpanded={isExpanded}
               onToggle={toggleExpanded}
             />
           ))}
