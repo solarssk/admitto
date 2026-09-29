@@ -26,6 +26,16 @@ on:
           - v1
           - v2
         default: v2
+      effort:
+        description: Reasoning effort passed to the reviewer (empty = the CLI default, which is what the live review uses today)
+        type: choice
+        options:
+          - default
+          - low
+          - medium
+          - high
+          - xhigh
+        default: default
 
 permissions: {}
 
@@ -64,6 +74,7 @@ jobs:
           BASE_SHA: ${{ matrix.base }}
           HEAD_SHA: ${{ matrix.head }}
           VARIANT: ${{ inputs.variant }}
+          EFFORT: ${{ inputs.effort }}
         run: |
           set -euo pipefail
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "base and head must be 40-hex SHAs"; exit 1; }
@@ -87,6 +98,7 @@ jobs:
             echo
             echo "${DELIM}"
             echo "schema=$(jq -c . "$RUNNER_TEMP/ai-review/schema-${VARIANT}.json")"
+            if [ "$EFFORT" = "default" ]; then echo "effort_args="; else echo "effort_args=--effort ${EFFORT}"; fi
           } >> "$GITHUB_OUTPUT"
 
       - name: Review the diff
@@ -100,6 +112,7 @@ jobs:
             --model claude-sonnet-5-5
             --max-turns 25
             --allowedTools "Read,Grep,Glob"
+            ${{ steps.cfg.outputs.effort_args }}
             --json-schema '${{ steps.cfg.outputs.schema }}'
 
       - name: Report
@@ -108,11 +121,12 @@ jobs:
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
           EXEC_FILE: ${{ steps.review.outputs.execution_file }}
           VARIANT: ${{ inputs.variant }}
+          EFFORT: ${{ inputs.effort }}
           PR: ${{ matrix.pr }}
         run: |
           set -euo pipefail
           {
-            echo "### PR ${PR} (${VARIANT})"
+            echo "### PR ${PR} (${VARIANT}, effort ${EFFORT})"
             if [ -z "${STRUCTURED:-}" ]; then
               echo "NO STRUCTURED OUTPUT"
             else

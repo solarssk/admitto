@@ -78,10 +78,12 @@ async function hasEventMailOverride(db: PrismaClient, eventId: string): Promise<
 
 /** Count of this event's deliveries still marked `retryable` after failing — mirrors
  * `ops/readyz.ts`'s `collectGauges()` instance-wide gauge, narrowed to one event. Not a
- * time-windowed "recent failures" count: nothing in this codebase auto-retries (only the
- * `admitto mail retry-failed` CLI does), so a row can sit here for weeks until the retention
- * job eventually flips `retryable` to `false` — a nonzero count means "needs manual attention
- * at some point," not "just happened." */
+ * time-windowed "recent failures" count: the worker's own drain reclaim already retries these
+ * automatically with backoff, up to `MAX_MAIL_DRAIN_ATTEMPTS`
+ * (packages/mail-delivery/src/drain-retry.ts), and flips `retryable` to `false` itself once
+ * attempts are exhausted - a nonzero count means "the worker is still working through these,
+ * or is not running," not "nothing will retry these without the manual `admitto
+ * mail retry-failed` CLI." */
 async function countFailedRetryableDeliveries(db: PrismaClient, eventId: string): Promise<number> {
   return db.emailDelivery.count({ where: { event_id: eventId, status: "failed", retryable: true } });
 }
