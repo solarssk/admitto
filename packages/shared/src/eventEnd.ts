@@ -19,24 +19,34 @@ function utcDay(date: Date, offsetDays: number): string {
     .slice(0, 10);
 }
 
-/** UTC instant at which the event is over: `eventHoursEnd` on the event's day in its own
- * timezone, or - without a usable end time - the end of that day (the next local midnight). An
- * overnight event (end earlier than its own start) ends on the calendar day after `date`. An
- * unknown timezone falls back to UTC rather than throwing, since the answer only gates a public
- * page. */
-export function eventEndsAtUtc(event: EventEndInput): Date {
-  // An unreadable date has no end: NaN compares as "not over", so nothing is closed by mistake.
-  if (Number.isNaN(event.date.getTime())) return new Date(Number.NaN);
+/** The event's own local calendar day and "HH:mm" at which it is over - `eventHoursEnd` on
+ * `date`'s day, or, without a usable end time, the next local midnight. An overnight event (end
+ * earlier than its own start) ends on the calendar day after `date`. Null for an unreadable
+ * `date`, since there is no day to report. Split out of eventEndsAtUtc below so a naive,
+ * provider-bound wall-clock string (WalletPass.expires_at's own expirationDate push, plan v4.2
+ * step 6 - see computeExpirationDateLabel, packages/tickets/src/wallet-pass-input.ts) can share
+ * these exact day/overnight rules instead of re-deriving them (AGENTS.md's duplication-gate
+ * note). */
+export function eventEndsAtLocal(event: EventEndInput): { day: string; time: string } | null {
+  if (Number.isNaN(event.date.getTime())) return null;
   const end = event.eventHoursEnd && HH_MM.test(event.eventHoursEnd) ? event.eventHoursEnd : null;
   const start = event.eventHoursStart && HH_MM.test(event.eventHoursStart) ? event.eventHoursStart : null;
   const overnight = end !== null && start !== null && end < start;
+  return { day: utcDay(event.date, end === null || overnight ? 1 : 0), time: end ?? "00:00" };
+}
 
-  const day = utcDay(event.date, end === null || overnight ? 1 : 0);
-  const wallClock = end === null ? "00:00:00.000" : `${end}:00.000`;
+/** UTC instant at which the event is over (see eventEndsAtLocal above for the day/time this reads
+ * off). An unknown timezone falls back to UTC rather than throwing, since the answer only gates a
+ * public page. */
+export function eventEndsAtUtc(event: EventEndInput): Date {
+  const local = eventEndsAtLocal(event);
+  // An unreadable date has no end: NaN compares as "not over", so nothing is closed by mistake.
+  if (!local) return new Date(Number.NaN);
+  const wallClock = `${local.time}:00.000`;
   try {
-    return new Date(zonedWallClockToUtcIso(day, wallClock, event.timezone));
+    return new Date(zonedWallClockToUtcIso(local.day, wallClock, event.timezone));
   } catch {
-    return new Date(zonedWallClockToUtcIso(day, wallClock, "UTC"));
+    return new Date(zonedWallClockToUtcIso(local.day, wallClock, "UTC"));
   }
 }
 

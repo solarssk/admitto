@@ -66,6 +66,12 @@ model Event {
   // passcreator-mapper.ts) - PassCreator templates don't share a common field-name vocabulary, so
   // there is no built-in default mapping to fall back to.
   wallet_field_mapping         Json?
+  // "none" (default - existing events keep issuing passes that never expire on their own) or
+  // "event_end" (a newly-issued or reissued pass gets WalletPass.expires_at set to the event's own
+  // end, pushed to the provider as its expirationDate). Only Admitto ever computes expires_at, and
+  // only from this mode plus the event's own end - never from anything the provider reports back
+  // (plan v4.2 step 6).
+  wallet_expiration_mode       String                     @default("none")
   timezone                     String                     @default("UTC")
   capacity                     Int?
   logo_url                     String?
@@ -373,8 +379,17 @@ model WalletPass {
   last_error_code String?
   last_synced_at  DateTime?
 
-  issued_at DateTime?
-  voided_at DateTime?
+  issued_at  DateTime?
+  voided_at  DateTime?
+  // Admitto's own canonical expiration - set only when the event's wallet_expiration_mode is
+  // "event_end" (eventEndsAtUtc at the time this pass was last issued/pushed), pushed to the
+  // provider as expirationDate. Never written from anything the provider reports back - unlike
+  // status's own voided/expired transitions, which a sync/refresh CAN set from an observation, this
+  // column is Admitto-authoritative only (plan v4.2 step 6). A separate worker job expires a pass
+  // once past this date without contacting the provider at all; null means "no canonical expiry set
+  // for this pass" (wallet_expiration_mode was "none" at issuance, or the pass predates this
+  // column).
+  expires_at DateTime?
 
   // Stamped once, the first time PassCreator's `first_pushnotification_registered` webhook fires
   // for this pass (applyFirstConfirmedAt, packages/wallet/src/passcreator-webhook.ts) - i.e. the
@@ -423,7 +438,7 @@ model WalletPass {
   // ahead of, and silently discard, a real one (Codex review, 2026-09-27 - the third such write site
   // found after registration_checked_at and the per-pass failure branch). No other writer touches
   // this column.
-  lifecycle_observed_at DateTime?
+  lifecycle_observed_at          DateTime?
 
   // Provider presence, independent of the pass's validity (`status` above): set once Admitto has
   // confirmed the remote pass is gone - only ever by a successful delete at the provider (2xx or
@@ -431,7 +446,7 @@ model WalletPass {
   // every registration count and first_confirmed_at on it, stays as historical data; nothing
   // provider-facing (sync, void, restore, push, ...) may touch a row with this set. Null = the
   // remote pass is still managed by Admitto.
-  provider_removed_at DateTime?
+  provider_removed_at   DateTime?
   // When Admitto last sent the provider a command that changes the pass's validity (void,
   // restore). A provider read within the provider's own consistency window after this may still
   // show the state from before the command, so reconciliation ignores it (see

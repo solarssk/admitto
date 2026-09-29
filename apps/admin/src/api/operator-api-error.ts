@@ -226,6 +226,12 @@ export const CODE_MESSAGES: Record<string, string> = {
   url_required: "URL is required.",
   "user id required": "User ID is missing from the request.",
   validation_error: "Check the form and try again.",
+  wallet_expiration_mode_locked:
+    "Can't be turned off once wallet passes have been issued for this event - PassCreator has no live-verified way to clear an already-sent expiration date.",
+  wallet_expiration_mode_not_supported:
+    "This template doesn't support a per-pass expiration date. Check its PassCreator template settings ('Different for each pass' under Expiration), then Test connection again.",
+  wallet_expiration_mode_requires_template:
+    "Set a Template ID and API key before turning this on - they're needed to confirm the template supports per-pass expiration.",
   wallet_not_configured: "Wallet isn't configured for this event.",
   wallet_pass_changed: "This wallet pass changed while updating. Reload and try again.",
   wallet_pass_inactive: "This wallet pass is no longer active, so there is nothing to refresh.",
@@ -241,6 +247,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   wallet_provider_timeout: "The wallet provider didn't respond in time. Try again.",
   wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
   wallet_restore_closed: "This event is over, so a voided wallet pass can no longer be restored.",
+  wallet_restore_expired: "This wallet pass has already reached its expiration date, so it can no longer be restored.",
   wallet_push_already_running: "A push is already running for this event. Try again once it finishes.",
   wallet_cleanup_already_running: "A wallet clean-up job is already running for this event. Try again once it finishes.",
   wallet_status_check_inconclusive: "Could not confirm the wallet pass status. Try again shortly.",

@@ -253,6 +253,33 @@ describe("buildWalletPassInput — relevantDate (PassCreator Lock Screen surfaci
   });
 });
 
+describe("buildWalletPassInput — expirationDate (plan v4.2 step 6 canonical expiry)", () => {
+  it("is omitted when walletExpirationMode is 'none' (the default)", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { walletExpirationMode: "none" } }), "b");
+    expect(input.expirationDate).toBeUndefined();
+  });
+
+  it("is omitted when walletExpirationMode is absent entirely", () => {
+    const input = buildWalletPassInput(fullResolved(), "b");
+    expect(input.expirationDate).toBeUndefined();
+  });
+
+  it("sends the event's own end-of-day wall-clock digits when walletExpirationMode is 'event_end'", () => {
+    // eventHoursEnd is "18:00" in fullResolved's fixture - eventEndsAtLocal anchors to that, same
+    // day, not midnight (no overnight rollover here).
+    const input = buildWalletPassInput(fullResolved({ event: { walletExpirationMode: "event_end" } }), "b");
+    expect(input.expirationDate).toBe("2026-09-24 18:00");
+  });
+
+  it("rolls over to the next day at midnight when the event has no end time and is 'event_end'", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { walletExpirationMode: "event_end", eventHoursEnd: null } }),
+      "b",
+    );
+    expect(input.expirationDate).toBe("2026-09-25 00:00");
+  });
+});
+
 describe("buildWalletPassInput — ticket status placeholder", () => {
   it("is 'Valid' for a registered attendee not yet checked in", () => {
     const input = buildWalletPassInput(fullResolved({ attendee: { status: "registered", admitted_at: null } }), "b");

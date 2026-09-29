@@ -136,6 +136,13 @@ export function toPassCreatorData(
     // (PassCreator docs, POST /api/v3/pass). Omitted (not sent as an explicit null/empty string)
     // when Admitto has no start time to anchor it to.
     ...(input.relevantDate ? { relevantDate: input.relevantDate } : {}),
+    // Top-level, same convention as relevantDate - not the template's own nested
+    // `expiration.expirationDate` (a different resource, GET .../pass-template/{id}/describe).
+    // Omitted (not an explicit null) when the event's wallet_expiration_mode isn't "event_end" -
+    // per-pass expirationDate is ignored anyway when the template has
+    // expirationDateDifferentForEachPass:false (confirmed live 2026-09-28), so sending nothing at
+    // all when Admitto has no canonical expiry to assert is the more honest default regardless.
+    ...(input.expirationDate ? { expirationDate: input.expirationDate } : {}),
   };
 
   if (!fieldMapping) return base;
@@ -178,7 +185,12 @@ export function toPassCreatorData(
  * list (plus its own event_date/event_date_short) - it's the day every one of those is anchored to
  * (`formatEventHours`'s own date param, and `zonedDateTimeToIso(event.date, ...)` for every venue
  * access-point time), so a reschedule can shift all of them even when a template only maps one
- * venue time placeholder and neither event_date placeholder (bot review).
+ * venue time placeholder and neither event_date placeholder (bot review). `wallet_expiration_mode`
+ * has no placeholder of its own either - `expirationDate` (packages/tickets/src/
+ * wallet-pass-input.ts's computeExpirationDate) is a top-level PassCreator field sent unconditionally
+ * whenever the mode is "event_end", never gated on any Additional Property mapping, same reasoning
+ * as `wallet_apple_enabled`/relevantDate - callers treat any real change to it as relevant directly,
+ * without consulting this table (event-settings-routes.ts's walletRelevantEventFieldsChanged).
  */
 export const EVENT_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
   title: ["event_name"],
@@ -208,6 +220,7 @@ export const EVENT_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
   event_hours_end: ["event_hours"],
   event_type: ["event_type"],
   wallet_apple_enabled: [],
+  wallet_expiration_mode: [],
 };
 
 /** Location counterpart of {@link EVENT_FIELD_PLACEHOLDERS}. `venue_name` feeds `event_location`

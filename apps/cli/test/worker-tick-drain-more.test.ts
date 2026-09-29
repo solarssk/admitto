@@ -28,6 +28,7 @@ const runWalletRegistrationSync = vi.fn(async () => ({
   skippedNoProvider: 0,
   failed: 0,
 }));
+const runWalletExpiry = vi.fn(async () => ({ expired: 0 }));
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},
@@ -64,6 +65,7 @@ vi.mock("../src/commands/wallet-refresh-status-jobs.js", () => ({ drainWalletRef
 vi.mock("../src/commands/wallet-cleanup-jobs.js", () => ({ drainWalletCleanupJobs }));
 vi.mock("../src/commands/wallet-message-jobs.js", () => ({ drainWalletMessageJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
+vi.mock("../src/commands/wallet-expire.js", () => ({ runWalletExpiry }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
 const { runWorkerTick } = await import("../src/commands/worker.js");

@@ -52,6 +52,17 @@ export interface WalletPassInput {
    * event has a start time and Apple Wallet is enabled (ADR 0009 data minimization: omitted when
    * there's no start time). */
   relevantDate?: string;
+  /** PassCreator's top-level `expirationDate` ("Y-m-d H:i", local wall-clock digits, no offset,
+   * same convention as `relevantDate` above - there is no separate provider-timezone field, plan
+   * v4.2's own PR 2b having been dropped, so this assumes the PassCreator account's own
+   * company-settings timezone matches this event's timezone). Set only when the event's
+   * wallet_expiration_mode is "event_end" (computeExpirationDateLabel,
+   * packages/tickets/src/wallet-pass-input.ts) - the provider adapter must only send this when
+   * present, never clear a previously-sent expirationDate by omitting it (untested against a real
+   * account: the only template on the dev account has expirationDateDifferentForEachPass:false,
+   * so a per-pass expirationDate is silently ignored there - see the WalletProviderCapabilities'
+   * own perPassExpiration flag below, which gates the whole event_end mode in the UI). */
+  expirationDate?: string;
   /** Apple PKEventType literal (e.g. "PKEventTypeSports") derived from Event.event_type - a
    * WALLET_MAPPING_PLACEHOLDERS entry like every field below, not sent automatically; PassCreator
    * only reads it once an admin maps this placeholder to a Custom Field bound in that template's
