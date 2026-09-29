@@ -20,15 +20,12 @@ import {
 } from "@admitto/auth";
 import { describeMailConfigForOrg, MailConfigError, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
-import {
-  evaluateBounceIngestHealth,
-  parseBounceIngestTickSeconds,
-  workerHeartbeatStaleMs,
-} from "@admitto/mail-delivery";
+import { evaluateBounceIngestHealth, parseBounceIngestTickSeconds } from "@admitto/mail-delivery";
 import type { GeocodingProvider } from "@admitto/location";
 import { resolveUploadDir } from "@admitto/storage";
 import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import { collectSetupChecks, type SetupCheckResult } from "./setup-checks-routes.js";
+import { checkWorkerHeartbeat } from "./worker-heartbeat.js";
 import { collectGauges, checkMailer, checkDatabase } from "../ops/readyz.js";
 import { resolveProductVersion } from "../ops/product-version.js";
 import { readAdminBuildMeta } from "./admin-build-meta.js";
@@ -1424,13 +1421,8 @@ async function backgroundWorkerRow(
   now: Date,
   env: NodeJS.ProcessEnv,
 ): Promise<HealthCheckRow> {
-  const tickSeconds = parseBounceIngestTickSeconds(env);
-  const staleMs = workerHeartbeatStaleMs(tickSeconds);
-  const beat = await db.backgroundWorkerHeartbeat.findUnique({
-    where: { id: "default" },
-    select: { last_beat_at: true, hostname: true },
-  });
-  if (!beat) {
+  const heartbeat = await checkWorkerHeartbeat(db, now, env);
+  if (heartbeat.state === "never_ran") {
     return {
       id: "background_worker",
       label: "Background worker",
@@ -1443,8 +1435,7 @@ async function backgroundWorkerRow(
       ]),
     };
   }
-  const ageMs = now.getTime() - beat.last_beat_at.getTime();
-  if (ageMs > staleMs) {
+  if (heartbeat.state === "stale") {
     return {
       id: "background_worker",
       label: "Background worker",
@@ -1453,9 +1444,9 @@ async function backgroundWorkerRow(
       details: detailsFromEntries([
         ["status", "degraded"],
         ["reason", "stale"],
-        ["last_beat_at", beat.last_beat_at.toISOString()],
-        ["hostname", beat.hostname ?? ""],
-        ["stale_after_ms", String(staleMs)],
+        ["last_beat_at", heartbeat.lastBeatAt.toISOString()],
+        ["hostname", heartbeat.hostname ?? ""],
+        ["stale_after_ms", String(heartbeat.staleAfterMs)],
         ["last_checked", checkedAt],
       ]),
     };
@@ -1467,8 +1458,8 @@ async function backgroundWorkerRow(
     summary: "Worker heartbeat is fresh",
     details: detailsFromEntries([
       ["status", "ok"],
-      ["last_beat_at", beat.last_beat_at.toISOString()],
-      ["hostname", beat.hostname ?? ""],
+      ["last_beat_at", heartbeat.lastBeatAt.toISOString()],
+      ["hostname", heartbeat.hostname ?? ""],
       ["last_checked", checkedAt],
     ]),
   };

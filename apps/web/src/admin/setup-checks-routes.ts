@@ -7,6 +7,7 @@ import { checkMigrationsStatus } from "../ops/migrations-check.js";
 import { checkRedis } from "../ops/readyz.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { normalizePersistedInstanceUrl, normalizeRuntimeBaseUrl } from "../instance-base-url.js";
+import { checkWorkerHeartbeat } from "./worker-heartbeat.js";
 
 /** `reason` distinguishes *why* a check is down, currently only set by the database check
  * — a connection failure and "connected but can't confirm migrations are current" are both
@@ -26,6 +27,11 @@ export type SetupChecksPayload = {
     encryption: SetupCheckResult;
     base_url: SetupCheckResult;
   };
+  /** Background worker heartbeat — a sibling of `checks`, not a member of it: it's shown on
+   * the topbar pill next to the other four, but deliberately excluded from `setupChecksAllOk`'s
+   * wizard-completion gate, since Admitto is usable without a worker running (mail delivery,
+   * import/export, and bounce ingest just queue up instead of failing outright). */
+  worker: SetupCheckResult;
 };
 
 /** Shared "this simple probe took too long" cutoff for the database `SELECT 1` and the Redis
@@ -166,6 +172,35 @@ async function checkInstanceUrl(
   };
 }
 
+/** Background worker heartbeat, mapped to the topbar's ok/warn vocabulary. Never `ok: false` —
+ * a missing or stale worker degrades mail delivery, import/export, and bounce ingest, it
+ * doesn't break the app itself, so this reads the same "degraded" severity as the Health check
+ * tab's `background_worker` row, never "down". */
+export async function checkWorker(
+  db: PrismaClient,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SetupCheckResult> {
+  const heartbeat = await checkWorkerHeartbeat(db, new Date(), env).catch(() => null);
+  if (heartbeat === null) {
+    return { ok: true, warn: true, detail: "Could not read the worker heartbeat" };
+  }
+  if (heartbeat.state === "never_ran") {
+    return {
+      ok: true,
+      warn: true,
+      detail: "Worker has never reported a heartbeat. Run npm run worker or the compose worker service.",
+    };
+  }
+  if (heartbeat.state === "stale") {
+    return {
+      ok: true,
+      warn: true,
+      detail: `Worker heartbeat is stale (last seen ${heartbeat.lastBeatAt.toISOString()})`,
+    };
+  }
+  return { ok: true, detail: `Worker heartbeat is fresh (last seen ${heartbeat.lastBeatAt.toISOString()})` };
+}
+
 /** Redis result for a ping that didn't error (caller already handled `"degraded"`). */
 function describeAvailableRedis(status: "ok" | "disabled", latencyMs: number): SetupCheckResult {
   if (status === "disabled") {
@@ -217,7 +252,8 @@ export async function handleGetSetupChecks(
   }
 
   const checks = await collectSetupChecks(db, rateLimitStore, injectedBaseUrl);
-  const payload: SetupChecksPayload = { checks };
+  const worker = await checkWorker(db);
+  const payload: SetupChecksPayload = { checks, worker };
 
   return c.json(payload, 200);
 }

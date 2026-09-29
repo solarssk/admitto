@@ -1646,6 +1646,9 @@ export interface SetupCheckResult {
 
 export interface SetupChecksResponse {
   checks: Record<SetupCheckKey, SetupCheckResult>;
+  /** Background worker heartbeat — a sibling of `checks`, not a wizard-gating key (see
+   * `SetupCheckKey`'s scope), shown only on the topbar pill (SystemStatus.tsx). */
+  worker: SetupCheckResult;
 }
 
 export type HealthDetailDto = { key: string; value: string };
