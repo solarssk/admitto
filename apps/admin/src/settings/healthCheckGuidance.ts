@@ -202,6 +202,16 @@ function weatherGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   if (check.status === "degraded" && liveCheck === undefined && detailValue(check, "reason") === undefined) {
     return weatherSupportContactGuidance();
   }
+  // A successful but slow live probe (weatherLiveOkRow(), latency at or above
+  // WEATHER_DEGRADED_MS) is also degraded, with live_check=ok rather than missing entirely.
+  if (check.status === "degraded" && liveCheck === "ok") {
+    return {
+      impact: "Weather forecasts may be slow to load.",
+      nextStep:
+        "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    };
+  }
   if (check.status === "down" && liveCheck !== undefined && WEATHER_UNREACHABLE_LIVE_CHECKS.has(liveCheck)) {
     return {
       impact: "Weather forecasts may be missing.",

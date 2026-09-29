@@ -326,6 +326,24 @@ describe("healthCheckGuidance", () => {
     });
   });
 
+  it("gives weather degraded/live_check=ok the slow-forecast guidance", () => {
+    // weatherLiveOkRow(): a successful but slow live probe (latency >= WEATHER_DEGRADED_MS)
+    // is degraded with live_check=ok, not missing entirely - a different shape from both the
+    // support-contact case (no live_check) and the unreachable case (live_check=failed/etc).
+    const guidance = healthCheckGuidance(
+      checkRow("weather", "degraded", [
+        { key: "live_check", value: "ok" },
+        { key: "latency_ms", value: "2000" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      impact: "Weather forecasts may be slow to load.",
+      nextStep:
+        "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    });
+  });
+
   it("gives bounce_ingest degraded with no reason key the shared bounce guidance", () => {
     const guidance = healthCheckGuidance(
       checkRow("bounce_ingest", "degraded", [
