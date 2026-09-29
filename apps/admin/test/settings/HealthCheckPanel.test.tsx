@@ -838,7 +838,7 @@ describe("HealthCheckPanel", () => {
     const detailsEl = body.querySelector(".health-check__details");
     expect(guidanceEl).toBeTruthy();
     if (detailsEl) {
-      expect(guidanceEl?.compareDocumentPosition(detailsEl) === Node.DOCUMENT_POSITION_FOLLOWING).toBe(true);
+      expect(guidanceEl?.compareDocumentPosition(detailsEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     }
   });
 
