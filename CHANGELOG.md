@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The workflows that mint a token from the release GitHub App now pass its Client ID (`client-id`) instead of the deprecated numeric App ID (`app-id`), which removes a deprecation warning from every release, wiki and Scorecard run. Nothing changes for operators or attendees.
 - The automated pull request review now runs on the maintainer's Claude subscription instead of per-token API billing, stops after 6 automated review attempts on one pull request or 40 in a day, counting failed attempts too (a manual re-run of the job bypasses this), and posts a plain comment, without approving, when it cannot run because a limit was reached or the service failed. Nothing changes for operators or attendees.
 - The **AI review backtest** workflow now takes an optional reasoning effort (`low` to `xhigh`) for the reviewer, so how deep it thinks can be measured against its cost on past changes. Nothing changes for operators or attendees.
 - A new manual workflow, **AI review backtest**, runs the automated pull request review against past changes whose real defects are already known and prints what it would have said, without posting anything, so a change to the reviewer's prompt can be measured before it goes live. The reviewer's prompt, output schema and diff builder now live in `.github/ai-review/`. Nothing changes for operators or attendees.
