@@ -965,6 +965,29 @@ function walletRelevantEventFieldsChanged(
   });
 }
 
+/** True when the save actually changed the event's canonical expiration - wallet_expiration_mode
+ * itself, or (while that mode is "event_end") one of the same date/hours/timezone fields
+ * EVENT_END_DATE_FIELDS names above. Deliberately narrower than walletRelevantEventFieldsChanged:
+ * a title/location/event_type save is wallet-relevant (refreshes card content) but has nothing to
+ * do with expiration, so it must not also reach voided passes - only these two cases can leave a
+ * voided pass's own expires_at/expirationDate stale or never-set (architect review: "Include
+ * voided passes when enabling event-end expiration" - reissueOneWalletPass already updates
+ * content/expires_at without touching status/voided_at, so it's safe to target a voided pass with
+ * it, just not useful for an unrelated save). */
+function expirationRelevantFieldsChanged(
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot,
+): boolean {
+  if (existing.wallet_expiration_mode !== updated.wallet_expiration_mode) return true;
+  if (updated.wallet_expiration_mode !== "event_end") return false;
+  return (
+    existing.date.getTime() !== updated.date.getTime() ||
+    existing.event_hours_start !== updated.event_hours_start ||
+    existing.event_hours_end !== updated.event_hours_end ||
+    existing.timezone !== updated.timezone
+  );
+}
+
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass's
  * name/ticket type/event details whenever a save actually changes one of the wallet-relevant
  * fields (PO report, 2026-08-13: "the system already knows the wallet is on, so when hours/name
@@ -992,7 +1015,8 @@ async function pushWalletUpdatesBestEffort(
   if (!walletRelevantEventFieldsChanged(existing, updated, parseWalletFieldMapping(updated.wallet_field_mapping))) return;
   if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
 
-  await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings");
+  const includeVoided = expirationRelevantFieldsChanged(existing, updated);
+  await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings", includeVoided);
 }
 
 /** Blocks a wallet credential change that would silently orphan already-issued passes.

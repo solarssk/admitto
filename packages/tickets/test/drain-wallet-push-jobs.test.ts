@@ -422,6 +422,40 @@ describe("drainWalletPushJobs", () => {
       });
     });
 
+    it("also loads voided passes when the request carries includeVoided: true (expiration-relevant save)", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({
+          result_json: { request: { kind: "event_wide", eventId: "evt-1", reason: "settings", includeVoided: true } },
+        }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued").mockResolvedValueOnce("skipped");
+
+      await drainWalletPushJobs(db as never);
+
+      expect(db.walletPass.findMany).toHaveBeenCalledWith({
+        where: { status: { in: ["active", "voided"] }, provider_pass_id: { not: null }, attendee: { event_id: "evt-1" } },
+        select: { attendee_id: true, provider_pass_id: true },
+      });
+    });
+
+    it("preserves includeVoided through the success write-back, not just the initial insert", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({
+          result_json: { request: { kind: "event_wide", eventId: "evt-1", reason: "settings", includeVoided: true } },
+        }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued");
+
+      await drainWalletPushJobs(db as never);
+
+      const finalCall = db.adminJob.update.mock.calls.find(
+        (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+      );
+      expect(finalCall![0].data.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: "evt-1", reason: "settings", includeVoided: true },
+      });
+    });
+
     it("preserves the trigger reason through the success write-back, not just the initial insert", async () => {
       vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
         baseJob({

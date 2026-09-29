@@ -35,7 +35,7 @@ type WalletPushResultJson = {
  * WalletPushRequest - the history row still renders, just without this detail. */
 export type WalletPushHistoryScope =
   | { kind: "attendee_ids"; count: number }
-  | { kind: "event_wide"; reason: "location" | "settings" | "manual" | null };
+  | { kind: "event_wide"; reason: "location" | "settings" | "manual" | null; includeVoided: boolean };
 
 /** Re-validates the stored request via the same parser the drain worker itself trusts
  * (packages/tickets), rather than the loose WalletPushResultJson cast below - a single
@@ -45,7 +45,7 @@ function historyScope(job: { result_json: unknown }): WalletPushHistoryScope | n
   const request = readWalletPushRequest(job);
   if (!request) return null;
   if (request.kind === "attendee_ids") return { kind: "attendee_ids", count: request.attendeeIds.length };
-  return { kind: "event_wide", reason: request.reason ?? null };
+  return { kind: "event_wide", reason: request.reason ?? null, includeVoided: request.includeVoided ?? false };
 }
 
 /** Shared insert behind both enqueue helpers below - the two request kinds differ only in
@@ -97,11 +97,20 @@ export async function enqueueWalletPushJob(
  * current data) from one already running (may have already read its target set, so a manual
  * click coalescing with it silently would refresh nothing the operator's click asked for). Also
  * returns the job's own currently-stored reason, so a manual click that coalesces with a still-
- * pending automatic job can upgrade it (bot review: see enqueueEventWideWalletPushJob below). */
+ * pending automatic job can upgrade it (bot review: see enqueueEventWideWalletPushJob below).
+ * Also returns the job's currently-stored includeVoided, so that same upgrade write can carry it
+ * forward instead of silently dropping it back to false - unlike reason, includeVoided changes
+ * which passes the worker actually targets (see WalletPushRequest's own doc comment), so losing it
+ * on a reason-only overwrite would undo an expiration-relevant save's whole point. */
 async function findPendingEventWideWalletPushJob(
   db: PrismaClient,
   eventId: string,
-): Promise<{ id: string; status: string; reason: "location" | "settings" | "manual" | null } | null> {
+): Promise<{
+  id: string;
+  status: string;
+  reason: "location" | "settings" | "manual" | null;
+  includeVoided: boolean;
+} | null> {
   const job = await db.adminJob.findFirst({
     where: {
       event_id: eventId,
@@ -114,14 +123,16 @@ async function findPendingEventWideWalletPushJob(
   if (!job) return null;
   const request = readWalletPushRequest(job);
   const reason = request?.kind === "event_wide" ? (request.reason ?? null) : null;
-  return { id: job.id, status: job.status, reason };
+  const includeVoided = request?.kind === "event_wide" ? (request.includeVoided ?? false) : false;
+  return { id: job.id, status: job.status, reason, includeVoided };
 }
 
-/** Enqueues a wallet_push job for every already-issued active pass under the event - event
- * settings / location saves, where the affected set has no operator-picked selection to bound
- * it. No no-op case to check for here (unlike enqueueWalletPushJob above): the job drain itself
- * resolves the target set at run time, so an event with zero issued passes just finishes with
- * `reissued: 0` rather than never having been worth creating.
+/** Enqueues a wallet_push job for every already-issued active pass under the event (also voided
+ * ones when `includeVoided` - see WalletPushRequest's own doc comment) - event settings / location
+ * saves, where the affected set has no operator-picked selection to bound it. No no-op case to
+ * check for here (unlike enqueueWalletPushJob above): the job drain itself resolves the target
+ * set at run time, so an event with zero issued passes just finishes with `reissued: 0` rather
+ * than never having been worth creating.
  *
  * Deduplicates against any pending/running *event_wide* wallet_push job for this event instead
  * of creating a new one - unlike enqueueWalletPushJob above (an explicit operator click), this is
@@ -150,34 +161,46 @@ async function findPendingEventWideWalletPushJob(
  * otherwise vanish from the operator's perspective: the click reports success, but the job's own
  * stored reason keeps showing whichever save queued it first, so the history list never reflects
  * that a manual push was ever requested (bot review). `reason` is display-only (see
- * WalletPushRequest's own docstring in packages/tickets - the drain worker never reads it and
- * both event_wide triggers resolve the same target set regardless), so upgrading it in place is
- * safe - best-effort and scoped to status still being "pending" at write time (not just at the
- * read above) so a worker that claims the job in between isn't racing this write and having its
- * own final result_json (reissued/skipped/errored) clobbered; losing that race just leaves the
- * job's reason as-is, same self-heals-on-next-occurrence tradeoff already accepted elsewhere in
- * this file. Only upgrades toward "manual", never away from it - an automatic save coalescing
- * with an existing manual pending job doesn't call this branch at all (reason !== "manual"). */
+ * WalletPushRequest's own docstring in packages/tickets - the drain worker never reads it), so
+ * upgrading it in place is safe - best-effort and scoped to status still being "pending" at write
+ * time (not just at the read above) so a worker that claims the job in between isn't racing this
+ * write and having its own final result_json (reissued/skipped/errored) clobbered; losing that
+ * race just leaves the job's reason as-is, same self-heals-on-next-occurrence tradeoff already
+ * accepted elsewhere in this file. Only upgrades toward "manual", never away from it - an
+ * automatic save coalescing with an existing manual pending job doesn't call this branch at all
+ * (reason !== "manual"). The existing job's own includeVoided is carried through unchanged (see
+ * findPendingEventWideWalletPushJob's own doc comment): unlike reason, it changes which passes get
+ * targeted, so this reason-only upgrade must not silently reset it to false. */
 export async function enqueueEventWideWalletPushJob(
   db: PrismaClient,
   c: Context,
   eventId: string,
   organizationId: string,
   reason?: "location" | "settings" | "manual",
+  includeVoided?: boolean,
 ): Promise<{ jobId: string; alreadyRunning: boolean }> {
   const existing = await findPendingEventWideWalletPushJob(db, eventId);
   if (existing) {
     if (reason === "manual" && existing.status === "pending" && existing.reason !== "manual") {
       await db.adminJob.updateMany({
         where: { id: existing.id, status: "pending" },
-        data: { result_json: { request: { kind: "event_wide", eventId, reason: "manual" } } },
+        data: {
+          result_json: {
+            request: { kind: "event_wide", eventId, reason: "manual", includeVoided: existing.includeVoided },
+          },
+        },
       });
     }
     return { jobId: existing.id, alreadyRunning: existing.status === "running" };
   }
 
   try {
-    const jobId = await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
+    const jobId = await createWalletPushJob(db, c, eventId, organizationId, {
+      kind: "event_wide",
+      eventId,
+      reason,
+      includeVoided,
+    });
     return { jobId, alreadyRunning: false };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {

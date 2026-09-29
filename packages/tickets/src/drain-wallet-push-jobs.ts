@@ -45,16 +45,23 @@ export type DrainWalletPushJobsResult = {
 
 /** `attendee_ids` is an operator-bounded selection (e.g. bulk ticket-type change) - the request
  * carries exactly which attendees to push, and a target with no resolvable pass is a "skip", not
- * an error. `event_wide` is every already-issued *active* pass under the event (event settings /
- * location saves, with no selection cap) - there's no predetermined id list to diff against, so
- * every row the query finds simply *is* a target; a voided pass is deliberately excluded (matches
- * the previous best-effort push's own behaviour - refreshing a voided pass's content is not
- * useful background work). `reason` is display-only metadata for the history list (which
- * wallet-relevant save triggered this) - the drain worker itself never reads it, both event_wide
- * triggers resolve targets identically regardless of which field actually changed. */
+ * an error. `event_wide` is every already-issued pass under the event (event settings / location
+ * saves, with no selection cap) - there's no predetermined id list to diff against, so every row
+ * the query finds simply *is* a target. `reason` is display-only metadata for the history list
+ * (which wallet-relevant save triggered this) - the drain worker itself never reads it.
+ *
+ * `includeVoided` DOES change target selection (loadEventWideTargets below): a voided pass is
+ * excluded by default - matches the previous best-effort push's own behaviour, refreshing a
+ * voided pass's content is not useful background work - except when the save that triggered this
+ * push actually changed the event's canonical expiration (wallet_expiration_mode, or the event
+ * end date/hours/timezone while that mode is "event_end"). A voided pass's own local expires_at
+ * and provider-side expirationDate are otherwise never touched again after it's voided, so an
+ * enable or a reschedule of event_end must still reach it - reissueOneWalletPass already updates
+ * content/expires_at without touching the voided flag or status, so reusing it here is safe
+ * (event-settings-routes.ts computes this flag, not this file). */
 export type WalletPushRequest =
   | { kind: "attendee_ids"; eventId: string; attendeeIds: string[] }
-  | { kind: "event_wide"; eventId: string; reason?: "location" | "settings" | "manual" };
+  | { kind: "event_wide"; eventId: string; reason?: "location" | "settings" | "manual"; includeVoided?: boolean };
 
 type ClaimedWalletPushJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
@@ -76,7 +83,8 @@ export function readWalletPushRequest(job: { result_json: unknown }): WalletPush
   if (req.kind === "event_wide") {
     const reason =
       req.reason === "location" || req.reason === "settings" || req.reason === "manual" ? req.reason : undefined;
-    return { kind: "event_wide", eventId: req.eventId, reason };
+    const includeVoided = typeof req.includeVoided === "boolean" ? req.includeVoided : undefined;
+    return { kind: "event_wide", eventId: req.eventId, reason, includeVoided };
   }
   if (req.kind !== "attendee_ids") return null;
   if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
@@ -126,14 +134,20 @@ async function loadTargets(
   return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
 }
 
-/** Every already-issued *active* pass under the event - see WalletPushRequest's own doc comment
- * for why `status: "active"` is deliberate here but not in loadTargets above. */
+/** Every already-issued active pass under the event, plus voided ones too when `includeVoided` -
+ * see WalletPushRequest's own doc comment for why `status` is not unconditionally "active" here
+ * (unlike loadTargets above, which is never event-wide and never needs this). */
 async function loadEventWideTargets(
   db: PrismaClient,
   eventId: string,
+  includeVoided: boolean,
 ): Promise<{ attendeeId: string; providerPassId: string }[]> {
   const rows = await db.walletPass.findMany({
-    where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: eventId } },
+    where: {
+      status: includeVoided ? { in: ["active", "voided"] } : "active",
+      provider_pass_id: { not: null },
+      attendee: { event_id: eventId },
+    },
     select: { attendee_id: true, provider_pass_id: true },
   });
   return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
@@ -237,7 +251,9 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
     // event_wide has no predetermined id list to diff targets against - the query result *is*
     // the full selection, so there's nothing to count as "requested but no pass" (always 0).
     const targets =
-      request.kind === "event_wide" ? await loadEventWideTargets(db, eventId) : await loadTargets(db, eventId, request.attendeeIds);
+      request.kind === "event_wide"
+        ? await loadEventWideTargets(db, eventId, request.includeVoided ?? false)
+        : await loadTargets(db, eventId, request.attendeeIds);
     const skippedNoPass = request.kind === "event_wide" ? 0 : request.attendeeIds.length - targets.length;
 
     // Denominator is the full selection, not just targets.length - keeps progress_total and the

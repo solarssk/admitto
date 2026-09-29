@@ -1375,7 +1375,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
       await prisma.adminJob.deleteMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
     });
 
-    it("enqueues an event-wide wallet_push job when a wallet-relevant field (title) changes", async () => {
+    it("enqueues an event-wide wallet_push job when a wallet-relevant field (title) changes, without including voided passes (unrelated to expiration)", async () => {
       const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
         method: "PATCH",
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -1391,6 +1391,8 @@ describe("PATCH /api/admin/events/:eventId", () => {
         status: "pending",
         result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT, reason: "settings" } },
       });
+      const request = (jobs[0]!.result_json as { request: { includeVoided?: boolean } }).request;
+      expect(request.includeVoided).toBeFalsy();
     });
 
     it("enqueues an event-wide wallet_push job when event_type is changed", async () => {
@@ -1440,7 +1442,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
-    it("enqueues an event-wide wallet_push job when wallet_expiration_mode is turned on (plan v4.2 step 6 - bypasses the field-mapping gate entirely)", async () => {
+    it("enqueues an event-wide wallet_push job when wallet_expiration_mode is turned on (plan v4.2 step 6 - bypasses the field-mapping gate entirely), including already-voided passes (architect review: their own expires_at/expirationDate would otherwise never get set)", async () => {
       vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockResolvedValueOnce({
         name: "Wallet Push Gala",
         perPassExpirationReady: true,
@@ -1457,7 +1459,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
         expect(jobs).toHaveLength(1);
         expect(jobs[0]).toMatchObject({
           status: "pending",
-          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT, includeVoided: true } },
         });
       } finally {
         await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_expiration_mode: "none" } });
@@ -1469,7 +1471,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
     // of PUSH_EVENT's own field mapping (name -> event_name, kind -> event_type - neither maps
     // event_hours/event_date). Without this fix, rescheduling under event_end mode left every
     // already-issued pass on the previous expirationDate/expires_at.
-    it("enqueues an event-wide wallet_push job when event_hours_end changes under event_end mode, even though event_hours isn't mapped", async () => {
+    it("enqueues an event-wide wallet_push job when event_hours_end changes under event_end mode, even though event_hours isn't mapped, including already-voided passes (their own expires_at must move with the reschedule too)", async () => {
       await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_expiration_mode: "event_end" } });
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
@@ -1481,6 +1483,8 @@ describe("PATCH /api/admin/events/:eventId", () => {
         expect(res.status).toBe(200);
         const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
         expect(jobs).toHaveLength(1);
+        const request = (jobs[0]!.result_json as { request: { includeVoided?: boolean } }).request;
+        expect(request.includeVoided).toBe(true);
       } finally {
         await prisma.event.update({
           where: { id: PUSH_EVENT },
