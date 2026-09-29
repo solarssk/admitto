@@ -87,7 +87,7 @@ Active automated checks in this repository:
   `security-extended` remains the primary gate, and Semgrep is the complementary second engine, on
   PRs and `main` alike.
 
-**Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), `migration-safety`, `wiki-docs`, `semgrep`, and `dependency-review`. All eight must pass before a PR can merge.
+**Required merge checks on `main`:** GitHub branch protection requires the checks named **Build and test gate**, **Secret scan**, **PII guard (no real personal data)**, **Code security scan (CodeQL)**, **Database migration safety**, **Wiki docs - sync and links**, **Code security scan (Semgrep)**, and **Dependency and license review** (job ids `build-test`, `secret-scan`, `pii-guard`, `analyze`, `migration-safety`, `wiki-docs`, `semgrep`, `dependency-review`). All eight must pass before a PR can merge.
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the

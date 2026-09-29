@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   analyze:
+    name: Code security scan (CodeQL)
     runs-on: ubuntu-latest
     permissions:
       contents: read
