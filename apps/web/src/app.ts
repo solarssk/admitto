@@ -1035,14 +1035,38 @@ export function createApp(options: CreateAppOptions = {}) {
      * "wallet_credential_changed" (markActive's own mid-request Template ID race guard above) is
      * not a real WalletProviderErrorCode - PassCreator never rejected anything, Admitto is the
      * one refusing to keep this result - but it's stored in the same last_error_code column and
-     * shown the same way, so accepting it here avoids a second, near-identical write path. */
+     * shown the same way, so accepting it here avoids a second, near-identical write path.
+     *
+     * walletCreateLocks (above) only serializes calls within this one `app` instance - a second,
+     * horizontally-scaled instance racing the same attendee can still reach this function after
+     * this instance's own markActive already committed "active" (recoverDuplicatePass's retry is
+     * "in practice", not a guarantee - see its own doc comment). The write below is therefore
+     * conditional on the row not already being "active", the same "don't let the loser clobber
+     * the winner" shape as createOrRecoverPass's own duplicate recovery and the conditional
+     * updateMany in void-wallet-pass-at-provider.ts / remove-wallet-pass-from-provider.ts - a
+     * plain upsert here would otherwise overwrite a winner's row with status "failed" while
+     * leaving its issued_at set, a combination no other write path in this codebase produces
+     * (bot review, PR #1478). */
     async function markFailed(code: WalletProviderErrorCode | "wallet_credential_changed"): Promise<null> {
       try {
-        await db.walletPass.upsert({
-          where: { attendee_id: attendee.id },
-          create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
-          update: { status: "failed", last_error_code: code },
+        const { count } = await db.walletPass.updateMany({
+          where: { attendee_id: attendee.id, status: { not: "active" } },
+          data: { status: "failed", last_error_code: code },
         });
+        // No row matched: either none exists yet (create it), or a concurrent instance's
+        // markActive already holds "active" (the row exists but the guard above correctly
+        // skipped it). The two are told apart by attempting the insert and catching the unique
+        // constraint violation the second case throws - the same losing-write-becomes-a-no-op
+        // pattern already used for P2002 elsewhere in this file (e.g. wallet-push-routes.ts).
+        if (count === 0) {
+          await db.walletPass
+            .create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: code } })
+            .catch((createErr) => {
+              if (!(createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002")) {
+                throw createErr;
+              }
+            });
+        }
       } catch (upsertErr) {
         console.error("walletPass upsert (failed) failed:", upsertErr);
         recordSystemLog({

@@ -911,6 +911,69 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
+  // Regression (bot review, PR #1478): walletCreateLocks only serializes calls within one
+  // running `app` instance (its own doc comment) - it does nothing for a horizontally-scaled
+  // deployment, where a second instance can race the same attendee past PassCreator's own
+  // eventually-consistent duplicate check. If that second instance's duplicate-recovery lookup
+  // misses on both attempts (the real search-index-lag case recoverDuplicatePass's own doc
+  // comment describes), it falls through to markFailed - which must not be allowed to overwrite a
+  // winning instance's already-"active" row, leaving a WalletPass with status "failed" and
+  // issued_at still set: a combination no other write path in this codebase ever produces.
+  it("does not let a losing instance's markFailed clobber a winning instance's already-active row", async () => {
+    const winnerProvider = stubProvider();
+    const loserProvider = stubProvider();
+    loserProvider.createPass.mockRejectedValueOnce(
+      new WalletProviderError("wallet_provider_duplicate", "userProvidedId already exists"),
+    );
+    let releaseFirstLookup: (() => void) | undefined;
+    let firstLookupStarted: (() => void) | undefined;
+    const firstLookupStartedPromise = new Promise<void>((resolve) => {
+      firstLookupStarted = resolve;
+    });
+    // Both duplicate-recovery attempts miss - recoverDuplicatePass's real 1s delay between them is
+    // left unmocked (same as "retries the duplicate-recovery lookup once" above), so the winner
+    // below gets a full, undisturbed window to create and commit its own pass in the meantime.
+    loserProvider.findByUserProvidedId.mockImplementationOnce(async () => {
+      firstLookupStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseFirstLookup = resolve;
+      });
+      return null;
+    });
+    loserProvider.findByUserProvidedId.mockResolvedValueOnce(null);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Two separate app instances - each gets its own walletCreateLocks Map, reproducing the exact
+    // gap that per-instance lock cannot close.
+    const winnerApp = makeApp(winnerProvider);
+    const loserApp = makeApp(loserProvider);
+
+    const loserRequest = loserApp.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+    // Parked mid-recovery, after its own "no row yet" read - the same starting point the real race
+    // begins from - and before it knows the duplicate is unrecoverable.
+    await firstLookupStartedPromise;
+
+    const winnerRes = await winnerApp.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+    expect(winnerRes.status).toBe(302);
+    const afterWinner = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(afterWinner?.status).toBe("active");
+    expect(afterWinner?.issued_at).not.toBeNull();
+
+    // Let the loser's stalled first lookup resolve (still null) and its real delayed retry run -
+    // both miss, so it now falls through to markFailed against a row that is already "active".
+    releaseFirstLookup?.();
+    const loserRes = await loserRequest;
+
+    expect(loserRes.status).toBe(302);
+    expect(loserRes.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    const final = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(final?.status).toBe("active");
+    expect(final?.issued_at?.getTime()).toBe(afterWinner?.issued_at?.getTime());
+    expect(final?.provider_pass_id).toBe(afterWinner?.provider_pass_id);
+    expect(final?.last_error_code).toBeNull();
+    errSpy.mockRestore();
+  });
+
   it("redirects with walletError=1 and logs when the walletPass lookup itself throws", async () => {
     const provider = stubProvider();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -961,7 +1024,9 @@ describe("On-demand wallet routes", () => {
       new WalletProviderError("wallet_provider_rejected", "boom"),
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(prisma.walletPass, "upsert").mockRejectedValueOnce(new Error("db down"));
+    // markFailed's own DB write is a guarded updateMany (not a plain upsert - see its doc
+    // comment), so that's the call this failure-path test needs to fail first.
+    vi.spyOn(prisma.walletPass, "updateMany").mockRejectedValueOnce(new Error("db down"));
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
