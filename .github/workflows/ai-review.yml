@@ -185,12 +185,16 @@ jobs:
             for changed behaviour. Style, naming and taste are not findings.
 
             A finding is blocking only if you can name the file, say what is wrong, and explain the
-            concrete way it fails. Do not pad. If you cannot verify a risky change from the diff and
-            the base code, that is a reason to comment, not to approve.
+            concrete way it fails. Do not pad. If a risky change is one you could check from the diff and
+            the base code but cannot settle, that is a reason to comment, not to approve. A dependency
+            on a setting, secret or branch rule you cannot see is the exception described above: it is
+            never a reason to comment.
 
             Decide the verdict:
-            - "approve": no blocking findings.
-            - "comment": at least one blocking finding, or you could not verify a risky change.
+            - "approve": no blocking findings. A dependency on a setting, secret or branch rule you
+              cannot see is not a blocking finding; mention it in the summary.
+            - "comment": at least one blocking finding, or a risky change in the code itself that you
+              could check but could not settle.
             Write `summary` in plain English, 2 to 5 sentences: what the change does and what you
             checked. Put every blocking finding in `blocking_findings`.
           claude_args: >-
