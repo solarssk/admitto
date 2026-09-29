@@ -1,0 +1,38 @@
+{
+ "type": "object",
+ "properties": {
+  "verdict": {
+   "type": "string",
+   "enum": [
+    "approve",
+    "comment"
+   ]
+  },
+  "summary": {
+   "type": "string"
+  },
+  "blocking_findings": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "file": {
+      "type": "string"
+     },
+     "issue": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "file",
+     "issue"
+    ]
+   }
+  }
+ },
+ "required": [
+  "verdict",
+  "summary",
+  "blocking_findings"
+ ]
+}

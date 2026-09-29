@@ -1,0 +1,84 @@
+{
+ "type": "object",
+ "properties": {
+  "verdict": {
+   "type": "string",
+   "enum": [
+    "approve",
+    "comment"
+   ]
+  },
+  "summary": {
+   "type": "string"
+  },
+  "blocking_findings": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "file": {
+      "type": "string"
+     },
+     "issue": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "file",
+     "issue"
+    ]
+   }
+  },
+  "unverified": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "scenarios": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "where": {
+      "type": "string"
+     },
+     "scenario": {
+      "type": "string"
+     },
+     "handled": {
+      "type": "string",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ]
+     },
+     "evidence": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "where",
+     "scenario",
+     "handled",
+     "evidence"
+    ]
+   }
+  },
+  "files_opened": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "required": [
+  "verdict",
+  "summary",
+  "blocking_findings",
+  "unverified",
+  "scenarios",
+  "files_opened"
+ ]
+}
