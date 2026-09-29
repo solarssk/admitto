@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { Badge, Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
 import type { NoticeVariant } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
@@ -18,6 +19,7 @@ import {
   visibleHealthDetails,
   workerLastSeenFact,
 } from "./healthCheckDisplay.js";
+import { healthCheckGuidance } from "./healthCheckGuidance.js";
 import { formatHealthCheckMarkdown } from "./healthCheckMarkdown.js";
 import "./health-check.css";
 
@@ -210,6 +212,7 @@ function HealthCheckRowView({
   const meta = rowStatusMeta(check.status);
   const workerFact = workerLastSeenFact(check, generatedAt);
   const details = visibleHealthDetails(check, timezone, workerFact !== null);
+  const guidance = healthCheckGuidance(check);
   return (
     <div
       className={[
@@ -256,15 +259,36 @@ function HealthCheckRowView({
           aria-hidden="true"
         />
       </button>
-      {expanded && details.length > 0 && (
-        <dl className="health-check__details">
-          {details.map((d) => (
-            <div key={d.key} className="health-check__detail">
-              <dt>{formatHealthDisplayLabel(d.key)}</dt>
-              <dd>{formatHealthDisplayValue(d.key, d.value, timezone)}</dd>
+      {expanded && (guidance || details.length > 0) && (
+        <div className="health-check__body">
+          {guidance && (
+            <div className="health-check__guidance">
+              <p>{guidance.impact}</p>
+              <p>
+                {guidance.nextStep}
+                {guidance.link && (
+                  <>
+                    {" "}
+                    <Link className="health-check__guidance-link" to={guidance.link.to}>
+                      {guidance.link.label}
+                      <i className="ti ti-arrow-right" aria-hidden="true" />
+                    </Link>
+                  </>
+                )}
+              </p>
             </div>
-          ))}
-        </dl>
+          )}
+          {details.length > 0 && (
+            <dl className="health-check__details">
+              {details.map((d) => (
+                <div key={d.key} className="health-check__detail">
+                  <dt>{formatHealthDisplayLabel(d.key)}</dt>
+                  <dd>{formatHealthDisplayValue(d.key, d.value, timezone)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
       )}
     </div>
   );
