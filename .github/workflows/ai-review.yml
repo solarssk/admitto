@@ -46,10 +46,12 @@ jobs:
 
     steps:
       # Debounce: a newer push cancels this run (concurrency above) while it is still waiting, so
-      # a burst of pushes costs one review, not one per push. Runner minutes are free on a public
-      # repo; the model tokens are what this saves.
+      # a quick series of pushes costs one review, not one per push. Runner minutes are free on a
+      # public repo; the model tokens are what this saves. Skipped on a manual re-run (attempt 2
+      # or later): nobody is pushing then, the maintainer is waiting for the result.
       - name: Wait for further pushes
-        run: sleep 240
+        if: ${{ github.run_attempt == 1 }}
+        run: sleep 60
 
       # No ref: on pull_request_target this is the base branch, never the PR head.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
