@@ -33,12 +33,12 @@ export const DEFAULT_WALLET_CLEANUP_JOB_STALE_RUNNING_MS = 30 * 60 * 1000;
 
 export const WALLET_CLEANUP_CONCURRENCY = 8;
 
-/** How long a voided pass sits before "Remove inactive passes" is allowed to remove it at the
+/** How long an inactive pass sits before "Remove inactive passes" is allowed to remove it at the
  * provider - a safety margin against removing (irreversible there) something an admin might still
- * restore, per the plan's own "Remove" grace rule. Counted from `voided_at` only: an expired pass
- * has no such reference point yet (the canonical `expires_at` column is a later step), so it does
- * not qualify for this job - Remove from provider on one attendee, or the bulk selection action,
- * still works on it directly. */
+ * restore, per the plan's own "Remove" grace rule. Counted from `voided_at` for a voided pass, or
+ * `expires_at` for an expired one (plan v4.2 step 6 - the canonical `expires_at` column) - a pass
+ * with neither reference point set does not qualify for this job (Remove from provider on one
+ * attendee, or the bulk selection action, still works on it directly). */
 export const WALLET_REMOVE_INACTIVE_GRACE_MS = 24 * 60 * 60 * 1000;
 
 export const WALLET_CLEANUP_JOB_TYPES = ["wallet_void_active", "wallet_remove_inactive"] as const;
@@ -133,13 +133,16 @@ async function loadActivePassTargets(db: PrismaClient, eventId: string): Promise
   return rows.map(mapRowToWalletCleanupTarget);
 }
 
-/** Every voided pass under the event, past its grace period, that still exists at the provider.
- * Expired passes are excluded (see WALLET_REMOVE_INACTIVE_GRACE_MS). */
+/** Every voided or expired pass under the event, past its own grace period (see
+ * WALLET_REMOVE_INACTIVE_GRACE_MS), that still exists at the provider. */
 async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string): Promise<WalletCleanupTarget[]> {
+  const cutoff = new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS);
   const rows = await db.walletPass.findMany({
     where: {
-      status: "voided",
-      voided_at: { lte: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS) },
+      OR: [
+        { status: "voided", voided_at: { lte: cutoff } },
+        { status: "expired", expires_at: { lte: cutoff } },
+      ],
       provider_pass_id: { not: null },
       provider_removed_at: null,
       attendee: { event_id: eventId },
@@ -159,10 +162,14 @@ async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string):
  *
  * A restore-then-void in that same window leaves the pass `voided` again, so the status check
  * alone would not catch it - but it also gives the pass a brand new `voided_at`, so the grace
- * period this job promises ("only touches a pass voided for at least a day") no longer applies to
- * it. The re-read checks `voided_at` against the same cutoff loadGracedInactivePassTargets used,
- * not just status, so a freshly re-voided pass is left for a later run instead of being removed
- * before its own new grace period has elapsed. */
+ * period this job promises ("only touches a pass inactive for at least a day") no longer applies
+ * to it. The re-read checks the anchor for the pass's current status - `voided_at` for voided,
+ * `expires_at` for expired - against the same cutoff loadGracedInactivePassTargets used, not just
+ * status, so a freshly re-voided pass is left for a later run instead of being removed before its
+ * own new grace period has elapsed. `expired` has no such re-triggering path (it is terminal -
+ * Restore is blocked once `expires_at <= now()`), so its own re-check exists for the same
+ * defense-in-depth reason as the status check itself: acting on a fresh read, not the one from
+ * listing time. */
 async function removeOneGracedInactivePass(
   db: PrismaClient,
   eventId: string,
@@ -175,6 +182,7 @@ async function removeOneGracedInactivePass(
     select: {
       status: true,
       voided_at: true,
+      expires_at: true,
       provider_removed_at: true,
       provider_commanded_at: true,
       user_provided_id: true,
@@ -182,10 +190,11 @@ async function removeOneGracedInactivePass(
   });
   if (!current || current.provider_removed_at) return "skipped";
   if (current.status !== "voided" && current.status !== "expired") return "skipped";
-  if (
-    current.status === "voided" &&
-    (!current.voided_at || current.voided_at.getTime() > Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS)
-  ) {
+  const cutoff = Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS;
+  if (current.status === "voided" && (!current.voided_at || current.voided_at.getTime() > cutoff)) {
+    return "skipped";
+  }
+  if (current.status === "expired" && (!current.expires_at || current.expires_at.getTime() > cutoff)) {
     return "skipped";
   }
 

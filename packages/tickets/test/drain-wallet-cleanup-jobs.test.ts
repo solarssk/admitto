@@ -364,7 +364,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     });
   });
 
-  it("queries voided passes past their grace period, not the ones still within it", async () => {
+  it("queries both voided and expired passes past their own anchor's grace period, not the ones still within it", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
 
     const before = Date.now();
@@ -374,14 +374,21 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     expect(claimNextAdminJob).toHaveBeenCalledWith(db, "wallet_remove_inactive");
     const where = db.walletPass.findMany.mock.calls[0]![0].where;
     expect(where).toMatchObject({
-      status: "voided",
       provider_pass_id: { not: null },
       provider_removed_at: null,
       attendee: { event_id: "evt-1" },
     });
-    const cutoff = (where.voided_at as { lte: Date }).lte.getTime();
-    expect(cutoff).toBeGreaterThanOrEqual(before - WALLET_REMOVE_INACTIVE_GRACE_MS);
-    expect(cutoff).toBeLessThanOrEqual(after - WALLET_REMOVE_INACTIVE_GRACE_MS);
+    expect(where.OR).toHaveLength(2);
+    const [votedClause, expiredClause] = where.OR as [
+      { status: string; voided_at: { lte: Date } },
+      { status: string; expires_at: { lte: Date } },
+    ];
+    expect(votedClause.status).toBe("voided");
+    expect(expiredClause.status).toBe("expired");
+    for (const cutoff of [votedClause.voided_at.lte.getTime(), expiredClause.expires_at.lte.getTime()]) {
+      expect(cutoff).toBeGreaterThanOrEqual(before - WALLET_REMOVE_INACTIVE_GRACE_MS);
+      expect(cutoff).toBeLessThanOrEqual(after - WALLET_REMOVE_INACTIVE_GRACE_MS);
+    }
   });
 
   it("re-reads each pass right before removing it, and passes the fresh state (not the stale listing) to removeOneWalletPassFromProvider", async () => {
@@ -403,6 +410,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
       select: {
         status: true,
         voided_at: true,
+        expires_at: true,
         provider_removed_at: true,
         provider_commanded_at: true,
         user_provided_id: true,
@@ -444,10 +452,11 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     expect(terminalWrite()).toMatchObject({ result_json: { done: 0, skipped: 1, errored: 0 } });
   });
 
-  it("still removes a pass that expired since the listing (Remove from provider also allows expired)", async () => {
+  it("still removes a pass that expired since the listing, past its own expires_at grace period", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
     db.walletPass.findFirst.mockResolvedValueOnce({
       status: "expired",
+      expires_at: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000),
       provider_removed_at: null,
       provider_commanded_at: null,
       user_provided_id: "admitto:evt-1:att-1",
@@ -463,6 +472,27 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
       expect.anything(),
       { eventWide: true },
     );
+  });
+
+  it.each([
+    ["expires_at is missing (no grace anchor)", { status: "expired", expires_at: null }],
+    [
+      "expires_at is still within its own grace period (regression)",
+      { status: "expired", expires_at: new Date() },
+    ],
+  ])("skips an expired pass whose %s, without calling the provider", async (_label, overrides) => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    db.walletPass.findFirst.mockResolvedValueOnce({
+      provider_removed_at: null,
+      provider_commanded_at: null,
+      user_provided_id: "admitto:evt-1:att-1",
+      ...overrides,
+    });
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(removeOneWalletPassFromProvider).not.toHaveBeenCalled();
+    expect(terminalWrite()).toMatchObject({ result_json: { done: 0, skipped: 1, errored: 0 } });
   });
 
   it("counts a non-'removed' outcome (already_removed/not_found/changed) as skipped, not an error", async () => {
