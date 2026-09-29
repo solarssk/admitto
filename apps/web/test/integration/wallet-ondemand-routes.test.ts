@@ -1050,6 +1050,57 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
+  it("updates an existing failed row's error code in place on a repeat failed attempt (no extra row created)", async () => {
+    // markFailed's guarded updateMany (where status is not "active") matches this row directly -
+    // the create-and-catch-P2002 fallback below it only runs when nothing matched, which must not
+    // happen here.
+    await prisma.walletPass.create({
+      data: { attendee_id: ATTENDEE_MODE_A_ID, status: "failed", last_error_code: "wallet_provider_duplicate" },
+    });
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_rejected", "boom again"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const createSpy = vi.spyOn(prisma.walletPass, "create");
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(createSpy).not.toHaveBeenCalled();
+    const rows = await prisma.walletPass.findMany({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("failed");
+    expect(rows[0]?.last_error_code).toBe("wallet_provider_rejected");
+    errSpy.mockRestore();
+  });
+
+  it("logs and redirects when the fallback create throws something other than a unique-constraint conflict", async () => {
+    // Distinguishes this from the P2002-is-ignored race-recovery path above: any other error out
+    // of that same create() call must still surface through the same catch-and-log every other
+    // write failure in this function goes through, not be swallowed alongside P2002.
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_rejected", "boom"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(prisma.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "wallet_pass_upsert_failed",
+        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID },
+      }),
+    );
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved).toBeNull();
+    errSpy.mockRestore();
+  });
+
   it("returns 500 (not the not-found page) when the Mode A ticket lookup fails", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
