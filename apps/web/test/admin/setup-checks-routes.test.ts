@@ -264,4 +264,16 @@ describe("checkWorker", () => {
 
     expect(result).toEqual({ ok: true, detail: expect.stringMatching(/fresh/i) });
   });
+
+  it("degrades to ok+warn instead of rejecting when the heartbeat lookup throws", async () => {
+    const db = {
+      backgroundWorkerHeartbeat: { findUnique: vi.fn().mockRejectedValue(new Error("connection refused")) },
+    } as unknown as PrismaClient;
+
+    const result = await checkWorker(db, {});
+
+    expect(result.ok).toBe(true);
+    expect(result.warn).toBe(true);
+    expect(result.detail).toMatch(/could not read the worker heartbeat/i);
+  });
 });

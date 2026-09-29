@@ -180,7 +180,10 @@ export async function checkWorker(
   db: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<SetupCheckResult> {
-  const heartbeat = await checkWorkerHeartbeat(db, new Date(), env);
+  const heartbeat = await checkWorkerHeartbeat(db, new Date(), env).catch(() => null);
+  if (heartbeat === null) {
+    return { ok: true, warn: true, detail: "Could not read the worker heartbeat" };
+  }
   if (heartbeat.state === "never_ran") {
     return {
       ok: true,
