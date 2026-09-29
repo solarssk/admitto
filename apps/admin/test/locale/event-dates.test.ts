@@ -7,6 +7,7 @@ import {
   formatWalletDatePreviewShort,
   formatEventDateTime,
   formatEventTime,
+  formatRelativeMagnitude,
   formatRelativeTime,
   formatRelativeAdmissionDisplay,
   formatUtcDateTime,
@@ -176,6 +177,36 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime("2026-04-29T13:00:00.000Z")).toBe("2 months ago");
 
     dateNow.mockRestore();
+  });
+
+  it("returns an empty string for an invalid date instead of NaN months ago", () => {
+    expect(formatRelativeTime("not-a-date")).toBe("");
+  });
+
+  it("accepts an explicit now instead of always the live clock", () => {
+    expect(formatRelativeTime("2026-06-28T12:48:00.000Z", new Date("2026-06-28T13:00:00.000Z"))).toBe(
+      "12 min ago",
+    );
+    expect(formatRelativeTime("2026-06-28T12:48:00.000Z", new Date("2026-06-28T13:00:00.000Z").getTime())).toBe(
+      "12 min ago",
+    );
+  });
+});
+
+describe("formatRelativeMagnitude", () => {
+  it("returns the bare quantity with no suffix", () => {
+    const now = new Date("2026-06-28T13:00:00.000Z");
+    expect(formatRelativeMagnitude("2026-06-28T12:48:00.000Z", now)).toBe("12 min");
+    expect(formatRelativeMagnitude("2026-06-28T10:00:00.000Z", now)).toBe("3 hours");
+    expect(formatRelativeMagnitude("2026-06-26T13:00:00.000Z", now)).toBe("2 days");
+    expect(formatRelativeMagnitude("2026-04-29T13:00:00.000Z", now)).toBe("2 months");
+  });
+
+  it("returns null under a minute, for an invalid date, or for a future instant", () => {
+    const now = new Date("2026-06-28T13:00:00.000Z");
+    expect(formatRelativeMagnitude("2026-06-28T12:59:30.000Z", now)).toBeNull();
+    expect(formatRelativeMagnitude("not-a-date", now)).toBeNull();
+    expect(formatRelativeMagnitude("2026-06-28T13:05:00.000Z", now)).toBeNull();
   });
 });
 

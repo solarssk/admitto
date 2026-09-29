@@ -196,6 +196,14 @@
   color: var(--text-muted, var(--tblr-secondary));
 }
 
+/* The worker's own "Last seen ... before this report" fact - same muted treatment as the
+ * summary, a separate class since it's a sibling span (not a description of the check itself). */
+.health-check__worker-fact {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted, var(--tblr-secondary));
+}
+
 .health-check__chevron {
   color: var(--text-muted);
   flex-shrink: 0;
@@ -223,7 +231,6 @@
 .health-check__detail dt {
   margin: 0;
   color: var(--text-muted);
-  text-transform: capitalize;
 }
 
 .health-check__detail dd {
