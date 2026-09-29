@@ -171,10 +171,17 @@ function syncedHint(syncedAt: string | null): string {
  * noticed on the next sync or a manual Refresh status - and the background sync job skips an
  * archived event outright (runWalletRegistrationSync, packages/wallet/src/registration-sync.ts),
  * so a pass the wallet service quietly expired after archiving can keep reading Active here
- * indefinitely until someone runs Refresh status by hand (bot review). */
+ * indefinitely until someone runs Refresh status by hand (bot review).
+ *
+ * Deliberately says "most recently checked", not "Synced at" the way syncedHint above does -
+ * `synced_at` is the single MAX registration_checked_at across every sampled pass (mostRecentSync,
+ * aggregateWalletPasses below), so one attendee's own Refresh status can make this read as freshly
+ * synced even when every other pass in the count hasn't been touched in weeks - restating it as a
+ * blanket "Synced at" would repeat exactly the false confidence this hint exists to dispel (bot
+ * review, a second finding on the same hint). */
 function passValidityHint(syncedAt: string | null): string {
-  const label = syncedAt ? `Synced at ${viewerLocalTime(syncedAt)}` : "Not synced yet";
-  return `${label}. Voiding a pass here takes effect immediately. The wallet service voiding or expiring a pass on its own is only noticed on the next sync or a manual Refresh status - which the background sync skips once the event is archived.`;
+  const label = syncedAt ? `Most recently checked at ${viewerLocalTime(syncedAt)}` : "No pass checked yet";
+  return `${label} - the single most recently checked pass, not every pass counted here. Voiding a pass takes effect immediately, but the wallet service voiding or expiring a pass on its own is only noticed at that pass's own next sync or a manual Refresh status - which the background sync skips once the event is archived.`;
 }
 
 /** Devices per attendee's own hint - both totals here are scoped to platforms this event

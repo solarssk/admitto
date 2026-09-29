@@ -150,7 +150,11 @@ export interface EventWalletReportsResponse {
    * (runWalletRegistrationSync, packages/wallet/src/registration-sync.ts). So `active` here can
    * read stale (the wallet service may have since voided/expired it) for an archived event nobody
    * has manually refreshed since - `synced_at` above is this field's own freshness signal too, not
-   * just `platform`/`registrations_per_attendee`'s (bot review).
+   * just `platform`/`registrations_per_attendee`'s. `synced_at` is the single MAX across every
+   * sampled pass's own last check, though, not a coverage guarantee - one attendee's own manual
+   * Refresh status can advance it while every other pass in this axis hasn't been checked in weeks,
+   * so a recent `synced_at` is evidence about the single freshest pass, not about every pass this
+   * field counts (bot review, a second finding on the same freshness signal).
    *
    * `failed` should read 0 - a `createPass` attempt that never actually issued a pass normally
    * never sets `issued_at` (see `markActive`/`markFailed`, apps/web/src/app.ts), so it would
