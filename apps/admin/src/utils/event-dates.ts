@@ -463,15 +463,39 @@ export function formatUtcPrimaryTime(iso: string): string {
  * Callers decide their own fallback text for a missing/null timestamp; this only formats a
  * known instant.
  */
-export function formatRelativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "Just now";
+/** "12 min" / "3 hours" / "2 days" / "1 month" - the bare quantity with no suffix, for a caller
+ * that supplies its own ("... ago", "... before this report"). Returns null under a minute
+ * (the caller's own "Just now"/omit decision) or when `diffMs` is not finite (an invalid date),
+ * so nothing here ever produces "NaN months". */
+function relativeMagnitude(diffMs: number): string | null {
+  if (!Number.isFinite(diffMs) || diffMs < 60_000) return null;
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"}`;
   const months = Math.floor(days / 30);
-  return `${months} month${months === 1 ? "" : "s"} ago`;
+  return `${months} month${months === 1 ? "" : "s"}`;
+}
+
+/** Compact "N min/hours/days ago" for recency-focused UI, measured against `now` (defaults to
+ * the real current time) rather than always live wall-clock time, so a caller can compute a
+ * fixed age against another instant (e.g. a report's own `generated_at`) instead of one that
+ * ticks on every render. */
+export function formatRelativeTime(iso: string, now: number | Date = Date.now()): string {
+  const nowMs = now instanceof Date ? now.getTime() : now;
+  const diffMs = nowMs - new Date(iso).getTime();
+  if (!Number.isFinite(diffMs)) return "";
+  if (diffMs < 60_000) return "Just now";
+  return `${relativeMagnitude(diffMs)} ago`;
+}
+
+/** The bare magnitude behind {@link formatRelativeTime}, for a caller that writes its own
+ * suffix instead of "ago" (e.g. Health check's worker fact, "Last seen 12 min before this
+ * report"). Null under a minute or for an invalid date - the caller decides whether to omit
+ * the fact entirely or show its own short-age wording in that case. */
+export function formatRelativeMagnitude(iso: string, now: number | Date = Date.now()): string | null {
+  const nowMs = now instanceof Date ? now.getTime() : now;
+  return relativeMagnitude(nowMs - new Date(iso).getTime());
 }

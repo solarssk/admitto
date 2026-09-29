@@ -12,7 +12,13 @@ import type {
 } from "../api/types.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
-import { formatHealthCheckMarkdown, formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckMarkdown.js";
+import {
+  formatHealthDisplayLabel,
+  formatHealthDisplayValue,
+  visibleHealthDetails,
+  workerLastSeenFact,
+} from "./healthCheckDisplay.js";
+import { formatHealthCheckMarkdown } from "./healthCheckMarkdown.js";
 import "./health-check.css";
 
 const CHECK_ICONS: Record<string, string> = {
@@ -191,13 +197,19 @@ function HealthCheckRowView({
   check,
   expanded,
   onToggle,
+  generatedAt,
+  timezone,
 }: Readonly<{
   check: HealthCheckRowDto;
   expanded: boolean;
   onToggle: () => void;
+  generatedAt: string;
+  timezone: string;
 }>) {
   const icon = checkIcon(check.id);
   const meta = rowStatusMeta(check.status);
+  const workerFact = workerLastSeenFact(check, generatedAt);
+  const details = visibleHealthDetails(check, timezone, workerFact !== null);
   return (
     <div
       className={[
@@ -237,18 +249,19 @@ function HealthCheckRowView({
             </Badge>
           )}
           <span className="health-check__summary">{check.summary}</span>
+          {workerFact && <span className="health-check__worker-fact">{workerFact}</span>}
         </span>
         <i
           className={`ti ti-chevron-${expanded ? "up" : "down"} health-check__chevron`}
           aria-hidden="true"
         />
       </button>
-      {expanded && check.details.length > 0 && (
+      {expanded && details.length > 0 && (
         <dl className="health-check__details">
-          {check.details.map((d) => (
+          {details.map((d) => (
             <div key={d.key} className="health-check__detail">
-              <dt>{formatHealthDetailLabel(d.key)}</dt>
-              <dd>{formatHealthDetailValue(d.key, d.value)}</dd>
+              <dt>{formatHealthDisplayLabel(d.key)}</dt>
+              <dd>{formatHealthDisplayValue(d.key, d.value, timezone)}</dd>
             </div>
           ))}
         </dl>
@@ -266,10 +279,14 @@ function HealthGroupSection({
   group,
   isExpanded,
   onToggle,
+  generatedAt,
+  timezone,
 }: Readonly<{
   group: HealthGroupDto;
   isExpanded: (check: HealthCheckRowDto) => boolean;
   onToggle: (check: HealthCheckRowDto) => void;
+  generatedAt: string;
+  timezone: string;
 }>) {
   const icon = GROUP_ICONS[group.id] ?? "circle-dot";
   return (
@@ -292,6 +309,8 @@ function HealthGroupSection({
               check={check}
               expanded={isExpanded(check)}
               onToggle={() => onToggle(check)}
+              generatedAt={generatedAt}
+              timezone={timezone}
             />
           </li>
         ))}
@@ -513,6 +532,8 @@ export function HealthCheckPanel() {
     addToast("Health snapshot downloaded", "success");
   };
 
+  const timezone = getBrowserTimeZone();
+
   return (
     <div className="settings-sections health-check">
       <Card
@@ -554,7 +575,7 @@ export function HealthCheckPanel() {
         <p className="health-check__meta">
           Generated{" "}
           <time dateTime={report.generated_at}>
-            {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
+            {formatEventDateTime(report.generated_at, timezone)}
           </time>
           {runningBuildLabel()}
         </p>
@@ -570,6 +591,8 @@ export function HealthCheckPanel() {
               group={group}
               isExpanded={isExpanded}
               onToggle={toggleExpanded}
+              generatedAt={report.generated_at}
+              timezone={timezone}
             />
           ))}
         </div>
