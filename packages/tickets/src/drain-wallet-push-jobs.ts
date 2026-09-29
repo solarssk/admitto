@@ -136,7 +136,17 @@ async function loadTargets(
 
 /** Every already-issued active pass under the event, plus voided ones too when `includeVoided` -
  * see WalletPushRequest's own doc comment for why `status` is not unconditionally "active" here
- * (unlike loadTargets above, which is never event-wide and never needs this). */
+ * (unlike loadTargets above, which is never event-wide and never needs this).
+ *
+ * `provider_removed_at: null` was previously implied for free: Remove only ever runs on a voided
+ * or expired pass and never changes status (see removeOneWalletPassFromProvider's own doc), so an
+ * `active`-only query could never see a removed row. Once `includeVoided` can also select voided
+ * passes, that's no longer true - "Remove inactive passes" (drain-wallet-cleanup-jobs.ts) removes
+ * a voided pass at the provider while deliberately keeping it voided locally, so this now needs
+ * the same explicit filter loadTargets above already has: reissueOneWalletPass's own early-skip on
+ * providerRemovedAt only fires when a caller passes that field, which neither loader does, so
+ * without this the provider call itself (not just the later local-row update) would still be
+ * attempted against an already-deleted resource and typically 404 (bot review). */
 async function loadEventWideTargets(
   db: PrismaClient,
   eventId: string,
@@ -146,6 +156,7 @@ async function loadEventWideTargets(
     where: {
       status: includeVoided ? { in: ["active", "voided"] } : "active",
       provider_pass_id: { not: null },
+      provider_removed_at: null,
       attendee: { event_id: eventId },
     },
     select: { attendee_id: true, provider_pass_id: true },

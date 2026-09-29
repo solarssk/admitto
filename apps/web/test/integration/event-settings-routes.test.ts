@@ -1720,6 +1720,90 @@ describe("PATCH /api/admin/events/:eventId", () => {
       expect(afterSecond[0]?.id).toBe(afterFirst[0]?.id);
     });
 
+    it("merges includeVoided into an already-pending job instead of leaving it stuck at false (bot review)", async () => {
+      // An ordinary save (title) queues a pending event_wide job first, includeVoided left unset -
+      // then a save that actually changes expiration coalesces with that same still-pending job.
+      // Without merging the flag in, the queued job would run active-only and the expiration
+      // save's whole point (reaching voided passes too) would be silently lost.
+      const first = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (includeVoided merge 1)" }),
+      });
+      expect(first.status).toBe(200);
+      const afterFirst = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(afterFirst).toHaveLength(1);
+      expect((afterFirst[0]!.result_json as { request: { includeVoided?: boolean } }).request.includeVoided).toBeFalsy();
+
+      vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockResolvedValueOnce({
+        name: "Wallet Push Gala",
+        perPassExpirationReady: true,
+      });
+      try {
+        const second = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+        expect(second.status).toBe(200);
+
+        const afterSecond = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(afterSecond).toHaveLength(1);
+        expect(afterSecond[0]?.id).toBe(afterFirst[0]?.id);
+        const request = (afterSecond[0]!.result_json as { request: { includeVoided?: boolean } }).request;
+        expect(request.includeVoided).toBe(true);
+      } finally {
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_expiration_mode: "none" } });
+      }
+    });
+
+    it("merges includeVoided into the winning job's own coalesce, not just the fast-path check (P2002 race, bot review)", async () => {
+      // Mirrors "reuses the winning job when create() itself hits a P2002 conflict" above, but
+      // proves the P2002 recovery path shares the same includeVoided-merge logic as the fast-path
+      // check, not just the reason-upgrade - a caller that only wins the race via this catch block
+      // must not skip the merge the fast-path winner gets (bot review).
+      const winner = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT, reason: "location" } },
+        },
+      });
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValueOnce(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockResolvedValueOnce({
+        name: "Wallet Push Gala",
+        perPassExpirationReady: true,
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+        expect(res.status).toBe(200);
+
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]?.id).toBe(winner.id);
+        const request = (jobs[0]!.result_json as { request: { reason?: string; includeVoided?: boolean } }).request;
+        // reason stays "location" (only "manual" ever upgrades it) - includeVoided still merges.
+        expect(request.reason).toBe("location");
+        expect(request.includeVoided).toBe(true);
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_expiration_mode: "none" } });
+      }
+    });
+
     it("does not enqueue a job when a wallet-relevant field is resubmitted with its current value (bot review)", async () => {
       const before = await prisma.event.findUniqueOrThrow({ where: { id: PUSH_EVENT }, select: { title: true } });
 

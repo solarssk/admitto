@@ -392,7 +392,12 @@ describe("drainWalletPushJobs", () => {
       // status: "active" is deliberate here (unlike loadTargets for attendee_ids requests) -
       // matches the pre-job-system best-effort push's own behaviour of excluding voided passes.
       expect(db.walletPass.findMany).toHaveBeenCalledWith({
-        where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: "evt-1" } },
+        where: {
+          status: "active",
+          provider_pass_id: { not: null },
+          provider_removed_at: null,
+          attendee: { event_id: "evt-1" },
+        },
         select: { attendee_id: true, provider_pass_id: true },
       });
       expect(reissueOneWalletPass).toHaveBeenCalledTimes(2);
@@ -433,7 +438,16 @@ describe("drainWalletPushJobs", () => {
       await drainWalletPushJobs(db as never);
 
       expect(db.walletPass.findMany).toHaveBeenCalledWith({
-        where: { status: { in: ["active", "voided"] }, provider_pass_id: { not: null }, attendee: { event_id: "evt-1" } },
+        where: {
+          status: { in: ["active", "voided"] },
+          provider_pass_id: { not: null },
+          // Regression (bot review): "Remove inactive passes" removes a voided pass at the
+          // provider while deliberately keeping it voided locally, so this must still exclude it -
+          // otherwise reissueOneWalletPass would call the provider against an already-deleted
+          // resource and typically 404, counted as an error.
+          provider_removed_at: null,
+          attendee: { event_id: "evt-1" },
+        },
         select: { attendee_id: true, provider_pass_id: true },
       });
     });

@@ -162,15 +162,48 @@ async function findPendingEventWideWalletPushJob(
  * stored reason keeps showing whichever save queued it first, so the history list never reflects
  * that a manual push was ever requested (bot review). `reason` is display-only (see
  * WalletPushRequest's own docstring in packages/tickets - the drain worker never reads it), so
- * upgrading it in place is safe - best-effort and scoped to status still being "pending" at write
- * time (not just at the read above) so a worker that claims the job in between isn't racing this
- * write and having its own final result_json (reissued/skipped/errored) clobbered; losing that
- * race just leaves the job's reason as-is, same self-heals-on-next-occurrence tradeoff already
- * accepted elsewhere in this file. Only upgrades toward "manual", never away from it - an
- * automatic save coalescing with an existing manual pending job doesn't call this branch at all
- * (reason !== "manual"). The existing job's own includeVoided is carried through unchanged (see
- * findPendingEventWideWalletPushJob's own doc comment): unlike reason, it changes which passes get
- * targeted, so this reason-only upgrade must not silently reset it to false. */
+ * upgrading it in place is safe. The same coalescing can just as easily go the other way for
+ * `includeVoided`: an ordinary (non-expiration) save queues a pending job first, then a save that
+ * actually changes the event's expiration coalesces with it - without merging the flag in too,
+ * that job would run active-only and the expiration save's whole point (reaching voided passes)
+ * would be silently lost, with no later save guaranteed to retrigger it (bot review). Both upgrade
+ * checks, and the actual write, are shared by upgradePendingEventWideJob below - called from both
+ * places a caller can land on an already-existing job (the fast-path check here, and the P2002
+ * race-recovery path further down), so a caller that only wins the race doesn't skip the merge the
+ * fast-path winner gets. */
+async function upgradePendingEventWideJob(
+  db: PrismaClient,
+  eventId: string,
+  existing: { id: string; status: string; reason: "location" | "settings" | "manual" | null; includeVoided: boolean },
+  reason: "location" | "settings" | "manual" | undefined,
+  includeVoided: boolean | undefined,
+): Promise<{ jobId: string; alreadyRunning: boolean }> {
+  const upgradeReason = reason === "manual" && existing.reason !== "manual";
+  const upgradeIncludeVoided = includeVoided === true && !existing.includeVoided;
+  // Scoped to status still being "pending" at write time (not just at the read above) so a worker
+  // that claims the job in between isn't racing this write and having its own final result_json
+  // (reissued/skipped/errored) clobbered; losing that race just leaves the job as-is. A *running*
+  // job is never upgraded at all - it may have already read its target set, so this call's own
+  // includeVoided:true can only self-heal on a later qualifying save, not this one (same tradeoff
+  // already accepted elsewhere in this file for reason).
+  if (existing.status === "pending" && (upgradeReason || upgradeIncludeVoided)) {
+    await db.adminJob.updateMany({
+      where: { id: existing.id, status: "pending" },
+      data: {
+        result_json: {
+          request: {
+            kind: "event_wide",
+            eventId,
+            reason: upgradeReason ? "manual" : existing.reason,
+            includeVoided: existing.includeVoided || includeVoided === true,
+          },
+        },
+      },
+    });
+  }
+  return { jobId: existing.id, alreadyRunning: existing.status === "running" };
+}
+
 export async function enqueueEventWideWalletPushJob(
   db: PrismaClient,
   c: Context,
@@ -181,17 +214,7 @@ export async function enqueueEventWideWalletPushJob(
 ): Promise<{ jobId: string; alreadyRunning: boolean }> {
   const existing = await findPendingEventWideWalletPushJob(db, eventId);
   if (existing) {
-    if (reason === "manual" && existing.status === "pending" && existing.reason !== "manual") {
-      await db.adminJob.updateMany({
-        where: { id: existing.id, status: "pending" },
-        data: {
-          result_json: {
-            request: { kind: "event_wide", eventId, reason: "manual", includeVoided: existing.includeVoided },
-          },
-        },
-      });
-    }
-    return { jobId: existing.id, alreadyRunning: existing.status === "running" };
+    return upgradePendingEventWideJob(db, eventId, existing, reason, includeVoided);
   }
 
   try {
@@ -205,7 +228,7 @@ export async function enqueueEventWideWalletPushJob(
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const winner = await findPendingEventWideWalletPushJob(db, eventId);
-      if (winner) return { jobId: winner.id, alreadyRunning: winner.status === "running" };
+      if (winner) return upgradePendingEventWideJob(db, eventId, winner, reason, includeVoided);
     }
     throw err;
   }
