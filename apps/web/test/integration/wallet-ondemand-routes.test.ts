@@ -932,7 +932,7 @@ describe("On-demand wallet routes", () => {
       expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
       expect(saved?.status).toBe("failed");
-      expect(saved?.last_error_code).toBe("wallet_expiration_mode_changed");
+      expect(saved?.last_error_code).toBe("wallet_expiration_changed");
       expect(saved?.expires_at).toBeNull();
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
@@ -966,9 +966,46 @@ describe("On-demand wallet routes", () => {
       expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
       expect(saved?.status).toBe("failed");
-      expect(saved?.last_error_code).toBe("wallet_expiration_mode_changed");
+      expect(saved?.last_error_code).toBe("wallet_expiration_changed");
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
+    }
+  });
+
+  // Regression (CodeRabbit follow-up review): the mode-only checks above miss a reschedule that
+  // happens *without* touching wallet_expiration_mode at all - the event's own date/hours/
+  // timezone all feed eventEndsAtLocal/eventEndsAtUtc's computation just as much as the mode
+  // itself, but markActive used to only re-read wallet_template_id/wallet_expiration_mode fresh,
+  // still computing expires_at from the outer, stale event snapshot.
+  it("marks failed, not active, when the event's own end time changes (mode unchanged, still event_end) while this request's own createPass call is in flight", async () => {
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      // Same mode throughout - only the event's own end time moves.
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { event_hours_end: "23:00" } });
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+    const app = makeApp(provider);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_expiration_changed");
+      expect(saved?.expires_at).toBeNull();
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_ID },
+        data: { wallet_expiration_mode: "none", event_hours_end: "22:00" },
+      });
     }
   });
 
@@ -1117,7 +1154,7 @@ describe("On-demand wallet routes", () => {
         // computed from the stale "event_end" snapshot.
         expect(row.wallet_expiration_mode).toBe("none");
         expect(saved?.status).toBe("failed");
-        expect(saved?.last_error_code).toBe("wallet_expiration_mode_changed");
+        expect(saved?.last_error_code).toBe("wallet_expiration_changed");
       } else {
         // Issuance won the lock race and committed first - the admin's own recheck must then
         // have seen the freshly-issued pass and refused the disable outright.
