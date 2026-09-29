@@ -24,6 +24,7 @@ permissions:
 
 jobs:
   scan:
+    name: Privacy guard - no real personal data in PR
     runs-on: ubuntu-latest
     steps:
       - name: Scan PR diff (via API) for sensitive patterns
