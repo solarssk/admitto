@@ -389,6 +389,28 @@ export function HealthCheckPanel() {
     }));
   }, [report]);
 
+  /** Drops (not just bypasses) any override whose pinned status no longer matches the row's
+   * current one, every time a new report arrives. Without this, a row collapsed while degraded
+   * that goes down and later reverts back to degraded would resurrect the stale collapse,
+   * since its status would once again equal the override's own - the override must not survive
+   * past the first status change, however many reports follow it. */
+  useEffect(() => {
+    if (!report) return;
+    const statusById = new Map<string, HealthRowStatus>();
+    for (const group of report.groups) {
+      for (const check of group.checks) statusById.set(check.id, check.status);
+    }
+    setExpandOverride((prev) => {
+      let changed = false;
+      const next: Record<string, ExpandOverride> = {};
+      for (const [id, override] of Object.entries(prev)) {
+        if (statusById.get(id) === override.status) next[id] = override;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [report]);
+
   const loadPassive = useCallback(async (signal?: AbortSignal) => {
     setInitialLoading(true);
     setError(null);

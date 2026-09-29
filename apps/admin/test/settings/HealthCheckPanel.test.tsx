@@ -698,4 +698,38 @@ describe("HealthCheckPanel", () => {
       "true",
     );
   });
+
+  it("does not resurrect a stale override once a row's status returns to its earlier value", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithMixedOrder());
+    renderWithToast(<HealthCheckPanel />);
+    const charlieBtn = await screen.findByRole("button", { name: /Charlie/ });
+    expect(charlieBtn.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(charlieBtn); // manually collapse while degraded
+    expect(charlieBtn.getAttribute("aria-expanded")).toBe("false");
+
+    // First live run: degraded -> down. The stale override must be dropped here, not just
+    // bypassed for this one report (see "discards a manual collapse..." above).
+    const downReport = reportWithMixedOrder();
+    downReport.groups[0]!.checks[2]!.status = "down";
+    mockLive.mockResolvedValueOnce(downReport);
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Charlie/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      );
+    });
+
+    // Second live run: back to degraded. If the override had merely been bypassed instead of
+    // dropped, its stored status ("degraded") would once again match and resurrect the
+    // original collapse - the row must stay open instead.
+    mockLive.mockResolvedValueOnce(reportWithMixedOrder());
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+    await waitFor(() => {
+      expect(mockLive).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByRole("button", { name: /Charlie/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+  });
 });
