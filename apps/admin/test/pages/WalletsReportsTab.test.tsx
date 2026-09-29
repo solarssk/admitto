@@ -240,8 +240,8 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
   };
 }
 
-/** Cards title their header with `<HintLabel>` for three of these cards ("Wallet adoption",
- * "Wallet platform", "Devices per attendee"), which renders the title text alongside a trailing
+/** Cards title their header with `<HintLabel>` for four of these cards ("Wallet adoption",
+ * "Wallet platform", "Devices per attendee", "Pass validity"), which renders the title text alongside a trailing
  * icon inside the same tooltip-trigger wrapper as `.at-card__title` itself - both nodes end up
  * with identical `textContent`, so a plain `screen.getByText(title)` throws "multiple elements
  * found" for those cards. Locating the `.at-card` by its title text via `closest` sidesteps that

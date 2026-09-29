@@ -138,6 +138,14 @@ export interface EventWalletReportsResponse {
    * (whether it's still on a device is a different question from whether it's still valid) - the
    * three normal axes are deliberately independent, not nested.
    *
+   * An admin's own Void/Restore lands immediately, with no sync involved - but the wallet service
+   * voiding or expiring a pass entirely on its own is only noticed on the next sync or a manual
+   * Refresh status, and the periodic sync skips an archived event outright
+   * (runWalletRegistrationSync, packages/wallet/src/registration-sync.ts). So `active` here can
+   * read stale (the wallet service may have since voided/expired it) for an archived event nobody
+   * has manually refreshed since - `synced_at` above is this field's own freshness signal too, not
+   * just `platform`/`registrations_per_attendee`'s (bot review).
+   *
    * `failed` should read 0 - a `createPass` attempt that never actually issued a pass normally
    * never sets `issued_at` (see `markActive`/`markFailed`, apps/web/src/app.ts), so it would
    * ordinarily be outside this population entirely, not a bucket here. It exists only to catch a

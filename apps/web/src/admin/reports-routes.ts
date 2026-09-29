@@ -970,9 +970,10 @@ function applyReminderTapDayStats(
  * platform toggle can't retroactively undo, so it's gated on the ungated `everInstalled` below
  * instead (architect review, 2026-09-03, following on from the 2026-09-03 registration-sync fix -
  * same reasoning as buildEverInstalledWalletFilter and everInstalledAnywhere's own doc comments
- * further down this file). Delegates the platform-counter bump, tap-day stats, and the "ever
- * installed anywhere" check to their own small functions above - each independent concern this
- * function pulls together, not a single flat block, so a future 4th platform (or a new stat) can
+ * further down this file). Delegates the platform-counter bump, tap-day stats, the "ever
+ * installed anywhere" check, and pass_validity/provider_state to their own small functions above -
+ * each independent concern this function pulls together, not a single flat block, so a future 4th
+ * platform (or a new stat) can
  * extend just the one relevant helper instead of adding more branches straight into this
  * function's own body and tipping it over the limit again. */
 function applyWalletPassToAggregates(
@@ -1033,12 +1034,21 @@ function applyWalletPassToAggregates(
     )
   ]++;
 
-  // Independent axes, not gated on enabledPlatforms/platform/everInstalled like the counters
-  // above - status and provider_removed_at aren't platform-specific facts. Every status other
-  // than active/voided/expired falls to `failed` (see pass_validity's own DTO doc comment for the
-  // narrow concurrency race that is this bucket's one real cause) rather than being silently
-  // dropped - this is the only counter on this whole aggregate with a catch-all, since it is the
-  // one place a value this codebase's own write paths are supposed to prevent could still surface.
+  applyPassValidityAndProviderState(pass, acc);
+}
+
+/** Bumps pass_validity/provider_state - split out of applyWalletPassToAggregates above (SonarCloud
+ * S3776), same reasoning as incrementPlatformCounter. Independent axes, not gated on
+ * enabledPlatforms/platform/everInstalled like the counters above - status and
+ * provider_removed_at aren't platform-specific facts. Every status other than
+ * active/voided/expired falls to `failed` (see pass_validity's own DTO doc comment for the narrow
+ * concurrency race that is this bucket's one real cause) rather than being silently dropped - this
+ * is the only counter on this whole aggregate with a catch-all, since it is the one place a value
+ * this codebase's own write paths are supposed to prevent could still surface. */
+function applyPassValidityAndProviderState(
+  pass: Pick<WalletPassAggregateRow, "status" | "provider_removed_at">,
+  acc: Pick<WalletPassAggregates, "passValidityCounts" | "providerStateCounts">,
+): void {
   if (pass.status === "active") acc.passValidityCounts.active++;
   else if (pass.status === "voided") acc.passValidityCounts.voided++;
   else if (pass.status === "expired") acc.passValidityCounts.expired++;

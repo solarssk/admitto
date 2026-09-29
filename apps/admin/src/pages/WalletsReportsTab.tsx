@@ -165,6 +165,18 @@ function syncedHint(syncedAt: string | null): string {
   return `${label}. Reflects each enabled wallet platform's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
 }
 
+/** Pass validity's own hint - unlike syncedHint above, an admin's own Void/Restore takes effect
+ * immediately here, with no sync involved at all. The staleness this calls out is narrower: the
+ * wallet service voiding or expiring a pass entirely on its own (not through Admitto) is only
+ * noticed on the next sync or a manual Refresh status - and the background sync job skips an
+ * archived event outright (runWalletRegistrationSync, packages/wallet/src/registration-sync.ts),
+ * so a pass the wallet service quietly expired after archiving can keep reading Active here
+ * indefinitely until someone runs Refresh status by hand (bot review). */
+function passValidityHint(syncedAt: string | null): string {
+  const label = syncedAt ? `Synced at ${viewerLocalTime(syncedAt)}` : "Not synced yet";
+  return `${label}. Voiding a pass here takes effect immediately. The wallet service voiding or expiring a pass on its own is only noticed on the next sync or a manual Refresh status - which the background sync skips once the event is archived.`;
+}
+
 /** Devices per attendee's own hint - both totals here are scoped to platforms this event
  * currently has enabled (RegistrationsPerAttendeeDonut's own doc comment explains why: same
  * enabledPlatforms gating as `platform`/`wallet_lifecycle.active` elsewhere on this tab). A
@@ -894,7 +906,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Pass validity">
+        <Card title={<HintLabel hint={passValidityHint(data.synced_at)}>Pass validity</HintLabel>}>
           <p className="wallets-description">
             Every issued pass, grouped by whether it can still be used, was voided (reversible via Restore until the event ends, whether an admin voided it or the wallet service reported it voided) or has permanently expired.
           </p>
