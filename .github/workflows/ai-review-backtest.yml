@@ -27,10 +27,6 @@ on:
           - v2
         default: v2
 
-concurrency:
-  group: ai-review-backtest
-  cancel-in-progress: false
-
 permissions: {}
 
 jobs:
@@ -74,7 +70,14 @@ jobs:
           mv .harness/.github/ai-review "$RUNNER_TEMP/ai-review"
           rm -rf .harness
           mkdir -p .ai-review
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/compare/${BASE_SHA}...${HEAD_SHA}" --jq '.files[]' | jq -s '.' > .ai-review/files.json
+          # One call, not --paginate: the compare API lists changed files only on the first page and
+          # caps them at 300, so a longer list would be silently incomplete. Fail such a case instead.
+          gh api "repos/${GITHUB_REPOSITORY}/compare/${BASE_SHA}...${HEAD_SHA}" --jq '.files' > .ai-review/files.json
+          FILES=$(jq 'length' .ai-review/files.json)
+          if [ "$FILES" -ge 300 ]; then
+            echo "This comparison reaches the API's 300-file cap (${FILES} files); the file list may be incomplete. Choose a smaller change."
+            exit 1
+          fi
           jq -r -f "$RUNNER_TEMP/ai-review/build-diff.jq" .ai-review/files.json > .ai-review/pr.diff
           echo "Diff is $(wc -c < .ai-review/pr.diff) bytes"
           DELIM="EOF_$(openssl rand -hex 8)"
