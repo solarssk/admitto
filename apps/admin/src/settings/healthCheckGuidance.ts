@@ -112,6 +112,21 @@ function emailSendingGuidance(check: HealthCheckRowDto): HealthCheckGuidance | n
   return null;
 }
 
+function instanceUrlGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  if (check.status === "degraded") {
+    return {
+      impact: "Links in emails and tickets use the address saved in General settings, so they keep working.",
+      nextStep: "Set the BASE_URL environment variable to the same address in your deployment configuration.",
+    };
+  }
+  if (check.status !== "down") return null;
+  return {
+    impact: "Admitto cannot build links for emails, tickets and wallet passes.",
+    nextStep: "Enter the Instance URL in General settings, or set the BASE_URL environment variable.",
+    link: { label: "Open General settings", to: "/admin/settings?tab=general" },
+  };
+}
+
 function identityProviderGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   if (check.status !== "down" || detailValue(check, "live_check") !== "failed") return null;
   return {
@@ -280,6 +295,7 @@ function emailSendingNotConfiguredGuidance(check: HealthCheckRowDto): HealthChec
  * rather than just displaying the wrong thing. */
 const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheckGuidance | null>([
   ["database", databaseGuidance],
+  ["instance_url", instanceUrlGuidance],
   ["rate_limit_storage", rateLimitStorageGuidance],
   ["background_worker", backgroundWorkerGuidance],
   ["mail_delivery_queue", mailDeliveryQueueGuidance],

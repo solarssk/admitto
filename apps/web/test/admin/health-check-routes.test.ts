@@ -304,12 +304,13 @@ describe("fileStorageRow", () => {
     expect(row.details.find((d) => d.key === "reason")?.value).toBe("missing_directory");
   });
 
-  it("reports not_configured (not down) on a live check when the missing directory can actually be created", async () => {
+  it("reports Connected (not down, not missing) on a live check that just created the missing directory", async () => {
     const missingChild = join(uploadFixture.dir, "not-created-yet");
     try {
       const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
-      expect(row.status).toBe("not_configured");
-      expect(row.summary).toBe("Missing directory · created on first upload");
+      expect(row.status).toBe("ok");
+      expect(row.summary).toBe("Connected");
+      expect(row.details.find((d) => d.key === "writable")?.value).toBe("yes");
       // canCreateUploadDir() leaves the directory itself in place - a concurrent real upload
       // could be creating or writing into that same shared path at the same time - and removes
       // only its own probe file from inside it.
@@ -1445,6 +1446,33 @@ describe("collectAdminHealth", () => {
       "Could not read queue depth",
     );
     expect(report.overall).toBe("down");
+  });
+
+  it("reports a valid Settings-only Instance URL as degraded, not down", async () => {
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      base_url: {
+        ok: false,
+        reason: "base_url_env_unset",
+        detail: "BASE_URL environment variable is not set; this check wants it set explicitly",
+      },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+    });
+
+    const instanceUrl = report.groups[0]!.checks.find((c) => c.id === "instance_url");
+    // The running app accepts a URL saved in Settings; only the Setup checklist prefers BASE_URL.
+    expect(instanceUrl?.status).toBe("degraded");
+    expect(instanceUrl?.summary).toBe("BASE_URL not set");
+    expect(instanceUrl?.details.find((d) => d.key === "configured")?.value).toBe("yes");
   });
 
   it("covers migrations_pending, redis warn/in-memory, instance URL warn, and queue retryables", async () => {

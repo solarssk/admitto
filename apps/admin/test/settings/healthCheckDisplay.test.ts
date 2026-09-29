@@ -27,7 +27,11 @@ describe("formatHealthDisplayLabel", () => {
   });
 
   it("sentence-cases an unmapped key instead of title-casing every word", () => {
-    expect(formatHealthDisplayLabel("stale_after_ms")).toBe("Stale after ms");
+    expect(formatHealthDisplayLabel("worker_host_name")).toBe("Worker host name");
+  });
+
+  it("labels stale_after_ms without a unit, since its value is shown in minutes", () => {
+    expect(formatHealthDisplayLabel("stale_after_ms")).toBe("Stale after");
   });
 
   it("capitalises a single-word unmapped key", () => {
@@ -151,6 +155,20 @@ describe("visibleHealthDetails", () => {
       details: [{ key: "latency_ms", value: "4" }],
     });
     expect(visibleHealthDetails(check, TZ, false)).toEqual([{ key: "latency_ms", value: "4" }]);
+  });
+
+  it("does not treat a value that is only part of a longer word or number as already shown", () => {
+    // "No" sits inside "Not configured", and "12" inside "112 ms": neither is a repeat.
+    const notConfigured = checkRow({
+      summary: "Not configured",
+      details: [{ key: "configured", value: "no" }],
+    });
+    expect(visibleHealthDetails(notConfigured, TZ, false)).toEqual([{ key: "configured", value: "no" }]);
+    const latency = checkRow({
+      summary: "Responding slowly · 112 ms",
+      details: [{ key: "latency_ms", value: "12" }],
+    });
+    expect(visibleHealthDetails(latency, TZ, false)).toEqual([{ key: "latency_ms", value: "12" }]);
   });
 
   it("keeps a detail with an empty value instead of treating it as a duplicate of everything", () => {

@@ -414,6 +414,22 @@ function setupToEncryptionRow(check: SetupCheckResult, checkedAt: string): Healt
 
 function setupToInstanceUrlRow(check: SetupCheckResult, checkedAt: string): HealthCheckRow {
   const label = "Instance URL";
+  if (!check.ok && check.reason === "base_url_env_unset") {
+    // A valid URL saved in Settings is enough for the running app (resolveInstanceBaseUrl() falls
+    // back to it); only the Setup checklist prefers BASE_URL outside development. That is a
+    // recommendation, so it must not show as Down or turn the whole verdict red.
+    return {
+      id: "instance_url",
+      label,
+      status: "degraded",
+      summary: "BASE_URL not set",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["configured", "yes"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
   if (!check.ok) {
     return {
       id: "instance_url",
@@ -1283,7 +1299,8 @@ function fileStorageIssueRow(
  * Passive: path must be an existing directory that is readable, writable, and searchable
  * (`R_OK|W_OK|X_OK`). A missing root is not_configured (adapter `mkdir` on first put), not an
  * outage, unless a live check finds it cannot actually be created (see `canCreateUploadDir`).
- * Live: write+unlink a tiny probe file under that root.
+ * Live: a missing root is created first (and stays), then a tiny probe file is written and
+ * removed under it.
  */
 export async function fileStorageRow(
   env: NodeJS.ProcessEnv,
@@ -1355,16 +1372,21 @@ export async function fileStorageRow(
       // mkdir(recursive) call - reporting not_configured for that would tell an operator the
       // instance is healthy when uploads are already broken. A live check verifies this
       // directly instead of assuming the benign case.
-      if (live && !(await canCreateUploadDir(uploadPath))) {
-        return fileStorageIssueRow(
-          label,
-          checkedAt,
-          uploadPath,
-          "down",
-          "Cannot create the upload folder",
-          "no",
-          "cannot_create_directory",
-        );
+      if (live) {
+        if (!(await canCreateUploadDir(uploadPath))) {
+          return fileStorageIssueRow(
+            label,
+            checkedAt,
+            uploadPath,
+            "down",
+            "Cannot create the upload folder",
+            "no",
+            "cannot_create_directory",
+          );
+        }
+        // canCreateUploadDir() just created the folder and wrote into it, so it is no longer
+        // missing: report what is true now instead of the state the probe itself changed.
+        return fileStorageOkRow(label, checkedAt, uploadPath);
       }
       return fileStorageIssueRow(
         label,
@@ -1399,6 +1421,10 @@ export async function fileStorageRow(
     }
   }
 
+  return fileStorageOkRow(label, checkedAt, uploadPath);
+}
+
+function fileStorageOkRow(label: string, checkedAt: string, uploadPath: string): HealthCheckRow {
   return {
     id: "file_storage",
     label,
