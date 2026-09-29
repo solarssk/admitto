@@ -52,16 +52,24 @@ jobs:
           TAGS: ${{ inputs.tags }}
         run: |
           set -euo pipefail
+          SIGNED=0
           for TAG in $TAGS; do
-            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Skipping unexpected tag '$TAG'"; continue; }
-            DIR="$(mktemp -d)"
-            if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.cdx.json' --dir "$DIR"; then
-              echo "No SBOM assets on $TAG - skipping."
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Unexpected tag '$TAG'"; exit 1; }
+            # Ask separately whether SBOMs exist, so a mistyped tag, an auth failure or a rate limit
+            # fails the run here instead of being read as "this release has no SBOMs".
+            COUNT="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '[.assets[].name | select(endswith(".cdx.json"))] | length')"
+            if [ "$COUNT" -eq 0 ]; then
+              echo "$TAG has no SBOM assets - skipping."
               continue
             fi
+            DIR="$(mktemp -d)"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.cdx.json' --dir "$DIR"
             for f in "$DIR"/*.cdx.json; do
               cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
             done
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$DIR"/*.sigstore.json --clobber
+            SIGNED=$((SIGNED + 1))
             echo "Signed $TAG"
           done
+          [ "$SIGNED" -gt 0 ] || { echo "Nothing was signed."; exit 1; }
