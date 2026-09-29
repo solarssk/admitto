@@ -43,6 +43,13 @@ jobs:
     permissions:
       contents: read # checkout of the BASE branch and reading it
       pull-requests: write # submit the review
+      actions: read # count today's runs for the daily review budget
+    env:
+      # Spend guards. The reviewer runs on the maintainer's Claude subscription, whose limit is
+      # shared with their own work, so a burst of pushes must not be able to drain it. A manual
+      # re-run of the job (attempt 2 or later) skips the check on purpose.
+      PER_PR_LIMIT: 6 # review attempts on one PR before it stops reviewing new pushes
+      DAILY_LIMIT: 40 # review attempts per UTC day, across all PRs
 
     steps:
       # Debounce: a newer push cancels this run (concurrency above) while it is still waiting, so
@@ -92,12 +99,46 @@ jobs:
             echo "unavailable=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Counts every run that could have reached the reviewer, whatever its outcome: a run that
+      # failed after Claude spent turns costs as much as a successful one, and cancelled runs (a
+      # newer push replaced them while they waited) never reach it. Runs still in progress or
+      # queued count too, which narrows, but cannot remove, the window in which two PRs check the
+      # budget at the same moment; the daily limit is therefore a close bound, not an exact one.
+      - name: Check the review budget
+        id: budget
+        if: ${{ github.run_attempt == 1 }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/count-attempts.jq" <<'JQ'
+          [.[] | select(.databaseId != $self)
+            | select(.status == "in_progress" or .status == "queued" or .conclusion == "success" or .conclusion == "failure")]
+          | length
+          JQ
+          PR_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --branch "$HEAD_REF" \
+            --limit 200 --json databaseId,status,conclusion | jq --argjson self "$RUN_ID" -f "$RUNNER_TEMP/count-attempts.jq")
+          TODAY=$(date -u +%Y-%m-%d)
+          DAY_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --created ">=${TODAY}" \
+            --limit 200 --json databaseId,status,conclusion | jq --argjson self "$RUN_ID" -f "$RUNNER_TEMP/count-attempts.jq")
+          echo "Runs on this PR: ${PR_RUNS}/${PER_PR_LIMIT}; runs today: ${DAY_RUNS}/${DAILY_LIMIT}"
+          if [ "$PR_RUNS" -ge "$PER_PR_LIMIT" ]; then
+            echo "exhausted=true" >> "$GITHUB_OUTPUT"
+            echo "reason=this PR has used its ${PER_PR_LIMIT} automated review attempts" >> "$GITHUB_OUTPUT"
+          elif [ "$DAY_RUNS" -ge "$DAILY_LIMIT" ]; then
+            echo "exhausted=true" >> "$GITHUB_OUTPUT"
+            echo "reason=the daily budget of ${DAILY_LIMIT} automated review attempts is used up" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Review the diff
         id: review
-        if: steps.diff.outputs.too_large != 'true'
+        if: steps.diff.outputs.too_large != 'true' && steps.budget.outputs.exhausted != 'true'
         uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829  # v1.0.236
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The maintainer's Claude subscription (from `claude setup-token`), not per-token API billing.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: |
             You are the independent code reviewer for this repository. The pull request's diff is in
@@ -153,6 +194,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           TOO_LARGE: ${{ steps.diff.outputs.too_large }}
           UNAVAILABLE: ${{ steps.diff.outputs.unavailable }}
+          BUDGET_EXHAUSTED: ${{ steps.budget.outputs.exhausted }}
+          BUDGET_REASON: ${{ steps.budget.outputs.reason }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
@@ -170,12 +213,19 @@ jobs:
               done
           }
 
+          if [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
+            dismiss_bot_approvals
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review skipped:** ${BUDGET_REASON}. Nothing was approved. Re-run the AI review job to review this commit anyway." || true
+            exit 0
+          fi
+
           if [ "${TOO_LARGE:-}" = "true" ]; then
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
           elif [ -z "${STRUCTURED:-}" ] || ! jq -e '.verdict and .summary' <<< "$STRUCTURED" >/dev/null 2>&1; then
             echo "No usable verdict from the reviewer - not approving."
             dismiss_bot_approvals
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review could not run** (for example the Claude usage limit is reached, or the service returned an error). Nothing was approved. Re-run the AI review job later." || true
             exit 1
           else
             {
