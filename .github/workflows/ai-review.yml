@@ -80,6 +80,13 @@ jobs:
           mkdir -p .ai-review
           EXCLUDE='(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$'
           gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[]' | jq -s '.' > .ai-review/files.json
+          # A change is documentation-only when every file it touches (including the old name of a
+          # renamed file) is a Markdown file under docs/ or CHANGELOG.md. AGENTS.md and CLAUDE.md
+          # are excluded wherever they sit: they steer agents, so they are code, not documentation.
+          # Anything else, including .github/, makes it an ordinary change that gets a model review.
+          DOCS_ONLY=$(jq -r 'def ok: test("^(docs/.*\\.md|CHANGELOG\\.md)$") and (test("(^|/)(AGENTS|CLAUDE)\\.md$") | not);
+            length > 0 and all(.[]; (.filename | ok) and ((.previous_filename // .filename) | ok))' .ai-review/files.json)
+          echo "docs_only=${DOCS_ONLY}" >> "$GITHUB_OUTPUT"
           jq -r --arg re "$EXCLUDE" '
             ([.[] | select(.filename | test($re)) | .filename]) as $skipped
             | (if ($skipped | length) > 0
@@ -106,7 +113,7 @@ jobs:
       # budget at the same moment; the daily limit is therefore a close bound, not an exact one.
       - name: Check the review budget
         id: budget
-        if: ${{ github.run_attempt == 1 }}
+        if: ${{ github.run_attempt == 1 && steps.diff.outputs.docs_only != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
@@ -134,7 +141,7 @@ jobs:
 
       - name: Review the diff
         id: review
-        if: steps.diff.outputs.too_large != 'true' && steps.budget.outputs.exhausted != 'true'
+        if: steps.diff.outputs.too_large != 'true' && steps.diff.outputs.docs_only != 'true' && steps.budget.outputs.exhausted != 'true'
         uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829  # v1.0.236
         with:
           # The maintainer's Claude subscription (from `claude setup-token`), not per-token API billing.
@@ -194,6 +201,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           TOO_LARGE: ${{ steps.diff.outputs.too_large }}
           UNAVAILABLE: ${{ steps.diff.outputs.unavailable }}
+          DOCS_ONLY: ${{ steps.diff.outputs.docs_only }}
           BUDGET_EXHAUSTED: ${{ steps.budget.outputs.exhausted }}
           BUDGET_REASON: ${{ steps.budget.outputs.reason }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
@@ -219,7 +227,10 @@ jobs:
             exit 0
           fi
 
-          if [ "${TOO_LARGE:-}" = "true" ]; then
+          if [ "${DOCS_ONLY:-}" = "true" ]; then
+            printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
+            APPROVE=true
+          elif [ "${TOO_LARGE:-}" = "true" ]; then
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
           elif [ -z "${STRUCTURED:-}" ] || ! jq -e '.verdict and .summary' <<< "$STRUCTURED" >/dev/null 2>&1; then
