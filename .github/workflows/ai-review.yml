@@ -48,8 +48,8 @@ jobs:
       # Spend guards. The reviewer runs on the maintainer's Claude subscription, whose limit is
       # shared with their own work, so a burst of pushes must not be able to drain it. A manual
       # re-run of the job (attempt 2 or later) skips the check on purpose.
-      PER_PR_LIMIT: 6 # bot reviews on one PR before it stops reviewing new pushes
-      DAILY_LIMIT: 40 # successful review runs per UTC day, across all PRs
+      PER_PR_LIMIT: 6 # review attempts on one PR before it stops reviewing new pushes
+      DAILY_LIMIT: 40 # review attempts per UTC day, across all PRs
 
     steps:
       # Debounce: a newer push cancels this run (concurrency above) while it is still waiting, so
@@ -99,26 +99,37 @@ jobs:
             echo "unavailable=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Counts every run that could have reached the reviewer, whatever its outcome: a run that
+      # failed after Claude spent turns costs as much as a successful one, and cancelled runs (a
+      # newer push replaced them while they waited) never reach it. Runs still in progress or
+      # queued count too, which narrows, but cannot remove, the window in which two PRs check the
+      # budget at the same moment; the daily limit is therefore a close bound, not an exact one.
       - name: Check the review budget
         id: budget
         if: ${{ github.run_attempt == 1 }}
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          PR_REVIEWS=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --paginate \
-            --jq '.[] | select(.user.login == "github-actions[bot]") | .id' | wc -l | tr -d ' ')
+          cat > "$RUNNER_TEMP/count-attempts.jq" <<'JQ'
+          [.[] | select(.databaseId != $self)
+            | select(.status == "in_progress" or .status == "queued" or .conclusion == "success" or .conclusion == "failure")]
+          | length
+          JQ
+          PR_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --branch "$HEAD_REF" \
+            --limit 200 --json databaseId,status,conclusion | jq --argjson self "$RUN_ID" -f "$RUNNER_TEMP/count-attempts.jq")
           TODAY=$(date -u +%Y-%m-%d)
           DAY_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --created ">=${TODAY}" \
-            --status success --limit 200 --json databaseId --jq 'length')
-          echo "Reviews on this PR: ${PR_REVIEWS}/${PER_PR_LIMIT}; successful runs today: ${DAY_RUNS}/${DAILY_LIMIT}"
-          if [ "$PR_REVIEWS" -ge "$PER_PR_LIMIT" ]; then
+            --limit 200 --json databaseId,status,conclusion | jq --argjson self "$RUN_ID" -f "$RUNNER_TEMP/count-attempts.jq")
+          echo "Runs on this PR: ${PR_RUNS}/${PER_PR_LIMIT}; runs today: ${DAY_RUNS}/${DAILY_LIMIT}"
+          if [ "$PR_RUNS" -ge "$PER_PR_LIMIT" ]; then
             echo "exhausted=true" >> "$GITHUB_OUTPUT"
-            echo "reason=this PR has used its ${PER_PR_LIMIT} automated reviews" >> "$GITHUB_OUTPUT"
+            echo "reason=this PR has used its ${PER_PR_LIMIT} automated review attempts" >> "$GITHUB_OUTPUT"
           elif [ "$DAY_RUNS" -ge "$DAILY_LIMIT" ]; then
             echo "exhausted=true" >> "$GITHUB_OUTPUT"
-            echo "reason=the daily budget of ${DAILY_LIMIT} automated reviews is used up" >> "$GITHUB_OUTPUT"
+            echo "reason=the daily budget of ${DAILY_LIMIT} automated review attempts is used up" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Review the diff
