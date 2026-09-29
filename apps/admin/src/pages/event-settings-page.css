@@ -243,6 +243,28 @@
   margin: 0;
 }
 
+/* Separates this subsection from the Apple/Google/Samsung toggle pair above it, the same way
+   .settings-row's own border-bottom separates rows within a list - same trick as
+   .wallet-field-mapping below, which separates itself from this section the same way. */
+.wallet-expiration-mode {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.wallet-expiration-mode__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.wallet-expiration-mode__options label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
 /* Separates this subsection from the Apple/Google toggle pair above it, the same way
    .settings-row's own border-bottom separates rows within a list. */
 .wallet-field-mapping {

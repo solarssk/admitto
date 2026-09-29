@@ -22,6 +22,7 @@ const EMPTY_EVENT_LOCATION = {
   walletGoogleEnabled: true,
   walletSamsungEnabled: true,
   walletFieldMapping: null,
+  walletExpirationMode: "none",
   eventType: null,
   formattedAddress: null,
   addressComponents: null,

@@ -46,6 +46,7 @@ const drainWalletMessageJobs = deferredJob("wallet_message", 10, {
 });
 const ingestBounces = deferredJob("bounce", 10);
 const runWalletRegistrationSync = deferredJob("wallet_sync", 10);
+const runWalletExpiry = deferredJob("wallet_expire", 10, { expired: 0 });
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},
@@ -82,6 +83,7 @@ vi.mock("../src/commands/wallet-refresh-status-jobs.js", () => ({ drainWalletRef
 vi.mock("../src/commands/wallet-cleanup-jobs.js", () => ({ drainWalletCleanupJobs }));
 vi.mock("../src/commands/wallet-message-jobs.js", () => ({ drainWalletMessageJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
+vi.mock("../src/commands/wallet-expire.js", () => ({ runWalletExpiry }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
 function fakeLocks() {
@@ -103,7 +105,7 @@ const { runWorker, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 
 describe("runWorkerTick", () => {
-  it("runs mail_delivery, import, export, wallet_push, wallet_refresh_status, wallet_cleanup, wallet_message, bounce, and wallet_sync concurrently", async () => {
+  it("runs mail_delivery, import, export, wallet_push, wallet_refresh_status, wallet_cleanup, wallet_message, bounce, wallet_sync, and wallet_expire concurrently", async () => {
     for (const key of Object.keys(starts)) delete starts[key];
     for (const key of Object.keys(finishes)) delete finishes[key];
     drainImportJobs.mockClear();
@@ -125,6 +127,7 @@ describe("runWorkerTick", () => {
     expect(starts["wallet_message"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["bounce"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["wallet_sync"]).toBeLessThan(finishes["mail_delivery"]);
+    expect(starts["wallet_expire"]).toBeLessThan(finishes["mail_delivery"]);
   });
 });
 

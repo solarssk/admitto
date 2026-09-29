@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { decryptFromString } from "@admitto/crypto";
+import { eventEndsAtUtc } from "@admitto/shared";
 import { WalletProviderError, type WalletPassProvider } from "@admitto/wallet";
 import { resolveTicket } from "./resolve.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
@@ -78,6 +79,15 @@ export async function reissueOneWalletPass(
         android_url: result.androidUrl,
         last_error_code: null,
         last_synced_at: new Date(),
+        // Kept in sync with the same expirationDate input just pushed above (a reschedule can
+        // move it), but does NOT touch provider_commanded_at the way Void/Restore do - that
+        // stamp's one job is protecting a recent lifecycle COMMAND from being undone by a stale
+        // read (reconcileWalletPassLifecycle's own observationStalenessWindowMs), and a reissue
+        // re-asserting an already-canonical value isn't a new decision that needs that same
+        // protection. Bumping it here too would extend the window on every ordinary content push
+        // (an attendee-detail edit, say), which could suppress a genuine external
+        // void/expire signal from the wallet service for longer than intended.
+        expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
       },
     });
     // Removed while the provider call was in flight: nothing to record, and no reissue to log.

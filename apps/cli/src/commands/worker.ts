@@ -32,6 +32,7 @@ import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publis
 import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
+import { runWalletExpiry } from "./wallet-expire.js";
 import { drainWalletPushJobs } from "./wallet-push-jobs.js";
 import { drainWalletCleanupJobs } from "./wallet-cleanup-jobs.js";
 import { drainWalletRefreshStatusJobs } from "./wallet-refresh-status-jobs.js";
@@ -389,6 +390,28 @@ async function runWalletSyncJob(db: PrismaClient, locks: WorkerLockClient): Prom
   }
 }
 
+/** Flips any wallet pass whose canonical expires_at (plan v4.2 step 6) has passed to "expired" -
+ * a quiet background maintenance job like wallet_sync/retention, not a user-visible-progress one,
+ * so it doesn't publish an SSE activity nudge on completion. No provider contact, so unlike
+ * wallet_sync there's no per-tick batch cap to report on. */
+async function runWalletExpireJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+  const acquired = await locks.tryAcquire("wallet_expire");
+  if (!acquired) {
+    log("wallet_expire", "skipped (lock held)");
+    return;
+  }
+  try {
+    const result = await runWalletExpiry(db);
+    if (result.expired === 0) {
+      log("wallet_expire", "idle");
+      return;
+    }
+    log("wallet_expire", `ok expired=${result.expired}`);
+  } finally {
+    await locks.release("wallet_expire");
+  }
+}
+
 /** @returns true when this process held the lock and finished retention work. */
 async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
   const acquired = await locks.tryAcquire("retention");
@@ -457,6 +480,7 @@ export async function runWorkerTick(
     runJobSafely("wallet_message", () => runWalletMessageJob(db, locks), false),
     runJobSafely("bounce", () => runBounceJob(db, locks), undefined),
     runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks), undefined),
+    runJobSafely("wallet_expire", () => runWalletExpireJob(db, locks), undefined),
   ]);
 
   if (retentionIsDue(schedule, Date.now())) {

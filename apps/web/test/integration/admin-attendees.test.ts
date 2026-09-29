@@ -1645,6 +1645,56 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("restore once the pass's own canonical expiry has passed (plan v4.2 step 6)", () => {
+    it("answers 409 wallet_restore_expired and never reaches the provider, even though the event itself is still upcoming", async () => {
+      const attendeeId = "att-wallet-action-restore-expired";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true, passStatus: "voided" });
+      await prisma.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { expires_at: new Date("2020-01-01") },
+      });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/restore`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_restore_expired" });
+        expect(restoreSpy).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("voided");
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("the attendee revoke/restore cascade leaves an expired pass voided too", async () => {
+      const attendeeId = "att-wallet-action-restore-expired-cascade";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true, passStatus: "voided" });
+      await prisma.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { expires_at: new Date("2020-01-01") },
+      });
+      await prisma.attendee.update({ where: { id: attendeeId }, data: { status: "revoked" } });
+      const before = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+      try {
+        const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`, {
+          method: "PATCH",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "registered", expected_updated_at: before.updated_at.toISOString() }),
+        });
+        expect(res.status).toBe(200);
+        expect(restoreSpy).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("voided");
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+  });
+
   describe("reissue", () => {
     it("rebuilds the pass from current attendee data, reusing the attendee's own token as the barcode", async () => {
       const attendeeId = "att-wallet-action-reissue";

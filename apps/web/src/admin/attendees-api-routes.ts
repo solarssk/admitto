@@ -2147,14 +2147,16 @@ async function syncWalletPassOnStatusChangeBestEffort(
     }),
     db.walletPass.findUnique({
       where: { attendee_id: attendeeId },
-      select: { provider_pass_id: true, status: true, provider_removed_at: true },
+      select: { provider_pass_id: true, status: true, provider_removed_at: true, expires_at: true },
     }),
   ]);
   if (!event || !walletPass?.provider_pass_id) return;
   // Nothing left at the provider to void or restore for a removed pass.
   if (walletPass.provider_removed_at) return;
-  // Same rule as the Restore route: a pass is never made valid again once the event is over.
+  // Same rule as the Restore route: a pass is never made valid again once the event is over, or
+  // once its own canonical expiry (plan v4.2 step 6) has passed.
   if (statusChange === "registered" && isEventWalletAddClosed(event)) return;
+  if (statusChange === "registered" && walletPass.expires_at && walletPass.expires_at.getTime() <= Date.now()) return;
   if (statusChange === "revoked" && walletPass.status !== "active") return;
   if (statusChange === "registered" && walletPass.status !== "voided") return;
 
@@ -4157,6 +4159,10 @@ async function loadWalletActionContext(
       userProvidedId: string | null;
       providerCommandedAt: Date | null;
       providerRemovedAt: Date | null;
+      /** Canonical expiry (plan v4.2 step 6) - null unless Event.wallet_expiration_mode was
+       * "event_end" when this pass was last issued/reissued. Restore's own gate below refuses once
+       * this has passed, the same way it already refuses once the event itself is over. */
+      expiresAt: Date | null;
       /** When the event is over, and whether it is archived (isWalletAddClosed) - what the Restore
        * gate needs. */
       eventEnd: EventEndInput & { archivedAt: Date | null };
@@ -4185,6 +4191,7 @@ async function loadWalletActionContext(
             user_provided_id: true,
             provider_commanded_at: true,
             provider_removed_at: true,
+            expires_at: true,
           },
         },
       },
@@ -4228,6 +4235,7 @@ async function loadWalletActionContext(
     userProvidedId: attendee.wallet_pass.user_provided_id,
     providerCommandedAt: attendee.wallet_pass.provider_commanded_at,
     providerRemovedAt: attendee.wallet_pass.provider_removed_at,
+    expiresAt: attendee.wallet_pass.expires_at,
     eventEnd: {
       date: event.date,
       eventHoursStart: event.event_hours_start,
@@ -4322,6 +4330,12 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
   // The server decides, whatever the UI showed: once the event is over (or archived) nothing may
   // make a pass valid again.
   if (isWalletAddClosed(ctx.eventEnd)) return c.json({ error: "wallet_restore_closed" }, 409);
+  // Canonical expiry (plan v4.2 step 6) outranks a manual Restore too - once Admitto's own
+  // expires_at has passed, the pass is done the same way it's done once the event itself is over,
+  // regardless of what the provider itself would say about it.
+  if (ctx.expiresAt && ctx.expiresAt.getTime() <= Date.now()) {
+    return c.json({ error: "wallet_restore_expired" }, 409);
+  }
 
   try {
     await ctx.provider.restorePass(ctx.providerPassId);

@@ -508,6 +508,34 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
+  describe("expires_at (plan v4.2 step 6 canonical expiry)", () => {
+    it("is null when the event's wallet_expiration_mode is 'none' (the default)", async () => {
+      const provider = stubProvider();
+      const app = makeApp(provider);
+
+      await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.expires_at).toBeNull();
+    });
+
+    it("is set to the event's own end time (UTC) when wallet_expiration_mode is 'event_end'", async () => {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
+      try {
+        const provider = stubProvider();
+        const app = makeApp(provider);
+
+        await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+        const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+        // event_hours_end "22:00", timezone "UTC" (fixture default) - same day, no rollover.
+        expect(saved?.expires_at).toEqual(new Date("2099-09-01T22:00:00.000Z"));
+      } finally {
+        await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
+      }
+    });
+  });
+
   describe("once the event is over or archived", () => {
     async function withEventPatch(data: { date?: Date; archived_at?: Date | null }, run: () => Promise<void>) {
       const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
@@ -821,6 +849,38 @@ describe("On-demand wallet routes", () => {
       expect(saved?.last_error_code).toBe("wallet_credential_changed");
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
+  // Regression (self-review, plan v4.2 step 6): markActive originally computed expires_at from
+  // the outer event snapshot resolveTicket took at the top of the request, not the fresh row read
+  // under the same advisory lock/recheck as wallet_template_id above - an admin's settings save
+  // enabling wallet_expiration_mode while this request's own createPass call is in flight would
+  // otherwise silently persist a pass with no expires_at at all, and PassCreator would never even
+  // have been sent an expirationDate for it.
+  it("computes expires_at from the event's current wallet_expiration_mode, not the request's initial snapshot, when a settings save lands while createPass is in flight", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+    const app = makeApp(provider);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      // event_hours_end "22:00", timezone "UTC" (fixture default) - the same computation the
+      // dedicated "expires_at" describe block above already proves in the non-racing case.
+      expect(saved?.expires_at).toEqual(new Date("2099-09-01T22:00:00.000Z"));
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
     }
   });
 

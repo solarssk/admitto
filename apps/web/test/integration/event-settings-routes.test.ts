@@ -1440,6 +1440,30 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    it("enqueues an event-wide wallet_push job when wallet_expiration_mode is turned on (plan v4.2 step 6 - bypasses the field-mapping gate entirely)", async () => {
+      vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockResolvedValueOnce({
+        name: "Wallet Push Gala",
+        perPassExpirationReady: true,
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]).toMatchObject({
+          status: "pending",
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        });
+      } finally {
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_expiration_mode: "none" } });
+      }
+    });
+
     it("does not enqueue a job when wallet_apple_enabled is toggled on an event with no start time (relevantDate absent on both sides)", async () => {
       await prisma.event.update({ where: { id: PUSH_EVENT }, data: { event_hours_start: null } });
       try {
@@ -2756,6 +2780,219 @@ describe("PATCH /api/admin/events/:eventId", () => {
       expect(res.status).toBe(200);
 
       await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_api_key_enc: null } });
+    });
+  });
+
+  // guardWalletExpirationModeChange (plan v4.2 step 6): "none" -> "event_end" is only accepted
+  // once a live describeTemplate() probe confirms perPassExpirationReady; "event_end" -> "none" is
+  // refused outright once any wallet pass has been issued (no live-verified way to clear
+  // expirationDate at the provider).
+  describe("wallet expiration mode guard", () => {
+    async function seedIssuedWalletPass(): Promise<{ attendeeId: string; cleanup: () => Promise<void> }> {
+      const attendee = await prisma.attendee.create({
+        data: {
+          event_id: EVENT_SET,
+          email: `wallet-expiration-guard-${Date.now()}@example.com`,
+          name: "Wallet Expiration Guard Attendee",
+          status: "registered",
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: attendee.id,
+          provider: "passcreator",
+          provider_pass_id: `pc-${attendee.id}`,
+          status: "active",
+          issued_at: new Date("2026-06-15T00:00:00.000Z"),
+        },
+      });
+      return {
+        attendeeId: attendee.id,
+        cleanup: async () => {
+          await prisma.walletPass.deleteMany({ where: { attendee_id: attendee.id } });
+          await prisma.attendee.delete({ where: { id: attendee.id } });
+        },
+      };
+    }
+
+    async function resetEventWalletConfig(): Promise<void> {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_template_id: null, wallet_api_key_enc: null, wallet_expiration_mode: "none" },
+      });
+    }
+
+    it("enables event_end once describeTemplate confirms perPassExpirationReady", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_template_id: "tmpl-expiration", wallet_api_key_enc: encryptToString("expiration-key") },
+      });
+      const describeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "describeTemplate")
+        .mockResolvedValueOnce({ name: "Gala Pass", perPassExpirationReady: true });
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+        expect(res.status).toBe(200);
+        expect(describeSpy).toHaveBeenCalled();
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_expiration_mode).toBe("event_end");
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("rejects enabling event_end with 409 wallet_expiration_mode_not_supported when the template can't do per-pass expiration", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_template_id: "tmpl-expiration", wallet_api_key_enc: encryptToString("expiration-key") },
+      });
+      vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockResolvedValueOnce({
+        name: "Gala Pass",
+        perPassExpirationReady: false,
+      });
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_not_supported" });
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_expiration_mode).toBe("none");
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("rejects enabling event_end with 409 wallet_expiration_mode_not_supported when describeTemplate itself fails", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_template_id: "tmpl-expiration", wallet_api_key_enc: encryptToString("expiration-key") },
+      });
+      vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockRejectedValueOnce(
+        new WalletProviderError("wallet_provider_unauthorized", "bad key"),
+      );
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_not_supported" });
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("rejects enabling event_end with 409 wallet_expiration_mode_requires_template when no template/key is configured", async () => {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_expiration_mode: "event_end" }),
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "wallet_expiration_mode_requires_template" });
+    });
+
+    // Regression (self-review): the guard must not fall back to the still-encrypted *existing*
+    // API key when this same request is simultaneously clearing it - that would verify against a
+    // key the save is about to discard, and describeTemplate would never actually see it used.
+    it("rejects enabling event_end with 409 wallet_expiration_mode_requires_template when this same request also clears the API key", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_template_id: "tmpl-expiration", wallet_api_key_enc: encryptToString("expiration-key") },
+      });
+      const describeSpy = vi.spyOn(PassCreatorClient.prototype, "describeTemplate");
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "event_end", wallet_api_key: "" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_requires_template" });
+        expect(describeSpy).not.toHaveBeenCalled();
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_expiration_mode).toBe("none");
+        expect(row.wallet_api_key_enc).not.toBeNull();
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("rejects disabling event_end with 409 wallet_expiration_mode_locked once a pass has been issued", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: {
+          wallet_template_id: "tmpl-expiration",
+          wallet_api_key_enc: encryptToString("expiration-key"),
+          wallet_expiration_mode: "event_end",
+        },
+      });
+      const { cleanup } = await seedIssuedWalletPass();
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "none" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_locked" });
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_expiration_mode).toBe("event_end");
+      } finally {
+        await cleanup();
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("allows disabling event_end when the event has no issued wallet passes", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: {
+          wallet_template_id: "tmpl-expiration",
+          wallet_api_key_enc: encryptToString("expiration-key"),
+          wallet_expiration_mode: "event_end",
+        },
+      });
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_expiration_mode: "none" }),
+        });
+        expect(res.status).toBe(200);
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
+    it("is a no-op that skips the live check when re-saving the already-stored value", async () => {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_expiration_mode: "none" },
+      });
+      const describeSpy = vi.spyOn(PassCreatorClient.prototype, "describeTemplate");
+
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_expiration_mode: "none", title: "Settings Event" }),
+      });
+      expect(res.status).toBe(200);
+      expect(describeSpy).not.toHaveBeenCalled();
     });
   });
 });

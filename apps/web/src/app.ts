@@ -446,7 +446,7 @@ import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
 import { handleOpsSystemLogIngest } from "./ops/system-log-ingest.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
-import { isWalletAddClosed } from "@admitto/shared";
+import { eventEndsAtUtc, isWalletAddClosed } from "@admitto/shared";
 
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
@@ -970,17 +970,26 @@ export function createApp(options: CreateAppOptions = {}) {
       result: WalletPassResult,
     ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
       let templateChanged = false;
+      let expiresAt: Date | null = null;
       try {
         await db.$transaction(async (tx) => {
           await acquireWalletTemplateLock(tx, event.id);
           const currentEvent = await tx.event.findUnique({
             where: { id: event.id },
-            select: { wallet_template_id: true },
+            select: { wallet_template_id: true, wallet_expiration_mode: true },
           });
           if (currentEvent?.wallet_template_id !== event.walletTemplateId) {
             templateChanged = true;
             return;
           }
+          // Admitto's own canonical value, never re-derived from anything the provider reports
+          // back (plan v4.2 step 6) - null when the event's wallet_expiration_mode is "none", so
+          // a pass from an event that has never turned this on gets no expires_at at all. Read
+          // under the same lock/recheck as wallet_template_id above, not the outer `event`
+          // snapshot resolveTicket took at the top of the request: an admin's settings save
+          // enabling or disabling this mode can land during the provider round-trip this
+          // function is called after, and the snapshot would otherwise silently win the race.
+          expiresAt = currentEvent.wallet_expiration_mode === "event_end" ? eventEndsAtUtc(event) : null;
           await tx.walletPass.upsert({
             where: { attendee_id: attendee.id },
             create: {
@@ -993,6 +1002,7 @@ export function createApp(options: CreateAppOptions = {}) {
               android_url: result.androidUrl,
               status: "active",
               issued_at: new Date(),
+              expires_at: expiresAt,
             },
             update: {
               provider: "passcreator",
@@ -1004,6 +1014,7 @@ export function createApp(options: CreateAppOptions = {}) {
               status: "active",
               last_error_code: null,
               issued_at: new Date(),
+              expires_at: expiresAt,
             },
           });
         });

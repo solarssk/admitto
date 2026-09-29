@@ -1094,6 +1094,14 @@ export interface BounceIngestRunResponse {
 /** SMTP connection probe (nodemailer verify, no send) — org or event dedicated SMTP. */
 export type MailSmtpProbeResponse = ConnectionTestResponse;
 
+/** Wallet "Test connection" probe — adds the per-pass-expiration capability gate (plan v4.2 step
+ * 6) the Wallet tab's "Pass expiration" field needs before it can offer "Expire when the event
+ * ends": undefined on a failed probe (`ok: false`), otherwise whether the template's own
+ * PassCreator "Different for each pass" setting is on. */
+export type WalletConnectionTestResponse = ConnectionTestResponse & {
+  perPassExpirationReady?: boolean;
+};
+
 export interface SaveMailSettingsBody {
   /** Omit = unchanged; `""` clears stored provider (Not configured). */
   provider?: MailProvider | "";

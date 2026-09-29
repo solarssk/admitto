@@ -312,6 +312,11 @@ describe("isWalletFieldMappingRelevant", () => {
     expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, { any: "event_name" })).toBe(false);
   });
 
+  it("wallet_expiration_mode has no placeholder of its own either - callers bypass this table for it entirely", () => {
+    expect(isWalletFieldMappingRelevant("wallet_expiration_mode", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
+    expect(isWalletFieldMappingRelevant("wallet_expiration_mode", EVENT_FIELD_PLACEHOLDERS, { any: "event_name" })).toBe(false);
+  });
+
   it("is not relevant for a mapped-only field when fieldMapping is null/empty (e.g. event_type with no template field pointed at it)", () => {
     expect(isWalletFieldMappingRelevant("event_type", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
     expect(isWalletFieldMappingRelevant("title", EVENT_FIELD_PLACEHOLDERS, {})).toBe(false);

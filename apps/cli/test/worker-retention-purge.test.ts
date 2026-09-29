@@ -61,6 +61,9 @@ vi.mock("../src/commands/wallet-message-jobs.js", () => ({
 vi.mock("../src/commands/wallet-sync.js", () => ({
   runWalletRegistrationSync: vi.fn(async () => ({ checked: 0, updated: 0, skippedNoProvider: 0, failed: 0 })),
 }));
+vi.mock("../src/commands/wallet-expire.js", () => ({
+  runWalletExpiry: vi.fn(async () => ({ expired: 0 })),
+}));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn(async () => undefined) }));
 
 const { runWorkerTick } = await import("../src/commands/worker.js");

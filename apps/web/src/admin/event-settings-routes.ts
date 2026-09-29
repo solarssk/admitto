@@ -113,6 +113,12 @@ const patchEventSchema = z
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
     wallet_samsung_enabled: z.boolean().optional(),
+    // "none" (default): no canonical expires_at. "event_end": every new/reissued pass gets
+    // expires_at = eventEndsAtUtc(event) and PassCreator gets expirationDate (plan v4.2 step 6).
+    // guardWalletExpirationModeChange below live-verifies the template supports per-pass
+    // expiration before allowing "none" -> "event_end", and blocks "event_end" -> "none" outright
+    // once passes are issued (no live-verified way to clear expirationDate at the provider).
+    wallet_expiration_mode: z.enum(["none", "event_end"]).optional(),
     // Value is either a fixed WALLET_MAPPING_PLACEHOLDERS entry or a "custom:<source_field>"
     // reference to one of this event's select/boolean EventCustomField rows (WALLET_CUSTOM_
     // FIELD_PLACEHOLDER_PREFIX, packages/tickets/src/wallet-custom-fields.ts; source_field charset
@@ -150,6 +156,7 @@ type EventSettingsRow = {
   wallet_google_enabled: boolean;
   wallet_samsung_enabled: boolean;
   wallet_field_mapping: unknown;
+  wallet_expiration_mode: string;
   capacity: number | null;
   archived_at: Date | null;
   archived_by_timezone: string | null;
@@ -192,6 +199,7 @@ function serializeEventSettings(
     wallet_google_enabled: event.wallet_google_enabled,
     wallet_samsung_enabled: event.wallet_samsung_enabled,
     wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
+    wallet_expiration_mode: event.wallet_expiration_mode,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
@@ -237,6 +245,7 @@ const EVENT_SETTINGS_SELECT = {
   wallet_google_enabled: true,
   wallet_samsung_enabled: true,
   wallet_field_mapping: true,
+  wallet_expiration_mode: true,
   capacity: true,
   archived_at: true,
   archived_by_timezone: true,
@@ -489,6 +498,10 @@ export async function handlePostEventWalletTest(c: Context, db: PrismaClient): P
     return c.json({
       ok: true,
       message: result.name ? `Connected - template "${result.name}".` : "Connected to PassCreator.",
+      // "Per-pass expiration" gate for the Wallet tab's own Pass expiration field (plan v4.2 step
+      // 6) - wallet_expiration_mode "event_end" is only offered once this template supports a
+      // per-pass expiration date at all (see describeTemplate's own doc comment).
+      perPassExpirationReady: result.perPassExpirationReady,
     });
   } catch (err) {
     const message =
@@ -509,6 +522,7 @@ type WalletFieldsPatch = {
   wallet_google_enabled?: boolean;
   wallet_samsung_enabled?: boolean;
   wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  wallet_expiration_mode?: string;
 };
 
 /** Wallet-only slice of buildBasicFieldsPatch, extracted to keep the main function's cognitive
@@ -533,6 +547,9 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   if (patch.wallet_field_mapping !== undefined) {
     const mapping = patch.wallet_field_mapping;
     data.wallet_field_mapping = mapping && Object.keys(mapping).length > 0 ? mapping : Prisma.JsonNull;
+  }
+  if (patch.wallet_expiration_mode !== undefined) {
+    data.wallet_expiration_mode = patch.wallet_expiration_mode;
   }
   return data;
 }
@@ -881,7 +898,10 @@ export async function subscribeWalletWebhooksBestEffort(
  * hours, date, location, event type) - flipping any of these changes what buildWalletPassInput
  * would produce for an already-issued pass. wallet_apple_enabled is included too: PassCreator's
  * relevantDate (Lock Screen surfacing) is Apple-only, gated on it alone, so turning Apple Wallet
- * off must also refresh already-issued passes. */
+ * off must also refresh already-issued passes. wallet_expiration_mode is included for the same
+ * reason: flipping "none" -> "event_end" (guardWalletExpirationModeChange above only allows this
+ * once already-issued passes could actually gain expires_at/expirationDate) must push that date
+ * onto every already-issued pass, not just new ones. */
 type WalletRelevantEventSnapshot = {
   title: string;
   date: Date;
@@ -890,6 +910,7 @@ type WalletRelevantEventSnapshot = {
   event_hours_end: string | null;
   event_type: string | null;
   wallet_apple_enabled: boolean;
+  wallet_expiration_mode: string;
 };
 
 /** True only when one of WALLET_RELEVANT_EVENT_FIELDS' *persisted* values actually differs -
@@ -906,7 +927,10 @@ type WalletRelevantEventSnapshot = {
  * `updatedWalletFieldMapping` (the post-write mapping, so a save that both edits a field and maps
  * it in the same request still counts) - see @admitto/wallet. Editing an event field with no
  * template Additional Property pointed at it (e.g. `event_type` on a template that doesn't map it)
- * cannot change any issued pass, so it must not enqueue a no-op push. */
+ * cannot change any issued pass, so it must not enqueue a no-op push. `wallet_expiration_mode` is
+ * also never gated on fieldMapping - it isn't sent via an Additional Property at all, so any real
+ * change to it (in practice only "none" -> "event_end": guardWalletExpirationModeChange above
+ * blocks the other direction once passes are issued) is unconditionally relevant. */
 function walletRelevantEventFieldsChanged(
   existing: WalletRelevantEventSnapshot,
   updated: WalletRelevantEventSnapshot,
@@ -921,6 +945,7 @@ function walletRelevantEventFieldsChanged(
     const b = updated[field];
     const changed = a instanceof Date && b instanceof Date ? a.getTime() !== b.getTime() : a !== b;
     if (!changed) return false;
+    if (field === "wallet_expiration_mode") return true;
     if ((field === "date" || field === "event_hours_start" || field === "wallet_apple_enabled") && relevantDateAffected) {
       return true;
     }
@@ -1015,6 +1040,69 @@ async function guardWalletCredentialChange(
   }
 }
 
+/** Blocks "event_end" -> "none" for an event with already-issued passes (no live-verified way to
+ * clear `expirationDate` at the provider, so the safe default is to refuse rather than leave a
+ * stale date behind - plan v4.2 step 6), and blocks "none" -> "event_end" unless a live
+ * describeTemplate() probe confirms the template actually supports a per-pass expiration date -
+ * PassCreator otherwise silently ignores `expirationDate` on create/update whenever the
+ * template's own "Different for each pass" setting is off (2026-09-28 live-account finding, see
+ * PassCreatorClient.describeTemplate's own doc comment), so enabling this mode without the check
+ * would look like it worked while doing nothing. Returns null when nothing needs blocking (not
+ * changing, or the new value already matches what's saved). */
+async function guardWalletExpirationModeChange(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  patch: Pick<PatchEventBody, "wallet_expiration_mode" | "wallet_template_id" | "wallet_api_key">,
+  existing: Pick<EventSettingsRow, "wallet_expiration_mode" | "wallet_template_id" | "wallet_api_key_enc">,
+): Promise<Response | null> {
+  if (
+    patch.wallet_expiration_mode === undefined ||
+    patch.wallet_expiration_mode === existing.wallet_expiration_mode
+  ) {
+    return null;
+  }
+
+  if (patch.wallet_expiration_mode === "none") {
+    const issuedCount = await loadIssuedWalletPassCount(db, eventId);
+    return issuedCount > 0 ? c.json({ error: "wallet_expiration_mode_locked" }, 409) : null;
+  }
+
+  const templateId = patch.wallet_template_id !== undefined ? patch.wallet_template_id : existing.wallet_template_id;
+  if (!templateId) {
+    return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
+  }
+  // patch.wallet_api_key can be `null`/`""` (this same request is clearing the key) - that must
+  // NOT fall back to the still-encrypted existing key below, or this check would verify against a
+  // key the save is simultaneously discarding (bot review). Only "not present in this patch at
+  // all" (undefined) falls back to it.
+  let apiKey: string | null | undefined = patch.wallet_api_key;
+  // Checks presence (undefined vs. set), not equality of two secret values - no secret comparison
+  // here to time.
+  // eslint-disable-next-line security/detect-possible-timing-attacks
+  if (apiKey === undefined) {
+    if (!existing.wallet_api_key_enc) {
+      return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
+    }
+    try {
+      apiKey = decryptFromString(existing.wallet_api_key_enc);
+    } catch {
+      return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
+    }
+  }
+  if (!apiKey) {
+    return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
+  }
+
+  const client = new PassCreatorClient({ apiKey, templateId, baseUrl: resolvePassCreatorBaseUrl() });
+  try {
+    const result = await client.describeTemplate();
+    return result.perPassExpirationReady ? null : c.json({ error: "wallet_expiration_mode_not_supported" }, 409);
+  } catch {
+    return c.json({ error: "wallet_expiration_mode_not_supported" }, 409);
+  }
+}
+
 /** Authoritative block for a Template ID change on an event with issued passes - see
  * guardWalletCredentialChange's own doc comment for why this half moved into
  * handlePatchEvent's transaction instead of running there. Acquires the same per-event advisory
@@ -1073,7 +1161,8 @@ async function parsePatchEventRequest(
     patch.wallet_apple_enabled !== undefined ||
     patch.wallet_google_enabled !== undefined ||
     patch.wallet_samsung_enabled !== undefined ||
-    patch.wallet_field_mapping !== undefined;
+    patch.wallet_field_mapping !== undefined ||
+    patch.wallet_expiration_mode !== undefined;
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
   }
@@ -1121,6 +1210,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (patchesWallet) {
     const credentialGuardResponse = await guardWalletCredentialChange(c, db, eventId, patch, existing);
     if (credentialGuardResponse) return credentialGuardResponse;
+    const expirationModeGuardResponse = await guardWalletExpirationModeChange(c, db, eventId, patch, existing);
+    if (expirationModeGuardResponse) return expirationModeGuardResponse;
   }
 
   const audit = adminAuditFromContext(c);
@@ -1140,6 +1231,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     wallet_google_enabled?: boolean;
     wallet_samsung_enabled?: boolean;
     wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+    wallet_expiration_mode?: string;
     capacity?: number | null;
     logo_url?: string | null;
     logo_original_url?: string | null;
