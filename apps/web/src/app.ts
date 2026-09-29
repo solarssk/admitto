@@ -1161,7 +1161,32 @@ export function createApp(options: CreateAppOptions = {}) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
         const recovered =
           code === "wallet_provider_duplicate" ? await recoverDuplicatePass(input.userProvidedId) : null;
-        if (recovered) return markActive(input.userProvidedId, recovered, hadExpirationDate);
+        if (recovered) {
+          // recoverDuplicatePass is a lookup (findByUserProvidedId), not a push - its result is
+          // whatever content the *winning* concurrent request's own createPass call happened to
+          // send, which markActive's own mismatch check below can't see (it only knows this
+          // request's own hadExpirationDate, not what's actually on the recovered pass). Pushing
+          // this request's own fresh input via updatePass reconciles the recovered pass to a
+          // known, current state before markActive ever runs - closes the case where a retry
+          // recovers an earlier attempt's own now-orphaned pass, left behind with a stale
+          // expirationDate by exactly the race markActive's check exists to catch on a fresh
+          // create (CodeRabbit review). Falls through to markFailed on its own failure, same as
+          // any other unrecoverable createPass error - a reconcile Admitto can't confirm must not
+          // be treated as a successful activation.
+          try {
+            const reconciled = await provider.updatePass(recovered.providerPassId, input);
+            return await markActive(input.userProvidedId, reconciled, hadExpirationDate);
+          } catch (reconcileErr) {
+            console.error("PassCreator updatePass (duplicate recovery reconcile) failed:", reconcileErr);
+            recordSystemLog({
+              level: "error",
+              source: "api",
+              message: "wallet_pass_recovery_reconcile_failed",
+              fields: { eventId: event.id, attendeeId: attendee.id },
+            });
+            return markFailed(code);
+          }
+        }
 
         console.error("PassCreator createPass failed:", err);
         recordSystemLog({

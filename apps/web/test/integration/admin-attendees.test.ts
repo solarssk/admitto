@@ -1747,6 +1747,53 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       }
     });
 
+    // Regression (CodeRabbit review, plan v4.2 step 6): this route duplicates
+    // reissueOneWalletPass's own provider push (updatePass with the same buildWalletPassInput
+    // computed expirationDate) but had drifted from also keeping the local expires_at column in
+    // sync with what was actually sent - the provider got a real expirationDate while Admitto's
+    // own record silently stayed null (or vice versa once the mode is later disabled).
+    it("keeps expires_at in sync with the expirationDate just pushed to the provider (plan v4.2 step 6)", async () => {
+      const attendeeId = "att-wallet-action-reissue-expiration";
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Wallet Reissue Expiration",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: { attendee_id: attendeeId, provider: "passcreator", provider_pass_id: `pc-${attendeeId}`, status: "active" },
+      });
+      await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { wallet_expiration_mode: "event_end" } });
+      updateSpy.mockResolvedValueOnce({
+        providerPassId: `pc-${attendeeId}`,
+        downloadUrl: "https://pc.test/p/new",
+        appleUrl: "https://pc.test/apple/new",
+        androidUrl: "https://pc.test/android/new",
+      });
+
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        // No end time on WALLET_ACTION_EVENT - rolls over to next-day midnight, UTC (schema default).
+        expect(updateSpy.mock.calls[0]?.[1]).toMatchObject({ expirationDate: "2099-09-02 00:00" });
+        const saved = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(saved?.expires_at).toEqual(new Date("2099-09-02T00:00:00.000Z"));
+      } finally {
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { wallet_expiration_mode: "none" } });
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
     it("keeps an already-voided pass voided - updatePass never restores the provider's voided flag", async () => {
       const attendeeId = "att-wallet-action-reissue-voided";
       const token = generateToken();

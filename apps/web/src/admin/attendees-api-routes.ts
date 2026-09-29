@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { WALLET_RELEVANT_ATTENDEE_FIELDS, isWalletAddClosed, type EventEndInput } from "@admitto/shared";
+import { WALLET_RELEVANT_ATTENDEE_FIELDS, eventEndsAtUtc, isWalletAddClosed, type EventEndInput } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
@@ -4432,6 +4432,12 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
       android_url: result.androidUrl,
       last_error_code: null,
       last_synced_at: new Date(),
+      // Kept in sync with the same expirationDate input just pushed above - see
+      // reissue-wallet-pass.ts's own reissueOneWalletPass (the bulk/background counterpart of this
+      // single-attendee action) for why this doesn't also bump provider_commanded_at (bot review:
+      // this route duplicated that function's provider push but had drifted from its expires_at
+      // write).
+      expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
     });
     if (!row) return null;
     await writeActionLog(tx, {
