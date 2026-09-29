@@ -15,8 +15,8 @@ describe("healthCheckGuidance", () => {
     expect(healthCheckGuidance(checkRow("database", "ok"))).toBeNull();
   });
 
-  it("returns null for a not_configured row", () => {
-    expect(healthCheckGuidance(checkRow("email_sending", "not_configured"))).toBeNull();
+  it("returns null for a not_configured row on a check with no quiet note", () => {
+    expect(healthCheckGuidance(checkRow("database", "not_configured"))).toBeNull();
   });
 
   it("gives database down with no migrations key the missing-database-service guidance", () => {
@@ -239,4 +239,142 @@ describe("healthCheckGuidance", () => {
         "Reload this page. If the Database row is also down, fix that first. If the problem stays, use Copy for GitHub Issue and open an issue.",
     });
   });
+
+  it.each(["not_a_directory", "not_writable", "cannot_create_directory"])(
+    "gives file_storage down/reason=%s the missing-folder guidance",
+    (reason) => {
+      const guidance = healthCheckGuidance(
+        checkRow("file_storage", "down", [{ key: "reason", value: reason }]),
+      );
+      expect(guidance).toEqual({
+        impact: "Logos, imports and exports need this folder.",
+        nextStep:
+          "Make sure UPLOAD_DIR exists and Admitto can write to it. In Docker Compose that is the uploads folder on the host.",
+      });
+    },
+  );
+
+  it("gives file_storage degraded/write_probe_failed the same missing-folder guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("file_storage", "degraded", [{ key: "reason", value: "write_probe_failed" }]),
+    );
+    expect(guidance?.impact).toBe("Logos, imports and exports need this folder.");
+  });
+
+  it("returns null for file_storage degraded/not_implemented (S3, out of scope)", () => {
+    expect(
+      healthCheckGuidance(
+        checkRow("file_storage", "degraded", [{ key: "reason", value: "not_implemented" }]),
+      ),
+    ).toBeNull();
+  });
+
+  it("gives address_lookup degraded (slow, no reason key) the slow guidance with a link", () => {
+    const guidance = healthCheckGuidance(checkRow("address_lookup", "degraded"));
+    expect(guidance).toEqual({
+      impact: "Address suggestions may be slow.",
+      nextStep:
+        "Check the geocoding address under Maps in External services and that this server can reach it. Then run live checks again.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    });
+  });
+
+  it("gives address_lookup down the unreachable guidance with the same link", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("address_lookup", "down", [{ key: "live_check", value: "failed" }]),
+    );
+    expect(guidance?.impact).toBe("Address suggestions may not work.");
+    expect(guidance?.link).toEqual({ label: "Open External services", to: "/admin/settings?tab=external" });
+  });
+
+  it.each(["failed", "timeout", "unavailable"])(
+    "gives weather down/live_check=%s the unreachable guidance with a link",
+    (liveCheck) => {
+      const guidance = healthCheckGuidance(
+        checkRow("weather", "down", [{ key: "live_check", value: liveCheck }]),
+      );
+      expect(guidance).toEqual({
+        impact: "Weather forecasts may be missing.",
+        nextStep:
+          "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
+        link: { label: "Open External services", to: "/admin/settings?tab=external" },
+      });
+    },
+  );
+
+  it("gives weather down/live_check=support_contact_required the support-contact guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("weather", "down", [{ key: "live_check", value: "support_contact_required" }]),
+    );
+    expect(guidance).toEqual({
+      impact: "Weather forecasts are not available until a support contact is set.",
+      nextStep: "Add a support contact in General settings.",
+      link: { label: "Open General settings", to: "/admin/settings?tab=general" },
+    });
+  });
+
+  it("gives weather degraded with no live_check or reason key the same support-contact guidance", () => {
+    // The passive "no geocoding contact configured" branch (MET Norway) - no live_check,
+    // no reason, just a provider key.
+    const guidance = healthCheckGuidance(
+      checkRow("weather", "degraded", [{ key: "provider", value: "metno" }]),
+    );
+    expect(guidance).toEqual({
+      impact: "Weather forecasts are not available until a support contact is set.",
+      nextStep: "Add a support contact in General settings.",
+      link: { label: "Open General settings", to: "/admin/settings?tab=general" },
+    });
+  });
+
+  it("gives bounce_ingest degraded with no reason key the shared bounce guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("bounce_ingest", "degraded", [
+        { key: "enabled_events", value: "3" },
+        { key: "problem_events", value: "1" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      impact: "Bounced emails may not be detected for those events.",
+      nextStep:
+        "Check the Background worker row first. Then open Event settings for events with bounce detection turned on.",
+    });
+  });
+
+  it("gives email_sending not_configured with no provider the quiet no-provider note", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("email_sending", "not_configured", [{ key: "configured", value: "no" }]),
+    );
+    expect(guidance).toEqual({
+      impact: "No organisation mail provider is set.",
+      nextStep: "To send emails from Admitto, choose a mail provider in Mail settings.",
+      link: { label: "Open Mail settings", to: "/admin/settings?tab=mail" },
+      quiet: true,
+    });
+  });
+
+  it("gives email_sending not_configured/provider=export_only the quiet export-only note", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("email_sending", "not_configured", [{ key: "provider", value: "export_only" }]),
+    );
+    expect(guidance).toEqual({
+      impact: "This provider does not send emails.",
+      nextStep: "To send emails from Admitto, choose a mail provider in Mail settings.",
+      link: { label: "Open Mail settings", to: "/admin/settings?tab=mail" },
+      quiet: true,
+    });
+  });
+
+  it.each(["address_lookup", "weather", "bounce_ingest"])(
+    "gives %s degraded/reason=lookup_failed the shared could-not-read guidance, not its own",
+    (id) => {
+      const guidance = healthCheckGuidance(
+        checkRow(id, "degraded", [{ key: "reason", value: "lookup_failed" }]),
+      );
+      expect(guidance).toEqual({
+        impact: "Admitto could not read the data for this check, so it cannot tell whether it works.",
+        nextStep:
+          "Reload this page. If the Database row is also down, fix that first. If the problem stays, use Copy for GitHub Issue and open an issue.",
+      });
+    },
+  );
 });

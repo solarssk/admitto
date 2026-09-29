@@ -262,7 +262,11 @@ function HealthCheckRowView({
       {expanded && (guidance || details.length > 0) && (
         <div className="health-check__body">
           {guidance && (
-            <div className="health-check__guidance">
+            <div
+              className={
+                guidance.quiet ? "health-check__guidance health-check__guidance--quiet" : "health-check__guidance"
+              }
+            >
               <p>{guidance.impact}</p>
               <p>
                 {guidance.nextStep}

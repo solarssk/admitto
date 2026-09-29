@@ -859,4 +859,38 @@ describe("HealthCheckPanel", () => {
     fireEvent.click(rowBtn);
     expect(row.querySelector(".health-check__guidance")).toBeNull();
   });
+
+  it("shows a quiet note with a Mail settings link when email_sending is not configured", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleReport({
+        overall: "ok",
+        groups: [
+          {
+            id: "external",
+            label: "External integrations",
+            subtitle: "Third-party APIs this instance depends on",
+            status: "ok",
+            checks: [
+              {
+                id: "email_sending",
+                label: "Email sending",
+                status: "not_configured",
+                summary: "Not configured",
+                details: [{ key: "configured", value: "no" }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    renderWithToastAndRouter(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Email sending/ });
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
+    fireEvent.click(rowBtn);
+
+    expect(within(row).getByText("No organisation mail provider is set.")).toBeTruthy();
+    const link = within(row).getByRole("link", { name: /Open Mail settings/ });
+    expect(link.getAttribute("href")).toBe("/admin/settings?tab=mail");
+    expect(row.querySelector(".health-check__guidance--quiet")).toBeTruthy();
+  });
 });

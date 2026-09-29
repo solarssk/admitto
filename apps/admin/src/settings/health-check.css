@@ -242,6 +242,13 @@
   white-space: nowrap;
 }
 
+/* email_sending's own not_configured note: a quiet fact ("no mail provider set yet"), not a
+ * problem, so its text stays muted instead of the primary-coloured tone the rest of guidance
+ * uses. The link keeps its normal colour - it is still the useful next action. */
+.health-check__guidance--quiet p {
+  color: var(--text-muted, var(--tblr-secondary));
+}
+
 .health-check__details {
   display: grid;
   gap: 0.35rem;
