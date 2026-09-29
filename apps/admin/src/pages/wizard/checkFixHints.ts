@@ -4,15 +4,15 @@ const FIX_HINTS: Record<SetupCheckKey, string> = {
   database: `Verify DATABASE_URL in your .env or Docker environment points to a running PostgreSQL instance.
 If the database is up but migrations are pending, run:
   npx prisma migrate deploy
-In Docker Compose, migrations run automatically on app container start. Restart the web service after fixing DATABASE_URL.`,
+In Docker Compose, migrations run in the separate migrate service, once, before the app starts - check its log. Restart the stack after fixing DATABASE_URL.`,
   redis: `If you use Redis for rate limiting or sessions, set REDIS_URL and ensure the Redis service is reachable.
 For single-node dev without Redis, the in-memory store is acceptable. Check your deployment docs.`,
   encryption: `Set ENCRYPTION_KEY in your .env file or Docker environment (32 bytes, base64-encoded):
   ENCRYPTION_KEY=$(openssl rand -base64 32)
 Then restart the server.`,
-  base_url: `Set the Instance URL in Settings → General, or set BASE_URL in your environment, for example:
+  base_url: `Set BASE_URL in your environment to the public https address of this site, for example:
   BASE_URL=https://tickets.example.com
-In production, BASE_URL env is required for server boot/restarts; the Settings value is used for mail links at runtime.`,
+Then restart Admitto. This check specifically wants BASE_URL: with only the Settings → General value set, ticket links and sign-in still work, but this check stays red until BASE_URL is also set.`,
 };
 
 /** Operator-facing remediation copy for a failed setup readiness check. */
