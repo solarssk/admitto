@@ -392,7 +392,12 @@ describe("drainWalletPushJobs", () => {
       // status: "active" is deliberate here (unlike loadTargets for attendee_ids requests) -
       // matches the pre-job-system best-effort push's own behaviour of excluding voided passes.
       expect(db.walletPass.findMany).toHaveBeenCalledWith({
-        where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: "evt-1" } },
+        where: {
+          status: "active",
+          provider_pass_id: { not: null },
+          provider_removed_at: null,
+          attendee: { event_id: "evt-1" },
+        },
         select: { attendee_id: true, provider_pass_id: true },
       });
       expect(reissueOneWalletPass).toHaveBeenCalledTimes(2);
@@ -419,6 +424,49 @@ describe("drainWalletPushJobs", () => {
           },
           error: null,
         },
+      });
+    });
+
+    it("also loads voided passes when the request carries includeVoided: true (expiration-relevant save)", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({
+          result_json: { request: { kind: "event_wide", eventId: "evt-1", reason: "settings", includeVoided: true } },
+        }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued").mockResolvedValueOnce("skipped");
+
+      await drainWalletPushJobs(db as never);
+
+      expect(db.walletPass.findMany).toHaveBeenCalledWith({
+        where: {
+          status: { in: ["active", "voided"] },
+          provider_pass_id: { not: null },
+          // Regression (bot review): "Remove inactive passes" removes a voided pass at the
+          // provider while deliberately keeping it voided locally, so this must still exclude it -
+          // otherwise reissueOneWalletPass would call the provider against an already-deleted
+          // resource and typically 404, counted as an error.
+          provider_removed_at: null,
+          attendee: { event_id: "evt-1" },
+        },
+        select: { attendee_id: true, provider_pass_id: true },
+      });
+    });
+
+    it("preserves includeVoided through the success write-back, not just the initial insert", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({
+          result_json: { request: { kind: "event_wide", eventId: "evt-1", reason: "settings", includeVoided: true } },
+        }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued");
+
+      await drainWalletPushJobs(db as never);
+
+      const finalCall = db.adminJob.update.mock.calls.find(
+        (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+      );
+      expect(finalCall![0].data.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: "evt-1", reason: "settings", includeVoided: true },
       });
     });
 
