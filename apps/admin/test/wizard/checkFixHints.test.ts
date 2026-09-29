@@ -8,10 +8,12 @@ describe("checkFixHint", () => {
     expect(hint).toMatch(/migrate service/);
   });
 
-  it("does not offer Settings as a production-sufficient alternative to BASE_URL", () => {
+  it("does not offer Settings as an equal alternative to BASE_URL, or claim boot enforcement", () => {
     const hint = checkFixHint("base_url");
     expect(hint).not.toMatch(/Set the Instance URL in Settings.*or set BASE_URL/);
+    expect(hint).not.toMatch(/required at boot/);
     expect(hint).toMatch(/BASE_URL/);
-    expect(hint).toMatch(/not sufficient/);
+    // Accurate framing: this is what the check wants, not what the app enforces to run.
+    expect(hint).toMatch(/this check/);
   });
 });

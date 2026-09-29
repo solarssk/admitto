@@ -179,12 +179,23 @@ describe("collectSetupChecks — redis latency", () => {
 });
 
 describe("collectSetupChecks — base_url production fallback", () => {
-  it("does not offer Settings as a sufficient alternative when nothing is configured in production", async () => {
+  async function withProdNoBaseUrl(run: () => Promise<void>): Promise<void> {
     const prevNodeEnv = process.env.NODE_ENV;
     const prevBaseUrl = process.env.BASE_URL;
     process.env.NODE_ENV = "production";
     delete process.env.BASE_URL;
     try {
+      await run();
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+      if (prevBaseUrl === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBaseUrl;
+    }
+  }
+
+  it("does not offer Settings as an equal alternative, or claim boot enforcement, when nothing is configured", async () => {
+    await withProdNoBaseUrl(async () => {
       const db = {
         $queryRaw: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
         systemSettings: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -197,13 +208,27 @@ describe("collectSetupChecks — base_url production fallback", () => {
 
       expect(checks.base_url.ok).toBe(false);
       expect(checks.base_url.detail).not.toMatch(/Settings.*or BASE_URL/);
+      expect(checks.base_url.detail).not.toMatch(/required (for server boot|in production)/);
       expect(checks.base_url.detail).toContain("BASE_URL");
-      expect(checks.base_url.detail).toContain("not sufficient");
-    } finally {
-      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = prevNodeEnv;
-      if (prevBaseUrl === undefined) delete process.env.BASE_URL;
-      else process.env.BASE_URL = prevBaseUrl;
-    }
+    });
+  });
+
+  it("does not claim boot enforcement when a persisted Settings URL exists but BASE_URL is unset", async () => {
+    await withProdNoBaseUrl(async () => {
+      const db = {
+        $queryRaw: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+        systemSettings: {
+          findUnique: vi.fn().mockResolvedValue({ value_json: '"https://tickets.example.com"' }),
+        },
+      };
+      checkMigrationsStatus.mockResolvedValueOnce("ok");
+      checkRedis.mockResolvedValueOnce({ status: "ok", latency_ms: 1 });
+
+      const checks = await collectSetupChecks(db as never, {} as never);
+
+      expect(checks.base_url.ok).toBe(false);
+      expect(checks.base_url.detail).not.toMatch(/required for server boot/);
+      expect(checks.base_url.detail).toContain("BASE_URL");
+    });
   });
 });

@@ -12,7 +12,7 @@ For single-node dev without Redis, the in-memory store is acceptable. Check your
 Then restart the server.`,
   base_url: `Set BASE_URL in your environment to the public https address of this site, for example:
   BASE_URL=https://tickets.example.com
-In production this is required at boot; the Settings → General value alone is not sufficient there. Then restart Admitto.`,
+Then restart Admitto. This check specifically wants BASE_URL: with only the Settings → General value set, ticket links and sign-in still work, but this check stays red until BASE_URL is also set.`,
 };
 
 /** Operator-facing remediation copy for a failed setup readiness check. */

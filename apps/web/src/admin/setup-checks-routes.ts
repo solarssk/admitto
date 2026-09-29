@@ -111,15 +111,17 @@ function checkExplicitBaseUrl(
   }
 }
 
-/** Validate an instance URL persisted in Settings (only sufficient outside production). */
+/** Validate an instance URL persisted in Settings. This check specifically wants the BASE_URL
+ * env var outside development - the running app itself accepts a Settings-only value in every
+ * environment (resolveInstanceBaseUrl() falls back to it), so this is a checklist preference,
+ * not a boot requirement the app actually enforces. */
 function checkPersistedInstanceUrl(dbUrl: string, env: NodeJS.ProcessEnv): SetupCheckResult {
   try {
     const normalized = normalizePersistedInstanceUrl(dbUrl);
     if (!isDevOrTestEnv(env)) {
       return {
         ok: false,
-        detail:
-          "BASE_URL env is required for server boot in production; Settings instance URL alone is not sufficient",
+        detail: "BASE_URL environment variable is not set; this check wants it set explicitly",
       };
     }
     return { ok: true, detail: normalized };
@@ -160,7 +162,7 @@ async function checkInstanceUrl(
 
   return {
     ok: false,
-    detail: "BASE_URL environment variable is required in production; Settings alone is not sufficient",
+    detail: "BASE_URL environment variable is not set; this check wants it set explicitly",
   };
 }
 
