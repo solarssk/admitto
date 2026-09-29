@@ -100,8 +100,8 @@ export async function handleTriggerEventWideWalletVoidActive(c: Context, db: Pri
   return triggerEventWideWalletCleanup(c, db, "wallet_void_active");
 }
 
-/** POST /api/admin/events/:eventId/wallet-remove-inactive - removes every voided wallet pass of
- * the event still managed at the provider, past its grace period, in the background - keeping each
+/** POST /api/admin/events/:eventId/wallet-remove-inactive - removes every voided or expired wallet
+ * pass of the event still managed at the provider, past its grace period, in the background - keeping each
  * pass's local record and Reports history, same as the single/bulk "Remove from provider" actions.
  * Requires no attendee selection. */
 export async function handleTriggerEventWideWalletRemoveInactive(c: Context, db: PrismaClient): Promise<Response> {

@@ -501,11 +501,11 @@ function walletManagedAtProviderHint(count: number): string {
   if (count <= 0) return "";
   const passWord = count === 1 ? "pass is" : "passes are";
   // walletPassesManagedAtProviderCount counts every voided or expired pass still at the wallet
-  // service, but "Remove inactive passes" only reaches voided ones past their own day-long grace
+  // service, but "Remove inactive passes" only reaches the ones past their own day-long grace
   // period - naming just that action here could send an admin to run it and see the count unchanged.
-  // "Remove from provider" alone reaches all of them (voided or expired, no grace period), so the
-  // hint says which action covers which part instead of pointing at one action for the whole count.
-  return ` ${count} inactive wallet ${passWord} still at the wallet service - archiving does not remove them. Remove inactive passes on Attendees clears the ones voided for at least a day; Remove from provider (per attendee or a selection) reaches the rest, including any that are expired.`;
+  // "Remove from provider" alone reaches all of them (no grace period), so the hint says which
+  // action covers which part instead of pointing at one action for the whole count.
+  return ` ${count} inactive wallet ${passWord} still at the wallet service - archiving does not remove them. Remove inactive passes on Attendees clears the ones voided or expired for at least a day; Remove from provider (per attendee or a selection) reaches the rest, including any from the last day.`;
 }
 
 function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPassesManagedAtProviderCount: number): ArchiveDialogCopy {
