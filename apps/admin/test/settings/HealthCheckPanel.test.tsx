@@ -543,4 +543,60 @@ describe("HealthCheckPanel", () => {
     await screen.findByText("Core infrastructure");
     expect(container.querySelector(".health-check__verdict")?.className).toContain(expectedClass);
   });
+
+  function reportWithOneCheck(status: HealthRowStatus): HealthReportDto {
+    return sampleReport({
+      overall: "ok",
+      groups: [
+        {
+          id: "core",
+          label: "Core infrastructure",
+          subtitle: "Owned and run by this instance",
+          status: "ok",
+          checks: [{ id: "test_check", label: "Test check", status, summary: "Summary text", details: [] }],
+        },
+      ],
+    });
+  }
+
+  it.each<[HealthRowStatus, string, string, string | null]>([
+    ["ok", "ok", "check", null],
+    ["degraded", "warn", "alert-triangle", "Degraded"],
+    ["down", "error", "x", "Down"],
+    ["not_configured", "neutral", "minus", "Not configured"],
+  ])(
+    "renders a %s row with a %s status circle, %s glyph, and badge %s",
+    async (status, circleVariant, glyph, badgeWord) => {
+      mockFetch.mockResolvedValueOnce(reportWithOneCheck(status));
+      renderWithToast(<HealthCheckPanel />);
+      const rowBtn = await screen.findByRole("button", { name: /Test check/ });
+
+      expect(rowBtn.querySelector(`.status-circle--${circleVariant} .ti-${glyph}`)).toBeTruthy();
+
+      const badge = rowBtn.querySelector(".at-badge");
+      if (badgeWord === null) {
+        expect(badge).toBeNull();
+      } else {
+        expect(badge?.textContent).toBe(badgeWord);
+        expect(badge?.getAttribute("aria-hidden")).toBe("true");
+      }
+    },
+  );
+
+  it("gives a not_configured row a quiet label instead of a coloured border", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithOneCheck("not_configured"));
+    const { container } = renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Test check");
+    expect(container.querySelector(".health-check__row--quiet")).toBeTruthy();
+    expect(container.querySelector(".health-check__row--warn")).toBeNull();
+    expect(container.querySelector(".health-check__row--err")).toBeNull();
+  });
+
+  it("never colours the summary text by row severity", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithOneCheck("down"));
+    renderWithToast(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Test check/ });
+    const summary = within(rowBtn).getByText("Summary text");
+    expect(summary.className).toBe("health-check__summary");
+  });
 });

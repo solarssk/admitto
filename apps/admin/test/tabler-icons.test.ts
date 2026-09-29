@@ -45,6 +45,7 @@ const ADMIN_TABLER_ICON_CLASSES = [
   "mail-exclamation",
   "map-pin",
   "menu-2",
+  "minus",
   "moon",
   "package",
   "pencil",
