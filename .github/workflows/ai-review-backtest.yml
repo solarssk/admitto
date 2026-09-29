@@ -1,0 +1,134 @@
+name: AI review backtest
+
+# Manual-only measuring tool for the automated PR review (ai-review.yml). It runs the same reviewer
+# action with the same read-only tools on historical pull request states and prints what the
+# reviewer would have said. It posts nothing: no review, no comment, no label. Use it to compare a
+# prompt/schema variant (.github/ai-review/prompt-<variant>.md and schema-<variant>.json) against
+# changes whose real defects are already known, before a variant becomes the live one.
+#
+# Each case is one historical change: the base commit the PR started from and the head commit whose
+# diff to review. The reviewer sees the code as it was at the base commit, so a later fix cannot
+# leak into the review.
+#
+# Cost: one reviewer run per case, about the same as one live review.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'JSON array, e.g. [{"pr":1466,"base":"<40-hex sha>","head":"<40-hex sha>"}]'
+        type: string
+        required: true
+      variant:
+        description: Prompt and schema variant to test
+        type: choice
+        options:
+          - v1
+          - v2
+        default: v2
+
+permissions: {}
+
+jobs:
+  backtest:
+    name: PR ${{ matrix.pr }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout and the compare API only; nothing is written
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include: ${{ fromJSON(inputs.cases) }}
+
+    steps:
+      # The code as it was when the PR started, so later fixes cannot leak into the review.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ matrix.base }}
+          persist-credentials: false
+
+      # Prompt, schema and diff builder come from the branch this run was started on, not from the
+      # historical checkout above. Only that one directory is fetched.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: .harness
+          sparse-checkout: .github/ai-review
+          persist-credentials: false
+
+      - name: Prepare the review input
+        id: cfg
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ matrix.base }}
+          HEAD_SHA: ${{ matrix.head }}
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "base and head must be 40-hex SHAs"; exit 1; }
+          mv .harness/.github/ai-review "$RUNNER_TEMP/ai-review"
+          rm -rf .harness
+          mkdir -p .ai-review
+          # One call, not --paginate: the compare API lists changed files only on the first page and
+          # caps them at 300, so a longer list would be silently incomplete. Fail such a case instead.
+          gh api "repos/${GITHUB_REPOSITORY}/compare/${BASE_SHA}...${HEAD_SHA}" --jq '.files' > .ai-review/files.json
+          FILES=$(jq 'length' .ai-review/files.json)
+          if [ "$FILES" -ge 300 ]; then
+            echo "This comparison reaches the API's 300-file cap (${FILES} files); the file list may be incomplete. Choose a smaller change."
+            exit 1
+          fi
+          jq -r -f "$RUNNER_TEMP/ai-review/build-diff.jq" .ai-review/files.json > .ai-review/pr.diff
+          echo "Diff is $(wc -c < .ai-review/pr.diff) bytes"
+          DELIM="EOF_$(openssl rand -hex 8)"
+          {
+            echo "prompt<<${DELIM}"
+            cat "$RUNNER_TEMP/ai-review/prompt-${VARIANT}.md"
+            echo
+            echo "${DELIM}"
+            echo "schema=$(jq -c . "$RUNNER_TEMP/ai-review/schema-${VARIANT}.json")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Review the diff
+        id: review
+        uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829  # v1.0.236
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.cfg.outputs.prompt }}
+          claude_args: >-
+            --model claude-sonnet-5-5
+            --max-turns 25
+            --allowedTools "Read,Grep,Glob"
+            --json-schema '${{ steps.cfg.outputs.schema }}'
+
+      - name: Report
+        if: ${{ !cancelled() }}
+        env:
+          STRUCTURED: ${{ steps.review.outputs.structured_output }}
+          EXEC_FILE: ${{ steps.review.outputs.execution_file }}
+          VARIANT: ${{ inputs.variant }}
+          PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### PR ${PR} (${VARIANT})"
+            if [ -z "${STRUCTURED:-}" ]; then
+              echo "NO STRUCTURED OUTPUT"
+            else
+              # A variant that has no unverified/scenarios fields (v1) falls back to its own verdict.
+              jq -r '(if (.verdict == "approve")
+                        and ((.blocking_findings | length) == 0)
+                        and ((.unverified // []) | length == 0)
+                        and (((.scenarios // []) | map(select(.handled != "yes")) | length) == 0)
+                      then "approve" else "comment" end) as $eff
+                     | "MODEL VERDICT: \(.verdict)  |  EFFECTIVE VERDICT: \($eff)"' <<< "$STRUCTURED"
+              echo '```json'
+              jq . <<< "$STRUCTURED"
+              echo '```'
+            fi
+            if [ -n "${EXEC_FILE:-}" ]; then
+              jq -r '[.. | objects | select(.type == "result")] | last | "cost: \(.total_cost_usd // "n/a") USD, turns: \(.num_turns // "n/a")"' "$EXEC_FILE" || true
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ -n "${STRUCTURED:-}" ]
