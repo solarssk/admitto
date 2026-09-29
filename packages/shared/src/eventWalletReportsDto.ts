@@ -130,13 +130,19 @@ export interface EventWalletReportsResponse {
   /** What WalletPass.status says about every issued pass - independent of, and not to be confused
    * with, `wallet_lifecycle` below (registration state) or `provider_state` (whether the pass
    * still exists at the wallet provider). Always sums to exactly `adoption.got_pass`. A pass can
-   * be `voided` (invalidated - reversible via Restore until the event ends - whether an admin
-   * voided it directly or a sync/refresh reconciled the wallet provider's own report of it as
-   * voided, see reconcileWalletPassLifecycle) or have
+   * be `voided` (invalidated - whether an admin voided it directly or a sync/refresh reconciled
+   * the wallet provider's own report of it as voided, see reconcileWalletPassLifecycle) or have
    * naturally `expired`, while still being `managed` in `provider_state` (removing it there is a
    * separate, later step) and while still showing as `active`/`removed` in `wallet_lifecycle`
    * (whether it's still on a device is a different question from whether it's still valid) - the
-   * three normal axes are deliberately independent, not nested.
+   * three normal axes are deliberately independent, not nested. A `voided` pass is NOT
+   * unconditionally reversible: Restore (handleRestoreAttendeeWalletPass,
+   * apps/web/src/admin/attendees-api-routes.ts) is refused with 409 `wallet_pass_removed` once
+   * that same pass is also `removed` in `provider_state` (requireNotRemoved), with 409
+   * `wallet_restore_closed` once the event has ended or is archived, and with 409
+   * `wallet_not_configured` if Wallet is off or unconfigured for the event - since these axes are
+   * deliberately independent, a pass can be `voided` here and `removed` in `provider_state` at the
+   * same time, and that specific combination cannot be restored (bot review).
    *
    * An admin's own Void/Restore lands immediately, with no sync involved - but the wallet service
    * voiding or expiring a pass entirely on its own is only noticed on the next sync or a manual
