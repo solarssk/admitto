@@ -74,6 +74,7 @@ env:
 
 jobs:
   wiki-docs:
+    name: Wiki docs - sync and links
     # Dependabot PRs omit the human/agent PR template body. Skip this gate by PR author, not
     # github.actor: a human re-run sets actor to a person and would otherwise re-enable the
     # documentation-impact check against Dependabot's body. Push to main still runs as usual.
@@ -109,6 +110,7 @@ jobs:
   # conditioned on this job's output, so a docs-only PR still gets a real "success" result on every
   # job GitHub actually gates on.
   changes:
+    name: Detect changed areas
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -236,6 +238,7 @@ jobs:
   # apps/web and apps/admin each get their own job since together they're ~75%+ of total test
   # volume; everything else is bundled into test-rest.
   lint-and-typecheck:
+    name: Lint and type check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -287,6 +290,7 @@ jobs:
       - run: npm run typecheck --workspaces --if-present
 
   actionlint:
+    name: Workflow files lint
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -298,6 +302,7 @@ jobs:
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # 1.7.12
 
   test-web:
+    name: Tests - web app
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [changes]
@@ -410,6 +415,7 @@ jobs:
           retention-days: 1
 
   test-admin:
+    name: Tests - admin UI
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [changes]
@@ -484,6 +490,7 @@ jobs:
   # mail-templates/mailer/mailer-config/crypto/ui/cli) already has its own uniquely-named test
   # database (or none at all), verified with an Explore agent before this split was written.
   test-rest:
+    name: Tests - other packages
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [changes]
@@ -597,6 +604,7 @@ jobs:
   # checks - that's a deliberate follow-up once real coverage numbers are visible and the existing
   # "Sonar way" new_coverage < 80% condition is confirmed achievable, not a surprise wall here.
   sonarcloud:
+    name: Code quality (SonarCloud)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [changes, test-web, test-admin, test-rest]
@@ -634,6 +642,7 @@ jobs:
   # it's kept OUT of build-test's strict "every needs: entry must be success" loop (that check has
   # no notion of "skipped is fine here") and instead checked separately, tolerating skipped.
   e2e-checkin-smoke:
+    name: E2E - check-in smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [changes]
@@ -697,10 +706,11 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # main's branch protection requires a status check literally named "build-test" - this
-  # aggregator keeps that name alive (and its pass/fail contract equivalent to the old monolithic
-  # job) without needing anyone to update the protection rule's required-checks list. Update this
-  # `needs:` list, not the branch protection settings, if the shard jobs above are ever renamed.
+  # main's branch protection requires a status check named after this job's `name:` ("Build and
+  # test gate") - this aggregator keeps that name alive (and its pass/fail contract equivalent to
+  # the old monolithic job) without needing anyone to update the protection rule's required-checks
+  # list. Update this `needs:` list, not the branch protection settings, if the shard jobs above
+  # are ever renamed. Renaming a job's `name:` DOES require updating the required checks list.
   #
   # if: always() + an explicit result check, not the needs: default - by default a job whose
   # needs: includes a failed job is skipped, not failed, and this aggregator is the one thing
@@ -709,6 +719,7 @@ jobs:
   # worth not staking a branch-protection guarantee on when an explicit, always-run check is this
   # cheap (CodeRabbit review).
   build-test:
+    name: Build and test gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -740,6 +751,7 @@ jobs:
           echo "All build-test shards passed."
 
   secret-scan:
+    name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -776,6 +788,7 @@ jobs:
             detect --source . --no-banner --redact --exit-code 1 --log-opts="$RANGE"
 
   pii-guard:
+    name: PII guard (no real personal data)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -790,6 +803,7 @@ jobs:
         run: bash scripts/check-ci-pii.sh phone
 
   migration-safety:
+    name: Database migration safety
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -825,6 +839,7 @@ jobs:
   # license-incompatible packages - the thing a PR actually did. pull_request-only by design (the
   # action needs a base ref to diff against; nothing to compare on a push to main).
   dependency-review:
+    name: Dependency and license review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -904,6 +919,7 @@ jobs:
           allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api, pkg:npm/axe-core, pkg:npm/%40axe-core/playwright, pkg:pypi/semgrep, pkg:pypi/certifi, pkg:pypi/protobuf, pkg:pypi/typing-extensions"
 
   docker-build:
+    name: Docker image build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
