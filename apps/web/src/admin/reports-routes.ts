@@ -634,6 +634,7 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   issued_at: true,
   first_confirmed_at: true,
   status: true,
+  provider_removed_at: true,
   apple_active_registrations: true,
   google_active_registrations: true,
   samsung_active_registrations: true,
@@ -764,8 +765,10 @@ export function confirmedPlatformLabel(appleActive: number, googleActive: number
   }
 }
 
-/** What became of one issued pass, for the Wallets tab's "Wallet lifecycle" card - mutually
- * exclusive with the other two outcomes. "active" reuses classifyPassPlatform's own live
+/** What became of one issued pass, for the Wallets tab's "Registration state (last known)" card
+ * (the `wallet_lifecycle` DTO field - see that field's own doc comment for why the field/value
+ * names stay as-is) - mutually exclusive with the other two outcomes. "active" reuses
+ * classifyPassPlatform's own live
  * "platform !== none" definition (appleActive/googleActive already zeroed for a disabled platform
  * by the caller, same as everywhere else in this file) rather than re-deriving it, so the two
  * can't drift - this intentionally stays gated, keeping `wallet_lifecycle.active` in agreement
@@ -852,6 +855,13 @@ interface WalletPassAggregates {
    * provider's own "active registrations" total in that specific case. */
   totalActiveRegistrations: number;
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
+  /** Pass validity axis (WalletPass.status among issued passes) - independent of lifecycleCounts
+   * above, see pass_validity's own DTO doc comment. `failed` should read 0 - see that field's own
+   * doc comment for the narrow concurrency race it exists to catch instead of silently dropping. */
+  passValidityCounts: Record<"active" | "voided" | "expired" | "failed", number>;
+  /** Provider-presence axis (WalletPass.provider_removed_at among issued passes) - independent of
+   * both lifecycleCounts and passValidityCounts, see provider_state's own DTO doc comment. */
+  providerStateCounts: Record<"managed" | "removed", number>;
 }
 
 /** Bumps the one platform-mix counter `platform` maps to - split out of
@@ -960,9 +970,10 @@ function applyReminderTapDayStats(
  * platform toggle can't retroactively undo, so it's gated on the ungated `everInstalled` below
  * instead (architect review, 2026-09-03, following on from the 2026-09-03 registration-sync fix -
  * same reasoning as buildEverInstalledWalletFilter and everInstalledAnywhere's own doc comments
- * further down this file). Delegates the platform-counter bump, tap-day stats, and the "ever
- * installed anywhere" check to their own small functions above - each independent concern this
- * function pulls together, not a single flat block, so a future 4th platform (or a new stat) can
+ * further down this file). Delegates the platform-counter bump, tap-day stats, the "ever
+ * installed anywhere" check, and pass_validity/provider_state to their own small functions above -
+ * each independent concern this function pulls together, not a single flat block, so a future 4th
+ * platform (or a new stat) can
  * extend just the one relevant helper instead of adding more branches straight into this
  * function's own body and tipping it over the limit again. */
 function applyWalletPassToAggregates(
@@ -1022,6 +1033,27 @@ function applyWalletPassToAggregates(
       everInstalled,
     )
   ]++;
+
+  applyPassValidityAndProviderState(pass, acc);
+}
+
+/** Bumps pass_validity/provider_state - split out of applyWalletPassToAggregates above (SonarCloud
+ * S3776), same reasoning as incrementPlatformCounter. Independent axes, not gated on
+ * enabledPlatforms/platform/everInstalled like the counters above - status and
+ * provider_removed_at aren't platform-specific facts. Every status other than
+ * active/voided/expired falls to `failed` (see pass_validity's own DTO doc comment for the narrow
+ * concurrency race that is this bucket's one real cause) rather than being silently dropped - this
+ * is the only counter on this whole aggregate with a catch-all, since it is the one place a value
+ * this codebase's own write paths are supposed to prevent could still surface. */
+function applyPassValidityAndProviderState(
+  pass: Pick<WalletPassAggregateRow, "status" | "provider_removed_at">,
+  acc: Pick<WalletPassAggregates, "passValidityCounts" | "providerStateCounts">,
+): void {
+  if (pass.status === "active") acc.passValidityCounts.active++;
+  else if (pass.status === "voided") acc.passValidityCounts.voided++;
+  else if (pass.status === "expired") acc.passValidityCounts.expired++;
+  else acc.passValidityCounts.failed++;
+  acc.providerStateCounts[pass.provider_removed_at ? "removed" : "managed"]++;
 }
 
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
@@ -1049,6 +1081,8 @@ export function aggregateWalletPasses(
     registrationsByBucket: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
     totalActiveRegistrations: 0,
     lifecycleCounts: { active: 0, removed: 0, never_installed: 0 },
+    passValidityCounts: { active: 0, voided: 0, expired: 0, failed: 0 },
+    providerStateCounts: { managed: 0, removed: 0 },
   };
 
   for (const pass of passes) {
@@ -1225,6 +1259,8 @@ async function loadWalletReportsAggregates(
     registrationsByBucket,
     totalActiveRegistrations,
     lifecycleCounts,
+    passValidityCounts,
+    providerStateCounts,
   } = aggregateWalletPasses(passes, enabledPlatforms);
 
   const gotPass = passes.length;
@@ -1301,6 +1337,8 @@ async function loadWalletReportsAggregates(
       },
     },
     wallet_lifecycle: lifecycleCounts,
+    pass_validity: passValidityCounts,
+    provider_state: providerStateCounts,
   };
 }
 
@@ -2458,13 +2496,14 @@ async function exportWalletReportsPdf(
           .join("");
 
   const lifecycleLabels: Record<keyof EventWalletReportsResponse["wallet_lifecycle"], string> = {
-    active: "Active",
-    removed: "Removed",
+    active: "Registered",
+    removed: "Previously registered",
     never_installed: "Never installed",
   };
   // Guarded on adoption.got_pass (not adoption.confirmed like platformRows/registrationCountRows
   // above) - this breakdown is of every ISSUED pass, "never_installed" included, unlike those two
-  // which only cover the installed subset.
+  // which only cover the installed subset. Same guard reused for passValidityRows/
+  // providerStateRows below - all three are breakdowns of the same got_pass population.
   const lifecycleRows =
     aggregates.adoption.got_pass === 0
       ? ""
@@ -2472,6 +2511,36 @@ async function exportWalletReportsPdf(
           .map((key) => {
             const count = aggregates.wallet_lifecycle[key];
             return `<tr><td>${lifecycleLabels[key]}</td><td>${count}</td><td>${oneDecimalPct(count, aggregates.adoption.got_pass)}%</td></tr>`;
+          })
+          .join("");
+
+  const passValidityLabels: Record<keyof EventWalletReportsResponse["pass_validity"], string> = {
+    active: "Active",
+    voided: "Voided",
+    expired: "Expired",
+    failed: "Failed (unexpected)",
+  };
+  const passValidityRows =
+    aggregates.adoption.got_pass === 0
+      ? ""
+      : (Object.keys(passValidityLabels) as Array<keyof EventWalletReportsResponse["pass_validity"]>)
+          .map((key) => {
+            const count = aggregates.pass_validity[key];
+            return `<tr><td>${passValidityLabels[key]}</td><td>${count}</td><td>${oneDecimalPct(count, aggregates.adoption.got_pass)}%</td></tr>`;
+          })
+          .join("");
+
+  const providerStateLabels: Record<keyof EventWalletReportsResponse["provider_state"], string> = {
+    managed: "Managed",
+    removed: "Removed from provider",
+  };
+  const providerStateRows =
+    aggregates.adoption.got_pass === 0
+      ? ""
+      : (Object.keys(providerStateLabels) as Array<keyof EventWalletReportsResponse["provider_state"]>)
+          .map((key) => {
+            const count = aggregates.provider_state[key];
+            return `<tr><td>${providerStateLabels[key]}</td><td>${count}</td><td>${oneDecimalPct(count, aggregates.adoption.got_pass)}%</td></tr>`;
           })
           .join("");
 
@@ -2489,7 +2558,7 @@ async function exportWalletReportsPdf(
   // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
   // this needs to survive into the saved/printed PDF, not just the on-screen preview.
   const truncatedWarningHtml = aggregates.passes_truncated
-    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, time to wallet install, and time to install after reminder below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, pass validity, provider state, registration state, time to wallet install, and time to install after reminder below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
     : "";
 
   const sectionsHtml = `
@@ -2519,7 +2588,17 @@ async function exportWalletReportsPdf(
     <thead><tr><th>Days after most recent reminder</th><th>Passes</th><th>Share</th></tr></thead>
     <tbody>${reminderTapRows || '<tr><td colspan="3">No installs are attributable to a follow-up email yet</td></tr>'}</tbody>
   </table>
-  <h2>Wallet lifecycle</h2>
+  <h2>Pass validity</h2>
+  <table>
+    <thead><tr><th>Status</th><th>Passes</th><th>Share of issued</th></tr></thead>
+    <tbody>${passValidityRows || '<tr><td colspan="3">No wallet passes issued yet</td></tr>'}</tbody>
+  </table>
+  <h2>Provider state</h2>
+  <table>
+    <thead><tr><th>Status</th><th>Passes</th><th>Share of issued</th></tr></thead>
+    <tbody>${providerStateRows || '<tr><td colspan="3">No wallet passes issued yet</td></tr>'}</tbody>
+  </table>
+  <h2>Registration state (last known)</h2>
   <table>
     <thead><tr><th>Status</th><th>Passes</th><th>Share of issued</th></tr></thead>
     <tbody>${lifecycleRows || '<tr><td colspan="3">No wallet passes issued yet</td></tr>'}</tbody>

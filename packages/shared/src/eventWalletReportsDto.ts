@@ -127,19 +127,89 @@ export interface EventWalletReportsResponse {
     with_wallet: { total: number; admitted: number; pct: number };
     without_wallet: { total: number; admitted: number; pct: number };
   };
-  /** What became of every issued pass - mutually exclusive, always summing to exactly
-   * `adoption.got_pass`, and splitting `adoption.confirmed` itself into its two components:
-   * `active` + `removed` == `adoption.confirmed` (the core "Installed = Active + Removed" identity
-   * this field exists to make explicit - architect review, 2026-09-03). Most numbers on this DTO
-   * (adoption, by_ticket_type, admission_by_wallet, the two time-to-install cards) now answer "was
-   * a wallet pass ever confirmed installed", a historical fact - `platform` and
+  /** What WalletPass.status says about every issued pass - independent of, and not to be confused
+   * with, `wallet_lifecycle` below (registration state) or `provider_state` (whether the pass
+   * still exists at the wallet provider). Always sums to exactly `adoption.got_pass`. A pass can
+   * be `voided` (invalidated - whether an admin voided it directly or a sync/refresh reconciled
+   * the wallet provider's own report of it as voided, see reconcileWalletPassLifecycle) or have
+   * naturally `expired`, while still being `managed` in `provider_state` (removing it there is a
+   * separate, later step) and while still showing as `active`/`removed` in `wallet_lifecycle`
+   * (whether it's still on a device is a different question from whether it's still valid) - the
+   * three normal axes are deliberately independent, not nested. A `voided` pass is NOT
+   * unconditionally reversible: Restore (handleRestoreAttendeeWalletPass,
+   * apps/web/src/admin/attendees-api-routes.ts) is refused with 409 `wallet_pass_removed` once
+   * that same pass is also `removed` in `provider_state` (requireNotRemoved), with 409
+   * `wallet_restore_closed` once the event has ended or is archived, and with 409
+   * `wallet_not_configured` if Wallet is off or unconfigured for the event - since these axes are
+   * deliberately independent, a pass can be `voided` here and `removed` in `provider_state` at the
+   * same time, and that specific combination cannot be restored (bot review).
+   *
+   * An admin's own Void/Restore lands immediately, with no sync involved - but the wallet service
+   * voiding or expiring a pass entirely on its own is only noticed on the next sync or a manual
+   * Refresh status, and the periodic sync skips an archived event outright
+   * (runWalletRegistrationSync, packages/wallet/src/registration-sync.ts). So `active` here can
+   * read stale (the wallet service may have since voided/expired it) for an archived event nobody
+   * has manually refreshed since - `synced_at` above is this field's own freshness signal too, not
+   * just `platform`/`registrations_per_attendee`'s. `synced_at` is the single MAX across every
+   * sampled pass's own last check, though, not a coverage guarantee - one attendee's own manual
+   * Refresh status can advance it while every other pass in this axis hasn't been checked in weeks,
+   * so a recent `synced_at` is evidence about the single freshest pass, not about every pass this
+   * field counts (bot review, a second finding on the same freshness signal).
+   *
+   * `failed` should read 0 - a `createPass` attempt that never actually issued a pass normally
+   * never sets `issued_at` (see `markActive`/`markFailed`, apps/web/src/app.ts), so it would
+   * ordinarily be outside this population entirely, not a bucket here. It exists only to catch a
+   * known, narrow concurrency race in that same issuance code (two app instances racing to create
+   * one attendee's pass: the winner's `markActive` sets `issued_at`, and if the loser's own
+   * duplicate-recovery search then also misses due to provider search-index lag, its `markFailed`
+   * call can clobber `status` back to `"failed"` on that same, already-issued row without clearing
+   * `issued_at` - `markFailed`'s upsert has no guard against this). Kept as its own bucket, not
+   * silently dropped, so this field's own "always sums to `adoption.got_pass`" promise holds
+   * unconditionally rather than quietly failing whenever that race is hit (bot review). */
+  pass_validity: {
+    active: number;
+    voided: number;
+    expired: number;
+    failed: number;
+  };
+  /** Whether Admitto has permanently deleted every issued pass at the wallet provider (`removed`,
+   * via "Remove from provider" or "Remove inactive passes" - see Wallet-Passes-Overview.md) or not
+   * (`managed`) - NOT a live check of whether the pass still genuinely exists at the provider.
+   * `provider_removed_at` is only ever set by Admitto's own confirmed delete call - a pass deleted
+   * directly at the provider, outside Admitto, is never detected as gone this way
+   * (refreshOneWalletPassStatus's own doc comment: a provider lookup with no match throws
+   * WalletStatusCheckInconclusiveError rather than being read as proof of deletion, since a search-
+   * index lag looks the same as a real deletion) and keeps reading `managed` until reached by one
+   * of the two actions above. Always sums to exactly `adoption.got_pass`, independent of
+   * `pass_validity` and `wallet_lifecycle`: a removed pass is always voided or expired (Remove
+   * requires one of those first, see removeOneWalletPassFromProvider's own doc comment), but it
+   * doesn't disappear from this report the way it disappears from the provider's own dashboard once
+   * removed. */
+  provider_state: {
+    managed: number;
+    removed: number;
+  };
+  /** What became of every issued pass, as far as registration on a device is concerned right now
+   * (this DTO's "last known" registration-state axis) - mutually exclusive, always summing to
+   * exactly `adoption.got_pass`, and splitting `adoption.confirmed` itself into its two
+   * components: `active` + `removed` == `adoption.confirmed` (the core "Installed = Active +
+   * Removed" identity this field exists to make explicit - architect review, 2026-09-03).
+   * Independent of `pass_validity`/`provider_state` above - a pass can be `active` here while
+   * `voided` in `pass_validity` (a void doesn't touch registration counts by itself; only a later
+   * push/removal does), or `removed` here while still `managed` in `provider_state` (an attendee
+   * uninstalling a still-valid, still-provider-managed pass). Most numbers on this DTO (adoption,
+   * by_ticket_type, admission_by_wallet, the two time-to-install cards) now answer "was a wallet
+   * pass ever confirmed installed", a historical fact - `platform` and
    * `registrations_per_attendee` are the (now unusual) exceptions that stay live-right-now, since
    * neither has any historical data to fall back on (no per-platform or per-device history is
    * persisted once a registration goes inactive). `active` below is this DTO's one live-right-now
    * number inside `wallet_lifecycle` itself; `removed` is what turns the historical `confirmed`
    * total into more than just a repeat of `active` - a retention/removal signal the rest of the
    * tab has no way to show on its own (PO review: "80 installed, 25 removed before the event"
-   * points at a UX/communication problem the adoption number alone hides). */
+   * points at a UX/communication problem the adoption number alone hides). Field name and values
+   * kept as `wallet_lifecycle`/`active`/`removed`/`never_installed` (not renamed to match the
+   * frontend's "Registration state (last known)" card title) so this contract doesn't churn for a
+   * display-only rename - plan v4.2 step 4. */
   wallet_lifecycle: {
     /** At least one active registration on any platform the event still offers - the same
      * definition `classifyPassPlatform` uses for "active" (platform !== "none"), and the same
