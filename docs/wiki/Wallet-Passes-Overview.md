@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.7
+**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.3
 
 ## What this page helps you do
 
@@ -37,9 +37,11 @@ works; Admitto never signs or hosts pass files itself.
     the attendee's name to whichever template field is registered as `fullName`.
   - **Available values:** attendee full/first/last name, email, company, department, event
     name/date/hours/location, directions/accessibility text, Google/Apple Maps links, individual
-    address parts, ticket type, the ticket/QR value itself, event type, or a venue access-point
-    detail such as room, entrance, door/gate/portal, phone number, Venue place ID, or an opening
-    time.
+    address parts, ticket type, the ticket/QR value itself, ticket status, event type, a venue
+    access-point detail such as room, entrance, door/gate/portal, phone number, Venue place ID, or
+    an opening time, or this event's own custom fields that are set up as **Single choice** or
+    **Yes/No** (see the [template setup page](Wallet-Passes-PassCreator-Setup) for how each of
+    these reads on the card).
   - **No default mapping, no auto-detection:** nothing beyond the QR/barcode is sent until a row
     exists for it, because different templates use different field names and Admitto can't guess
     them.
@@ -99,7 +101,8 @@ works; Admitto never signs or hosts pass files itself.
     delete a wallet pass at the provider (and its local record), restore, and - once a pass is
     voided or expired - remove it from the provider while keeping the local record and its Reports
     history. Revoking an attendee's ticket also voids their wallet pass automatically; restoring
-    the ticket restores the pass the same way.
+    the ticket restores the pass the same way, following the same rule as the manual **Restore
+    wallet pass** action above: it does nothing once the event is over.
   - **Single vs bulk scope:** void, push updates, refresh status, delete, and remove are available
     both from Attendee Detail (single attendee) and the Attendees list (bulk, for a selection).
     Restore is Attendee Detail only, there is no bulk version of it.
