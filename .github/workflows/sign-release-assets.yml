@@ -1,0 +1,67 @@
+name: Sign release assets
+
+# Manual-only. Releases published before the SBOM signing step existed in publish-container.yml
+# carry unsigned SBOMs, which OpenSSF Scorecard's Signed-Releases check scores as 0. This attaches
+# a keyless Sigstore signature (*.sigstore.json) to the SBOMs already on the given releases.
+#
+# Signature only, on purpose: no provenance is attached. Provenance would claim this run built
+# the files, and these SBOMs were built by the release pipeline of their own time. The signature
+# states only what is true - this repository's workflow vouches for these exact bytes, as of now.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: Space-separated release tags whose SBOMs to sign
+        type: string
+        default: v0.7.3 v0.7.2 v0.7.1 v0.7.0
+
+concurrency:
+  group: sign-release-assets
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout only - release upload uses the GitHub App token minted below
+      id-token: write # OIDC token for keyless Sigstore signing
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # See release.yml's own comment on its identical step for the full rationale.
+      - name: Mint release automation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: Sign and upload SBOMs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+          for TAG in $TAGS; do
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Skipping unexpected tag '$TAG'"; continue; }
+            DIR="$(mktemp -d)"
+            if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.cdx.json' --dir "$DIR"; then
+              echo "No SBOM assets on $TAG - skipping."
+              continue
+            fi
+            for f in "$DIR"/*.cdx.json; do
+              cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
+            done
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$DIR"/*.sigstore.json --clobber
+            echo "Signed $TAG"
+          done
