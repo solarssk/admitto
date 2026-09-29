@@ -914,7 +914,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Registration state (last known)">
           <p className="wallets-description">
-            Every issued pass, grouped by whether it&rsquo;s registered on a platform this event offers right now, was registered before but isn&rsquo;t now (including on a platform since turned off), or was never installed at all.
+            Every issued pass, grouped by whether it&rsquo;s registered on a platform this event offers right now, has no registration there even though it has real installation history (which can include one still active on a platform since turned off), or was never installed at all.
           </p>
           <div className="wallets-adoption">
             <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} gotPass={data.adoption.got_pass} isActive={isActive} />

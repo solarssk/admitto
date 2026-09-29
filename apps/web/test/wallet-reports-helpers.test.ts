@@ -566,6 +566,15 @@ describe("aggregateWalletPasses — passValidityCounts and providerStateCounts",
     expect(sum(result.passValidityCounts)).toBe(passes.length);
     expect(sum(result.providerStateCounts)).toBe(passes.length);
   });
+
+  it("silently drops a pass whose status is none of active/voided/expired from passValidityCounts (should not occur for an issued pass - issued_at is only ever set alongside status: active, see markActive in apps/web/src/app.ts - documented here so a future caller that violates that invariant fails loudly via a count mismatch, not a thrown error)", () => {
+    const result = aggregateWalletPasses([pass({ status: "pending" })], BOTH_ENABLED);
+    expect(result.passValidityCounts).toEqual({ active: 0, voided: 0, expired: 0 });
+    // Still counted in the other two axes - only the pass_validity if/else-if chain has no bucket
+    // for an unexpected status, by design (no runtime assertion for an invariant enforced entirely
+    // by write-path discipline elsewhere in the codebase).
+    expect(result.providerStateCounts).toEqual({ managed: 1, removed: 0 });
+  });
 });
 
 describe("buildWalletExportCsvRow — enabledPlatforms gating", () => {
