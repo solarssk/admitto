@@ -5,6 +5,9 @@ export type HealthCheckGuidance = {
   impact: string;
   nextStep: string;
   link?: { label: string; to: string };
+  /** A quiet, non-alarming note (email_sending with no mail provider set) rather than guidance
+   * about an actual problem - rendered with a muted tone instead of the usual one. */
+  quiet?: boolean;
 };
 
 function detailValue(check: HealthCheckRowDto, key: string): string | undefined {
@@ -139,6 +142,137 @@ function cloudflareAccessGuidance(check: HealthCheckRowDto): HealthCheckGuidance
   return null;
 }
 
+/** `not_a_directory`/`not_writable` (both original) and `cannot_create_directory` (added later
+ * by #1477's canCreateUploadDir(), after this guidance table was first drafted) all describe the
+ * same underlying problem - no working upload folder - so they share one message. */
+const FILE_STORAGE_FOLDER_PROBLEM_REASONS = new Set([
+  "not_a_directory",
+  "not_writable",
+  "cannot_create_directory",
+]);
+
+function fileStorageGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  const reason = detailValue(check, "reason");
+  const isFolderProblem =
+    (check.status === "down" && FILE_STORAGE_FOLDER_PROBLEM_REASONS.has(reason ?? "")) ||
+    (check.status === "degraded" && reason === "write_probe_failed");
+  if (!isFolderProblem) return null;
+  return {
+    impact: "Logos, imports and exports need this folder.",
+    nextStep:
+      "Make sure UPLOAD_DIR exists and Admitto can write to it. In Docker Compose that is the uploads folder on the host.",
+  };
+}
+
+function addressLookupGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  const link = { label: "Open External services", to: "/admin/settings?tab=external" };
+  // The only real degraded branch is "slow" (status alone, no reason key); excluding
+  // reason=lookup_failed keeps this from also swallowing this check's own generic
+  // could-not-read fallback, which is also degraded with no other distinguishing key.
+  if (check.status === "degraded" && detailValue(check, "reason") === undefined) {
+    return {
+      impact: "Address suggestions may be slow.",
+      nextStep:
+        "Check the geocoding address under Maps in External services and that this server can reach it. Then run live checks again.",
+      link,
+    };
+  }
+  if (check.status === "down") {
+    return {
+      impact: "Address suggestions may not work.",
+      nextStep:
+        "Check the geocoding address under Maps in External services and that this server can reach it. Then run live checks again.",
+      link,
+    };
+  }
+  return null;
+}
+
+const WEATHER_UNREACHABLE_LIVE_CHECKS = new Set(["failed", "timeout", "unavailable"]);
+
+function weatherGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  const liveCheck = detailValue(check, "live_check");
+  if (liveCheck === "support_contact_required") {
+    return weatherSupportContactGuidance();
+  }
+  // The passive "no geocoding contact configured" branch (MET Norway only) has neither a
+  // live_check nor a reason key - checking for no reason key at all keeps this from also
+  // swallowing this check's own generic could-not-read fallback, which shares that same
+  // missing-live_check shape but does carry reason=lookup_failed.
+  if (check.status === "degraded" && liveCheck === undefined && detailValue(check, "reason") === undefined) {
+    return weatherSupportContactGuidance();
+  }
+  // A successful but slow live probe (weatherLiveOkRow(), latency at or above
+  // WEATHER_DEGRADED_MS) is also degraded, with live_check=ok rather than missing entirely.
+  if (check.status === "degraded" && liveCheck === "ok") {
+    return {
+      impact: "Weather forecasts may be slow to load.",
+      nextStep:
+        "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    };
+  }
+  if (check.status === "down" && liveCheck !== undefined && WEATHER_UNREACHABLE_LIVE_CHECKS.has(liveCheck)) {
+    return {
+      impact: "Weather forecasts may be missing.",
+      nextStep:
+        "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    };
+  }
+  return null;
+}
+
+function weatherSupportContactGuidance(): HealthCheckGuidance {
+  return {
+    impact: "Weather forecasts are not available until a support contact is set.",
+    nextStep: "Add a support contact in General settings.",
+    link: { label: "Open General settings", to: "/admin/settings?tab=general" },
+  };
+}
+
+function bounceIngestGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  // The real degraded state has no reason key at all (just problem_events/enabled_events
+  // counts) - checking for no reason key keeps this from also swallowing this check's own
+  // generic could-not-read fallback, which is degraded with reason=lookup_failed and no
+  // problem_events key.
+  if (check.status !== "degraded" || detailValue(check, "reason") !== undefined) return null;
+  return {
+    impact: "Bounced emails may not be detected for those events.",
+    nextStep:
+      "Check the Background worker row first. Then open Event settings for events with bounce detection turned on.",
+  };
+}
+
+/** Not a problem - a quiet, scoped note that Admitto cannot send organisation email yet,
+ * shown on the row's own not_configured state (no provider, or a provider that only exports).
+ * Gated on PO decision 8; changes no verdict, since not_configured is already excluded from the
+ * tally in HealthCheckPanel.tsx.
+ *
+ * `source: "env"` (only ever set on the export_only branch, `describeMailConfigForOrg()`'s
+ * `field()` helper marks a field `locked` exactly when its source is "env") means EMAIL_PROVIDER
+ * is set in the deployment, so the Mail settings link this note otherwise offers would land on a
+ * read-only field - point at the deployment configuration instead. */
+function emailSendingNotConfiguredGuidance(check: HealthCheckRowDto): HealthCheckGuidance {
+  const isExportOnly = detailValue(check, "provider") === "export_only";
+  if (isExportOnly && detailValue(check, "source") === "env") {
+    return {
+      impact: "This provider does not send emails.",
+      nextStep:
+        "Set by the EMAIL_PROVIDER environment variable, not Mail settings. Change it in your deployment configuration to send emails from Admitto.",
+      quiet: true,
+    };
+  }
+  return {
+    impact: isExportOnly
+      ? "This provider does not send emails."
+      : "No organisation mail provider is set.",
+    nextStep: "To send emails from Admitto, choose a mail provider in Mail settings.",
+    link: { label: "Open Mail settings", to: "/admin/settings?tab=mail" },
+    quiet: true,
+  };
+}
+
 /** `Map`, not a plain object - `check.id` is server-controlled today, but the same
  * `["__proto__"]` footgun applies to any object indexed by an external string (see
  * healthCheckDisplay.ts's REASON_SENTENCES for the full reasoning), and here it would throw
@@ -151,16 +285,26 @@ const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheck
   ["mail_delivery_queue", mailDeliveryQueueGuidance],
   ["email_sending", emailSendingGuidance],
   ["cloudflare_access", cloudflareAccessGuidance],
+  ["file_storage", fileStorageGuidance],
+  ["address_lookup", addressLookupGuidance],
+  ["weather", weatherGuidance],
+  ["bounce_ingest", bounceIngestGuidance],
 ]);
 
 /**
  * One impact sentence and one next-step sentence (plus an optional link to the relevant
  * settings tab) for a problem row, shown above its detail list when expanded. Detection is by
  * exact match on the check's id, status and existing detail values - returns null for a healthy
- * or not_configured row, or for any down/degraded state this module doesn't recognise, rather
- * than guessing.
+ * row, or for any down/degraded state this module doesn't recognise, rather than guessing.
+ *
+ * The one exception is email_sending's own not_configured state, which gets a quiet informational
+ * note (no organisation mail provider set) rather than problem guidance - see
+ * emailSendingNotConfiguredGuidance()'s own doc comment.
  */
 export function healthCheckGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  if (check.id === "email_sending" && check.status === "not_configured") {
+    return emailSendingNotConfiguredGuidance(check);
+  }
   if (check.status !== "down" && check.status !== "degraded") return null;
 
   const specific = check.id.startsWith("identity_provider_")
