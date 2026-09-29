@@ -115,8 +115,8 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
   };
 }
 
-/** A single-group report with one check per given status, for verdict/mode-line tests that
- * need an exact down/degraded tally instead of `sampleReport()`'s fixed mix. */
+/** A single-group report with one check per given status, for verdict tests that need an exact
+ * down/degraded tally instead of `sampleReport()`'s fixed mix. */
 function reportWithStatuses(statuses: HealthRowStatus[]): HealthReportDto {
   return sampleReport({
     overall: "ok",
@@ -542,39 +542,5 @@ describe("HealthCheckPanel", () => {
     const { container } = renderWithToast(<HealthCheckPanel />);
     await screen.findByText("Core infrastructure");
     expect(container.querySelector(".health-check__verdict")?.className).toContain(expectedClass);
-  });
-
-  it("shows the passive mode line before any live run, then the live wording after one", async () => {
-    renderWithToast(<HealthCheckPanel />);
-    await screen.findByText(
-      "Local checks only. Run live checks to also test connected services.",
-    );
-
-    mockLive.mockResolvedValueOnce(sampleReport({ overall: "ok" }));
-    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
-
-    await screen.findByText("Live checks ran where possible. They test connections, not delivery.");
-    expect(
-      screen.queryByText("Local checks only. Run live checks to also test connected services."),
-    ).toBeNull();
-  });
-
-  it("keeps the passive mode line when a live run fails", async () => {
-    renderWithToast(<HealthCheckPanel />);
-    await screen.findByText(
-      "Local checks only. Run live checks to also test connected services.",
-    );
-
-    mockLive.mockRejectedValueOnce(new ApiError(429, "health_live_rate_limited"));
-    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(
-        /Too many live checks right now/,
-      );
-    });
-    expect(
-      screen.getByText("Local checks only. Run live checks to also test connected services."),
-    ).toBeTruthy();
   });
 });

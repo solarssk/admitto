@@ -98,10 +98,6 @@ const ROW_STATUS_TEXT: Record<HealthRowStatus, string> = {
   planned: "Planned",
 };
 
-const MODE_LINE_PASSIVE =
-  "Local checks only. Run live checks to also test connected services.";
-const MODE_LINE_LIVE = "Live checks ran where possible. They test connections, not delivery.";
-
 /** Tallies down/degraded checks across every group. Not configured and planned rows never
  * count, matching `worstHealthStatus()` on the backend. */
 function tallyHealthChecks(report: HealthReportDto): { down: number; degraded: number } {
@@ -321,7 +317,6 @@ export function HealthCheckPanel() {
   const [liveLoading, setLiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [includesLive, setIncludesLive] = useState(false);
 
   const loadPassive = useCallback(async (signal?: AbortSignal) => {
     setInitialLoading(true);
@@ -360,7 +355,6 @@ export function HealthCheckPanel() {
     try {
       const data = await runAdminHealthLive();
       setReport(data);
-      setIncludesLive(true);
       if (data.overall === "down") {
         addToast("Live checks finished with outages", "error");
       } else if (data.overall === "degraded") {
@@ -472,9 +466,6 @@ export function HealthCheckPanel() {
         <Notice as="p" variant={healthVerdictVariant(report)} className="health-check__verdict">
           {healthVerdictText(report)}
         </Notice>
-        <p className="at-hint health-check__mode-line">
-          {includesLive ? MODE_LINE_LIVE : MODE_LINE_PASSIVE}
-        </p>
 
         <div className="health-check__groups">
           {report.groups.map((group) => (

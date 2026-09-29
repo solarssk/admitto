@@ -56,10 +56,6 @@
 }
 
 .health-check__verdict {
-  margin: 0 0 var(--space-2);
-}
-
-.health-check__mode-line {
   margin: 0 0 var(--space-4);
 }
 
