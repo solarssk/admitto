@@ -192,27 +192,6 @@ export function EventDangerZonePanel({
 
         <div className="danger-zone__item">
           <div className="danger-zone__info">
-            <div className="danger-zone__title">Revoke all Wallet passes</div>
-            <p className="danger-zone__desc">
-              Bulk revoke isn&apos;t built yet - planned for a future release. Attendees can still
-              add their ticket to Apple or Google Wallet from the ticket page.
-            </p>
-          </div>
-          <ArchivedGuard event={null} reasonId="wallet-revoke-reason" disabled tooltip="Not built yet">
-            {(guard) => (
-              <Button
-                variant="secondary"
-                icon={<i className="ti ti-wallet-off" aria-hidden="true" />}
-                {...guard}
-              >
-                Revoke all Wallet passes
-              </Button>
-            )}
-          </ArchivedGuard>
-        </div>
-
-        <div className="danger-zone__item">
-          <div className="danger-zone__info">
             <div className="danger-zone__title">Archive event</div>
             <p className="danger-zone__desc">
               An archived event becomes fully read-only, including check-in. Only a superadmin can

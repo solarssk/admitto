@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Health check row's expanded detail list is easier to read: labels are sentence-case instead of every word capitalised, technical codes like `reason` and `live_check` show as short plain phrases, `stale_after_ms` shows in minutes, yes/no values are capitalised, and a detail already repeated in the row's own summary (for example a degraded row's latency) is no longer shown twice. The Background worker row also gains a **Last seen** fact next to its label once its heartbeat is a minute or older, measured against the report's own Generated time so it never counts up on its own; the export and the Markdown snapshot are unchanged.
 - The checks on pull requests now have readable names instead of internal ids, for example **Wiki docs - sync and links** instead of `wiki-docs` and **Database migration safety** instead of `migration-safety`, so it is clear at a glance what each check verifies. What each check verifies has not changed.
 - The pull request check that scans for real personal data, previously shown as just `scan`, is now named **Privacy guard - no real personal data in PR**. What it verifies has not changed.
+- Event settings → Danger zone no longer shows a disabled **Revoke all Wallet passes** placeholder. The action it was reserving space for now exists, as **Void active passes** and **Remove inactive passes** under Attendees → More actions, kept there rather than duplicated into Danger zone so wallet lifecycle management stays in one place.
 
 ### Fixed
 

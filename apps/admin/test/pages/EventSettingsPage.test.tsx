@@ -3834,7 +3834,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("always shows Revoke all Wallet passes as a disabled roadmap placeholder with no dialog", async () => {
+  it("does not show a Revoke all Wallet passes placeholder (superseded by the event-wide Void active passes / Remove inactive passes actions on Attendees)", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       admitted_count: 5,
@@ -3842,14 +3842,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     });
     renderSettings();
     await openDangerZone();
-    const button = (await screen.findByRole("button", {
-      name: "Revoke all Wallet passes",
-    })) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    const describedBy = button.getAttribute("aria-describedby");
-    expect(document.getElementById(describedBy!)?.textContent).toBe("Not built yet");
-    fireEvent.click(button);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revoke all Wallet passes" })).toBeNull();
   });
 });
 
