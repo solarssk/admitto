@@ -7,6 +7,7 @@ import {
   LIVE_CHECKS_HINT,
 } from "../../src/settings/HealthCheckPanel.js";
 import { renderWithToast } from "../test-utils.js";
+import { formatEventDateTime, getBrowserTimeZone } from "../../src/utils/event-dates.js";
 import type { HealthReportDto, HealthRowStatus } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -731,5 +732,57 @@ describe("HealthCheckPanel", () => {
     expect(screen.getByRole("button", { name: /Charlie/ }).getAttribute("aria-expanded")).toBe(
       "true",
     );
+  });
+
+  function reportWithWorker(lastBeatAt: string): HealthReportDto {
+    return sampleReport({
+      generated_at: "2026-08-03T12:54:24.000Z",
+      overall: "ok",
+      groups: [
+        {
+          id: "core",
+          label: "Core infrastructure",
+          subtitle: "Owned and run by this instance",
+          status: "ok",
+          checks: [
+            {
+              id: "background_worker",
+              label: "Background worker",
+              status: "ok",
+              summary: "Worker heartbeat is fresh",
+              details: [
+                { key: "status", value: "ok" },
+                { key: "last_beat_at", value: lastBeatAt },
+                { key: "hostname", value: "worker-1" },
+                { key: "last_checked", value: "2026-08-03T12:54:00.000Z" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("shows the worker's Last seen fact next to the label", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithWorker("2026-08-03T12:42:24.000Z"));
+    renderWithToast(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Background worker/ });
+    expect(within(rowBtn).getByText("Last seen 12 min before this report")).toBeTruthy();
+  });
+
+  it("omits the worker fact for a heartbeat under a minute old, and hides status/last_checked", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithWorker("2026-08-03T12:54:00.000Z"));
+    renderWithToast(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Background worker/ });
+    expect(within(rowBtn).queryByText(/Last seen/)).toBeNull();
+
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
+    fireEvent.click(rowBtn);
+    expect(within(row).getByText("Hostname")).toBeTruthy();
+    expect(within(row).queryByText("Status")).toBeNull();
+    expect(within(row).queryByText("Last checked")).toBeNull();
+    // The fact was omitted (too fresh), so the raw timestamp still shows up in the details
+    // instead of being lost entirely.
+    expect(within(row).getByText(formatEventDateTime("2026-08-03T12:54:00.000Z", getBrowserTimeZone()))).toBeTruthy();
   });
 });
