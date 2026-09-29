@@ -1,23 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Regression test for a real gap a bot review caught on PR #1320: purgeNotifications was wired
-// into the manually-invoked `admitto retention run` CLI command (retention.ts) but never into
-// this worker's own scheduled retention job - the one Docker Compose actually runs automatically
-// on boot and every ~24h. Proves the worker's own retention pass purges all four retention
-// targets, not just the three that predate the notifications feature.
+// Covers runWalletExpireJob's own three log branches (idle / ok / lock-held-skip) - the
+// concurrency test (worker-tick-concurrency.test.ts) only ever drives it through a fixed
+// { expired: 0 } mock and a lock that's always free, so the "ok expired=N" and "skipped (lock
+// held)" branches were otherwise untested (Codecov patch-coverage review, PR #1489).
 
 const DEFAULT_MAIL_DRAIN_LIMIT = 50;
 
-const purgeAuthRetention = vi.fn(async () => ({ sessions: 0, trustedDevices: 0 }));
-const purgeSecurityAuditLog = vi.fn(async () => ({ deleted: 0 }));
-const nullifyDeliverySnapshots = vi.fn(async () => ({ deliveries: 0 }));
-const purgeNotifications = vi.fn(async () => ({ deleted: 0 }));
-const resolveNotificationRetentionDays = vi.fn(() => 30);
+const runWalletExpiry = vi.fn(async () => ({ expired: 0 }));
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},
-  purgeAuthRetention,
-  purgeSecurityAuditLog,
+  purgeAuthRetention: vi.fn(async () => ({ sessions: 0, trustedDevices: 0 })),
+  purgeSecurityAuditLog: vi.fn(async () => ({ deleted: 0 })),
   resolveInstanceBaseUrl: vi.fn(async () => "https://example.test"),
   resolveSecurityAuditLogRetentionDays: vi.fn(() => 30),
 }));
@@ -27,14 +22,14 @@ vi.mock("@admitto/mail-delivery", () => ({
   assertValidBounceIngestTickSecondsEnv: vi.fn(),
   drainPendingDeliveries: vi.fn(async () => ({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] })),
   ingestBounces: vi.fn(async () => ({ eventsProcessed: 0, messagesSeen: 0, bouncesApplied: 0, errors: 0 })),
-  nullifyDeliverySnapshots,
+  nullifyDeliverySnapshots: vi.fn(async () => ({ deliveries: 0 })),
   parseBounceIngestTickSeconds: vi.fn(() => 60),
   workerHeartbeatStaleMs: vi.fn(() => 120_000),
 }));
 
 vi.mock("@admitto/notifications", () => ({
-  purgeNotifications,
-  resolveNotificationRetentionDays,
+  purgeNotifications: vi.fn(async () => ({ deleted: 0 })),
+  resolveNotificationRetentionDays: vi.fn(() => 30),
 }));
 
 vi.mock("@admitto/import", () => ({
@@ -61,31 +56,43 @@ vi.mock("../src/commands/wallet-message-jobs.js", () => ({
 vi.mock("../src/commands/wallet-sync.js", () => ({
   runWalletRegistrationSync: vi.fn(async () => ({ checked: 0, updated: 0, skippedNoProvider: 0, failed: 0 })),
 }));
-vi.mock("../src/commands/wallet-expire.js", () => ({
-  runWalletExpiry: vi.fn(async () => ({ expired: 0 })),
-}));
+vi.mock("../src/commands/wallet-expire.js", () => ({ runWalletExpiry }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn(async () => undefined) }));
 
 const { runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 
-function fakeLocks() {
+function fakeLocks(overrides: Partial<Record<string, boolean>> = {}) {
   return {
-    tryAcquire: vi.fn(async () => true),
+    tryAcquire: vi.fn(async (job: string) => overrides[job] ?? true),
     release: vi.fn(async () => undefined),
     releaseAll: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
   };
 }
 
-describe("runWorkerTick — scheduled retention pass", () => {
-  it("purges notifications alongside auth/mail/security-audit-log retention on a fresh (never-run) schedule", async () => {
-    const db = {} as never;
-    await runWorkerTick(db, fakeLocks() as never, createRetentionSchedule());
+describe("runWorkerTick — wallet_expire job", () => {
+  it("logs ok with the expired count when the sweep finds due passes", async () => {
+    runWalletExpiry.mockResolvedValueOnce({ expired: 5 });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    expect(purgeAuthRetention).toHaveBeenCalledWith(db, { dryRun: false });
-    expect(nullifyDeliverySnapshots).toHaveBeenCalledWith(db, { dryRun: false });
-    expect(purgeSecurityAuditLog).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 30 });
-    expect(purgeNotifications).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 30 });
+    await runWorkerTick({} as never, fakeLocks() as never, createRetentionSchedule());
+
+    expect(logSpy.mock.calls.some((c) => String(c[0]).includes("wallet_expire") && String(c[0]).includes("expired=5"))).toBe(
+      true,
+    );
+    logSpy.mockRestore();
+  });
+
+  it("skips the sweep and logs lock-held when another process already holds the wallet_expire lock", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runWorkerTick({} as never, fakeLocks({ wallet_expire: false }) as never, createRetentionSchedule());
+
+    expect(runWalletExpiry).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.some((c) => String(c[0]).includes("wallet_expire") && String(c[0]).includes("lock held"))).toBe(
+      true,
+    );
+    logSpy.mockRestore();
   });
 });

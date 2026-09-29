@@ -293,6 +293,26 @@ describe("toPassCreatorData", () => {
     });
   });
 
+  // plan v4.2 step 6 - same top-level, mapping-independent convention as relevantDate above, not
+  // a template Additional Property.
+  describe("expirationDate", () => {
+    it("omits the expirationDate key entirely when input.expirationDate is unset (wallet_expiration_mode was 'none')", () => {
+      const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("expirationDate");
+    });
+
+    it("sends expirationDate as a top-level sibling of base fields when present, regardless of fieldMapping", () => {
+      const data = toPassCreatorData(
+        { ...baseInput, expirationDate: "2026-09-24 22:00" },
+        "tmpl-1",
+        { mappedDate: "event_date" },
+        true,
+      );
+      expect(data.mappedDate).toBe("10 August 2026");
+      expect(data.expirationDate).toBe("2026-09-24 22:00");
+      expect(data.templateId).toBe("tmpl-1");
+    });
+  });
 });
 
 describe("isWalletFieldMappingRelevant", () => {
@@ -310,6 +330,11 @@ describe("isWalletFieldMappingRelevant", () => {
   it("wallet_apple_enabled has no placeholder of its own - isWalletFieldMappingRelevant alone is always false for it, regardless of mapping", () => {
     expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
     expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, { any: "event_name" })).toBe(false);
+  });
+
+  it("wallet_expiration_mode has no placeholder of its own either - callers bypass this table for it entirely", () => {
+    expect(isWalletFieldMappingRelevant("wallet_expiration_mode", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
+    expect(isWalletFieldMappingRelevant("wallet_expiration_mode", EVENT_FIELD_PLACEHOLDERS, { any: "event_name" })).toBe(false);
   });
 
   it("is not relevant for a mapped-only field when fieldMapping is null/empty (e.g. event_type with no template field pointed at it)", () => {

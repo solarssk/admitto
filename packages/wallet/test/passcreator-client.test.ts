@@ -206,16 +206,30 @@ describe("PassCreatorClient.describeTemplate", () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(url).toBe("https://pc.test/api/v2/pass-template/tmpl-1/describe");
       expect(init?.method).toBe("GET");
-      return jsonResponse(200, { success: true, data: { name: "Cybersecurity Awareness" } });
+      return jsonResponse(200, {
+        success: true,
+        data: { name: "Cybersecurity Awareness", expiration: { expirationDateDifferentForEachPass: false } },
+      });
     });
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.describeTemplate()).resolves.toEqual({ name: "Cybersecurity Awareness" });
+    await expect(client.describeTemplate()).resolves.toEqual({
+      name: "Cybersecurity Awareness",
+      perPassExpirationReady: false,
+    });
   });
 
   it("returns a null name when the response omits it", async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: {} }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.describeTemplate()).resolves.toEqual({ name: null });
+    await expect(client.describeTemplate()).resolves.toEqual({ name: null, perPassExpirationReady: false });
+  });
+
+  it("reports perPassExpirationReady true only when the template's own capability is on", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { success: true, data: { expiration: { expirationDateDifferentForEachPass: true } } }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.describeTemplate()).resolves.toEqual({ name: null, perPassExpirationReady: true });
   });
 
   it("throws wallet_provider_unauthorized on a bad key", async () => {

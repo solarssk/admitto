@@ -3,9 +3,11 @@
  * passes triggers an automatic push to refresh them
  * (apps/web/src/admin/event-settings-routes.ts's pushWalletUpdatesBestEffort). wallet_apple_enabled
  * is included too: PassCreator's relevantDate (Lock Screen surfacing) is Apple-only, gated on it
- * alone, so turning Apple Wallet off must also refresh already-issued passes. Shared with the
- * admin UI so it can warn before a save that would trigger this cascade, without a second,
- * independently-maintained copy of the same list. */
+ * alone, so turning Apple Wallet off must also refresh already-issued passes. wallet_expiration_mode
+ * (plan v4.2 step 6) is included for the same reason: enabling it gives every already-issued pass a
+ * canonical expires_at/expirationDate it didn't have before. Shared with the admin UI so it can warn
+ * before a save that would trigger this cascade, without a second, independently-maintained copy of
+ * the same list. */
 export const WALLET_RELEVANT_EVENT_FIELDS = [
   "title",
   "date",
@@ -14,6 +16,7 @@ export const WALLET_RELEVANT_EVENT_FIELDS = [
   "event_hours_end",
   "event_type",
   "wallet_apple_enabled",
+  "wallet_expiration_mode",
 ] as const;
 
 /** Location fields that appear in a wallet pass via buildWalletPassInput (packages/tickets/src/

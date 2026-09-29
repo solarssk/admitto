@@ -19,6 +19,7 @@ import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
 import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
+import { walletTestFingerprint, type WalletExpirationTest } from "./walletExpirationTest.js";
 import {
   formatUtcDateTime,
   formatWalletDatePreview,
@@ -50,6 +51,18 @@ const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_TEMPLATE_LOCKED_HINT =
   "Can't be changed once wallet passes have been issued for this event - the wallet provider can't move an existing pass to a different template.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
+const WALLET_EXPIRATION_MODE_HINT =
+  "Whether an issued pass ever expires on its own, without an admin voiding it.";
+const WALLET_EXPIRATION_MODE_NONE_LABEL = "Do not expire automatically";
+const WALLET_EXPIRATION_MODE_EVENT_END_LABEL = "Expire when the event ends";
+// Server-verified, not just client-guessed: guardWalletExpirationModeChange (event-settings-
+// routes.ts) re-checks this with its own live describeTemplate() call at save time regardless of
+// what this hint shows - PassCreator otherwise silently ignores expirationDate whenever the
+// template's own "Different for each pass" setting is off.
+const WALLET_EXPIRATION_MODE_NOT_READY_HINT =
+  "Test connection to confirm this template supports a per-pass expiration date before turning this on.";
+const WALLET_EXPIRATION_MODE_LOCKED_HINT =
+  "Can't be turned off once wallet passes have been issued for this event - PassCreator has no live-verified way to clear an already-sent expiration date.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
   "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
 const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
@@ -382,6 +395,7 @@ export function EventWalletPanel({
   onSave,
   walletTesting,
   onTestWallet,
+  walletExpirationTest,
   walletLocationPreview,
   walletCustomFields,
   walletPushHistory,
@@ -398,6 +412,7 @@ export function EventWalletPanel({
     event: EventSettingsDto;
     walletTesting: boolean;
     onTestWallet: () => void;
+    walletExpirationTest: WalletExpirationTest | null;
     walletLocationPreview: EventLocationDto | null | undefined;
     walletCustomFields: EventCustomFieldDto[] | undefined;
     walletPushHistory: WalletPushHistoryEntry[] | null;
@@ -416,6 +431,13 @@ export function EventWalletPanel({
   // fixed categories, same as an unset row - see sortWalletFieldMappingByCategory's own doc comment).
   const walletCustomFieldOptions = buildWalletCustomFieldOptions(walletCustomFields);
   const allWalletPlaceholderOptions = [...WALLET_PLACEHOLDER_OPTIONS, ...walletCustomFieldOptions];
+  // Already-selected "event_end" never needs a fresh Ready check to stay selected - only
+  // *turning it on* from "none" requires one, so a page reload (walletExpirationTest starts null)
+  // doesn't spuriously lock in an already-saved choice.
+  const canEnableWalletExpirationEventEnd =
+    form.walletExpirationMode === "event_end" ||
+    (walletExpirationTest?.fingerprint === walletTestFingerprint(form) && walletExpirationTest.ready);
+  const walletExpirationModeLocked = event.wallet_expiration_mode === "event_end" && event.issued_wallet_pass_count > 0;
   return (
     <>
       <Card
@@ -541,6 +563,41 @@ export function EventWalletPanel({
                 onChange={(e) => setForm({ ...form, walletSamsungEnabled: e.target.checked })}
               />
             </div>
+          </div>
+          <div className="wallet-expiration-mode">
+            <div className="settings-row wallet-expiration-mode__header">
+              <div className="settings-row__text">
+                <strong>
+                  <HintLabel hint={WALLET_EXPIRATION_MODE_HINT}>Pass expiration</HintLabel>
+                </strong>
+              </div>
+            </div>
+            <div className="wallet-expiration-mode__options">
+              <label>
+                <input
+                  type="radio"
+                  name="event-wallet-expiration-mode"
+                  checked={form.walletExpirationMode === "none"}
+                  disabled={isArchived || saving || walletExpirationModeLocked}
+                  onChange={() => setForm({ ...form, walletExpirationMode: "none" })}
+                />
+                {WALLET_EXPIRATION_MODE_NONE_LABEL}
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="event-wallet-expiration-mode"
+                  checked={form.walletExpirationMode === "event_end"}
+                  disabled={isArchived || saving || !canEnableWalletExpirationEventEnd}
+                  onChange={() => setForm({ ...form, walletExpirationMode: "event_end" })}
+                />
+                {WALLET_EXPIRATION_MODE_EVENT_END_LABEL}
+              </label>
+            </div>
+            {walletExpirationModeLocked && <Notice variant="warning">{WALLET_EXPIRATION_MODE_LOCKED_HINT}</Notice>}
+            {!canEnableWalletExpirationEventEnd && (
+              <Notice variant="info">{WALLET_EXPIRATION_MODE_NOT_READY_HINT}</Notice>
+            )}
           </div>
           <div className="wallet-field-mapping">
             <Notice variant="info">{WALLET_FIELD_MAPPING_SEMANTIC_TAGS_NOTICE}</Notice>

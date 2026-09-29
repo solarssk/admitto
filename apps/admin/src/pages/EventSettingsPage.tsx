@@ -50,6 +50,7 @@ import { EventImagesPanel } from "../settings/EventImagesPanel.js";
 import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { buildWalletFieldMappingPatch, type WalletFieldMappingRow } from "../settings/walletFieldMapping.js";
+import { walletTestFingerprint, type WalletExpirationTest } from "../settings/walletExpirationTest.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
@@ -92,6 +93,7 @@ export type SettingsForm = {
   walletGoogleEnabled: boolean;
   walletSamsungEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
+  walletExpirationMode: "none" | "event_end";
   timezone: string;
   capacity: string;
   logoUrl: string;
@@ -126,6 +128,7 @@ type SettingsPatch = Partial<{
   wallet_google_enabled: boolean;
   wallet_samsung_enabled: boolean;
   wallet_field_mapping: Record<string, string> | null;
+  wallet_expiration_mode: "none" | "event_end";
   timezone: string;
   capacity: number | null;
   logo_url: string | null;
@@ -166,6 +169,10 @@ function toForm(data: EventSettingsDto): SettingsForm {
       key,
       value,
     })),
+    // Defensive normalize: the DTO field is a plain string (Event.wallet_expiration_mode's own
+    // Prisma column type), not a literal union - anything but the one recognized "on" value reads
+    // as "none", the same as the column's own migration default.
+    walletExpirationMode: data.wallet_expiration_mode === "event_end" ? "event_end" : "none",
     timezone: data.timezone,
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
@@ -199,6 +206,7 @@ function buildWalletPatch(
   | "wallet_google_enabled"
   | "wallet_samsung_enabled"
   | "wallet_field_mapping"
+  | "wallet_expiration_mode"
 > {
   const patch: SettingsPatch = {};
   if (form.walletEnabled !== original.walletEnabled) {
@@ -223,6 +231,9 @@ function buildWalletPatch(
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
     patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
+  }
+  if (form.walletExpirationMode !== original.walletExpirationMode) {
+    patch.wallet_expiration_mode = form.walletExpirationMode;
   }
   return patch;
 }
@@ -297,7 +308,17 @@ function appendUnsavedWarning(message: string, pageDirty: boolean): string {
  * *effective* wallet_field_mapping (this same patch's own new mapping if it changes one, else the
  * event's current mapping) - matching the server's own gate exactly so this warning never fires
  * for a field with no template Additional Property pointed at it (e.g. `event_type` on a template
- * that doesn't map it). */
+ * that doesn't map it). `wallet_expiration_mode` bypasses the mapping gate entirely, same as the
+ * server's own walletRelevantEventFieldsChanged - it isn't sent via an Additional Property at all,
+ * so any patch that touches it is always relevant (in practice only "none" -> "event_end": the
+ * server refuses the other direction once passes are issued). */
+// Mirrors event-settings-routes.ts's own EVENT_END_DATE_FIELDS - these four all feed
+// eventEndsAtLocal/eventEndsAtUtc's computation of the canonical expires_at (plan v4.2 step 6),
+// unconditionally on field mapping, so a reschedule under event_end mode must warn regardless of
+// whether an admin has also mapped event_hours/event_date to a card-content placeholder
+// (CodeRabbit review).
+const EVENT_END_DATE_FIELDS = new Set(["date", "event_hours_start", "event_hours_end", "timezone"]);
+
 function patchTouchesWalletRelevantField(patch: SettingsPatch, event: EventSettingsDto): boolean {
   const effectiveMapping = patch.wallet_field_mapping !== undefined ? patch.wallet_field_mapping : event.wallet_field_mapping;
   const relevantDateAffected = isRelevantDateAffected(
@@ -307,8 +328,11 @@ function patchTouchesWalletRelevantField(patch: SettingsPatch, event: EventSetti
       eventHoursStart: patch.event_hours_start !== undefined ? patch.event_hours_start : event.event_hours_start,
     },
   );
+  const expirationModeIsEventEnd = (patch.wallet_expiration_mode ?? event.wallet_expiration_mode) === "event_end";
   return Object.keys(patch).some((key) => {
     if (!(WALLET_RELEVANT_EVENT_FIELDS as readonly string[]).includes(key)) return false;
+    if (key === "wallet_expiration_mode") return true;
+    if (expirationModeIsEventEnd && EVENT_END_DATE_FIELDS.has(key)) return true;
     if ((key === "date" || key === "event_hours_start" || key === "wallet_apple_enabled") && relevantDateAffected) {
       return true;
     }
@@ -841,12 +865,13 @@ interface TestWalletConnectionDeps {
   eventId: string;
   form: Pick<SettingsForm, "walletTemplateId" | "walletApiKeyEdit">;
   setWalletTesting: (value: boolean) => void;
+  setWalletExpirationTest: (value: WalletExpirationTest | null) => void;
   addToast: AddToast;
 }
 
 /** Extracted out of handleTestWallet (SonarCloud S3776). */
 async function confirmTestWalletConnection(deps: TestWalletConnectionDeps): Promise<void> {
-  const { eventId, form, setWalletTesting, addToast } = deps;
+  const { eventId, form, setWalletTesting, setWalletExpirationTest, addToast } = deps;
   const templateId = form.walletTemplateId.trim();
   if (!templateId) {
     addToast("Enter a Template ID before testing the connection.", "error");
@@ -857,6 +882,7 @@ async function confirmTestWalletConnection(deps: TestWalletConnectionDeps): Prom
     return;
   }
   setWalletTesting(true);
+  setWalletExpirationTest(null);
   try {
     const result = await testWalletConnection(eventId, {
       templateId,
@@ -868,6 +894,9 @@ async function confirmTestWalletConnection(deps: TestWalletConnectionDeps): Prom
       result.ok ? (result.message ?? "Connected.") : (result.error ?? "Could not reach PassCreator."),
       result.ok ? "success" : "error",
     );
+    if (result.ok) {
+      setWalletExpirationTest({ fingerprint: walletTestFingerprint(form), ready: result.perPassExpirationReady === true });
+    }
   } catch (err) {
     addToast(operatorApiErrorMessage(err, "Could not test the wallet connection."), "error");
   } finally {
@@ -1010,6 +1039,7 @@ export function EventSettingsPage() {
   // the operator has actually chosen anything (CodeRabbit review).
   const pendingWalletPushCancelRef = useRef<(() => void) | null>(null);
   const [walletTesting, setWalletTesting] = useState(false);
+  const [walletExpirationTest, setWalletExpirationTest] = useState<WalletExpirationTest | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -1205,7 +1235,7 @@ export function EventSettingsPage() {
 
   async function handleTestWallet() {
     if (!eventId || !form) return;
-    await confirmTestWalletConnection({ eventId, form, setWalletTesting, addToast });
+    await confirmTestWalletConnection({ eventId, form, setWalletTesting, setWalletExpirationTest, addToast });
   }
 
   async function handleArchiveConfirm() {
@@ -1543,6 +1573,7 @@ export function EventSettingsPage() {
             onSave={() => void handleSave()}
             walletTesting={walletTesting}
             onTestWallet={() => void handleTestWallet()}
+            walletExpirationTest={walletExpirationTest}
             walletLocationPreview={walletLocationPreview}
             walletCustomFields={walletCustomFields}
             walletPushHistory={walletPushHistory}

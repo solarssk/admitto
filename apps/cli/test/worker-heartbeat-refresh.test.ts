@@ -16,6 +16,7 @@ const drainWalletCleanupJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, fa
 const drainWalletMessageJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 }));
 const ingestBounces = vi.fn(async () => ({ eventsProcessed: 0, messagesSeen: 0, bouncesApplied: 0, errors: 0 }));
 const runWalletRegistrationSync = vi.fn(async () => ({ checked: 0, updated: 0, skippedNoProvider: 0, failed: 0 }));
+const runWalletExpiry = vi.fn(async () => ({ expired: 0 }));
 const touchWorkerHeartbeat = vi.fn(async () => undefined);
 
 vi.mock("@admitto/auth", () => ({
@@ -53,6 +54,7 @@ vi.mock("../src/commands/wallet-refresh-status-jobs.js", () => ({ drainWalletRef
 vi.mock("../src/commands/wallet-cleanup-jobs.js", () => ({ drainWalletCleanupJobs }));
 vi.mock("../src/commands/wallet-message-jobs.js", () => ({ drainWalletMessageJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
+vi.mock("../src/commands/wallet-expire.js", () => ({ runWalletExpiry }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat }));
 
 const { runWorkerTick } = await import("../src/commands/worker.js");

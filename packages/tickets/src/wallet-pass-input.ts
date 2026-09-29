@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassInput } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
-import { zonedWallClockToUtcIso } from "@admitto/shared";
+import { eventEndsAtLocal, zonedWallClockToUtcIso } from "@admitto/shared";
 import { loadEventTicketTypes } from "./ticket-types.js";
 import type { resolveTicket } from "./resolve.js";
 import { formatDate, formatDateShort, formatEventHoursRange } from "@admitto/shared/region-date-format";
@@ -137,6 +137,26 @@ function computeRelevantDate(event: {
   return `${dayStr} ${event.eventHoursStart}`;
 }
 
+/** PassCreator's top-level `expirationDate` ("Y-m-d H:i", no offset - same local-wall-clock-digits
+ * convention as relevantDate above; there is no separate provider-timezone field to translate
+ * through, plan v4.2's own PR 2b having been dropped, so this assumes the PassCreator account's
+ * own company-settings timezone matches this event's). Reads the exact same day/time
+ * eventEndsAtUtc (packages/shared) converts to a UTC instant for `expires_at` itself - see
+ * eventEndsAtLocal's own doc comment for why the two share one rule instead of each re-deriving
+ * the overnight/no-end-time logic. Undefined whenever the event's wallet_expiration_mode isn't
+ * "event_end", so a "none" event's pass never carries an expirationDate at all. */
+function computeExpirationDate(event: {
+  date: Date;
+  eventHoursStart: string | null;
+  eventHoursEnd: string | null;
+  timezone: string;
+  walletExpirationMode: string;
+}): string | undefined {
+  if (event.walletExpirationMode !== "event_end") return undefined;
+  const local = eventEndsAtLocal(event);
+  return local ? `${local.day} ${local.time}` : undefined;
+}
+
 /** Attendee-facing wallet status word - mirrors packages/ui/src/status-map.ts's wording
  * (registered -> "Registered"/confirmed -> "Confirmed", admitted -> "Checked in") without adding
  * a dependency on that (React-facing) package, same idea as EVENT_TYPE_TO_APPLE below. registered
@@ -220,6 +240,7 @@ export function buildWalletPassInput(
     userProvidedId: `admitto:${event.id}:${attendee.id}`,
     barcodeValue,
     relevantDate: computeRelevantDate(event),
+    expirationDate: computeExpirationDate(event),
     eventTypeLabel: event.eventType ? EVENT_TYPE_TO_APPLE[event.eventType] : undefined,
     venueRoomLabel: event.venueRoom || undefined,
     venueEntranceLabel: event.venueEntrance || undefined,

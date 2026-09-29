@@ -66,6 +66,19 @@ An earlier version of this integration sent a separate `semantics` object throug
 
 Whenever Apple Wallet is enabled for an event and the event has a start time set (Event settings → Basic information → Event hours), Admitto also tells PassCreator when the pass becomes relevant enough to surface on the Lock Screen. This works independently of the semantic tags setup above and needs no configuration of its own. It has no effect on Google Wallet passes. An event with no start time set gets no Lock Screen surfacing behavior; nothing else about the pass changes.
 
+## Pass expiration (event_end mode)
+
+Event Settings → Wallet's **Pass expiration** field controls whether an issued pass ever expires on its own, without an admin voiding it. It has two options:
+
+- **Do not expire automatically** (the default). Passes stay active until an admin explicitly voids them, or the wallet feature's own other lifecycle actions apply.
+- **Expire when the event ends.** Every pass issued or reissued while this is on gets an expiration date equal to the event's own end time (its `Event hours` end, or the end of its day when it has none, in the event's own time zone). Admitto sends this to PassCreator as the pass's `expirationDate` in addition to keeping its own record of it.
+
+**Turning this on requires the template to support a per-pass expiration date.** Click **Test connection** first - it checks the template's own PassCreator setting (**Design & Content → Expiration → Different for each pass**) and reports **Per-pass expiration: Ready** once confirmed. Without that template setting on, PassCreator silently ignores the expiration date sent with each pass, so Admitto refuses to turn this mode on until the check succeeds - there is no way to tell from the pass itself that the date was ignored.
+
+**Turning this back off is blocked once any pass has been issued for the event.** There is no PassCreator-confirmed way to clear an already-sent expiration date on an existing pass, so allowing the switch would risk leaving a stale date behind with no visible warning. If you genuinely need to remove expiration from already-issued passes, void or remove them and start over once the field is off.
+
+**What happens once a pass expires:** a background job checks every active or voided pass's own expiration date, independent of PassCreator and independent of whether the event is archived, and marks it **Expired** once that date has passed - the same terminal status a manually-set expiration reaches. An expired pass can no longer be restored, the same as one whose event is already over.
+
 ## Related pages
 
 - [Wallet Passes Overview](Wallet-Passes-Overview) - what the wallet integration supports overall, and where each piece is configured

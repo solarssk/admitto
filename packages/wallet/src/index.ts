@@ -45,6 +45,7 @@ export {
   WALLET_SYNC_STALE_MS,
   type WalletRegistrationSyncResult,
 } from "./registration-sync.js";
+export { runWalletExpiry, type WalletExpiryResult } from "./expire-passes.js";
 export {
   reconcileWalletPassLifecycle,
   type ReconcileWalletPassLifecycleInput,
