@@ -382,6 +382,23 @@ describe("healthCheckGuidance", () => {
     });
   });
 
+  it("points an env-locked export_only provider at deployment configuration, not Mail settings", () => {
+    // EMAIL_PROVIDER=export_only: describeMailConfigForOrg() marks this field locked
+    // (source: "env"), so the Mail settings link would land on a read-only field.
+    const guidance = healthCheckGuidance(
+      checkRow("email_sending", "not_configured", [
+        { key: "provider", value: "export_only" },
+        { key: "source", value: "env" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      impact: "This provider does not send emails.",
+      nextStep:
+        "Set by the EMAIL_PROVIDER environment variable, not Mail settings. Change it in your deployment configuration to send emails from Admitto.",
+      quiet: true,
+    });
+  });
+
   it.each(["address_lookup", "weather", "bounce_ingest"])(
     "gives %s degraded/reason=lookup_failed the shared could-not-read guidance, not its own",
     (id) => {

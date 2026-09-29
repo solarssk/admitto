@@ -247,9 +247,22 @@ function bounceIngestGuidance(check: HealthCheckRowDto): HealthCheckGuidance | n
 /** Not a problem - a quiet, scoped note that Admitto cannot send organisation email yet,
  * shown on the row's own not_configured state (no provider, or a provider that only exports).
  * Gated on PO decision 8; changes no verdict, since not_configured is already excluded from the
- * tally in HealthCheckPanel.tsx. */
+ * tally in HealthCheckPanel.tsx.
+ *
+ * `source: "env"` (only ever set on the export_only branch, `describeMailConfigForOrg()`'s
+ * `field()` helper marks a field `locked` exactly when its source is "env") means EMAIL_PROVIDER
+ * is set in the deployment, so the Mail settings link this note otherwise offers would land on a
+ * read-only field - point at the deployment configuration instead. */
 function emailSendingNotConfiguredGuidance(check: HealthCheckRowDto): HealthCheckGuidance {
   const isExportOnly = detailValue(check, "provider") === "export_only";
+  if (isExportOnly && detailValue(check, "source") === "env") {
+    return {
+      impact: "This provider does not send emails.",
+      nextStep:
+        "Set by the EMAIL_PROVIDER environment variable, not Mail settings. Change it in your deployment configuration to send emails from Admitto.",
+      quiet: true,
+    };
+  }
   return {
     impact: isExportOnly
       ? "This provider does not send emails."
