@@ -39,8 +39,22 @@ jobs:
         with:
           persist-credentials: false
 
+      # The default GITHUB_TOKEN has no Administration permission, so Scorecard cannot read
+      # classic branch protection with it and Branch-Protection errors out (-1). The release
+      # GitHub App's short-lived installation token, minted here with read-only Administration
+      # only, replaces a long-lived PAT.
+      - name: Mint Scorecard read token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-administration: read
+          permission-contents: read
+
       - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
         with:
+          repo_token: ${{ steps.app-token.outputs.token }}
           results_file: results.sarif
           results_format: sarif
           publish_results: true
