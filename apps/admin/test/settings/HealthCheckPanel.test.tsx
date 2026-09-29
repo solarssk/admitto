@@ -6,7 +6,7 @@ import {
   HealthCheckPanel,
   LIVE_CHECKS_HINT,
 } from "../../src/settings/HealthCheckPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../../src/utils/event-dates.js";
 import type { HealthReportDto, HealthRowStatus } from "../../src/api/types.js";
 
@@ -784,5 +784,79 @@ describe("HealthCheckPanel", () => {
     // The fact was omitted (too fresh), so the raw timestamp still shows up in the details
     // instead of being lost entirely.
     expect(within(row).getByText(formatEventDateTime("2026-08-03T12:54:00.000Z", getBrowserTimeZone()))).toBeTruthy();
+  });
+
+  function reportWithGuidanceRows(): HealthReportDto {
+    return sampleReport({
+      overall: "down",
+      groups: [
+        {
+          id: "core",
+          label: "Core infrastructure",
+          subtitle: "Owned and run by this instance",
+          status: "down",
+          checks: [
+            { id: "database", label: "Database", status: "down", summary: "Not reachable", details: [] },
+          ],
+        },
+        {
+          id: "external",
+          label: "External integrations",
+          subtitle: "Third-party APIs this instance depends on",
+          status: "down",
+          checks: [
+            {
+              id: "email_sending",
+              label: "Email sending",
+              status: "down",
+              summary: "Unreachable",
+              details: [{ key: "live_check", value: "failed" }],
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("shows guidance above the detail list for a problem row, with no link when none applies", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithGuidanceRows());
+    renderWithToastAndRouter(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Database/ });
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
+
+    expect(
+      within(row).getByText("Admitto cannot read or save attendees, events or settings."),
+    ).toBeTruthy();
+    expect(
+      within(row).getByText("Check that the database service is running and that DATABASE_URL is correct."),
+    ).toBeTruthy();
+    expect(within(row).queryByRole("link")).toBeNull();
+
+    // Guidance renders before the detail list in DOM order.
+    const body = row.querySelector(".health-check__body") as HTMLElement;
+    const guidanceEl = body.querySelector(".health-check__guidance");
+    const detailsEl = body.querySelector(".health-check__details");
+    expect(guidanceEl).toBeTruthy();
+    if (detailsEl) {
+      expect(guidanceEl?.compareDocumentPosition(detailsEl) === Node.DOCUMENT_POSITION_FOLLOWING).toBe(true);
+    }
+  });
+
+  it("shows a guidance link to the relevant settings tab when one applies", async () => {
+    mockFetch.mockResolvedValueOnce(reportWithGuidanceRows());
+    renderWithToastAndRouter(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Email sending/ });
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
+
+    const link = within(row).getByRole("link", { name: /Open Mail settings/ });
+    expect(link.getAttribute("href")).toBe("/admin/settings?tab=mail");
+  });
+
+  it("shows no guidance block for a healthy row", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    const rowBtn = await screen.findByRole("button", { name: /Database/ });
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
+    fireEvent.click(rowBtn);
+    expect(row.querySelector(".health-check__guidance")).toBeNull();
   });
 });
