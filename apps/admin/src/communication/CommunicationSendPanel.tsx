@@ -78,10 +78,12 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
   },
 ];
 
+// Same "last known" wording as Reports' Wallets tab "Registration state (last known)" card
+// (plan v4.2 step 4) - both read the exact same registration data, so the labels shouldn't drift.
 const WALLET_STATUS_OPTIONS: ReadonlyArray<{ id: WalletLifecycleStatus; label: string; icon: string }> = [
-  { id: "active", label: "Active (installed now)", icon: "circle-check" },
-  { id: "removed", label: "Once installed, not active now", icon: "wallet-off" },
-  { id: "never_installed", label: "Never added", icon: "minus" },
+  { id: "active", label: "Registered (last known)", icon: "circle-check" },
+  { id: "removed", label: "Previously registered (last known)", icon: "wallet-off" },
+  { id: "never_installed", label: "Never installed", icon: "minus" },
 ];
 
 /** Notice tone for the two remaining plain-text result cases (SendCompleteSummary owns its own
@@ -543,7 +545,7 @@ export function CommunicationSendPanel({
               />
             </div>
             <p className="mail-field-hint">
-              Attendees whose wallet pass currently matches this status will receive the email.
+              Attendees whose wallet pass most recently matched this status will receive the email.
             </p>
           </>
         )}

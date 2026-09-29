@@ -232,12 +232,16 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     // `registrations_per_attendee` above) - never_installed passes were issued but never
     // confirmed installed at all, so they're outside `confirmed` while still counting here.
     wallet_lifecycle: { active: 6, removed: 3, never_installed: 6 },
+    // Independent of wallet_lifecycle above (a voided/removed pass can still read as
+    // active/registered there) - both also sum to adoption.got_pass=15.
+    pass_validity: { active: 10, voided: 3, expired: 2, failed: 0 },
+    provider_state: { managed: 13, removed: 2 },
     ...overrides,
   };
 }
 
-/** Cards title their header with `<HintLabel>` for three of these cards ("Wallet adoption",
- * "Wallet platform", "Devices per attendee"), which renders the title text alongside a trailing
+/** Cards title their header with `<HintLabel>` for four of these cards ("Wallet adoption",
+ * "Wallet platform", "Devices per attendee", "Pass validity"), which renders the title text alongside a trailing
  * icon inside the same tooltip-trigger wrapper as `.at-card__title` itself - both nodes end up
  * with identical `textContent`, so a plain `screen.getByText(title)` throws "multiple elements
  * found" for those cards. Locating the `.at-card` by its title text via `closest` sidesteps that
@@ -466,23 +470,69 @@ describe("WalletsReportsTab", () => {
     expect(subs[1]?.textContent).toBe("2 of 8 attendees");
     expect(compareCard.querySelector(".wallets-compare-delta__pill")?.textContent).toBe("▲ +50 pts");
 
-    // Wallet lifecycle donut: active, removed, never_installed (fixture's 6/3/6, summing to
-    // adoption.got_pass=15, not adoption.confirmed=10) - and the breakdown list's own percentages,
-    // each independently computed against got_pass (not confirmed, unlike the platform card).
-    const lifecycleCard = cardByTitle("Wallet lifecycle");
+    // Registration state (last known) donut: active, removed, never_installed (fixture's 6/3/6,
+    // summing to adoption.got_pass=15, not adoption.confirmed=10) - and the breakdown list's own
+    // percentages, each independently computed against got_pass (not confirmed, unlike the
+    // platform card). Labels read "Registered"/"Previously registered" (not "Active"/"Removed") -
+    // the wallet_lifecycle DTO field/value names themselves stay as-is (plan v4.2 step 4).
+    const lifecycleCard = cardByTitle("Registration state (last known)");
     expect(dataValues(within(lifecycleCard).getByTestId("rc-pie"))).toEqual([6, 3, 6]);
     expect(breakdownRows(lifecycleCard)).toEqual([
-      { name: "Active", meta: "6 · 40%" },
-      { name: "Removed", meta: "3 · 20%" },
+      { name: "Registered", meta: "6 · 40%" },
+      { name: "Previously registered", meta: "3 · 20%" },
       { name: "Never installed", meta: "6 · 40%" },
     ]);
-    // Centers on the ring's whole (got_pass=15), not the "Removed" slice's own value - that value
-    // is already shown in the "Removed" legend row above.
+    // Centers on the ring's whole (got_pass=15), not the "Previously registered" slice's own
+    // value - that value is already shown in its own legend row above.
     expect(lifecycleCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
     expect(lifecycleCard.querySelector(".wallets-gauge-overlay__label")?.textContent).toBe("issued");
 
+    // Pass validity donut: active/voided/expired/failed (fixture's 10/3/2/0), independent of
+    // Registration state above - all sum to adoption.got_pass=15 but answer different questions.
+    // "Failed" always renders as its own row (0 here) - it's a diagnostic bucket for a concurrency
+    // race (see pass_validity's own DTO doc comment), not something worth hiding at zero the way
+    // Samsung Wallet's own 0-until-activated slice isn't hidden elsewhere on this tab either.
+    const validityCard = cardByTitle("Pass validity");
+    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([10, 3, 2, 0]);
+    expect(breakdownRows(validityCard)).toEqual([
+      { name: "Active", meta: "10 · 66.7%" },
+      { name: "Voided", meta: "3 · 20%" },
+      { name: "Expired", meta: "2 · 13.3%" },
+      { name: "Failed (unexpected)", meta: "0 · 0%" },
+    ]);
+    expect(validityCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
+
+    // Provider state donut: managed/removed (fixture's 13/2).
+    const providerCard = cardByTitle("Provider state");
+    expect(dataValues(within(providerCard).getByTestId("rc-pie"))).toEqual([13, 2]);
+    expect(breakdownRows(providerCard)).toEqual([
+      { name: "Managed", meta: "13 · 86.7%" },
+      { name: "Removed from provider", meta: "2 · 13.3%" },
+    ]);
+    expect(providerCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
+
     // No truncation notice for this (default) fixture.
     expect(document.querySelector(".wallets-truncated-notice")).toBeNull();
+  });
+
+  it("renders a nonzero Failed (unexpected) count in Pass validity - the concurrency-race bucket, not hidden or folded into another status", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({ pass_validity: { active: 8, voided: 3, expired: 2, failed: 2 } }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const validityCard = cardByTitle("Pass validity");
+    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([8, 3, 2, 2]);
+    expect(breakdownRows(validityCard)).toEqual([
+      { name: "Active", meta: "8 · 53.3%" },
+      { name: "Voided", meta: "3 · 20%" },
+      { name: "Expired", meta: "2 · 13.3%" },
+      { name: "Failed (unexpected)", meta: "2 · 13.3%" },
+    ]);
   });
 
   it("shows the down-arrow delta when the wallet group's admission rate trails the no-wallet group's", async () => {
@@ -517,6 +567,13 @@ describe("WalletsReportsTab", () => {
     expect(notice?.textContent).toContain(
       "This event has more issued wallet passes than a single report can process at once",
     );
+    // pass validity, provider state, and registration state (wallet_lifecycle) are all computed
+    // from the same WALLET_AGGREGATE_MAX-capped passes array as platform/devices-per-attendee/
+    // adoption-by-type/time-to-tap - the notice must say so for all three, not just the two that
+    // predate this card split (a regression that dropped one of these three words from the notice
+    // string would otherwise pass unnoticed, since the assertion above only checks the leading,
+    // unchanged sentence).
+    expect(notice?.textContent).toContain("pass validity, provider state, registration state");
   });
 
   it("shows the CumulativeChart's own empty copy when no passes have been issued yet", async () => {

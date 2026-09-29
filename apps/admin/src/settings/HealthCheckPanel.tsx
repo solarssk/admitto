@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
 import type { NoticeVariant } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { fetchAdminHealth, runAdminHealthLive } from "../api/client.js";
@@ -7,7 +7,6 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type {
   HealthCheckRowDto,
   HealthGroupDto,
-  HealthOverallStatus,
   HealthReportDto,
   HealthRowStatus,
 } from "../api/types.js";
@@ -43,18 +42,54 @@ function checkIcon(id: string): string {
   return CHECK_ICONS[id] ?? "circle-dot";
 }
 
-function rowDotClass(status: HealthRowStatus | HealthOverallStatus): string {
-  if (status === "ok") return "health-check__dot--ok";
-  if (status === "degraded") return "health-check__dot--warn";
-  if (status === "down") return "health-check__dot--err";
-  if (status === "planned") return "health-check__dot--planned";
-  return "health-check__dot--muted";
-}
+type RowStatusMeta = {
+  /** Tabler icon suffix shown inside the status circle. */
+  glyph: string;
+  circleVariant: "ok" | "warn" | "error" | "neutral";
+  /** Full word for the sr-only "Status: X" span, shown on every row including healthy ones. */
+  srWord: string;
+  /** Visible badge next to the label; omitted entirely for a healthy row. */
+  badge: { variant: "warn" | "error" | "neutral"; word: string } | null;
+  /** Row wrapper class: border tone for warn/err, a quiet label for not_configured, none for ok. */
+  toneClass: string;
+};
 
-function rowToneClass(status: HealthRowStatus): string {
-  if (status === "degraded") return "health-check__row--warn";
-  if (status === "down") return "health-check__row--err";
-  return "";
+/** The server never emits `planned` (ADR 0037), so it has no entry here; `rowStatusMeta()`
+ * below falls back to the `not_configured` treatment for it defensively. */
+const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta> = {
+  ok: {
+    glyph: "check",
+    circleVariant: "ok",
+    srWord: "Healthy",
+    badge: null,
+    toneClass: "",
+  },
+  degraded: {
+    glyph: "alert-triangle",
+    circleVariant: "warn",
+    srWord: "Degraded",
+    badge: { variant: "warn", word: "Degraded" },
+    toneClass: "health-check__row--warn",
+  },
+  down: {
+    glyph: "x",
+    circleVariant: "error",
+    srWord: "Down",
+    badge: { variant: "error", word: "Down" },
+    toneClass: "health-check__row--err",
+  },
+  not_configured: {
+    glyph: "minus",
+    circleVariant: "neutral",
+    srWord: "Not configured",
+    badge: { variant: "neutral", word: "Not configured" },
+    toneClass: "health-check__row--quiet",
+  },
+};
+
+function rowStatusMeta(status: HealthRowStatus): RowStatusMeta {
+  if (status === "planned") return ROW_STATUS_META.not_configured;
+  return ROW_STATUS_META[status];
 }
 
 function downloadTextFile(filename: string, content: string): void {
@@ -89,14 +124,6 @@ function runningBuildLabel(): string {
   const { version, commit } = runningBuildMeta();
   return formatRunningBuildLabel(version, commit);
 }
-
-const ROW_STATUS_TEXT: Record<HealthRowStatus, string> = {
-  ok: "Healthy",
-  degraded: "Degraded",
-  down: "Down",
-  not_configured: "Not configured",
-  planned: "Planned",
-};
 
 /** Tallies down/degraded checks across every group. Not configured and planned rows never
  * count, matching `worstHealthStatus()` on the backend. */
@@ -149,11 +176,12 @@ function HealthCheckRowView({
   onToggle: () => void;
 }>) {
   const icon = checkIcon(check.id);
+  const meta = rowStatusMeta(check.status);
   return (
     <div
       className={[
         "health-check__row",
-        rowToneClass(check.status),
+        meta.toneClass,
         expanded ? "health-check__row--expanded" : "",
       ]
         .filter(Boolean)
@@ -166,16 +194,28 @@ function HealthCheckRowView({
         onClick={onToggle}
       >
         <span
-          className={`health-check__dot ${rowDotClass(check.status)}`}
+          className={`status-circle status-circle--sm status-circle--${meta.circleVariant}`}
           aria-hidden="true"
-        />
-        <span className="sr-only">{`Status: ${ROW_STATUS_TEXT[check.status]}`}</span>
+        >
+          <i className={`ti ti-${meta.glyph}`} />
+        </span>
+        <span className="sr-only">{`Status: ${meta.srWord}`}</span>
         <span className="health-check__row-icon" aria-hidden="true">
           <i className={`ti ti-${icon}`} />
         </span>
         <span className="health-check__row-text">
           <strong>{check.label}</strong>
-          <span>{check.summary}</span>
+          {meta.badge && (
+            <Badge
+              variant={meta.badge.variant}
+              dot={meta.badge.variant !== "neutral"}
+              outline={meta.badge.variant === "neutral"}
+              aria-hidden="true"
+            >
+              {meta.badge.word}
+            </Badge>
+          )}
+          <span className="health-check__summary">{check.summary}</span>
         </span>
         <i
           className={`ti ti-chevron-${expanded ? "up" : "down"} health-check__chevron`}
