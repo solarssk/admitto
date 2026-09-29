@@ -11,6 +11,7 @@ vi.mock("../../src/ops/migrations-check.js", () => ({ checkMigrationsStatus }));
 vi.mock("../../src/ops/readyz.js", () => ({ checkRedis }));
 
 import {
+  checkWorker,
   classifyLatency,
   collectSetupChecks,
   setupChecksAllOk,
@@ -230,5 +231,37 @@ describe("collectSetupChecks — base_url production fallback", () => {
       expect(checks.base_url.detail).not.toMatch(/required for server boot/);
       expect(checks.base_url.detail).toContain("BASE_URL");
     });
+  });
+});
+
+function workerHeartbeatDb(beat: { last_beat_at: Date; hostname: string | null } | null): PrismaClient {
+  return { backgroundWorkerHeartbeat: { findUnique: vi.fn().mockResolvedValue(beat) } } as unknown as PrismaClient;
+}
+
+describe("checkWorker", () => {
+  it("reports ok+warn, never down, when the worker has never reported a heartbeat", async () => {
+    const result = await checkWorker(workerHeartbeatDb(null), {});
+
+    expect(result.ok).toBe(true);
+    expect(result.warn).toBe(true);
+    expect(result.detail).toMatch(/never reported a heartbeat/i);
+  });
+
+  it("reports ok+warn, never down, when the heartbeat is stale", async () => {
+    const db = workerHeartbeatDb({ last_beat_at: new Date(Date.now() - 6 * 60_000), hostname: "worker-1" });
+
+    const result = await checkWorker(db, {});
+
+    expect(result.ok).toBe(true);
+    expect(result.warn).toBe(true);
+    expect(result.detail).toMatch(/stale/i);
+  });
+
+  it("reports plain ok when the heartbeat is fresh", async () => {
+    const db = workerHeartbeatDb({ last_beat_at: new Date(), hostname: "worker-1" });
+
+    const result = await checkWorker(db, {});
+
+    expect(result).toEqual({ ok: true, detail: expect.stringMatching(/fresh/i) });
   });
 });
