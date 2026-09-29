@@ -7,7 +7,7 @@ import {
   LIVE_CHECKS_HINT,
 } from "../../src/settings/HealthCheckPanel.js";
 import { renderWithToast } from "../test-utils.js";
-import type { HealthReportDto } from "../../src/api/types.js";
+import type { HealthReportDto, HealthRowStatus } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -113,6 +113,29 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
     ],
     ...overrides,
   };
+}
+
+/** A single-group report with one check per given status, for verdict tests that need an exact
+ * down/degraded tally instead of `sampleReport()`'s fixed mix. */
+function reportWithStatuses(statuses: HealthRowStatus[]): HealthReportDto {
+  return sampleReport({
+    overall: "ok",
+    groups: [
+      {
+        id: "core",
+        label: "Core infrastructure",
+        subtitle: "Owned and run by this instance",
+        status: "ok",
+        checks: statuses.map((status, i) => ({
+          id: `check_${i}`,
+          label: `Check ${i}`,
+          status,
+          summary: "Summary",
+          details: [],
+        })),
+      },
+    ],
+  });
 }
 
 beforeEach(() => {
@@ -485,5 +508,39 @@ describe("HealthCheckPanel", () => {
     });
     // No throw / no leftover loading UI after abort.
     expect(screen.queryByText("Loading health checks…")).toBeNull();
+  });
+
+  it("gives group titles their own h2 heading", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Core infrastructure" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "External integrations" })).toBeTruthy();
+  });
+
+  it.each<[HealthRowStatus[], string]>([
+    [["ok", "not_configured", "planned"], "No problems found."],
+    [["degraded"], "1 check is degraded."],
+    [["degraded", "degraded", "degraded"], "3 checks are degraded."],
+    [["down"], "1 check is down."],
+    [["down", "down"], "2 checks are down."],
+    [["down", "degraded", "degraded"], "1 check is down and 2 are degraded."],
+    [["down", "down", "degraded"], "2 checks are down and 1 is degraded."],
+  ])("shows the verdict sentence for %j", async (statuses, expectedText) => {
+    mockFetch.mockResolvedValueOnce(reportWithStatuses(statuses));
+    renderWithToast(<HealthCheckPanel />);
+    expect(await screen.findByText(expectedText)).toBeTruthy();
+  });
+
+  it.each<[HealthRowStatus[], string]>([
+    [["ok"], "at-notice--success"],
+    [["degraded"], "at-notice--warning"],
+    [["down"], "at-notice--error"],
+    [["down", "degraded"], "at-notice--error"],
+  ])("colours the verdict notice for %j", async (statuses, expectedClass) => {
+    mockFetch.mockResolvedValueOnce(reportWithStatuses(statuses));
+    const { container } = renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Core infrastructure");
+    expect(container.querySelector(".health-check__verdict")?.className).toContain(expectedClass);
   });
 });

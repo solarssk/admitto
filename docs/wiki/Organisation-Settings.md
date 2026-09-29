@@ -42,6 +42,7 @@ Use a named Superadmin account, record the intended change, and prepare a synthe
 9. Use **Identity** for OIDC providers and Cloudflare Access.
 10. Use **Logs** to review system, administration, and security activity.
 11. Use **Health check** to review Core infrastructure and External integrations status.
+    - **Verdict**: a sentence above the groups summarizes any down or degraded checks (for example "No problems found." or "1 check is down and 2 are degraded.").
     - **Core**: includes **Background worker** (heartbeat from the Admitto worker process that drains mail, runs import/export jobs, bounce detection, and retention). If that row is degraded, start the worker (`npm run worker` locally, or the compose `worker` service).
     - **External**: rows are labelled **role, provider** (for example `Address lookup, Nominatim`, `Map tiles, OpenStreetMap`, and `Weather, MET Norway` or `Weather, Open-Meteo`). Turning **Maps** off in External services marks **Map tiles** as Maps disabled; **Address lookup, Nominatim** stays available for the Location tab. Each configured identity provider appears as its own row; Cloudflare Access is listed separately.
     - **File storage**: reports whether the local upload directory (`UPLOAD_DIR`) exists and is writable. If the folder is missing it shows as not configured (Admitto creates it on the first branding upload). A misconfigured path that points at a file instead of a folder is reported as down.

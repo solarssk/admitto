@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
+import type { NoticeVariant } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { fetchAdminHealth, runAdminHealthLive } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -97,6 +98,47 @@ const ROW_STATUS_TEXT: Record<HealthRowStatus, string> = {
   planned: "Planned",
 };
 
+/** Tallies down/degraded checks across every group. Not configured and planned rows never
+ * count, matching `worstHealthStatus()` on the backend. */
+function tallyHealthChecks(report: HealthReportDto): { down: number; degraded: number } {
+  let down = 0;
+  let degraded = 0;
+  for (const group of report.groups) {
+    for (const check of group.checks) {
+      if (check.status === "down") down++;
+      else if (check.status === "degraded") degraded++;
+    }
+  }
+  return { down, degraded };
+}
+
+function pluralCheck(count: number): string {
+  return count === 1 ? "check" : "checks";
+}
+
+function pluralVerb(count: number): string {
+  return count === 1 ? "is" : "are";
+}
+
+/** One tally of `check.status` decides both wording and colour; no fallback to `report.overall`,
+ * since with real API data both come from the same roll-up. */
+function healthVerdictText(report: HealthReportDto): string {
+  const { down, degraded } = tallyHealthChecks(report);
+  if (down === 0 && degraded === 0) return "No problems found.";
+  if (down > 0 && degraded > 0) {
+    return `${down} ${pluralCheck(down)} ${pluralVerb(down)} down and ${degraded} ${pluralVerb(degraded)} degraded.`;
+  }
+  if (down > 0) return `${down} ${pluralCheck(down)} ${pluralVerb(down)} down.`;
+  return `${degraded} ${pluralCheck(degraded)} ${pluralVerb(degraded)} degraded.`;
+}
+
+function healthVerdictVariant(report: HealthReportDto): NoticeVariant {
+  const { down, degraded } = tallyHealthChecks(report);
+  if (down > 0) return "error";
+  if (degraded > 0) return "warning";
+  return "success";
+}
+
 function HealthCheckRowView({
   check,
   expanded,
@@ -176,9 +218,9 @@ function HealthGroupSection({
           <i className={`ti ti-${icon}`} />
         </span>
         <div className="health-check__section-text">
-          <h3 id={`health-group-${group.id}`} className="health-check__section-title">
+          <h2 id={`health-group-${group.id}`} className="health-check__section-title">
             {group.label}
-          </h3>
+          </h2>
           <p className="health-check__section-subtitle">{group.subtitle}</p>
         </div>
       </header>
@@ -420,6 +462,10 @@ export function HealthCheckPanel() {
           </time>
           {runningBuildLabel()}
         </p>
+
+        <Notice as="p" variant={healthVerdictVariant(report)} className="health-check__verdict">
+          {healthVerdictText(report)}
+        </Notice>
 
         <div className="health-check__groups">
           {report.groups.map((group) => (
