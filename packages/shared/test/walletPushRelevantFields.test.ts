@@ -15,6 +15,7 @@ describe("WALLET_RELEVANT_EVENT_FIELDS", () => {
       "event_hours_end",
       "event_type",
       "wallet_apple_enabled",
+      "wallet_expiration_mode",
     ]);
   });
 });

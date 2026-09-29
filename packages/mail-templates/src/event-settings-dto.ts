@@ -43,6 +43,9 @@ export type EventSettingsDto = {
   /** PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}). No default
    * mapping - null/empty means nothing beyond the QR code is sent to PassCreator. */
   wallet_field_mapping: Record<string, string> | null;
+  /** "none" (default) or "event_end" - only "event_end" gives a newly-issued/reissued pass a
+   * canonical expires_at, computed from the event's own end time (plan v4.2 step 6). */
+  wallet_expiration_mode: string;
   capacity: number | null;
   status: "active" | "archived";
   /** Null unless status is "archived". */

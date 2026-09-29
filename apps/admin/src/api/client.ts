@@ -67,6 +67,7 @@ import type {
   EventBounceIngestSettingsResponse,
   SaveEventBounceIngestSettingsBody,
   ConnectionTestResponse,
+  WalletConnectionTestResponse,
   BounceIngestRunResponse,
   MailSmtpProbeResponse,
   SaveMailSettingsBody,
@@ -562,6 +563,7 @@ export async function patchEvent(
     wallet_google_enabled: boolean;
     wallet_samsung_enabled: boolean;
     wallet_field_mapping: Record<string, string> | null;
+    wallet_expiration_mode: "none" | "event_end";
     location: string | null;
     capacity: number | null;
     logo_url: string | null;
@@ -2431,12 +2433,12 @@ export async function testNotificationSettings(
 export async function testWalletConnection(
   eventId: string,
   body: { apiKey?: string; templateId: string },
-): Promise<ConnectionTestResponse> {
+): Promise<WalletConnectionTestResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/wallet/test`,
     jsonPostInit(body),
   );
-  return parseJson<ConnectionTestResponse>(res);
+  return parseJson<WalletConnectionTestResponse>(res);
 }
 
 export async function fetchSessions(

@@ -268,13 +268,24 @@ export class PassCreatorClient implements WalletPassProvider {
    * Probes the API key + template ID pair for "Test connection" (Event Settings -> Wallet).
    * Uses the v2 template-read endpoint (v3 has no template-management operations - ADR 0041 §3),
    * assumed to share v3's {success, data, errors} envelope shape pending live confirmation.
+   *
+   * `perPassExpirationReady` is the "Per-pass expiration: Ready" gate for
+   * wallet_expiration_mode "event_end" (plan v4.2 step 6): confirmed against PassCreator's own
+   * published API docs (developer.passcreator.com/en/api/v2/pass-template, both the create
+   * schema and this describe endpoint's own "Returned values" section, 2026-09-29) that `data`
+   * carries a mandatory `expiration` object with `expirationDateDifferentForEachPass` - "If true
+   * the system will ask for an expiration date on pass creation." False (or missing, defensively)
+   * means a per-pass expirationDate sent on create/update is silently ignored - confirmed live
+   * against the dev account's own template on 2026-09-28. Not requesting this live check be
+   * redone against the real account: doing so would require reconfiguring that real, in-use
+   * template, which the same session that ran the live check explicitly avoided.
    */
-  async describeTemplate(): Promise<{ name: string | null }> {
-    const data = await this.request<{ name?: string }>(
+  async describeTemplate(): Promise<{ name: string | null; perPassExpirationReady: boolean }> {
+    const data = await this.request<{ name?: string; expiration?: { expirationDateDifferentForEachPass?: boolean } }>(
       "GET",
       `/api/v2/pass-template/${encodeURIComponent(this.templateId)}/describe`,
     );
-    return { name: data.name ?? null };
+    return { name: data.name ?? null, perPassExpirationReady: data.expiration?.expirationDateDifferentForEachPass === true };
   }
 
   /** PEM-formatted public key used to verify a signed webhook payload

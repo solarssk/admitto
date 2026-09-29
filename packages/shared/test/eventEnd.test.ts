@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventEndsAtUtc, isWalletAddClosed } from "../src/eventEnd.js";
+import { eventEndsAtLocal, eventEndsAtUtc, isWalletAddClosed } from "../src/eventEnd.js";
 
 // `date` is the display-only sentinel anchored at noon UTC.
 const day = (yyyyMmDd: string) => new Date(`${yyyyMmDd}T12:00:00.000Z`);
@@ -73,6 +73,32 @@ describe("eventEndsAtUtc", () => {
     expect(
       eventEndsAtUtc({ date: day("2026-09-30"), eventHoursStart: "22:00", eventHoursEnd: "01:00", timezone: "UTC" }).toISOString(),
     ).toBe("2026-10-01T01:00:00.000Z");
+  });
+});
+
+describe("eventEndsAtLocal", () => {
+  it("reports the event's own day and eventHoursEnd - the same wall clock eventEndsAtUtc converts through the event's timezone", () => {
+    expect(
+      eventEndsAtLocal({ date: day("2026-09-01"), eventHoursStart: "10:00", eventHoursEnd: "18:00", timezone: "Europe/Warsaw" }),
+    ).toEqual({ day: "2026-09-01", time: "18:00" });
+  });
+
+  it("reports the next day at 00:00 when there is no usable end time", () => {
+    expect(
+      eventEndsAtLocal({ date: day("2026-09-01"), eventHoursStart: "10:00", eventHoursEnd: null, timezone: "UTC" }),
+    ).toEqual({ day: "2026-09-02", time: "00:00" });
+  });
+
+  it("rolls to the next day for an overnight event, same as eventEndsAtUtc's own rule", () => {
+    expect(
+      eventEndsAtLocal({ date: day("2026-09-01"), eventHoursStart: "20:00", eventHoursEnd: "02:00", timezone: "UTC" }),
+    ).toEqual({ day: "2026-09-02", time: "02:00" });
+  });
+
+  it("is null for an unreadable date, instead of throwing", () => {
+    expect(
+      eventEndsAtLocal({ date: new Date("nope"), eventHoursStart: null, eventHoursEnd: "18:00", timezone: "UTC" }),
+    ).toBeNull();
   });
 });
 

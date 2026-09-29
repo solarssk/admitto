@@ -123,6 +123,11 @@ works; Admitto never signs or hosts pass files itself.
     for **Remove from provider**: it removes every voided pass of the event that has stayed voided
     for at least a day, keeping each pass's local record and Reports history. Expired passes are not
     included yet - remove those one at a time or from a selection.
+  - **Automatic expiration.** Event Settings → Wallet's **Pass expiration** field can give every
+    issued pass a real expiration date tied to the event's own end time, so it goes **Expired** on
+    its own instead of staying active indefinitely once the event is over. Off by default; see the
+    [template setup page](Wallet-Passes-PassCreator-Setup) for the template requirement and how to
+    turn it on. An expired pass can't be restored, the same as one whose event is already over.
   - **Rate and pacing limits:** a bulk wallet action accepts at most 100 attendees per selection.
     Each attendee's pass is updated one call at a time at a fixed pace, to stay within
     PassCreator's own request limit, rather than all at once, so a bulk action against a large

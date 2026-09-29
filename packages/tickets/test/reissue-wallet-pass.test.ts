@@ -116,6 +116,7 @@ describe("reissueOneWalletPass", () => {
         android_url: "https://pc/android",
         last_error_code: null,
         last_synced_at: expect.any(Date),
+        expires_at: null,
       },
     });
     expect(writeActionLog).toHaveBeenCalledWith(expect.anything(), {
@@ -125,6 +126,46 @@ describe("reissueOneWalletPass", () => {
       audit,
       metadata: { bulk: true },
     });
+  });
+
+  it("recomputes expires_at from the event's own end time when walletExpirationMode is 'event_end' (plan v4.2 step 6)", async () => {
+    const { db, txWalletPassUpdate } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null });
+    const eventEndTicket = {
+      attendee: { id: "att-1", custom_data: null },
+      event: {
+        id: "evt-1",
+        walletFieldMapping: null,
+        walletExpirationMode: "event_end",
+        date: new Date("2026-09-24T12:00:00.000Z"),
+        timezone: "UTC",
+        eventHoursStart: "09:00",
+        eventHoursEnd: "18:00",
+      },
+    };
+    vi.mocked(resolveTicketPageDisplay).mockResolvedValueOnce(eventEndTicket as never);
+    vi.mocked(resolveTicket).mockResolvedValueOnce(eventEndTicket as never);
+    provider.updatePass.mockResolvedValueOnce({ downloadUrl: "d", appleUrl: "a", androidUrl: "g" });
+
+    await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
+
+    expect(txWalletPassUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ expires_at: new Date("2026-09-24T18:00:00.000Z") }),
+      }),
+    );
+  });
+
+  it("does not bump provider_commanded_at for a routine reissue, event_end mode or not", async () => {
+    const { db, txWalletPassUpdate } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null });
+    vi.mocked(resolveTicket).mockResolvedValueOnce(resolvedTicket as never);
+    provider.updatePass.mockResolvedValueOnce({ downloadUrl: "d", appleUrl: "a", androidUrl: "g" });
+
+    await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
+
+    const data = txWalletPassUpdate.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("provider_commanded_at");
   });
 
   it("skips a pass already removed at the provider without reading anything or calling it", async () => {

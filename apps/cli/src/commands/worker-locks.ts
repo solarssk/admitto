@@ -15,6 +15,7 @@ export const WORKER_LOCK_KEYS = {
   import: "admitto:worker:import",
   export: "admitto:worker:export",
   wallet_sync: "admitto:worker:wallet_sync",
+  wallet_expire: "admitto:worker:wallet_expire",
   wallet_push: "admitto:worker:wallet_push",
   wallet_refresh_status: "admitto:worker:wallet_refresh_status",
   wallet_cleanup: "admitto:worker:wallet_cleanup",

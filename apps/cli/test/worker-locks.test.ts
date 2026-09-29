@@ -29,6 +29,7 @@ describe("WORKER_LOCK_KEYS", () => {
     expect(WORKER_LOCK_KEYS.import).toBe("admitto:worker:import");
     expect(WORKER_LOCK_KEYS.export).toBe("admitto:worker:export");
     expect(WORKER_LOCK_KEYS.wallet_sync).toBe("admitto:worker:wallet_sync");
+    expect(WORKER_LOCK_KEYS.wallet_expire).toBe("admitto:worker:wallet_expire");
     expect(WORKER_LOCK_KEYS.wallet_push).toBe("admitto:worker:wallet_push");
     expect(WORKER_LOCK_KEYS.wallet_refresh_status).toBe("admitto:worker:wallet_refresh_status");
     expect(WORKER_LOCK_KEYS.wallet_cleanup).toBe("admitto:worker:wallet_cleanup");

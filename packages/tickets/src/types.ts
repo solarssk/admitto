@@ -209,6 +209,10 @@ export type ResolvedTicket = {
     walletSamsungEnabled: boolean;
     /** PassCreator field key -> Admitto placeholder token; null/empty uses the default mapping. */
     walletFieldMapping: Record<string, string> | null;
+    /** "none" (default) or "event_end" - only "event_end" gives a newly-issued/reissued pass a
+     * canonical expires_at (plan v4.2 step 6, computeExpirationDateLabel in
+     * wallet-pass-input.ts). */
+    walletExpirationMode: string;
     /** Optional event category (Apple PKEventType vocabulary key, e.g. "sports") - a
      * WALLET_MAPPING_PLACEHOLDERS entry like every other field here. */
     eventType: string | null;
