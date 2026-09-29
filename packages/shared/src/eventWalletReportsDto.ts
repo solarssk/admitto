@@ -130,7 +130,9 @@ export interface EventWalletReportsResponse {
   /** What WalletPass.status says about every issued pass - independent of, and not to be confused
    * with, `wallet_lifecycle` below (registration state) or `provider_state` (whether the pass
    * still exists at the wallet provider). Always sums to exactly `adoption.got_pass`. A pass can
-   * be `voided` (an admin invalidated it - reversible via Restore until the event ends) or have
+   * be `voided` (invalidated - reversible via Restore until the event ends - whether an admin
+   * voided it directly or a sync/refresh reconciled the wallet provider's own report of it as
+   * voided, see reconcileWalletPassLifecycle) or have
    * naturally `expired`, while still being `managed` in `provider_state` (removing it there is a
    * separate, later step) and while still showing as `active`/`removed` in `wallet_lifecycle`
    * (whether it's still on a device is a different question from whether it's still valid) - the
@@ -142,13 +144,19 @@ export interface EventWalletReportsResponse {
     voided: number;
     expired: number;
   };
-  /** Whether every issued pass still exists at the wallet provider (`managed`) or has been
-   * permanently deleted there (`removed`, via "Remove from provider" or "Remove inactive passes" -
-   * see Wallet-Passes-Overview.md) while its local record and history stay here. Always sums to
-   * exactly `adoption.got_pass`, independent of `pass_validity` and `wallet_lifecycle`: a removed
-   * pass is always voided or expired (Remove requires one of those first, see
-   * removeOneWalletPassFromProvider's own doc comment), but it doesn't disappear from this report
-   * the way it disappears from the provider's own dashboard once removed. */
+  /** Whether Admitto has permanently deleted every issued pass at the wallet provider (`removed`,
+   * via "Remove from provider" or "Remove inactive passes" - see Wallet-Passes-Overview.md) or not
+   * (`managed`) - NOT a live check of whether the pass still genuinely exists at the provider.
+   * `provider_removed_at` is only ever set by Admitto's own confirmed delete call - a pass deleted
+   * directly at the provider, outside Admitto, is never detected as gone this way
+   * (refreshOneWalletPassStatus's own doc comment: a provider lookup with no match throws
+   * WalletStatusCheckInconclusiveError rather than being read as proof of deletion, since a search-
+   * index lag looks the same as a real deletion) and keeps reading `managed` until reached by one
+   * of the two actions above. Always sums to exactly `adoption.got_pass`, independent of
+   * `pass_validity` and `wallet_lifecycle`: a removed pass is always voided or expired (Remove
+   * requires one of those first, see removeOneWalletPassFromProvider's own doc comment), but it
+   * doesn't disappear from this report the way it disappears from the provider's own dashboard once
+   * removed. */
   provider_state: {
     managed: number;
     removed: number;

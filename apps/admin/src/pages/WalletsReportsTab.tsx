@@ -889,7 +889,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Pass validity">
           <p className="wallets-description">
-            Every issued pass, grouped by whether it can still be used, was voided by an admin (reversible via Restore until the event ends), or has permanently expired.
+            Every issued pass, grouped by whether it can still be used, was voided (reversible via Restore until the event ends, whether an admin voided it or the wallet service reported it voided) or has permanently expired.
           </p>
           <div className="wallets-adoption">
             <PassValidityDonut validity={data.pass_validity} gotPass={data.adoption.got_pass} isActive={isActive} />
@@ -900,7 +900,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
         <Card title="Provider state">
           <p className="wallets-description">
-            Every issued pass, grouped by whether it&rsquo;s still managed at the wallet service or has been permanently removed there - its record and history stay here either way.
+            Every issued pass, grouped by whether Admitto has removed it from the wallet service (via Remove from provider or Remove inactive passes) or not - its record and history stay here either way. A pass deleted directly at the wallet service, outside Admitto, still shows as managed here until reached by one of those actions.
           </p>
           <div className="wallets-adoption">
             <ProviderStateDonut state={data.provider_state} gotPass={data.adoption.got_pass} isActive={isActive} />
