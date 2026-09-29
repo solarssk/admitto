@@ -117,11 +117,24 @@ jobs:
           set -euo pipefail
           BODY="$RUNNER_TEMP/review.md"
 
+          # Dismiss this bot's approvals of the reviewed commit. Every path that does not end in a
+          # fresh approval goes through here first, including the ones that then fail the job, so
+          # an approval from an earlier run on the same commit can never outlive a failed re-review.
+          dismiss_bot_approvals() {
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --paginate \
+              --jq ".[] | select(.user.login == \"github-actions[bot]\" and .state == \"APPROVED\" and .commit_id == \"${HEAD_SHA}\") | .id" |
+              while read -r RID; do
+                gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews/${RID}/dismissals" \
+                  -f message="AI review no longer approves this commit." -f event=DISMISS >/dev/null
+              done
+          }
+
           if [ "${TOO_LARGE:-}" = "true" ]; then
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
           elif [ -z "${STRUCTURED:-}" ] || ! jq -e '.verdict and .summary' <<< "$STRUCTURED" >/dev/null 2>&1; then
             echo "No usable verdict from the reviewer - not approving."
+            dismiss_bot_approvals
             exit 1
           else
             {
@@ -149,18 +162,25 @@ jobs:
           # review text that looks like it carries a credential is never posted.
           if grep -Eq 'sk-ant-|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|-----BEGIN' "$BODY"; then
             echo "Review text looks like it contains a credential - not posting."
+            dismiss_bot_approvals
             exit 1
           fi
 
-          # Never leave an older approval standing on this commit when the verdict is not "approve".
-          if [ "$APPROVE" != "true" ]; then
-            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --paginate \
-              --jq ".[] | select(.user.login == \"github-actions[bot]\" and .state == \"APPROVED\" and .commit_id == \"${HEAD_SHA}\") | .id" |
-              while read -r RID; do
-                gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews/${RID}/dismissals" \
-                  -f message="AI review no longer approves this commit." -f event=DISMISS >/dev/null
-              done
-            gh pr review "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --comment --body-file "$BODY"
-          else
-            gh pr review "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --approve --body-file "$BODY"
+          # The diff was read at HEAD_SHA. If a push landed while the reviewer ran, this run is stale
+          # (its concurrency cancellation can race with this very call), so it submits nothing and
+          # the run for the new head takes over.
+          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
+            echo "PR head moved from ${HEAD_SHA} to ${LIVE_HEAD} during the review - submitting nothing."
+            exit 0
           fi
+
+          # The review is always bound to the reviewed commit (commit_id), never to "latest".
+          if [ "$APPROVE" != "true" ]; then
+            dismiss_bot_approvals
+            EVENT=COMMENT
+          else
+            EVENT=APPROVE
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -f commit_id="$HEAD_SHA" -f event="$EVENT" -F body=@"$BODY" >/dev/null
