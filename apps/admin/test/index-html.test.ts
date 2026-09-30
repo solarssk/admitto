@@ -25,7 +25,7 @@ describe("apps/admin/index.html splash", () => {
   });
 
   it("is plain CSS only: no inline script or event handler (the staff CSP has no 'unsafe-inline' for scripts)", () => {
-    const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+    const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
     expect(scripts).toEqual(['<script type="module" src="/src/main.tsx">']);
     expect(html).not.toMatch(/\son[a-z]+\s*=/i);
   });

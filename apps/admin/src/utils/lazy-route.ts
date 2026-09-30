@@ -1,4 +1,5 @@
 import { lazy, useSyncExternalStore, type ComponentType, type LazyExoticComponent } from "react";
+import { LOAD_TIMEOUT_MS } from "./loading-timing.js";
 
 /**
  * Knows when the code of a not-yet-visited page is being downloaded. React Router wraps
@@ -25,8 +26,32 @@ export function trackChunk<T>(promise: Promise<T>): Promise<T> {
 }
 
 /**
- * `React.lazy` whose download is tracked. Background preloads (`preloadLazyRoute`) call the raw
- * loader instead, so they never show the bar; only a page the user actually opened does.
+ * Reject `promise` if it has not settled within `ms`. A download that stalls without ever failing
+ * would otherwise keep `pending` above zero (the top bar running) and leave the page suspended forever.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Loading this page timed out. Check your connection and reload.")),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+/**
+ * `React.lazy` whose download is tracked, and abandoned after `LOAD_TIMEOUT_MS`: the rejection lands
+ * in the app's error boundary, which offers a reload. Background preloads (`preloadLazyRoute`) call
+ * the raw loader instead, so they never show the bar; only a page the user actually opened does.
  */
 // `any` mirrors React's own `lazy<T extends ComponentType<any>>`: a narrower props type rejects
 // class components and pages with required props.
@@ -34,7 +59,7 @@ export function trackChunk<T>(promise: Promise<T>): Promise<T> {
 export function lazyRoute<T extends ComponentType<any>>(
   load: () => Promise<{ default: T }>,
 ): LazyExoticComponent<T> {
-  return lazy(() => trackChunk(load()));
+  return lazy(() => trackChunk(withTimeout(load(), LOAD_TIMEOUT_MS)));
 }
 
 function subscribe(listener: () => void): () => void {
@@ -46,9 +71,5 @@ function subscribe(listener: () => void): () => void {
 
 /** True while any page chunk the user asked for is still downloading. */
 export function useChunkLoading(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => pending > 0,
-    () => false,
-  );
+  return useSyncExternalStore(subscribe, () => pending > 0);
 }

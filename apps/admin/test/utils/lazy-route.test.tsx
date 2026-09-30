@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
-import { Suspense } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { Component, Suspense, type ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lazyRoute, trackChunk, useChunkLoading } from "../../src/utils/lazy-route.js";
+import { LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 
 afterEach(() => {
   cleanup();
@@ -92,5 +93,72 @@ describe("lazyRoute", () => {
     });
     expect(await screen.findByText("the page")).toBeTruthy();
     expect(result.current).toBe(false);
+  });
+
+  describe("a download that stalls", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "error").mockImplementation(() => undefined); // React logs the error it hands to the boundary
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    class Boundary extends Component<{ children: ReactNode }, { message: string | null }> {
+      state = { message: null as string | null };
+      static getDerivedStateFromError(error: Error) {
+        return { message: error.message };
+      }
+      render() {
+        return this.state.message ? <p role="alert">{this.state.message}</p> : this.props.children;
+      }
+    }
+
+    it("is abandoned after 30s: the top bar clears and the page fails into the error boundary instead of waiting forever", async () => {
+      const Page = lazyRoute(() => new Promise<{ default: () => JSX.Element }>(() => undefined));
+      const { result } = renderHook(() => useChunkLoading());
+      render(
+        <Boundary>
+          <Suspense fallback={<p>fallback</p>}>
+            <Page />
+          </Suspense>
+        </Boundary>,
+      );
+      expect(result.current).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS - 1);
+      });
+      expect(result.current).toBe(true);
+      expect(screen.queryByRole("alert")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(result.current).toBe(false);
+      expect(screen.getByRole("alert").textContent).toContain("timed out");
+    });
+
+    it("does not fire the timeout once the download has finished", async () => {
+      const chunk = deferred<{ default: () => JSX.Element }>();
+      const Page = lazyRoute(() => chunk.promise);
+      render(
+        <Boundary>
+          <Suspense fallback={<p>fallback</p>}>
+            <Page />
+          </Suspense>
+        </Boundary>,
+      );
+      await act(async () => {
+        chunk.resolve({ default: () => <p>the page</p> });
+        await chunk.promise;
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS * 2);
+      });
+      expect(screen.getByText("the page")).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
   });
 });

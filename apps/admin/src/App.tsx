@@ -301,7 +301,7 @@ export function StaffRoutes() {
 }
 
 /** Mounted inside the route Suspense boundary, so it only runs once the first page has rendered. */
-function RoutesReadyMarker({ onReady }: Readonly<{ onReady: () => void }>) {
+export function RoutesReadyMarker({ onReady }: Readonly<{ onReady: () => void }>) {
   useEffect(() => {
     onReady();
   }, [onReady]);
@@ -313,7 +313,7 @@ function RoutesReadyMarker({ onReady }: Readonly<{ onReady: () => void }>) {
  * stays visible meanwhile). Shown after the shared 200ms delay, so a warm cache never flashes it,
  * and only after the first page has rendered: at start the full-screen loader already says it.
  */
-function PageChangeProgress({ enabled }: Readonly<{ enabled: boolean }>) {
+export function PageChangeProgress({ enabled }: Readonly<{ enabled: boolean }>) {
   const chunkLoading = useChunkLoading();
   const { showIndicator } = useLoadingGate(enabled && chunkLoading);
   return <TopProgressBar active={showIndicator} />;
