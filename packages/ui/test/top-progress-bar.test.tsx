@@ -22,6 +22,24 @@ describe("TopProgressBar", () => {
     expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
   });
 
+  it("says nothing more than the bar unless it is given a note", () => {
+    render(<TopProgressBar active />);
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
+  it("shows the note under the bar while it runs", () => {
+    render(<TopProgressBar active note="Taking longer than usual." />);
+    expect(screen.getByText("Taking longer than usual.").className).toBe("at-topbar-note");
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+  });
+
+  it("drops the note as soon as the bar starts finishing", () => {
+    const { rerender } = render(<TopProgressBar active note="Taking longer than usual." />);
+    rerender(<TopProgressBar active={false} note="Taking longer than usual." />);
+    expect(screen.getByRole("status", { name: "Loading page" }).getAttribute("data-phase")).toBe("finishing");
+    expect(screen.queryByText("Taking longer than usual.")).toBeNull();
+  });
+
   it("runs while active", () => {
     render(<TopProgressBar active />);
     const bar = screen.getByRole("status", { name: "Loading page" });

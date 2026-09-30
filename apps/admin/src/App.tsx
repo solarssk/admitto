@@ -15,7 +15,8 @@ import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvent } from "./api/client.js";
-import { useLoadingGate } from "./hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "./hooks/useDelayedLoading.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "./utils/loading-timing.js";
 import { lazyRoute, useChunkLoading } from "./utils/lazy-route.js";
 import type { EventDto } from "./api/types.js";
 
@@ -309,14 +310,31 @@ export function RoutesReadyMarker({ onReady }: Readonly<{ onReady: () => void }>
 }
 
 /**
+ * Full-screen loader while the code of the first page downloads (the route Suspense fallback). It
+ * is only mounted while that wait lasts, so after 8 seconds it says the wait is taking longer than
+ * usual; after 30 the download is abandoned (see `lazyRoute`) and the error screen takes over.
+ */
+export function RouteFallback() {
+  const slow = useDelayedLoading(true, SLOW_NOTICE_MS);
+  return (
+    <div className="shell-loading">
+      <PageLoader caption={slow ? SLOW_NOTICE_TEXT : undefined} />
+    </div>
+  );
+}
+
+/**
  * Thin bar along the top while the code of a page the user just opened downloads (the old page
  * stays visible meanwhile). Shown after the shared 200ms delay, so a warm cache never flashes it,
  * and only after the first page has rendered: at start the full-screen loader already says it.
+ * After 8 seconds the bar gets the "taking longer than usual" line.
  */
 export function PageChangeProgress({ enabled }: Readonly<{ enabled: boolean }>) {
   const chunkLoading = useChunkLoading();
-  const { showIndicator } = useLoadingGate(enabled && chunkLoading);
-  return <TopProgressBar active={showIndicator} />;
+  const waiting = enabled && chunkLoading;
+  const { showIndicator } = useLoadingGate(waiting);
+  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
+  return <TopProgressBar active={showIndicator} note={slow ? SLOW_NOTICE_TEXT : undefined} />;
 }
 
 export default function App() {
@@ -327,13 +345,7 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <ConnectionStateProvider initiallyConnected>
-            <Suspense
-              fallback={
-                <div className="shell-loading">
-                  <PageLoader />
-                </div>
-              }
-            >
+            <Suspense fallback={<RouteFallback />}>
               <StaffRoutes />
               <RoutesReadyMarker onReady={markRoutesReady} />
             </Suspense>

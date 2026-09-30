@@ -3,7 +3,8 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import App, { PageChangeProgress, RoutesReadyMarker } from "../../src/App.js";
+import App, { PageChangeProgress, RouteFallback, RoutesReadyMarker } from "../../src/App.js";
+import { SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import type { EventDto } from "../../src/api/types.js";
 import { trackChunk } from "../../src/utils/lazy-route.js";
 
@@ -121,6 +122,53 @@ describe("PageChangeProgress", () => {
     quick.resolve();
     await advance(1000);
     expect(screen.queryByRole("status", { name: "Loading page" })).toBeNull();
+  });
+});
+
+describe("PageChangeProgress slow note", () => {
+  it("adds the taking-longer line to the bar after 8 seconds, and takes it away when the page arrives", async () => {
+    vi.useFakeTimers();
+    render(<PageChangeProgress enabled />);
+    const slow = deferred();
+    act(() => {
+      void trackChunk(slow.promise);
+    });
+    await advance(7999);
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+
+    await advance(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+
+    slow.resolve();
+    await advance(0);
+    await advance(400);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+  });
+
+  it("never shows the line while disabled", async () => {
+    vi.useFakeTimers();
+    render(<PageChangeProgress enabled={false} />);
+    const slow = deferred();
+    act(() => {
+      void trackChunk(slow.promise);
+    });
+    await advance(9000);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    slow.resolve();
+    await advance(0);
+  });
+});
+
+describe("RouteFallback", () => {
+  it("shows the start loader at once and the taking-longer line only after 8 seconds", async () => {
+    vi.useFakeTimers();
+    render(<RouteFallback />);
+    expect(screen.getByRole("status", { name: "Loading" })).toBeTruthy();
+    await advance(7999);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advance(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 });
 

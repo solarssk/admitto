@@ -151,7 +151,7 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Panel, card or dialog whose shape is not known | `SectionLoader` (logo, 52px) with `minHeight` | after 200ms |
 | Shape is known: table rows, KPI tiles, forms, a dialog's content | `Skeleton` in the same shape | after 200ms |
 | Data is already on screen and is refetched (filter, search, page) | keep the data, dim it, thin bar on the card | after 200ms |
-| Page change | `TopProgressBar`, the old page stays | after 200ms |
+| Page change | `TopProgressBar`, the old page stays (after 8s it also says it is taking longer than usual, `note`) | after 200ms |
 | The user clicked a button | `<Button loading loadingLabel="Saving…">` | immediately |
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
 | Long job: send, import, upload | determinate bar with a count or percent | immediately |

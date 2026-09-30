@@ -75,6 +75,10 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     } catch (err) {
       hasLoadedRef.current = false;
       if (err instanceof ApiError && err.status === 401) {
+        // The session is gone. Drop the identity first, so the signed-in pages unmount at once (the
+        // loader shows instead) and stay out of sight while the browser goes to the login page.
+        setUser(null);
+        setAssignments([]);
         const next = encodeURIComponent(window.location.pathname + window.location.search);
         window.location.assign(`/login?next=${next}`);
         return;

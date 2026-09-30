@@ -10,6 +10,35 @@
  * It is safe for the app: the deferred module script still waits for a pending parser-inserted
  * stylesheet before it runs, so React never mounts unstyled.
  */
+/** A `<link rel="stylesheet" ...>` tag (the whole tag, `<` to `>`). */
+function isStylesheetLink(tag: string): boolean {
+  return /^<link\s/.test(tag) && /\brel="stylesheet"/.test(tag);
+}
+
+const isBlank = (char: string | undefined): boolean => char === " " || char === "\t";
+
+/** Start of the run of spaces and tabs just before `at`, never going back past `floor`. */
+function blankRunStart(html: string, at: number, floor: number): number {
+  let from = at;
+  while (from > floor && isBlank(html[from - 1])) from--;
+  return from;
+}
+
+/** Just past `end` and any spaces or tabs after it, plus one line break, so a removed tag leaves no empty line. */
+function afterTag(html: string, end: number): number {
+  let to = end;
+  while (isBlank(html[to])) to++;
+  return html[to] === "\n" ? to + 1 : to;
+}
+
+/** Put `links` (indented, one per line) just before the last `</body>` of `html`; null if there is nothing to put or no `</body>`. */
+function insertBeforeBodyEnd(html: string, links: string[]): string | null {
+  const bodyEnd = html.lastIndexOf("</body>");
+  if (links.length === 0 || bodyEnd === -1) return null;
+  const moved = links.map((link) => `    ${link}\n`).join("");
+  return `${html.slice(0, bodyEnd)}${moved}  ${html.slice(bodyEnd)}`;
+}
+
 export function moveStylesheetsToBodyEnd(html: string): string {
   const links: string[] = [];
   let kept = "";
@@ -20,23 +49,16 @@ export function moveStylesheetsToBodyEnd(html: string): string {
     const close = html.indexOf(">", at);
     if (close === -1) break;
     const tag = html.slice(at, close + 1);
-    if (/^<link\s/.test(tag) && /\brel="stylesheet"/.test(tag)) {
-      let from = at;
-      while (from > cursor && (html[from - 1] === " " || html[from - 1] === "\t")) from--;
-      let to = close + 1;
-      while (html[to] === " " || html[to] === "\t") to++;
-      if (html[to] === "\n") to++;
-      kept += html.slice(cursor, from);
+    if (isStylesheetLink(tag)) {
+      kept += html.slice(cursor, blankRunStart(html, at, cursor));
       links.push(tag);
-      cursor = to;
-      at = html.indexOf("<link", to);
+      cursor = afterTag(html, close + 1);
+      at = html.indexOf("<link", cursor);
     } else {
       at = html.indexOf("<link", close + 1);
     }
   }
   kept += html.slice(cursor);
-  const bodyEnd = kept.lastIndexOf("</body>");
-  if (links.length === 0 || bodyEnd === -1) return html;
-  const moved = links.map((link) => `    ${link}\n`).join("");
-  return `${kept.slice(0, bodyEnd)}${moved}  ${kept.slice(bodyEnd)}`;
+  // The original page, untouched, when there is nothing to move or no `</body>` to move it to.
+  return insertBeforeBodyEnd(kept, links) ?? html;
 }

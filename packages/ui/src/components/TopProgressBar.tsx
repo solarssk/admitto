@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 export interface TopProgressBarProps {
   /** True while a navigation (or other page-level wait) is in flight. */
   active: boolean;
+  /**
+   * Short visible line under the bar, reserved for the "taking longer than usual" message that
+   * follows a wait of 8 seconds. It is shown only while the bar is running.
+   */
+  note?: string;
 }
 
 type Phase = "idle" | "running" | "finishing";
@@ -16,7 +21,7 @@ const FINISH_MS = 300;
  * navigation never shows it. It has no known progress, so it is a status ("Loading page") and not a
  * `progressbar`, which would have to report a value.
  */
-export function TopProgressBar({ active }: Readonly<TopProgressBarProps>) {
+export function TopProgressBar({ active, note }: Readonly<TopProgressBarProps>) {
   const [phase, setPhase] = useState<Phase>("idle");
 
   useEffect(() => {
@@ -32,8 +37,11 @@ export function TopProgressBar({ active }: Readonly<TopProgressBarProps>) {
   if (phase === "idle") return null;
 
   return (
-    <output className="at-topbar" data-phase={phase} aria-label="Loading page">
-      <span className="at-topbar__bar" />
-    </output>
+    <>
+      <output className="at-topbar" data-phase={phase} aria-label="Loading page">
+        <span className="at-topbar__bar" />
+      </output>
+      {note && phase === "running" && <output className="at-topbar-note">{note}</output>}
+    </>
   );
 }

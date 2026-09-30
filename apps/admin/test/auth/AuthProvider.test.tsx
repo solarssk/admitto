@@ -254,6 +254,55 @@ describe("AuthProvider loading experience", () => {
   });
 });
 
+describe("AuthProvider when the session has ended (401)", () => {
+  const assign = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("location", { pathname: "/admin/events/evt-1", search: "?tab=a", assign });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("goes to the login page and keeps the page it was on as the way back", async () => {
+    mockFetchMe.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    expect(assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%3Ftab%3Da");
+    expect(screen.queryByTestId("child")).toBeNull();
+  });
+
+  it("takes the signed-in pages off the screen at once when a later refresh finds the session gone", async () => {
+    mockFetchMe.mockResolvedValueOnce(sessionResponse);
+    function Probe() {
+      const { refresh } = useAuth();
+      return (
+        <button type="button" data-testid="probe" onClick={() => void refresh()}>
+          page content
+        </button>
+      );
+    }
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await screen.findByTestId("probe");
+
+    mockFetchMe.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    fireEvent.click(screen.getByTestId("probe"));
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    // The redirect has started but the browser has not left yet: nothing of the old page remains.
+    expect(screen.queryByText("page content")).toBeNull();
+  });
+});
+
 describe("AuthProvider hand-over from the index.html splash", () => {
   /** Pretend index.html's splash has been drawing for `elapsedMs` when React starts. */
   function bootFromSplash(elapsedMs: number) {
