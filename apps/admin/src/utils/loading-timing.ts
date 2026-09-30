@@ -10,3 +10,11 @@ export const LOAD_TIMEOUT_MESSAGE = "The server did not answer in time. Check yo
 
 /** How long the boot loader takes to fade out over the freshly mounted app. Keep in step with `.shell-loading--leaving` in shell.css. */
 export const BOOT_FADE_MS = 250;
+
+/**
+ * The loader is removed when its fade-out animation ends (`animationend`). This is only the safety
+ * net for a browser that never fires it, and it must stay clearly later than `BOOT_FADE_MS`: taking
+ * the element out while the animation is still running cancels it, which rejects `Animation.finished`
+ * with an AbortError for anything (an end-to-end accessibility scan, for one) waiting on it.
+ */
+export const BOOT_FADE_FALLBACK_MS = BOOT_FADE_MS + 250;

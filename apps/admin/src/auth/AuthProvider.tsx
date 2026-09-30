@@ -14,7 +14,7 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
 import {
-  BOOT_FADE_MS,
+  BOOT_FADE_FALLBACK_MS,
   LOAD_TIMEOUT_MESSAGE,
   LOAD_TIMEOUT_MS,
   SLOW_NOTICE_MS,
@@ -128,7 +128,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, [ready, handover]);
   useEffect(() => {
     if (handover !== "leaving") return undefined;
-    const timer = setTimeout(() => setHandover("done"), BOOT_FADE_MS);
+    const timer = setTimeout(() => setHandover("done"), BOOT_FADE_FALLBACK_MS);
     return () => clearTimeout(timer);
   }, [handover]);
 
@@ -157,7 +157,14 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     <>
       {bootLoading || !value ? null : <AuthContext.Provider value={value}>{children}</AuthContext.Provider>}
       {bootLoading || leaving ? (
-        <div className={leaving ? "shell-loading shell-loading--leaving" : "shell-loading"} aria-hidden={leaving || undefined}>
+        <div
+          className={leaving ? "shell-loading shell-loading--leaving" : "shell-loading"}
+          aria-hidden={leaving || undefined}
+          // Remove the loader once its own fade has finished, never while it is still running.
+          onAnimationEnd={(event) => {
+            if (event.animationName === "shell-loading-leave") setHandover("done");
+          }}
+        >
           <PageLoader label="Loading Admitto" caption={slow ? SLOW_NOTICE_TEXT : undefined} />
         </div>
       ) : null}

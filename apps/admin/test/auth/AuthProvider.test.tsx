@@ -4,7 +4,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { resetLoaderClockForTests, syncLoaderClockToSplash } from "@admitto/ui";
 import { AuthProvider, useAuth } from "../../src/auth/AuthProvider.js";
-import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
+import {
+  BOOT_FADE_FALLBACK_MS,
+  BOOT_FADE_MS,
+  LOAD_TIMEOUT_MESSAGE,
+  LOAD_TIMEOUT_MS,
+  SLOW_NOTICE_MS,
+  SLOW_NOTICE_TEXT,
+} from "../../src/utils/loading-timing.js";
+
+// jsdom has no AnimationEvent, and React then never listens for animation events at all (it only does
+// so in browsers that have one), so `onAnimationEnd` could not fire. Give jsdom a minimal one before
+// React loads (vi.hoisted runs ahead of the imports).
+vi.hoisted(() => {
+  class TestAnimationEvent extends Event {
+    animationName: string;
+    constructor(type: string, init: EventInit & { animationName?: string } = {}) {
+      super(type, init);
+      this.animationName = init.animationName ?? "";
+    }
+  }
+  Object.assign(globalThis, { AnimationEvent: TestAnimationEvent });
+});
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -242,6 +263,13 @@ describe("AuthProvider hand-over from the index.html splash", () => {
     syncLoaderClockToSplash(root);
   }
 
+  /** What a browser sends when a CSS animation ends. */
+  function endAnimation(target: Element, animationName: string) {
+    act(() => {
+      target.dispatchEvent(new AnimationEvent("animationend", { bubbles: true, animationName }));
+    });
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     mockFetchMe.mockResolvedValue(sessionResponse);
@@ -288,11 +316,43 @@ describe("AuthProvider hand-over from the index.html splash", () => {
     expect(overlay).not.toBeNull();
     expect(overlay?.getAttribute("aria-hidden")).toBe("true");
 
-    await flush(249);
+    // Still there when the fade is nominally over: it is removed when the animation ENDS (the browser
+    // tells us), not on a timer, so an animation waiting on it is never cancelled mid-flight.
+    await flush(BOOT_FADE_MS);
+    expect(container.querySelector(".shell-loading--leaving")).not.toBeNull();
+
+    endAnimation(overlay as Element, "shell-loading-leave");
+    expect(container.querySelector(".shell-loading")).toBeNull();
+    expect(screen.getByTestId("child")).toBe(child);
+  });
+
+  it("ignores the end of any other animation inside the loader", async () => {
+    bootFromSplash(100);
+    const { container } = render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await flush(0);
+    await flush(550);
+    endAnimation(container.querySelector(".shell-loading--leaving") as Element, "at-loader-draw");
+    expect(container.querySelector(".shell-loading--leaving")).not.toBeNull();
+  });
+
+  it("still removes the loader if the browser never reports the end of the fade (safety net)", async () => {
+    bootFromSplash(100);
+    const { container } = render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await flush(0);
+    await flush(550);
+    await flush(BOOT_FADE_FALLBACK_MS - 1);
     expect(container.querySelector(".shell-loading--leaving")).not.toBeNull();
     await flush(1);
     expect(container.querySelector(".shell-loading")).toBeNull();
-    expect(screen.getByTestId("child")).toBe(child);
+    expect(screen.getByTestId("child")).toBeTruthy();
   });
 
   it("does not hold a slow start back any longer: the fade begins as soon as the session is there", async () => {
