@@ -1641,7 +1641,7 @@ export interface SetupCheckResult {
   warn?: boolean;
   /** Only set by the `database` check — distinguishes a connection failure from "connected
    * but can't confirm migrations are current" (see SystemStatus.tsx's PLAIN_DETAIL). */
-  reason?: "unreachable" | "migrations_pending";
+  reason?: "unreachable" | "migrations_pending" | "base_url_env_unset";
 }
 
 export interface SetupChecksResponse {

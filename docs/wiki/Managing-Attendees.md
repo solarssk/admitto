@@ -1,6 +1,6 @@
 # Managing Attendees
 
-**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.5
+**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.4
 
 - [What this page helps you do](#what-this-page-helps-you-do)
 - [Before you start](#before-you-start)
@@ -68,7 +68,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Delete attendee** (typed confirmation for GDPR erasure)
    - Once the attendee has added a wallet pass: **Void wallet pass**, **Push updates**, **Refresh status**, **Delete wallet pass**, and **Remove from provider** (shown greyed out until the pass is voided or expired). A pass that has expired only offers **Delete wallet pass** and **Remove from provider** - expiry is permanent, so there is no Restore, Push updates, or Refresh status for it.
 
-   **Restore wallet pass** is only offered until the event is over (and never on an archived event), because a pass must not become valid again after it. **Restore pass** asks for confirmation before applying; **Refresh status** does not, since it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
+   **Restore wallet pass** is only offered until the event is over (and never on an archived event), because a pass must not become valid again after it. **Restore wallet pass** asks for confirmation before applying; **Refresh status** does not, since it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
 
 Use [Importing Attendees](Importing-Attendees) for a prepared list rather than adding many records one by one.
 
@@ -89,7 +89,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - After **Delete wallet pass**, the attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
 - Once a pass is confirmed installed, the attendee's Wallet card shows an **Added from** row with the browser and OS that installed it (for example "Safari 18.7 / iOS 18.7"). It only appears for a pass confirmed after this was introduced, and never for a link a mail security scanner merely pre-fetched; passes confirmed earlier stay without it.
 - **Refresh status** pulls that attendee's current status directly from the provider, immediately. Use it when the provider's own dashboard already shows a pass as added but Admitto's Wallet column or Attendee Detail hasn't caught up yet, instead of waiting for the periodic background check to reach that attendee. It is offered for an active pass only (a voided or expired pass keeps the status it had). If the provider now reports the pass voided or expired, Admitto marks it **Voided**.
-- **Void wallet pass**, **Delete wallet pass**, **Remove from provider**, and **Refresh status** all still work on an archived event or with the event's Wallet switch off - useful for winding down wallet passes once an event has ended. **Restore pass** and **Push updates** stay disabled there; reopen the event or turn Wallet back on first.
+- **Void wallet pass**, **Delete wallet pass**, **Remove from provider**, and **Refresh status** all still work on an archived event or with the event's Wallet switch off - useful for winding down wallet passes once an event has ended. **Restore wallet pass** and **Push updates** stay disabled there; reopen the event or turn Wallet back on first.
 - Attendees' header **More actions** also has a **Push updates** for the whole event, not just a selection. Use it when a pass needs refreshing but nothing wallet-relevant technically changed (Event Settings' own automatic push only fires on an actual field change).
   - Appears once this event has Wallet configured. The run shows up in Event Settings → Wallet's push history as "Whole event · manual push".
 - Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection. It pulls the current status for every active wallet pass under the event at once, running in the background with a summary toast once it finishes. Voided and expired passes are skipped.
@@ -98,10 +98,9 @@ The attendee appears once in the event with accurate contact, ticket, and event-
   - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Void wallet pass**.
   - If someone restores a pass while the run is voiding it, the restore wins: that pass stays active and is counted as left alone.
   - Only one run at a time per event: while one is running, starting another says so and waits. When it has finished, run it again if you want it to catch passes that became active in the meantime.
-- Attendees' header **More actions** also has **Remove inactive passes**. It removes every voided wallet pass of the event from the wallet service, once it has stayed voided for at least a day, in one go (a selection is limited to 100 attendees). It asks first, then runs in the background and shows a summary when it is done: how many passes were removed, how many were left alone because they had changed since, and how many could not be removed (run it again to try those once more). Unlike **Delete wallet pass**, it keeps each pass's local record and its history in Reports.
+- Attendees' header **More actions** also has **Remove inactive passes**. It removes every voided or expired wallet pass of the event from the wallet service, once it has stayed inactive for at least a day (counted from when it was voided or expired), in one go (a selection is limited to 100 attendees). It asks first, then runs in the background and shows a summary when it is done: how many passes were removed, how many were left alone because they had changed since, and how many could not be removed (run it again to try those once more). Unlike **Delete wallet pass**, it keeps each pass's local record and its history in Reports.
   - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Remove from provider**.
-  - Only removes passes that have been voided for at least a day - a safety margin before something irreversible at the wallet service. A pass restored in that window is never touched.
-  - Expired passes are not included yet - **Remove from provider** on that attendee still reaches them.
+  - Only removes passes that have been voided or expired for at least a day - a safety margin before something irreversible at the wallet service. A pass restored in that window is never touched. **Remove from provider** on one attendee has no such waiting time.
   - Only one run at a time per event, same as **Void active passes** above.
 - Export attendee information only for an approved event purpose.
 

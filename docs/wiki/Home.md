@@ -1,6 +1,6 @@
 # Admitto Documentation
 
-**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
+**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.4
 
 Admitto helps event teams prepare attendee lists, send tickets, and run check-in.
 
@@ -40,7 +40,7 @@ The diagram is a quick overview. The numbered list below describes the same jour
 4. **Prepare a message, send a test, then send tickets.** If Wallet is configured, the attendee can add their pass straight from the ticket page - no separate step for staff to trigger. *Administrator or Superadmin sends; the attendee receives and, optionally, adds the pass.*
 5. **Monitor delivery and correct problems** - resend a bounced or failed message, correct a typo, revoke or reissue a ticket if needed. *Administrator or Superadmin.*
 6. **Run check-in on event day.** An Operator scans tickets (or looks an attendee up by name, if manual lookup is allowed for that event) at the door; an Administrator or Superadmin can watch admissions update live from the Overview page without being at the door themselves.
-7. **Review attendance, export reports, and archive the event** once it's over. *Administrator or Superadmin.*
+7. **Review attendance, export reports, and archive the event** once it's over. *Administrator or Superadmin; archiving itself is Superadmin only.*
 
 Attendees never sign in to Admitto. They receive a ticket by email, present it (as a QR code, a wallet pass, or their name at manual lookup) at the door, and that's their entire interaction with the system.
 

@@ -119,7 +119,7 @@ The table below lists every event that causes Admitto to do something, for a rev
 | Wallet status sync interval | Automatic - the worker | Read registration status from the wallet provider | Admitto's wallet status and "added to wallet" figures stay current |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
 
-There is currently **no date-triggered automation** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one.
+There is currently **no date-triggered automation of attendee-facing messages** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one. The one date-driven job is wallet pass expiry: when an event's **Pass expiration** is set to expire when the event ends, the worker marks its passes Expired once the event is over, without contacting the wallet provider.
 
 ---
 
@@ -133,7 +133,7 @@ There is currently **no date-triggered automation** (for example, an automatic r
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Wallet provider webhook | Internet (provider servers) | Signature verified against the provider's public key before any write; per-event and per-IP throttling; failures return no detail |
 | Database | Internal network | Not published to internet |
-| Container image | Pulled by customer | Signed tags; CI scanning documented in SECURITY.md |
+| Container image | Pulled by customer | Multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation; release SBOMs carry a Sigstore signature and, from v0.7.4, a provenance file (see "Verifying a release" in SECURITY.md). Git tags are created by CI and are not GPG/SSH-signed. CI scanning documented in SECURITY.md |
 | Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |
 
 Specific paths and headers are defined in deployment runbooks - not repeated here to avoid
@@ -207,7 +207,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Container vulnerability scan | `.github/workflows/publish-container.yml` - Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` - `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` - `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |
-| Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo - see [SECURITY.md](../../SECURITY.md) |
+| Code quality analysis (SonarCloud) | CI-based analysis on every PR and `main` push (the `sonarcloud` job in `.github/workflows/ci.yml`, configured by `sonar-project.properties`); Automatic Analysis is switched off - see [SECURITY.md](../../SECURITY.md) |
 | Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` - `scripts/check-migrations-destructive.sh` on PRs |
 | OpenSSF Scorecard | `.github/workflows/scorecard.yml` (results published) |
 | Dynamic scan (ZAP baseline) | `.github/workflows/dast-baseline.yml` |

@@ -414,6 +414,33 @@ jobs:
           pattern: sbom-*
           merge-multiple: true
 
+      # The SBOMs go onto the GitHub Release FIRST and unsigned, so a Sigstore or attestation
+      # outage below can never leave a release without them. Signing then fails loudly (this job
+      # goes red) instead of silently dropping assets; the signatures are added to the same
+      # Release afterwards, and if that step fails the "Sign release assets" workflow
+      # (sign-release-assets.yml) attaches them to this tag later without a rebuild.
+      - name: Upload SBOMs to GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            NOTES=".github/release-notes/v${VERSION}.md"
+            if [ -f "$NOTES" ]; then
+              CREATE_ARGS=(--title "$(bash scripts/release-display-title.sh "$VERSION")" --notes-file "$NOTES")
+            else
+              CREATE_ARGS=(--title "$TAG" --generate-notes)
+            fi
+            # release.yml creates this same release when it tags the commit. If it got there between
+            # the check above and this call, create fails with "already exists"; that is fine as long
+            # as the release exists now, and a create that failed for any other reason still fails
+            # the step because the second check fails too.
+            gh release create "$TAG" "${CREATE_ARGS[@]}" --latest || gh release view "$TAG" >/dev/null 2>&1
+          fi
+          gh release upload "$TAG" /tmp/sboms/*.cdx.json --clobber
+
       # Release assets get a keyless Sigstore signature and a provenance attestation of their own.
       # The container image is already attested above, but OpenSSF Scorecard's Signed-Releases
       # check only looks at files attached to the GitHub Release (*.sigstore.json signature,
@@ -437,28 +464,18 @@ jobs:
       - name: Collect provenance for the Release
         run: cp "${{ steps.sbom-provenance.outputs.bundle-path }}" "/tmp/sboms/provenance-${{ needs.prepare.outputs.tag }}.intoto.jsonl"
 
-      - name: Upload SBOMs to GitHub Release
+      - name: Upload SBOM signatures and provenance to GitHub Release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          TAG="${{ needs.prepare.outputs.tag }}"
-          VERSION="${TAG#v}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" /tmp/sboms/* --clobber
-          else
-            NOTES=".github/release-notes/v${VERSION}.md"
-            if [ -f "$NOTES" ]; then
-              DISPLAY_TITLE="$(bash scripts/release-display-title.sh "$VERSION")"
-              gh release create "$TAG" --title "$DISPLAY_TITLE" --notes-file "$NOTES" --latest /tmp/sboms/*
-            else
-              gh release create "$TAG" --title "$TAG" --generate-notes --latest /tmp/sboms/*
-            fi
-          fi
+          gh release upload "${{ needs.prepare.outputs.tag }}" /tmp/sboms/*.sigstore.json /tmp/sboms/provenance-*.intoto.jsonl --clobber
 
       # Kept last on purpose: a failure here (e.g. a Docker Hub token without description
-      # write scope) must not skip the SBOM upload to the GitHub Release above.
+      # write scope) must not skip the SBOM upload to the GitHub Release above, and a signing
+      # failure above must not skip the description sync.
       - name: Sync Docker Hub repository description
+        if: ${{ !cancelled() }}
         uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa  # v5.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}

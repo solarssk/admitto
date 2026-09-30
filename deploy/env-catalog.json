@@ -39,11 +39,11 @@
     {
       "name": "BASE_URL",
       "group": "boot",
-      "boot": "required",
+      "boot": "recommended",
       "consumers": ["app", "worker"],
       "secret": false,
       "ui": "Settings → General (Instance URL, read-only while set)",
-      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development, so the Instance URL field in Settings → General is read-only there."
+      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Recommended in production: the app still starts without it and falls back to the Instance URL saved in Settings → General, but the Setup checklist and Health check flag it as missing, and ticket and mail links fail outright when neither is set. While it is set, the Instance URL field in Settings → General is read-only."
     },
     {
       "name": "ENCRYPTION_KEY",
@@ -657,7 +657,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Check-in live-updates stream: max stream requests (connects and reconnects) per operator per event within the window. Default 120. Positive integer; anything else falls back to the default with a boot warning. Read at startup, so a change needs a container restart, not a rebuild. Separate from the concurrency limits below."
+      "summary": "Check-in live-updates stream: max stream requests (connects and reconnects) per operator per event within the window. Default 120. Positive integer; anything else falls back to the default with a boot warning. Read at startup, so a change needs the container recreated (for example `docker compose up -d`; a plain restart does not re-read `.env`), not a rebuild. Separate from the concurrency limits below."
     },
     {
       "name": "CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR",

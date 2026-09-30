@@ -1,6 +1,6 @@
 # Email Templates
 
-**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
+**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.4
 
 ## What this page helps you do
 
@@ -20,11 +20,11 @@ Confirm the event title, date, timezone, location, attendee data, and effective 
 6. Select **Preview** and resolve all validation messages.
 7. Save the template.
 8. In **Send test**, enter an approved address such as `docs.test@example.com` and select **Send test**.
-9. Check the message in a normal email client, including links, event details, and responsive layout - for the ticket template, also check the QR image.
+9. Check the message in a normal email client, including event details and responsive layout. The ticket button and QR image in a test message are placeholders (the button goes nowhere and the QR is a sample picture), so use the test to check layout only; the real link and QR appear in a message sent to an attendee.
 
 ## Expected result
 
-The saved template previews without errors. For the ticket template, the test message contains a working ticket link and rendered QR image; for another named template, it reflects whatever content and links you built into it.
+The saved template previews without errors. The test message shows your layout and event details with a placeholder ticket button and QR image (they are not live); for another named template, it reflects whatever content and links you built into it.
 
 ## Important decisions
 

@@ -493,12 +493,12 @@ describe("WalletsReportsTab", () => {
     // race (see pass_validity's own DTO doc comment), not something worth hiding at zero the way
     // Samsung Wallet's own 0-until-activated slice isn't hidden elsewhere on this tab either.
     const validityCard = cardByTitle("Pass validity");
-    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([10, 3, 2, 0]);
+    expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([10, 3, 2]);
+    // The defensive "Failed (unexpected)" bucket is only listed when it is not 0.
     expect(breakdownRows(validityCard)).toEqual([
       { name: "Active", meta: "10 · 66.7%" },
       { name: "Voided", meta: "3 · 20%" },
       { name: "Expired", meta: "2 · 13.3%" },
-      { name: "Failed (unexpected)", meta: "0 · 0%" },
     ]);
     expect(validityCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
 
@@ -515,7 +515,7 @@ describe("WalletsReportsTab", () => {
     expect(document.querySelector(".wallets-truncated-notice")).toBeNull();
   });
 
-  it("renders a nonzero Failed (unexpected) count in Pass validity - the concurrency-race bucket, not hidden or folded into another status", async () => {
+  it("renders a nonzero Failed (unexpected) count in Pass validity instead of hiding it or folding it into another status", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({ pass_validity: { active: 8, voided: 3, expired: 2, failed: 2 } }),
     );

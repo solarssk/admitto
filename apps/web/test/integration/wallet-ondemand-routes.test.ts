@@ -1168,6 +1168,88 @@ describe("On-demand wallet routes", () => {
     }
   });
 
+  // The two racy tests above accept either winner, so the "admin wins" branch only runs when the
+  // scheduler happens to order the requests that way. These pin that ordering: createPass is held
+  // open, the admin's change commits while the tap is mid-issuance (after it read the event, before
+  // its locked recheck), and only then is the provider call released. The recheck must refuse to
+  // persist the pass as active under state the event no longer has.
+  async function holdCreatePass(provider: ReturnType<typeof stubProvider>): Promise<{ entered: Promise<void>; release: () => void }> {
+    let release!: () => void;
+    let markEntered!: () => void;
+    const entered = new Promise<void>((resolve) => (markEntered = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const original = provider.createPass.getMockImplementation() as
+      | ((input: WalletPassInput) => Promise<unknown>)
+      | undefined;
+    if (!original) throw new Error("stubProvider().createPass has no default implementation to delegate to");
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      markEntered();
+      await gate;
+      return original(input);
+    });
+    return { entered, release };
+  }
+
+  it("refuses to persist a pass as active when the Template ID changed while its issuance was in flight", async () => {
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-gate-a" } });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    const { entered, release } = await holdCreatePass(provider);
+
+    try {
+      const tap = app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      await entered;
+      const patchRes = await app.request(`/api/admin/events/${EVENT_ID}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_template_id: "tmpl-gate-b" }),
+      });
+      release();
+      const walletRes = await tap;
+
+      expect(patchRes.status).toBe(200);
+      expect(walletRes.status).toBe(302);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
+      expect(row.wallet_template_id).toBe("tmpl-gate-b");
+    } finally {
+      release();
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
+  it("refuses to persist a pass as active when the expiration mode changed while its issuance was in flight", async () => {
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "event_end" } });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    const { entered, release } = await holdCreatePass(provider);
+
+    try {
+      const tap = app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      await entered;
+      const patchRes = await app.request(`/api/admin/events/${EVENT_ID}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_expiration_mode: "none" }),
+      });
+      release();
+      const walletRes = await tap;
+
+      expect(patchRes.status).toBe(200);
+      expect(walletRes.status).toBe(302);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_expiration_changed");
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
+      expect(row.wallet_expiration_mode).toBe("none");
+    } finally {
+      release();
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_expiration_mode: "none" } });
+    }
+  });
+
   it("marks failed when a duplicate error can't be recovered (findByUserProvidedId finds nothing)", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(

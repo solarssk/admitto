@@ -14,12 +14,13 @@ Your role decides which organisations, events, and actions are available. If a c
 | Run check-in | ✅ | 🟡¹ | ✅ |
 | Change ticket types and requirements | ✅ | – | ✅ |
 | Manage organisation-level settings | 🟡² | – | ✅ |
-| Assign organisation and event roles | 🟡³ | – | ✅ |
+| Assign Operator access to events | 🟡³ | – | ✅ |
+| Assign Administrator or Superadmin roles | – | – | ✅ |
 | Manage staff users across the instance | – | – | ✅ |
 | Change instance settings | – | – | ✅ |
 | Archive or restore an event | – | – | ✅ |
 
-¹ Only for events they're assigned to. ² Only for organisations they're assigned to. ³ Within the scope they've been granted.
+¹ Only for events they're assigned to. ² Only for organisations they're assigned to. ³ Only the Operator role, and only for events in an organisation they administer.
 
 ## Administrator
 

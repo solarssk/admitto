@@ -50,10 +50,13 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
 - **`null` from `getPassSnapshot` is not proof the remote pass is gone.** It only means the
   provider's read side has no such pass right now (PassCreator's is a search whose index can lag).
   Only a successful `deletePass` (2xx, or 404 for an already-gone pass) confirms removal.
-- **`capabilities` gate actions.** Callers check them instead of assuming every provider is
-  PassCreator: Google Wallet's Event Ticket API has no delete method for objects and an issuer
-  cannot remove a pass from a user's Apple Wallet, so `remoteDelete` is a capability, not a given.
-  The static table is `@admitto/wallet/capabilities` (safe to import from `apps/admin`).
+- **`capabilities` are declarative; only `remoteDelete` is enforced today.** Google Wallet's Event
+  Ticket API has no delete method for objects and an issuer cannot remove a pass from a user's
+  Apple Wallet, so the Remove from provider routes check `remoteDelete` instead of assuming every
+  provider is PassCreator. The other flags (`lifecycleObservation`, `expiration`, `voidRestore`,
+  `registrationSnapshot`) describe a provider but no caller checks them yet, so a future provider
+  that sets one to `false` must also wire the matching check. The static table is
+  `@admitto/wallet/capabilities` (safe to import from `apps/admin`, but nothing imports it yet).
 - **An observation only ever moves an `active` pass forward.** `reconcileWalletPassLifecycle`
   (`packages/wallet/src/reconcile-lifecycle.ts`) is the one place that decides. From `active` (and
   not removed at the provider) a read that says `voided: true` becomes `voided`, or `expired` when
@@ -115,10 +118,13 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   `expirationDate`, a "Y-m-d H:i" wall-clock string with no time zone that the provider reads in
   its own account time zone. It only works if the template has "different for each pass" switched
   on; `describeTemplate()` reports that as `perPassExpirationReady`, and the mode cannot be turned
-  on unless the check passes. Turning it off
-  is blocked once any pass has been issued, since there is no confirmed way to clear an
-  already-sent date. The worker's `wallet_expire` job then marks a due pass `expired` locally,
-  without contacting the provider (`runWalletExpiry`, `packages/wallet/src/expire-passes.ts`).
+  on unless the check passes. Changing the Template ID or API key while the mode is on runs the same
+  check against the new values and answers 409 `wallet_expiration_mode_not_supported` when it fails.
+  Turning it off is blocked once any pass has been issued, since there is no confirmed way to clear
+  an already-sent date. The worker's `wallet_expire` job then marks a due pass `expired` locally,
+  without contacting the provider, once the event's own end has also passed: `runWalletExpiry`
+  (`packages/wallet/src/expire-passes.ts`) locks the event row, re-reads its end time and updates the
+  passes in one transaction, so an end time moved later at that moment cannot slip through.
 - **The template is fixed once passes exist.** A provider scopes a pass lookup to one template, so
   once any pass has been issued for an event, changing the Template ID answers 409
   `wallet_template_locked` (checked under the per-event advisory lock issuance takes). The API key

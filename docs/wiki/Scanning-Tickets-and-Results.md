@@ -15,7 +15,7 @@ Scan tickets and respond consistently to every supported check-in result.
 ## Steps
 
 1. Open **Check-in**.
-2. Use **Use camera** (desktop viewfinder is QR-sized; **Disable camera** turns it off), a hardware scanner, or the focused scan field. You can also paste or type a ticket token, URL, or agency QR and press Enter. A torch button appears next to the camera controls once the camera is on, on devices whose camera supports it - most phones' rear camera, but not laptops or iPhones. Use it to light up a ticket in dim venue lighting.
+2. Use **Use camera** (desktop viewfinder is QR-sized; **Disable camera** turns it off), a hardware scanner, or the focused scan field (on a phone or tablet, tapping it opens the on-screen keyboard so you can type a name or email). You can also paste or type a ticket token, URL, or agency QR and press Enter. A torch button appears next to the camera controls once the camera is on, on devices whose camera supports it - most phones' rear camera, but not laptops or iPhones. Use it to light up a ticket in dim venue lighting.
 3. Point the camera at one QR code or scan one ticket. Admitto plays a short beep (and vibration where the device supports it), with distinct tones for valid, already checked in, and invalid results.
 4. Read the status, attendee name, and ticket type before acting.
 5. Confirm check-in when the screen shows **Ready to check in**.

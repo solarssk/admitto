@@ -3718,13 +3718,13 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
         /3 inactive wallet passes are still at the wallet service - archiving does not remove them\./,
       ),
     ).toBeTruthy();
-    // The count includes passes Remove inactive passes does not reach (still within its grace
-    // period, or expired), so the hint must not point at that one action for the whole count.
+    // The count includes passes Remove inactive passes does not reach yet (still within its
+    // one-day grace period), so the hint must not point at that one action for the whole count.
     expect(
-      within(dialog).getByText(/Remove inactive passes on Attendees clears the ones voided for at least a day/),
+      within(dialog).getByText(/Remove inactive passes on Attendees clears the ones voided or expired for at least a day/),
     ).toBeTruthy();
     expect(
-      within(dialog).getByText(/Remove from provider \(per attendee or a selection\) reaches the rest, including any that are expired\./),
+      within(dialog).getByText(/Remove from provider \(per attendee or a selection\) reaches the rest, including any from the last day\./),
     ).toBeTruthy();
   });
 

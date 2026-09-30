@@ -60,6 +60,18 @@ Active automated checks in this repository:
 | OWASP ZAP baseline | DAST, passive scan of the unauthenticated surface plus `/admin` as a signed-in synthetic superadmin and `/operator` as a synthetic operator (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
 | OpenSSF Scorecard | Supply-chain security posture score (branch protection, pinned dependencies, SAST presence, token permissions, etc.); report-only, not a merge gate | Push to `main` + branch-protection changes + weekly | `.github/workflows/scorecard.yml` |
 
+**Verifying a release.** Every release attaches a CycloneDX SBOM per architecture. Once the publish workflow has finished, each SBOM also has a keyless Sigstore signature (`*.cdx.json.sigstore.json`) and the release carries a signed provenance file (`provenance-vX.Y.Z.intoto.jsonl`). The SBOMs are attached first, so if signing or attestation ever fails they are still there, and the manual "Sign release assets" workflow can add the signatures afterward. It never adds provenance (that file would claim the recovery run built the SBOMs), so a release recovered this way has signatures but no provenance file. An SBOM without a `.sigstore.json` next to it has not been verified and should not be relied on. To check one:
+
+```bash
+cosign verify-blob --bundle sbom-v0.7.4-amd64.cdx.json.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/solarssk/admitto/\.github/workflows/(publish-container|sign-release-assets)\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  sbom-v0.7.4-amd64.cdx.json
+gh attestation verify oci://ghcr.io/solarssk/admitto:0.7.4 --repo solarssk/admitto
+```
+
+Git tags are created by the release workflow and are not GPG/SSH-signed.
+
 **DAST scope (2026-08-29):**
 
 - **Scope:** the ZAP baseline scan runs against the same docker-compose stack `deploy-smoke.yml`
@@ -126,7 +138,7 @@ accepted.
 
 ### Supported versions
 
-Only the **latest minor release** is supported (currently `0.7.x`, latest <!-- admitto:latest-patch -->`0.7.3`<!-- /admitto:latest-patch -->). Deploy from
+Only the **latest minor release** is supported (currently `0.7.x`, latest <!-- admitto:latest-patch -->`0.7.4`<!-- /admitto:latest-patch -->). Deploy from
 semver tags (`v0.7.y`) published to `ghcr.io/solarssk/admitto` (mirrored to `docker.io/solarssk/admitto`). These CI-created tags are ordinary,
 unsigned GitHub tags by default; a manual, GPG/SSH-signed tag path exists for emergencies - see
 [VERSIONING.md](VERSIONING.md).

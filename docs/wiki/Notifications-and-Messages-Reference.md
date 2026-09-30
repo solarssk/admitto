@@ -30,7 +30,7 @@ A resend always renders the message fresh at send time, using the template's **c
 
 ### Bounce handling
 
-A bounce does **not** generate a message to anyone. When mail to an attendee bounces, Admitto marks that delivery "Bounced" in the Delivery log and shows a banner on the Communication page ("N emails bounced. These addresses will not receive future mail.") - but nobody is emailed, paged, or otherwise alerted. You find out by looking at the Communication page or the event's Overview readiness checklist. See [Email Delivery Statuses](Email-Delivery-Statuses).
+A bounce does **not** generate a message to anyone. When mail to an attendee bounces, Admitto marks that delivery "Bounced" in the Delivery log and shows a banner on the Communication page ("N emails bounced. Check these addresses before sending again.") - Admitto does not block later sends to a bounced address, so correct the address first - but nobody is emailed, paged, or otherwise alerted. You find out by looking at the Communication page or the event's Overview readiness checklist. See [Email Delivery Statuses](Email-Delivery-Statuses).
 
 ### Wallet message
 

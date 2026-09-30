@@ -20,12 +20,13 @@ on:
         type: string
         required: true
       variant:
-        description: Prompt and schema variant to test
+        description: Prompt and schema variant to test (live = exactly what the live AI review runs)
         type: choice
         options:
+          - live
           - v1
           - v2
-        default: v2
+        default: live
       effort:
         description: Reasoning effort passed to the reviewer (empty = the CLI default, which is what the live review uses today)
         type: choice
@@ -46,6 +47,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read # checkout and the compare API only; nothing is written
+      pull-requests: read # the PR description, which the live reviewer also reads
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -75,8 +77,10 @@ jobs:
           HEAD_SHA: ${{ matrix.head }}
           VARIANT: ${{ inputs.variant }}
           EFFORT: ${{ inputs.effort }}
+          PR: ${{ matrix.pr }}
         run: |
           set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "pr must be a number"; exit 1; }
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "base and head must be 40-hex SHAs"; exit 1; }
           mv .harness/.github/ai-review "$RUNNER_TEMP/ai-review"
           rm -rf .harness
@@ -90,6 +94,11 @@ jobs:
             exit 1
           fi
           jq -r -f "$RUNNER_TEMP/ai-review/build-diff.jq" .ai-review/files.json > .ai-review/pr.diff
+          # The live reviewer's prompt points at the PR description; replay it the same way (capped).
+          # Fetched in full first: `head -c` closing the pipe early makes gh fail on a long
+          # description, and pipefail then aborts the whole preparation (same two steps as ai-review.yml).
+          gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > .ai-review/pr-notes.full
+          head -c 4000 .ai-review/pr-notes.full > .ai-review/pr-notes.md
           echo "Diff is $(wc -c < .ai-review/pr.diff) bytes"
           DELIM="EOF_$(openssl rand -hex 8)"
           {

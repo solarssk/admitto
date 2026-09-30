@@ -120,6 +120,20 @@ Settings → Security warns inline when either an absolute lifetime or an idle t
 sane threshold, and the API rejects a save where the idle timeout would exceed that role's own
 absolute lifetime.
 
+**Operator "Keep me signed in" (v0.7.4+).** An exception to the table above, for check-in tablets
+that sit idle between shifts. An operator-only account that ticks **Keep me signed in** on the
+password sign-in form gets one session whose absolute lifetime is `operator_remember_me_days`
+(system setting or `OPERATOR_REMEMBER_ME_DAYS`; 0 to 14, default 3) and which has **no shorter
+inactivity window**: the lifetime itself is the only limit, and the session cookie is persistent
+rather than a browser-session cookie. It does not apply to any account holding an Admin or
+Superadmin role (their limits above stay fixed, even if the box is ticked), never to passkey or
+SSO sign-in, and setting the days to 0 hides the checkbox. Sign-out and **Active sessions** revoke
+work as for any other session. Like every session lifetime here, the expiry is fixed when the
+session is issued: lowering the days setting (or setting it to 0) does not shorten sessions that
+already exist, so revoke them from **Active sessions** if that matters. Accepted risk: operator accounts have no MFA by default (a superadmin can add the `operator` role
+to the required-MFA list in Settings → Security), so a lost or stolen remembered tablet stays signed
+in for up to that many days until someone revokes it.
+
 **Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
 change, self-service Account change, admin-initiated create/reset) requires at least 12 characters
 and rejects a built-in list of 143 very common passwords plus trivial patterns (a password made of
@@ -235,7 +249,7 @@ process.
 
 `GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
 Reports page. Connects and reconnects are limited per operator per event and per operator overall, and
-the number of simultaneously open streams is capped. The defaults below are read once at startup from
+the number of simultaneously open streams is capped per application process. The defaults below are read once at startup from
 the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
 whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the
 container recreated, not just restarted.
@@ -245,12 +259,12 @@ container recreated, not just restarted.
 | connects and reconnects, per operator per event | 120 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` |
 | connects and reconnects, per operator across events | 240 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` |
 | window | 60 s | `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` |
-| open streams, per operator per event | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
-| open streams, per operator overall | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
+| open streams, per operator per event, per application process | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
+| open streams, per operator overall, per application process | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
 
 The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in
-memory **per application process**, so with several application replicas the effective ceiling is
-the figure above multiplied by the number of replicas.
+memory of each application process, not in a shared store, so with several application replicas the
+effective ceiling is the figure above multiplied by the number of replicas (for example 6 and 24 with two).
 
 The check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a
 minute when the rate limit is hit; scanning itself is not affected.

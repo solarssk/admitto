@@ -17,7 +17,7 @@ export type SetupCheckResult = {
   ok: boolean;
   detail: string;
   warn?: boolean;
-  reason?: "unreachable" | "migrations_pending";
+  reason?: "unreachable" | "migrations_pending" | "base_url_env_unset";
 };
 
 export type SetupChecksPayload = {
@@ -127,6 +127,7 @@ function checkPersistedInstanceUrl(dbUrl: string, env: NodeJS.ProcessEnv): Setup
     if (!isDevOrTestEnv(env)) {
       return {
         ok: false,
+        reason: "base_url_env_unset",
         detail: "BASE_URL environment variable is not set; this check wants it set explicitly",
       };
     }

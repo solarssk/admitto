@@ -1237,8 +1237,8 @@ export async function triggerEventWideWalletVoidActive(eventId: string): Promise
   return parseJson<{ jobId: string }>(res);
 }
 
-/** Event managers: remove every voided wallet pass of the event that is past its grace period and
- * still at the provider, in the background - same "keep the local record and Reports history"
+/** Event managers: remove every voided or expired wallet pass of the event that is past its grace period
+ * and still at the provider, in the background - same "keep the local record and Reports history"
  * behaviour as the single/bulk "Remove from provider" actions, from the Attendees header's "More
  * actions" menu. Works on an archived event and with the Wallet switch off. */
 export async function triggerEventWideWalletRemoveInactive(eventId: string): Promise<{ jobId: string }> {

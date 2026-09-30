@@ -16,7 +16,7 @@ const drainWalletCleanupJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, fa
 const drainWalletMessageJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 }));
 const ingestBounces = vi.fn(async () => ({ eventsProcessed: 0, messagesSeen: 0, bouncesApplied: 0, errors: 0 }));
 const runWalletRegistrationSync = vi.fn(async () => ({ checked: 0, updated: 0, skippedNoProvider: 0, failed: 0 }));
-const runWalletExpiry = vi.fn(async () => ({ expired: 0 }));
+const runWalletExpiry = vi.fn(async () => ({ expired: 0, deferredEvents: 0 }));
 const touchWorkerHeartbeat = vi.fn(async () => undefined);
 
 vi.mock("@admitto/auth", () => ({

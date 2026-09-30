@@ -26,7 +26,7 @@ Decide what the person must do, which organisation or event they need, and when 
 
    Resetting a staff account's two-factor or password, or unlinking its SSO connection, always sends that account a security notification (email and in-app). This cannot be turned off, so the account owner always knows their sign-in credentials changed, even when they didn't make the change themselves.
 8. Use instance scope only for a Superadmin.
-9. Use organisation scope for an Admin.
+9. Use organisation scope for an Admin (only a Superadmin can grant this).
 10. Use event scope for an Operator.
 11. Confirm the assignment by signing in with a synthetic test account or asking the user to verify their visible events.
 
@@ -54,7 +54,7 @@ New sessions use the updated assignments. Use **Active sessions** when access mu
 
 - **The user cannot sign in:** check account status, sign-in method, and MFA requirements.
 - **The user sees the wrong events:** inspect every scope for their role type, not only the newest one.
-- **A role option is unavailable:** your own role may not manage that scope.
+- **A role option is unavailable:** an Administrator can only grant or remove the Operator role, and only for events in an organisation they administer. Everything else needs a Superadmin.
 - **No role assigned after sign-in:** the account lands on My account with a notice until a Superadmin grants a usable assignment.
 - **"You need a confirmed authenticator app, passkey, or security key..." when resetting another Superadmin's two-factor/password or revoking their sessions:** set up two-factor authentication on your own account first, then retry the action. If you have no local password (single sign-on only), you cannot do this yourself - ask another Superadmin with a confirmed second factor to perform it instead.
 

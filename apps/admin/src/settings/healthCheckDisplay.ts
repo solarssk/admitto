@@ -40,6 +40,9 @@ function humanizeUnknownCode(value: string): string {
  * an unmapped key, e.g. `stale_after_ms`), instead of relying on a blanket CSS capitalize that
  * would also wrongly capitalize every word of a multi-word label. */
 export function formatHealthDisplayLabel(key: string): string {
+  // The value is shown in minutes (see formatHealthDisplayValue), so the raw key's "ms" would
+  // contradict it.
+  if (key === "stale_after_ms") return "Stale after";
   const label = formatHealthDetailLabel(key);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -82,8 +85,25 @@ export function visibleHealthDetails(
     // substring of every string, so without this guard it would look like a duplicate of the
     // summary and vanish instead of showing blank.
     if (displayValue === "") return true;
-    return !check.summary.includes(displayValue);
+    return !summaryShowsValue(check.summary, displayValue);
   });
+}
+
+function isWordChar(ch: string): boolean {
+  return /[\p{L}\p{N}]/u.test(ch);
+}
+
+/** True when `value` appears in `summary` as a whole word or phrase. A plain substring test would
+ * treat the detail "No" as already shown by a summary reading "Not configured", or "12" by "112 ms",
+ * and silently drop it from the expanded row. */
+function summaryShowsValue(summary: string, value: string): boolean {
+  let from = 0;
+  for (;;) {
+    const at = summary.indexOf(value, from);
+    if (at === -1) return false;
+    if (!isWordChar(summary.charAt(at - 1)) && !isWordChar(summary.charAt(at + value.length))) return true;
+    from = at + 1;
+  }
 }
 
 /**

@@ -61,13 +61,13 @@ Without these, containers exit or Health stays red. **None of them are set from 
 
 | What | Where | Notes |
 |------|--------|--------|
-| `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). App refuses to start in production without it. |
+| `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). Recommended in production: without it (and without an Instance URL in Settings → General) ticket and mail links fail, and the Setup checklist stays red. |
 | `ENCRYPTION_KEY` | `.env` | `openssl rand -base64 32`. Losing it loses encrypted mail/OIDC secrets. |
 | `POSTGRES_*` + `DATABASE_URL` | `.env` | Passwords must match. |
 | `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |
 | `/backups` on **db-backup** | volume | Nightly SQL dumps (`migration_backups`). Not mounted on `migrate` / `app`. |
 | `/app/uploads` writable by uid **1000** | volume | Branding storage. Health → file storage `not_writable` if wrong ownership. |
-| `worker` service | compose | Mail drain, import/export, bounce, retention. One replica. |
+| `worker` service | compose | Mail drain, import/export, bounce, retention, wallet sync, event-wide wallet clean-up and wallet pass expiry. One replica. |
 
 Copy `.env.example` → `.env`, fill the table above, then:
 

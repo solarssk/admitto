@@ -1099,11 +1099,19 @@ async function guardWalletExpirationModeChange(
   patch: Pick<PatchEventBody, "wallet_expiration_mode" | "wallet_template_id" | "wallet_api_key">,
   existing: Pick<EventSettingsRow, "wallet_expiration_mode" | "wallet_template_id" | "wallet_api_key_enc">,
 ): Promise<Response | null> {
-  if (
-    patch.wallet_expiration_mode === undefined ||
-    patch.wallet_expiration_mode === existing.wallet_expiration_mode ||
-    patch.wallet_expiration_mode === "none"
-  ) {
+  // Verify the template when this save leaves the event in "event_end" mode AND either turns that
+  // mode on or swaps the credentials it depends on. A saved "event_end" mode is otherwise only as
+  // good as the template it was confirmed against: changing the Template ID or API key (allowed
+  // while no pass is issued) would silently point it at a template that ignores `expirationDate`.
+  const effectiveMode = patch.wallet_expiration_mode ?? existing.wallet_expiration_mode;
+  const turningEventEndOn =
+    patch.wallet_expiration_mode !== undefined && patch.wallet_expiration_mode !== existing.wallet_expiration_mode;
+  // Only a credential being SET counts: clearing one leaves nothing to verify (and never used to be
+  // blocked here), so that path keeps behaving as before.
+  const credentialsChanging =
+    (Boolean(patch.wallet_template_id) && patch.wallet_template_id !== existing.wallet_template_id) ||
+    Boolean(patch.wallet_api_key);
+  if (effectiveMode !== "event_end" || (!turningEventEndOn && !credentialsChanging)) {
     return null;
   }
 

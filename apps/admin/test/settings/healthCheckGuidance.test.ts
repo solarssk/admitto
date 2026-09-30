@@ -55,6 +55,28 @@ describe("healthCheckGuidance", () => {
     });
   });
 
+  it("gives instance_url degraded the set-BASE_URL guidance", () => {
+    expect(healthCheckGuidance(checkRow("instance_url", "degraded"))).toEqual({
+      impact: "Links in emails and tickets use the address saved in General settings, so they keep working.",
+      nextStep: "Set the BASE_URL environment variable to the same address in your deployment configuration.",
+    });
+  });
+
+  it("gives instance_url down guidance that fixes an invalid BASE_URL first and only then points to General settings", () => {
+    const guidance = healthCheckGuidance(checkRow("instance_url", "down"));
+    expect(guidance).toEqual({
+      impact: "Admitto cannot build links for emails, tickets and wallet passes.",
+      nextStep:
+        "If BASE_URL is set, correct it or remove it, because it takes priority over General settings. Otherwise enter a valid Instance URL in General settings.",
+      link: { label: "Open General settings", to: "/admin/settings?tab=general" },
+    });
+  });
+
+  it("returns null for an instance_url row that is healthy or only optional", () => {
+    expect(healthCheckGuidance(checkRow("instance_url", "ok"))).toBeNull();
+    expect(healthCheckGuidance(checkRow("instance_url", "not_configured"))).toBeNull();
+  });
+
   it("gives rate_limit_storage down the Redis guidance", () => {
     const guidance = healthCheckGuidance(checkRow("rate_limit_storage", "down"));
     expect(guidance).toEqual({

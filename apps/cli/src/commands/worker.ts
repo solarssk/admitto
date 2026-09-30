@@ -403,11 +403,11 @@ async function runWalletExpireJob(db: PrismaClient, locks: WorkerLockClient): Pr
   }
   try {
     const result = await runWalletExpiry(db);
-    if (result.expired === 0) {
+    if (result.expired === 0 && result.deferredEvents === 0) {
       log("wallet_expire", "idle");
       return;
     }
-    log("wallet_expire", `ok expired=${result.expired}`);
+    log("wallet_expire", `ok expired=${result.expired} deferred_events=${result.deferredEvents}`);
   } finally {
     await locks.release("wallet_expire");
   }

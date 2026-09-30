@@ -28,7 +28,7 @@ const runWalletRegistrationSync = vi.fn(async () => ({
   skippedNoProvider: 0,
   failed: 0,
 }));
-const runWalletExpiry = vi.fn(async () => ({ expired: 0 }));
+const runWalletExpiry = vi.fn(async () => ({ expired: 0, deferredEvents: 0 }));
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},

@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatRunningBuildLabel,
@@ -161,7 +164,124 @@ describe("formatRunningBuildLabel", () => {
   });
 });
 
+// renderWithToastAndRouter wraps the first render only; a rerender has to bring the providers itself.
+function rerenderPanel(rerender: (ui: ReactNode) => void, isActive: boolean) {
+  rerender(
+    <MemoryRouter>
+      <ToastProvider>
+        <HealthCheckPanel isActive={isActive} />
+      </ToastProvider>
+    </MemoryRouter>,
+  );
+}
+
 describe("HealthCheckPanel", () => {
+  it("reads the report again, without a loading state, when its tab is shown again", async () => {
+    mockFetch.mockResolvedValueOnce(sampleReport({ overall: "down" }));
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    await screen.findByText("Core infrastructure");
+
+    rerenderPanel(rerender, false);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    const fresh = sampleReport({ generated_at: "2026-08-03T13:10:00.000Z" });
+    mockFetch.mockResolvedValueOnce(fresh);
+    rerenderPanel(rerender, true);
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    // The previous report stays on screen while the new one is read.
+    expect(screen.getByText("Core infrastructure")).toBeTruthy();
+    expect(screen.queryByText(/Loading/i)).toBeNull();
+  });
+
+  it("keeps the report it already shows when the read on returning to the tab fails", async () => {
+    mockFetch.mockResolvedValueOnce(sampleReport());
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await screen.findByText("Core infrastructure");
+
+    rerenderPanel(rerender, false);
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    rerenderPanel(rerender, true);
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Core infrastructure")).toBeTruthy();
+  });
+
+  it("does not let a read started when the tab was shown replace live results that finished first", async () => {
+    const oneGroup = (label: string) =>
+      sampleReport({ groups: [{ id: "core", label, subtitle: "Test group", status: "ok", checks: [] }] });
+    mockFetch.mockResolvedValueOnce(sampleReport());
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await screen.findByText("Core infrastructure");
+
+    rerenderPanel(rerender, false);
+    let resolveStale!: (report: HealthReportDto) => void;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<HealthReportDto>((resolve) => {
+          resolveStale = resolve;
+        }),
+    );
+    rerenderPanel(rerender, true);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+
+    mockLive.mockResolvedValueOnce(oneGroup("Live results"));
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+    await screen.findByText("Live results");
+
+    // The read that was already in flight answers after the live checks: it must not win.
+    resolveStale(oneGroup("Older results"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText("Live results")).toBeTruthy();
+    expect(screen.queryByText("Older results")).toBeNull();
+  });
+
+  it("still shows the first load when the tab is left and shown again while it is running", async () => {
+    let resolveFirst!: (report: HealthReportDto) => void;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<HealthReportDto>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+
+    rerenderPanel(rerender, false);
+    // The quiet read started on returning fails, so the first load is the only source of a report.
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    rerenderPanel(rerender, true);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+
+    resolveFirst(sampleReport({ groups: [{ id: "core", label: "First load results", subtitle: "Test group", status: "ok", checks: [] }] }));
+    expect(await screen.findByText("First load results")).toBeTruthy();
+    expect(screen.queryByText("Could not load health checks")).toBeNull();
+  });
+
+  it("ignores a read that finishes after the tab was left again", async () => {
+    mockFetch.mockResolvedValueOnce(sampleReport());
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await screen.findByText("Core infrastructure");
+
+    rerenderPanel(rerender, false);
+    let resolveLate!: (report: HealthReportDto) => void;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<HealthReportDto>((resolve) => {
+          resolveLate = resolve;
+        }),
+    );
+    rerenderPanel(rerender, true);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    rerenderPanel(rerender, false);
+
+    resolveLate(sampleReport({ groups: [{ id: "core", label: "Late results", subtitle: "Test group", status: "ok", checks: [] }] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText("Core infrastructure")).toBeTruthy();
+    expect(screen.queryByText("Late results")).toBeNull();
+  });
+
   it("renders fallback icons for unknown check and group ids", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleReport({

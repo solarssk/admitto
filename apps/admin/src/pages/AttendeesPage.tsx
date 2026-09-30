@@ -883,7 +883,7 @@ function HeaderMoreMenu({
                     icon="cloud-off"
                     variant="danger"
                     label={eventWideRemoveInactiveBusy ? "Removing passes…" : "Remove inactive passes"}
-                    hint="Delete voided passes from the wallet service, keep the history"
+                    hint="Delete voided or expired passes from the wallet service, keep the history"
                     disabled={eventWideRemoveInactiveBusy}
                     onClick={() => {
                       setOpen(false);
@@ -2492,7 +2492,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={eventWideRemoveInactive.confirmOpen}
         title="Remove inactive wallet passes for this event?"
-        message="This deletes every voided wallet pass of the event from the wallet service, once it has been voided for at least a day. It covers the whole event, not only the selected attendees, and runs in the background."
+        message="This deletes every voided or expired wallet pass of the event from the wallet service, once it has been inactive for at least a day. It covers the whole event, not only the selected attendees, and runs in the background."
         errorMessage={eventWideRemoveInactive.error}
         confirmLabel="Remove all"
         confirmVariant="danger"
@@ -2503,7 +2503,7 @@ export function AttendeesPage() {
         <ul className="confirm-dialog__list">
           <li>Unlike Delete wallet pass, it keeps the pass record and its history in Reports</li>
           <li>You cannot undo this at the wallet service</li>
-          <li>Passes that expired, rather than were voided, are not included yet - use Remove from provider on that attendee instead</li>
+          <li>A pass voided or expired less than a day ago is left alone; use Remove from provider on that attendee to remove it sooner</li>
           <li>Attendees with no pass, an active pass, or a pass already removed are not changed</li>
         </ul>
       </ConfirmDialog>

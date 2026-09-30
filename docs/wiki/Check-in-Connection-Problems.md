@@ -35,6 +35,8 @@ No attendee state changes until a request succeeds. After reconnection, refresh 
 
 ## Common problems
 
+- **"Live updates paused briefly (too many reconnects) - retrying automatically":** this device reconnected the live-update stream many times in a short period, usually because of unstable Wi-Fi or mobile data, or a proxy in between. Scanning still works. The page tries again by itself after about a minute. If it keeps coming back, move the device to a steadier network. If many devices share one network address, an instance administrator can raise the limit (`CHECKIN_STREAM_RATE_LIMIT_PER_EVENT`, 120 per minute by default; see the environment reference).
+- **"Live updates unavailable. Check access":** the live-update stream was refused, for example because you were signed out or lost access to this event. Sign in again and confirm you are assigned to the event.
 - **The banner does not clear:** reload only after noting the current attendee, then sign in again if asked.
 - **Only one device has the problem:** compare its network and browser state with a working device.
 - **Several devices lose access:** stop admissions and contact an Organisation Admin or Superadmin through the approved support channel.

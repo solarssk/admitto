@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.7
+**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.4
 
 ## What this page helps you do
 
@@ -65,13 +65,16 @@ works; Admitto never signs or hosts pass files itself.
   needed.
   - **What triggers a push:** an attendee edit (name, email, company, department, ticket type), or
     a wallet-relevant event field (title, date, hours, timezone, the Apple Wallet toggle, event
-    type, or a Location field).
+    type, the Pass expiration setting, or a Location field).
   - **Confirmation UX:** saving an event-wide change shows a confirmation naming how many
     attendees currently have the pass installed, so it's clear this reaches real devices. Editing
     a single attendee shows a lighter, non-blocking note instead, since that only ever affects one
     person. Neither appears when nothing is actually installed yet.
-  - **Two exceptions:** a voided pass is skipped until it is restored *and* separately pushed
-    again, since restoring only clears the void flag rather than refreshing content. A
+  - **Two exceptions:** a voided pass is skipped by these pushes until it is restored *and*
+    separately pushed again, since restoring only clears the void flag rather than refreshing
+    content - except that a save which changes the event's expiration (turning Pass expiration on,
+    or changing the date, hours or time zone while it is on) also gives voided passes the new
+    expiration date. A
     single-attendee edit pushes immediately in the same request rather than through the background
     job queue, so it never shows up in Event Settings → Wallet's "Wallet push history" list, which
     is event-wide and bulk pushes only.
@@ -120,9 +123,8 @@ works; Admitto never signs or hosts pass files itself.
     selection. It follows the same rules as void on one attendee (it also works on an archived
     event and with the Wallet switch off), leaves passes that are no longer active alone, and can be
     run again to retry any that failed. **Remove inactive passes**, right next to it, does the same
-    for **Remove from provider**: it removes every voided pass of the event that has stayed voided
-    for at least a day, keeping each pass's local record and Reports history. Expired passes are not
-    included yet - remove those one at a time or from a selection.
+    for **Remove from provider**: it removes every voided or expired pass of the event that has been
+    inactive for at least a day, keeping each pass's local record and Reports history.
   - **Automatic expiration.** Event Settings → Wallet's **Pass expiration** field can give every
     issued pass a real expiration date tied to the event's own end time, so it goes **Expired** on
     its own instead of staying active indefinitely once the event is over. Off by default; see the

@@ -116,9 +116,9 @@ const LIFECYCLE_COLORS: Record<WalletLifecycleKey, string> = {
 };
 
 type PassValidityKey = keyof EventWalletReportsResponse["pass_validity"];
-// "Failed" should always read 0 - see pass_validity's own DTO doc comment for the narrow
-// concurrency race in wallet-pass issuance it exists to catch instead of silently dropping a pass
-// from this card's own "always sums to Issued" promise.
+// "Failed" is a defensive catch-all that should always read 0 - see pass_validity's own DTO doc
+// comment. It keeps this card's "always sums to Issued" promise unconditional, and is listed only
+// when it is not 0.
 const PASS_VALIDITY_LABELS: Record<PassValidityKey, string> = {
   active: "Active",
   voided: "Voided",
@@ -402,11 +402,15 @@ function walletLifecycleBreakdownRows(
  * still show as Registered/Previously registered there; validity and registration are different
  * questions, see pass_validity's own DTO doc comment). */
 function passValiditySlices(validity: EventWalletReportsResponse["pass_validity"]): ReportsDonutSlice[] {
-  return (Object.keys(PASS_VALIDITY_LABELS) as PassValidityKey[]).map((key) => ({
-    label: PASS_VALIDITY_LABELS[key],
-    color: PASS_VALIDITY_COLORS[key],
-    count: validity[key],
-  }));
+  // "Failed (unexpected)" is a defensive catch-all that should always read 0; showing a permanent
+  // "0 · 0%" row for it would only puzzle an Administrator, so it appears only when it is not 0.
+  return (Object.keys(PASS_VALIDITY_LABELS) as PassValidityKey[])
+    .filter((key) => key !== "failed" || validity.failed > 0)
+    .map((key) => ({
+      label: PASS_VALIDITY_LABELS[key],
+      color: PASS_VALIDITY_COLORS[key],
+      count: validity[key],
+    }));
 }
 
 function PassValidityDonut({

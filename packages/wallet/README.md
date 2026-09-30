@@ -194,7 +194,9 @@ EC public key above. `apps/cli`'s `wallet_sync` job (`runWalletRegistrationSync`
 `getPassSnapshot()` for active, non-removed passes of non-archived events (stale after 30 minutes,
 oldest first, 25 per tick) as a fallback for events the webhook may have missed; the same read is
 how Admitto notices that the provider voided or expired a pass. `wallet_expire` marks passes past
-`WalletPass.expires_at` as expired locally, `wallet_refresh_status` runs bulk and event-wide Refresh
+`WalletPass.expires_at` as expired locally, but only once the event's own end has passed too (checked
+under a lock on the event row in the same transaction as the update, so an end time moved later at
+that moment cannot slip through), `wallet_refresh_status` runs bulk and event-wide Refresh
 status, `wallet_cleanup` runs Void active passes and Remove inactive passes, and `wallet_message`
 sends wallet messages. `wallet_push` (`AdminJob`) is the background job that re-syncs already-issued
 passes when a save changes something that can reach a pass: an event field (title, date, timezone,

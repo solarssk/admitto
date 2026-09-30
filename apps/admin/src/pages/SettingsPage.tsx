@@ -133,7 +133,7 @@ export function SettingsTabContent() {
         label="Health check"
         className="settings-sections"
       >
-        <HealthCheckPanel />
+        <HealthCheckPanel isActive={tab === "health"} />
       </SettingsTabPanel>
     </>
   );

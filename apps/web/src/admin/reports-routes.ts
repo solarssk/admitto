@@ -2524,6 +2524,8 @@ async function exportWalletReportsPdf(
     aggregates.adoption.got_pass === 0
       ? ""
       : (Object.keys(passValidityLabels) as Array<keyof EventWalletReportsResponse["pass_validity"]>)
+          // "Failed (unexpected)" is a defensive catch-all that should always read 0; list it only when it does not.
+          .filter((key) => key !== "failed" || aggregates.pass_validity.failed > 0)
           .map((key) => {
             const count = aggregates.pass_validity[key];
             return `<tr><td>${passValidityLabels[key]}</td><td>${count}</td><td>${oneDecimalPct(count, aggregates.adoption.got_pass)}%</td></tr>`;

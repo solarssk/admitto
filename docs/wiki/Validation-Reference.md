@@ -1,6 +1,6 @@
 # Validation Reference
 
-**Audience:** All staff · **Required role:** Any staff role (Superadmin-only sections are marked) · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.4
+**Audience:** All staff · **Required role:** Any staff role (Superadmin-only sections are marked) · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.4
 
 Every field-level and cross-field rule Admitto enforces, organised by screen. Use this page when a save is rejected and you want to know exactly why, or when you're preparing data or configuration and want to check the limits up front. A rule marked **frontend only** blocks the Save button before a request is even sent; **backend** means the server re-checks it regardless of what the browser already validated (so scripted or API access can't skip it); **both** means the same rule is enforced twice, once for immediate feedback and once for real.
 
@@ -323,7 +323,7 @@ The active provider (Microsoft 365 Graph, SMTP, or Power Automate) determines wh
 
 ### General / Instance URL
 
-The Instance URL must be a real `https://` address with no trailing slash, no query string, and no embedded credentials. If it's set by the `BASE_URL` environment variable, the field becomes read-only in the UI. The app itself accepts a Settings-only value outside development too, for ticket links and sign-in; the Setup checklist's Instance URL check specifically wants `BASE_URL` set as well and stays red without it, even though the app is already working. In development, if neither the environment variable nor this setting is configured, sending a ticket email (or anything else needing an absolute link) fails outright rather than guessing at one: "Set the Instance URL in Settings → General before sending ticket emails."
+The Instance URL must be a real `https://` address with no trailing slash, no query string, and no embedded credentials. If it's set by the `BASE_URL` environment variable, the field becomes read-only in the UI. The app itself accepts a Settings-only value outside development too, for ticket links and sign-in; the Setup checklist's Instance URL check specifically wants `BASE_URL` set as well and stays red without it, even though the app is already working. If neither the environment variable nor this setting is configured, sending a ticket email (or anything else needing an absolute link) fails outright outside development rather than guessing at one: "Set the Instance URL in Settings → General before sending ticket emails." Only in development does Admitto fall back to `http://localhost:3000`.
 
 ## Related pages
 
