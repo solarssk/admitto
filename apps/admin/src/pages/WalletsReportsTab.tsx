@@ -919,7 +919,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title={<HintLabel hint={passValidityHint(data.synced_at)}>Pass validity</HintLabel>}>
           <p className="wallets-description">
-            Every issued pass, grouped by whether it can still be used, was voided (whether an admin voided it or the wallet service reported it voided) or has permanently expired. A voided pass can be brought back with Restore wallet pass, but only while the event is still running, Wallet is turned on for this event, and it hasn&rsquo;t also been removed from the wallet service (see Provider state below).
+            Every issued pass, grouped by whether it can still be used: active, voided, or expired. A voided pass can be brought back with Restore wallet pass, but only while the event is running, Wallet is on, and it hasn&rsquo;t also been removed from the wallet service (see Provider state).
           </p>
           <div className="wallets-adoption">
             <PassValidityDonut validity={data.pass_validity} gotPass={data.adoption.got_pass} isActive={isActive} />
