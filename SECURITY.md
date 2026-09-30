@@ -56,6 +56,18 @@ Active automated checks in this repository:
 | OWASP ZAP baseline | DAST, passive scan of the unauthenticated surface plus `/admin` as a signed-in synthetic superadmin and `/operator` as a synthetic operator (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
 | OpenSSF Scorecard | Supply-chain security posture score (branch protection, pinned dependencies, SAST presence, token permissions, etc.); report-only, not a merge gate | Push to `main` + branch-protection changes + weekly | `.github/workflows/scorecard.yml` |
 
+**Verifying a release.** Every release attaches a CycloneDX SBOM per architecture, a keyless Sigstore signature for each (`*.cdx.json.sigstore.json`) and a signed provenance file (`provenance-vX.Y.Z.intoto.jsonl`). The SBOMs are attached first, so if signing ever fails they are still there and the signatures can be added afterwards with the manual "Sign release assets" workflow (signature only, no provenance). To check one:
+
+```bash
+cosign verify-blob --bundle sbom-v0.7.4-amd64.cdx.json.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/solarssk/admitto/\.github/workflows/(publish-container|sign-release-assets)\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  sbom-v0.7.4-amd64.cdx.json
+gh attestation verify oci://ghcr.io/solarssk/admitto:0.7.4 --repo solarssk/admitto
+```
+
+Git tags are created by the release workflow and are not GPG/SSH-signed.
+
 **DAST scope (2026-08-29):**
 
 - **Scope:** the ZAP baseline scan runs against the same docker-compose stack `deploy-smoke.yml`

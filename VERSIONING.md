@@ -86,9 +86,9 @@ Do not bump per-package versions unless we start publishing libraries separately
 6. Commit on `main` - include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
 7. **Merge the release PR** - GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
    - verifies release artifacts (`sync-release-docs.py --check`, notes file, non-empty `.title` file, CHANGELOG section),
-   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y - …` from the `.title` file, marked as the **latest** release,
+   - creates git tag `v0.x.y` **on the exact commit that push introduced and whose CI it just verified** (`--target`), so a merge that lands on `main` while the workflow waits for CI cannot end up inside the tag - it simply becomes part of the next release - and a GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y - …` from the `.title` file, marked as the **latest** release,
    - triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload),
-   - closes the open milestone titled `v0.x.y`.
+   - closes the open milestone titled `v0.x.y` - the title must be exactly that, with the leading `v`: a milestone named `0.x.y` is silently skipped, so rename it before merging the release PR.
 
    Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below) - not the default path.
 

@@ -126,7 +126,7 @@ There is currently **no date-triggered automation** (for example, an automatic r
 | Admin APIs | Authenticated staff only | Scope checks on event/org; per-user throttling on heavy ops (import, template preview) |
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Database | Internal network | Not published to internet |
-| Container image | Pulled by customer | Signed tags; CI scanning documented in SECURITY.md |
+| Container image | Pulled by customer | Multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation; release SBOMs carry a Sigstore signature and a provenance file (see "Verifying a release" in SECURITY.md). Git tags are created by CI and are not GPG/SSH-signed. CI scanning documented in SECURITY.md |
 | Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |
 
 Specific paths and headers are defined in deployment runbooks - not repeated here to avoid
@@ -200,7 +200,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Container vulnerability scan | `.github/workflows/publish-container.yml` - Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` - `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` - `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |
-| Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo - see [SECURITY.md](../../SECURITY.md) |
+| Code quality analysis (SonarCloud) | CI-based analysis on every PR and `main` push (the `sonarcloud` job in `.github/workflows/ci.yml`, configured by `sonar-project.properties`); Automatic Analysis is switched off - see [SECURITY.md](../../SECURITY.md) |
 | Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` - `scripts/check-migrations-destructive.sh` on PRs |
 
 Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) - prefer that file over this table when answering audit questionnaires.

@@ -152,7 +152,11 @@ jobs:
             exit 0
           fi
 
+          # --target pins the tag to the exact commit this push introduced and whose CI the previous
+          # step verified. Without it the tag lands on whatever main's HEAD is at this moment, so a
+          # merge that arrives while this job waits for CI would silently end up inside the release.
           gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
             --title "$DISPLAY_TITLE" \
             --notes-file "$NOTES" \
             --latest
