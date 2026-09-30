@@ -140,6 +140,38 @@ describe("lazyRoute", () => {
       expect(screen.getByRole("alert").textContent).toContain("timed out");
     });
 
+    it("a download that fails outright (offline) reaches the error boundary with its own message and clears the bar", async () => {
+      const Page = lazyRoute(() => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+      const { result } = renderHook(() => useChunkLoading());
+      render(
+        <Boundary>
+          <Suspense fallback={<p>fallback</p>}>
+            <Page />
+          </Suspense>
+        </Boundary>,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole("alert").textContent).toBe("Failed to fetch dynamically imported module");
+      expect(result.current).toBe(false);
+    });
+
+    it("wraps a rejection that is not an Error, so the boundary always gets a real one", async () => {
+      const Page = lazyRoute(() => Promise.reject("boom" as unknown as Error));
+      render(
+        <Boundary>
+          <Suspense fallback={<p>fallback</p>}>
+            <Page />
+          </Suspense>
+        </Boundary>,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole("alert").textContent).toBe("boom");
+    });
+
     it("does not fire the timeout once the download has finished", async () => {
       const chunk = deferred<{ default: () => JSX.Element }>();
       const Page = lazyRoute(() => chunk.promise);

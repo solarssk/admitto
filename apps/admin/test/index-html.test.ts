@@ -9,9 +9,9 @@ describe("apps/admin/index.html splash", () => {
   const root = /<div id="root">([\s\S]*?)<\/div>\s*<script/.exec(html)?.[1] ?? "";
 
   it("puts a loading splash inside #root, so the page is never blank before React mounts", () => {
-    expect(root).toContain('class="at-splash"');
-    expect(root).toContain('role="status"');
-    expect(root).toContain('aria-label="Loading Admitto"');
+    // <output> is the native status element (a live region), so no role attribute is needed.
+    expect(root).toMatch(/<output class="at-splash" aria-label="Loading Admitto">[\s\S]*<\/output>/);
+    expect(root).not.toContain('role="status"');
     expect(root).toContain('class="tile"');
     expect(root).toContain('class="check"');
     expect(root).toContain('pathLength="1"');

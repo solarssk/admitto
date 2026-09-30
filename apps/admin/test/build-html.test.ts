@@ -67,4 +67,21 @@ describe("moveStylesheetsToBodyEnd", () => {
   it("is idempotent", () => {
     expect(moveStylesheetsToBodyEnd(out)).toBe(out);
   });
+
+  it("leaves a <link> without rel=stylesheet, and text that merely mentions one, where it is", () => {
+    const html = '<head>\n  <link rel="preload" href="/a.css" as="style">\n  <!-- rel="stylesheet" -->\n</head><body></body>';
+    expect(moveStylesheetsToBodyEnd(html)).toBe(html);
+  });
+
+  it("copes with an unterminated tag rather than looping or throwing", () => {
+    const html = '<head><link rel="stylesheet" href="/a.css"';
+    expect(moveStylesheetsToBodyEnd(html)).toBe(html);
+  });
+
+  it("stays fast on a large page (no backtracking blow-up)", () => {
+    const filler = '<link rel="preload" href="/x.js" '.repeat(20000);
+    const started = performance.now();
+    moveStylesheetsToBodyEnd(`<head>${filler}</head><body></body>`);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 });
