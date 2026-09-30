@@ -53,7 +53,7 @@ flowchart LR
 
 ### Common scope mistakes (read before opening a milestone PR)
 
-- **First-event attendee intake** is planned as **MS Forms → Power Automate → `/api/ingest`**, not a native public registration UI inside Admitto - not yet built as of v0.6.0, and not yet assigned to a specific upcoming version.
+- **First-event attendee intake** is planned as **MS Forms → Power Automate → `/api/ingest`**, not a native public registration UI inside Admitto - not yet built, and not yet assigned to a specific version.
 - **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.5`–`v0.7` pre-go-live milestones.
 - **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal - they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
 
@@ -61,7 +61,7 @@ Internal Polish product guide (maintainer docs, outside this public repo) mirror
 
 ## Workspace packages (`0.0.1`)
 
-Every `packages/*` and `apps/web` `package.json` keeps `"version": "0.0.1"`. That is intentional:
+Every `packages/*` and `apps/*` `package.json` keeps `"version": "0.0.1"`. That is intentional:
 
 - packages are `private: true` and linked with `"@admitto/foo": "*"`
 - they are not published to npm

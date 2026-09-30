@@ -1,14 +1,14 @@
 # @admitto/auth
 
-Authentication and authorization for Admitto - local accounts, opaque DB sessions, MFA (TOTP), OIDC linking, Cloudflare Access JWT validation, and RBAC capability checks (ADR 0011, 0016b, 0016c, 0017).
+Authentication and authorization for Admitto - local accounts, opaque DB sessions, MFA (TOTP and WebAuthn passkeys / security keys), passkey sign-in, OIDC linking, Cloudflare Access JWT validation, and RBAC capability checks (ADR 0011, 0016b, 0016c, 0017).
 
 ## Responsibilities
 
 | Area | What lives here |
 |------|-----------------|
 | **Local auth** | Argon2 passwords, login/logout, session cookies |
-| **Sessions** | Opaque server-side sessions; separate TTL for admin vs operator |
-| **MFA** | TOTP enrollment, backup codes, trusted devices, break-glass recovery |
+| **Sessions** | Opaque server-side sessions; separate TTL and idle timeout for admin vs operator. An operator who ticks "Keep me signed in" gets one configurable lifetime instead (`operator_remember_me_days`, 0 to 14, default 3) with no shorter idle window; admins and superadmins never do |
+| **MFA** | TOTP enrollment, WebAuthn passkey / security-key registration and assertion (also passwordless passkey sign-in, gated by the `webauthn_enabled` / `passkey_login_enabled` settings), backup codes, trusted devices, break-glass recovery |
 | **OIDC** | Provider CRUD, PKCE authorize flow, group→role mapping, external identity JIT |
 | **Cloudflare Access** | `Cf-Access-Jwt-Assertion` validation on admin collision paths |
 | **RBAC** | `canManageEvent`, `canPerformCheckIn`, `canManageInstance`, etc. - scope-bound flat roles (ADR 0005) |
@@ -30,7 +30,7 @@ For integration tests, use `@admitto/auth/testing` helpers.
 
 ## CLI
 
-Requires `DATABASE_URL` and `ENCRYPTION_KEY`. Password is read from stdin (never pass on argv).
+Requires `DATABASE_URL`. Password is read from stdin (never pass on argv).
 
 **Local dev** (from repo root):
 
@@ -39,6 +39,8 @@ npm run cli -w @admitto/auth -- bootstrap-superadmin --email admin@example.com
 npm run cli -w @admitto/auth -- reset-mfa --email superadmin@example.com
 npm run cli -w @admitto/auth -- generate-emergency-recovery --email superadmin@example.com
 ```
+
+Other subcommands: `bootstrap-superadmin --email <email> --force` (create another superadmin; asks for confirmation), `purge-auth-retention [--dry-run]` (expired and revoked sessions and trusted devices) and `purge-security-audit-log [--dry-run]` (rows older than `SECURITY_AUDIT_LOG_RETENTION_DAYS`, 30 by default). `reset-mfa` and `generate-emergency-recovery` work only for the `superadmin@instance` user and read that user's current password from stdin.
 
 **Docker production** - the runtime image has no `npm`/`npx`; use `node` via the app entrypoint passthrough (see [`deploy/README.md`](../../deploy/README.md)):
 

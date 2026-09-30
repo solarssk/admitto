@@ -5,8 +5,8 @@ Design system for the staff SPA: Tabler-flavoured CSS tokens plus shared React p
 ## What lives here
 
 - **Tokens / theme** - CSS variables and theme helpers (`theme.ts`, `styles/`)
-- **Primitives** - `Button`, `Input`, `Select`, `Checkbox`, `Switch`, `Modal`, `Toast`, `Notice`, `EmptyState`, `PageHeader`, tabs, badges, skeleton/spinner, etc.
-- **Assets** - shared static pieces under `src/assets/` (copied into `dist/assets` on build)
+- **Primitives** - `Button`, `Input`, `Select`, `Checkbox`, `Switch`, `ModalBackdrop` (the shell the admin modals build on), `Toast`, `Notice`, `EmptyState`, `PageHeader`, `Avatar`, `Card`, `Tooltip`, `HintLabel`, `IconButton`, `PasswordStrengthMeter`, `StatusBadge`, `TicketTypeBadge`, tabs, badges, skeleton/spinner, etc.
+- **Assets** - shared static pieces under `src/assets/`, exported as source through `@admitto/ui/assets/*`
 
 This package does **not** own app routes or API calls. Page-level UI stays in `apps/admin`.
 
@@ -16,6 +16,8 @@ This package does **not** own app routes or API calls. Page-level UI stays in `a
 import { Button, Notice, useToast } from "@admitto/ui";
 ```
 
+Stylesheets and assets are subpath exports served from source: `@admitto/ui/styles.css` (tokens and component styles), `@admitto/ui/shell.css`, `@admitto/ui/ticket.css` and `@admitto/ui/assets/*` (logo SVGs). The theme helpers (`resolveThemeVars`, `themeVarsToStyleBlock`, `applyThemeVars` and the branding font validators) are exported from the root.
+
 Prefer these components over one-off markup so spacing, focus, and toast behaviour stay consistent (see root [AGENTS.md](../../AGENTS.md) toast vs Notice guidance).
 
 ## Build
@@ -24,12 +26,11 @@ Prefer these components over one-off markup so spacing, focus, and toast behavio
 npm run build -w @admitto/ui
 ```
 
-The SPA must be built (or run via Vite) against `dist/`; hot reload in admin still depends on this package being built when you change tokens or primitives.
+The SPA resolves this package's TypeScript entry from `dist/`, so rebuild it after changing primitives or `theme.ts`. The CSS tokens and component styles are imported from `src/styles/` directly and update through Vite hot reload.
 
 ## Fonts
 
-Self-hosted via `@fontsource` (`styles/tokens/fonts.css`) plus `@tabler/icons-webfont` for icons.
-No third-party CDN requests, no system-font fallback for these families.
+Self-hosted via `@fontsource` (`styles/tokens/fonts.css`). No third-party CDN requests: the families themselves are always loaded from bundled files, never from the visitor's OS (`--font-sans` still lists system fonts as a last-resort fallback, and monospace text uses a system mono stack, `--font-mono`). The Tabler icon font (`@tabler/icons-webfont`, `.ti-*` classes) is imported by `apps/admin` itself, not by this package.
 
 Everything below covers this package's own bundled UI fonts only. It does **not** apply to
 organisation-uploaded custom branding fonts (`apps/admin/src/settings/FontFamilyModal.tsx`,
@@ -38,15 +39,15 @@ organisation-uploaded custom branding fonts (`apps/admin/src/settings/FontFamily
 
 | Family | Role | Weights | Script coverage shipped |
 |---|---|---|---|
-| Inter | Body text | 400, 400 italic, 500, 600, 700, 700 italic | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Greek Ext, Vietnamese |
-| Manrope | Headings | 400, 500, 600, 700 | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Vietnamese |
-| Space Grotesk | Display / brand | 400, 500, 600, 700 | Latin, Latin Extended, Vietnamese |
-| IBM Plex Sans | Monospace-adjacent UI (numbers, codes) | 400, 400 italic, 500, 600, 700, 700 italic | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Vietnamese |
-| Tabler Icons | Icon font (`.ti-*` classes) | 400 only | n/a (glyphs, not text) |
+| Inter | Default UI font (body and headings) | 400, 400 italic, 500, 600, 700, 700 italic | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Greek Ext, Vietnamese |
+| Manrope | Built-in option of the Branding theme font picker ("Modern sans") | 400, 500, 600, 700 | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Vietnamese |
+| Space Grotesk | Built-in option of the Branding theme font picker ("Geometric sans") | 400, 500, 600, 700 | Latin, Latin Extended, Vietnamese |
+| IBM Plex Sans | Built-in option of the Branding theme font picker ("Corporate sans") | 400, 400 italic, 500, 600, 700, 700 italic | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Vietnamese |
+| Tabler Icons (imported by `apps/admin`, not bundled here) | Icon font (`.ti-*` classes) | 400 only | n/a (glyphs, not text) |
 
-**Not covered by any of the above, despite `SUPPORTED_LOCALE_TAGS` (`packages/shared/src/supportedLocales.ts`) already listing locales that need them:**
+**Not covered by any of the above.** `SUPPORTED_LOCALE_TAGS` (`packages/shared/src/supportedLocales.ts`) already lists the CJK locales `ja-JP`, `zh-CN` and `ko-KR`, which need glyphs these fonts lack; Arabic and other right-to-left locales are not listed today, but would hit the same gaps:
 
-- **Arabic** - none of these five typefaces ship Arabic glyphs at all; this isn't a missing subset import, the character set doesn't exist in the font files. Arabic text silently falls back to whatever font the visitor's OS provides, which won't match the app's branding.
+- **Arabic (not a supported locale yet)** - none of these five typefaces ship Arabic glyphs at all; this isn't a missing subset import, the character set doesn't exist in the font files. Arabic text silently falls back to whatever font the visitor's OS provides, which won't match the app's branding.
 - **CJK (Japanese/Chinese/Korean)** - `ja-JP`, `zh-CN`, `ko-KR` are valid `preferred_locale` values (used for `Intl`-based date/number formatting only, see below), but no shipped font has Han/Kana/Hangul glyphs either. Same silent-fallback behavior as Arabic.
 - **RTL layout** - the app has no `dir="rtl"` handling anywhere, and its CSS is written with physical properties (`margin-left`, `text-align: left`, …) rather than logical ones (`margin-inline-start`, …). Even if a font covered Arabic/Hebrew glyphs, the layout itself would still render left-to-right.
 

@@ -43,12 +43,12 @@ flowchart TD
 1. **Contain** - rotate exposed secrets; disable compromised accounts; block abusive traffic at edge.
 2. **Assess** - admin audit log, readiness probe, mail delivery log, recent deployments, and the
    two log sources below.
-   - **Security audit log** (Settings → Logs & audit → Security audit log, superadmin only):
+   - **Security log** (Organisation settings → Logs → Security, superadmin only):
      durable login/MFA/logout/OIDC/access-denied history. It survives a restart, so prefer it over
      the live tail below for reconstructing what happened. Writes are best-effort though, so a DB
      hiccup at the moment of the event can leave a gap even though the underlying auth action
      itself succeeded, and rows past the retention window (30 days by default) are gone.
-   - **System logs** live tail (Settings → Logs & audit → System, superadmin only): shows recent
+   - **System logs** live tail (Organisation settings → Logs → System, superadmin only): shows recent
      activity in near real time, but only the last 1000 entries, and only while the server process
      is still running.
 3. **Preserve** - snapshot logs and database if investigation is likely.
@@ -69,8 +69,13 @@ Treat any secret exposed in logs, tickets, or version control as **compromised**
 | Database password | Rotate in database and deployment config; restart services |
 | Mail integration | Rotate in M365 / SMTP provider and application settings |
 | Encryption key | Major incident - plan re-encryption with maintenance window |
+| Redis password | Change `REDIS_PASSWORD` and the password inside `REDIS_URL` together, then recreate `redis`, `app` and `worker` |
+| Wallet provider (PassCreator) API key | Rotate at the provider, then paste the new key in Event Settings → Wallet for each event |
+| SSO client secret | Rotate at the identity provider, then update the provider under Settings → Identity |
+| Alert webhook URL | Regenerate at Discord, Slack or the receiving service, then update Organisation Settings → Notifications (the URL is itself a bearer-style secret) |
+| Emergency check-in token | Change `CHECKIN_OPERATOR_TOKEN` (or leave `ALLOW_CHECKIN_BEARER` unset) and recreate `app` |
 | Monitoring token | Regenerate and update observability tools |
-| Session compromise | Invalidate active sessions; force staff re-authentication |
+| Session compromise | Invalidate active sessions; force staff re-authentication. For a lost or stolen check-in tablet, revoke its session in **Users & roles** (the user's active sessions) straight away: an operator who ticked **Keep me signed in** stays signed in for up to 14 days (3 by default) and operator accounts have no second factor unless a superadmin added the `operator` role to the required-MFA list (not the default). A superadmin can also set **Operator "Keep me signed in" duration** to 0 to stop new remembered sessions, but that does not shorten ones that already exist. If the web UI is unreachable, run `docker compose run --rm app node apps/cli/dist/index.js sessions revoke --user <email> --operator-email <superadmin email>` (or `sessions purge --all --yes --operator-email <superadmin email>` for every user) |
 
 See [SECURITY.md](../../SECURITY.md) for the project secret policy.
 

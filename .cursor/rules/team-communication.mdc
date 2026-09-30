@@ -8,12 +8,12 @@ alwaysApply: true
 ## Language
 
 - **With Filip / product owner:** Polish — clear, direct, no unnecessary jargon.
-- **Published on GitHub:** English — PR titles and descriptions, review comments intended for the repo, commit messages, prompts, and any docs others must read without Polish context. Do **not** publish ADRs on GitHub / in the repo.
+- **Published on GitHub:** English — PR titles and descriptions, review comments intended for the repo, commit messages, prompts, and any docs others must read without Polish context. ADR files are not published on GitHub (the one exception is `apps/web/test/ADR-0015-test-strategy.md`); other docs may cite ADR numbers without linking them.
 - **Clarity:** Whatever the language, write so a reviewer who was not in the chat can follow decisions and test steps.
 
 ## Sprint / stage reports (Cursor)
 
-After each completed stage or sprint, write **my own** report in `reports/` (e.g. `reports/sprint-v0.3-cursor.md`).
+After each completed stage or sprint, write **my own** report in `reports/` as `<topic>-<agent>.md` (for example `reports/static-map-resilience-cursor.md`).
 
 Each agent (Claude Code, Codex, Cursor) writes a **separate** report — do not copy or paraphrase the others’ reports; the architect compares independent perspectives.
 
@@ -25,7 +25,7 @@ Include:
 - Problems and blockers encountered
 - Open doubts or deferred decisions
 
-Reports are for architect review; match the tone and structure of existing `reports/sprint-*-claudecode.md` / `codex.md` files unless Filip asks otherwise.
+Reports are for architect review; match the shape of `reports/static-map-resilience-cursor.md` unless Filip asks otherwise.
 
 ## Reviews
 

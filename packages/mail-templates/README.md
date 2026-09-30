@@ -5,23 +5,26 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 ## Flow
 
 1. **Save:** `body_template` (MJML or HTML) → `compileTemplate` → `compiled_html_template` (placeholders preserved).
-2. **Send:** `compiled_html_template` + attendee vars → `renderTemplate` → `{ subject, html }` for `@admitto/mailer`. Subject is plain text (no HTML escaping); HTML body is escaped context-aware.
+2. **Send:** the compiled template + attendee vars are rendered with `renderTemplateTrustedForStorage` into a frozen `{ subject, html }` snapshot (link placeholders stay literal); at delivery time `materializeStoredDeliveryMessage` fills in the per-attendee links for `@admitto/mailer`. `renderTemplate` (with full placeholder validation) is what preview and test-send use. Subject is plain text (no HTML escaping); HTML body is escaped context-aware.
 
 ## Placeholders
 
-Closed whitelist - `{{snake_case}}` only, no interior whitespace (use `{{first_name}}`, not
+Closed whitelist (plus, for event-scoped templates only, the tokens of that event's uploaded image assets, which are treated as optional image URL placeholders) - `{{snake_case}}` only, no interior whitespace (use `{{first_name}}`, not
 `{{ first_name }}`). Any `{{...}}` token is validated: malformed names (e.g. `{{First_Name}}`,
 `{{first-name}}`, padded spacing) and unknown names fail validation (fail-closed).
 
 | Placeholder | Notes |
 |-------------|-------|
 | `first_name`, `last_name`, `full_name`, `email` | Attendee |
+| `ticket_type` | The attendee's ticket type label (from the event's ticket-type catalog) |
+| `event_hours` | Event hours range with the time zone abbreviation, for example "10:00 - 17:00 CEST"; empty when the event has no hours |
 | `event_name`, `event_date`, `event_location`, `event_address`, `directions_text`, `accessibility_text` | Event location text; `event_location` is the venue name |
 | `event_map_url` | Optional static map image URL; empty until the event has a saved pin, or when `LOCATION_MAPS_ENABLED=false` |
 | `google_maps_url`, `apple_maps_url` | Optional directions links; empty until the event has a saved pin |
 | `ticket_url`, `qr_image_url` | Required URLs - missing/empty values fail render |
 | `logo_url`, `header_image_url` | Optional URLs - empty omits `src`/`href` (no `src=""`) |
-| `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Reserved - empty until v0.5 |
+| `apple_wallet_url`, `google_wallet_url` | Optional add-to-wallet links, filled per attendee when the event has wallet configured and that platform enabled (they open the Admitto redirect route that creates or reuses the pass); empty otherwise |
+| `download_page_url` | Reserved - always empty today |
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.
 
@@ -40,10 +43,10 @@ Empty optional URL placeholders strip `src`, `href`, `action`, and `background` 
 
 ## Scope resolution
 
-- Templates: `resolveTemplate(eventId)` → event → organization → built-in default.
+- Templates: the default `ticket` template resolves `resolveTemplate(eventId)` → event → organization → built-in default. Events and organizations can also hold additional named templates; `resolveTemplateById(templateId, eventId, prisma)` loads one that belongs to the event or its organization (otherwise `TemplateNotFoundError`).
 - Branding URLs: `resolveBranding(eventId)` → event → organization → empty (columns on `Organization` / `Event`).
 
-`event_date` in templates is a calendar string (`YYYY-MM-DD`). Use `formatEventDate(date, timeZone)` (exported) so local event midnights do not shift to the previous UTC day. `previewTemplate` accepts optional `{ timeZone }`; default from `ADMITTO_DEFAULT_EVENT_TIMEZONE` env or `UTC`.
+`event_date` and `event_hours` are display text, not ISO dates. `event_date` is a long date such as "1 September 2026"; day/month order and 12h vs 24h follow the event's Location country and fall back to en-GB. Both are computed by `formatDate` / `formatEventHoursRangeText` from `@admitto/shared/region-date-format`, identically in preview, test-send and real sends. `previewTemplate(eventId, prisma, sampleVars?, { baseUrl?, env? })` takes no time zone. `formatEventDate(date, timeZone)` (`YYYY-MM-DD`, default from `ADMITTO_DEFAULT_EVENT_TIMEZONE` or `UTC`) is exported for report and overview date bucketing and is not used for template variables.
 
 ## Outlook Classic rules (advanced HTML mode)
 
@@ -90,6 +93,8 @@ import {
   previewTemplate,
 } from "@admitto/mail-templates";
 ```
+
+Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/placeholders` and `@admitto/mail-templates/branding`, never the package root, which pulls in `mjml` and node-only modules. Also exported: `resolveTemplateForEvent`, `resolveTemplateById`, `createMailTemplate`, `updateMailTemplateMetadata`, `renderTemplateTrustedForStorage` and `materializeStoredDeliveryMessage`.
 
 ## Security
 
