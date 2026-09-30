@@ -64,8 +64,18 @@ jobs:
         #     --output-file=.github/workflows/semgrep-requirements.txt \
         #     .github/workflows/semgrep-requirements.in
         # then re-run `pip-audit -r .github/workflows/semgrep-requirements.txt` before committing.
+        #
+        # --no-deps: the closure above is already complete and hash-pinned, so pip has nothing left
+        # to resolve. It is needed because pyjwt is hand-pinned to 2.14.0 in that file (fixes ten
+        # advisories, including the critical GHSA-ffc3-869f-jxw9) while semgrep 1.178.0, the
+        # newest release, still declares `pyjwt[crypto]~=2.13.0`, so a resolving install fails
+        # with ResolutionImpossible. Semgrep only imports jwt in its `semgrep mcp` server
+        # (semgrep/mcp/utilities/token_verifier.py); this job runs `semgrep scan`, which never
+        # loads it. Upstream tracks the too-tight range in semgrep/semgrep#11925. Once a semgrep
+        # release allows pyjwt>=2.14, regenerate the requirements with pip-compile (which drops
+        # the hand-pin) and remove --no-deps.
         run: |
-          python -m pip install --only-binary=:all: --require-hashes -r .github/workflows/semgrep-requirements.txt --break-system-packages
+          python -m pip install --only-binary=:all: --require-hashes --no-deps -r .github/workflows/semgrep-requirements.txt --break-system-packages
 
       - name: Run Semgrep
         # --error: any finding fails the job, on PRs, main merges, and the weekly schedule alike.
