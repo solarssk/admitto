@@ -54,23 +54,18 @@ describe("deferStylesheets", () => {
     );
   });
 
-  it("leaves a stylesheet that has a media query of its own alone", () => {
-    const html = '<head><link rel="stylesheet" href="/wide.css" media="(min-width: 60rem)"></head>';
-    expect(deferStylesheets(html)).toBe(html);
-  });
-
-  it("is a no-op when there is nothing to defer (dev server, or a page without stylesheets)", () => {
-    const dev = '<head><script type="module" src="/src/main.tsx"></script></head><body></body>';
-    expect(deferStylesheets(dev)).toBe(dev);
-  });
-
-  it("leaves a <link> without rel=stylesheet, and text that merely mentions one, where it is", () => {
-    const html = '<head>\n  <link rel="preload" href="/a.css" as="style">\n  <!-- rel="stylesheet" -->\n</head><body></body>';
-    expect(deferStylesheets(html)).toBe(html);
-  });
-
-  it("does not loop or throw on an unterminated tag", () => {
-    const html = '<head><link rel="stylesheet" href="/a.css"';
+  it.each([
+    ["a stylesheet that has a media query of its own", '<head><link rel="stylesheet" href="/wide.css" media="(min-width: 60rem)"></head>'],
+    [
+      "a page with nothing to defer (dev server)",
+      '<head><script type="module" src="/src/main.tsx"></script></head><body></body>',
+    ],
+    [
+      "a <link> without rel=stylesheet, and text that merely mentions one",
+      '<head>\n  <link rel="preload" href="/a.css" as="style">\n  <!-- rel="stylesheet" -->\n</head><body></body>',
+    ],
+    ["an unterminated tag (and does not loop or throw)", '<head><link rel="stylesheet" href="/a.css"'],
+  ])("leaves the page exactly as it was for %s", (_what, html) => {
     expect(deferStylesheets(html)).toBe(html);
   });
 
