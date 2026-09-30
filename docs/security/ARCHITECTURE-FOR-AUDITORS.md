@@ -126,7 +126,7 @@ There is currently **no date-triggered automation of attendee-facing messages** 
 | Admin APIs | Authenticated staff only | Scope checks on event/org; per-user throttling on heavy ops (import, template preview) |
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Database | Internal network | Not published to internet |
-| Container image | Pulled by customer | Multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation; release SBOMs carry a Sigstore signature and a provenance file (see "Verifying a release" in SECURITY.md). Git tags are created by CI and are not GPG/SSH-signed. CI scanning documented in SECURITY.md |
+| Container image | Pulled by customer | Multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation; release SBOMs carry a Sigstore signature and, from v0.7.4, a provenance file (see "Verifying a release" in SECURITY.md). Git tags are created by CI and are not GPG/SSH-signed. CI scanning documented in SECURITY.md |
 | Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |
 
 Specific paths and headers are defined in deployment runbooks - not repeated here to avoid

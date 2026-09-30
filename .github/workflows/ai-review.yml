@@ -52,6 +52,9 @@ jobs:
       # Attempts, not reviews: failed runs and documentation-only approvals count too, and a heavy
       # day (several PRs with a few pushes each) reaches 40 quickly, so the limit is 80.
       DAILY_LIMIT: 80 # review attempts per UTC day, across all PRs
+      # Seconds a run waits for further pushes before it does anything else. The budget count reads
+      # the same number: a run cancelled after this wait may already be in the reviewer.
+      DEBOUNCE_SECONDS: 60
 
     steps:
       # Debounce: a newer push cancels this run (concurrency above) while it is still waiting, so
@@ -60,7 +63,7 @@ jobs:
       # or later): nobody is pushing then, the maintainer is waiting for the result.
       - name: Wait for further pushes
         if: ${{ github.run_attempt == 1 }}
-        run: sleep 60
+        run: sleep "$DEBOUNCE_SECONDS"
 
       # No ref: on pull_request_target this is the base branch, never the PR head.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -104,8 +107,8 @@ jobs:
 
       # Counts every run that could have cost model tokens, whatever its outcome (the rules live in
       # .github/ai-review/count-attempts.jq and are unit tested): failed, timed out and successful
-      # runs count, and so does a run cancelled by a newer push once it had got past the debounce
-      # wait. Runs still in progress or queued count too, which narrows, but cannot remove, the
+      # runs count, and so does a run cancelled by a newer push once it had lived past the debounce
+      # wait (it may already have started the reviewer). Runs still in progress or queued count too, which narrows, but cannot remove, the
       # window in which two PRs check the budget at the same moment; the daily limit is therefore
       # a close bound, not an exact one.
       - name: Check the review budget
@@ -119,10 +122,10 @@ jobs:
           set -euo pipefail
           FIELDS=databaseId,status,conclusion,createdAt,startedAt,updatedAt
           PR_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --branch "$HEAD_REF" \
-            --limit 200 --json "$FIELDS" | jq --argjson self "$RUN_ID" --argjson settle 90 -f .github/ai-review/count-attempts.jq)
+            --limit 200 --json "$FIELDS" | jq --argjson self "$RUN_ID" --argjson settle "$DEBOUNCE_SECONDS" -f .github/ai-review/count-attempts.jq)
           TODAY=$(date -u +%Y-%m-%d)
           DAY_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --created ">=${TODAY}" \
-            --limit 200 --json "$FIELDS" | jq --argjson self "$RUN_ID" --argjson settle 90 -f .github/ai-review/count-attempts.jq)
+            --limit 200 --json "$FIELDS" | jq --argjson self "$RUN_ID" --argjson settle "$DEBOUNCE_SECONDS" -f .github/ai-review/count-attempts.jq)
           echo "Runs on this PR: ${PR_RUNS}/${PER_PR_LIMIT}; runs today: ${DAY_RUNS}/${DAILY_LIMIT}"
           if [ "$PR_RUNS" -ge "$PER_PR_LIMIT" ]; then
             echo "exhausted=true" >> "$GITHUB_OUTPUT"

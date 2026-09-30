@@ -1295,6 +1295,51 @@ function fileStorageIssueRow(
 }
 
 /**
+ * The upload root does not exist. Passive: LocalStorageAdapter.put mkdir(recursive) on first
+ * branding save - a fresh install with no branding uploaded yet is expected to have no upload
+ * directory, so on its own this must not count toward the overall verdict (worstHealthStatus()
+ * already skips not_configured and planned rows for that).
+ *
+ * Live: a missing directory can ALSO mean its parent cannot actually be created into (for
+ * example a read-only parent), in which case every real upload will fail the same
+ * mkdir(recursive) call - reporting not_configured for that would tell an operator the
+ * instance is healthy when uploads are already broken. A live check verifies this
+ * directly instead of assuming the benign case.
+ */
+async function missingUploadDirRow(
+  label: string,
+  checkedAt: string,
+  uploadPath: string,
+  live: boolean,
+): Promise<HealthCheckRow> {
+  if (!live) {
+    return fileStorageIssueRow(
+      label,
+      checkedAt,
+      uploadPath,
+      "not_configured",
+      "Missing directory · created on first upload",
+      "unknown",
+      "missing_directory",
+    );
+  }
+  if (!(await canCreateUploadDir(uploadPath))) {
+    return fileStorageIssueRow(
+      label,
+      checkedAt,
+      uploadPath,
+      "down",
+      "Cannot create the upload folder",
+      "no",
+      "cannot_create_directory",
+    );
+  }
+  // canCreateUploadDir() just created the folder and wrote into it, so it is no longer
+  // missing: report what is true now instead of the state the probe itself changed.
+  return fileStorageOkRow(label, checkedAt, uploadPath);
+}
+
+/**
  * Local branding upload volume (`UPLOAD_DIR` / `@admitto/storage`).
  * Passive: path must be an existing directory that is readable, writable, and searchable
  * (`R_OK|W_OK|X_OK`). A missing root is not_configured (adapter `mkdir` on first put), not an
@@ -1361,43 +1406,7 @@ export async function fileStorageRow(
     await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      // Passive: LocalStorageAdapter.put mkdir(recursive) on first branding save - a fresh
-      // install with no branding uploaded yet is expected to have no upload directory, so on
-      // its own this must not count toward the overall verdict (worstHealthStatus() already
-      // skips not_configured and planned rows for that).
-      //
-      // Live: a missing directory can ALSO mean its parent cannot actually be created into (for
-      // example a read-only parent), in which case every real upload will fail the same
-      // mkdir(recursive) call - reporting not_configured for that would tell an operator the
-      // instance is healthy when uploads are already broken. A live check verifies this
-      // directly instead of assuming the benign case.
-      if (live) {
-        if (!(await canCreateUploadDir(uploadPath))) {
-          return fileStorageIssueRow(
-            label,
-            checkedAt,
-            uploadPath,
-            "down",
-            "Cannot create the upload folder",
-            "no",
-            "cannot_create_directory",
-          );
-        }
-        // canCreateUploadDir() just created the folder and wrote into it, so it is no longer
-        // missing: report what is true now instead of the state the probe itself changed.
-        return fileStorageOkRow(label, checkedAt, uploadPath);
-      }
-      return fileStorageIssueRow(
-        label,
-        checkedAt,
-        uploadPath,
-        "not_configured",
-        "Missing directory · created on first upload",
-        "unknown",
-        "missing_directory",
-      );
-    }
+    if (code === "ENOENT") return missingUploadDirRow(label, checkedAt, uploadPath, live);
     return fileStorageIssueRow(label, checkedAt, uploadPath, "down", "Not writable", "no", "not_writable");
   }
 

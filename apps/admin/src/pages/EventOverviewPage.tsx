@@ -186,9 +186,10 @@ function countdownTileText(
   }
   const ended = /^Ended (.+)$/.exec(countdownLabel)?.[1];
   // computeLabel() calls the event day "Ended today" from the moment its stored day marker passes
-  // (noon UTC), long before a 09:00-18:00 event is actually over. The Check-in card already goes by
-  // the event's real end (eventEnded), so on that day the tile only says the event is over when it is.
-  if (ended === "today" && !eventEnded) return { value: "Today", label: "Event countdown" };
+  // (noon UTC), long before a 09:00-18:00 event is actually over, and "Ended yesterday" once local
+  // midnight passes on an overnight event that runs until 02:00. The Check-in card already goes by
+  // the event's real end (eventEnded), so the tile only says the event is over when it is.
+  if (ended && !eventEnded) return { value: "Today", label: "Event countdown" };
   if (ended) return { value: ended.charAt(0).toUpperCase() + ended.slice(1), label: "Event ended" };
   return { value: countdownLabel, label: "Event countdown" };
 }

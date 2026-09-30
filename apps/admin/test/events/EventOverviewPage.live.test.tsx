@@ -1858,6 +1858,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     // The day marker (noon UTC) has passed, but the event is still going: it must not say it ended.
     ["the event day, before its end time", { event_hours_end: "22:00" }, "2026-07-01T20:00:00.000Z", "Today", "Event countdown"],
     ["the event day, with no end time set", {}, "2026-07-01T20:00:00.000Z", "Today", "Event countdown"],
+    // Past local midnight the day marker reads "yesterday", but an overnight event runs until 02:00.
+    ["an overnight event after midnight, before it ends", { event_hours_start: "22:00", event_hours_end: "02:00" }, "2026-07-02T01:00:00.000Z", "Today", "Event countdown"],
+    ["an overnight event after it ends", { event_hours_start: "22:00", event_hours_end: "02:00" }, "2026-07-02T03:00:00.000Z", "Yesterday", "Event ended"],
   ])("shows the countdown tile for %s", async (_label, hours, now, value, label) => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

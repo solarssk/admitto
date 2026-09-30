@@ -95,7 +95,10 @@ jobs:
           fi
           jq -r -f "$RUNNER_TEMP/ai-review/build-diff.jq" .ai-review/files.json > .ai-review/pr.diff
           # The live reviewer's prompt points at the PR description; replay it the same way (capped).
-          gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' | head -c 4000 > .ai-review/pr-notes.md
+          # Fetched in full first: `head -c` closing the pipe early makes gh fail on a long
+          # description, and pipefail then aborts the whole preparation (same two steps as ai-review.yml).
+          gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > .ai-review/pr-notes.full
+          head -c 4000 .ai-review/pr-notes.full > .ai-review/pr-notes.md
           echo "Diff is $(wc -c < .ai-review/pr.diff) bytes"
           DELIM="EOF_$(openssl rand -hex 8)"
           {

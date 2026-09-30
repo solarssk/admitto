@@ -112,17 +112,21 @@ function emailSendingGuidance(check: HealthCheckRowDto): HealthCheckGuidance | n
   return null;
 }
 
-function instanceUrlGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+/** Only reached for a down or degraded row (healthCheckGuidance() returns early for the rest).
+ * Down covers an address that is missing and one that is invalid, and BASE_URL is read before the
+ * address saved in General settings, so a wrong BASE_URL has to be fixed or removed first: a valid
+ * address entered in General settings does not clear it. */
+function instanceUrlGuidance(check: HealthCheckRowDto): HealthCheckGuidance {
   if (check.status === "degraded") {
     return {
       impact: "Links in emails and tickets use the address saved in General settings, so they keep working.",
       nextStep: "Set the BASE_URL environment variable to the same address in your deployment configuration.",
     };
   }
-  if (check.status !== "down") return null;
   return {
     impact: "Admitto cannot build links for emails, tickets and wallet passes.",
-    nextStep: "Enter the Instance URL in General settings, or set the BASE_URL environment variable.",
+    nextStep:
+      "If BASE_URL is set, correct it or remove it, because it takes priority over General settings. Otherwise enter a valid Instance URL in General settings.",
     link: { label: "Open General settings", to: "/admin/settings?tab=general" },
   };
 }

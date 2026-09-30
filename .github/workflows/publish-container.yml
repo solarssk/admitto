@@ -422,21 +422,24 @@ jobs:
       - name: Upload SBOMs to GitHub Release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ needs.prepare.outputs.tag }}"
           VERSION="${TAG#v}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" /tmp/sboms/*.cdx.json --clobber
-          else
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
             NOTES=".github/release-notes/v${VERSION}.md"
             if [ -f "$NOTES" ]; then
-              DISPLAY_TITLE="$(bash scripts/release-display-title.sh "$VERSION")"
-              gh release create "$TAG" --title "$DISPLAY_TITLE" --notes-file "$NOTES" --latest /tmp/sboms/*.cdx.json
+              CREATE_ARGS=(--title "$(bash scripts/release-display-title.sh "$VERSION")" --notes-file "$NOTES")
             else
-              gh release create "$TAG" --title "$TAG" --generate-notes --latest /tmp/sboms/*.cdx.json
+              CREATE_ARGS=(--title "$TAG" --generate-notes)
             fi
+            # release.yml creates this same release when it tags the commit. If it got there between
+            # the check above and this call, create fails with "already exists"; that is fine as long
+            # as the release exists now, and a create that failed for any other reason still fails
+            # the step because the second check fails too.
+            gh release create "$TAG" "${CREATE_ARGS[@]}" --latest || gh release view "$TAG" >/dev/null 2>&1
           fi
+          gh release upload "$TAG" /tmp/sboms/*.cdx.json --clobber
 
       # Release assets get a keyless Sigstore signature and a provenance attestation of their own.
       # The container image is already attested above, but OpenSSF Scorecard's Signed-Releases
