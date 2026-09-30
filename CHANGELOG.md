@@ -95,6 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A wallet pass is now marked **Expired** only once its event's current end time has passed too. If the event's end time was moved later and the new expiration date had not reached a pass yet (for example because a second edit was saved while the first update was still running), the pass used to turn Expired in the middle of the event and could not be restored. The worker now leaves such passes alone until the event is really over.
 - Changing the wallet Template ID or API key while **Pass expiration** is set to **Expire when the event ends** now checks again that the new template supports a per-pass expiration date, and refuses the save when it does not. Before, only turning the option on was checked, so a template swap could leave every new pass without an expiration date at the wallet provider while Admitto still marked it Expired.
 - The Organisation settings Health check tab now reads the report again when you come back to it, so after following a hint to another settings tab and fixing the problem there, the verdict and hints are up to date. The previous report stays on screen while the new one loads.
+- The event countdown tile on Overview no longer says **Event ended** on the event's own day while the event is still going. It used to switch in the afternoon, when the Check-in card beside it still counted people who had not arrived yet; both now go by the event's end time (or the end of the day when none is set).
+- The bounce banner on the Communication page no longer promises that bounced addresses "will not receive future mail", which Admitto does not enforce. It now asks you to check those addresses before sending again.
 
 ## [0.7.3] - 2026-09-23
 

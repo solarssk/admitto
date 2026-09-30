@@ -631,7 +631,7 @@ function EmailBounceBanner({ count, onViewLog }: Readonly<{ count: number; onVie
       <strong>
         {count} email{count !== 1 ? "s" : ""} bounced
       </strong>
-      {". These addresses will not receive future mail. "}
+      {". Check these addresses before sending again. "}
       <button type="button" className="bounce-banner__link" onClick={onViewLog}>
         View delivery log
       </button>

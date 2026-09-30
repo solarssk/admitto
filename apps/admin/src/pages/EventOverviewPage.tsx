@@ -172,17 +172,23 @@ function OverviewKpiTile({
  * (fine for the header's prose chip, wrong for this numeric tile, it would just repeat the date
  * already shown in the page header), so beyond that window the tile shows the raw day count under a
  * "Days to/since event" label, on either side. Within the week the label stays a neutral
- * "Event countdown" for upcoming events. A past event reads "3 days ago" under "Event ended"
+ * "Event countdown" for upcoming events, and for the event's own day until it is really over (its
+ * end time, or the end of the day when it has none). A past event reads "3 days ago" under "Event ended"
  * instead of "Ended 3 days ago" under "Event countdown": the shorter value fits the tile at the same
  * type size as the other three numbers, and the label still says which way it points. */
 function countdownTileText(
   daysUntil: number | null,
   countdownLabel: string,
+  eventEnded: boolean,
 ): { value: string; label: string } {
   if (daysUntil != null && Math.abs(daysUntil) > 7) {
     return { value: String(Math.abs(daysUntil)), label: daysUntil < 0 ? "Days since event" : "Days to event" };
   }
   const ended = /^Ended (.+)$/.exec(countdownLabel)?.[1];
+  // computeLabel() calls the event day "Ended today" from the moment its stored day marker passes
+  // (noon UTC), long before a 09:00-18:00 event is actually over. The Check-in card already goes by
+  // the event's real end (eventEnded), so on that day the tile only says the event is over when it is.
+  if (ended === "today" && !eventEnded) return { value: "Today", label: "Event countdown" };
   if (ended) return { value: ended.charAt(0).toUpperCase() + ended.slice(1), label: "Event ended" };
   return { value: countdownLabel, label: "Event countdown" };
 }
@@ -1798,7 +1804,7 @@ export function EventOverviewPage() {
       eventHoursEnd: event.event_hours_end ?? null,
       timezone: eventTimezone,
     }).getTime();
-  const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel);
+  const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel, eventEnded);
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
