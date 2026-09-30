@@ -95,7 +95,7 @@ type WalletCleanupHandler = {
    * inactive passes" right after a wave of webhook-reported voids saw "nothing to remove" and
    * assumed the action had silently failed, with no way to tell it apart from there genuinely
    * being nothing voided/expired at all). */
-  countPending?(db: PrismaClient, eventId: string): Promise<number>;
+  countPending?(this: void, db: PrismaClient, eventId: string): Promise<number>;
 };
 
 /** The fields every clean-up target-loading query reads, and how the row maps to a
@@ -172,7 +172,7 @@ async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string):
  * it from the report's own WALLET_AGGREGATE_MAX-capped pass sample - that sample is fine for
  * percentages and breakdowns, which stay proportionally right even truncated, but wrong for a
  * plain count that must agree exactly with what this job itself will find (bot review). */
-export async function countPendingGraceInactivePasses(db: PrismaClient, eventId: string): Promise<number> {
+export function countPendingGraceInactivePasses(db: PrismaClient, eventId: string): Promise<number> {
   const cutoff = new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS);
   return db.walletPass.count({
     where: {
@@ -352,6 +352,34 @@ async function finalizeWalletCleanupJob(
   return allFailed ? "failed" : "succeeded";
 }
 
+/** Runs a handler's optional countPending outside the risk of failing the whole job: it is a
+ * best-effort, purely informational number (see WalletCleanupHandler.countPending's own doc
+ * comment), read AFTER the per-target loop above has already done its real, often irreversible
+ * work (voiding or removing passes at the provider). If this count itself throws (a DB timeout,
+ * say), letting that propagate to runOneWalletCleanupJob's own outer catch would mark the whole
+ * job failed - discarding done/skipped/errored and telling the admin "did not run" - even though
+ * the actual cleanup already succeeded, which could send them to retry an action that already
+ * happened (bot review). Falls back to null, the same "no info available" state already used for
+ * wallet_void_active (which has no countPending at all), and logs the real error server-side. */
+async function safeCountPending(
+  db: PrismaClient,
+  job: ClaimedWalletCleanupJob,
+  eventId: string,
+  countPending: NonNullable<WalletCleanupHandler["countPending"]>,
+): Promise<number | null> {
+  try {
+    return await countPending(db, eventId);
+  } catch (err) {
+    emitSystemLog("wallet", "warn", "wallet_cleanup_pending_count_failed", {
+      job_id: job.id,
+      job_type: job.type,
+      event_id: eventId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 async function runOneWalletCleanupJob(
   db: PrismaClient,
   job: ClaimedWalletCleanupJob,
@@ -398,7 +426,9 @@ async function runOneWalletCleanupJob(
       await db.adminJob.update({ where: { id: job.id }, data: { progress_done: processed } });
     }
 
-    const pendingGraceCount = handler.countPending ? await handler.countPending(db, eventId) : null;
+    const pendingGraceCount = handler.countPending
+      ? await safeCountPending(db, job, eventId, handler.countPending)
+      : null;
     return await finalizeWalletCleanupJob(
       db,
       job,

@@ -542,6 +542,24 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
 
     expect(terminalWrite()).toMatchObject({ result_json: { pendingGraceCount: 0 } });
   });
+
+  it("still succeeds, with the real done/skipped/errored counts, when the pending-grace count itself throws after the removal work already finished (bot review)", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    db.walletPass.count.mockRejectedValueOnce(new Error("db timeout"));
+
+    const result = await drainWalletCleanupJobs(db as never);
+
+    // Not "failed": the one real pass this run (votedRow(1), past its grace period) was actually
+    // removed before the count ever ran - that outcome must not be discarded just because the
+    // purely informational count afterward happened to fail.
+    expect(result).toMatchObject({ claimed: 1, succeeded: 1, failed: 0 });
+    expect(terminalWrite()).toMatchObject({
+      status: "succeeded",
+      result_json: { done: 1, skipped: 0, errored: 0, pendingGraceCount: null },
+    });
+    const [entry] = querySystemLogs({ source: "wallet", search: "wallet_cleanup_pending_count_failed" });
+    expect(entry?.fields).toMatchObject({ job_id: "job-remove-1", event_id: "evt-1", error: "db timeout" });
+  });
 });
 
 describe("drainWalletCleanupJobs (wallet_void_active has no grace period to report)", () => {
