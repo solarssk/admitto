@@ -65,7 +65,7 @@ The idea it's built around: **Admitto is the single source of truth** for who's 
 |-------|-------------|
 | 🟢 Runtime | Node.js 24, TypeScript, Docker (multi-arch: `linux/amd64` + `linux/arm64`) |
 | 🔌 Backend | Hono 4, PostgreSQL (Prisma 7), Redis |
-| 🎨 Frontend | React 19, react-router 7, Vite, Tabler design tokens |
+| 🎨 Frontend | React 19, react-router 8, Vite, Tabler design tokens |
 | 📬 Mail | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
 | 🔑 Auth | Local accounts · OIDC · Cloudflare Access (ZTNA) · 2FA (TOTP, WebAuthn passkeys/security keys) |
 
@@ -76,7 +76,7 @@ solarssk/admitto:X.Y.Z      # pinned release, e.g. 0.6.7
 solarssk/admitto:X.Y        # rolling minor line, e.g. 0.6
 ```
 
-Multi-arch manifest (`linux/amd64` + `linux/arm64`) - Docker pulls the one matching your host automatically. Every image passes a Trivy CRITICAL-vulnerability gate before it's pushed, and the same content is also published to `ghcr.io/solarssk/admitto` if you prefer GHCR.
+Multi-arch manifest (`linux/amd64` + `linux/arm64`) - Docker pulls the one matching your host automatically. Every image passes a Trivy CRITICAL-vulnerability gate before a version tag is published, and the same content is also published to `ghcr.io/solarssk/admitto` if you prefer GHCR.
 
 This image is one part of a Docker Compose stack (app, worker, PostgreSQL, Redis, nginx) - it's not meant to run standalone with `docker run`. Deploy instructions: **[deploy/README.md](https://github.com/solarssk/admitto/blob/main/deploy/README.md)**.
 

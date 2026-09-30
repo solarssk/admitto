@@ -118,7 +118,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | ✅ | **Check-in** | Scan with a camera or USB scanner, or look someone up by name. Hand out badges and items. Beep / vibration on each scan. |
 | 🖥️ | **Staff admin** | Events, reports, and who can access what. Staff can connect or disconnect their own company SSO from My account. |
 | ⚙️ | **Ops** | A background worker sends mail and finishes long imports/exports. Health page plus audit and security logs. |
-| 🔒 | **Security** | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country for each IP, looked up on your own server (no external geo API). |
+| 🔒 | **Security** | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country (and city, when the offline dataset resolves one) for each IP, looked up on your own server (no external geo API). |
 | 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
 **Coming later:** public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest`.
@@ -129,7 +129,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 |---|-------|-------------|
 | 🟢 | **Runtime** | Node.js 24, TypeScript, Docker (multi-arch: `linux/amd64` + `linux/arm64`) |
 | 🔌 | **Backend** | Hono 4, PostgreSQL (Prisma 7), Redis |
-| 🎨 | **Frontend** | React 19, react-router 7, Vite, Tabler design tokens |
+| 🎨 | **Frontend** | React 19, react-router 8, Vite, Tabler design tokens |
 | 📬 | **Mail** | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
 | 🔑 | **Auth** | Local accounts · OIDC · Cloudflare Access (ZTNA) · 2FA (TOTP, WebAuthn passkeys/security keys) |
 
@@ -150,6 +150,7 @@ docker compose -f infra/docker-compose.yml up -d db redis
 # 2. Configure database connection
 cp packages/db/.env.example packages/db/.env
 # Set ENCRYPTION_KEY before enrolling MFA or OIDC: openssl rand -base64 32
+cp apps/web/.env.example apps/web/.env   # set DATABASE_URL and ENCRYPTION_KEY here too; `npm run dev -w @admitto/web` reads this file
 
 # 3. Install, migrate, seed, prepare test databases
 npm install

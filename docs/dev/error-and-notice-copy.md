@@ -14,17 +14,17 @@ This doc is what closes that gap.
 Message copy is written for a specific reader. For most of the app, that reader is determined by
 **where the component lives**: a route sits behind exactly one role's guard, and the guard picks
 the register. A route that isn't behind a role-specific guard has no single reader, so it can't be
-classified this way. Look for it explicitly (`docs/wiki/Roles-and-Permissions.md` lists which
-guard, if any, sits in front of a given screen) rather than assuming location always resolves to
+classified this way. Look for it explicitly (the route tree in `apps/admin/src/App.tsx` and the guards in
+`apps/admin/src/auth/RoleRouter.tsx` show which guard, if any, sits in front of a given screen) rather than assuming location always resolves to
 one row below - the "Shared staff surface" row exists precisely for the routes it doesn't.
 
 | Register | Route / guard | Reader | Can name technical detail? |
 |---|---|---|---|
-| **Superadmin** | `/admin/settings` under `SuperadminGuard` (`apps/admin/src/App.tsx:186`); also `SUPERADMIN_ONLY_TABS` (`apps/admin/src/settings/eventSettingsTabs.ts:26-27`, the `mail`/`wallet`/`integrations` tabs inside per-event settings) | IT/infra person configuring the instance: Identity/OIDC, Cloudflare Access, Mail transport, System Logs, Archiving | Yes. System/provider name, HTTP status, machine error code, alongside a plain sentence |
-| **Administrator** | `/admin` under `AdminGuard` (`apps/admin/src/App.tsx:181`), minus the superadmin-only settings tabs above | Org-level event manager running day-to-day ops: Attendees, Communication, Check-in admin, Requirements, Reports | No. Zero codes, zero jargon |
-| **Operator** | `/operator` under `OperatorGuard` (`apps/admin/src/App.tsx:221`) | Check-in desk, reading under time pressure at the door | No, and terser than Administrator: one line, one action |
-| **Shared staff surface** | `/account` under `AuthenticatedGuard` (`apps/admin/src/App.tsx:229`, `apps/admin/src/auth/RoleRouter.tsx:35-37` - a no-op guard, not a role check) | Whoever is signed in: Superadmin, Administrator, or Operator, viewing their own password/passkeys/sessions | No. Treat every reader as the least technical one who can land here (an Operator can reach `/account` too) - same floor as Administrator, regardless of the account's actual role |
-| **Public attendee** | `apps/web` (`ticket-page.ts`, served at `/t/:token`) | General public, no product context, may be their only interaction with Admitto | No. Plainest and most reassuring of all four |
+| **Superadmin** | `/admin/settings` under `SuperadminGuard` (the `settings` route in `apps/admin/src/App.tsx`); also `SUPERADMIN_ONLY_TABS` (`apps/admin/src/settings/eventSettingsTabs.ts`, the `mail`/`wallet`/`integrations` tabs inside per-event settings) | IT/infra person configuring the instance: Identity/OIDC, Cloudflare Access, Mail transport, System Logs, Archiving | Yes. System/provider name, HTTP status, machine error code, alongside a plain sentence |
+| **Administrator** | `/admin` under `AdminGuard` (the `/admin` route in `apps/admin/src/App.tsx`), minus the superadmin-only settings tabs above | Org-level event manager running day-to-day ops: Attendees, Communication, Check-in admin, Requirements, Reports | No. Zero codes, zero jargon |
+| **Operator** | `/operator` under `OperatorGuard` (the `/operator` route in `apps/admin/src/App.tsx`) | Check-in desk, reading under time pressure at the door | No, and terser than Administrator: one line, one action |
+| **Shared staff surface** | `/account` under `AuthenticatedGuard` (the `/account` route in `apps/admin/src/App.tsx`; `AuthenticatedGuard` in `apps/admin/src/auth/RoleRouter.tsx` is a no-op guard, not a role check) | Whoever is signed in: Superadmin, Administrator, or Operator, viewing their own password/passkeys/sessions | No. Treat every reader as the least technical one who can land here (an Operator can reach `/account` too) - same floor as Administrator, regardless of the account's actual role |
+| **Public attendee** | `apps/web` (`ticket-page.ts`, served at `/t/:token`) | General public, no product context, may be their only interaction with Admitto | No. Plainest and most reassuring of all five |
 
 `docs/wiki/Roles-and-Permissions.md` is the canonical name source for the first three. Call the
 org-admin persona **Administrator** in code and comments, not "event manager", since that's the
@@ -35,7 +35,7 @@ plain-English description of the role, not the product's name for it.
 1. **One message per known cause, never one generic message for several causes.** *(Microsoft
    Writing Style Guide, [Error Message Guidelines](https://learn.microsoft.com/en-us/windows/win32/debug/error-message-guidelines))*
    If a 400 response can mean two different things, write two messages, not one that covers both.
-   [`AddAttendeeModal.tsx:174-190`](../../apps/admin/src/attendees/AddAttendeeModal.tsx) is the
+   [`AddAttendeeModal.tsx`](../../apps/admin/src/attendees/AddAttendeeModal.tsx) is the
    pattern this rule asks for: the server's `customDataErrorPayload` branches on three distinct
    codes (`unknown_custom_data_field`, `required_custom_data_field_missing`, `validation_failed`)
    and carries the offending field's slug back to the client, which
