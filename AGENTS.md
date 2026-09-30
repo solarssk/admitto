@@ -168,7 +168,7 @@ Rules:
 - Loading text is for assistive tech (`aria-label`, `aria-busy`). The only visible text is the 8s message, the label of a busy button, and the row inside a list of remote options.
 - `prefers-reduced-motion` slows the loaders and stops the shimmer. It never freezes them completely.
 
-`apps/admin/test/styles/loading-standard.test.ts` enforces the mechanical parts: no `*spin*` or `*shimmer*` `@keyframes` and no `at-spin` animation in admin CSS, no `Loading…` text, no hand-made busy-label ternaries. It is a ratchet: today's leftovers are listed per file and may only be removed, so a migration PR lowers the list in the same change.
+`apps/admin/test/styles/loading-standard.test.ts` enforces the mechanical parts: no `*spin*` or `*shimmer*` `@keyframes` and no `at-spin` animation in admin CSS, no `Loading…` text, no hand-made busy-label ternaries (a "Saving…" style literal in either branch, so `!saving ? "Save" : "Saving…"` counts too). It is a ratchet: today's leftovers are listed per file and may only be removed, so a migration PR lowers the list in the same change.
 
 ## Compounding rules
 

@@ -60,7 +60,6 @@ const ALLOWED: Record<Rule, Counts> = {
   "busy-label-swap": {
     "apps/admin/src/attendees/AddAttendeeModal.tsx": 1,
     "apps/admin/src/attendees/AttendeesTable.tsx": 12,
-    "apps/admin/src/attendees/CustomDataFieldInput.tsx": 2,
     "apps/admin/src/checkin/AttendeeCard.tsx": 1,
     "apps/admin/src/checkin/NoteModal.tsx": 1,
     "apps/admin/src/communication/CommunicationSendPanel.tsx": 2,
