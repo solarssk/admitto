@@ -253,6 +253,45 @@ function resolveDatabaseLatencyMs(
   return fromSetup;
 }
 
+/** A core row whose setup check could not be collected at all (`collectSetupChecks()` rejected,
+ * for example because the instance URL setting could not be read). Its real state is unknown, so
+ * it says so, with the same `lookup_failed` reason as every other could-not-evaluate row, instead
+ * of inventing a "down" the client would then explain with a specific cause (a wrong
+ * ENCRYPTION_KEY, an invalid BASE_URL, an unreachable Redis). */
+function setupLookupFailedRow(id: string, label: string, checkedAt: string): HealthCheckRow {
+  return {
+    id,
+    label,
+    status: "degraded",
+    summary: `Could not evaluate ${label.toLowerCase()}`,
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
+/** The Database row. When the setup collection rejected (`setup` is null) the row still has its
+ * own independent probe: down only if that probe says so, otherwise its state is simply unknown. */
+function databaseCoreRow(
+  setup: Awaited<ReturnType<typeof collectSetupChecks>> | null,
+  dbProbe: Awaited<ReturnType<typeof checkDatabase>>,
+  engine: string | undefined,
+  checkedAt: string,
+): HealthCheckRow {
+  const extras = { latencyMs: dbProbe.latency_ms, engine };
+  if (setup) return setupToDatabaseRow(setup.database, checkedAt, extras);
+  if (dbProbe.status === "down") {
+    return setupToDatabaseRow(
+      { ok: false, reason: "unreachable", detail: "Database check unavailable" },
+      checkedAt,
+      extras,
+    );
+  }
+  return setupLookupFailedRow("database", "Database", checkedAt);
+}
+
 function setupToDatabaseRow(
   check: SetupCheckResult,
   checkedAt: string,
@@ -1189,15 +1228,26 @@ async function weatherRow(
 }
 
 /** Wallet (PassCreator) is configured per event (ADR 0041), not per instance - "ok" means at
- * least one event currently has it fully turned on (enabled + template + API key). */
+ * least one event currently has it fully turned on (enabled + template + API key). The details
+ * also say how many events have it turned on at all, and how many of those are not fully set up
+ * yet, without changing the status: an event still being set up is not an outage. */
 async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
-  const configuredCount = await db.event.count({
-    where: {
-      wallet_enabled: true,
-      wallet_template_id: { not: null },
-      wallet_api_key_enc: { not: null },
-    },
-  });
+  // One REPEATABLE READ transaction, so both counts see the same committed state: two separate
+  // queries could straddle an event's Wallet settings being saved and report "0 on, 1 fully set
+  // up". The configured set is then always a subset of the enabled one.
+  const [enabledCount, configuredCount] = await db.$transaction(
+    [
+      db.event.count({ where: { wallet_enabled: true } }),
+      db.event.count({
+        where: {
+          wallet_enabled: true,
+          wallet_template_id: { not: null },
+          wallet_api_key_enc: { not: null },
+        },
+      }),
+    ],
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
   const status = configuredCount > 0 ? "ok" : "not_configured";
   const eventSuffix = configuredCount === 1 ? "" : "s";
   const summary =
@@ -1211,7 +1261,9 @@ async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthChe
     summary,
     details: detailsFromEntries([
       ["status", status],
+      ["wallet_enabled_events", String(enabledCount)],
       ["configured_events", String(configuredCount)],
+      ["wallet_incomplete_events", String(enabledCount - configuredCount)],
       ["last_checked", checkedAt],
     ]),
   };
@@ -1558,12 +1610,6 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
 
   await refreshMapsConfigCacheIfStale(deps.db, env).catch(() => undefined);
 
-  const setupFallback: Awaited<ReturnType<typeof collectSetupChecks>> = {
-    database: { ok: false, reason: "unreachable", detail: "Database check unavailable" },
-    redis: { ok: false, detail: "Rate-limit storage check unavailable" },
-    encryption: { ok: false, detail: "Encryption check unavailable" },
-    base_url: { ok: false, detail: "Instance URL check unavailable" },
-  };
   const gaugesFallback = {
     email_deliveries_queued: -1,
     email_deliveries_failed_retryable: -1,
@@ -1657,9 +1703,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     engine,
     fileStorage,
   ] = await Promise.all([
-      collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(
-        () => setupFallback,
-      ),
+      collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(() => null),
       collectGauges(deps.db).catch(() => gaugesFallback),
       emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
       bounceIngestRow(deps.db, checkedAt, now, env).catch(() => bounceIngestFallback),
@@ -1684,16 +1728,21 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       fileStorageRow(env, checkedAt, live),
     ]);
 
+  const databaseRow = databaseCoreRow(setup, dbProbe, engine, checkedAt);
+
   const coreChecks: HealthCheckRow[] = [
-    setupToDatabaseRow(setup.database, checkedAt, {
-      latencyMs: dbProbe.latency_ms,
-      engine,
-    }),
-    setupToRedisRow(setup.redis, checkedAt),
-    setupToEncryptionRow(setup.encryption, checkedAt),
+    databaseRow,
+    setup
+      ? setupToRedisRow(setup.redis, checkedAt)
+      : setupLookupFailedRow("rate_limit_storage", "Rate-limit storage", checkedAt),
+    setup
+      ? setupToEncryptionRow(setup.encryption, checkedAt)
+      : setupLookupFailedRow("data_encryption", "Data encryption", checkedAt),
     backgroundWorker,
     mailQueueRow(gauges.email_deliveries_queued, gauges.email_deliveries_failed_retryable, checkedAt),
-    setupToInstanceUrlRow(setup.base_url, checkedAt),
+    setup
+      ? setupToInstanceUrlRow(setup.base_url, checkedAt)
+      : setupLookupFailedRow("instance_url", "Instance URL", checkedAt),
     fileStorage,
   ];
 
