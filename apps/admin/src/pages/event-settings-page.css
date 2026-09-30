@@ -265,6 +265,15 @@
   cursor: pointer;
 }
 
+/* .wallet-expiration-mode__options' own `gap` only spaces its two radio labels - a Notice that
+   follows it (locked/not-ready hint) is a plain sibling of that flex container, not a member of
+   it, so it inherited no gap and sat flush against the last label (Notice's own base rule resets
+   margin: 0). Every Notice is a direct child here (the header always comes first), so this
+   applies uniformly - same fix as .wallet-field-mapping's own Notice spacing below. */
+.wallet-expiration-mode > .at-notice {
+  margin-top: var(--space-3);
+}
+
 /* Separates this subsection from the Apple/Google toggle pair above it, the same way
    .settings-row's own border-bottom separates rows within a list. */
 .wallet-field-mapping {

@@ -2466,7 +2466,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={eventWideRefreshStatusConfirm.open}
         title="Refresh the wallet status for every active wallet pass?"
-        message="This checks the current status of every active wallet pass in the wallet service, for the whole event. If the wallet service says a pass is voided or expired, it is marked Voided here. Passes that are already voided or expired, and attendees with no pass, are not changed."
+        message="Checks the current status of every active wallet pass in the wallet service, for the whole event."
         errorMessage={eventWideRefreshStatusConfirm.error}
         confirmLabel="Refresh status"
         confirmVariant="primary"
@@ -2475,19 +2475,37 @@ export function AttendeesPage() {
         onCancel={() => {
           if (!eventWideRefreshStatusBusy) eventWideRefreshStatusConfirm.close();
         }}
-      />
+      >
+        <ul className="confirm-dialog__list">
+          <li>If the wallet service reports a pass as voided or expired, it is marked Voided here</li>
+          <li>Passes already voided or expired, and attendees with no pass, are not changed</li>
+        </ul>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={eventWideVoidActive.confirmOpen}
         title="Void every active wallet pass for this event?"
-        message="Voiding makes a wallet pass show as invalid on the attendee's phone. The pass stays on the phone and the attendee's ticket is not changed. This covers every active pass of the event, not only the selected attendees, and runs in the background. You can restore one pass at a time from the attendee's page, while Wallet is on for this event and the event has not ended. Attendees who have not added a pass yet can still add one under the same conditions. To stop that, ask a Superadmin to turn Wallet off in Event settings. It is not the same as Remove from provider or Delete wallet pass: those erase the pass from the wallet service for good."
+        message="Voiding makes a wallet pass show as invalid on the attendee's phone. This covers every active pass of the event, not only the selected attendees, and runs in the background."
         errorMessage={eventWideVoidActive.error}
         confirmLabel="Void all"
         confirmVariant="danger"
         loading={eventWideVoidActive.busy}
         onConfirm={() => void eventWideVoidActive.confirm()}
         onCancel={eventWideVoidActive.cancel}
-      />
+      >
+        <ul className="confirm-dialog__list">
+          <li>The pass stays on the phone and the attendee's ticket is not changed</li>
+          <li>
+            You can restore one pass at a time from the attendee's page, while Wallet is on for this event and the
+            event has not ended
+          </li>
+          <li>
+            Attendees who have not added a pass yet can still add one under the same conditions - to stop that, ask a
+            Superadmin to turn Wallet off in Event settings
+          </li>
+          <li>It is not the same as Remove from provider or Delete wallet pass: those erase the pass from the wallet service for good</li>
+        </ul>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={eventWideRemoveInactive.confirmOpen}

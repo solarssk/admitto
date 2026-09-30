@@ -4936,6 +4936,11 @@ output.mail-field-hint {
   text-decoration: underline;
 }
 
+.mail-secret-field__link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .mail-secret-field__link--danger {
   color: var(--status-error);
 }
