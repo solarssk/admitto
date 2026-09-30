@@ -236,6 +236,9 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     // active/registered there) - both also sum to adoption.got_pass=15.
     pass_validity: { active: 10, voided: 3, expired: 2, failed: 0 },
     provider_state: { managed: 13, removed: 2 },
+    // Default 0: most tests don't exercise the pending-removal Notice, which only renders when
+    // this is above 0 (see the dedicated describe block below).
+    pending_removal: 0,
     ...overrides,
   };
 }
@@ -513,6 +516,30 @@ describe("WalletsReportsTab", () => {
 
     // No truncation notice for this (default) fixture.
     expect(document.querySelector(".wallets-truncated-notice")).toBeNull();
+    // No pending-removal notice either - fixture's pending_removal defaults to 0.
+    expect(document.querySelector(".wallets-pending-removal-notice")).toBeNull();
+  });
+
+  it.each([
+    [
+      1,
+      "1 voided or expired pass is less than 24 hours old, so Remove inactive passes can't remove it yet. Admitto waits a full day before deleting a pass from the wallet service, in case it needs to be restored by mistake. Ready to remove once that day has passed.",
+    ],
+    [
+      3,
+      "3 voided or expired passes are less than 24 hours old, so Remove inactive passes can't remove them yet. Admitto waits a full day before deleting a pass from the wallet service, in case it needs to be restored by mistake. Ready to remove once that day has passed.",
+    ],
+  ])("shows the pending-removal Notice on Provider state when pending_removal is %i, with correct singular/plural wording", async (pendingRemoval, expectedText) => {
+    fetchEventWalletReports.mockResolvedValue(fixture({ pending_removal: pendingRemoval }));
+
+    renderWithToast(
+      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const providerCard = cardByTitle("Provider state");
+    const notice = within(providerCard).getByText(expectedText);
+    expect(notice.closest(".wallets-pending-removal-notice")).not.toBeNull();
   });
 
   it("renders a nonzero Failed (unexpected) count in Pass validity instead of hiding it or folding it into another status", async () => {

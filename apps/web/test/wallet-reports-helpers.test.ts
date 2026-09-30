@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TicketTypeInfo } from "@admitto/tickets";
+import { WALLET_REMOVE_INACTIVE_GRACE_MS, type TicketTypeInfo } from "@admitto/tickets";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import {
   aggregateWalletPasses,
@@ -581,6 +581,78 @@ describe("aggregateWalletPasses — passValidityCounts and providerStateCounts",
     expect(result.passValidityCounts).toEqual({ active: 1, voided: 1, expired: 0, failed: 1 });
     const sum = Object.values(result.passValidityCounts).reduce((a, b) => a + b, 0);
     expect(sum).toBe(passes.length);
+  });
+});
+
+// pending_removal (EventWalletReportsResponse) - a live count of voided/expired-but-still-managed
+// passes that haven't yet passed WALLET_REMOVE_INACTIVE_GRACE_MS, mirroring
+// countPendingGraceInactivePasses's own query (packages/tickets/src/drain-wallet-cleanup-jobs.ts)
+// exactly, so this report and that job's own toast never disagree about which passes are waiting.
+describe("aggregateWalletPasses — pendingRemovalCount", () => {
+  const recentlyVoided = () => new Date(Date.now() - 60_000);
+  const longVoided = () => new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000);
+
+  it("counts a voided pass still managed at the provider and less than a day old", () => {
+    const result = aggregateWalletPasses(
+      [pass({ status: "voided", provider_pass_id: "pc-1", voided_at: recentlyVoided() })],
+      BOTH_ENABLED,
+    );
+    expect(result.pendingRemovalCount).toBe(1);
+  });
+
+  it("does not count a voided pass already past its own grace period - it's eligible now, not pending", () => {
+    const result = aggregateWalletPasses(
+      [pass({ status: "voided", provider_pass_id: "pc-1", voided_at: longVoided() })],
+      BOTH_ENABLED,
+    );
+    expect(result.pendingRemovalCount).toBe(0);
+  });
+
+  it("counts an expired pass the same way, anchored on expires_at instead of voided_at", () => {
+    const result = aggregateWalletPasses(
+      [pass({ status: "expired", provider_pass_id: "pc-1", expires_at: recentlyVoided() })],
+      BOTH_ENABLED,
+    );
+    expect(result.pendingRemovalCount).toBe(1);
+  });
+
+  it("does not count a pass already removed at the provider, even if recently voided", () => {
+    const result = aggregateWalletPasses(
+      [
+        pass({
+          status: "voided",
+          provider_pass_id: "pc-1",
+          voided_at: recentlyVoided(),
+          provider_removed_at: new Date(),
+        }),
+      ],
+      BOTH_ENABLED,
+    );
+    expect(result.pendingRemovalCount).toBe(0);
+  });
+
+  it("does not count a voided pass with no reference point set - it will never qualify for the bulk job, not just waiting", () => {
+    const result = aggregateWalletPasses(
+      [pass({ status: "voided", provider_pass_id: "pc-1", voided_at: null })],
+      BOTH_ENABLED,
+    );
+    expect(result.pendingRemovalCount).toBe(0);
+  });
+
+  it("does not count an active pass regardless of provider_pass_id", () => {
+    const result = aggregateWalletPasses([pass({ status: "active", provider_pass_id: "pc-1" })], BOTH_ENABLED);
+    expect(result.pendingRemovalCount).toBe(0);
+  });
+
+  it("is a subset of, not additional to, passValidityCounts.voided + expired", () => {
+    const passes = [
+      pass({ status: "voided", provider_pass_id: "pc-1", voided_at: recentlyVoided() }),
+      pass({ status: "voided", provider_pass_id: "pc-2", voided_at: longVoided() }),
+      pass({ status: "expired", provider_pass_id: "pc-3", expires_at: recentlyVoided() }),
+    ];
+    const result = aggregateWalletPasses(passes, BOTH_ENABLED);
+    expect(result.pendingRemovalCount).toBe(2);
+    expect(result.passValidityCounts.voided + result.passValidityCounts.expired).toBe(3);
   });
 });
 

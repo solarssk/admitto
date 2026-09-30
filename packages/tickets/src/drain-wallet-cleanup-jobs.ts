@@ -88,6 +88,14 @@ type WalletCleanupHandler = {
     provider: WalletPassProvider,
     audit: OpsAuditContext,
   ): Promise<"done" | "skipped">;
+  /** Optional: how many passes this handler would ALSO act on if not for some extra condition it
+   * gates on (only wallet_remove_inactive has one, its grace period) - surfaced in the job result
+   * so a run that finds nothing to do can be told apart from a run where something is waiting on
+   * that condition (PO report: the toast read the same either way, so an admin who ran "Remove
+   * inactive passes" right after a wave of webhook-reported voids saw "nothing to remove" and
+   * assumed the action had silently failed, with no way to tell it apart from there genuinely
+   * being nothing voided/expired at all). */
+  countPending?(db: PrismaClient, eventId: string): Promise<number>;
 };
 
 /** The fields every clean-up target-loading query reads, and how the row maps to a
@@ -150,6 +158,29 @@ async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string):
     select: WALLET_CLEANUP_TARGET_SELECT,
   });
   return rows.map(mapRowToWalletCleanupTarget);
+}
+
+/** Complement of loadGracedInactivePassTargets's own WHERE: every voided or expired pass under
+ * the event, still managed at the provider, that has NOT yet passed its own grace period - see
+ * that function's doc comment and WALLET_REMOVE_INACTIVE_GRACE_MS for the exact rule. Read by
+ * runOneWalletCleanupJob below and surfaced as the job's own `pendingGraceCount`. A pass with
+ * neither reference point set (voided with no voided_at, expired with no expires_at) is
+ * intentionally NOT counted here either - it is not "waiting", it will never qualify for this
+ * job regardless of how long it sits, so counting it here would wrongly suggest it just needs
+ * more time. */
+async function countPendingGraceInactivePasses(db: PrismaClient, eventId: string): Promise<number> {
+  const cutoff = new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS);
+  return db.walletPass.count({
+    where: {
+      OR: [
+        { status: "voided", voided_at: { gt: cutoff } },
+        { status: "expired", expires_at: { gt: cutoff } },
+      ],
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: eventId },
+    },
+  });
 }
 
 /** Removes one pass listed by loadGracedInactivePassTargets - re-read right before acting, the
@@ -229,6 +260,7 @@ const HANDLERS: Record<WalletCleanupJobType, WalletCleanupHandler> = {
   wallet_remove_inactive: {
     loadTargets: loadGracedInactivePassTargets,
     act: removeOneGracedInactivePass,
+    countPending: countPendingGraceInactivePasses,
   },
 };
 
@@ -283,6 +315,7 @@ async function finalizeWalletCleanupJob(
   request: WalletCleanupRequest,
   targetCount: number,
   tally: { done: number; skipped: number; errored: number },
+  pendingGraceCount: number | null,
 ): Promise<"succeeded" | "failed"> {
   const { done, skipped, errored } = tally;
 
@@ -307,7 +340,7 @@ async function finalizeWalletCleanupJob(
     data: {
       status: allFailed ? "failed" : "succeeded",
       finished_at: new Date(),
-      result_json: { request, done, skipped, errored },
+      result_json: { request, done, skipped, errored, pendingGraceCount },
       error: allFailed ? WALLET_CLEANUP_JOB_ALL_FAILED_ERROR : null,
     },
   });
@@ -361,7 +394,15 @@ async function runOneWalletCleanupJob(
       await db.adminJob.update({ where: { id: job.id }, data: { progress_done: processed } });
     }
 
-    return await finalizeWalletCleanupJob(db, job, request, targets.length, { done, skipped, errored });
+    const pendingGraceCount = handler.countPending ? await handler.countPending(db, eventId) : null;
+    return await finalizeWalletCleanupJob(
+      db,
+      job,
+      request,
+      targets.length,
+      { done, skipped, errored },
+      pendingGraceCount,
+    );
   } catch (err) {
     await markWalletCleanupJobFailed(db, job, err);
     return "failed";

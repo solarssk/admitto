@@ -74,7 +74,7 @@ describe("drainWalletCleanupJobs", () => {
   const db = {
     adminJob: { update: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     backgroundWorkerHeartbeat: { findUnique: vi.fn() },
-    walletPass: { findMany: vi.fn(), findFirst: vi.fn() },
+    walletPass: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
     event: { findUnique: vi.fn() },
   };
 
@@ -95,6 +95,7 @@ describe("drainWalletCleanupJobs", () => {
     db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 1 });
     db.backgroundWorkerHeartbeat.findUnique.mockReset().mockResolvedValue({ last_beat_at: new Date() });
     db.walletPass.findMany.mockReset().mockResolvedValue([passRow(1), passRow(2), passRow(3)]);
+    db.walletPass.count.mockReset().mockResolvedValue(0);
     db.walletPass.findFirst.mockReset().mockResolvedValue({
       status: "voided",
       provider_removed_at: null,
@@ -329,7 +330,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
   const db = {
     adminJob: { update: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     backgroundWorkerHeartbeat: { findUnique: vi.fn() },
-    walletPass: { findMany: vi.fn(), findFirst: vi.fn() },
+    walletPass: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
     event: { findUnique: vi.fn() },
   };
 
@@ -348,6 +349,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 1 });
     db.backgroundWorkerHeartbeat.findUnique.mockReset().mockResolvedValue({ last_beat_at: new Date() });
     db.walletPass.findMany.mockReset().mockResolvedValue([votedRow(1)]);
+    db.walletPass.count.mockReset().mockResolvedValue(0);
     db.walletPass.findFirst.mockReset().mockResolvedValue({
       status: "voided",
       voided_at: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000),
@@ -502,5 +504,84 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     await drainWalletCleanupJobs(db as never);
 
     expect(terminalWrite()).toMatchObject({ result_json: { done: 0, skipped: 1, errored: 0 } });
+  });
+
+  it("counts voided/expired passes still within their own grace period with the complement of the target query, and reports it on the job", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    db.walletPass.count.mockResolvedValueOnce(4);
+
+    const before = Date.now();
+    await drainWalletCleanupJobs(db as never);
+    const after = Date.now();
+
+    expect(db.walletPass.count).toHaveBeenCalledTimes(1);
+    const where = db.walletPass.count.mock.calls[0]![0].where;
+    expect(where).toMatchObject({
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: "evt-1" },
+    });
+    const [votedClause, expiredClause] = where.OR as [
+      { status: string; voided_at: { gt: Date } },
+      { status: string; expires_at: { gt: Date } },
+    ];
+    expect(votedClause.status).toBe("voided");
+    expect(expiredClause.status).toBe("expired");
+    for (const cutoff of [votedClause.voided_at.gt.getTime(), expiredClause.expires_at.gt.getTime()]) {
+      expect(cutoff).toBeGreaterThanOrEqual(before - WALLET_REMOVE_INACTIVE_GRACE_MS);
+      expect(cutoff).toBeLessThanOrEqual(after - WALLET_REMOVE_INACTIVE_GRACE_MS);
+    }
+    expect(terminalWrite()).toMatchObject({ result_json: { pendingGraceCount: 4 } });
+  });
+
+  it("reports pendingGraceCount as 0, not null, when nothing is waiting on the grace period", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    db.walletPass.count.mockResolvedValueOnce(0);
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(terminalWrite()).toMatchObject({ result_json: { pendingGraceCount: 0 } });
+  });
+});
+
+describe("drainWalletCleanupJobs (wallet_void_active has no grace period to report)", () => {
+  const db = {
+    adminJob: { update: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
+    backgroundWorkerHeartbeat: { findUnique: vi.fn() },
+    walletPass: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
+    event: { findUnique: vi.fn() },
+  };
+
+  const terminalWrite = () =>
+    [...db.adminJob.update.mock.calls, ...db.adminJob.updateMany.mock.calls]
+      .map((call) => (call[0] as { data: Record<string, unknown> }).data)
+      .find((data) => data.status === "succeeded" || data.status === "failed");
+
+  beforeEach(() => {
+    vi.mocked(claimNextAdminJob).mockReset().mockResolvedValue(null);
+    vi.mocked(voidOneWalletPassAtProvider).mockReset().mockResolvedValue("voided");
+    vi.mocked(resolveConfiguredWalletProvider).mockReset().mockReturnValue(provider as never);
+    db.adminJob.update.mockReset().mockResolvedValue({});
+    db.adminJob.findMany.mockReset().mockResolvedValue([]);
+    db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    db.backgroundWorkerHeartbeat.findUnique.mockReset().mockResolvedValue({ last_beat_at: new Date() });
+    db.walletPass.findMany.mockReset().mockResolvedValue([passRow(1)]);
+    db.walletPass.count.mockReset();
+    db.event.findUnique.mockReset().mockResolvedValue({
+      wallet_enabled: false,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key_enc: "enc",
+      wallet_field_mapping: null,
+      wallet_provider_timezone: null,
+    });
+  });
+
+  it("never calls walletPass.count, and reports pendingGraceCount as null - only wallet_remove_inactive gates on a grace period", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(voidJob() as never);
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(db.walletPass.count).not.toHaveBeenCalled();
+    expect(terminalWrite()).toMatchObject({ result_json: { pendingGraceCount: null } });
   });
 });

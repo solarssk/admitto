@@ -10,7 +10,12 @@ import { Prisma, type PrismaClient } from "@admitto/db";
 import { resolveEventWalletProvider, WALLET_CLEANUP_JOB_TYPES, type WalletCleanupJobType } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 
-type WalletCleanupResultJson = { done?: number; skipped?: number; errored?: number } | null;
+type WalletCleanupResultJson = {
+  done?: number;
+  skipped?: number;
+  errored?: number;
+  pendingGraceCount?: number | null;
+} | null;
 
 /** Finds a pending/running job of this type for the event - every clean-up job is event-wide by
  * construction. Returns its status too: a pending job has not read its targets yet, so it will
@@ -139,6 +144,7 @@ export async function handleGetWalletCleanupJob(c: Context, db: PrismaClient): P
     done: result?.done ?? null,
     skipped: result?.skipped ?? null,
     errored: result?.errored ?? null,
+    pendingGraceCount: result?.pendingGraceCount ?? null,
     created_at: job.created_at.toISOString(),
     started_at: job.started_at ? job.started_at.toISOString() : null,
   });

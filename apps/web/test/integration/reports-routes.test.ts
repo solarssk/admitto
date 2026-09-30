@@ -3454,6 +3454,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       wallet_lifecycle: { active: number; removed: number; never_installed: number };
       pass_validity: { active: number; voided: number; expired: number; failed: number };
       provider_state: { managed: number; removed: number };
+      pending_removal: number;
     };
     expect(body.adoption.got_pass).toBe(5);
     // ATT_LC_ACTIVE_SAME_PLATFORM and ATT_LC_ACTIVE_CROSS_PLATFORM are both active despite each
@@ -3480,6 +3481,10 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // fixture pass stays status: "active", provider_removed_at: null.
     expect(body.pass_validity).toEqual({ active: 4, voided: 1, expired: 0, failed: 0 });
     expect(body.provider_state).toEqual({ managed: 4, removed: 1 });
+    // ATT_LC_REMOVED's own voided pass is already provider_removed_at-set, so it's not "waiting"
+    // on its grace period - it's already past the point Remove inactive passes cares about.
+    // Nothing else in this fixture is voided/expired, so this is 0, not null or undefined.
+    expect(body.pending_removal).toBe(0);
     // Both sum to adoption.got_pass=5, same as wallet_lifecycle does.
     expect(
       body.pass_validity.active + body.pass_validity.voided + body.pass_validity.expired + body.pass_validity.failed,
