@@ -1,6 +1,7 @@
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { moveStylesheetsToBodyEnd } from "./build-html.ts";
 import { resolveAppVersion, resolveCommitSha, writeBuildMetaJson } from "./build-meta.ts";
 
 /** Emit `dist/build-meta.json` so `/api/admin/health` can report the same build as the sidebar. */
@@ -40,8 +41,23 @@ function stripLegacyIconFontFallback(): Plugin {
   };
 }
 
+/**
+ * Let the splash in index.html paint before the ~400 kB stylesheet has downloaded: move the
+ * stylesheet links from <head> (render-blocking) to the end of <body>. See build-html.ts.
+ */
+function stylesheetsAfterSplash(): Plugin {
+  return {
+    name: "admitto-stylesheets-after-splash",
+    transformIndexHtml: {
+      // After Vite has injected its own <link> tags into the page.
+      order: "post",
+      handler: moveStylesheetsToBodyEnd,
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), emitBuildMeta(), stripLegacyIconFontFallback()],
+  plugins: [react(), emitBuildMeta(), stripLegacyIconFontFallback(), stylesheetsAfterSplash()],
   base: "/",
   define: {
     __APP_VERSION__: JSON.stringify(resolveAppVersion()),
