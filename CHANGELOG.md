@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event Settings → Wallet's **Field mapping** section now shows only one notice at a time, the empty-mapping hint before any field is added or the Semantic Tags hint once one is, instead of stacking both.
 - Attendees → **More actions** → **Remove inactive passes** has a shorter, single-sentence hint.
 - The Wallets report's **Pass validity** card description is now one short sentence instead of two dense ones.
+- Health check rows now look the same before and after they are expanded: the row header was drawn in the browser's default font while the expanded text used the app font, and the details were set in a monospace font at a smaller size. Both now use the same font, size and line height, the category icon, label and arrow line up with the status circle instead of sitting near the top of the row, and the expanded text starts under the label instead of under the icon. Degraded, Down and Not configured rows no longer repeat their state in a badge, since the status circle already shows it. The worker's **Last seen** age is now a row in the expanded details instead of a loose fragment after the summary, and the guidance under a problem row is split into labelled **What it affects** and **What to do** lines in the same layout as the details, instead of two unlabelled sentences.
 
 ## [0.7.4] - 2026-09-30
 

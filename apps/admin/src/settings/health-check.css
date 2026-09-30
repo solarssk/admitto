@@ -142,13 +142,18 @@
 .health-check__row-btn {
   display: flex;
   width: 100%;
-  /* flex-start, not center: a 3-4 line wrapped row (long label + badge + summary) would
-     otherwise float the status circle mid-block instead of pinning it to the first line. */
+  /* flex-start, not center: a 3-4 line wrapped row (long label + summary) would otherwise
+     float the status circle mid-block instead of pinning it to the first line. The category
+     icon, the first text line and the chevron are centred on the circle's own 1.75rem band
+     below, so a single-line row has no dead space under its content. */
   align-items: flex-start;
   gap: var(--space-2);
   padding: 0.7rem 0.9rem;
   border: 0;
   background: transparent;
+  /* A <button> does not inherit the page font: without this the whole row rendered in the
+     browser's default Arial 13.33px while the expanded body (a plain <div>) used Inter. */
+  font: inherit;
   text-align: left;
   cursor: pointer;
   color: inherit;
@@ -162,6 +167,9 @@
 .health-check__row-icon {
   display: inline-flex;
   width: 1.25rem;
+  /* Same height as .status-circle--sm (1.75rem), so the glyph sits on the circle's centre line. */
+  height: 1.75rem;
+  align-items: center;
   justify-content: center;
   color: var(--text-secondary, var(--tblr-secondary));
   flex-shrink: 0;
@@ -174,10 +182,15 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.35rem 0.75rem;
+  /* One size and line height for everything in the row (label and summary) - the
+     same as the guidance and detail text in the expanded body. */
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  /* Centres the first text line on the 1.75rem status circle: (1.75rem - 1.5 * 0.8125rem) / 2. */
+  padding-block: 0.266rem;
 }
 
 .health-check__row-text strong {
-  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-primary, var(--tblr-body-color));
 }
@@ -188,23 +201,18 @@
 }
 
 /* The server's own summary text: always muted, never coloured by row severity - the status
- * circle, badge and border already carry that. Its own class (not a bare `span` selector)
- * so it can't accidentally also style the Badge, which is a sibling `<span>` here. */
+ * circle and border already carry that. Its own class (not a bare `span` selector), since it
+ * is a sibling span of the label. */
 .health-check__summary {
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  color: var(--text-muted, var(--tblr-secondary));
-}
-
-/* The worker's own "Last seen ... before this report" fact - same muted treatment as the
- * summary, a separate class since it's a sibling span (not a description of the check itself). */
-.health-check__worker-fact {
-  font-size: var(--fs-sm);
   font-weight: 400;
   color: var(--text-muted, var(--tblr-secondary));
 }
 
 .health-check__chevron {
+  display: inline-flex;
+  align-items: center;
+  /* Same band as the status circle and category icon, see .health-check__row-icon. */
+  height: 1.75rem;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -212,54 +220,48 @@
 /* Shared wrapper for the expanded body (guidance, then the detail list) so the divider line
  * and indent apply once regardless of which of the two is present. */
 .health-check__body {
-  /* Aligned under the label, not the old dot: row-btn's own 0.9rem padding + the 1.75rem
-     status circle + one gap (--space-2) = 3.15rem, matching where text starts once the
-     720px rule below hides the category icon. */
-  padding: 0.65rem 0.9rem 0.85rem 3.15rem;
+  /* Aligned under the label: row-btn's own 0.9rem padding + the 1.75rem status circle + the
+     1.25rem category icon + two gaps (--space-2) = 4.9rem. The 720px rule below hides the
+     category icon and drops this to 3.15rem. */
+  padding: 0.65rem 0.9rem 0.85rem 4.9rem;
   border-top: 1px solid var(--border, var(--tblr-border-color));
 }
 
-.health-check__guidance {
-  margin: 0 0 0.65rem;
+/* "What it affects" / "What to do": the same label-and-value grid as the technical details
+ * below it (.health-check__details), split off from them by a hairline when both are shown. */
+.health-check__guidance:not(:last-child) {
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border, var(--tblr-border-color));
 }
 
-.health-check__guidance p {
-  margin: 0 0 0.35rem;
-  font-size: var(--fs-sm);
-  color: var(--text-primary, var(--tblr-body-color));
-}
-
-.health-check__guidance p:last-child {
-  margin-bottom: 0;
-}
-
+/* A plain inline link in the sentence: no arrow, and no underline even on hover (the global
+ * `a:hover` underline stops short of an icon and reads as broken). Hover darkens instead. */
 .health-check__guidance-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
   color: var(--primary, var(--tblr-primary));
   font-weight: 500;
-  white-space: nowrap;
 }
 
-/* email_sending's own not_configured note: a quiet fact ("no mail provider set yet"), not a
- * problem, so its text stays muted instead of the primary-coloured tone the rest of guidance
- * uses. The link keeps its normal colour - it is still the useful next action. */
-.health-check__guidance--quiet p {
-  color: var(--text-muted, var(--tblr-secondary));
+.health-check__guidance-link:hover {
+  color: var(--primary-hover, var(--tblr-primary));
+  text-decoration: none;
 }
 
+.health-check__guidance,
 .health-check__details {
   display: grid;
   gap: 0.35rem;
   margin: 0;
 }
 
+/* One row of either list: the guidance (What it affects / What to do) and the technical
+ * details share the same font, size and line height as the row summary above. */
 .health-check__detail {
   display: grid;
   grid-template-columns: minmax(7rem, 9rem) 1fr;
   gap: var(--space-2);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
 }
 
 .health-check__detail dt {
@@ -269,8 +271,16 @@
 
 .health-check__detail dd {
   margin: 0;
-  font-family: var(--font-mono);
+  color: var(--text-primary, var(--tblr-body-color));
   overflow-wrap: anywhere;
+}
+
+/* email_sending's own not_configured note: a quiet fact ("no mail provider set yet"), not a
+ * problem, so its text stays muted instead of the primary tone. The link keeps its normal
+ * colour - it is still the useful next action. Declared after `.health-check__detail dd` so it
+ * wins on order at equal specificity. */
+.health-check__guidance--quiet .health-check__detail dd {
+  color: var(--text-muted, var(--tblr-secondary));
 }
 
 @media (max-width: 720px) {
@@ -300,9 +310,14 @@
     gap: 0.1rem;
   }
 
-  /* Below this width the row already carries the status circle, badge and label; the
-     category icon (database, mail, etc.) is decoration that can be dropped first. */
+  /* Below this width the row already carries the status circle and label; the category icon
+     (database, mail, etc.) is decoration that can be dropped first, so the body indent
+     loses the icon's 1.25rem and one gap: 0.9rem + 1.75rem + one gap = 3.15rem. */
   .health-check__row-icon {
     display: none;
+  }
+
+  .health-check__body {
+    padding-left: 3.15rem;
   }
 }

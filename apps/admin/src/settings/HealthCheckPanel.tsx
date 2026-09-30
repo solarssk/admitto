@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { Badge, Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
 import type { NoticeVariant } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { fetchAdminHealth, runAdminHealthLive } from "../api/client.js";
@@ -13,12 +13,7 @@ import type {
 } from "../api/types.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
-import {
-  formatHealthDisplayLabel,
-  formatHealthDisplayValue,
-  visibleHealthDetails,
-  workerLastSeenFact,
-} from "./healthCheckDisplay.js";
+import { healthDetailRows } from "./healthCheckDisplay.js";
 import { healthCheckGuidance } from "./healthCheckGuidance.js";
 import { formatHealthCheckMarkdown } from "./healthCheckMarkdown.js";
 import "./health-check.css";
@@ -54,10 +49,9 @@ type RowStatusMeta = {
   /** Tabler icon suffix shown inside the status circle. */
   glyph: string;
   circleVariant: "ok" | "warn" | "error" | "neutral";
-  /** Full word for the sr-only "Status: X" span, shown on every row including healthy ones. */
+  /** Full word for the sr-only "Status: X" span, shown on every row including healthy ones. The
+   * status circle (colour + glyph) carries the state visually, so there is no separate badge. */
   srWord: string;
-  /** Visible badge next to the label; omitted entirely for a healthy row. */
-  badge: { variant: "warn" | "error" | "neutral"; word: string } | null;
   /** Row wrapper class: border tone for warn/err, a quiet label for not_configured, none for ok. */
   toneClass: string;
   /** Stable sort order within a group: down, degraded, ok, not_configured. */
@@ -71,7 +65,6 @@ const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta
     glyph: "x",
     circleVariant: "error",
     srWord: "Down",
-    badge: { variant: "error", word: "Down" },
     toneClass: "health-check__row--err",
     sortRank: 0,
   },
@@ -79,7 +72,6 @@ const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta
     glyph: "alert-triangle",
     circleVariant: "warn",
     srWord: "Degraded",
-    badge: { variant: "warn", word: "Degraded" },
     toneClass: "health-check__row--warn",
     sortRank: 1,
   },
@@ -87,7 +79,6 @@ const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta
     glyph: "check",
     circleVariant: "ok",
     srWord: "Healthy",
-    badge: null,
     toneClass: "",
     sortRank: 2,
   },
@@ -95,7 +86,6 @@ const ROW_STATUS_META: Record<Exclude<HealthRowStatus, "planned">, RowStatusMeta
     glyph: "minus",
     circleVariant: "neutral",
     srWord: "Not configured",
-    badge: { variant: "neutral", word: "Not configured" },
     toneClass: "health-check__row--quiet",
     sortRank: 3,
   },
@@ -210,8 +200,7 @@ function HealthCheckRowView({
 }>) {
   const icon = checkIcon(check.id);
   const meta = rowStatusMeta(check.status);
-  const workerFact = workerLastSeenFact(check, generatedAt);
-  const details = visibleHealthDetails(check, timezone, workerFact !== null);
+  const details = healthDetailRows(check, timezone, generatedAt);
   const guidance = healthCheckGuidance(check);
   return (
     <div
@@ -241,18 +230,7 @@ function HealthCheckRowView({
         </span>
         <span className="health-check__row-text">
           <strong>{check.label}</strong>
-          {meta.badge && (
-            <Badge
-              variant={meta.badge.variant}
-              dot={meta.badge.variant !== "neutral"}
-              outline={meta.badge.variant === "neutral"}
-              aria-hidden="true"
-            >
-              {meta.badge.word}
-            </Badge>
-          )}
           <span className="health-check__summary">{check.summary}</span>
-          {workerFact && <span className="health-check__worker-fact">{workerFact}</span>}
         </span>
         <i
           className={`ti ti-chevron-${expanded ? "up" : "down"} health-check__chevron`}
@@ -262,32 +240,37 @@ function HealthCheckRowView({
       {expanded && (guidance || details.length > 0) && (
         <div className="health-check__body">
           {guidance && (
-            <div
+            <dl
               className={
                 guidance.quiet ? "health-check__guidance health-check__guidance--quiet" : "health-check__guidance"
               }
             >
-              <p>{guidance.impact}</p>
-              <p>
-                {guidance.nextStep}
-                {guidance.link && (
-                  <>
-                    {" "}
-                    <Link className="health-check__guidance-link" to={guidance.link.to}>
-                      {guidance.link.label}
-                      <i className="ti ti-arrow-right" aria-hidden="true" />
-                    </Link>
-                  </>
-                )}
-              </p>
-            </div>
+              <div className="health-check__detail">
+                <dt>What it affects</dt>
+                <dd>{guidance.impact}</dd>
+              </div>
+              <div className="health-check__detail">
+                <dt>What to do</dt>
+                <dd>
+                  {guidance.nextStep}
+                  {guidance.link && (
+                    <>
+                      {" "}
+                      <Link className="health-check__guidance-link" to={guidance.link.to}>
+                        {guidance.link.label}
+                      </Link>
+                    </>
+                  )}
+                </dd>
+              </div>
+            </dl>
           )}
           {details.length > 0 && (
             <dl className="health-check__details">
               {details.map((d) => (
                 <div key={d.key} className="health-check__detail">
-                  <dt>{formatHealthDisplayLabel(d.key)}</dt>
-                  <dd>{formatHealthDisplayValue(d.key, d.value, timezone)}</dd>
+                  <dt>{d.label}</dt>
+                  <dd>{d.value}</dd>
                 </div>
               ))}
             </dl>
