@@ -128,4 +128,13 @@ describe("runWorkerTick — scheduled retention pass", () => {
       expect(nullifyDeliverySnapshots).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: days });
     },
   );
+
+  it("hands the snapshot cleanup a date-safe window when the override is absurdly large", async () => {
+    vi.stubEnv(SNAPSHOT_RETENTION_ENV, "1000000000");
+    const db = fakeEmailDeliveryDb([]) as never;
+
+    await runWorkerTick(db, fakeLocks() as never, createRetentionSchedule());
+
+    expect(nullifyDeliverySnapshots).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 36_500 });
+  });
 });

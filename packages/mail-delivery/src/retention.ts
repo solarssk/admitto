@@ -15,6 +15,9 @@ export interface NullifyDeliverySnapshotResult {
 }
 
 const DEFAULT_RETENTION_DAYS = 60;
+// Cap on the window, in days (100 years). A fat-fingered override such as 1000000000 would otherwise
+// push the cutoff outside the Date range and make every cleanup query fail before it runs.
+const MAX_RETENTION_DAYS = 36_500;
 const DEFAULT_PURGE_BATCH_SIZE = 1000;
 
 // "accepted" means the provider acknowledged the delivery. After the retention
@@ -32,12 +35,12 @@ function normalizeBatchSize(batchSize: number | undefined): number {
   return Math.floor(batchSize);
 }
 
-/** Clamp retention days to a positive integer with a sensible default. */
+/** Clamp retention days to a positive integer within a sane range, defaulting to 60. */
 function normalizeRetentionDays(retentionDays: number | undefined): number {
   if (!Number.isFinite(retentionDays) || !retentionDays || retentionDays < 1) {
     return DEFAULT_RETENTION_DAYS;
   }
-  return Math.floor(retentionDays);
+  return Math.min(Math.floor(retentionDays), MAX_RETENTION_DAYS);
 }
 
 /** Build the cutoff timestamp for rows older than the configured retention window. */

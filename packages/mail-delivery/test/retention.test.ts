@@ -248,4 +248,21 @@ describe("nullifyDeliverySnapshots", () => {
       }),
     ).toBe(60);
   });
+
+  it("caps an absurdly large env override at 100 years", () => {
+    expect(
+      resolveDeliverySnapshotRetentionDays({
+        EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS: "1000000000",
+      }),
+    ).toBe(36_500);
+  });
+
+  it("clamps an absurdly large retentionDays instead of building an Invalid Date cutoff", async () => {
+    const result = await nullifyDeliverySnapshots(prisma, {
+      now: NOW,
+      dryRun: true,
+      retentionDays: 1_000_000_000,
+    });
+    expect(result.deliveries).toBe(0);
+  });
 });
