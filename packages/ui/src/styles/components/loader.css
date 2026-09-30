@@ -1,4 +1,5 @@
 .at-loader {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -55,10 +56,25 @@
   animation: at-loader-dot 1.6s ease-in-out infinite;
 }
 
+/* Out of flow, hanging under the mark: the mark stays exactly centred with or without a caption,
+   so it does not jump when "Taking longer than usual" appears, and it lines up with the static
+   splash in apps/admin/index.html. Offsets are half the mark (44px / 26px) plus a 14px gap. */
 .at-loader__caption {
+  position: absolute;
+  left: 50%;
+  width: max-content;
   max-width: 28ch;
+  transform: translateX(-50%);
   font-size: var(--fs-sm);
   line-height: var(--lh-snug);
+}
+
+.at-loader--page .at-loader__caption {
+  top: calc(50% + 44px + 14px);
+}
+
+.at-loader--section .at-loader__caption {
+  top: calc(50% + 26px + 14px);
 }
 
 @keyframes at-loader-breath {
