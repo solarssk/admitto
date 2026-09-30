@@ -2,3 +2,6 @@ pip==26.2.1
 wheel==0.48.0
 setuptools==84.0.0
 semgrep==1.178.0
+# NOTE: semgrep-requirements.txt hand-pins pyjwt==2.14.0 (security fixes), outside semgrep's own
+# `pyjwt~=2.13.0` range. Regenerating with pip-compile reverts it to 2.13.0 until semgrep relaxes
+# that range - see the --no-deps note in semgrep.yml before regenerating.
