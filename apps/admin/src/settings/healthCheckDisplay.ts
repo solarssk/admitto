@@ -2,9 +2,14 @@ import type { HealthCheckRowDto, HealthDetailDto } from "../api/types.js";
 import { formatEventDateTime, formatRelativeMagnitude } from "../utils/event-dates.js";
 import { formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckMarkdown.js";
 
-/** Always hidden from the expanded row: `status` and the badge/circle already say it,
+/** Always hidden from the expanded row: `status` and the status circle already say it,
  * `last_checked` is a bookkeeping timestamp with no operator value on its own. */
 const ALWAYS_HIDDEN_DETAIL_KEYS = new Set(["status", "last_checked"]);
+
+/** Counts of different sets of events that Wallet passes lists side by side. A number they share
+ * with the row's summary ("Configured for 1 event") is coincidence, not repetition, so hiding it
+ * would leave a breakdown with a missing line. */
+const NEVER_DEDUPED_DETAIL_KEYS = new Set(["wallet_enabled_events", "configured_events", "wallet_incomplete_events"]);
 
 /** `Map`, not a plain object: `reason`/`live_check` are server-controlled today (a closed set
  * of literals), but this module has no way to enforce that stays true, and a plain object's
@@ -18,6 +23,10 @@ const REASON_SENTENCES = new Map<string, string>([
   ["not_implemented", "Not implemented"],
   ["unknown_provider", "Unknown provider"],
   ["write_probe_failed", "Write test did not pass"],
+  ["not_a_directory", "Not a folder"],
+  ["not_writable", "Not writable"],
+  ["missing_directory", "Missing folder"],
+  ["cannot_create_directory", "Cannot create the folder"],
   ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
 ]);
 
@@ -49,8 +58,8 @@ export function formatHealthDisplayLabel(key: string): string {
 
 /** Panel-only readability on top of the shared {@link formatHealthDetailValue}: minutes for
  * `stale_after_ms`, plain sentences for `reason`/`live_check` codes, Yes/No capitalised, and a
- * browser-local date-time for `last_beat_at` (only reached when the worker fact itself is
- * omitted - see {@link visibleHealthDetails}). */
+ * browser-local date-time for `last_beat_at` (only reached when the "Last seen" age is omitted -
+ * see {@link healthDetailRows}). */
 export function formatHealthDisplayValue(key: string, value: string, timezone: string): string {
   if (key === "stale_after_ms") {
     const ms = Number(value);
@@ -65,21 +74,16 @@ export function formatHealthDisplayValue(key: string, value: string, timezone: s
 }
 
 /**
- * The detail list for an expanded row: always drops `status`/`last_checked`, drops
- * `last_beat_at` only when the worker fact already shows it (so the age isn't lost entirely
- * when the fact itself is omitted for being under a minute old or invalid), and drops any other
- * detail whose formatted value already appears in the row's own summary text, so a number isn't
- * repeated (a degraded `rate_limit_storage` already names its latency in the summary; a healthy
- * Database, whose summary is just "Connected", still shows its own Latency).
+ * The detail list for an expanded row: always drops `status`/`last_checked`, and drops any other
+ * detail whose formatted value already appears in the row's own summary text (except the Wallet
+ * event counts, see NEVER_DEDUPED_DETAIL_KEYS), so a number isn't repeated (a degraded
+ * `rate_limit_storage` already names its latency in the summary; a healthy Database, whose summary
+ * is just "Connected", still shows its own Latency).
  */
-export function visibleHealthDetails(
-  check: HealthCheckRowDto,
-  timezone: string,
-  workerFactShown: boolean,
-): HealthDetailDto[] {
+export function visibleHealthDetails(check: HealthCheckRowDto, timezone: string): HealthDetailDto[] {
   return check.details.filter((d) => {
     if (ALWAYS_HIDDEN_DETAIL_KEYS.has(d.key)) return false;
-    if (d.key === "last_beat_at" && workerFactShown) return false;
+    if (NEVER_DEDUPED_DETAIL_KEYS.has(d.key)) return true;
     const displayValue = formatHealthDisplayValue(d.key, d.value, timezone);
     // An empty display value (e.g. an unset worker hostname, `beat.hostname ?? ""`) is a
     // substring of every string, so without this guard it would look like a duplicate of the
@@ -106,19 +110,40 @@ function summaryShowsValue(summary: string, value: string): boolean {
   }
 }
 
+/** One row of the expanded detail list, already worded for display. */
+export type HealthDetailRow = { key: string; label: string; value: string };
+
 /**
- * "Last seen 12 min before this report", measured from the worker's `last_beat_at` detail
+ * {@link visibleHealthDetails}, worded for display. The worker's `last_beat_at` row becomes
+ * "Last seen: 12 min before this report" when {@link workerLastSeen} has an age to show, and
+ * stays a plain browser-local date-time when it has not (under a minute old, or invalid).
+ */
+export function healthDetailRows(check: HealthCheckRowDto, timezone: string, generatedAt: string): HealthDetailRow[] {
+  const lastSeen = workerLastSeen(check, generatedAt);
+  return visibleHealthDetails(check, timezone).map((d) =>
+    d.key === "last_beat_at" && lastSeen !== null
+      ? { key: d.key, label: "Last seen", value: lastSeen }
+      : {
+          key: d.key,
+          label: formatHealthDisplayLabel(d.key),
+          value: formatHealthDisplayValue(d.key, d.value, timezone),
+        },
+  );
+}
+
+/**
+ * "12 min before this report", measured from the worker's `last_beat_at` detail
  * against the report's own `generated_at` (never live wall-clock time, so it does not tick
  * between renders). Worker only (background_worker is the only check id that ever carries
  * `last_beat_at` today, but this pins the fact to that check by id rather than incidentally by
  * key, so a future unrelated check reusing the same detail name doesn't inherit this wording).
- * Omitted when the worker has no `last_beat_at` (never ran), the age is under a minute, or the
+ * Null when the worker has no `last_beat_at` (never ran), the age is under a minute, or the
  * date is invalid.
  */
-export function workerLastSeenFact(check: HealthCheckRowDto, generatedAt: string): string | null {
+export function workerLastSeen(check: HealthCheckRowDto, generatedAt: string): string | null {
   if (check.id !== "background_worker") return null;
   const lastBeatAt = check.details.find((d) => d.key === "last_beat_at")?.value;
   if (!lastBeatAt) return null;
   const magnitude = formatRelativeMagnitude(lastBeatAt, new Date(generatedAt));
-  return magnitude ? `Last seen ${magnitude} before this report` : null;
+  return magnitude ? `${magnitude} before this report` : null;
 }

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   formatHealthDisplayLabel,
   formatHealthDisplayValue,
+  healthDetailRows,
   visibleHealthDetails,
-  workerLastSeenFact,
+  workerLastSeen,
 } from "../../src/settings/healthCheckDisplay.js";
 import { formatEventDateTime } from "../../src/utils/event-dates.js";
 import type { HealthCheckRowDto } from "../../src/api/types.js";
@@ -55,6 +56,10 @@ describe("formatHealthDisplayValue", () => {
     ["not_implemented", "Not implemented"],
     ["unknown_provider", "Unknown provider"],
     ["write_probe_failed", "Write test did not pass"],
+    ["not_a_directory", "Not a folder"],
+    ["not_writable", "Not writable"],
+    ["missing_directory", "Missing folder"],
+    ["cannot_create_directory", "Cannot create the folder"],
     ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
   ])("gives reason=%s the sentence %j", (code, sentence) => {
     expect(formatHealthDisplayValue("reason", code, TZ)).toBe(sentence);
@@ -122,17 +127,16 @@ describe("visibleHealthDetails", () => {
         { key: "latency_ms", value: "4" },
       ],
     });
-    const keys = visibleHealthDetails(check, TZ, false).map((d) => d.key);
+    const keys = visibleHealthDetails(check, TZ).map((d) => d.key);
     expect(keys).toEqual(["latency_ms"]);
   });
 
-  it("hides last_beat_at only when the worker fact already shows it", () => {
+  it("keeps last_beat_at, so healthDetailRows can word it", () => {
     const check = checkRow({
       id: "background_worker",
       details: [{ key: "last_beat_at", value: "2026-08-03T12:00:00.000Z" }],
     });
-    expect(visibleHealthDetails(check, TZ, true)).toEqual([]);
-    expect(visibleHealthDetails(check, TZ, false)).toEqual([
+    expect(visibleHealthDetails(check, TZ)).toEqual([
       { key: "last_beat_at", value: "2026-08-03T12:00:00.000Z" },
     ]);
   });
@@ -145,7 +149,7 @@ describe("visibleHealthDetails", () => {
         { key: "latency_ms", value: "200" },
       ],
     });
-    const keys = visibleHealthDetails(check, TZ, false).map((d) => d.key);
+    const keys = visibleHealthDetails(check, TZ).map((d) => d.key);
     expect(keys).toEqual(["mode"]);
   });
 
@@ -154,7 +158,7 @@ describe("visibleHealthDetails", () => {
       summary: "Connected",
       details: [{ key: "latency_ms", value: "4" }],
     });
-    expect(visibleHealthDetails(check, TZ, false)).toEqual([{ key: "latency_ms", value: "4" }]);
+    expect(visibleHealthDetails(check, TZ)).toEqual([{ key: "latency_ms", value: "4" }]);
   });
 
   it("does not treat a value that is only part of a longer word or number as already shown", () => {
@@ -163,12 +167,12 @@ describe("visibleHealthDetails", () => {
       summary: "Not configured",
       details: [{ key: "configured", value: "no" }],
     });
-    expect(visibleHealthDetails(notConfigured, TZ, false)).toEqual([{ key: "configured", value: "no" }]);
+    expect(visibleHealthDetails(notConfigured, TZ)).toEqual([{ key: "configured", value: "no" }]);
     const latency = checkRow({
       summary: "Responding slowly · 112 ms",
       details: [{ key: "latency_ms", value: "12" }],
     });
-    expect(visibleHealthDetails(latency, TZ, false)).toEqual([{ key: "latency_ms", value: "12" }]);
+    expect(visibleHealthDetails(latency, TZ)).toEqual([{ key: "latency_ms", value: "12" }]);
   });
 
   it("keeps a detail with an empty value instead of treating it as a duplicate of everything", () => {
@@ -180,15 +184,36 @@ describe("visibleHealthDetails", () => {
       summary: "Worker heartbeat is fresh",
       details: [{ key: "hostname", value: "" }],
     });
-    expect(visibleHealthDetails(check, TZ, false)).toEqual([{ key: "hostname", value: "" }]);
+    expect(visibleHealthDetails(check, TZ)).toEqual([{ key: "hostname", value: "" }]);
   });
 });
 
-describe("workerLastSeenFact", () => {
+describe("visibleHealthDetails for Wallet passes", () => {
+  it("keeps every event count even when a number matches the summary", () => {
+    const check = checkRow({
+      id: "wallet_passes",
+      summary: "Configured for 1 event",
+      details: [
+        { key: "status", value: "ok" },
+        { key: "wallet_enabled_events", value: "1" },
+        { key: "configured_events", value: "1" },
+        { key: "wallet_incomplete_events", value: "0" },
+        { key: "last_checked", value: "2026-08-03T12:00:00.000Z" },
+      ],
+    });
+    expect(healthDetailRows(check, TZ, "2026-08-03T12:54:24.000Z")).toEqual([
+      { key: "wallet_enabled_events", label: "Events with Wallet on", value: "1" },
+      { key: "configured_events", label: "Events fully set up", value: "1" },
+      { key: "wallet_incomplete_events", label: "Events not fully set up", value: "0" },
+    ]);
+  });
+});
+
+describe("workerLastSeen", () => {
   const generatedAt = "2026-08-03T12:54:24.000Z";
 
   it("returns null when there is no last_beat_at detail", () => {
-    expect(workerLastSeenFact(checkRow({ id: "background_worker" }), generatedAt)).toBeNull();
+    expect(workerLastSeen(checkRow({ id: "background_worker" }), generatedAt)).toBeNull();
   });
 
   it("returns null for a check other than background_worker, even with a last_beat_at detail", () => {
@@ -196,7 +221,7 @@ describe("workerLastSeenFact", () => {
       id: "some_other_check",
       details: [{ key: "last_beat_at", value: "2026-08-03T12:42:24.000Z" }],
     });
-    expect(workerLastSeenFact(check, generatedAt)).toBeNull();
+    expect(workerLastSeen(check, generatedAt)).toBeNull();
   });
 
   it("returns null when the heartbeat is under a minute old", () => {
@@ -204,7 +229,7 @@ describe("workerLastSeenFact", () => {
       id: "background_worker",
       details: [{ key: "last_beat_at", value: "2026-08-03T12:54:00.000Z" }],
     });
-    expect(workerLastSeenFact(check, generatedAt)).toBeNull();
+    expect(workerLastSeen(check, generatedAt)).toBeNull();
   });
 
   it("returns null for an invalid last_beat_at", () => {
@@ -212,7 +237,7 @@ describe("workerLastSeenFact", () => {
       id: "background_worker",
       details: [{ key: "last_beat_at", value: "not-a-date" }],
     });
-    expect(workerLastSeenFact(check, generatedAt)).toBeNull();
+    expect(workerLastSeen(check, generatedAt)).toBeNull();
   });
 
   it("reports the age before the report when a minute or older", () => {
@@ -220,6 +245,34 @@ describe("workerLastSeenFact", () => {
       id: "background_worker",
       details: [{ key: "last_beat_at", value: "2026-08-03T12:42:24.000Z" }],
     });
-    expect(workerLastSeenFact(check, generatedAt)).toBe("Last seen 12 min before this report");
+    expect(workerLastSeen(check, generatedAt)).toBe("12 min before this report");
+  });
+});
+
+describe("healthDetailRows", () => {
+  const generatedAt = "2026-08-03T12:54:24.000Z";
+
+  it("words the worker's last_beat_at as Last seen, in place, when the age is a minute or more", () => {
+    const check = checkRow({
+      id: "background_worker",
+      details: [
+        { key: "reason", value: "stale" },
+        { key: "last_beat_at", value: "2026-08-03T12:42:24.000Z" },
+        { key: "hostname", value: "worker-1" },
+      ],
+    });
+    expect(healthDetailRows(check, TZ, generatedAt)).toEqual([
+      { key: "reason", label: "Reason", value: "Stale" },
+      { key: "last_beat_at", label: "Last seen", value: "12 min before this report" },
+      { key: "hostname", label: "Hostname", value: "worker-1" },
+    ]);
+  });
+
+  it("falls back to the plain date-time when the heartbeat is under a minute old", () => {
+    const iso = "2026-08-03T12:54:00.000Z";
+    const check = checkRow({ id: "background_worker", details: [{ key: "last_beat_at", value: iso }] });
+    expect(healthDetailRows(check, TZ, generatedAt)).toEqual([
+      { key: "last_beat_at", label: "Last beat at", value: formatEventDateTime(iso, TZ) },
+    ]);
   });
 });
