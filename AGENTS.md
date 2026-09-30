@@ -163,6 +163,7 @@ re-attempt that approach without reading why it failed first).
 
 - Run the **full package test suite** for every workspace you changed (e.g. `npm test -w @admitto/admin`, not a single `--run some.test.ts`). A subset Vitest run is for debugging only and does **not** authorize push. Prefer full `npm test` when blast radius is unclear.
 - Run the same gate CI uses for those packages: `npm run build` / typecheck when `.ts`/`.tsx` or tests included in `tsc` changed. Vitest alone is not enough for typecheck: `apps/web` and `apps/admin` both build with `tsc` (CI jobs fail on `TS18047` / `TS2493` even when Vitest is green). Touching admin UI means `npm run build -w @admitto/admin` before push; touching web means `npm run build -w @admitto/web`.
+- Run `npm run lint` (repo root) too. It is `eslint --max-warnings 0`, the exact command CI's lint-and-typecheck job runs, and there is no warning baseline any more: any warning fails CI. `security/detect-object-injection` (server packages), `detect-non-literal-regexp`, `detect-unsafe-regex` and `@typescript-eslint/no-misused-promises` are errors, so fix the code or add a narrow local suppression with a stated reason.
 - Do not push on red. Cite the commands and pass/fail in the handoff.
 
 Two `tsc`-only gotchas Vitest won't catch:

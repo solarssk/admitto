@@ -4166,7 +4166,7 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(html).toContain("<td>Active</td><td>4</td><td>80%</td>");
     expect(html).toContain("<td>Voided</td><td>1</td><td>20%</td>");
     expect(html).toContain("<td>Expired</td><td>0</td><td>0%</td>");
-    expect(html).toContain("<td>Failed (unexpected)</td><td>0</td><td>0%</td>");
+    expect(html).not.toContain("Failed (unexpected)");
     expect(html).toContain("<td>Managed</td><td>4</td><td>80%</td>");
     expect(html).toContain("<td>Removed from provider</td><td>1</td><td>20%</td>");
   });

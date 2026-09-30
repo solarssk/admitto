@@ -29,7 +29,7 @@ The batch completes with a recorded status for every attempted delivery - includ
 | Recipient option | Meaning |
 |---|---|
 | All attendees | Every attendee in the event. Use carefully because previous delivery does not exclude a person. |
-| No delivery for this template | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, rejected, or cancelled attempts do not count as successful delivery. |
+| Not yet emailed | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, rejected, or cancelled attempts do not count as successful delivery. |
 | By attendance status | Attendees whose current attendance status matches the selected status. |
 | By ticket type | Attendees whose stored ticket type matches the selected configured type. |
 | By wallet status | Attendees whose wallet pass matches the selected status, as last known: registered (last known) (registered on at least one wallet platform this event offers, as of the last check), previously registered (last known) (has real installation history but isn't registered on an offered platform any more - either genuinely removed, or its platform has since been turned off in Wallet settings), or never installed. The same three-way split as Reports' Wallets tab "Registration state (last known)" card. |

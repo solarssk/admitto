@@ -8,7 +8,7 @@ Push a short custom message to attendees' already-installed Apple Wallet or Goog
 
 ## Before you start
 
-The event's Wallet integration must be configured and working (see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)), and at least some attendees must have an active wallet pass on this event - the recipient count is every attendee with an issued, non-voided pass, whether or not they've actually added it to a phone yet. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so a queued send leaves the queue.
+The event's Wallet integration must be configured and working (see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)), and at least some attendees must have an active wallet pass on this event - the recipient count is every attendee with an active pass (voided and expired passes are left out), whether or not they've actually added it to a phone yet. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so a queued send leaves the queue.
 
 ## Steps
 

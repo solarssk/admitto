@@ -13,7 +13,7 @@ Decide which information is necessary for this event. Choose a stable field name
 ## Steps
 
 1. Open **Requirements**, then find **Custom attendee fields**.
-2. Select **Add custom field**.
+2. Select **Add field**.
 3. Enter a clear **Display label**.
 4. Review the generated field ID. It is the source field used by imports and references.
 5. Add an optional description when operators need context.

@@ -191,7 +191,7 @@ Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/a
 - Apple Silicon via Docker Desktop
 
 Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
-Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention).
+Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention, wallet sync, event-wide wallet clean-up, and wallet pass expiry).
 See [deploy/README.md](deploy/README.md).
 
 ## Repo layout

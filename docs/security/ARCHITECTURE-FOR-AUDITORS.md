@@ -113,7 +113,7 @@ The table below lists every event that causes Admitto to do something, for a rev
 | Retention window elapses (sessions, trusted devices, security audit log, mail-body snapshots) | Automatic - the worker, on a fixed interval | Purge or nullify the expired rows | Reduces what's retained without staff action; see the Retention table in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
 
-There is currently **no date-triggered automation** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one.
+There is currently **no date-triggered automation of attendee-facing messages** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one. The one date-driven job is wallet pass expiry: when an event's **Pass expiration** is set to expire when the event ends, the worker marks its passes Expired once the event is over, without contacting the wallet provider.
 
 ---
 

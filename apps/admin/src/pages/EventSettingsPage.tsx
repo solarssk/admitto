@@ -514,7 +514,7 @@ function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPasses
     return {
       title: "Archive this event?",
       message:
-        "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this." +
+        "This event will become fully read-only, including check-in, and hidden from default event lists. Attendee data is kept. Only a superadmin can undo this." +
         walletHint,
       confirmLabel: "Archive",
       confirmVariant: "danger",

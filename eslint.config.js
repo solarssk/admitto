@@ -54,7 +54,9 @@ const typeAwareFollowUpRules = {
 // suppressions. New dynamic filesystem filenames must now fail lint rather than add debt.
 // `detect-object-injection` is an error for packages/*/src/**/*.ts too (the React/TSX config
 // below keeps it off): the two computed-key lookups left there read from a fixed key set and each
-// carries a narrow local suppression saying which one.
+// carries a narrow local suppression saying which one. It is NOT enforced for apps/*/src (the web
+// server and the admin SPA): apps/web alone has about 80 computed-key lookups that have not been
+// audited yet, so this rule does not cover the main server.
 // `detect-non-literal-regexp` is an error everywhere: the few string-built RegExps left are audited
 // and each carries a narrow local suppression (compilePattern() in the bounce parser, which only
 // accepts build-time fragments, and two copies of a static constant in the placeholder highlighter).

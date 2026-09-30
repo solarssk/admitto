@@ -15,7 +15,7 @@ Open the correct event and confirm its time zone. Before archiving, finish check
 ### Review and export reports
 
 1. Open **Reports**.
-2. Review compact KPI tiles, the hourly admissions chart, **Attendance confirmation**, **Check-in method**, **By device**, ticket-type breakdowns, **By operator**, and the admission log.
+2. Review compact KPI tiles, the hourly admissions chart, **Attendance confirmation**, **Check-in method**, **By device**, ticket-type breakdowns, **By operator**, and the admission log (newest admission first).
 3. Treat **By operator** and the admission log as the authenticated operator who performed the check-in (staff account), not only a self-declared device label.
 4. Admission log and CSV/PDF exports also show which event-day items were issued to each admitted attendee.
 5. Apply filters when you need a narrower result.

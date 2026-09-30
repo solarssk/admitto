@@ -16,8 +16,10 @@ Before `git push`, opening a PR, or telling Filip that CI should be green:
    `npm run build -w @admitto/web` (or equivalent `tsc`) because test files are included in the
    web `tsconfig` and Vitest can pass while `tsc` fails. Touching admin UI means
    `npm run build -w @admitto/admin` before push.
-3. **Do not push on red.** Fix first, then push.
-4. Coverage-only commits still need the suites that generate that coverage (admin + web as applicable).
+3. **Run `npm run lint` at the repo root.** It is `eslint --max-warnings 0` (what CI runs); there is
+   no warning baseline, so any warning fails CI.
+4. **Do not push on red.** Fix first, then push.
+5. Coverage-only commits still need the suites that generate that coverage (admin + web as applicable).
 5. **After the final diff in a session:** re-run the full package gate(s). Passing a subset earlier
    in the chat does not count.
 6. **In the handoff to Filip before/with push:** cite the exact commands run and that they passed.

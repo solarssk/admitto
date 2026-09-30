@@ -155,7 +155,7 @@ export function EventArchivingPanel() {
     view === "active" ? "Active events will appear here." : "Events you archive will appear here.";
 
   const restoreMessage = confirmAction
-    ? `Restore "${confirmAction.event.title}" to active events? Edits will be allowed again.`
+    ? `"${confirmAction.event.title}" will become active again. Editing and check-in will be allowed, and it will show up in default event lists.`
     : "";
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
@@ -344,7 +344,7 @@ export function EventArchivingPanel() {
         title={confirmAction?.type === "archive" ? "Archive event" : "Restore event"}
         message={
           confirmAction?.type === "archive"
-            ? "This event will be hidden and read-only. Data is preserved. A superadmin can restore it later."
+            ? "This event will become fully read-only, including check-in, and hidden from default event lists. Attendee data is kept. Only a superadmin can undo this."
             : restoreMessage
         }
         confirmLabel={confirmAction?.type === "archive" ? "Archive" : "Restore"}

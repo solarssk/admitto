@@ -77,9 +77,12 @@ test('build-diff.jq leaves lockfiles out by name and marks a file without a patc
     { filename: 'package-lock.json', patch: '@@ x' },
     { filename: 'apps/a.ts', patch: '@@ -1 +1 @@\n-a\n+b' },
     { filename: 'img/x.png' },
+    { filename: 'docs/new.md', previous_filename: 'docs/old.md', status: 'renamed', changes: 0 },
   ])
   assert.match(out, /^EXCLUDED FROM THIS REVIEW .*package-lock\.json/)
   assert.doesNotMatch(out, /diff --git a\/package-lock\.json/)
   assert.match(out, /diff --git a\/apps\/a\.ts b\/apps\/a\.ts\n@@ -1 \+1 @@/)
   assert.match(out, /diff --git a\/img\/x\.png b\/img\/x\.png\nUNAVAILABLE:/)
+  // A pure rename has no patch because nothing changed; it must not read as an unreviewable file.
+  assert.match(out, /diff --git a\/docs\/old\.md b\/docs\/new\.md\n\(renamed without content changes\)/)
 })

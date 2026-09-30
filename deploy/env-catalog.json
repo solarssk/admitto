@@ -657,7 +657,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Check-in live-updates stream: max stream requests (connects and reconnects) per operator per event within the window. Default 120. Positive integer; anything else falls back to the default with a boot warning. Read at startup, so a change needs a container restart, not a rebuild. Separate from the concurrency limits below."
+      "summary": "Check-in live-updates stream: max stream requests (connects and reconnects) per operator per event within the window. Default 120. Positive integer; anything else falls back to the default with a boot warning. Read at startup, so a change needs the container recreated (for example `docker compose up -d`; a plain restart does not re-read `.env`), not a rebuild. Separate from the concurrency limits below."
     },
     {
       "name": "CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR",

@@ -67,7 +67,7 @@ Without these, containers exit or Health stays red. **None of them are set from 
 | `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |
 | `/backups` on **db-backup** | volume | Nightly SQL dumps (`migration_backups`). Not mounted on `migrate` / `app`. |
 | `/app/uploads` writable by uid **1000** | volume | Branding storage. Health → file storage `not_writable` if wrong ownership. |
-| `worker` service | compose | Mail drain, import/export, bounce, retention. One replica. |
+| `worker` service | compose | Mail drain, import/export, bounce, retention, wallet sync, event-wide wallet clean-up and wallet pass expiry. One replica. |
 
 Copy `.env.example` → `.env`, fill the table above, then:
 
