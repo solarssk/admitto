@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The loading spinner now takes the colour of the button or text around it instead of a fixed blue, so it is visible on primary buttons and follows the brand colour elsewhere, and skeleton placeholders use their own colour tokens.
+- The Attendees list, the attendee page and the Add attendee dialog now use the shared loading standard: the list shows its placeholder only if the first load takes longer than a fraction of a second and keeps it long enough not to flicker, later searches and page changes keep the rows on screen and dim them with a thin bar along the top of the list (rows cannot be clicked while it refreshes), the list count no longer says "Loading…", and the Send tickets, Check in, Apply, Add, Save, Reload, Export and wallet actions show a spinner in place of the icon and keep their size instead of swapping their text. Add attendee shows one loader for the ticket types and custom fields instead of two lines of text.
 
 ### Fixed
 

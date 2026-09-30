@@ -22,6 +22,18 @@ describe("TopProgressBar", () => {
     expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
   });
 
+  it("sits on the viewport by default and on its container when asked", () => {
+    const { rerender } = render(<TopProgressBar active />);
+    expect(screen.getByRole("status").className).toBe("at-topbar");
+    rerender(<TopProgressBar active placement="container" />);
+    expect(screen.getByRole("status").className).toBe("at-topbar at-topbar--container");
+  });
+
+  it("announces the label it is given", () => {
+    render(<TopProgressBar active placement="container" label="Refreshing attendees" />);
+    expect(screen.getByRole("status", { name: "Refreshing attendees" })).toBeTruthy();
+  });
+
   it("says nothing more than the bar unless it is given a note", () => {
     render(<TopProgressBar active />);
     expect(screen.getAllByRole("status")).toHaveLength(1);

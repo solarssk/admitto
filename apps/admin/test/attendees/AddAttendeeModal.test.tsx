@@ -25,22 +25,44 @@ afterEach(() => {
 });
 
 describe("AddAttendeeModal delayed loading", () => {
-  it("shows both loading hints once the fetches have genuinely taken a moment", () => {
+  const loader = () => screen.queryByRole("status", { name: "Loading fields" });
+
+  function renderWithPendingFetches() {
     mockFetchEventCustomFields.mockImplementation(() => new Promise(() => {}));
     mockFetchTicketTypes.mockImplementation(() => new Promise(() => {}));
-    try {
-      vi.useFakeTimers();
-      render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-      expect(screen.getByText("Loading attribute fields…")).toBeTruthy();
-      expect(screen.getByText("Loading ticket types…")).toBeTruthy();
-    } finally {
-      // Never-resolving mocks would otherwise leak into every later test in this file.
-      mockFetchEventCustomFields.mockResolvedValue([]);
-      mockFetchTicketTypes.mockResolvedValue([]);
-    }
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+  }
+
+  afterEach(() => {
+    // Never-resolving mocks would otherwise leak into every later test in this file.
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+  });
+
+  it("shows nothing for the first 200ms and one loader once the fetches have genuinely taken a moment", () => {
+    renderWithPendingFetches();
+    act(() => {
+      vi.advanceTimersByTime(199);
+    });
+    expect(loader()).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(loader()).toBeTruthy();
+    expect(screen.queryByText(/Loading attribute fields/)).toBeNull();
+    expect(screen.queryByText(/Loading ticket types/)).toBeNull();
+  });
+
+  it("holds the ticket type select back while the loader is up, so nobody picks from a half-loaded list", () => {
+    renderWithPendingFetches();
+    const select = () => screen.getByRole("button", { name: /^Ticket type,/ }) as HTMLButtonElement;
+    expect(select().disabled).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(select().disabled).toBe(true);
   });
 });
 
@@ -306,7 +328,7 @@ describe("AddAttendeeModal", () => {
     );
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
-    await screen.findByText("Loading ticket types…");
+    await screen.findByRole("status", { name: "Loading fields" });
     fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
     fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
@@ -318,8 +340,9 @@ describe("AddAttendeeModal", () => {
     );
 
     resolveTicketTypes([]);
+    // The loader has been up since 200ms, so it stays for its 400ms minimum before it leaves.
     await waitFor(() => {
-      expect(screen.queryByText("Loading ticket types…")).toBeNull();
+      expect(screen.queryByRole("status", { name: "Loading fields" })).toBeNull();
     });
     expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
       false,

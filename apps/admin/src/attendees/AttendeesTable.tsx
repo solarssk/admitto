@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, TopProgressBar } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type {
   AttendeeMailStatusFilter,
@@ -21,7 +21,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { MultiSelect } from "../components/MultiSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
@@ -35,7 +35,7 @@ import "./attendees.css";
 function AttendeesTableSkeleton({ walletColumnVisible }: Readonly<{ walletColumnVisible: boolean }>) {
   return (
     <div className="attendees-table-wrap attendees-list-table-wrap" aria-busy="true">
-      <span className="sr-only">Loading attendees…</span>
+      <output className="sr-only">Loading attendees</output>
       <table className="table attendees-table-v2" aria-hidden="true">
         <thead>
           <tr>
@@ -68,7 +68,7 @@ function AttendeesTableSkeleton({ walletColumnVisible }: Readonly<{ walletColumn
 function AttendeesCardsSkeleton() {
   return (
     <div className="attendees-cards" aria-busy="true">
-      <span className="sr-only">Loading attendees…</span>
+      <output className="sr-only">Loading attendees</output>
       {Array.from({ length: 4 }, (_, i) => (
         <div className="attendees-card" key={i}>
           <Skeleton variant="rect" height={64} />
@@ -441,7 +441,9 @@ function BulkSendTicketsMenuItem({
   return (
     <MoreActionsMenuItem
       icon="send"
-      label={bulkSendBusy ? "Sending…" : "Send tickets"}
+      label="Send tickets"
+      loading={bulkSendBusy}
+      loadingLabel="Sending…"
       hint={`Email tickets to ${attendeeCount(selectedCount)}`}
       disabled={archived || bulkSendBusy || !canBulkSend}
       tooltip={bulkSendTicketsTooltip(archived, canBulkSend)}
@@ -549,7 +551,9 @@ function BulkWalletMenuItems({
         <MoreActionsMenuItem
           icon="wallet-off"
           variant="warning"
-          label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
+          label="Void wallet pass"
+          loading={bulkVoidWalletBusy}
+          loadingLabel="Voiding wallet passes…"
           hint={`Make the pass invalid for ${attendeeCount(walletPassCount)}`}
           disabled={bulkVoidWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -562,7 +566,9 @@ function BulkWalletMenuItems({
       {walletPlatforms.any && (
         <MoreActionsMenuItem
           icon="refresh-dot"
-          label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
+          label="Push updates"
+          loading={bulkReissueWalletBusy}
+          loadingLabel="Pushing updates…"
           hint={`Send the latest details to ${attendeeCount(walletPassCount)}`}
           disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(archived, canBulkWallet)}
@@ -575,7 +581,9 @@ function BulkWalletMenuItems({
       {walletConfigured && (
         <MoreActionsMenuItem
           icon="cloud-download"
-          label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
+          label="Refresh status"
+          loading={bulkRefreshWalletStatusBusy}
+          loadingLabel="Refreshing status…"
           hint={`Get the latest status for ${attendeeCount(walletPassCount)}`}
           disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -589,7 +597,9 @@ function BulkWalletMenuItems({
         <MoreActionsMenuItem
           icon="cloud-off"
           variant="danger"
-          label={bulkRemoveWalletBusy ? "Removing from provider…" : "Remove from provider"}
+          label="Remove from provider"
+          loading={bulkRemoveWalletBusy}
+          loadingLabel="Removing from provider…"
           hint="Delete voided or expired passes, keep the history"
           disabled={bulkRemoveWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -603,7 +613,9 @@ function BulkWalletMenuItems({
         <MoreActionsMenuItem
           icon="trash"
           variant="danger"
-          label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
+          label="Delete wallet pass"
+          loading={bulkDeleteWalletBusy}
+          loadingLabel="Deleting wallet passes…"
           hint={`Delete the pass and its history for ${attendeeCount(walletPassCount)}`}
           disabled={bulkDeleteWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -809,7 +821,9 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="qrcode-off"
             variant="warning"
-            label={bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}
+            label="Revoke check-in"
+            loading={bulkRevokeCheckInBusy}
+            loadingLabel="Revoking check-in…"
             hint={`Undo check-in for ${attendeeCount(revokableCheckInCount)}`}
             disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
             tooltip={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
@@ -827,7 +841,9 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="package"
             variant="warning"
-            label={bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}
+            label="Revoke items"
+            loading={bulkRevokeItemsBusy}
+            loadingLabel="Revoking items…"
             hint={`Reset all issued items for ${attendeeCount(revokableItemsCount)}`}
             disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
             tooltip={bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems)}
@@ -849,7 +865,9 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="ban"
             variant="danger"
-            label={bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}
+            label="Revoke pass"
+            loading={bulkRevokePassBusy}
+            loadingLabel="Revoking pass…"
             hint={`Block check-in for ${attendeeCount(revokablePassCount)}`}
             disabled={archived || bulkRevokePassBusy || !canRevokePass}
             tooltip={bulkRevokePassTooltip(archived, canRevokePass)}
@@ -1042,9 +1060,11 @@ function BulkBar({
                 variant="ghost"
                 icon={<i className="ti ti-send" aria-hidden="true" />}
                 {...guard}
+                loading={bulkSendBusy}
+                loadingLabel="Sending…"
                 onClick={onBulkSendTickets}
               >
-                {bulkSendBusy ? "Sending…" : "Send tickets"}
+                Send tickets
               </Button>
             )}
           </ArchivedGuard>
@@ -1060,9 +1080,11 @@ function BulkBar({
               variant="ghost"
               icon={<i className="ti ti-qrcode" aria-hidden="true" />}
               {...guard}
+              loading={bulkCheckInBusy}
+              loadingLabel="Checking in…"
               onClick={onBulkCheckIn}
             >
-              {bulkCheckInBusy ? "Checking in…" : "Check in"}
+              Check in
             </Button>
           )}
         </ArchivedGuard>
@@ -1375,25 +1397,15 @@ function FilterToolbar({
   );
 }
 
-/** Desktop table, mobile card list (with its own "Select all" row, since there's no header
- * checkbox to reuse), the empty state, or the loading skeleton — whichever applies. */
-function AttendeesListContent({
-  loading,
-  hasLoadedOnce,
-  items,
-  isDesktop,
-  isUnfilteredEmpty,
-  selectedIds,
-  onToggleRow,
-  onToggleSelectAll,
-  onViewAttendee,
-  sortBy,
-  sortDir,
-  onSortChange,
-  ticketTypes,
-  eventTimezone,
-  walletPlatforms,
-}: Readonly<{
+/** Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
+ * column's own cell (WalletColumnCell) already reads real Samsung registration data the same
+ * way it does Apple/Google's, so the column itself must still appear for an event that enables
+ * Samsung alone. */
+function hasWalletColumn(walletPlatforms: EnabledWalletPlatforms): boolean {
+  return walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
+}
+
+type AttendeesListContentProps = Readonly<{
   loading: boolean;
   hasLoadedOnce: boolean;
   items: AttendeeRowDto[];
@@ -1409,35 +1421,74 @@ function AttendeesListContent({
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
   walletPlatforms: EnabledWalletPlatforms;
-}>): ReactNode {
-  // Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
-  // column's own cell (WalletColumnCell) already reads real Samsung registration data the same
-  // way it does Apple/Google's, so the column itself must still appear for an event that enables
-  // Samsung alone.
-  const walletColumnVisible = walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
-  // Only the very first load ever (never-loaded, items always [] at that point) gets the
-  // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
-  // dim-in-place treatment as a non-empty refetch instead of flashing the skeleton again.
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash the
-  // skeleton on and off faster than it can register as loading — show it only once the fetch
-  // has genuinely taken a moment.
-  const showLoadingSkeleton = useDelayedLoading(loading && !hasLoadedOnce);
-  if (loading && !hasLoadedOnce) {
-    return whenShown(
-      showLoadingSkeleton,
-      isDesktop ? (
-        <AttendeesTableSkeleton walletColumnVisible={walletColumnVisible} />
-      ) : (
-        <AttendeesCardsSkeleton />
-      ),
+}>;
+
+/** Desktop table, mobile card list (with its own "Select all" row, since there's no header
+ * checkbox to reuse), the empty state, or the loading skeleton — whichever applies.
+ *
+ * Two waits, each behind `useLoadingGate` (indicator after 200ms, at least 400ms once shown):
+ * - the very first load ever (never-loaded, items always [] at that point) shows the skeleton. Until
+ *   its 200ms have passed the skeleton is in the page but invisible, so the space is already
+ *   reserved and nothing jumps when it appears or when the rows replace it. A later filter/search
+ *   that also lands on zero matches is a refetch, not a first load, and never flashes the skeleton.
+ * - every later fetch keeps the rows on screen: clicks are blocked at once (stale rows must not be
+ *   acted on), and after 200ms the rows are dimmed and a thin bar runs along the top of the list. */
+function AttendeesListContent(props: AttendeesListContentProps): ReactNode {
+  const { loading, hasLoadedOnce, isDesktop, walletPlatforms } = props;
+  const firstLoad = useLoadingGate(loading && !hasLoadedOnce);
+  const refetch = useLoadingGate(loading && hasLoadedOnce);
+
+  if (!firstLoad.showContent) {
+    return (
+      <div key="skeleton" className={firstLoad.showIndicator ? "at-fade-in" : "at-loading-hold"}>
+        {isDesktop ? (
+          <AttendeesTableSkeleton walletColumnVisible={hasWalletColumn(walletPlatforms)} />
+        ) : (
+          <AttendeesCardsSkeleton />
+        )}
+      </div>
     );
   }
 
+  return (
+    <div key="content" className="attendees-list-region at-fade-in">
+      <TopProgressBar active={refetch.showIndicator} placement="container" label="Refreshing attendees" />
+      <AttendeesListRows {...props} busy={loading} dimmed={refetch.showIndicator} />
+    </div>
+  );
+}
+
+function AttendeesListRows({
+  busy,
+  dimmed,
+  items,
+  isDesktop,
+  isUnfilteredEmpty,
+  selectedIds,
+  onToggleRow,
+  onToggleSelectAll,
+  onViewAttendee,
+  sortBy,
+  sortDir,
+  onSortChange,
+  ticketTypes,
+  eventTimezone,
+  walletPlatforms,
+}: Readonly<
+  Omit<AttendeesListContentProps, "loading" | "hasLoadedOnce"> & {
+    /** A fetch is in flight: block clicks on the stale rows and mark the list busy. */
+    busy: boolean;
+    /** The fetch has taken long enough (see `useLoadingGate`) to dim the stale rows. */
+    dimmed: boolean;
+  }
+>): ReactNode {
+  const walletColumnVisible = hasWalletColumn(walletPlatforms);
+  const loadingClass = [busy && " attendees-table-wrap--loading", dimmed && " attendees-table-wrap--dim"]
+    .filter(Boolean)
+    .join("");
   if (items.length === 0) {
     return (
-      <div
-        className={`attendees-table-wrap attendees-list-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
-      >
+      <div className={`attendees-table-wrap attendees-list-table-wrap${loadingClass}`}>
         {isUnfilteredEmpty ? (
           <EmptyState
             icon={<i className="ti ti-users" aria-hidden="true" />}
@@ -1459,7 +1510,7 @@ function AttendeesListContent({
 
   if (!isDesktop) {
     return (
-      <div className={`attendees-cards${loading ? " attendees-table-wrap--loading" : ""}`} aria-busy={loading}>
+      <div className={`attendees-cards${loadingClass}`} aria-busy={busy}>
         <div className="attendees-cards__selectall">
           <Checkbox label="Select all" checked={allSelected} onChange={onToggleSelectAll} />
         </div>
@@ -1480,10 +1531,7 @@ function AttendeesListContent({
   }
 
   return (
-    <div
-      className={`attendees-table-wrap attendees-list-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
-      aria-busy={loading}
-    >
+    <div className={`attendees-table-wrap attendees-list-table-wrap${loadingClass}`} aria-busy={busy}>
       <table className="table attendees-table-v2">
         <thead>
           <tr>
@@ -1573,16 +1621,10 @@ function AttendeesListContent({
 }
 
 /** "0 attendees" is a confirmed-empty claim, not a loading placeholder — it must never render
- * while the first fetch (which "total" hasn't been set from yet) is still in flight, even during
- * the no-flash grace window before showLoadingText itself flips true (Sonar/PO review). */
-function footSummary(
-  isInitialLoad: boolean,
-  showLoadingText: boolean,
-  total: number,
-  from: number,
-  to: number,
-): string {
-  if (isInitialLoad) return showLoadingText ? "Loading…" : "";
+ * while the first fetch (which "total" hasn't been set from yet) is still in flight. The list above
+ * already shows the skeleton then, so the count stays empty instead of repeating it as text. */
+function footSummary(isInitialLoad: boolean, total: number, from: number, to: number): string {
+  if (isInitialLoad) return "";
   if (total === 0) return "0 attendees";
   return `Showing ${from}–${to} of ${total}`;
 }
@@ -1719,13 +1761,9 @@ export function AttendeesTable({
   // counts here and is skipped server-side instead (reported in the result toast).
   const walletPassCount = selectedRows.filter((row) => row.wallet_status !== null).length;
   const canBulkWallet = walletPassCount > 0;
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // this text on and off faster than it can register as loading — show it only once the
-  // fetch has genuinely taken a moment. isInitialLoad itself (not the delayed derivative)
-  // gates footSummary's 3-way branch so a fast response never renders "0 attendees" against
-  // a "total" that hasn't been set from a real response yet.
+  // isInitialLoad gates footSummary's 3-way branch so a fast response never renders "0 attendees"
+  // against a "total" that hasn't been set from a real response yet.
   const isInitialLoad = loading && items.length === 0;
-  const showFooterLoadingText = useDelayedLoading(isInitialLoad);
 
   return (
     <Card padded={false}>
@@ -1827,7 +1865,7 @@ export function AttendeesTable({
       />
       <div className="attendees-table-foot">
         <div className="attendees-table-foot__summary">
-          <span>{footSummary(isInitialLoad, showFooterLoadingText, total, from, to)}</span>
+          <span>{footSummary(isInitialLoad, total, from, to)}</span>
           <div className="attendees-table-foot__pagesize">
             <label htmlFor="attendees-rows-per-page">Rows per page</label>
             <SearchableSelect

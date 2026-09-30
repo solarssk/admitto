@@ -19,8 +19,6 @@ const ALLOWED: Record<Rule, Counts> = {
   },
   "bare-loading-text": {
     "apps/admin/src/account/AccountPage.tsx": 1,
-    "apps/admin/src/attendees/AddAttendeeModal.tsx": 2,
-    "apps/admin/src/attendees/AttendeesTable.tsx": 3,
     "apps/admin/src/communication/DeliveryDetailsModal.tsx": 1,
     "apps/admin/src/communication/DeliveryLogTable.tsx": 1,
     "apps/admin/src/communication/SentMessagePreviewModal.tsx": 1,
@@ -56,8 +54,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/settings/TicketTypesCard.tsx": 1,
   },
   "busy-label-swap": {
-    "apps/admin/src/attendees/AddAttendeeModal.tsx": 1,
-    "apps/admin/src/attendees/AttendeesTable.tsx": 12,
     "apps/admin/src/checkin/AttendeeCard.tsx": 1,
     "apps/admin/src/checkin/NoteModal.tsx": 1,
     "apps/admin/src/communication/CommunicationSendPanel.tsx": 2,
@@ -74,8 +70,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/identity/CfAccessEditor.tsx": 2,
     "apps/admin/src/identity/IdentityMappingRepeater.tsx": 1,
     "apps/admin/src/identity/IdentityProviderEditor.tsx": 2,
-    "apps/admin/src/pages/AttendeeDetailPage.tsx": 5,
-    "apps/admin/src/pages/AttendeesPage.tsx": 8,
     "apps/admin/src/pages/CommunicationPage.tsx": 2,
     "apps/admin/src/pages/DeviceLabelStep.tsx": 1,
     "apps/admin/src/pages/EventOverviewPage.tsx": 3,

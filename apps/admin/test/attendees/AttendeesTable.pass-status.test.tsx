@@ -207,7 +207,11 @@ describe("AttendeesTable check-in column (#359), two stacked lines", () => {
 });
 
 describe("AttendeesTable loading states (#271)", () => {
-  it("dims the existing rows and marks the table busy while re-fetching", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("blocks the existing rows and marks the table busy at once while re-fetching", () => {
     const { container } = render(
       <AttendeesTable {...tableProps} loading items={[baseRow]} />,
     );
@@ -215,6 +219,27 @@ describe("AttendeesTable loading states (#271)", () => {
     const wrap = container.querySelector(".attendees-table-wrap");
     expect(wrap?.classList.contains("attendees-table-wrap--loading")).toBe(true);
     expect(wrap?.getAttribute("aria-busy")).toBe("true");
+    // Not dimmed yet, and no bar: a refetch that answers within 200ms never shows either.
+    expect(wrap?.classList.contains("attendees-table-wrap--dim")).toBe(false);
+    expect(screen.queryByRole("status", { name: "Refreshing attendees" })).toBeNull();
+  });
+
+  it("dims the rows and runs a bar along the list once the re-fetch has taken 200ms", () => {
+    vi.useFakeTimers();
+    const { container } = render(<AttendeesTable {...tableProps} loading items={[baseRow]} />);
+    act(() => {
+      vi.advanceTimersByTime(199);
+    });
+    expect(container.querySelector(".attendees-table-wrap--dim")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(container.querySelector(".attendees-table-wrap--dim")).not.toBeNull();
+    const bar = screen.getByRole("status", { name: "Refreshing attendees" });
+    expect(bar.className).toContain("at-topbar--container");
+    // The bar rides the top edge of the list region, which is the positioned ancestor.
+    expect(bar.parentElement?.classList.contains("attendees-list-region")).toBe(true);
   });
 
   it("does not dim the rows once loading finishes", () => {
@@ -224,34 +249,84 @@ describe("AttendeesTable loading states (#271)", () => {
 
     const wrap = container.querySelector(".attendees-table-wrap");
     expect(wrap?.classList.contains("attendees-table-wrap--loading")).toBe(false);
+    expect(wrap?.classList.contains("attendees-table-wrap--dim")).toBe(false);
     expect(wrap?.getAttribute("aria-busy")).toBe("false");
   });
 
-  it("shows a neutral Loading… footer instead of falsely claiming 0 attendees while re-fetching", () => {
-    // useDelayedLoading only shows the text once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
-    // must be installed before render so the hook's setTimeout is one of ours.
+  it("keeps the footer empty instead of claiming 0 attendees while loading with nothing on screen", () => {
+    // The list above already shows the skeleton then, so the footer neither repeats it as text nor
+    // reads "0 attendees" against a total that has not been set from a real response yet.
     vi.useFakeTimers();
     render(<AttendeesTable {...tableProps} loading items={[]} total={0} />);
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.queryByText("0 attendees")).toBeNull();
   });
 
-  it("never claims '0 attendees' during the no-flash grace window of the very first load, even before Loading… itself appears", () => {
-    // Regression test: footSummary must gate on the raw first-load condition, not the
-    // delayed flag alone — otherwise, for the first ~200ms of every single page load
-    // (fast or slow), "total" is still its pre-fetch default (0) and the footer would
-    // wrongly read "0 attendees" instead of showing nothing until Loading… is warranted.
+  it("never claims '0 attendees' during the very first load, however long the wait has been", () => {
+    // Regression test: footSummary must gate on the raw first-load condition - otherwise, for as
+    // long as the fetch is in flight, "total" is still its pre-fetch default (0) and the footer
+    // would wrongly read "0 attendees" instead of showing nothing.
     vi.useFakeTimers();
     render(
       <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
     );
-    // Deliberately NOT advancing timers past 200ms — this is the pre-delay window.
     expect(screen.queryByText("0 attendees")).toBeNull();
-    expect(screen.queryByText("Loading…")).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.queryByText("0 attendees")).toBeNull();
+  });
+
+  it("holds the skeleton's space invisibly for 200ms, then fades it in", () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    const holder = () => container.querySelector("table[aria-hidden='true']")?.closest("[class*='at-']");
+    expect(holder()?.className).toContain("at-loading-hold");
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(holder()?.className).toContain("at-fade-in");
+    expect(holder()?.className).not.toContain("at-loading-hold");
+  });
+
+  it("never shows the skeleton for a first load that answers within 200ms", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading={false} items={[baseRow]} total={1} />);
+    expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
+    expect(container.querySelector(".attendees-list-region")?.className).toContain("at-fade-in");
+    expect(screen.getByRole("table")).toBeTruthy();
+  });
+
+  it("keeps a skeleton that did appear for at least 400ms before the rows replace it", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading={false} items={[baseRow]} total={1} />);
+    // The skeleton has been up for 0ms of its 400ms minimum.
+    expect(container.querySelector("table[aria-hidden='true']")).not.toBeNull();
+    expect(screen.queryByText(baseRow.name)).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
+    expect(screen.getByText(baseRow.name)).toBeTruthy();
   });
 
   it("shows the shimmer skeleton only on the very first load, not a later filter landing on zero matches", () => {
@@ -265,8 +340,16 @@ describe("AttendeesTable loading states (#271)", () => {
     expect(container.querySelector("table[aria-hidden='true']")).toBeTruthy();
     expect(screen.queryByText("No matches")).toBeNull();
 
-    // Once the first load has settled, a later filter/search landing on zero matches dims
-    // the empty state in place instead of flashing the skeleton again.
+    // The first load has settled; the skeleton leaves after its 400ms minimum.
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading={false} items={[]} total={0} />);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
+    expect(screen.getByText("No matches")).toBeTruthy();
+
+    // A later filter/search landing on zero matches dims the empty state in place instead of
+    // flashing the skeleton again.
     rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading items={[]} total={0} />);
     expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
     expect(screen.getByText("No matches")).toBeTruthy();

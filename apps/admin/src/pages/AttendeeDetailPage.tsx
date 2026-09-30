@@ -53,7 +53,7 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import {
   formatAdmissionDisplayParts,
@@ -1499,9 +1499,11 @@ function AttendeeNotesTab({
             variant="secondary"
             size="sm"
             disabled={mutationsDisabled || !draft.trim() || submitting}
+            loading={submitting}
+            loadingLabel="Adding…"
             onClick={onSubmit}
           >
-            {submitting ? "Adding…" : "Add"}
+            Add
           </Button>
         </div>
       </div>
@@ -1568,9 +1570,11 @@ function AttendeeNotesTab({
                           editState.submitting ||
                           editState.draft.trim() === note.body.trim()
                         }
+                        loading={editState.submitting}
+                        loadingLabel="Saving…"
                         onClick={onSaveEdit}
                       >
-                        {editState.submitting ? "Saving…" : "Save"}
+                        Save
                       </Button>
                     </div>
                   </div>
@@ -2517,10 +2521,11 @@ export function AttendeeDetailPage() {
     }
   }
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the skeleton on and off faster than it can register as loading — show it only once
-  // the fetch has genuinely taken a moment.
-  const showLoadingSkeleton = useDelayedLoading(loading);
+  // Only the first load of an attendee has nothing to show yet. A fetch that resolves near-instantly
+  // (localhost, a warm cache) shows no skeleton at all; a slower one shows it for at least 400ms so it
+  // never flickers, and until its 200ms have passed it is in the page but invisible, so the space is
+  // already reserved and nothing jumps.
+  const { showIndicator: showLoadingSkeleton, showContent } = useLoadingGate(loading && !detail);
 
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
@@ -2537,13 +2542,13 @@ export function AttendeeDetailPage() {
     }
   };
 
-  if (loading && !detail) {
-    return whenShown(
-      showLoadingSkeleton,
-      <div className="attendee-detail-page screen">
+  if (!showContent) {
+    return (
+      <div className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`} aria-busy="true">
+        <output className="sr-only">Loading attendee</output>
         <Skeleton variant="text" lines={2} />
         <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
-      </div>,
+      </div>
     );
   }
 
@@ -2820,8 +2825,10 @@ export function AttendeeDetailPage() {
                     size="sm"
                     onClick={() => void handleReload()}
                     disabled={reloading}
+                    loading={reloading}
+                    loadingLabel="Reloading…"
                   >
-                    {reloading ? "Reloading…" : "Reload"}
+                    Reload
                   </Button>
                 }
               >
@@ -2956,8 +2963,8 @@ export function AttendeeDetailPage() {
                 disabled={saving || reloading || staleWrite || !isDirty}
               >
                 {(guard) => (
-                  <Button type="submit" variant="primary" {...guard}>
-                    {saving ? "Saving…" : "Save"}
+                  <Button type="submit" variant="primary" {...guard} loading={saving} loadingLabel="Saving…">
+                    Save
                   </Button>
                 )}
               </ArchivedGuard>
@@ -2987,7 +2994,9 @@ export function AttendeeDetailPage() {
             )}
             <div className="attendee-form__actions">
               <Button type="button" variant="secondary" onClick={() => setResendOpen(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" disabled={resending}>{resending ? "Sending…" : "Send"}</Button>
+              <Button type="submit" variant="primary" disabled={resending} loading={resending} loadingLabel="Sending…">
+                Send
+              </Button>
             </div>
           </form>
         </dialog>

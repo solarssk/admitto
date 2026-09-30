@@ -150,13 +150,13 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Whole screen: app start, session check, switching event | `PageLoader` (logo, 88px) | from the first frame |
 | Panel, card or dialog whose shape is not known | `SectionLoader` (logo, 52px) with `minHeight` | after 200ms |
 | Shape is known: table rows, KPI tiles, forms, a dialog's content | `Skeleton` in the same shape | after 200ms |
-| Data is already on screen and is refetched (filter, search, page) | keep the data, dim it, thin bar on the card | after 200ms |
+| Data is already on screen and is refetched (filter, search, page) | keep the data, block clicks at once, dim it and run `<TopProgressBar placement="container">` along the card | dim and bar after 200ms |
 | Page change | `TopProgressBar`, the old page stays (after 8s it also says it is taking longer than usual, `note`) | after 200ms |
-| The user clicked a button | `<Button loading loadingLabel="Saving…">` | immediately |
+| The user clicked a button | `<Button loading loadingLabel="Saving…">` (a row in a More actions menu: `<MoreActionsMenuItem loading loadingLabel>`) | immediately |
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
 | Long job: send, import, upload | determinate bar with a count or percent | immediately |
 
-Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms). App start also waits until the mark's tick has finished drawing (about 0.65s after the splash appeared, skipped for reduced motion) and then fades the loader out over the already mounted app (250ms) instead of cutting to it. Every logo loader shares one animation clock (`loaderElapsedMs`, aligned with the splash in `main.tsx`), so the tick keeps drawing when one loader replaces another instead of restarting.
+Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms (`at-fade-in`); a skeleton whose 200ms have not passed yet is already in the page but invisible (`at-loading-hold`), so its space is reserved. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms). App start also waits until the mark's tick has finished drawing (about 0.65s after the splash appeared, skipped for reduced motion) and then fades the loader out over the already mounted app (250ms) instead of cutting to it. Every logo loader shares one animation clock (`loaderElapsedMs`, aligned with the splash in `main.tsx`), so the tick keeps drawing when one loader replaces another instead of restarting.
 
 Rules:
 

@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
-import { Tooltip } from "@admitto/ui";
+import { Spinner, Tooltip } from "@admitto/ui";
 import "./more-actions-menu.css";
 
 /** One row in a More actions panel: icon, two-line label/hint, optional disabled-reason
  * tooltip, and an optional warning/danger text-color variant. Always wrapped in a Tooltip,
  * even when `tooltip` is undefined: Tooltip renders children unchanged with no tooltip
- * wiring in that case, and `.more-actions-menu__item-wrapper` keeps stacked list layout. */
+ * wiring in that case, and `.more-actions-menu__item-wrapper` keeps stacked list layout.
+ *
+ * `loading` is the busy state of the action the row starts (the same contract as `<Button loading>`):
+ * the icon is replaced by a spinner in the same slot, the row is disabled and `aria-busy`, and the
+ * label becomes `loadingLabel` ("Sending…"). Pass it (true or false) for every action that can be
+ * busy; a row that never passes it renders exactly as before. */
 export function MoreActionsMenuItem({
   icon,
   label,
@@ -13,6 +18,8 @@ export function MoreActionsMenuItem({
   disabled = false,
   tooltip,
   variant,
+  loading,
+  loadingLabel,
   onClick,
   className,
 }: Readonly<{
@@ -22,6 +29,10 @@ export function MoreActionsMenuItem({
   disabled?: boolean;
   tooltip?: string | null;
   variant?: "warning" | "danger";
+  /** Busy state of this row's own action. `undefined` means the row is not busy-aware. */
+  loading?: boolean;
+  /** Label while `loading`: the verb of this action ("Sending…"). Defaults to `label`. */
+  loadingLabel?: ReactNode;
   onClick: () => void;
   /** Extra class(es) on the item's wrapper, e.g. to show/hide a specific item at a breakpoint. */
   className?: string;
@@ -38,12 +49,20 @@ export function MoreActionsMenuItem({
         className={["more-actions-menu__item", variant && `more-actions-menu__item--${variant}`]
           .filter(Boolean)
           .join(" ")}
-        disabled={disabled}
+        disabled={disabled || loading === true}
+        aria-busy={loading || undefined}
         onClick={onClick}
       >
-        <i className={`ti ti-${icon}`} aria-hidden="true" />
+        {loading === undefined ? (
+          <i className={`ti ti-${icon}`} aria-hidden="true" />
+        ) : (
+          <span className="more-actions-menu__icon">
+            <i className={`ti ti-${icon}`} aria-hidden="true" />
+            <Spinner size="sm" aria-hidden="true" />
+          </span>
+        )}
         <span className="more-actions-menu__item-text">
-          <span>{label}</span>
+          <span>{loading ? (loadingLabel ?? label) : label}</span>
           <span className="more-actions-menu__item-hint">{hint}</span>
         </span>
       </button>

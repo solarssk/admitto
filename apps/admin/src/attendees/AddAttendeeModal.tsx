@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, SectionLoader } from "@admitto/ui";
 import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
@@ -13,7 +13,7 @@ import {
 } from "./customData.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "./add-attendee-modal.css";
@@ -208,11 +208,10 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     }
   };
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // these "Loading…" hints on and off faster than they can register as loading — show them
-  // only once the fetch has genuinely taken a moment.
-  const showAttributeFieldsLoading = useDelayedLoading(attributeFieldsLoading);
-  const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
+  // Both catalogs load as the dialog opens. A fetch that resolves near-instantly (localhost, a warm
+  // cache) shows nothing at all; one that takes longer shows a single loader in the place where the
+  // ticket type and the custom fields appear, for at least 400ms so it never flickers.
+  const fieldsGate = useLoadingGate(attributeFieldsLoading || ticketTypesLoading);
 
   if (!open) return null;
 
@@ -241,12 +240,6 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           <Notice variant="error" role="alert">
             {ticketTypesError}
           </Notice>
-        )}
-        {attributeFieldsLoading && showAttributeFieldsLoading && (
-          <p className="add-attendee-modal__hint">Loading attribute fields…</p>
-        )}
-        {ticketTypesLoading && showTicketTypesLoading && (
-          <p className="add-attendee-modal__hint">Loading ticket types…</p>
         )}
         <div className="add-attendee-modal__fields">
           <Input
@@ -323,13 +316,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
                 { id: "", label: "No ticket type" },
                 ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
               ]}
-              disabled={submitting}
+              disabled={submitting || fieldsGate.showIndicator}
               onChange={(id) => {
                 setTicketType(id);
                 setError(null);
               }}
             />
           </div>
+          {fieldsGate.showIndicator && <SectionLoader label="Loading fields" minHeight="5rem" className="at-fade-in" />}
           {attributeFields.map((field) => (
             <CustomDataFieldInput
               key={field.source_field}
@@ -349,8 +343,15 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="button" variant="primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
-              {submitting ? "Adding…" : "Add attendee"}
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!canSubmit}
+              loading={submitting}
+              loadingLabel="Adding…"
+              onClick={() => void handleSubmit()}
+            >
+              Add attendee
             </Button>
           </div>
         </div>

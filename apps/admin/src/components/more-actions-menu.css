@@ -83,6 +83,35 @@
   background: none;
 }
 
+/* Busy-aware rows stack the icon and its spinner in one cell so the swap never moves the label. */
+.more-actions-menu__icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.more-actions-menu__icon > * {
+  grid-area: 1 / 1;
+}
+
+.more-actions-menu__icon > .at-spinner {
+  width: 1em;
+  height: 1em;
+  visibility: hidden;
+}
+
+.more-actions-menu__item[aria-busy="true"] .more-actions-menu__icon > .at-spinner {
+  visibility: visible;
+}
+
+.more-actions-menu__item[aria-busy="true"] .more-actions-menu__icon > i {
+  visibility: hidden;
+}
+
+.more-actions-menu__item[aria-busy="true"]:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+
 .more-actions-menu__item-text {
   display: flex;
   flex-direction: column;
