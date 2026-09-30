@@ -42,7 +42,9 @@
 .at-btn--loading .at-btn__label-idle { visibility: hidden; }
 .at-btn--loading .at-btn__label-busy { visibility: visible; }
 .at-btn--loading-solo { position: relative; }
-.at-btn--loading-solo > span:not(.at-btn__spinner) { visibility: hidden; }
+/* opacity, not visibility: `visibility: hidden` drops the label from the accessibility tree, and the
+   overlay spinner is aria-hidden, so the busy button would have no accessible name. */
+.at-btn--loading-solo > span:not(.at-btn__spinner) { opacity: 0; }
 .at-btn__spinner--overlay { position: absolute; inset: 0; margin: auto; }
 @media (prefers-reduced-motion: reduce) { .at-btn__spinner { animation-duration: 2.5s; } }
 

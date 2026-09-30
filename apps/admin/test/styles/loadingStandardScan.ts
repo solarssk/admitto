@@ -43,6 +43,63 @@ const SPIN_ANIMATION = /animation(?:-name)?\s*:[^;{}]*\bat-spin\b/g;
 const LOADING_TEXT = /Loading(?: [A-Za-z][\w -]*)?(?:…|\.\.\.)/g;
 const BUSY_TERNARY = /\?\s*(?:"[^"\n]*…"|'[^'\n]*…'|`[^`\n]*…`)\s*:/g;
 
+/** Index just past the value of a JSX prop that starts at `start` (a quoted string or a `{...}` expression). */
+function propValueEnd(source: string, start: number): number {
+  const open = source[start];
+  if (open === '"' || open === "'") {
+    const close = source.indexOf(open, start + 1);
+    return close === -1 ? start : close + 1;
+  }
+  if (open === "{") {
+    let depth = 0;
+    for (let i = start; i < source.length; i++) {
+      if (source[i] === "{") depth++;
+      else if (source[i] === "}" && --depth === 0) return i + 1;
+    }
+  }
+  return start;
+}
+
+/** Remove every `prop=...` JSX attribute (string or balanced `{}` value) from the source. */
+function stripJsxProp(source: string, prop: string): string {
+  const needle = `${prop}=`;
+  let out = "";
+  let cursor = 0;
+  let at = source.indexOf(needle);
+  while (at !== -1) {
+    const before = source[at - 1];
+    if (before !== undefined && /[\w-]/.test(before)) {
+      at = source.indexOf(needle, at + 1); // a longer attribute name that merely ends the same way
+      continue;
+    }
+    const end = propValueEnd(source, at + needle.length);
+    out += source.slice(cursor, at);
+    cursor = end;
+    at = source.indexOf(needle, end);
+  }
+  return out + source.slice(cursor);
+}
+
+/**
+ * Attributes that are allowed to say "Loading..." or a busy verb, because they are the standard's own
+ * way of doing it: `aria-label` is the text for assistive tech, and `loadingLabel` is what a
+ * `<Button loading>` shows (its ternaries choose a verb, they do not swap the button by hand).
+ */
+const COMPLIANT_PROPS = ["aria-label", "loadingLabel"];
+
+/** Violations of each rule in one source file. `kind` picks the CSS rule or the TS/TSX rules. */
+export function countLoadingViolations(source: string, kind: "css" | "code"): Partial<Record<Rule, number>> {
+  const text = stripBlockAndLineComments(source);
+  if (kind === "css") {
+    return { "hand-rolled-spinner-css": (text.match(SPIN_KEYFRAMES) ?? []).length + (text.match(SPIN_ANIMATION) ?? []).length };
+  }
+  const visible = COMPLIANT_PROPS.reduce(stripJsxProp, text);
+  return {
+    "bare-loading-text": (visible.match(LOADING_TEXT) ?? []).length,
+    "busy-label-swap": (visible.match(BUSY_TERNARY) ?? []).length,
+  };
+}
+
 /** Violation counts per rule and per file (path relative to the repo root), over apps/admin/src. */
 export function scanLoadingViolations(): Record<Rule, Counts> {
   const result: Record<Rule, Counts> = {
@@ -52,14 +109,8 @@ export function scanLoadingViolations(): Record<Rule, Counts> {
   };
   for (const file of walk(ADMIN_SRC, /\.(css|tsx?)$/)) {
     const rel = relative(REPO_ROOT, file).split(sep).join("/");
-    const source = stripBlockAndLineComments(readFileSync(file, "utf8"));
-    if (file.endsWith(".css")) {
-      bump(result["hand-rolled-spinner-css"], rel, (source.match(SPIN_KEYFRAMES) ?? []).length);
-      bump(result["hand-rolled-spinner-css"], rel, (source.match(SPIN_ANIMATION) ?? []).length);
-    } else {
-      bump(result["bare-loading-text"], rel, (source.match(LOADING_TEXT) ?? []).length);
-      bump(result["busy-label-swap"], rel, (source.match(BUSY_TERNARY) ?? []).length);
-    }
+    const counts = countLoadingViolations(readFileSync(file, "utf8"), file.endsWith(".css") ? "css" : "code");
+    for (const rule of RULES) bump(result[rule], rel, counts[rule] ?? 0);
   }
   return result;
 }

@@ -71,7 +71,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/components/ConfirmDialog.tsx": 1,
     "apps/admin/src/components/EventImageAssetLibrary.tsx": 1,
     "apps/admin/src/components/LogoUploadZone.tsx": 1,
-    "apps/admin/src/components/NotificationBell.tsx": 1,
     "apps/admin/src/components/VenueAutocomplete.tsx": 1,
     "apps/admin/src/components/crop/CropImageModal.tsx": 1,
     "apps/admin/src/events/CreateEventModal.tsx": 1,

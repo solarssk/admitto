@@ -17,15 +17,19 @@ let hasSplash = false;
 
 /**
  * Align the shared clock with the static splash that is on screen before React mounts. Call it once,
- * right before the first render, while the splash element is still in the DOM.
+ * right before the first render, while the splash element is still in the DOM. Only the first call
+ * counts (the splash exists once, at boot). A negative animation time is treated as "just started", and
+ * no animation time at all (no Web Animations API) leaves the clock on page time, so it can never push
+ * the hand-over wait past its own limit.
  */
 export function syncLoaderClockToSplash(root: ParentNode = document): void {
+  if (hasSplash) return;
   const svg = root.querySelector(".at-splash svg");
   if (!svg) return;
   hasSplash = true;
   const animations = typeof svg.getAnimations === "function" ? svg.getAnimations({ subtree: true }) : [];
   const elapsed = Number(animations[0]?.currentTime);
-  if (Number.isFinite(elapsed)) origin = performance.now() - elapsed;
+  if (Number.isFinite(elapsed)) origin = performance.now() - Math.max(0, elapsed);
 }
 
 /** Milliseconds on the shared loader timeline (counted from when the splash started drawing). */

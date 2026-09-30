@@ -69,4 +69,26 @@ describe("loader clock", () => {
     expect(bootHandoverEnabled()).toBe(true);
     expect(loaderElapsedMs()).toBe(now);
   });
+
+  it("only the first sync counts: a second call cannot move the clock (the splash exists once, at boot)", () => {
+    syncLoaderClockToSplash(splashWithAnimationAt(300));
+    now += 500;
+    syncLoaderClockToSplash(splashWithAnimationAt(0));
+    expect(loaderElapsedMs()).toBe(800);
+  });
+
+  it("treats a negative or missing animation time as just started", () => {
+    syncLoaderClockToSplash(splashWithAnimationAt(-5000));
+    expect(loaderElapsedMs()).toBe(0);
+    expect(firstDrawRemainingMs()).toBe(LOADER_FIRST_DRAW_MS);
+
+    resetLoaderClockForTests();
+    syncLoaderClockToSplash(splashWithAnimationAt(null));
+    expect(loaderElapsedMs()).toBe(0);
+  });
+
+  it("never asks for more than one first draw-in, whatever the animation reported", () => {
+    syncLoaderClockToSplash(splashWithAnimationAt(-1e9));
+    expect(firstDrawRemainingMs()).toBeLessThanOrEqual(LOADER_FIRST_DRAW_MS);
+  });
 });

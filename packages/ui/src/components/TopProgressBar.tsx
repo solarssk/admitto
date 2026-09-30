@@ -13,7 +13,8 @@ const FINISH_MS = 300;
 /**
  * Thin indeterminate bar along the top edge of the viewport for page changes. The old page stays
  * on screen underneath. Callers delay `active` by 200ms (see `useLoadingGate`) so a near-instant
- * navigation never shows it.
+ * navigation never shows it. It has no known progress, so it is a status ("Loading page") and not a
+ * `progressbar`, which would have to report a value.
  */
 export function TopProgressBar({ active }: Readonly<TopProgressBarProps>) {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -31,8 +32,8 @@ export function TopProgressBar({ active }: Readonly<TopProgressBarProps>) {
   if (phase === "idle") return null;
 
   return (
-    <div className="at-topbar" data-phase={phase} role="progressbar" aria-label="Loading page">
+    <output className="at-topbar" data-phase={phase} aria-label="Loading page">
       <span className="at-topbar__bar" />
-    </div>
+    </output>
   );
 }
