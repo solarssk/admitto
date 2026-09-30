@@ -22,7 +22,7 @@ export function describeWalletPushConfirm(installedCount: number): string {
  * issued-but-not-yet-installed pass stops being manageable too. */
 export function describeWalletKeyClearConfirm(issuedCount: number): string {
   const pass = issuedCount === 1 ? "pass" : "passes";
-  return `This event has ${issuedCount} issued wallet ${pass}. Clearing the API key stops syncing, voiding, restoring, and pushing updates to ${issuedCount === 1 ? "it" : "them"} until a working key is set again.`;
+  return `This event has ${issuedCount} issued wallet ${pass}. Clearing the API key stops syncing, voiding, restoring, and pushing updates to ${issuedCount === 1 ? "it" : "them"}.`;
 }
 
 /** Confirm-dialog copy for turning off wallet_enabled (the master switch) on an event with
@@ -41,7 +41,7 @@ export function describeWalletKeyClearConfirm(issuedCount: number): string {
 export function describeWalletDisableConfirm(issuedCount: number): string {
   const pass = issuedCount === 1 ? "pass" : "passes";
   const it = issuedCount === 1 ? "it" : "them";
-  return `This event has ${issuedCount} issued wallet ${pass}. Turning off wallet passes stops syncing, restoring, and pushing updates to ${it}. You can still void, remove or delete ${it}. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.`;
+  return `This event has ${issuedCount} issued wallet ${pass}. Turning this off stops syncing, restoring, and pushing updates to ${it}. You can still void, remove, or delete ${it}, and PassCreator's own notifications keep being applied - only the periodic check pauses.`;
 }
 
 /** Confirm-dialog copy for turning off one or more per-platform toggles (wallet_apple_enabled /
@@ -81,5 +81,5 @@ export function describeWalletPlatformDisableConfirm(
   const closing = alsoPushes
     ? `This save will also push an update to ${totalInstalledCount} installed wallet ${totalPass} across every platform.`
     : "Nothing changes on attendees' actual devices.";
-  return `${joined} already ${plural ? "have" : "has"} attendees who added ${plural ? "them" : "it"} on their device. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for anyone who hasn't added it yet, and ${plural ? "their" : "its"} status disappears from the Attendees list and attendee detail pages until you turn ${plural ? "them" : "it"} back on. ${closing}`;
+  return `${joined} already ${plural ? "have" : "has"} attendees using ${plural ? "them" : "it"}. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for new attendees, and hides existing status from the Attendees list until you turn ${plural ? "them" : "it"} back on. ${closing}`;
 }

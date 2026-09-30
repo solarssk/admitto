@@ -239,7 +239,7 @@ describe("pollWalletCleanupCompletion", () => {
       );
 
       expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
-        "There were no wallet passes ready to remove. 3 wallet passes are voided or expired, but less than a day old. Admitto waits 24 hours before removing a pass from the wallet service, in case an admin needs to restore it by mistake. Run this again after that.",
+        "There were no wallet passes ready to remove. 3 wallet passes are less than a day old - not yet eligible, in case one needs restoring.",
         "info",
       );
     });
@@ -250,7 +250,7 @@ describe("pollWalletCleanupCompletion", () => {
       );
 
       expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
-        "There were no wallet passes ready to remove. 1 wallet pass is voided or expired, but less than a day old. Admitto waits 24 hours before removing a pass from the wallet service, in case an admin needs to restore it by mistake. Run this again after that.",
+        "There were no wallet passes ready to remove. 1 wallet pass is less than a day old - not yet eligible, in case one needs restoring.",
         "info",
       );
     });

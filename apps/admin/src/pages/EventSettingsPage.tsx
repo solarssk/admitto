@@ -500,12 +500,12 @@ interface ArchiveDialogCopy {
 function walletManagedAtProviderHint(count: number): string {
   if (count <= 0) return "";
   const passWord = count === 1 ? "pass is" : "passes are";
-  // walletPassesManagedAtProviderCount counts every voided or expired pass still at the wallet
-  // service, but "Remove inactive passes" only reaches the ones past their own day-long grace
-  // period - naming just that action here could send an admin to run it and see the count unchanged.
-  // "Remove from provider" alone reaches all of them (no grace period), so the hint says which
-  // action covers which part instead of pointing at one action for the whole count.
-  return ` ${count} inactive wallet ${passWord} still at the wallet service - archiving does not remove them. Remove inactive passes on Attendees clears the ones voided or expired for at least a day; Remove from provider (per attendee or a selection) reaches the rest, including any from the last day.`;
+  // Full detail on which action (Remove inactive passes vs. Remove from provider) covers which
+  // part of this count, and why, now lives on the Wallets report's own Provider state card and
+  // its live pending_removal Notice (checkable anytime, not just at the moment of archiving) -
+  // repeating it here made this already-dense dialog the longest one in the app for a fact that
+  // isn't this dialog's own decision to make.
+  return ` ${count} inactive wallet ${passWord} still at the wallet service - archiving won't remove them. Clean them up from Attendees first if you want them gone.`;
 }
 
 function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPassesManagedAtProviderCount: number): ArchiveDialogCopy {

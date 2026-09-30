@@ -81,10 +81,9 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
       </div>
 
       <Notice variant="info">
-        Google Wallet allows at most 3 notification-triggering messages per pass in a rolling
-        24-hour window, and further sends within that window are rejected until it resets. Apple
-        Wallet doesn't publish a fixed number, but throttles or blocks pushes it considers
-        excessive. Space out repeat sends to the same event.
+        Google Wallet allows at most 3 messages per pass every 24 hours; more are rejected until
+        it resets. Apple Wallet has no fixed limit, but throttles excessive pushes. Space out
+        repeat sends.
       </Notice>
 
       <WalletsSendPanel event={event} eventId={eventId} text={text} />

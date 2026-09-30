@@ -3101,7 +3101,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "void"}
         title="Void wallet pass?"
-        message={`Voiding makes ${detail.name}'s pass show as invalid on their phone. The pass stays on the phone and the ticket is not changed. You can restore it later, while Wallet is on for this event and the event has not ended.`}
+        message={`Marks ${detail.name}'s pass as invalid on their phone. You can restore it afterward.`}
         confirmLabel="Void"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3152,7 +3152,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "delete"}
         title="Delete wallet pass?"
-        message={`This deletes ${detail.name}'s wallet pass from the wallet service and erases its record here.`}
+        message={`Deletes ${detail.name}'s pass and its history from Reports. Use Remove from provider instead to keep that history.`}
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3164,22 +3164,12 @@ export function AttendeeDetailPage() {
             setWalletError(null);
           }
         }}
-      >
-        <ul className="confirm-dialog__list">
-          <li>The pass stays on their phone. Only they can remove it there (Apple and Google do not let us)</li>
-          <li>Check-in is not affected. Use Revoke pass to block entry</li>
-          <li>They can only add a new pass from their ticket page while Wallet is on for this event and the event has not ended</li>
-          <li>
-            This also erases the pass from Reports (installs and registrations). Use Remove from
-            provider instead to keep that history
-          </li>
-        </ul>
-      </ConfirmDialog>
+      />
 
       <ConfirmDialog
         open={activeWalletAction === "remove"}
         title="Remove from provider?"
-        message={`This deletes ${detail.name}'s pass from the wallet service. Unlike Delete, it keeps the pass record and its history in Reports (installs and registrations). It only stops the wallet service from counting this pass in its plan.`}
+        message={`Deletes ${detail.name}'s pass from the wallet service - the pass record and history in Reports stay. This can't be undone there.`}
         confirmLabel="Remove"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3191,13 +3181,7 @@ export function AttendeeDetailPage() {
             setWalletError(null);
           }
         }}
-      >
-        <ul className="confirm-dialog__list">
-          <li>You cannot undo this. The pass cannot be brought back in the wallet service</li>
-          <li>It only works on a pass that is already voided or expired</li>
-          <li>Check-in is not affected, and the history in Reports stays</li>
-        </ul>
-      </ConfirmDialog>
+      />
 
       <ConfirmDialog
         open={noteDeleteId !== null}
