@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Shared loading pieces for the staff app: a full-screen and a panel-sized loading screen that show the Admitto mark, a thin progress bar for page changes, and a loading state for buttons that disables the button and keeps its width. Screens move over to them in the following changes, so waiting looks and behaves the same everywhere.
 - A written standard for loading and busy states in `AGENTS.md` (which indicator to use, the 200 ms, 400 ms, 8 s and 30 s timing) and a test that stops new one-off spinners, "Loading…" text and hand-made "Saving…" labels from being added.
+- Opening the staff app now shows the Admitto mark as soon as the page's HTML arrives, without waiting for the large stylesheet (on a slow connection the page used to stay white for several seconds), instead of a blank page and then plain "Loading…" text, the tick in the mark always finishes drawing (even on a fast connection) before the app fades in over it instead of cutting in, and going to a page you have not opened yet shows a thin progress bar along the top while it downloads, with the current page staying in place. A page whose code is slow to download says "Taking longer than usual" after 8 seconds (under the bar, or under the start loader for the first page), and one that stalls for 30 seconds now ends in the error screen with a reload instead of a bar that never stops. If the server does not answer, the start screen adds "Taking longer than usual" after 8 seconds and, after 30 seconds, stops waiting and offers **Retry** instead of spinning forever.
 
 ### Changed
 
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Finishing the setup wizard or saving an operator's device label no longer resets the whole app: the session is refreshed in place instead of replacing every open page with a loading screen and dropping what was on it.
 - Event Settings → Danger zone's warning notice under the panel no longer sits about twice as far below it as the notices and cards elsewhere in Event Settings. It now uses the same standard gap.
 - The **Void every active wallet pass** and **Refresh the wallet status** confirmation dialogs on Attendees now lead with one short sentence and list the rest as bullet points, matching the neighbouring **Remove inactive wallet passes** dialog, instead of one dense paragraph.
 - Event Settings → Wallet's **API key** field no longer shows its **Change**/**Clear** links in full colour, looking clickable, once the event is archived. They were already disabled (archiving an event makes it read-only), this only fixes how they look.

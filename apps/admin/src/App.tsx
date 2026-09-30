@@ -1,6 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
-import { Spinner, ToastProvider } from "@admitto/ui";
+import { PageLoader, ToastProvider, TopProgressBar } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
@@ -15,6 +15,9 @@ import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvent } from "./api/client.js";
+import { useDelayedLoading, useLoadingGate } from "./hooks/useDelayedLoading.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "./utils/loading-timing.js";
+import { lazyRoute, supersedePendingChunks, useChunkLoading } from "./utils/lazy-route.js";
 import type { EventDto } from "./api/types.js";
 
 // Route-level code-splitting: each page below loads on demand so the initial
@@ -40,22 +43,22 @@ const loadEventOverviewPage = () => import("./pages/EventOverviewPage.js").then(
 const loadReportsPage = () => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage }));
 const loadSetupWizardPage = () => import("./pages/SetupWizardPage.js").then((m) => ({ default: m.SetupWizardPage }));
 
-const SettingsTabContent = lazy(loadSettingsTabContent);
-const IdentityProvidersPanel = lazy(loadIdentityProvidersPanel);
-const UsersPage = lazy(loadUsersPage);
-const AccountLayout = lazy(loadAccountLayout);
-const CheckInEntryPage = lazy(loadCheckInEntryPage);
-const CheckInPage = lazy(loadCheckInPage);
-const AdminCheckInRoute = lazy(loadAdminCheckInRoute);
-const AttendeesPage = lazy(loadAttendeesPage);
-const AttendeeDetailPage = lazy(loadAttendeeDetailPage);
-const EventSettingsPage = lazy(loadEventSettingsPage);
-const ImportPage = lazy(loadImportPage);
-const RequirementsPage = lazy(loadRequirementsPage);
-const CommunicationPage = lazy(loadCommunicationPage);
-const EventOverviewPage = lazy(loadEventOverviewPage);
-const ReportsPage = lazy(loadReportsPage);
-const SetupWizardPage = lazy(loadSetupWizardPage);
+const SettingsTabContent = lazyRoute(loadSettingsTabContent);
+const IdentityProvidersPanel = lazyRoute(loadIdentityProvidersPanel);
+const UsersPage = lazyRoute(loadUsersPage);
+const AccountLayout = lazyRoute(loadAccountLayout);
+const CheckInEntryPage = lazyRoute(loadCheckInEntryPage);
+const CheckInPage = lazyRoute(loadCheckInPage);
+const AdminCheckInRoute = lazyRoute(loadAdminCheckInRoute);
+const AttendeesPage = lazyRoute(loadAttendeesPage);
+const AttendeeDetailPage = lazyRoute(loadAttendeeDetailPage);
+const EventSettingsPage = lazyRoute(loadEventSettingsPage);
+const ImportPage = lazyRoute(loadImportPage);
+const RequirementsPage = lazyRoute(loadRequirementsPage);
+const CommunicationPage = lazyRoute(loadCommunicationPage);
+const EventOverviewPage = lazyRoute(loadEventOverviewPage);
+const ReportsPage = lazyRoute(loadReportsPage);
+const SetupWizardPage = lazyRoute(loadSetupWizardPage);
 
 const PLACEHOLDER_ROUTES = [
   { path: "overview", title: "Overview" },
@@ -222,9 +225,9 @@ export function EventLayout() {
   if (error) return <Navigate to="/admin" replace />;
   if (!event) {
     return (
-      <output className="shell-loading">
-        <Spinner label="Loading event" />
-      </output>
+      <div className="shell-loading">
+        <PageLoader label="Loading event" />
+      </div>
     );
   }
 
@@ -298,21 +301,66 @@ export function StaffRoutes() {
   );
 }
 
+/** Mounted inside the route Suspense boundary, so it only runs once the first page has rendered. */
+export function RoutesReadyMarker({ onReady }: Readonly<{ onReady: () => void }>) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  return null;
+}
+
+/**
+ * Full-screen loader while the code of the first page downloads (the route Suspense fallback). It
+ * is only mounted while that wait lasts, so after 8 seconds it says the wait is taking longer than
+ * usual; after 30 the download is abandoned (see `lazyRoute`) and the error screen takes over.
+ */
+export function RouteFallback() {
+  const slow = useDelayedLoading(true, SLOW_NOTICE_MS);
+  return (
+    <div className="shell-loading">
+      <PageLoader caption={slow ? SLOW_NOTICE_TEXT : undefined} />
+    </div>
+  );
+}
+
+/**
+ * Thin bar along the top while the code of a page the user just opened downloads (the old page
+ * stays visible meanwhile). Shown after the shared 200ms delay, so a warm cache never flashes it,
+ * and only after the first page has rendered: at start the full-screen loader already says it.
+ * After 8 seconds the bar gets the "taking longer than usual" line.
+ *
+ * `locationKey` changes when a navigation commits (React Router keeps the old location until the new
+ * page has rendered). A download still running from before that belongs to a page the user has
+ * already left, so it stops holding the bar up.
+ */
+export function PageChangeProgress({
+  enabled,
+  locationKey,
+}: Readonly<{ enabled: boolean; locationKey?: string }>) {
+  useEffect(() => {
+    supersedePendingChunks();
+  }, [locationKey]);
+  const chunkLoading = useChunkLoading();
+  const waiting = enabled && chunkLoading;
+  const { showIndicator } = useLoadingGate(waiting);
+  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
+  return <TopProgressBar active={showIndicator} note={slow ? SLOW_NOTICE_TEXT : undefined} />;
+}
+
 export default function App() {
+  const [routesReady, setRoutesReady] = useState(false);
+  const markRoutesReady = useCallback(() => setRoutesReady(true), []);
+  const location = useLocation();
   return (
     <ErrorBoundary>
       <ToastProvider>
         <AuthProvider>
           <ConnectionStateProvider initiallyConnected>
-            <Suspense
-              fallback={
-                <output className="shell-loading">
-                  <Spinner label="Loading" />
-                </output>
-              }
-            >
+            <Suspense fallback={<RouteFallback />}>
               <StaffRoutes />
+              <RoutesReadyMarker onReady={markRoutesReady} />
             </Suspense>
+            <PageChangeProgress enabled={routesReady} locationKey={location.key} />
           </ConnectionStateProvider>
         </AuthProvider>
       </ToastProvider>

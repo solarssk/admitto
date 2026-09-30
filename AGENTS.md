@@ -151,12 +151,12 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Panel, card or dialog whose shape is not known | `SectionLoader` (logo, 52px) with `minHeight` | after 200ms |
 | Shape is known: table rows, KPI tiles, forms, a dialog's content | `Skeleton` in the same shape | after 200ms |
 | Data is already on screen and is refetched (filter, search, page) | keep the data, dim it, thin bar on the card | after 200ms |
-| Page change | `TopProgressBar`, the old page stays | after 200ms |
+| Page change | `TopProgressBar`, the old page stays (after 8s it also says it is taking longer than usual, `note`) | after 200ms |
 | The user clicked a button | `<Button loading loadingLabel="Saving…">` | immediately |
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
 | Long job: send, import, upload | determinate bar with a count or percent | immediately |
 
-Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms).
+Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms). App start also waits until the mark's tick has finished drawing (about 0.65s after the splash appeared, skipped for reduced motion) and then fades the loader out over the already mounted app (250ms) instead of cutting to it. Every logo loader shares one animation clock (`loaderElapsedMs`, aligned with the splash in `main.tsx`), so the tick keeps drawing when one loader replaces another instead of restarting.
 
 Rules:
 
@@ -167,6 +167,8 @@ Rules:
 - The spinner draws in the colour of its parent (the brand colour by default), so it also works on primary buttons. The logo loaders are never smaller than 40px; use `Spinner` for anything smaller.
 - Loading text is for assistive tech (`aria-label`, `aria-busy`). The only visible text is the 8s message, the label of a busy button, and the row inside a list of remote options.
 - `prefers-reduced-motion` slows the loaders and stops the shimmer. It never freezes them completely.
+
+The two places that render before the bundle or without React, the splash inside `#root` in `apps/admin/index.html` and the server-rendered pages in `apps/web`, use plain inline CSS instead (the staff CSP allows inline styles, not inline scripts). The splash keeps the mark, size and position of `PageLoader` so the hand-over to React does not move anything. The admin build gives every `<link rel="stylesheet">` `media="print"` (`apps/admin/build-html.ts`), because a browser paints nothing until the head's stylesheets have downloaded, so on a slow connection the splash would otherwise never show; `main.tsx` switches them on once they have loaded (`enableDeferredStylesheets`) and only then starts React, so it never mounts unstyled. The links must stay in `<head>`, ahead of the page stylesheets Vite appends there later: of two rules with the same specificity the later stylesheet wins, and putting the main one at the end of `<body>` made base styles override page styles.
 
 `apps/admin/test/styles/loading-standard.test.ts` enforces the mechanical parts: no `*spin*` or `*shimmer*` `@keyframes` and no `at-spin` animation in admin CSS, no `Loading…` text, no hand-made busy-label ternaries (a "Saving…" style literal in either branch, so `!saving ? "Save" : "Saving…"` counts too). It is a ratchet: today's leftovers are listed per file and may only be removed, so a migration PR lowers the list in the same change.
 

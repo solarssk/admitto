@@ -1,0 +1,47 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../index.html"), "utf8");
+
+describe("apps/admin/index.html splash", () => {
+  const root = /<div id="root">([\s\S]*?)<\/div>\s*<script/.exec(html)?.[1] ?? "";
+
+  it("puts a loading splash inside #root, so the page is never blank before React mounts", () => {
+    // <output> is the native status element (a live region), so no role attribute is needed.
+    expect(root).toMatch(/<output class="at-splash" aria-label="Loading Admitto">[\s\S]*<\/output>/);
+    expect(root).not.toContain('role="status"');
+    expect(root).toContain('class="tile"');
+    expect(root).toContain('class="check"');
+    expect(root).toContain('pathLength="1"');
+    expect(root).toContain('class="dot"');
+  });
+
+  it("explains itself when JavaScript is off, and hides the splash then", () => {
+    expect(root).toContain("<noscript>");
+    expect(root).toMatch(/Admitto needs JavaScript/);
+    expect(html).toMatch(/<noscript>\s*<style>[\s\S]*\.at-splash\s*\{\s*display:\s*none/);
+  });
+
+  it("is plain CSS only: no inline script or event handler (the staff CSP has no 'unsafe-inline' for scripts)", () => {
+    const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
+    expect(scripts).toEqual(['<script type="module" src="/src/main.tsx">']);
+    expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+
+  it("draws the tick in with the same 2s cycle as PageLoader, so the two look like one animation", () => {
+    expect(html).toMatch(/animation:\s*at-splash-draw 2s/);
+    expect(html).toMatch(/@keyframes at-splash-draw\s*\{\s*0%\s*\{\s*stroke-dashoffset:\s*1\.05/);
+    const loaderCss = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../packages/ui/src/styles/components/loader.css"), "utf8");
+    expect(loaderCss).toMatch(/animation:\s*at-loader-draw 2s/);
+    // Same keyframe stops for the draw-in in both places.
+    expect(loaderCss).toMatch(/25%,\s*80%/);
+    expect(html).toMatch(/25%,\s*80%/);
+  });
+
+  it("respects prefers-reduced-motion without freezing the mark", () => {
+    expect(html).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    expect(html).toContain("at-splash-soft");
+  });
+});

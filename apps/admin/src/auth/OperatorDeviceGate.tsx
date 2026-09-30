@@ -9,12 +9,8 @@ function skipKey(userId: string): string {
 
 /** Prompt for optional device label after sign-in, before operator check-in surfaces. */
 export function OperatorDeviceGate() {
-  const { user, deviceLabel, loading, refresh } = useAuth();
+  const { user, deviceLabel, refresh } = useAuth();
   const [skipped, setSkipped] = useState(() => sessionStorage.getItem(skipKey(user.id)) === "1");
-
-  if (loading) {
-    return <p>Loading…</p>;
-  }
 
   if (!deviceLabel && !skipped) {
     return (

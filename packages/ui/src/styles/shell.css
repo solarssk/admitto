@@ -449,6 +449,22 @@ html:has(.shell), body:has(.shell) {
   background: var(--surface-page);
 }
 
+/* App start: once the first draw-in of the mark has finished, the app is mounted underneath and the
+   loader (same box, same mark position) fades away over it, instead of being cut out. */
+.shell-loading--leaving {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  pointer-events: none;
+  animation: shell-loading-leave 0.25s ease-out forwards;
+}
+
+@keyframes shell-loading-leave {
+  to {
+    opacity: 0;
+  }
+}
+
 .screen {
   display: flex;
   flex-direction: column;
