@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetLoaderClockForTests, syncLoaderClockToSplash } from "../src/loader-clock.js";
 import { PageLoader, SectionLoader } from "../src/components/Loader.js";
 
 describe("PageLoader", () => {
@@ -10,10 +11,14 @@ describe("PageLoader", () => {
     expect(el.className).toContain("at-loader--page");
   });
 
-  it("draws the mark as decorative SVG (the label carries the meaning)", () => {
+  it("draws the whole mark as decorative SVG (the label carries the meaning)", () => {
     const { container } = render(<PageLoader />);
     const svg = container.querySelector("svg");
     expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    // Tile, tick and dot are all present from the first render: the loader never shows a partial icon.
+    expect(svg?.querySelector(".at-loader__tile")).not.toBeNull();
+    expect(svg?.querySelector(".at-loader__check")).not.toBeNull();
+    expect(svg?.querySelector(".at-loader__dot")).not.toBeNull();
     expect(svg?.querySelector(".at-loader__check")?.getAttribute("pathLength")).toBe("1");
   });
 
@@ -46,5 +51,33 @@ describe("SectionLoader", () => {
   it("lets a caller style override the reserved height", () => {
     render(<SectionLoader minHeight={250} style={{ minHeight: 100 }} />);
     expect(screen.getByRole("status").style.minHeight).toBe("100px");
+  });
+});
+
+describe("loader phase (shared clock)", () => {
+  afterEach(() => {
+    resetLoaderClockForTests();
+    vi.restoreAllMocks();
+  });
+
+  it("starts each loader mid-cycle, where the shared clock is, so swapping loaders does not restart the tick", () => {
+    let now = 5_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="at-splash"><svg></svg></div>';
+    Object.assign(root.querySelector("svg")!, { getAnimations: () => [{ currentTime: 700 }] });
+    syncLoaderClockToSplash(root);
+
+    now += 600; // the splash has been drawing for 1300ms when this loader mounts
+    render(<PageLoader />);
+    expect(screen.getByRole("status").style.getPropertyValue("--at-loader-phase")).toBe("-1300ms");
+  });
+
+  it("wraps around the 2s cycle instead of growing without bound", () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    now = 4_750;
+    render(<SectionLoader />);
+    expect(screen.getByRole("status").style.getPropertyValue("--at-loader-phase")).toBe("-750ms");
   });
 });

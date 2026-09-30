@@ -1,3 +1,7 @@
+/* One 2s cycle for every part of the mark. The tick draws in during the first quarter, stays, and
+   fades just before the loop restarts. `--at-loader-phase` (a negative delay set per loader from a
+   shared clock, see loader-clock.ts) starts each loader mid-cycle so swapping loaders does not
+   restart the drawing. The static splash in apps/admin/index.html uses the same timings. */
 .at-loader {
   position: relative;
   display: flex;
@@ -21,7 +25,8 @@
 
 .at-loader__mark {
   display: block;
-  animation: at-loader-breath 1.6s ease-in-out infinite;
+  animation: at-loader-breath 2s ease-in-out infinite;
+  animation-delay: var(--at-loader-phase, 0ms);
 }
 
 .at-loader--page .at-loader__mark {
@@ -48,12 +53,15 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 1 2;
-  animation: at-loader-draw 1.6s ease-in-out infinite;
+  animation: at-loader-draw 2s ease-in-out infinite;
+  animation-delay: var(--at-loader-phase, 0ms);
 }
 
 .at-loader__dot {
   fill: var(--text-on-primary);
-  animation: at-loader-dot 1.6s ease-in-out infinite;
+  fill-opacity: 0.55;
+  animation: at-loader-dot 2s ease-in-out infinite;
+  animation-delay: var(--at-loader-phase, 0ms);
 }
 
 /* Out of flow, hanging under the mark: the mark stays exactly centred with or without a caption,
@@ -80,7 +88,7 @@
 @keyframes at-loader-breath {
   0%,
   100% {
-    transform: scale(0.95);
+    transform: scale(0.96);
   }
   50% {
     transform: scale(1);
@@ -92,8 +100,8 @@
     stroke-dashoffset: 1.05;
     opacity: 1;
   }
-  50%,
-  82% {
+  25%,
+  80% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
@@ -124,9 +132,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Slower and static, not frozen: a completely still mark reads as a hung page. */
+  /* The whole mark, slowly changing brightness: nothing to draw in, and not frozen (a completely
+     still mark reads as a hung page). */
   .at-loader__mark {
     animation: at-loader-soft 3s ease-in-out infinite;
+    animation-delay: 0ms;
   }
 
   .at-loader__check {
@@ -136,6 +146,5 @@
 
   .at-loader__dot {
     animation: none;
-    fill-opacity: 0.5;
   }
 }

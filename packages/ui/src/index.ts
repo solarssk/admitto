@@ -32,6 +32,15 @@ export {
   type SectionLoaderProps,
 } from "./components/Loader.js";
 export { TopProgressBar, type TopProgressBarProps } from "./components/TopProgressBar.js";
+export {
+  LOADER_CYCLE_MS,
+  LOADER_FIRST_DRAW_MS,
+  bootHandoverEnabled,
+  firstDrawRemainingMs,
+  loaderElapsedMs,
+  resetLoaderClockForTests,
+  syncLoaderClockToSplash,
+} from "./loader-clock.js";
 export { EmptyState, type EmptyStateProps } from "./components/EmptyState.js";
 export { Skeleton, type SkeletonProps, type SkeletonVariant } from "./components/Skeleton.js";
 export {
