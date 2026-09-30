@@ -243,30 +243,30 @@
   margin: 0;
 }
 
-/* Separates this subsection from the Apple/Google/Samsung toggle pair above it, the same way
-   .settings-row's own border-bottom separates rows within a list - same trick as
-   .wallet-field-mapping below, which separates itself from this section the same way. */
-.wallet-expiration-mode {
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-4);
-}
-
-.wallet-expiration-mode__options {
+/* Pulls the Pass expiration hint/warning Notice closer to the toggle it's actually about - the
+   grid's own row-gap (--space-3, 12px) reads as too loose for a Notice directly commenting on
+   the control right above it, unlike the same gap between unrelated rows elsewhere in this grid
+   (PO report). A plain flex column with its own small gap, not a negative margin fighting the
+   grid's row-gap - that fought the grid's own row sizing in ways that did not net out to the
+   simple subtraction it looks like on paper (confirmed empirically: identical negative
+   margin-top gave a correct, predictable result set as an inline style, but a wrong, much more
+   negative one from this same value in the stylesheet - not fully root-caused, not worth
+   depending on either way). This wrapper is one grid item, so .mail-transport-section's own gap
+   applies only once, above the whole block, same as before. */
+.wallet-expiration-block {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
+  gap: var(--space-1);
+  /* Not in .mail-transport-section's own > child allowlist (staff.css) - this wrapper is new,
+     so it defaults to one of the grid's two columns (half width) without this. */
+  grid-column: 1 / -1;
 }
 
-.wallet-expiration-mode__options label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
-}
-
-/* Separates this subsection from the Apple/Google toggle pair above it, the same way
-   .settings-row's own border-bottom separates rows within a list. */
+/* Separates Field mapping from the wallet/Pass expiration toggles above it - re-added after the
+   Notice-adjacency issues that made the previous version of this line look arbitrary were fixed
+   separately (the Semantic Tags/empty notices now anchor under this section's own header instead
+   of floating above it, and that header no longer carries a stray second border-bottom of its
+   own) - the line itself marking a real section boundary was never the problem (PO report). */
 .wallet-field-mapping {
   border-top: 1px solid var(--border);
   padding-top: var(--space-4);
@@ -282,19 +282,38 @@
    beside the label+description on narrow screens instead of dropping onto its own line below
    them, matching the Security panel's "Manage origins" row and .smtp-connection-tls-row. The
    compound selector (two classes, same element - see the className on this row) outweighs the
-   generic single-class .settings-row rule regardless of which stylesheet loads later. */
+   generic single-class .settings-row rule regardless of which stylesheet loads later.
+   border-bottom: 0 for the same reason .smtp-connection-tls-row sets it - .settings-row's own
+   default border-bottom drew a stray line directly above the Notice that follows this header
+   (empty-mapping or Semantic Tags), breaking what should be one even gap into two uneven-looking
+   pieces split by a line that marks nothing (PO report). padding-bottom: var(--space-2) for the
+   same reason .smtp-connection-tls-row uses that value instead of .settings-row's own default
+   --space-3 - .wallet-expiration-block's own flex gap (--space-1) is identical to this
+   container's, so the two Notices only end up the same total distance from their own trigger row
+   when the ROW's own bottom padding matches too; .settings-row's un-overridden --space-3 here
+   was 4px taller than .smtp-connection-tls-row's, which was the actual, real difference between
+   the two (PO report - not the gap itself, which was already equal). */
 .settings-row.wallet-field-mapping__header {
   flex-direction: row;
   align-items: center;
+  border-bottom: 0;
+  padding-bottom: var(--space-2);
 }
 
-/* Same value as .wallet-field-mapping__row's own margin-top below, so the gap under the
-   header reads identically whether it's followed by the empty-mapping notice or the
-   first custom row. Excludes the semantic-tags info notice above the header (:first-child) -
-   that one already sits flush against the container's own padding-top; this margin would only
-   push it down an extra, unwanted step. */
-.wallet-field-mapping .at-notice:not(:first-child) {
-  margin-top: var(--space-3);
+/* Same wrapper technique as .wallet-expiration-block above, same target gap (--space-1, 4px) -
+   one shared mechanism for how close a Notice sits to what it's about, used identically
+   everywhere in this panel instead of a different margin value guessed per location (PO report:
+   "just define the notice spacing once, this back-and-forth on every single one is exhausting").
+   .wallet-field-mapping__header-and-notice groups the header with whichever Notice follows it
+   (empty-mapping, or the Semantic Tags one - the two are mutually exclusive, see the JSX) into
+   one flex column, the same way .wallet-expiration-block groups the Pass expiration row with
+   its own Notice - so the grid vs. plain-block difference between these two containers never
+   matters, because a Notice's distance from its trigger is never governed by either container's
+   own gap/padding at all, only by this wrapper's own small, explicit gap. */
+.wallet-field-mapping__header-and-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 /* A single row (Value | Key | Hint | Remove) down to tablet width - the Value dropdown's own
@@ -310,6 +329,14 @@
   align-items: start;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+/* :first-child would never match here - .wallet-field-mapping__header-and-notice always
+   precedes every row, so no row is ever its parent's literal first child (same trap as
+   :first-of-type elsewhere in this file: both check tag/DOM position, not class). The adjacent
+   sibling combinator instead matches the one row that actually sits right after that wrapper. */
+.wallet-field-mapping__header-and-notice + .wallet-field-mapping__row {
+  margin-top: var(--space-1);
 }
 
 .wallet-field-mapping__row-detail {
