@@ -98,3 +98,34 @@ export function useLoadingGate(
 
   return { showIndicator, showContent: !isLoading && !showIndicator };
 }
+
+/**
+ * For a busy state the user asked for with a click (a Retry, a Save): true from the first render in
+ * which `busy` is true, and for at least `minMs` from then on, however quickly the work ends. Offline,
+ * a request fails within a few milliseconds with the same message as the last time, and without this
+ * the click would look like nothing happened. Unlike `useLoadingGate` it has no start delay, and so no
+ * timer that could lose the race against a fast answer.
+ */
+export function useMinimumBusy(busy: boolean, minMs = 400): boolean {
+  const [holding, setHolding] = useState(false);
+  const since = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (busy) {
+      since.current ??= Date.now();
+      setHolding(true);
+      return undefined;
+    }
+    if (since.current === null) return undefined;
+    const timer = setTimeout(
+      () => {
+        since.current = null;
+        setHolding(false);
+      },
+      Math.max(0, minMs - (Date.now() - since.current)),
+    );
+    return () => clearTimeout(timer);
+  }, [busy, minMs]);
+
+  return busy || holding;
+}
