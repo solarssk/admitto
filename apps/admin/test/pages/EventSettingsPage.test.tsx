@@ -1419,8 +1419,14 @@ describe("EventSettingsPage tabs", () => {
     expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(false);
   });
 
-  it("shows a Notice explaining that field mapping alone does not deliver Semantic Tags", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+  it("shows a Notice explaining that field mapping alone does not deliver Semantic Tags, once a field is mapped", async () => {
+    // Only shown once there is at least one mapped field - see "shows only one Field mapping
+    // notice at a time" below for why this and the "No fields mapped yet" notice are mutually
+    // exclusive.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_field_mapping: { attendeeFullName: "full_name" },
+    });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
@@ -2294,8 +2300,8 @@ describe("EventSettingsPage tabs", () => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
 
-    const eventEndRadio = screen.getByLabelText("Expire when the event ends") as HTMLInputElement;
-    expect(eventEndRadio.disabled).toBe(true);
+    const expirationSwitch = screen.getByLabelText("Pass expiration") as HTMLInputElement;
+    expect(expirationSwitch.disabled).toBe(true);
     expect(screen.getByText(/Test connection to confirm/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
@@ -2303,20 +2309,18 @@ describe("EventSettingsPage tabs", () => {
       expect(testWalletConnection).toHaveBeenCalledWith("evt-1", { templateId: "tmpl-1" });
     });
     await waitFor(() => {
-      expect(eventEndRadio.disabled).toBe(false);
+      expect(expirationSwitch.disabled).toBe(false);
     });
 
-    fireEvent.click(eventEndRadio);
-    expect(eventEndRadio.checked).toBe(true);
+    fireEvent.click(expirationSwitch);
+    expect(expirationSwitch.checked).toBe(true);
 
     // Not locked yet (no issued passes) - flips straight back without needing a fresh Test
-    // connection, since "none" never requires the capability check.
-    const noneRadio = screen.getByLabelText("Do not expire automatically") as HTMLInputElement;
-    fireEvent.click(noneRadio);
-    expect(noneRadio.checked).toBe(true);
-    expect(eventEndRadio.checked).toBe(false);
+    // connection, since turning it off never requires the capability check.
+    fireEvent.click(expirationSwitch);
+    expect(expirationSwitch.checked).toBe(false);
 
-    fireEvent.click(eventEndRadio);
+    fireEvent.click(expirationSwitch);
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -2344,11 +2348,11 @@ describe("EventSettingsPage tabs", () => {
       expect(testWalletConnection).toHaveBeenCalledWith("evt-1", { templateId: "tmpl-1" });
     });
 
-    expect((screen.getByLabelText("Expire when the event ends") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Pass expiration") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/Test connection to confirm/)).toBeTruthy();
   });
 
-  it("locks 'Do not expire automatically' once wallet_expiration_mode is already event_end and passes have been issued", async () => {
+  it("locks the Pass expiration switch off once wallet_expiration_mode is already event_end and passes have been issued", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       wallet_template_id: "tmpl-1",
@@ -2360,13 +2364,32 @@ describe("EventSettingsPage tabs", () => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
 
-    const noneRadio = screen.getByLabelText("Do not expire automatically") as HTMLInputElement;
-    const eventEndRadio = screen.getByLabelText("Expire when the event ends") as HTMLInputElement;
-    expect(noneRadio.disabled).toBe(true);
-    expect(eventEndRadio.checked).toBe(true);
-    // Already the saved value - no fresh Test connection needed to keep it selected.
-    expect(eventEndRadio.disabled).toBe(false);
+    const expirationSwitch = screen.getByLabelText("Pass expiration") as HTMLInputElement;
+    expect(expirationSwitch.checked).toBe(true);
+    // Already the saved value - locked against turning off, not against staying on, so no fresh
+    // Test connection is needed to keep it in its current state.
+    expect(expirationSwitch.disabled).toBe(true);
     expect(screen.getByText(/Can't be turned off once wallet passes have been issued/)).toBeTruthy();
+  });
+
+  it("shows only one Field mapping notice at a time, not both stacked together (PO report)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: null,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(screen.getByText(/No fields mapped yet/)).toBeTruthy();
+    expect(screen.queryByText(/Siri Suggestions/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+
+    expect(screen.queryByText(/No fields mapped yet/)).toBeNull();
+    expect(screen.getByText(/Siri Suggestions/)).toBeTruthy();
   });
 
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {

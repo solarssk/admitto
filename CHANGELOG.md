@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event Settings → Danger zone's warning notice under the panel no longer sits about twice as far below it as the notices and cards elsewhere in Event Settings. It now uses the same standard gap.
 - The **Void every active wallet pass** and **Refresh the wallet status** confirmation dialogs on Attendees now lead with one short sentence and list the rest as bullet points, matching the neighbouring **Remove inactive wallet passes** dialog, instead of one dense paragraph.
 - Event Settings → Wallet's **API key** field no longer shows its **Change**/**Clear** links in full colour, looking clickable, once the event is archived. They were already disabled (archiving an event makes it read-only), this only fixes how they look.
-- Event Settings → Wallet's **Pass expiration** notices (the locked and not-ready hints) no longer sit flush against the radio options above them.
+- Event Settings → Wallet's **Pass expiration** control is now a single on/off switch, matching the Apple/Google/Samsung Wallet switches right above it, instead of two radio buttons, and its locked/not-ready notice no longer sits flush against the row above it.
+- Event Settings → Wallet's **Field mapping** section now shows only one notice at a time, the empty-mapping hint before any field is added or the Semantic Tags hint once one is, instead of stacking both.
+- Attendees → **More actions** → **Remove inactive passes** has a shorter, single-sentence hint.
+- The Wallets report's **Pass validity** card description is now one short sentence instead of two dense ones.
 
 ## [0.7.4] - 2026-09-30
 

@@ -53,7 +53,6 @@ const WALLET_TEMPLATE_LOCKED_HINT =
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 const WALLET_EXPIRATION_MODE_HINT =
   "Whether an issued pass ever expires on its own, without an admin voiding it.";
-const WALLET_EXPIRATION_MODE_NONE_LABEL = "Do not expire automatically";
 const WALLET_EXPIRATION_MODE_EVENT_END_LABEL = "Expire when the event ends";
 // Server-verified, not just client-guessed: guardWalletExpirationModeChange (event-settings-
 // routes.ts) re-checks this with its own live describeTemplate() call at save time regardless of
@@ -513,7 +512,6 @@ export function EventWalletPanel({
               {...NO_AUTOFILL_PROPS}
               onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
             />
-          </div>
           <div className="smtp-connection-tls-pair">
             <div className="settings-row smtp-connection-tls-row wallet-platform-row">
               <span className="wallet-platform-row__icon">
@@ -564,69 +562,74 @@ export function EventWalletPanel({
               />
             </div>
           </div>
-          <div className="wallet-expiration-mode">
-            <div className="settings-row wallet-expiration-mode__header">
-              <div className="settings-row__text">
-                <strong>
-                  <HintLabel hint={WALLET_EXPIRATION_MODE_HINT}>Pass expiration</HintLabel>
-                </strong>
-              </div>
-            </div>
-            <div className="wallet-expiration-mode__options">
-              <label>
-                <input
-                  type="radio"
-                  name="event-wallet-expiration-mode"
-                  checked={form.walletExpirationMode === "none"}
-                  disabled={isArchived || saving || walletExpirationModeLocked}
-                  onChange={() => setForm({ ...form, walletExpirationMode: "none" })}
-                />
-                {WALLET_EXPIRATION_MODE_NONE_LABEL}
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="event-wallet-expiration-mode"
+          <div className="wallet-expiration-block">
+            <div className="smtp-connection-tls-pair">
+              <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                <div className="settings-row__text">
+                  <strong>
+                    <HintLabel hint={WALLET_EXPIRATION_MODE_HINT}>Pass expiration</HintLabel>
+                  </strong>
+                  <p>{WALLET_EXPIRATION_MODE_EVENT_END_LABEL}</p>
+                </div>
+                <Switch
+                  id="event-wallet-expiration-mode"
+                  aria-label="Pass expiration"
                   checked={form.walletExpirationMode === "event_end"}
-                  disabled={isArchived || saving || !canEnableWalletExpirationEventEnd}
-                  onChange={() => setForm({ ...form, walletExpirationMode: "event_end" })}
+                  disabled={
+                    isArchived ||
+                    saving ||
+                    (form.walletExpirationMode === "event_end"
+                      ? walletExpirationModeLocked
+                      : !canEnableWalletExpirationEventEnd)
+                  }
+                  onChange={(e) =>
+                    setForm({ ...form, walletExpirationMode: e.target.checked ? "event_end" : "none" })
+                  }
                 />
-                {WALLET_EXPIRATION_MODE_EVENT_END_LABEL}
-              </label>
+              </div>
             </div>
             {walletExpirationModeLocked && <Notice variant="warning">{WALLET_EXPIRATION_MODE_LOCKED_HINT}</Notice>}
             {!canEnableWalletExpirationEventEnd && (
               <Notice variant="info">{WALLET_EXPIRATION_MODE_NOT_READY_HINT}</Notice>
             )}
           </div>
+          </div>
           <div className="wallet-field-mapping">
-            <Notice variant="info">{WALLET_FIELD_MAPPING_SEMANTIC_TAGS_NOTICE}</Notice>
-            <div className="settings-row wallet-field-mapping__header">
-              <div className="settings-row__text">
-                <strong>Field mapping</strong>
-                <p>{WALLET_FIELD_MAPPING_HEADER_DESC}</p>
+            <div className="wallet-field-mapping__header-and-notice">
+              <div className="settings-row wallet-field-mapping__header">
+                <div className="settings-row__text">
+                  <strong>Field mapping</strong>
+                  <p>{WALLET_FIELD_MAPPING_HEADER_DESC}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isArchived || saving}
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      walletFieldMapping: [
+                        ...form.walletFieldMapping,
+                        { id: crypto.randomUUID(), key: "", value: "" },
+                      ],
+                    })
+                  }
+                >
+                  Add field
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={isArchived || saving}
-                onClick={() =>
-                  setForm({
-                    ...form,
-                    walletFieldMapping: [
-                      ...form.walletFieldMapping,
-                      { id: crypto.randomUUID(), key: "", value: "" },
-                    ],
-                  })
-                }
-              >
-                Add field
-              </Button>
+              {/* Mutually exclusive on whether a field has been mapped yet, so at most one of the
+                  two shows at a time - the empty-state nudge to add a first field, or (once there
+                  is one) the Siri/Maps/Calendar caveat, which is only actionable once there is
+                  something mapped to bind in PassCreator's own Semantic Tags panel (too many
+                  stacked Notices at once, PO report). */}
+              {form.walletFieldMapping.length === 0 ? (
+                <Notice variant="warning">{WALLET_FIELD_MAPPING_EMPTY_NOTICE}</Notice>
+              ) : (
+                <Notice variant="info">{WALLET_FIELD_MAPPING_SEMANTIC_TAGS_NOTICE}</Notice>
+              )}
             </div>
-            {form.walletFieldMapping.length === 0 && (
-              <Notice variant="warning">{WALLET_FIELD_MAPPING_EMPTY_NOTICE}</Notice>
-            )}
             {form.walletFieldMapping.length > 0 &&
               sortWalletFieldMappingByCategory(form.walletFieldMapping).map((row: WalletFieldMappingRow) => {
                 // Options already picked by a *different* row are excluded, not just

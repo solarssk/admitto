@@ -883,7 +883,7 @@ function HeaderMoreMenu({
                     icon="cloud-off"
                     variant="danger"
                     label={eventWideRemoveInactiveBusy ? "Removing passes…" : "Remove inactive passes"}
-                    hint="Delete voided or expired passes from the wallet service, keep the history"
+                    hint="Delete voided or expired passes from the wallet service"
                     disabled={eventWideRemoveInactiveBusy}
                     onClick={() => {
                       setOpen(false);
