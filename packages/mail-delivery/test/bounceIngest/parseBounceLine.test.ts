@@ -457,3 +457,31 @@ describe("parseRfc3464DsnBlocks block separators and hostile input", () => {
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });
+
+describe("parseBounceLines free-text matchers on hostile input", () => {
+  // Each dialect ends in `(.+?)` plus an optional "(in reply to ...)" tail; a long run of blanks
+  // inside the reason used to make matching quadratic (about 3 s for one 64 KB message).
+  const blanks = " \t".repeat(30_000);
+  const cases: ReadonlyArray<[string, string, string]> = [
+    ["postfix-enhanced", "user@example.com failed: host mx.example.com said: 550 5.1.1 x: a", "user@example.com"],
+    ["failed-host-said", "<user@example.com> failed: host mx.example.com said: 550 5.1.1 a", "user@example.com"],
+    ["postfix-angle-bracket", "<user@example.com>: host mx.example.com said: 550 5.1.1 a", "user@example.com"],
+    ["bare failed line", "failed: host mx.example.com said: 550 5.1.1 a", ""],
+  ];
+
+  it.each(cases)("stays fast on a very long run of blanks in the %s reason", (_id, prefix) => {
+    const started = performance.now();
+    const lines = parseBounceLines(`${prefix}${blanks}b`);
+
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(lines.length).toBeLessThanOrEqual(1);
+  });
+
+  it("still parses a reason whose words are separated by several blanks", () => {
+    const lines = parseBounceLines("user@example.com failed: host mx.example.com said: 550 5.1.1 x:   mailbox \t  unavailable");
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.recipientEmail).toBe("user@example.com");
+    expect(lines[0]!.reason).toBe("mailbox unavailable");
+  });
+});

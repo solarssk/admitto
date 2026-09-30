@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatRunningBuildLabel,
@@ -161,7 +164,50 @@ describe("formatRunningBuildLabel", () => {
   });
 });
 
+// renderWithToastAndRouter wraps the first render only; a rerender has to bring the providers itself.
+function rerenderPanel(rerender: (ui: ReactNode) => void, isActive: boolean) {
+  rerender(
+    <MemoryRouter>
+      <ToastProvider>
+        <HealthCheckPanel isActive={isActive} />
+      </ToastProvider>
+    </MemoryRouter>,
+  );
+}
+
 describe("HealthCheckPanel", () => {
+  it("reads the report again, without a loading state, when its tab is shown again", async () => {
+    mockFetch.mockResolvedValueOnce(sampleReport({ overall: "down" }));
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    await screen.findByText("Core infrastructure");
+
+    rerenderPanel(rerender, false);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    const fresh = sampleReport({ generated_at: "2026-08-03T13:10:00.000Z" });
+    mockFetch.mockResolvedValueOnce(fresh);
+    rerenderPanel(rerender, true);
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    // The previous report stays on screen while the new one is read.
+    expect(screen.getByText("Core infrastructure")).toBeTruthy();
+    expect(screen.queryByText(/Loading/i)).toBeNull();
+  });
+
+  it("keeps the report it already shows when the read on returning to the tab fails", async () => {
+    mockFetch.mockResolvedValueOnce(sampleReport());
+    const { rerender } = renderWithToastAndRouter(<HealthCheckPanel isActive />);
+    await screen.findByText("Core infrastructure");
+
+    rerenderPanel(rerender, false);
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    rerenderPanel(rerender, true);
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Core infrastructure")).toBeTruthy();
+  });
+
   it("renders fallback icons for unknown check and group ids", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleReport({

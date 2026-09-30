@@ -46,7 +46,7 @@ const drainWalletMessageJobs = deferredJob("wallet_message", 10, {
 });
 const ingestBounces = deferredJob("bounce", 10);
 const runWalletRegistrationSync = deferredJob("wallet_sync", 10);
-const runWalletExpiry = deferredJob("wallet_expire", 10, { expired: 0 });
+const runWalletExpiry = deferredJob("wallet_expire", 10, { expired: 0, deferredEvents: 0 });
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},

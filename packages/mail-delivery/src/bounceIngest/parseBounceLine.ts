@@ -286,8 +286,15 @@ function parsePostfixFallback(
 ): void {
   const inferredEmail = inferRecipientEmail(normalized, dsnLines);
 
+  // Every matcher ends in `(.+?)` followed by an optional `\s+(in reply to ...)` tail. Both can
+  // consume the same whitespace, so a long run of it inside the reason makes the engine retry the
+  // tail from every position of that run: quadratic, about 3 s for one 64 KB message. A run of
+  // spaces or tabs carries no meaning for a reason, so collapse it first. Newlines are kept, since
+  // `.` never crosses them and the tail is what may span lines.
+  const compact = normalized.replace(/[^\S\r\n]{2,}/g, " ");
+
   for (const matcher of FREE_TEXT_MATCHERS) {
-    for (const match of normalized.matchAll(matcher.pattern)) {
+    for (const match of compact.matchAll(matcher.pattern)) {
       const fields = matcher.extract(match, inferredEmail);
       pushLine(out, seen, fields.email, fields.code, fields.enhanced, fields.reason);
     }

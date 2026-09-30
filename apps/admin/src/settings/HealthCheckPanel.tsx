@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Badge, Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
 import type { NoticeVariant } from "@admitto/ui";
@@ -417,8 +417,12 @@ function HealthCheckMoreActions({
   );
 }
 
-/** Organisation Settings → Health check (ADR 0037). */
-export function HealthCheckPanel() {
+/** Organisation Settings → Health check (ADR 0037).
+ *
+ * `isActive` is whether this tab is the one showing. The Settings page keeps a visited tab mounted,
+ * so without it the report loaded on the first visit would stay on screen after an operator
+ * followed a guidance link to another tab, fixed the setting there, and came back. */
+export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: boolean }> = {}) {
   const { addToast } = useToast();
   const [report, setReport] = useState<HealthReportDto | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -480,6 +484,22 @@ export function HealthCheckPanel() {
     void loadPassive(ac.signal);
     return () => ac.abort();
   }, [loadPassive]);
+
+  // Returning to this tab reads the report again, quietly: the previous report stays on screen
+  // (no loading state, and a failed read keeps it) and is replaced when the new one arrives.
+  const wasActive = useRef(isActive);
+  useEffect(() => {
+    const returned = isActive && !wasActive.current;
+    wasActive.current = isActive;
+    if (!returned) return;
+    const ac = new AbortController();
+    fetchAdminHealth(ac.signal)
+      .then((data) => {
+        if (!ac.signal.aborted) setReport(data);
+      })
+      .catch(() => undefined);
+    return () => ac.abort();
+  }, [isActive]);
 
   const toggleExpanded = useCallback((check: HealthCheckRowDto) => {
     setExpandOverride((prev) => ({

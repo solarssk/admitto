@@ -2998,6 +2998,39 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    it("re-verifies the template when the Template ID is swapped while event_end is already on", async () => {
+      // A saved event_end mode is only as good as the template it was confirmed against: swapping
+      // to one whose "Different for each pass" setting is off would make PassCreator silently
+      // ignore every expirationDate while Admitto still marks passes Expired locally.
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: {
+          wallet_template_id: "tmpl-expiration",
+          wallet_api_key_enc: encryptToString("expiration-key"),
+          wallet_expiration_mode: "event_end",
+        },
+      });
+      const describeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "describeTemplate")
+        .mockResolvedValueOnce({ name: "No per-pass expiry", perPassExpirationReady: false });
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-without-expiry" }),
+        });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_expiration_mode_not_supported" });
+        expect(describeSpy).toHaveBeenCalledTimes(1);
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_template_id).toBe("tmpl-expiration");
+        expect(row.wallet_expiration_mode).toBe("event_end");
+      } finally {
+        await resetEventWalletConfig();
+      }
+    });
+
     it("rejects enabling event_end with 409 wallet_expiration_mode_not_supported when describeTemplate itself fails", async () => {
       await prisma.event.update({
         where: { id: EVENT_SET },

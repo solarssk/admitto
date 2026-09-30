@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 // Covers runWalletExpireJob's own three log branches (idle / ok / lock-held-skip) - the
 // concurrency test (worker-tick-concurrency.test.ts) only ever drives it through a fixed
-// { expired: 0 } mock and a lock that's always free, so the "ok expired=N" and "skipped (lock
+// { expired: 0, deferredEvents: 0 } mock and a lock that's always free, so the "ok expired=N" and "skipped (lock
 // held)" branches were otherwise untested (Codecov patch-coverage review, PR #1489).
 
 const DEFAULT_MAIL_DRAIN_LIMIT = 50;
 
-const runWalletExpiry = vi.fn(async () => ({ expired: 0 }));
+const runWalletExpiry = vi.fn(async () => ({ expired: 0, deferredEvents: 0 }));
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},
@@ -73,7 +73,7 @@ function fakeLocks(overrides: Partial<Record<string, boolean>> = {}) {
 
 describe("runWorkerTick — wallet_expire job", () => {
   it("logs ok with the expired count when the sweep finds due passes", async () => {
-    runWalletExpiry.mockResolvedValueOnce({ expired: 5 });
+    runWalletExpiry.mockResolvedValueOnce({ expired: 5, deferredEvents: 0 });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     await runWorkerTick({} as never, fakeLocks() as never, createRetentionSchedule());
