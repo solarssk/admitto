@@ -67,7 +67,7 @@
     "@admitto/notifications": "*",
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
-    "@simplewebauthn/server": "^14.0.2",
+    "@simplewebauthn/server": "^14.0.3",
     "argon2": "^0.45.1",
     "jose": "^6.2.10",
     "otplib": "^13.5.0",
@@ -76,9 +76,9 @@
   "devDependencies": {
     "@prisma/client": "^7.10.0",
     "@types/node": "^24.13.4",
-    "jsdom": "^30.1.0",
+    "jsdom": "^30.1.1",
     "prisma": "^7.10.0",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }

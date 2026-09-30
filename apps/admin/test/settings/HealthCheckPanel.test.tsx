@@ -684,27 +684,23 @@ describe("HealthCheckPanel", () => {
     });
   }
 
-  it.each<[HealthRowStatus, string, string, string | null]>([
-    ["ok", "ok", "check", null],
+  it.each<[HealthRowStatus, string, string, string]>([
+    ["ok", "ok", "check", "Healthy"],
     ["degraded", "warn", "alert-triangle", "Degraded"],
     ["down", "error", "x", "Down"],
     ["not_configured", "neutral", "minus", "Not configured"],
   ])(
-    "renders a %s row with a %s status circle, %s glyph, and badge %s",
-    async (status, circleVariant, glyph, badgeWord) => {
+    "renders a %s row with a %s status circle and %s glyph, and no separate status badge",
+    async (status, circleVariant, glyph, srWord) => {
       mockFetch.mockResolvedValueOnce(reportWithOneCheck(status));
       renderWithToast(<HealthCheckPanel />);
       const rowBtn = await screen.findByRole("button", { name: /Test check/ });
 
       expect(rowBtn.querySelector(`.status-circle--${circleVariant} .ti-${glyph}`)).toBeTruthy();
-
-      const badge = rowBtn.querySelector(".at-badge");
-      if (badgeWord === null) {
-        expect(badge).toBeNull();
-      } else {
-        expect(badge?.textContent).toBe(badgeWord);
-        expect(badge?.getAttribute("aria-hidden")).toBe("true");
-      }
+      // The circle's colour and glyph carry the state; a badge would only repeat it (and, for
+      // not_configured, the summary word for word). Screen readers still get the status.
+      expect(rowBtn.querySelector(".at-badge")).toBeNull();
+      expect(within(rowBtn).getByText(`Status: ${srWord}`).className).toBe("sr-only");
     },
   );
 
@@ -883,25 +879,30 @@ describe("HealthCheckPanel", () => {
     });
   }
 
-  it("shows the worker's Last seen fact next to the label", async () => {
+  it("shows the worker's Last seen in the expanded details, not in the row header", async () => {
     mockFetch.mockResolvedValueOnce(reportWithWorker("2026-08-03T12:42:24.000Z"));
     renderWithToast(<HealthCheckPanel />);
     const rowBtn = await screen.findByRole("button", { name: /Background worker/ });
-    expect(within(rowBtn).getByText("Last seen 12 min before this report")).toBeTruthy();
+    const row = rowBtn.closest(".health-check__row") as HTMLElement;
+    expect(within(rowBtn).queryByText(/Last seen/)).toBeNull();
+
+    fireEvent.click(rowBtn);
+    const label = within(row).getByText("Last seen");
+    expect(label.tagName).toBe("DT");
+    expect(label.nextElementSibling?.textContent).toBe("12 min before this report");
   });
 
-  it("omits the worker fact for a heartbeat under a minute old, and hides status/last_checked", async () => {
+  it("shows the raw heartbeat time for a heartbeat under a minute old, and hides status/last_checked", async () => {
     mockFetch.mockResolvedValueOnce(reportWithWorker("2026-08-03T12:54:00.000Z"));
     renderWithToast(<HealthCheckPanel />);
     const rowBtn = await screen.findByRole("button", { name: /Background worker/ });
-    expect(within(rowBtn).queryByText(/Last seen/)).toBeNull();
-
     const row = rowBtn.closest(".health-check__row") as HTMLElement;
     fireEvent.click(rowBtn);
+    expect(within(row).queryByText("Last seen")).toBeNull();
     expect(within(row).getByText("Hostname")).toBeTruthy();
     expect(within(row).queryByText("Status")).toBeNull();
     expect(within(row).queryByText("Last checked")).toBeNull();
-    // The fact was omitted (too fresh), so the raw timestamp still shows up in the details
+    // The age was omitted (too fresh), so the raw timestamp still shows up in the details
     // instead of being lost entirely.
     expect(within(row).getByText(formatEventDateTime("2026-08-03T12:54:00.000Z", getBrowserTimeZone()))).toBeTruthy();
   });
@@ -952,6 +953,12 @@ describe("HealthCheckPanel", () => {
     ).toBeTruthy();
     expect(within(row).queryByRole("link")).toBeNull();
 
+    // Both lines are labelled rows in the same grid as the detail list.
+    expect(within(row).getByText("Why").tagName).toBe("DT");
+    expect(within(row).getByText("Admitto could not connect to the database.")).toBeTruthy();
+    expect(within(row).getByText("What it affects").tagName).toBe("DT");
+    expect(within(row).getByText("What to do").tagName).toBe("DT");
+
     // Guidance renders before the detail list in DOM order.
     const body = row.querySelector(".health-check__body") as HTMLElement;
     const guidanceEl = body.querySelector(".health-check__guidance");
@@ -970,6 +977,8 @@ describe("HealthCheckPanel", () => {
 
     const link = within(row).getByRole("link", { name: /Open Mail settings/ });
     expect(link.getAttribute("href")).toBe("/admin/settings?tab=mail");
+    // A plain text link: the arrow icon made the hover underline stop short of the link's end.
+    expect(link.querySelector(".ti")).toBeNull();
   });
 
   it("shows no guidance block for a healthy row", async () => {
