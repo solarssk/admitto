@@ -21,8 +21,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/account/AccountPage.tsx": 1,
     "apps/admin/src/attendees/AddAttendeeModal.tsx": 2,
     "apps/admin/src/attendees/AttendeesTable.tsx": 3,
-    "apps/admin/src/auth/AuthProvider.tsx": 2,
-    "apps/admin/src/auth/OperatorDeviceGate.tsx": 1,
     "apps/admin/src/communication/DeliveryDetailsModal.tsx": 1,
     "apps/admin/src/communication/DeliveryLogTable.tsx": 1,
     "apps/admin/src/communication/SentMessagePreviewModal.tsx": 1,

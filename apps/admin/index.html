@@ -7,9 +7,130 @@
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <title>Admitto</title>
+    <!--
+      Splash shown until React mounts and replaces #root. Plain CSS on purpose: it has to render before
+      any bundle loads, and the staff CSP allows inline styles but not inline scripts. It is the
+      same mark, size and position as PageLoader in @admitto/ui (88px, centred), so the hand-over to
+      React does not move anything; PageLoader then takes the organisation's brand colour once the
+      theme has loaded. Keep the two visually in step.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: #f1f5f9;
+      }
+      .at-splash {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+      }
+      .at-splash svg {
+        width: 88px;
+        height: 88px;
+        animation: at-splash-breath 1.6s ease-in-out infinite;
+      }
+      .at-splash .tile {
+        fill: #066fd1;
+      }
+      .at-splash .check {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 2.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 1 2;
+        animation: at-splash-draw 1.6s ease-in-out infinite;
+      }
+      .at-splash .dot {
+        fill: #fff;
+        animation: at-splash-dot 1.6s ease-in-out infinite;
+      }
+      @keyframes at-splash-breath {
+        0%,
+        100% {
+          transform: scale(0.95);
+        }
+        50% {
+          transform: scale(1);
+        }
+      }
+      @keyframes at-splash-draw {
+        0% {
+          stroke-dashoffset: 1.05;
+          opacity: 1;
+        }
+        50%,
+        82% {
+          stroke-dashoffset: 0;
+          opacity: 1;
+        }
+        100% {
+          stroke-dashoffset: 0;
+          opacity: 0;
+        }
+      }
+      @keyframes at-splash-dot {
+        0%,
+        100% {
+          fill-opacity: 0.25;
+        }
+        50% {
+          fill-opacity: 0.8;
+        }
+      }
+      @keyframes at-splash-soft {
+        0%,
+        100% {
+          opacity: 0.55;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .at-splash svg {
+          animation: at-splash-soft 3s ease-in-out infinite;
+        }
+        .at-splash .check {
+          animation: none;
+          stroke-dashoffset: 0;
+        }
+        .at-splash .dot {
+          animation: none;
+          fill-opacity: 0.5;
+        }
+      }
+    </style>
+    <noscript>
+      <style>
+        .at-splash {
+          display: none;
+        }
+        .at-noscript {
+          padding: 2rem;
+          font: 14px/1.5 system-ui, sans-serif;
+          text-align: center;
+        }
+      </style>
+    </noscript>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="at-splash" role="status" aria-label="Loading Admitto">
+        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect class="tile" x="1" y="1" width="30" height="30" rx="7.5" />
+          <path class="check" pathLength="1" d="M9.5 16.5l4.2 4.2 7.5-9" />
+          <rect class="dot" x="22.5" y="6" width="4" height="4" rx="1" />
+        </svg>
+      </div>
+      <noscript>
+        <p class="at-noscript">Admitto needs JavaScript. Turn it on in your browser and reload the page.</p>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

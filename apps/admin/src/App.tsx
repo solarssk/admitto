@@ -1,6 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
-import { Spinner, ToastProvider } from "@admitto/ui";
+import { PageLoader, ToastProvider, TopProgressBar } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
@@ -15,6 +15,8 @@ import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvent } from "./api/client.js";
+import { useLoadingGate } from "./hooks/useDelayedLoading.js";
+import { lazyRoute, useChunkLoading } from "./utils/lazy-route.js";
 import type { EventDto } from "./api/types.js";
 
 // Route-level code-splitting: each page below loads on demand so the initial
@@ -40,22 +42,22 @@ const loadEventOverviewPage = () => import("./pages/EventOverviewPage.js").then(
 const loadReportsPage = () => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage }));
 const loadSetupWizardPage = () => import("./pages/SetupWizardPage.js").then((m) => ({ default: m.SetupWizardPage }));
 
-const SettingsTabContent = lazy(loadSettingsTabContent);
-const IdentityProvidersPanel = lazy(loadIdentityProvidersPanel);
-const UsersPage = lazy(loadUsersPage);
-const AccountLayout = lazy(loadAccountLayout);
-const CheckInEntryPage = lazy(loadCheckInEntryPage);
-const CheckInPage = lazy(loadCheckInPage);
-const AdminCheckInRoute = lazy(loadAdminCheckInRoute);
-const AttendeesPage = lazy(loadAttendeesPage);
-const AttendeeDetailPage = lazy(loadAttendeeDetailPage);
-const EventSettingsPage = lazy(loadEventSettingsPage);
-const ImportPage = lazy(loadImportPage);
-const RequirementsPage = lazy(loadRequirementsPage);
-const CommunicationPage = lazy(loadCommunicationPage);
-const EventOverviewPage = lazy(loadEventOverviewPage);
-const ReportsPage = lazy(loadReportsPage);
-const SetupWizardPage = lazy(loadSetupWizardPage);
+const SettingsTabContent = lazyRoute(loadSettingsTabContent);
+const IdentityProvidersPanel = lazyRoute(loadIdentityProvidersPanel);
+const UsersPage = lazyRoute(loadUsersPage);
+const AccountLayout = lazyRoute(loadAccountLayout);
+const CheckInEntryPage = lazyRoute(loadCheckInEntryPage);
+const CheckInPage = lazyRoute(loadCheckInPage);
+const AdminCheckInRoute = lazyRoute(loadAdminCheckInRoute);
+const AttendeesPage = lazyRoute(loadAttendeesPage);
+const AttendeeDetailPage = lazyRoute(loadAttendeeDetailPage);
+const EventSettingsPage = lazyRoute(loadEventSettingsPage);
+const ImportPage = lazyRoute(loadImportPage);
+const RequirementsPage = lazyRoute(loadRequirementsPage);
+const CommunicationPage = lazyRoute(loadCommunicationPage);
+const EventOverviewPage = lazyRoute(loadEventOverviewPage);
+const ReportsPage = lazyRoute(loadReportsPage);
+const SetupWizardPage = lazyRoute(loadSetupWizardPage);
 
 const PLACEHOLDER_ROUTES = [
   { path: "overview", title: "Overview" },
@@ -222,9 +224,9 @@ export function EventLayout() {
   if (error) return <Navigate to="/admin" replace />;
   if (!event) {
     return (
-      <output className="shell-loading">
-        <Spinner label="Loading event" />
-      </output>
+      <div className="shell-loading">
+        <PageLoader label="Loading event" />
+      </div>
     );
   }
 
@@ -298,7 +300,28 @@ export function StaffRoutes() {
   );
 }
 
+/** Mounted inside the route Suspense boundary, so it only runs once the first page has rendered. */
+function RoutesReadyMarker({ onReady }: Readonly<{ onReady: () => void }>) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  return null;
+}
+
+/**
+ * Thin bar along the top while the code of a page the user just opened downloads (the old page
+ * stays visible meanwhile). Shown after the shared 200ms delay, so a warm cache never flashes it,
+ * and only after the first page has rendered: at start the full-screen loader already says it.
+ */
+function PageChangeProgress({ enabled }: Readonly<{ enabled: boolean }>) {
+  const chunkLoading = useChunkLoading();
+  const { showIndicator } = useLoadingGate(enabled && chunkLoading);
+  return <TopProgressBar active={showIndicator} />;
+}
+
 export default function App() {
+  const [routesReady, setRoutesReady] = useState(false);
+  const markRoutesReady = useCallback(() => setRoutesReady(true), []);
   return (
     <ErrorBoundary>
       <ToastProvider>
@@ -306,13 +329,15 @@ export default function App() {
           <ConnectionStateProvider initiallyConnected>
             <Suspense
               fallback={
-                <output className="shell-loading">
-                  <Spinner label="Loading" />
-                </output>
+                <div className="shell-loading">
+                  <PageLoader />
+                </div>
               }
             >
               <StaffRoutes />
+              <RoutesReadyMarker onReady={markRoutesReady} />
             </Suspense>
+            <PageChangeProgress enabled={routesReady} />
           </ConnectionStateProvider>
         </AuthProvider>
       </ToastProvider>

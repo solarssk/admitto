@@ -168,6 +168,8 @@ Rules:
 - Loading text is for assistive tech (`aria-label`, `aria-busy`). The only visible text is the 8s message, the label of a busy button, and the row inside a list of remote options.
 - `prefers-reduced-motion` slows the loaders and stops the shimmer. It never freezes them completely.
 
+The two places that render before the bundle or without React, the splash inside `#root` in `apps/admin/index.html` and the server-rendered pages in `apps/web`, use plain inline CSS instead (the staff CSP allows inline styles, not inline scripts). The splash keeps the mark, size and position of `PageLoader` so the hand-over to React does not move anything.
+
 `apps/admin/test/styles/loading-standard.test.ts` enforces the mechanical parts: no `*spin*` or `*shimmer*` `@keyframes` and no `at-spin` animation in admin CSS, no `Loading…` text, no hand-made busy-label ternaries. It is a ratchet: today's leftovers are listed per file and may only be removed, so a migration PR lowers the list in the same change.
 
 ## Compounding rules
