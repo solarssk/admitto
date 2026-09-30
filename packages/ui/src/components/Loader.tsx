@@ -1,4 +1,5 @@
-import type { CSSProperties, HTMLAttributes } from "react";
+import { useState, type CSSProperties, type HTMLAttributes } from "react";
+import { LOADER_CYCLE_MS, loaderElapsedMs } from "../loader-clock.js";
 
 export interface LoaderProps extends Omit<HTMLAttributes<HTMLOutputElement>, "children"> {
   /** Accessible name announced to assistive tech. Visible text is only ever the optional `caption`. */
@@ -16,7 +17,8 @@ export interface SectionLoaderProps extends LoaderProps {
 }
 
 /** The Admitto mark, drawn from the same paths as `assets/admitto-mark.svg`. Colours come from
- * `loader.css` (brand colour follows the organisation theme). */
+ * `loader.css` (brand colour follows the organisation theme). `pathLength="1"` lets the tick's
+ * draw-in animation use dash values that do not depend on the real path length. */
 const MARK = (
   <svg className="at-loader__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
     <rect className="at-loader__tile" x="1" y="1" width="30" height="30" rx="7.5" />
@@ -32,10 +34,14 @@ function LoaderBody({
   className,
   style,
   ...rest
-}: Readonly<LoaderProps & { size: "page" | "section"; style?: CSSProperties }>) {
+}: Readonly<LoaderProps & { size: "page" | "section" }>) {
+  // Start this loader's animation mid-cycle, at the phase the shared clock is at, so swapping one
+  // loader for another (splash, boot, event, route) keeps drawing instead of restarting the tick.
+  const [phaseMs] = useState(() => loaderElapsedMs() % LOADER_CYCLE_MS);
   const cls = ["at-loader", `at-loader--${size}`, className].filter(Boolean).join(" ");
+  const merged = { "--at-loader-phase": `-${Math.round(phaseMs)}ms`, ...style } as CSSProperties;
   return (
-    <output className={cls} aria-label={label} style={style} {...rest}>
+    <output className={cls} aria-label={label} style={merged} {...rest}>
       {MARK}
       {caption ? <span className="at-loader__caption">{caption}</span> : null}
     </output>
