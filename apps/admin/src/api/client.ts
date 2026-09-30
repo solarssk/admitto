@@ -1262,6 +1262,9 @@ export interface WalletCleanupJobStatusResponse {
   done: number | null;
   skipped: number | null;
   errored: number | null;
+  /** How many voided/expired passes (wallet_remove_inactive only) exist but have not yet passed
+   * their own 24-hour grace period - null for wallet_void_active, which has no such gate. */
+  pendingGraceCount: number | null;
 }
 
 /** Poll an event-wide wallet clean-up job (currently wallet_void_active), enqueued by

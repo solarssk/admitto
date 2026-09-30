@@ -24,7 +24,7 @@ function toastWalletCleanupSucceeded(
   const errored = status.errored ?? 0;
 
   if (errored > 0) addToast(copy.withErrors(done, errored), "warning");
-  else if (done === 0) addToast(copy.nothing, "info");
+  else if (done === 0) addToast(copy.nothing(status.pendingGraceCount ?? 0), "info");
   else addToast(copy.done(done, skipped), "success");
 }
 

@@ -149,6 +149,7 @@ export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.j
 export { drainWalletRefreshStatusJobs } from "./drain-wallet-refresh-status-jobs.js";
 export type { DrainWalletRefreshStatusJobsResult } from "./drain-wallet-refresh-status-jobs.js";
 export {
+  countPendingGraceInactivePasses,
   drainWalletCleanupJobs,
   WALLET_CLEANUP_JOB_TYPES,
   WALLET_REMOVE_INACTIVE_GRACE_MS,

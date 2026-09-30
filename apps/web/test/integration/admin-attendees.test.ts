@@ -11355,4 +11355,20 @@ describe("GET /api/admin/events/:eventId/wallet-cleanup/jobs/:jobId", () => {
 
     expect(await (await getJob(EVENT_A, job.id)).json()).toMatchObject({ done: null, skipped: null, errored: null });
   });
+
+  it("surfaces pendingGraceCount (wallet_remove_inactive's own grace-period count) - null for a not-yet-finished job, the real value once finished", async () => {
+    const job = await seedJob({ type: "wallet_remove_inactive", status: "running" });
+
+    expect(await (await getJob(EVENT_A, job.id)).json()).toMatchObject({ pendingGraceCount: null });
+
+    await prisma.adminJob.update({
+      where: { id: job.id },
+      data: {
+        status: "succeeded",
+        finished_at: new Date(),
+        result_json: { request: { eventId: EVENT_A }, done: 2, skipped: 0, errored: 0, pendingGraceCount: 5 },
+      },
+    });
+    expect(await (await getJob(EVENT_A, job.id)).json()).toMatchObject({ pendingGraceCount: 5 });
+  });
 });
