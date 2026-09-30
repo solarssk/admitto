@@ -52,6 +52,14 @@ describe("Health check row typography and alignment (health-check.css)", () => {
     expect(quiet).toBeGreaterThan(base);
   });
 
+  it("leaves the spacing around the verdict notice to the card body's gap", () => {
+    expect(rule(".health-check__card .at-card__body")).toMatch(/display:\s*flex/);
+    expect(rule(".health-check__card .at-card__body")).toMatch(/gap:\s*var\(--space-4\)/);
+    // No margin of its own on the notice, and none pushing the intro away from it.
+    expect(css).not.toMatch(/\.health-check__verdict/);
+    expect(rule(".health-check__meta")).not.toMatch(/margin:[^;]*var\(--space-4\)/);
+  });
+
   it("keeps the guidance link a plain link with no underline, even on hover", () => {
     expect(rule(".health-check__guidance-link:hover")).toMatch(/text-decoration:\s*none/);
     expect(rule(".health-check__guidance-link")).not.toMatch(/display:\s*inline-flex/);
