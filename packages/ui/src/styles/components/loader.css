@@ -1,0 +1,125 @@
+.at-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.at-loader--page {
+  width: 100%;
+  height: 100%;
+  min-height: 16rem;
+}
+
+.at-loader--section {
+  width: 100%;
+}
+
+.at-loader__mark {
+  display: block;
+  animation: at-loader-breath 1.6s ease-in-out infinite;
+}
+
+.at-loader--page .at-loader__mark {
+  width: 88px;
+  height: 88px;
+}
+
+.at-loader--section .at-loader__mark {
+  width: 52px;
+  height: 52px;
+}
+
+/* --primary, not --at-blue: an organisation with its own brand colour gets a matching mark. */
+.at-loader__tile {
+  fill: var(--primary);
+}
+
+/* pathLength="1" on the path makes the dash values below independent of the real path length.
+   dasharray "1 2" plus an offset just past 1 hides the whole stroke at the start of the loop. */
+.at-loader__check {
+  fill: none;
+  stroke: var(--text-on-primary);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 2;
+  animation: at-loader-draw 1.6s ease-in-out infinite;
+}
+
+.at-loader__dot {
+  fill: var(--text-on-primary);
+  animation: at-loader-dot 1.6s ease-in-out infinite;
+}
+
+.at-loader__caption {
+  max-width: 28ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+@keyframes at-loader-breath {
+  0%,
+  100% {
+    transform: scale(0.95);
+  }
+  50% {
+    transform: scale(1);
+  }
+}
+
+@keyframes at-loader-draw {
+  0% {
+    stroke-dashoffset: 1.05;
+    opacity: 1;
+  }
+  50%,
+  82% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes at-loader-dot {
+  0%,
+  100% {
+    fill-opacity: 0.25;
+  }
+  50% {
+    fill-opacity: 0.8;
+  }
+}
+
+@keyframes at-loader-soft {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Slower and static, not frozen: a completely still mark reads as a hung page. */
+  .at-loader__mark {
+    animation: at-loader-soft 3s ease-in-out infinite;
+  }
+
+  .at-loader__check {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .at-loader__dot {
+    animation: none;
+    fill-opacity: 0.5;
+  }
+}

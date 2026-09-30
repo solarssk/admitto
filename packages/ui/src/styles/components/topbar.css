@@ -1,0 +1,51 @@
+.at-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: var(--z-dropdown);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.at-topbar__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  background: var(--primary);
+  border-radius: 2px;
+  animation: at-topbar-slide 1.3s ease-in-out infinite;
+}
+
+/* Finishing: the bar fills to the right edge, then fades out. */
+.at-topbar[data-phase="finishing"] {
+  opacity: 0;
+  transition: opacity 0.25s ease-out 0.05s;
+}
+
+.at-topbar[data-phase="finishing"] .at-topbar__bar {
+  animation: none;
+  left: 0;
+  width: 100%;
+  transition: width 0.2s ease-out;
+}
+
+@keyframes at-topbar-slide {
+  from {
+    left: -40%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .at-topbar__bar {
+    left: 0;
+    width: 45%;
+    animation: at-loader-soft 2s ease-in-out infinite;
+  }
+}

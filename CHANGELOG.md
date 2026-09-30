@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Shared loading pieces for the staff app: a full-screen and a panel-sized loading screen that show the Admitto mark, a thin progress bar for page changes, and a loading state for buttons that disables the button and keeps its width. Screens move over to them in the following changes, so waiting looks and behaves the same everywhere.
+- A written standard for loading and busy states in `AGENTS.md` (which indicator to use, the 200 ms, 400 ms, 8 s and 30 s timing) and a test that stops new one-off spinners, "Loading…" text and hand-made "Saving…" labels from being added.
+
+### Changed
+
+- The loading spinner now takes the colour of the button or text around it instead of a fixed blue, so it is visible on primary buttons and follows the brand colour elsewhere, and skeleton placeholders use their own colour tokens.
+
 ### Fixed
 
 - Event Settings → Danger zone's warning notice under the panel no longer sits about twice as far below it as the notices and cards elsewhere in Event Settings. It now uses the same standard gap.

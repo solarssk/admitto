@@ -25,6 +25,13 @@ export { Card, type CardProps } from "./components/Card.js";
 export { PageHeader, type PageHeaderProps } from "./components/PageHeader.js";
 export { Tabs, type TabsProps, type TabItem } from "./components/Tabs.js";
 export { Spinner, type SpinnerProps, type SpinnerSize } from "./components/Spinner.js";
+export {
+  PageLoader,
+  SectionLoader,
+  type LoaderProps,
+  type SectionLoaderProps,
+} from "./components/Loader.js";
+export { TopProgressBar, type TopProgressBarProps } from "./components/TopProgressBar.js";
 export { EmptyState, type EmptyStateProps } from "./components/EmptyState.js";
 export { Skeleton, type SkeletonProps, type SkeletonVariant } from "./components/Skeleton.js";
 export {

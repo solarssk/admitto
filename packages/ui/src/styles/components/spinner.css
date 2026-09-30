@@ -1,7 +1,10 @@
+/* The arc is drawn in currentColor, so the ring follows whatever colour its parent sets: brand
+   colour by default, the button's own text colour inside a button (see `.at-btn .at-spinner`). */
 .at-spinner {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: var(--primary);
 }
 
 .at-spinner--sm {
@@ -23,8 +26,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  border: 2px solid var(--at-gray-200, #e2e8f0);
-  border-top-color: var(--at-blue, #066fd1);
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: at-spin 0.7s linear infinite;
 }
