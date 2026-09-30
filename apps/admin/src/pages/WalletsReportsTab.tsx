@@ -184,6 +184,19 @@ function passValidityHint(syncedAt: string | null): string {
   return `${label} - the single most recently checked pass, not every pass counted here. Voiding a pass takes effect immediately, but the wallet service voiding or expiring a pass on its own is only noticed at that pass's own next sync or a manual Refresh status - which the background sync skips once the event is archived.`;
 }
 
+/** Provider state's own pending-removal note, shown only when EventWalletReportsResponse's own
+ * `pending_removal` is above 0 - live, with no action required to see it, unlike the "Remove
+ * inactive passes" job's own toast (a one-off message after running it, gone as soon as it's
+ * dismissed). Explains WHY a voided/expired pass still shows as "managed" rather than leaving an
+ * admin to assume the action silently did nothing (PO report: running it right after a wave of
+ * webhook-reported voids read exactly like "nothing to remove", with nowhere afterwards to check
+ * whether anything was actually just waiting on the window - this card is that checkable place). */
+function pendingRemovalNote(count: number): string {
+  const verb = count === 1 ? "is" : "are";
+  const noun = count === 1 ? "pass" : "passes";
+  return `${count} voided or expired ${noun} ${verb} less than 24 hours old, so Remove inactive passes can't remove ${count === 1 ? "it" : "them"} yet. Admitto waits a full day before deleting a pass from the wallet service, in case it needs to be restored by mistake. Ready to remove once that day has passed.`;
+}
+
 /** Devices per attendee's own hint - both totals here are scoped to platforms this event
  * currently has enabled (RegistrationsPerAttendeeDonut's own doc comment explains why: same
  * enabledPlatforms gating as `platform`/`wallet_lifecycle.active` elsewhere on this tab). A
@@ -932,6 +945,11 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
           <p className="wallets-description">
             Every issued pass, grouped by whether Admitto has removed it from the wallet service (via Remove from provider or Remove inactive passes) or not - its record and history stay here either way. A pass deleted directly at the wallet service, outside Admitto, still shows as managed here until reached by one of those actions.
           </p>
+          {data.pending_removal > 0 && (
+            <Notice variant="info" className="wallets-pending-removal-notice">
+              {pendingRemovalNote(data.pending_removal)}
+            </Notice>
+          )}
           <div className="wallets-adoption">
             <ProviderStateDonut state={data.provider_state} gotPass={data.adoption.got_pass} isActive={isActive} />
             <div className="wallets-adoption__breakdown">

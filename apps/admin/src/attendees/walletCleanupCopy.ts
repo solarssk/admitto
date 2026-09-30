@@ -10,13 +10,27 @@ function leftAloneNote(skipped: number, reason: string): string {
   return ` ${skipped} ${verb} left alone because ${reason}.`;
 }
 
+/** " 3 are still inside their 24-hour safety window before removal." - empty when nothing is
+ * waiting on the grace period. Explains WHY in plain terms (in case one needs to be restored by
+ * mistake), not just that a wait exists - this line is what tells an admin who just ran "Remove
+ * inactive passes" right after a wave of voids apart from one where nothing is voided/expired at
+ * all, both of which otherwise read as the exact same "nothing removed" (PO report). */
+function pendingGraceNote(pendingGraceCount: number): string {
+  if (pendingGraceCount <= 0) return "";
+  const verb = pendingGraceCount === 1 ? "is" : "are";
+  return ` ${passes(pendingGraceCount)} ${verb} voided or expired, but less than a day old. Admitto waits 24 hours before removing a pass from the wallet service, in case an admin needs to restore it by mistake. Run this again after that.`;
+}
+
 const VOID_ACTIVE_COPY = {
   queued: "Voiding started. You'll see a summary when it's done.",
   failed: "Voiding the wallet passes did not run. Try again from More actions.",
   /** The job was queued, only checking on it failed: it may well still finish. */
   pollFailed: "Could not check on the voiding. It may still be running in the background.",
   stillRunning: "Voiding the wallet passes is still running in the background.",
-  nothing: "There were no active wallet passes to void.",
+  /** wallet_void_active has no grace period, so this never has anything to append - kept as a
+   * function purely so toastWalletCleanupSucceeded can call `copy.nothing(...)` the same way for
+   * both actions rather than branching on which one it is. */
+  nothing: (_pendingGraceCount: number) => "There were no active wallet passes to void.",
   done: (count: number, skipped: number) =>
     `${passes(count)} voided.${leftAloneNote(skipped, skipped === 1 ? "it was no longer active" : "they were no longer active")}`,
   withErrors: (count: number, errored: number) =>
@@ -28,7 +42,8 @@ const REMOVE_INACTIVE_COPY = {
   failed: "Removing the wallet passes did not run. Try again from More actions.",
   pollFailed: "Could not check on the removal. It may still be running in the background.",
   stillRunning: "Removing the wallet passes is still running in the background.",
-  nothing: "There were no wallet passes ready to remove.",
+  nothing: (pendingGraceCount: number) =>
+    `There were no wallet passes ready to remove.${pendingGraceNote(pendingGraceCount)}`,
   done: (count: number, skipped: number) =>
     `${passes(count)} removed from the wallet service.${leftAloneNote(skipped, skipped === 1 ? "it had changed since" : "they had changed since")}`,
   withErrors: (count: number, errored: number) =>

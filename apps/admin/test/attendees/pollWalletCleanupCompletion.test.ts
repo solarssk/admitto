@@ -17,6 +17,7 @@ const status = (overrides: Record<string, unknown> = {}) => ({
   done: null,
   skipped: null,
   errored: null,
+  pendingGraceCount: null,
   ...overrides,
 });
 
@@ -221,11 +222,46 @@ describe("pollWalletCleanupCompletion", () => {
       expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(expected, "success");
     });
 
-    it("toasts info when there was nothing ready to remove", async () => {
-      fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done: 0, skipped: 2, errored: 0 }));
+    it("toasts info when there was nothing ready to remove, and nothing is waiting on the grace period either", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(
+        status({ status: "succeeded", done: 0, skipped: 2, errored: 0, pendingGraceCount: 0 }),
+      );
 
       expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
         "There were no wallet passes ready to remove.",
+        "info",
+      );
+    });
+
+    it("explains the 24-hour wait, and how many are in it, when nothing was removed but some are waiting", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(
+        status({ status: "succeeded", done: 0, skipped: 0, errored: 0, pendingGraceCount: 3 }),
+      );
+
+      expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
+        "There were no wallet passes ready to remove. 3 wallet passes are voided or expired, but less than a day old. Admitto waits 24 hours before removing a pass from the wallet service, in case an admin needs to restore it by mistake. Run this again after that.",
+        "info",
+      );
+    });
+
+    it("uses singular phrasing for exactly one pending pass", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(
+        status({ status: "succeeded", done: 0, skipped: 0, errored: 0, pendingGraceCount: 1 }),
+      );
+
+      expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
+        "There were no wallet passes ready to remove. 1 wallet pass is voided or expired, but less than a day old. Admitto waits 24 hours before removing a pass from the wallet service, in case an admin needs to restore it by mistake. Run this again after that.",
+        "info",
+      );
+    });
+
+    it("does not mention the grace period for void_active, which has no such gate", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(
+        status({ status: "succeeded", done: 0, skipped: 0, errored: 0, pendingGraceCount: 3 }),
+      );
+
+      expect(await poll({ action: "void_active" })).toHaveBeenCalledWith(
+        "There were no active wallet passes to void.",
         "info",
       );
     });

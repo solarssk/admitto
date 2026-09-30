@@ -749,6 +749,16 @@
   margin-bottom: 0;
 }
 
+/* .at-card__body is plain block flow (packages/ui's Card, padding only, no flex/grid gap), so a
+   Notice placed between .wallets-description and .wallets-adoption needs its own bottom margin to
+   get the same standard step everything else on this page uses - .at-notice itself is margin: 0
+   by design (its layout contract expects a flex/grid gap parent to supply spacing, which this
+   plain block body doesn't). Same value as .wallets-description's own margin-bottom above, so the
+   notice reads as just another paragraph in the flow, not a specially-spaced insert. */
+.wallets-pending-removal-notice {
+  margin: 0 0 var(--space-4);
+}
+
 .wallets-adoption {
   display: flex;
   align-items: center;

@@ -186,6 +186,20 @@ export interface EventWalletReportsResponse {
     managed: number;
     removed: number;
   };
+  /** How many voided or expired passes (a subset of `pass_validity`'s voided+expired that is also
+   * `provider_state.managed`) have not yet passed their own 24-hour safety window before "Remove
+   * inactive passes" is allowed to delete them at the wallet provider (counted from
+   * WalletPass.voided_at for a voided pass, or expires_at for an expired one - see
+   * WALLET_REMOVE_INACTIVE_GRACE_MS, packages/tickets/src/drain-wallet-cleanup-jobs.ts). A live
+   * count, independent of whether "Remove inactive passes" has ever been run for this event -
+   * surfaced so an admin can see, at any time, why a voided/expired pass is still showing as
+   * managed instead of having to run the action and guess from a one-off toast (PO report: running
+   * the action right after a wave of webhook-reported voids looked exactly like "nothing to
+   * remove", with nowhere to check whether anything was actually just waiting on the window).
+   * Excludes a voided/expired pass with neither reference point set - that pass isn't "waiting",
+   * it will never qualify for the bulk action regardless of how long it sits (Remove from provider
+   * on that one attendee still works directly). */
+  pending_removal: number;
   /** What became of every issued pass, as far as registration on a device is concerned right now
    * (this DTO's "last known" registration-state axis) - mutually exclusive, always summing to
    * exactly `adoption.got_pass`, and splitting `adoption.confirmed` itself into its two

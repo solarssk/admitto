@@ -10,7 +10,13 @@ import {
   type EventWalletReportsResponse,
 } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
-import { buildExportColumnLabels, loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
+import {
+  buildExportColumnLabels,
+  countPendingGraceInactivePasses,
+  loadEventTicketTypes,
+  writeBulkActionLog,
+  type TicketTypeInfo,
+} from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -1196,6 +1202,7 @@ async function loadWalletReportsAggregates(
   const [
     totalAttendees,
     totalPassCount,
+    pendingRemovalCount,
     passes,
     byTypeTotalRaw,
     catalog,
@@ -1209,6 +1216,13 @@ async function loadWalletReportsAggregates(
     // Unbounded, unlike the findMany below - a plain COUNT never has to hold rows in memory, so
     // it stays cheap and accurate at any scale and doubles as truncation detection for `passes`.
     db.walletPass.count({ where: { attendee: { event_id: eventId }, issued_at: { not: null } } }),
+    // Also unbounded, for the same reason - pending_removal must match exactly what "Remove
+    // inactive passes" will itself find (see that field's own DTO doc comment), which the
+    // WALLET_AGGREGATE_MAX-capped `passes` sample below cannot guarantee once an event has more
+    // issued passes than that cap (bot review: a plain count derived from the sample could
+    // undercount, or read 0 and hide the Notice, even while the job's own unbounded query finds
+    // real waiting passes).
+    countPendingGraceInactivePasses(db, eventId),
     db.walletPass.findMany({
       where: { attendee: { event_id: eventId }, issued_at: { not: null } },
       take: WALLET_AGGREGATE_MAX,
@@ -1339,6 +1353,7 @@ async function loadWalletReportsAggregates(
     wallet_lifecycle: lifecycleCounts,
     pass_validity: passValidityCounts,
     provider_state: providerStateCounts,
+    pending_removal: pendingRemovalCount,
   };
 }
 
