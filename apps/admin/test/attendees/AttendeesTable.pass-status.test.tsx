@@ -424,6 +424,20 @@ describe("AttendeesTable loading states (#271)", () => {
     });
   });
 
+  it("marks the empty state busy while a later search is refetching it, and not otherwise", () => {
+    const { container, rerender } = render(
+      <AttendeesTable {...tableProps} hasLoadedOnce loading={false} items={[]} total={0} />,
+    );
+    const wrap = () => container.querySelector(".attendees-table-wrap");
+    expect(screen.getByText("No matches")).toBeTruthy();
+    expect(wrap()?.getAttribute("aria-busy")).toBe("false");
+
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading items={[]} total={0} />);
+    // Announced at once, before the 200ms it takes the dim and the bar to appear.
+    expect(wrap()?.getAttribute("aria-busy")).toBe("true");
+    expect(wrap()?.classList.contains("attendees-table-wrap--loading")).toBe(true);
+  });
+
   it("omits the Wallet column from the shimmer skeleton too when no wallet platform is enabled", () => {
     vi.useFakeTimers();
     const { container } = render(

@@ -17,6 +17,14 @@ describe("content fade-in and held skeleton CSS (jsdom does not load the stylesh
     expect(declarationsOf(".at-fade-in {")).toMatch(/animation:\s*at-fade-in\s+0\.15s/);
   });
 
+  it("leaves nothing animated once it has run, so it keeps no stacking context around what it wraps", () => {
+    // `both` / `forwards` would keep the animation in effect for good: a page holding fixed-position
+    // dialogs, or a list with open menus, would be trapped in a stacking context.
+    const rule = declarationsOf(".at-fade-in {").replaceAll(/\/\*[\s\S]*?\*\//g, "");
+    expect(rule).not.toMatch(/\b(both|forwards)\b/);
+    expect(rule).toMatch(/\bbackwards\b/);
+  });
+
   it("does not animate under prefers-reduced-motion", () => {
     const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)", css.indexOf("@keyframes at-fade-in")));
     expect(reduced).toMatch(/\.at-fade-in\s*\{\s*animation:\s*none/);

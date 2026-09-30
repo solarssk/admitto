@@ -849,7 +849,6 @@ function HeaderMoreMenu({
                   icon="refresh-dot"
                   label="Push updates"
                   loading={eventWidePushBusy}
-                  loadingLabel="Pushing updates…"
                   hint="Send the latest details to every installed pass"
                   disabled={archived || eventWidePushBusy}
                   tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -865,7 +864,6 @@ function HeaderMoreMenu({
                     icon="cloud-download"
                     label="Refresh status"
                     loading={eventWideRefreshStatusBusy}
-                    loadingLabel="Refreshing status…"
                     hint="Get the latest status of every active pass"
                     disabled={eventWideRefreshStatusBusy}
                     onClick={() => {

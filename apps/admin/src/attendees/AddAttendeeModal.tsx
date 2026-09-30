@@ -16,6 +16,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../utils/loading-timing.js";
 import "./add-attendee-modal.css";
 
 type AddAttendeeModalProps = {
@@ -84,7 +85,11 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     setAttributeFieldsLoading(true);
     setAttributeFieldsError(null);
     let cancelled = false;
-    fetchAttendeeCustomFields(eventId)
+    // The form is held back until this answers, so a request that stalls must not hold it forever:
+    // give up after LOAD_TIMEOUT_MS, which ends in the error below and releases the form.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+    fetchAttendeeCustomFields(eventId, controller.signal)
       .then((fields) => {
         if (cancelled) return;
         setAttributeFields(fields);
@@ -93,14 +98,21 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       .catch(() => {
         if (!cancelled) {
           setAttributeFields([]);
-          setAttributeFieldsError("Could not load attribute fields. Try reopening the dialog.");
+          setAttributeFieldsError(
+            controller.signal.aborted
+              ? `${LOAD_TIMEOUT_MESSAGE} Reopen the dialog to load the custom fields.`
+              : "Could not load attribute fields. Try reopening the dialog.",
+          );
         }
       })
       .finally(() => {
+        clearTimeout(timeout);
         if (!cancelled) setAttributeFieldsLoading(false);
       });
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [eventId, open]);
 
@@ -116,21 +128,31 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     setTicketTypesError(null);
     setTicketTypesLoading(true);
     let cancelled = false;
-    fetchTicketTypes(eventId)
+    // Same as the custom fields above: a stalled request ends in an error after LOAD_TIMEOUT_MS.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+    fetchTicketTypes(eventId, controller.signal)
       .then((types) => {
         if (!cancelled) setTicketTypes(types);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setTicketTypes([]);
-          setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
+          setTicketTypesError(
+            controller.signal.aborted
+              ? `${LOAD_TIMEOUT_MESSAGE} Reopen the dialog to load the ticket types.`
+              : operatorApiErrorMessage(err, "Could not load ticket types."),
+          );
         }
       })
       .finally(() => {
+        clearTimeout(timeout);
         if (!cancelled) setTicketTypesLoading(false);
       });
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [eventId, open]);
 

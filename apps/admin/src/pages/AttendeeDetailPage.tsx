@@ -2542,7 +2542,11 @@ export function AttendeeDetailPage() {
 
   if (!showContent) {
     return (
-      <div className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`} aria-busy="true">
+      <div
+        key="loading"
+        className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
+        aria-busy="true"
+      >
         <output className="sr-only">Loading attendee</output>
         <Skeleton variant="text" lines={2} />
         <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
@@ -2550,9 +2554,11 @@ export function AttendeeDetailPage() {
     );
   }
 
+  // The page, the not-found notice and the error all replace the skeleton (same key: none of them
+  // renders next to another), fading in over 150ms.
   if (notFound) {
     return (
-      <div className="attendee-detail-page screen">
+      <div key="page" className="attendee-detail-page screen at-fade-in">
         <PageHeader title="Attendee not found" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         <p>The attendee could not be found or you do not have access.</p>
       </div>
@@ -2561,7 +2567,7 @@ export function AttendeeDetailPage() {
 
   if (!detail || !form) {
     return (
-      <div className="attendee-detail-page screen">
+      <div key="page" className="attendee-detail-page screen at-fade-in">
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         {error && (
           <EmptyState
@@ -2618,7 +2624,7 @@ export function AttendeeDetailPage() {
     : null;
 
   return (
-    <div className="attendee-detail-page screen">
+    <div key="page" className="attendee-detail-page screen at-fade-in">
       <PageHeader
         title={detail.name}
         subtitle="Manage this attendee's profile, ticket, and check-in status."

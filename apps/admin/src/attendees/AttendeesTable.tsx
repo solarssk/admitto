@@ -563,7 +563,6 @@ function BulkWalletMenuItems({
           variant="warning"
           label="Void wallet pass"
           loading={bulkVoidWalletBusy}
-          loadingLabel="Voiding wallet passes…"
           hint={`Make the pass invalid for ${attendeeCount(walletPassCount)}`}
           disabled={bulkVoidWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -578,7 +577,6 @@ function BulkWalletMenuItems({
           icon="refresh-dot"
           label="Push updates"
           loading={bulkReissueWalletBusy}
-          loadingLabel="Pushing updates…"
           hint={`Send the latest details to ${attendeeCount(walletPassCount)}`}
           disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(archived, canBulkWallet)}
@@ -593,7 +591,6 @@ function BulkWalletMenuItems({
           icon="cloud-download"
           label="Refresh status"
           loading={bulkRefreshWalletStatusBusy}
-          loadingLabel="Refreshing status…"
           hint={`Get the latest status for ${attendeeCount(walletPassCount)}`}
           disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -609,7 +606,6 @@ function BulkWalletMenuItems({
           variant="danger"
           label="Remove from provider"
           loading={bulkRemoveWalletBusy}
-          loadingLabel="Removing from provider…"
           hint="Delete voided or expired passes, keep the history"
           disabled={bulkRemoveWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -625,7 +621,6 @@ function BulkWalletMenuItems({
           variant="danger"
           label="Delete wallet pass"
           loading={bulkDeleteWalletBusy}
-          loadingLabel="Deleting wallet passes…"
           hint={`Delete the pass and its history for ${attendeeCount(walletPassCount)}`}
           disabled={bulkDeleteWalletBusy || !canBulkWallet}
           tooltip={bulkWalletTooltip(false, canBulkWallet)}
@@ -833,7 +828,6 @@ function BulkMoreActionsMenu({
             variant="warning"
             label="Revoke check-in"
             loading={bulkRevokeCheckInBusy}
-            loadingLabel="Revoking check-in…"
             hint={`Undo check-in for ${attendeeCount(revokableCheckInCount)}`}
             disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
             tooltip={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
@@ -853,7 +847,6 @@ function BulkMoreActionsMenu({
             variant="warning"
             label="Revoke items"
             loading={bulkRevokeItemsBusy}
-            loadingLabel="Revoking items…"
             hint={`Reset all issued items for ${attendeeCount(revokableItemsCount)}`}
             disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
             tooltip={bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems)}
@@ -877,7 +870,6 @@ function BulkMoreActionsMenu({
             variant="danger"
             label="Revoke pass"
             loading={bulkRevokePassBusy}
-            loadingLabel="Revoking pass…"
             hint={`Block check-in for ${attendeeCount(revokablePassCount)}`}
             disabled={archived || bulkRevokePassBusy || !canRevokePass}
             tooltip={bulkRevokePassTooltip(archived, canRevokePass)}
@@ -1502,7 +1494,7 @@ function AttendeesListRows({
     .join("");
   if (items.length === 0) {
     return (
-      <div className={`attendees-table-wrap attendees-list-table-wrap${loadingClass}`}>
+      <div className={`attendees-table-wrap attendees-list-table-wrap${loadingClass}`} aria-busy={busy}>
         {isUnfilteredEmpty ? (
           <EmptyState
             icon={<i className="ti ti-users" aria-hidden="true" />}

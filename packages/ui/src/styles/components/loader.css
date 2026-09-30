@@ -152,7 +152,9 @@
 /* Content that replaces a loading indicator fades in over 150ms. The indicator stays at least
    400ms once shown (useLoadingGate), so its own fade-in is always over before it is removed. */
 .at-fade-in {
-  animation: at-fade-in 0.15s ease-out both;
+  /* `backwards`, not `both`: once it has run nothing stays animated, so it does not leave a stacking
+     context around what it wraps (a page holding fixed-position dialogs, a list with open menus). */
+  animation: at-fade-in 0.15s ease-out backwards;
 }
 
 /* A skeleton whose 200ms delay has not passed yet: already in the page, so its space is reserved and

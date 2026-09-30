@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -69,6 +70,78 @@ describe("AddAttendeeModal delayed loading", () => {
     expect(fields().className).not.toContain("at-loading-hold");
     expect(fields().getAttribute("aria-busy")).toBeNull();
     expect(skeleton()).toBeNull();
+  });
+});
+
+describe("AddAttendeeModal when a catalog request stalls", () => {
+  /** A request that never answers but, like fetch, rejects when its signal is aborted. */
+  function stalledUntilAborted() {
+    const signals: AbortSignal[] = [];
+    const impl = (_eventId: string, signal?: AbortSignal) =>
+      new Promise<never>((_resolve, reject) => {
+        if (signal) signals.push(signal);
+        signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+      });
+    return { signals, impl };
+  }
+
+  afterEach(() => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+  });
+
+  it("gives up after the load timeout, shows why, and releases the form it was holding back", async () => {
+    const stalled = stalledUntilAborted();
+    mockFetchEventCustomFields.mockImplementation(stalled.impl as never);
+    mockFetchTicketTypes.mockImplementation(stalled.impl as never);
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    const fields = () => document.querySelector(".add-attendee-modal__fields") as HTMLElement;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS - 1);
+    });
+    expect(fields().className).toContain("at-loading-hold");
+    expect(screen.queryByText(new RegExp(LOAD_TIMEOUT_MESSAGE))).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fields().className).not.toContain("at-loading-hold");
+    expect(screen.queryByText("Loading attendee form")).toBeNull();
+    // Both failures are said, with the reason and what to do.
+    expect(screen.getByText(new RegExp(`${LOAD_TIMEOUT_MESSAGE} Reopen the dialog to load the ticket types`))).toBeTruthy();
+    expect(screen.getByText(new RegExp(`${LOAD_TIMEOUT_MESSAGE} Reopen the dialog to load the custom fields`))).toBeTruthy();
+  });
+
+  it("aborts both requests when the dialog goes away, and says nothing about it", async () => {
+    const stalled = stalledUntilAborted();
+    mockFetchEventCustomFields.mockImplementation(stalled.impl as never);
+    mockFetchTicketTypes.mockImplementation(stalled.impl as never);
+    const { rerender } = render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    expect(stalled.signals).toHaveLength(2);
+    expect(stalled.signals.every((s) => !s.aborted)).toBe(true);
+
+    rerender(<AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />);
+    expect(stalled.signals.every((s) => s.aborted)).toBe(true);
+    await act(async () => {});
+    expect(screen.queryByText(new RegExp(LOAD_TIMEOUT_MESSAGE))).toBeNull();
+  });
+
+  it("leaves no timeout behind once the catalogs have answered", async () => {
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The 30 second timeouts are cleared; only the loading gates' own short timers may remain.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS + 1000);
+    });
+    expect(screen.queryByText(new RegExp(LOAD_TIMEOUT_MESSAGE))).toBeNull();
   });
 });
 

@@ -10,7 +10,11 @@ import "./more-actions-menu.css";
  * `loading` is the busy state of the action the row starts (the same contract as `<Button loading>`):
  * the icon is replaced by a spinner in the same slot, the row is disabled and `aria-busy`, and the
  * label becomes `loadingLabel` ("Sending…"). Pass it (true or false) for every action that can be
- * busy; a row that never passes it renders exactly as before. */
+ * busy; a row that never passes it renders exactly as before.
+ *
+ * `loadingLabel` swaps the text instead of reserving both, and the menu is as wide as its widest row,
+ * so pass one only when it is not longer than `label` ("Send tickets" → "Sending…"); otherwise leave it
+ * out and the spinner alone marks the row busy. */
 export function MoreActionsMenuItem({
   icon,
   label,

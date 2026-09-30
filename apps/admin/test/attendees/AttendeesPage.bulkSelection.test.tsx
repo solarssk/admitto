@@ -3077,7 +3077,7 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
     expect(pollWalletPushCompletion).not.toHaveBeenCalled();
   });
 
-  it("shows the busy label and disables the header item while the trigger request is in flight", async () => {
+  it("keeps the header item's label, marks it busy and disables it while the trigger request is in flight", async () => {
     let resolveTrigger!: (value: { jobId: string }) => void;
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     triggerEventWideWalletPush.mockReturnValueOnce(
@@ -3096,8 +3096,10 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
     await waitFor(() => expect(triggerEventWideWalletPush).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const busyItem = screen.getByRole("menuitem", { name: /^Pushing updates…/ });
+    const busyItem = screen.getByRole("menuitem", { name: /^Push updates/ });
     expect((busyItem as HTMLButtonElement).disabled).toBe(true);
+    expect(busyItem.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText(/Pushing updates…/)).toBeNull();
 
     // The dialog's backdrop is wired to onCancel unconditionally (unlike its Cancel button,
     // which the confirm-dialog component itself disables while loading) - onCancel's own busy
@@ -3357,7 +3359,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     expect(triggerEventWideWalletRefreshStatus).not.toHaveBeenCalled();
   });
 
-  it("shows the busy label and disables the header item while the trigger request is in flight", async () => {
+  it("keeps the header item's label, marks it busy and disables it while the trigger request is in flight", async () => {
     let resolveTrigger!: (value: { jobId: string }) => void;
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     triggerEventWideWalletRefreshStatus.mockReturnValueOnce(
@@ -3376,7 +3378,9 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     await waitFor(() => expect(triggerEventWideWalletRefreshStatus).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const busyItem = screen.getByRole("menuitem", { name: /^Refreshing status…/ });
+    const busyItem = screen.getByRole("menuitem", { name: /^Refresh status/ });
+    expect(busyItem.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText(/Refreshing status…/)).toBeNull();
     expect((busyItem as HTMLButtonElement).disabled).toBe(true);
 
     // The dialog's backdrop is wired to onCancel unconditionally (unlike its Cancel button,

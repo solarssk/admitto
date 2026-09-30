@@ -152,7 +152,7 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Shape is known: table rows, KPI tiles, forms, a dialog's content | `Skeleton` in the same shape | after 200ms |
 | Data is already on screen and is refetched (filter, search, page) | keep the data, block clicks at once, dim it and run `<TopProgressBar placement="container">` along the card | dim and bar after 200ms |
 | Page change | `TopProgressBar`, the old page stays (after 8s it also says it is taking longer than usual, `note`) | after 200ms |
-| The user clicked a button | `<Button loading>`, with `loadingLabel` only when it is no longer than the label at rest (a row in a More actions menu: `<MoreActionsMenuItem loading loadingLabel>`) | immediately |
+| The user clicked a button | `<Button loading>`, with `loadingLabel` only when it is no longer than the label at rest (a row in a More actions menu: `<MoreActionsMenuItem loading>`, same rule) | immediately |
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
 | Long job: send, import, upload | determinate bar with a count or percent | immediately |
 
@@ -162,7 +162,7 @@ Rules:
 
 - A failed load is an error state with Retry (`EmptyState`, see the feedback table above), never an empty state such as "No attendees yet".
 - Data that is already on screen does not disappear while it is refetched, and saving something must not unmount the page it was saved from.
-- One busy flag per action. Two buttons that can run independently must not share one `loading` state, and a busy button never changes width. The button reserves room for both labels, so a `loadingLabel` longer than the label at rest ("Save" → "Saving…") would make it wider than it needs to be all the time: give one only when it is not longer ("Send tickets" → "Sending…"), otherwise leave it out and let the spinner replace the icon, or cover the label when there is no icon.
+- One busy flag per action. Two buttons that can run independently must not share one `loading` state, and a busy button never changes width. The button reserves room for both labels, so a `loadingLabel` longer than the label at rest ("Save" → "Saving…") would make it wider than it needs to be all the time: give one only when it is not longer ("Send tickets" → "Sending…"), otherwise leave it out and let the spinner replace the icon, or cover the label when there is no icon. The same holds for a row in a More actions menu, which swaps its text instead of reserving both: the menu is as wide as its widest row, so a longer busy text would widen it while the job runs and shrink it afterwards. `apps/admin/test/styles/loading-label-length.test.ts` checks it.
 - Reserve the final size (`SectionLoader minHeight`, a `Skeleton` of the same shape) so nothing jumps when the content arrives.
 - The spinner draws in the colour of its parent (the brand colour by default), so it also works on primary buttons. The logo loaders are never smaller than 40px; use `Spinner` for anything smaller.
 - Loading text is for assistive tech (`aria-label`, `aria-busy`). The only visible text is the 8s message, the label of a busy button, and the row inside a list of remote options.
