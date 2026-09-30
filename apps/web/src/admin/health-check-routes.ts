@@ -272,6 +272,26 @@ function setupLookupFailedRow(id: string, label: string, checkedAt: string): Hea
   };
 }
 
+/** The Database row. When the setup collection rejected (`setup` is null) the row still has its
+ * own independent probe: down only if that probe says so, otherwise its state is simply unknown. */
+function databaseCoreRow(
+  setup: Awaited<ReturnType<typeof collectSetupChecks>> | null,
+  dbProbe: Awaited<ReturnType<typeof checkDatabase>>,
+  engine: string | undefined,
+  checkedAt: string,
+): HealthCheckRow {
+  const extras = { latencyMs: dbProbe.latency_ms, engine };
+  if (setup) return setupToDatabaseRow(setup.database, checkedAt, extras);
+  if (dbProbe.status === "down") {
+    return setupToDatabaseRow(
+      { ok: false, reason: "unreachable", detail: "Database check unavailable" },
+      checkedAt,
+      extras,
+    );
+  }
+  return setupLookupFailedRow("database", "Database", checkedAt);
+}
+
 function setupToDatabaseRow(
   check: SetupCheckResult,
   checkedAt: string,
@@ -1708,17 +1728,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       fileStorageRow(env, checkedAt, live),
     ]);
 
-  // When the setup collection rejected (`setup` is null) the database row still has its own
-  // independent probe: down only if that probe says so, otherwise its state is simply unknown.
-  const databaseRow = setup
-    ? setupToDatabaseRow(setup.database, checkedAt, { latencyMs: dbProbe.latency_ms, engine })
-    : dbProbe.status === "down"
-      ? setupToDatabaseRow(
-          { ok: false, reason: "unreachable", detail: "Database check unavailable" },
-          checkedAt,
-          { latencyMs: dbProbe.latency_ms, engine },
-        )
-      : setupLookupFailedRow("database", "Database", checkedAt);
+  const databaseRow = databaseCoreRow(setup, dbProbe, engine, checkedAt);
 
   const coreChecks: HealthCheckRow[] = [
     databaseRow,
