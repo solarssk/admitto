@@ -68,7 +68,7 @@ export async function runWalletExpiry(db: PrismaClient, nowMs = Date.now()): Pro
  * hold many passes. The UPDATE itself is still bounded by the database's statement timeout. */
 const EXPIRY_TX_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
-async function expireEventPasses(
+function expireEventPasses(
   db: PrismaClient,
   eventId: string,
   due: { status: { in: string[] }; expires_at: { lte: Date } },

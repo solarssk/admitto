@@ -118,10 +118,13 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   `expirationDate`, a "Y-m-d H:i" wall-clock string with no time zone that the provider reads in
   its own account time zone. It only works if the template has "different for each pass" switched
   on; `describeTemplate()` reports that as `perPassExpirationReady`, and the mode cannot be turned
-  on unless the check passes. Turning it off
-  is blocked once any pass has been issued, since there is no confirmed way to clear an
-  already-sent date. The worker's `wallet_expire` job then marks a due pass `expired` locally,
-  without contacting the provider (`runWalletExpiry`, `packages/wallet/src/expire-passes.ts`).
+  on unless the check passes. Changing the Template ID or API key while the mode is on runs the same
+  check against the new values and answers 409 `wallet_expiration_mode_not_supported` when it fails.
+  Turning it off is blocked once any pass has been issued, since there is no confirmed way to clear
+  an already-sent date. The worker's `wallet_expire` job then marks a due pass `expired` locally,
+  without contacting the provider, once the event's own end has also passed: `runWalletExpiry`
+  (`packages/wallet/src/expire-passes.ts`) locks the event row, re-reads its end time and updates the
+  passes in one transaction, so an end time moved later at that moment cannot slip through.
 - **The template is fixed once passes exist.** A provider scopes a pass lookup to one template, so
   once any pass has been issued for an event, changing the Template ID answers 409
   `wallet_template_locked` (checked under the per-event advisory lock issuance takes). The API key

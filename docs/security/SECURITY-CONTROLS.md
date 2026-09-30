@@ -130,8 +130,9 @@ Superadmin role (their limits above stay fixed, even if the box is ticked), neve
 SSO sign-in, and setting the days to 0 hides the checkbox. Sign-out and **Active sessions** revoke
 work as for any other session. Like every session lifetime here, the expiry is fixed when the
 session is issued: lowering the days setting (or setting it to 0) does not shorten sessions that
-already exist, so revoke them from **Active sessions** if that matters. Accepted risk: operator accounts have no MFA by design, so a lost
-or stolen remembered tablet stays signed in for up to that many days until someone revokes it.
+already exist, so revoke them from **Active sessions** if that matters. Accepted risk: operator accounts have no MFA by default (a superadmin can add the `operator` role
+to the required-MFA list in Settings → Security), so a lost or stolen remembered tablet stays signed
+in for up to that many days until someone revokes it.
 
 **Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
 change, self-service Account change, admin-initiated create/reset) requires at least 12 characters
