@@ -7,3 +7,6 @@ export const SLOW_NOTICE_TEXT = "Taking longer than usual. Check your connection
 
 /** Shown with a Retry once a request has been abandoned at `LOAD_TIMEOUT_MS`. */
 export const LOAD_TIMEOUT_MESSAGE = "The server did not answer in time. Check your connection and try again.";
+
+/** How long the boot loader takes to fade out over the freshly mounted app. Keep in step with `.shell-loading--leaving` in shell.css. */
+export const BOOT_FADE_MS = 250;

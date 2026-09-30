@@ -12,7 +12,10 @@ describe("apps/admin/index.html splash", () => {
     expect(root).toContain('class="at-splash"');
     expect(root).toContain('role="status"');
     expect(root).toContain('aria-label="Loading Admitto"');
+    expect(root).toContain('class="tile"');
+    expect(root).toContain('class="check"');
     expect(root).toContain('pathLength="1"');
+    expect(root).toContain('class="dot"');
   });
 
   it("explains itself when JavaScript is off, and hides the splash then", () => {
@@ -25,6 +28,16 @@ describe("apps/admin/index.html splash", () => {
     const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
     expect(scripts).toEqual(['<script type="module" src="/src/main.tsx">']);
     expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+
+  it("draws the tick in with the same 2s cycle as PageLoader, so the two look like one animation", () => {
+    expect(html).toMatch(/animation:\s*at-splash-draw 2s/);
+    expect(html).toMatch(/@keyframes at-splash-draw\s*\{\s*0%\s*\{\s*stroke-dashoffset:\s*1\.05/);
+    const loaderCss = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../packages/ui/src/styles/components/loader.css"), "utf8");
+    expect(loaderCss).toMatch(/animation:\s*at-loader-draw 2s/);
+    // Same keyframe stops for the draw-in in both places.
+    expect(loaderCss).toMatch(/25%,\s*80%/);
+    expect(html).toMatch(/25%,\s*80%/);
   });
 
   it("respects prefers-reduced-motion without freezing the mark", () => {

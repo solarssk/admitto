@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
+import { resetLoaderClockForTests, syncLoaderClockToSplash } from "@admitto/ui";
 import { AuthProvider, useAuth } from "../../src/auth/AuthProvider.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 
@@ -229,6 +230,121 @@ describe("AuthProvider loading experience", () => {
     });
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("Renamed"));
     expect(screen.getByTestId("probe")).toBe(probe);
+  });
+});
+
+describe("AuthProvider hand-over from the index.html splash", () => {
+  /** Pretend index.html's splash has been drawing for `elapsedMs` when React starts. */
+  function bootFromSplash(elapsedMs: number) {
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="at-splash"><svg></svg></div>';
+    Object.assign(root.querySelector("svg")!, { getAnimations: () => [{ currentTime: elapsedMs }] });
+    syncLoaderClockToSplash(root);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockFetchMe.mockResolvedValue(sessionResponse);
+  });
+
+  afterEach(() => {
+    resetLoaderClockForTests();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  const flush = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  it("keeps the loader up until the tick has finished drawing, even though everything loaded at once", async () => {
+    bootFromSplash(100); // first draw-in is done at 650ms, so 550ms are left
+    render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await flush(0); // the session resolves and React schedules the wait
+    await flush(549);
+    expect(screen.queryByTestId("child")).toBeNull();
+    expect(screen.getByRole("status", { name: "Loading Admitto" })).toBeTruthy();
+
+    await flush(1);
+    expect(screen.getByTestId("child")).toBeTruthy();
+  });
+
+  it("fades the loader out over the mounted app instead of cutting it, without remounting the app", async () => {
+    bootFromSplash(100);
+    const { container } = render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await flush(0);
+    await flush(550);
+    const child = screen.getByTestId("child");
+    const overlay = container.querySelector(".shell-loading--leaving");
+    expect(overlay).not.toBeNull();
+    expect(overlay?.getAttribute("aria-hidden")).toBe("true");
+
+    await flush(249);
+    expect(container.querySelector(".shell-loading--leaving")).not.toBeNull();
+    await flush(1);
+    expect(container.querySelector(".shell-loading")).toBeNull();
+    expect(screen.getByTestId("child")).toBe(child);
+  });
+
+  it("does not hold a slow start back any longer: the fade begins as soon as the session is there", async () => {
+    bootFromSplash(0);
+    let resolveSession: ((value: typeof sessionResponse) => void) | undefined;
+    mockFetchMe.mockImplementation(
+      () => new Promise<typeof sessionResponse>((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+    const { container } = render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await flush(3000);
+    expect(screen.queryByTestId("child")).toBeNull();
+
+    await act(async () => {
+      resolveSession!(sessionResponse);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await flush(0); // nothing left to wait for: the fade starts on the next tick
+    expect(screen.getByTestId("child")).toBeTruthy();
+    expect(container.querySelector(".shell-loading--leaving")).not.toBeNull();
+  });
+
+  it("skips the wait for reduced motion (there is no draw-in), but still fades", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: true, media: q }));
+    bootFromSplash(0);
+    const { container } = render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await flush(0);
+    await flush(0);
+    expect(screen.getByTestId("child")).toBeTruthy();
+    expect(container.querySelector(".shell-loading--leaving")).not.toBeNull();
+  });
+
+  it("shows a failed start straight away, not after the wait", async () => {
+    bootFromSplash(0);
+    mockFetchMe.mockRejectedValue(new ApiError(500, "secret_internal"));
+    render(
+      <AuthProvider>
+        <div data-testid="child">should not render</div>
+      </AuthProvider>,
+    );
+    await flush(0);
+    expect(screen.getByText("Could not load session")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 });
 

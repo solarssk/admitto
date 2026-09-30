@@ -7,6 +7,7 @@ import App from "./App.js";
 import { installGlobalErrorReporting } from "./globalErrorReporting.js";
 import countryFlagFontUrl from "./assets/TwemojiCountryFlags.woff2?url";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
+import { syncLoaderClockToSplash } from "@admitto/ui";
 import "@admitto/ui/styles.css";
 import "@admitto/ui/shell.css";
 import "./staff.css";
@@ -18,6 +19,10 @@ const router = createBrowserRouter([{ path: "*", element: <App /> }]);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root");
+
+// The splash from index.html is still in #root here. Line the loaders' animation clock up with it,
+// so the tick keeps drawing when React replaces the splash instead of starting over.
+syncLoaderClockToSplash(root);
 
 createRoot(root).render(
   <StrictMode>

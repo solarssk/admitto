@@ -8,12 +8,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Button, EmptyState, PageLoader, applyThemeVars } from "@admitto/ui";
+import { Button, EmptyState, PageLoader, applyThemeVars, bootHandoverEnabled, firstDrawRemainingMs } from "@admitto/ui";
 import { ApiError, fetchMe, fetchStaffTheme } from "../api/client.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
-import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import {
+  BOOT_FADE_MS,
+  LOAD_TIMEOUT_MESSAGE,
+  LOAD_TIMEOUT_MS,
+  SLOW_NOTICE_MS,
+  SLOW_NOTICE_TEXT,
+} from "../utils/loading-timing.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../utils/locale-store.js";
 
 export interface AuthContextValue {
@@ -106,15 +112,27 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, [user, assignments, deviceLabel, hasAdmittoSession, setupComplete, loading, authError, refresh]);
 
   const slow = useDelayedLoading(loading, SLOW_NOTICE_MS);
-  const bootLoader = (
-    <div className="shell-loading">
-      <PageLoader label="Loading Admitto" caption={slow ? SLOW_NOTICE_TEXT : undefined} />
-    </div>
+
+  // App start hands over from the static splash in index.html in two steps, so it never looks like
+  // a cut: (1) keep the loader up until the tick has finished drawing in, even when everything
+  // loaded faster; (2) mount the app underneath and fade the loader away over it. Without a splash
+  // (tests, dev) there is nothing to hand over from and the app shows at once.
+  const [handover, setHandover] = useState<"waiting" | "leaving" | "done">(() =>
+    bootHandoverEnabled() ? "waiting" : "done",
   );
+  const ready = !loading && !authError && value !== null;
+  useEffect(() => {
+    if (!ready || handover !== "waiting") return undefined;
+    const timer = setTimeout(() => setHandover("leaving"), firstDrawRemainingMs());
+    return () => clearTimeout(timer);
+  }, [ready, handover]);
+  useEffect(() => {
+    if (handover !== "leaving") return undefined;
+    const timer = setTimeout(() => setHandover("done"), BOOT_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [handover]);
 
-  if (loading) return bootLoader;
-
-  if (authError) {
+  if (!loading && authError) {
     return (
       <div className="shell-loading" style={{ padding: "2rem" }}>
         <EmptyState
@@ -130,9 +148,21 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     );
   }
 
-  if (!value) return bootLoader;
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const bootLoading = loading || !value || handover === "waiting";
+  const leaving = handover === "leaving";
+  // One stable shape for start, hand-over and steady state: the app is mounted exactly once (into
+  // the first slot) and the loader is a single div that only gains the fade-out class, so nothing
+  // is remounted when the loader goes away.
+  return (
+    <>
+      {bootLoading || !value ? null : <AuthContext.Provider value={value}>{children}</AuthContext.Provider>}
+      {bootLoading || leaving ? (
+        <div className={leaving ? "shell-loading shell-loading--leaving" : "shell-loading"} aria-hidden={leaving || undefined}>
+          <PageLoader label="Loading Admitto" caption={slow ? SLOW_NOTICE_TEXT : undefined} />
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 export function useAuth(): AuthContextValue {

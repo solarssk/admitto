@@ -12,7 +12,8 @@
       any bundle loads, and the staff CSP allows inline styles but not inline scripts. It is the
       same mark, size and position as PageLoader in @admitto/ui (88px, centred), so the hand-over to
       React does not move anything; PageLoader then takes the organisation's brand colour once the
-      theme has loaded. Keep the two visually in step.
+      theme has loaded. Keep the two in step: same shapes, same 2s cycle. main.tsx aligns the loaders'
+      shared animation clock with this splash so the tick keeps drawing across the hand-over.
     -->
     <style>
       html,
@@ -31,7 +32,7 @@
       .at-splash svg {
         width: 88px;
         height: 88px;
-        animation: at-splash-breath 1.6s ease-in-out infinite;
+        animation: at-splash-breath 2s ease-in-out infinite;
       }
       .at-splash .tile {
         fill: #066fd1;
@@ -43,16 +44,17 @@
         stroke-linecap: round;
         stroke-linejoin: round;
         stroke-dasharray: 1 2;
-        animation: at-splash-draw 1.6s ease-in-out infinite;
+        animation: at-splash-draw 2s ease-in-out infinite;
       }
       .at-splash .dot {
         fill: #fff;
-        animation: at-splash-dot 1.6s ease-in-out infinite;
+        fill-opacity: 0.55;
+        animation: at-splash-dot 2s ease-in-out infinite;
       }
       @keyframes at-splash-breath {
         0%,
         100% {
-          transform: scale(0.95);
+          transform: scale(0.96);
         }
         50% {
           transform: scale(1);
@@ -63,8 +65,8 @@
           stroke-dashoffset: 1.05;
           opacity: 1;
         }
-        50%,
-        82% {
+        25%,
+        80% {
           stroke-dashoffset: 0;
           opacity: 1;
         }
@@ -101,7 +103,6 @@
         }
         .at-splash .dot {
           animation: none;
-          fill-opacity: 0.5;
         }
       }
     </style>

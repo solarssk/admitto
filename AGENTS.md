@@ -156,7 +156,7 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
 | Long job: send, import, upload | determinate bar with a count or percent | immediately |
 
-Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms).
+Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms). App start also waits until the mark's tick has finished drawing (about 0.65s after the splash appeared, skipped for reduced motion) and then fades the loader out over the already mounted app (250ms) instead of cutting to it. Every logo loader shares one animation clock (`loaderElapsedMs`, aligned with the splash in `main.tsx`), so the tick keeps drawing when one loader replaces another instead of restarting.
 
 Rules:
 
