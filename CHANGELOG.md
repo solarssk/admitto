@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Event Settings → Danger zone's warning notice under the panel no longer sits about twice as far below it as the notices and cards elsewhere in Event Settings. It now uses the same standard gap.
+
 ## [0.7.4] - 2026-09-30
 
 ### Added
