@@ -20,6 +20,34 @@
 .at-btn:disabled, .at-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .at-btn .at-btn__icon { font-size: 1.05em; line-height: 0; }
 
+/* Loading (`<Button loading>`): disabled for double-click safety but not dimmed to the "unavailable"
+   look, since it is busy, not off. Width never changes: the spinner takes the icon's slot, or sits
+   in the second stacked label, or overlays the hidden label. */
+.at-btn[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
+.at-btn__spinner {
+  display: inline-block; flex: none; width: 1rem; height: 1rem; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  animation: at-spin 0.7s linear infinite;
+}
+.at-btn .at-spinner { color: inherit; }
+.at-btn__icon--swap { display: inline-grid; place-items: center; }
+.at-btn__icon--swap > * { grid-area: 1 / 1; }
+.at-btn__icon--swap > .at-btn__spinner { visibility: hidden; }
+.at-btn--loading .at-btn__icon--swap > .at-btn__spinner { visibility: visible; }
+.at-btn--loading .at-btn__icon-face { visibility: hidden; }
+.at-btn__label { display: inline-grid; justify-items: center; align-items: center; }
+.at-btn__label > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: var(--space-2); }
+.at-btn__label-busy { visibility: hidden; }
+.at-btn--loading .at-btn__label-idle { visibility: hidden; }
+.at-btn--loading .at-btn__label-busy { visibility: visible; }
+.at-btn--loading-solo { position: relative; }
+/* opacity, not visibility: `visibility: hidden` drops the label from the accessibility tree, and the
+   overlay spinner is aria-hidden, so the busy button would have no accessible name. */
+.at-btn--loading-solo > span:not(.at-btn__spinner) { opacity: 0; }
+.at-btn__spinner--overlay { position: absolute; inset: 0; margin: auto; }
+@media (prefers-reduced-motion: reduce) { .at-btn__spinner { animation-duration: 2.5s; } }
+
 .at-btn--sm { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
 .at-btn--lg { height: var(--control-h-lg); font-size: var(--fs-h3); padding: 0 var(--space-5); }
 .at-btn--block { display: flex; width: 100%; }

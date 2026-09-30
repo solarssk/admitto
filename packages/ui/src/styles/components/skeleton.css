@@ -11,13 +11,13 @@
   display: block;
   background: linear-gradient(
     90deg,
-    var(--at-gray-100, #f1f5f9) 25%,
-    var(--at-gray-200, #e2e8f0) 50%,
-    var(--at-gray-100, #f1f5f9) 75%
+    var(--skeleton-base) 25%,
+    var(--skeleton-highlight) 50%,
+    var(--skeleton-base) 75%
   );
   background-size: 200% 100%;
   animation: at-shimmer 1.5s ease-in-out infinite;
-  border-radius: 4px;
+  border-radius: var(--radius);
 }
 
 .at-skeleton--text {
@@ -28,7 +28,7 @@
 .at-skeleton--rect {
   height: 120px;
   width: 100%;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .at-skeleton--circle {

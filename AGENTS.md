@@ -15,6 +15,7 @@ Repo: https://github.com/solarssk/admitto
 - [Changelog and releases](#changelog-and-releases)
 - [Admin SPA feedback (toast vs inline)](#admin-spa-feedback-toast-vs-inline)
   - [Admin API errors in the UI](#admin-api-errors-in-the-ui)
+- [Admin SPA loading and busy states](#admin-spa-loading-and-busy-states)
 - [Compounding rules](#compounding-rules)
   - [Visual documentation](#visual-documentation)
 - [Claude Code](#claude-code)
@@ -139,6 +140,35 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 The table above governs which surface to use; it doesn't govern what the text inside it says. For
 which register (Superadmin/Administrator/Operator/Public attendee) gets how much technical detail,
 and the content rules behind it, see [docs/dev/error-and-notice-copy.md](docs/dev/error-and-notice-copy.md).
+
+## Admin SPA loading and busy states
+
+Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same timing. Do not write a one-off spinner, shimmer, "Loading…" line or `saving ? "Saving…" : "Save"` label.
+
+| Situation | Use | Shows |
+|---|---|---|
+| Whole screen: app start, session check, switching event | `PageLoader` (logo, 88px) | from the first frame |
+| Panel, card or dialog whose shape is not known | `SectionLoader` (logo, 52px) with `minHeight` | after 200ms |
+| Shape is known: table rows, KPI tiles, forms, a dialog's content | `Skeleton` in the same shape | after 200ms |
+| Data is already on screen and is refetched (filter, search, page) | keep the data, dim it, thin bar on the card | after 200ms |
+| Page change | `TopProgressBar`, the old page stays | after 200ms |
+| The user clicked a button | `<Button loading loadingLabel="Saving…">` | immediately |
+| Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
+| Long job: send, import, upload | determinate bar with a count or percent | immediately |
+
+Timing: use `useLoadingGate(isLoading)` from `apps/admin/src/hooks/useDelayedLoading.ts`. An indicator appears after 200ms, stays at least 400ms once it has, and the content branch is gated on `showContent`, not on the raw `isLoading` (otherwise the 400ms minimum has no effect). After 8s add "Taking longer than usual…"; after 30s stop waiting and show an error with **Retry**. Content fades in over 150ms. Dialogs fade in (150ms backdrop, 180ms panel) and out (120ms).
+
+Rules:
+
+- A failed load is an error state with Retry (`EmptyState`, see the feedback table above), never an empty state such as "No attendees yet".
+- Data that is already on screen does not disappear while it is refetched, and saving something must not unmount the page it was saved from.
+- One busy flag per action. Two buttons that can run independently must not share one `loading` state, and a busy button never changes width.
+- Reserve the final size (`SectionLoader minHeight`, a `Skeleton` of the same shape) so nothing jumps when the content arrives.
+- The spinner draws in the colour of its parent (the brand colour by default), so it also works on primary buttons. The logo loaders are never smaller than 40px; use `Spinner` for anything smaller.
+- Loading text is for assistive tech (`aria-label`, `aria-busy`). The only visible text is the 8s message, the label of a busy button, and the row inside a list of remote options.
+- `prefers-reduced-motion` slows the loaders and stops the shimmer. It never freezes them completely.
+
+`apps/admin/test/styles/loading-standard.test.ts` enforces the mechanical parts: no `*spin*` or `*shimmer*` `@keyframes` and no `at-spin` animation in admin CSS, no `Loading…` text, no hand-made busy-label ternaries (a "Saving…" style literal in either branch, so `!saving ? "Save" : "Saving…"` counts too). It is a ratchet: today's leftovers are listed per file and may only be removed, so a migration PR lowers the list in the same change.
 
 ## Compounding rules
 

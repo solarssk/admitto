@@ -64,6 +64,8 @@
   --surface-elevated:  var(--surface-card);  /* skeleton shimmer highlight sweep */
   --surface-inverse:   var(--at-ink);        /* dark scan view, tooltips */
   --surface-hover:     var(--at-gray-50);    /* row / item hover */
+  --skeleton-base:      var(--at-gray-100);  /* loading placeholder fill and shimmer base */
+  --skeleton-highlight: var(--at-gray-200);  /* loading placeholder shimmer sweep */
 
   /* Text */
   --text-primary:      var(--at-ink);        /* headings, key data */
