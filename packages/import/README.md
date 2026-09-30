@@ -14,7 +14,7 @@ Both modes can coexist in a single file.
 ## CLI
 
 On a clean checkout, build workspace packages first (`npm run build` from the repo root, or an
-explicit sequence such as `npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets`, then `npm run build -w @admitto/import`).
+explicit sequence such as `npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth -w @admitto/storage`, then `npm run build -w @admitto/import`; `npm run pretest -w @admitto/import` runs the same dependency builds, in the same order).
 `npm run build -w @admitto/import` alone does **not** build its dependencies. Then:
 
 ```bash
