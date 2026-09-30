@@ -248,7 +248,7 @@ process.
 
 `GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
 Reports page. Connects and reconnects are limited per operator per event and per operator overall, and
-the number of simultaneously open streams is capped. The defaults below are read once at startup from
+the number of simultaneously open streams is capped per application process. The defaults below are read once at startup from
 the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
 whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the
 container recreated, not just restarted.
@@ -258,12 +258,12 @@ container recreated, not just restarted.
 | connects and reconnects, per operator per event | 120 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` |
 | connects and reconnects, per operator across events | 240 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` |
 | window | 60 s | `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` |
-| open streams, per operator per event | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
-| open streams, per operator overall | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
+| open streams, per operator per event, per application process | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
+| open streams, per operator overall, per application process | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
 
 The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in
-memory **per application process**, so with several application replicas the effective ceiling is
-the figure above multiplied by the number of replicas.
+memory of each application process, not in a shared store, so with several application replicas the
+effective ceiling is the figure above multiplied by the number of replicas (for example 6 and 24 with two).
 
 The check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a
 minute when the rate limit is hit; scanning itself is not affected.
