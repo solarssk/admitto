@@ -954,6 +954,8 @@ describe("HealthCheckPanel", () => {
     expect(within(row).queryByRole("link")).toBeNull();
 
     // Both lines are labelled rows in the same grid as the detail list.
+    expect(within(row).getByText("Why").tagName).toBe("DT");
+    expect(within(row).getByText("Admitto could not connect to the database.")).toBeTruthy();
     expect(within(row).getByText("What it affects").tagName).toBe("DT");
     expect(within(row).getByText("What to do").tagName).toBe("DT");
 

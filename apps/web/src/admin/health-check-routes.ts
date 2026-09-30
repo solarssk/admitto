@@ -1189,15 +1189,20 @@ async function weatherRow(
 }
 
 /** Wallet (PassCreator) is configured per event (ADR 0041), not per instance - "ok" means at
- * least one event currently has it fully turned on (enabled + template + API key). */
+ * least one event currently has it fully turned on (enabled + template + API key). The details
+ * also say how many events have it turned on at all, and how many of those are not fully set up
+ * yet, without changing the status: an event still being set up is not an outage. */
 async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
-  const configuredCount = await db.event.count({
-    where: {
-      wallet_enabled: true,
-      wallet_template_id: { not: null },
-      wallet_api_key_enc: { not: null },
-    },
-  });
+  const [enabledCount, configuredCount] = await Promise.all([
+    db.event.count({ where: { wallet_enabled: true } }),
+    db.event.count({
+      where: {
+        wallet_enabled: true,
+        wallet_template_id: { not: null },
+        wallet_api_key_enc: { not: null },
+      },
+    }),
+  ]);
   const status = configuredCount > 0 ? "ok" : "not_configured";
   const eventSuffix = configuredCount === 1 ? "" : "s";
   const summary =
@@ -1211,7 +1216,9 @@ async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthChe
     summary,
     details: detailsFromEntries([
       ["status", status],
+      ["wallet_enabled_events", String(enabledCount)],
       ["configured_events", String(configuredCount)],
+      ["wallet_incomplete_events", String(Math.max(enabledCount - configuredCount, 0))],
       ["last_checked", checkedAt],
     ]),
   };

@@ -1255,6 +1255,36 @@ describe("collectAdminHealth", () => {
     expect(wallet?.summary).toBe("Configured for 1 event");
   });
 
+  it("reports how many events have Wallet on and how many of those are not fully set up", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    // First count: events with Wallet turned on. Second: those that are also fully set up.
+    const count = vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    // Still ok, and still worded by the fully set up count: an event mid-setup is not an outage.
+    expect(wallet?.status).toBe("ok");
+    expect(wallet?.summary).toBe("Configured for 1 event");
+    expect(wallet?.details).toEqual(
+      expect.arrayContaining([
+        { key: "wallet_enabled_events", value: "3" },
+        { key: "configured_events", value: "1" },
+        { key: "wallet_incomplete_events", value: "2" },
+      ]),
+    );
+  });
+
   it("reports wallet as degraded when the event lookup fails", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
