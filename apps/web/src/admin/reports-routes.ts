@@ -12,8 +12,8 @@ import {
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   buildExportColumnLabels,
+  countPendingGraceInactivePasses,
   loadEventTicketTypes,
-  WALLET_REMOVE_INACTIVE_GRACE_MS,
   writeBulkActionLog,
   type TicketTypeInfo,
 } from "@admitto/tickets";
@@ -641,9 +641,6 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   first_confirmed_at: true,
   status: true,
   provider_removed_at: true,
-  provider_pass_id: true,
-  voided_at: true,
-  expires_at: true,
   apple_active_registrations: true,
   google_active_registrations: true,
   samsung_active_registrations: true,
@@ -871,8 +868,6 @@ interface WalletPassAggregates {
   /** Provider-presence axis (WalletPass.provider_removed_at among issued passes) - independent of
    * both lifecycleCounts and passValidityCounts, see provider_state's own DTO doc comment. */
   providerStateCounts: Record<"managed" | "removed", number>;
-  /** See pending_removal's own DTO doc comment (EventWalletReportsResponse). */
-  pendingRemovalCount: number;
 }
 
 /** Bumps the one platform-mix counter `platform` maps to - split out of
@@ -990,7 +985,6 @@ function applyReminderTapDayStats(
 function applyWalletPassToAggregates(
   pass: WalletPassAggregateRow,
   enabledPlatforms: EnabledWalletPlatforms,
-  cutoff: Date,
   acc: WalletPassAggregates,
 ): void {
   const appleActive = enabledPlatforms.apple ? (pass.apple_active_registrations ?? 0) : 0;
@@ -1046,38 +1040,26 @@ function applyWalletPassToAggregates(
     )
   ]++;
 
-  applyPassValidityAndProviderState(pass, cutoff, acc);
+  applyPassValidityAndProviderState(pass, acc);
 }
 
-/** Bumps pass_validity/provider_state/pending_removal - split out of applyWalletPassToAggregates
- * above (SonarCloud S3776), same reasoning as incrementPlatformCounter. Independent axes, not
- * gated on enabledPlatforms/platform/everInstalled like the counters above - status and
+/** Bumps pass_validity/provider_state - split out of applyWalletPassToAggregates above (SonarCloud
+ * S3776), same reasoning as incrementPlatformCounter. Independent axes, not gated on
+ * enabledPlatforms/platform/everInstalled like the counters above - status and
  * provider_removed_at aren't platform-specific facts. Every status other than
  * active/voided/expired falls to `failed` (see pass_validity's own DTO doc comment for the narrow
  * concurrency race that is this bucket's one real cause) rather than being silently dropped - this
  * is the only counter on this whole aggregate with a catch-all, since it is the one place a value
- * this codebase's own write paths are supposed to prevent could still surface.
- *
- * `pendingRemovalCount` mirrors countPendingGraceInactivePasses's own WHERE
- * (packages/tickets/src/drain-wallet-cleanup-jobs.ts) exactly, so this report and the clean-up
- * job's own toast never disagree about which passes are "waiting": still managed at the provider,
- * voided/expired, but not yet past `cutoff`. A pass with neither reference point set is not
- * counted here either, for the same reason that function's own doc comment gives. */
+ * this codebase's own write paths are supposed to prevent could still surface. */
 function applyPassValidityAndProviderState(
-  pass: Pick<WalletPassAggregateRow, "status" | "provider_removed_at" | "provider_pass_id" | "voided_at" | "expires_at">,
-  cutoff: Date,
-  acc: Pick<WalletPassAggregates, "passValidityCounts" | "providerStateCounts" | "pendingRemovalCount">,
+  pass: Pick<WalletPassAggregateRow, "status" | "provider_removed_at">,
+  acc: Pick<WalletPassAggregates, "passValidityCounts" | "providerStateCounts">,
 ): void {
   if (pass.status === "active") acc.passValidityCounts.active++;
   else if (pass.status === "voided") acc.passValidityCounts.voided++;
   else if (pass.status === "expired") acc.passValidityCounts.expired++;
   else acc.passValidityCounts.failed++;
   acc.providerStateCounts[pass.provider_removed_at ? "removed" : "managed"]++;
-
-  if (pass.provider_pass_id && !pass.provider_removed_at) {
-    if (pass.status === "voided" && pass.voided_at && pass.voided_at > cutoff) acc.pendingRemovalCount++;
-    else if (pass.status === "expired" && pass.expires_at && pass.expires_at > cutoff) acc.pendingRemovalCount++;
-  }
 }
 
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
@@ -1107,15 +1089,10 @@ export function aggregateWalletPasses(
     lifecycleCounts: { active: 0, removed: 0, never_installed: 0 },
     passValidityCounts: { active: 0, voided: 0, expired: 0, failed: 0 },
     providerStateCounts: { managed: 0, removed: 0 },
-    pendingRemovalCount: 0,
   };
 
-  // Computed once, not per pass - the same "how long ago" line every pass in this batch is
-  // measured against, matching loadGracedInactivePassTargets/countPendingGraceInactivePasses'
-  // own single `cutoff` per query (packages/tickets/src/drain-wallet-cleanup-jobs.ts).
-  const cutoff = new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS);
   for (const pass of passes) {
-    applyWalletPassToAggregates(pass, enabledPlatforms, cutoff, acc);
+    applyWalletPassToAggregates(pass, enabledPlatforms, acc);
   }
 
   return acc;
@@ -1225,6 +1202,7 @@ async function loadWalletReportsAggregates(
   const [
     totalAttendees,
     totalPassCount,
+    pendingRemovalCount,
     passes,
     byTypeTotalRaw,
     catalog,
@@ -1238,6 +1216,13 @@ async function loadWalletReportsAggregates(
     // Unbounded, unlike the findMany below - a plain COUNT never has to hold rows in memory, so
     // it stays cheap and accurate at any scale and doubles as truncation detection for `passes`.
     db.walletPass.count({ where: { attendee: { event_id: eventId }, issued_at: { not: null } } }),
+    // Also unbounded, for the same reason - pending_removal must match exactly what "Remove
+    // inactive passes" will itself find (see that field's own DTO doc comment), which the
+    // WALLET_AGGREGATE_MAX-capped `passes` sample below cannot guarantee once an event has more
+    // issued passes than that cap (bot review: a plain count derived from the sample could
+    // undercount, or read 0 and hide the Notice, even while the job's own unbounded query finds
+    // real waiting passes).
+    countPendingGraceInactivePasses(db, eventId),
     db.walletPass.findMany({
       where: { attendee: { event_id: eventId }, issued_at: { not: null } },
       take: WALLET_AGGREGATE_MAX,
@@ -1290,7 +1275,6 @@ async function loadWalletReportsAggregates(
     lifecycleCounts,
     passValidityCounts,
     providerStateCounts,
-    pendingRemovalCount,
   } = aggregateWalletPasses(passes, enabledPlatforms);
 
   const gotPass = passes.length;

@@ -167,8 +167,12 @@ async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string):
  * neither reference point set (voided with no voided_at, expired with no expires_at) is
  * intentionally NOT counted here either - it is not "waiting", it will never qualify for this
  * job regardless of how long it sits, so counting it here would wrongly suggest it just needs
- * more time. */
-async function countPendingGraceInactivePasses(db: PrismaClient, eventId: string): Promise<number> {
+ * more time. Exported so the Wallets report (apps/web/src/admin/reports-routes.ts) can call this
+ * same, unbounded-by-construction count for its own `pending_removal` field instead of deriving
+ * it from the report's own WALLET_AGGREGATE_MAX-capped pass sample - that sample is fine for
+ * percentages and breakdowns, which stay proportionally right even truncated, but wrong for a
+ * plain count that must agree exactly with what this job itself will find (bot review). */
+export async function countPendingGraceInactivePasses(db: PrismaClient, eventId: string): Promise<number> {
   const cutoff = new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS);
   return db.walletPass.count({
     where: {
