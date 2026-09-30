@@ -37,6 +37,9 @@ const MARKDOWN_SAFE_DETAIL_KEYS = new Set([
 
 const DETAIL_LABELS: Record<string, string> = {
   latency_ms: "Latency",
+  wallet_enabled_events: "Events with Wallet on",
+  configured_events: "Events fully set up",
+  wallet_incomplete_events: "Events not fully set up",
   failed_retryable: "Failed retryable",
   degraded_threshold: "Degraded threshold",
   live_check: "Live check",
