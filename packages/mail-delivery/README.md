@@ -67,12 +67,11 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 
 ## Snapshot retention
 
-Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days the Admitto **worker**
-(once at boot, then about every 24h) and `admitto retention run` clear `rendered_html` /
-`rendered_subject` while preserving delivery log metadata. A failed row loses `retryable` at the same
-time, so it can no longer be retried. `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` is read only by this
-package's own `nullify-delivery-snapshots` CLI command; the worker and `admitto retention run` always
-use 60 days today.
+Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days (override with
+`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) the Admitto **worker** (once at boot, then about every 24h),
+`admitto retention run` and `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject`
+while preserving delivery log metadata. A failed row loses `retryable` at the same time, so it can no
+longer be retried. All three read the same variable.
 
 ## Tests
 

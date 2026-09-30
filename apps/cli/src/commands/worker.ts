@@ -24,6 +24,7 @@ import {
   ingestBounces,
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
+  resolveDeliverySnapshotRetentionDays,
   workerHeartbeatStaleMs,
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
@@ -422,8 +423,12 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
   try {
     const retentionDays = resolveSecurityAuditLogRetentionDays(process.env);
     const notificationRetentionDays = resolveNotificationRetentionDays(process.env);
+    const snapshotRetentionDays = resolveDeliverySnapshotRetentionDays(process.env);
     const authResult = await purgeAuthRetention(db, { dryRun: false });
-    const mailResult = await nullifyDeliverySnapshots(db, { dryRun: false });
+    const mailResult = await nullifyDeliverySnapshots(db, {
+      dryRun: false,
+      retentionDays: snapshotRetentionDays,
+    });
     const securityAuditResult = await purgeSecurityAuditLog(db, {
       dryRun: false,
       retentionDays,

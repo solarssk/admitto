@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "@admitto/auth";
-import { nullifyDeliverySnapshots } from "@admitto/mail-delivery";
+import { nullifyDeliverySnapshots, resolveDeliverySnapshotRetentionDays } from "@admitto/mail-delivery";
 import { purgeNotifications, resolveNotificationRetentionDays } from "@admitto/notifications";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { hasFlag } from "../lib/args.js";
@@ -10,11 +10,15 @@ export async function runRetention(db: PrismaClient): Promise<void> {
   const dryRun = hasFlag("dry-run");
   const retentionDays = resolveSecurityAuditLogRetentionDays(process.env);
   const notificationRetentionDays = resolveNotificationRetentionDays(process.env);
+  const snapshotRetentionDays = resolveDeliverySnapshotRetentionDays(process.env);
 
   if (!dryRun) {
     const actorUserId = await requireOperatorUserId(db);
     const authResult = await purgeAuthRetention(db, { dryRun: false });
-    const mailResult = await nullifyDeliverySnapshots(db, { dryRun: false });
+    const mailResult = await nullifyDeliverySnapshots(db, {
+      dryRun: false,
+      retentionDays: snapshotRetentionDays,
+    });
     const securityAuditResult = await purgeSecurityAuditLog(db, { dryRun: false, retentionDays });
     const notificationsResult = await purgeNotifications(db, {
       dryRun: false,
@@ -45,7 +49,10 @@ export async function runRetention(db: PrismaClient): Promise<void> {
   }
 
   const authResult = await purgeAuthRetention(db, { dryRun: true });
-  const mailResult = await nullifyDeliverySnapshots(db, { dryRun: true });
+  const mailResult = await nullifyDeliverySnapshots(db, {
+    dryRun: true,
+    retentionDays: snapshotRetentionDays,
+  });
   const securityAuditResult = await purgeSecurityAuditLog(db, { dryRun: true, retentionDays });
   const notificationsResult = await purgeNotifications(db, {
     dryRun: true,

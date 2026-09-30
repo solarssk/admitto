@@ -969,10 +969,10 @@
       "name": "EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS",
       "group": "retention",
       "boot": "optional",
-      "consumers": ["cli"],
+      "consumers": ["worker", "cli"],
       "secret": false,
       "ui": "none",
-      "summary": "Days before rendered mail HTML/subject are nullified, read only by the standalone nullify-delivery-snapshots command. The worker and admitto retention run always use 60 days."
+      "summary": "Days before rendered mail HTML/subject are nullified on terminal deliveries (default 60). Honored by the worker, admitto retention run and the standalone nullify-delivery-snapshots command."
     },
     {
       "name": "SECURITY_AUDIT_LOG_RETENTION_DAYS",

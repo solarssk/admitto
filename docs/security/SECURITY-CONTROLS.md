@@ -464,8 +464,8 @@ is no allowlist escape hatch for this destination. The Send test action is rate 
   security headers; neither exposes secrets or attendee data.
 - **Frozen email delivery bodies:** `EmailDelivery.rendered_html` / `rendered_subject` are nullified
   best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60
-  days. The worker and `admitto retention run` always use 60 days; `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`
-  is read only by the standalone `nullify-delivery-snapshots` command. Preview with
+  days by default. `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker,
+  `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike. Preview with
   `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
 - **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
   (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
