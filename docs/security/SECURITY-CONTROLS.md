@@ -401,7 +401,8 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
   security headers; neither exposes secrets or attendee data.
 - **Frozen email delivery bodies:** `EmailDelivery.rendered_html` / `rendered_subject` are nullified
   best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60
-  days (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
+  days by default. `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker,
+  `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike. Preview with
   `npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
 - **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
   (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
