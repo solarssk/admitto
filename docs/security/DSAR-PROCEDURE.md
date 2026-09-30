@@ -55,17 +55,22 @@ flowchart TD
        from the bulk bar. A confirmation dialog lists what will be removed; there's no typed-name
        confirmation here since there's no single name to type, unlike the single-attendee flow.
      - **What gets removed and audited:** dependent delivery, wallet, and check-in rows are removed
-       in one transaction. An audit log entry is written per-attendee, plus a central
-       admin-audit-log entry naming the erased attendee(s) and event. See
+       in one transaction. An event-level action-log entry records the erasure (`attendee_erased`, or one
+       `attendees_bulk_erased` entry for a bulk delete; attendee ids and removed-row counts only, no
+       name or email), plus a central admin-audit-log entry (one per single erasure, one per bulk
+       request listing every erased attendee) naming the erased attendee(s) and event. See
        [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for why
-       the central entry retains identity, unlike the per-attendee trail.
+       the central entry retains identity, unlike the event-level trail.
      - **Wallet pass at the provider:** after the local delete, Admitto also asks the wallet
        provider to delete each erased attendee's pass, so their name no longer sits there. This is
        best effort: if a provider call fails, the attendee is still erased locally and a
        `wallet_pass_erasure_delete_failed` entry appears in **System logs** (live tail,
        superadmin). Check that log after an erasure and remove any remaining pass by hand in the
-       provider's own console. Nothing is sent to the provider when the event has no wallet
-       template and key configured.
+       provider's own console. **Nothing is sent, and no failure entry is written,** when the
+       event's wallet template or API key is no longer configured (for example removed after the
+       pass was issued). In that case restore the credentials in Event Settings → Wallet before
+       erasing, or delete the attendee's pass in the provider's own console yourself: once the local
+       row is gone, Admitto no longer knows which provider pass belonged to the attendee.
      - **Direct-API fallback:** if the SPA is unavailable, call the endpoint directly with an
        authenticated staff session and CSRF token (same session model as other admin mutations).
   2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
@@ -79,8 +84,8 @@ with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email 
 contact the wallet provider, so delete any wallet pass of the erased attendee in the provider's own
 console yourself.
 
-> **Warning: this bypasses both audit writers the API path uses** (the per-attendee
-> `AttendeeActionLog` entry and the central `AdminAuditLog` entry - see
+> **Warning: this bypasses both audit writers the API path uses** (the event-level
+> `AttendeeActionLog` erasure entry and the central `AdminAuditLog` entry - see
 > [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)). A manual
 > erasure with no central audit record is exactly the accountability gap that log exists to close.
 > The `INSERT` below writes the same central record by hand; do not skip it.
@@ -89,7 +94,9 @@ Before you run this:
 
 1. Capture the attendee's name and email, and the event's title, *before* the delete. The `SELECT`
    in the transaction below does this.
-2. Know your own `user_id` (`SELECT id FROM "User" WHERE email = '...'`).
+2. Know your own `user_id` and identity (`SELECT id, email, display_name FROM "User" WHERE email = '...'`).
+   The API path stores your email and display name in the record so it stays readable if your
+   account is deleted later; the `INSERT` below does the same.
 3. Know the event's `organization_id` beforehand.
 
 Run the operation in one transaction and scope it to the event and attendee:
@@ -121,12 +128,14 @@ DELETE FROM "Attendee"
 WHERE "event_id" = :'event_id'
   AND "id" = :'attendee_id';
 
--- Central accountability record - fill in the values from the two SELECTs above.
-INSERT INTO "AdminAuditLog" (id, organization_id, actor_user_id, action_type, metadata, created_at)
+-- Central accountability record - fill in the values from the SELECTs above (`ip` and `session_id` may stay NULL).
+INSERT INTO "AdminAuditLog" (id, organization_id, actor_user_id, actor_email, actor_display_name, action_type, metadata, created_at)
 VALUES (
   gen_random_uuid()::text,
   '<organization_id from the Event SELECT>',
   :'actor_user_id',
+  '<your email>',
+  '<your display name, or NULL>',
   'attendee_erased',
   jsonb_build_object(
     'event_id', :'event_id',

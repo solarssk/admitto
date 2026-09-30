@@ -24,9 +24,11 @@ import {
 ```
 
 - **`issueTicket` / `issueTicketsForEvent`** - create Mode A tokens for attendees missing them
-- **`resolveTicket`** - lookup by raw token or agency payload for `/t` and mail links
+- **`resolveTicket`** - lookup by full ticket URL or raw token (Mode A), or, when `context.eventId` is given, by agency `qr_payload` / `external_uuid` (Mode B) for check-in scans and the `/t/:token` page. Agency ticket pages and mail links use the `public_ref` routes `/t/<eventSlug>/a/<ref>` and `/q/<eventSlug>/a/<ref>.png`, resolved in `apps/web`
 - **`buildTicketUrl`** - `BASE_URL` + `/t/<token>` (never derived from request `Host`)
-- **`checkInScan`** - validate scan, record check-in, return `CheckInStatus`
+- **`checkInScan(params, prisma)`** - resolve the scanned value and either record the check-in or, when the event requires confirmation on scan, return a preview. Returns `CheckInScanResult`: `VALID`, `ALREADY_CHECKED_IN`, `REVOKED`, `INVALID`, or `PREVIEW` (nothing is recorded until `admitAttendee` is called)
+
+The package root also exports attendee list filtering and export (CSV / PDF / XLSX), notes, per-item states, undo / revoke, the ticket-type catalog, event custom fields, the ops and admin audit writers, and the worker's AdminJob drains (export, wallet push, wallet message, wallet refresh status, wallet cleanup). **Browser code (`apps/admin`) must not import the root**, which pulls in Prisma, `node:crypto` and `pdfkit`; use the subpaths `@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability`, `@admitto/tickets/attendees-export`, `@admitto/tickets/attendees-export-pdf` and `@admitto/tickets/attendees-export-xlsx`.
 
 ## Security notes
 

@@ -191,7 +191,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` | optional | worker | none | no | Days before rendered mail HTML/subject are nullified on terminal deliveries. |
+| `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` | optional | cli | none | no | Days before rendered mail HTML/subject are nullified, read only by the standalone nullify-delivery-snapshots command. The worker and admitto retention run always use 60 days. |
 | `SECURITY_AUDIT_LOG_RETENTION_DAYS` | optional | worker | none | no | Days to keep durable security audit rows (default 30). |
 | `NOTIFICATION_RETENTION_DAYS` | optional | worker | none | no | Days to keep in-app notification inbox rows a user never manually cleared (default 30). |
 

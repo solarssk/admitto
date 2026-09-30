@@ -68,15 +68,18 @@ flowchart TB
   WORKER --> PG
   WORKER --> RD
   WORKER --> Mail
+  WORKER --> Wallet
 ```
 
 The application and background worker are separate processes from the same container image (ADR
 0042), not the same process under different threads. Only the application accepts inbound HTTP
 traffic; the worker has no listening port and is not reachable from the edge. The worker runs
 scheduled/queued jobs against the same database (mail delivery drain, bounce ingest, attendee
-import commit, wallet sync and the event-wide wallet jobs, wallet pass expiry, retention purges) and coordinates with the application over Redis (job locks, and
-pub/sub so a worker-driven change reflects live in an open admin session without the operator
-having to refresh).
+import commit, export jobs, wallet sync and the event-wide wallet jobs, wallet pass expiry,
+retention purges). It coordinates through PostgreSQL (session advisory locks so each job class runs
+once at a time, and LISTEN/NOTIFY wake-ups when work is queued) and, best effort, through Redis
+(pub/sub so a worker-driven change reflects live in an open admin session without a refresh, and
+the shared pacing of PassCreator calls).
 
 ---
 
@@ -111,7 +114,9 @@ The table below lists every event that causes Admitto to do something, for a rev
 | A wallet pass is voided, restored, or an attendee's details change | Staff, or automatically as a side effect of revoking/restoring a ticket | Push the updated state to the wallet provider | The attendee's wallet pass reflects the new status/details (a lock-screen update, not a new pass) |
 | Void active passes / Remove inactive passes for a whole event, or Remove from provider for one attendee or a selection | Staff (event-wide actions run as one background job per event) | Void, or delete, the pass at the wallet provider; the local record and its history are kept | A removed pass no longer exists at the provider (so it no longer holds the attendee's name there); the local record stays until the attendee is erased |
 | Mail bounces | External mail system | The worker's bounce-ingest process reads the bounce mailbox and marks the affected delivery | Delivery status changes to "bounced"; surfaced to staff in-app (no outbound alert is sent - see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
-| Retention window elapses (sessions, trusted devices, security audit log, mail-body snapshots) | Automatic - the worker, on a fixed interval | Purge or nullify the expired rows | Reduces what's retained without staff action; see the Retention table in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
+| Retention window elapses (sessions, trusted devices, security audit log, mail-body snapshots, in-app notifications) | Automatic - the worker, on a fixed interval | Purge or nullify the expired rows | Reduces what's retained without staff action; see the Retention table in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
+| Wallet pass reaches its expiry date | Automatic - the worker | Mark the pass expired (local status change; the provider is not contacted) | The pass is shown as expired in Admitto |
+| Wallet status sync interval | Automatic - the worker | Read registration status from the wallet provider | Admitto's wallet status and "added to wallet" figures stay current |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
 
 There is currently **no date-triggered automation** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one.
@@ -123,9 +128,10 @@ There is currently **no date-triggered automation** (for example, an automatic r
 | Area | Typical exposure | Mitigation approach |
 |------|------------------|---------------------|
 | Public ticket links | Internet | Opaque tokens; throttling; minimal data on page |
-| Staff UIs | Restricted by customer network and/or app auth | RBAC; optional MFA; optional perimeter gateway |
+| Staff UIs | Restricted by customer network and/or app auth | RBAC; MFA required for admin/superadmin by default; optional perimeter gateway |
 | Admin APIs | Authenticated staff only | Scope checks on event/org; per-user throttling on heavy ops (import, template preview) |
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
+| Wallet provider webhook | Internet (provider servers) | Signature verified against the provider's public key before any write; per-event and per-IP throttling; failures return no detail |
 | Database | Internal network | Not published to internet |
 | Container image | Pulled by customer | Signed tags; CI scanning documented in SECURITY.md |
 | Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |
@@ -203,5 +209,9 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` - `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |
 | Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo - see [SECURITY.md](../../SECURITY.md) |
 | Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` - `scripts/check-migrations-destructive.sh` on PRs |
+| OpenSSF Scorecard | `.github/workflows/scorecard.yml` (results published) |
+| Dynamic scan (ZAP baseline) | `.github/workflows/dast-baseline.yml` |
+| Fuzzing (ClusterFuzzLite) | `.github/workflows/cflite_pr.yml`, `.github/workflows/cflite_batch.yml` |
+| Dependency and licence review, secret scan | `.github/workflows/ci.yml` jobs `dependency-review` and `secret-scan` |
 
 Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) - prefer that file over this table when answering audit questionnaires.

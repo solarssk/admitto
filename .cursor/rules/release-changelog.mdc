@@ -5,4 +5,4 @@ alwaysApply: true
 
 # Changelog and releases
 
-Follow [AGENTS.md](AGENTS.md) (Changelog and releases). Full checklist: [VERSIONING.md](VERSIONING.md).
+Follow [AGENTS.md](../../AGENTS.md) (Changelog and releases). Full checklist: [VERSIONING.md](../../VERSIONING.md).

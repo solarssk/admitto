@@ -23,10 +23,10 @@ In production Compose the worker is a separate service (`command: worker`). Loca
 | `worker` | Drain mail queue, import/export jobs, bounce ingest, wallet sync, the event-wide wallet jobs (push, message, refresh status, void and remove clean-up), wallet pass expiry, retention (long-running) |
 | `auth` | Bootstrap superadmin, reset MFA, emergency recovery codes |
 | `checkin` / `attendees` / `mail` / `sessions` | Event-day failover when the UI is unreachable |
-| `retention` | Scheduled data retention pass |
+| `retention` | Manual retention run (`retention run --operator-email <email> [--dry-run]`, audit-logged): auth sessions and trusted devices, mail delivery snapshots, the security audit log and notifications. The worker runs the same pass on its own schedule (once at boot, then about every 24h) |
 | `storage` | Orphan branding file GC |
 
-Full usage text: `admitto` with no args (see `src/lib/usage.ts`). Production failover notes: [deploy/README.md](../../deploy/README.md#emergency-cli-event-day-failover).
+Full usage text: `admitto --help` (see `src/lib/usage.ts`; running `admitto` with no arguments prints it too but exits with code 1). Production failover notes: [deploy/README.md](../../deploy/README.md#emergency-cli-event-day-failover).
 
 ## Build
 

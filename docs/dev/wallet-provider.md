@@ -3,15 +3,16 @@
 Admitto issues Apple/Google Wallet passes through a single interface, `WalletPassProvider`
 (`packages/wallet/src/provider.ts`). Pass creation, update, void, restore, delete, and status
 lookup all go through it - resolved via `resolveWalletProvider()`, never a concrete provider
-imported directly. PassCreator is today's only implementation. Two things don't go through it yet
-- see "Seams that bypass the interface" below; a new provider needs to account for both, not just
-implement the interface.
+imported directly. PassCreator is today's only implementation. Three things don't go through it yet
+- see "Seams that bypass the interface" below; a new provider needs to account for all three, not
+just implement the interface.
 
 ## Why this boundary exists
 
 Admitto is always the source of truth for check-in, tokens, and attendance. A wallet provider is
 presentation and delivery only - it never gates check-in, and Admitto can rebuild pass state from
-its own database (`passId` + wallet URLs) if the provider is ever unavailable. Only pass-relevant
+its own database (`WalletPass.provider_pass_id` / `user_provided_id` plus the stored `apple_url` /
+`android_url`) if the provider is ever unavailable. Only pass-relevant
 fields are sent (data minimization) - see [packages/wallet/README.md](../../packages/wallet/README.md)
 for the full architecture and the exact fields PassCreator receives today.
 
@@ -114,11 +115,17 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   `expirationDate`, a "Y-m-d H:i" wall-clock string with no time zone that the provider reads in
   its own account time zone. It only works if the template has "different for each pass" switched
   on; `describeTemplate()` reports that as `perPassExpirationReady`, and the mode cannot be turned
-  on (or the Template ID or API key changed while it is on) unless the check passes. Turning it off
+  on unless the check passes. Turning it off
   is blocked once any pass has been issued, since there is no confirmed way to clear an
   already-sent date. The worker's `wallet_expire` job then marks a due pass `expired` locally,
-  without contacting the provider, once the event's own end has also passed (`runWalletExpiry`,
-  `packages/wallet/src/expire-passes.ts`).
+  without contacting the provider (`runWalletExpiry`, `packages/wallet/src/expire-passes.ts`).
+- **The template is fixed once passes exist.** A provider scopes a pass lookup to one template, so
+  once any pass has been issued for an event, changing the Template ID answers 409
+  `wallet_template_locked` (checked under the per-event advisory lock issuance takes). The API key
+  can still be rotated; it is verified against the unchanged template first.
+- **Restore closes.** Restore answers 409 `wallet_restore_closed` once the event has ended or is
+  archived, and 409 `wallet_restore_expired` once `WalletPass.expires_at` has passed, whatever the
+  UI showed.
 - **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.
   Without it, a reset must retire the old remote object (void/expire) and issue the next pass under
   a *new* provider identity (a generation counter mixed into it), because today's stable
@@ -134,27 +141,39 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   `_rejected`. Callers branch on `.code`, never on `.message`.
 - **Data minimization.** Send only what `WalletPassInput` actually contains - never reach back
   into Admitto's database for more. Fields are optional for a reason: nothing beyond the
-  provider-controlled identity fields (barcode/QR value, `userProvidedId`, and - Apple-only, when
-  the event has a start time - `relevantDate` for Lock Screen surfacing) reaches a provider until
-  an admin explicitly maps the rest in Event Settings → Wallet's Field mapping.
+  provider-controlled fields (`templateId`, barcode/QR value, `userProvidedId`, `enforceUniqueUserProvidedId`,
+  `relevantDate` for Lock Screen surfacing - Apple-only, when the event has a start time - and, when
+  Pass expiration is on, `expirationDate`) reaches a provider until an admin explicitly maps the
+  rest in Event Settings → Wallet's Field mapping.
 - **No gating authority.** A webhook or callback from your service is a signal Admitto reconciles
   against its own state - never a source of truth for check-in eligibility.
 
 ## Seams that bypass the interface
 
-Two things a PassCreator-only implementation currently handles outside `WalletPassProvider` - a
-second provider needs its own answer for both, since implementing the interface alone won't cover
-them:
+Three things a PassCreator-only implementation currently handles outside `WalletPassProvider` - a
+second provider needs its own answer for all of them, since implementing the interface alone won't
+cover them:
 
 - **Test connection and webhook subscription management.** `apps/web/src/admin/event-settings-routes.ts`
   imports and constructs `PassCreatorClient` directly (not through `resolveWalletProvider()`) for
   the Wallet tab's "Test connection" action and for registering/clearing PassCreator's own webhook
   subscriptions. `WalletPassProvider` has no method for either of these today.
-- **The inbound webhook receiver.** `apps/web/src/wallet-webhook.ts` parses PassCreator's specific
-  webhook payload shape and signature scheme (`PassCreatorWebhookData`, `verifyWebhookSignature`),
-  and the route itself is PassCreator-specific (`/api/wallet/webhook/passcreator/:eventId`). A
-  second provider that also delivers device-registration/void events via webhook needs its own
-  receiver route and payload parsing - there's no generic inbound webhook abstraction to plug into.
+- **The inbound webhook receiver.** `packages/wallet/src/passcreator-webhook.ts` parses PassCreator's
+  payload shape and verifies its signature scheme (`parseWebhookEnvelope`, `parseWebhookData`,
+  `verifyWebhookSignature`, `PassCreatorWebhookData`), and `apps/web/src/wallet-webhook.ts` is the
+  handler. Both are PassCreator-specific: there are three routes
+  (`/api/wallet/webhook/passcreator/:eventId`, `.../voided` and `.../first-confirmed`), and the
+  provider must expose `getWebhookPublicKey()` (checked by duck typing, it is not part of
+  `WalletPassProvider`). A second provider that also delivers device-registration/void events via
+  webhook needs its own receiver route and payload parsing - there's no generic inbound webhook
+  abstraction to plug into.
+- **Provider selection.** Nothing chooses a provider today. `resolveConfiguredWalletProvider`
+  (`packages/wallet/src/resolve-provider.ts`) always builds a `PassCreatorClient` from the event's
+  `wallet_template_id`, `wallet_api_key_enc` and `wallet_field_mapping`, the Wallet tab is
+  PassCreator-shaped, and `walletProviderCapabilities()` only lists `passcreator`.
+  `WalletPass.provider` is stored (default `passcreator`) but not used to route. A second provider
+  needs a selection mechanism (a per-event provider setting), its own credentials storage and a
+  capabilities entry.
 
 ## What's out of scope
 
