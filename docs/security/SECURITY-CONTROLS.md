@@ -45,7 +45,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway - e.g. **Cloudflare Access** - in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
-| Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store recommended in production) | App · Config |
+| Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store, required in production) | App · Config |
+| Browser hardening | Clickjacking, MIME sniffing, script injection | Baseline headers on responses (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, `X-Robots-Tag: noindex, nofollow`); route-specific Content-Security-Policy on the staff SPA and auth pages, with extra trusted origins configurable by a superadmin (Settings → Security) | App · Config |
 | Outbound fetch safety | Block SSRF from OIDC / JWKS admin actions | Hostname blocklist + DNS resolve-before-connect on outbound HTTP | App |
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
@@ -62,14 +63,14 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 ```mermaid
 flowchart TB
     SA["superadmin @ instance\nAll events · All config · Break-glass CLI\n(multiple active grants allowed)"]
-    A["admin @ organization\nOrg events · Mail config · Guest list · Export"]
+    A["admin @ organization\nOrg events · Communication and ticket sends · Guest list · Export"]
     O["operator @ event\nAssigned event only · Check-in · Item fulfilment"]
     SA --> A --> O
 ```
 
 **Staff surfaces** (administration, check-in) require authentication. Deployments may use:
 
-- **Local accounts** with password and optional MFA for privileged roles.
+- **Local accounts** with password and mandatory MFA for admin and superadmin (by default).
 - **OIDC / SSO** (optional) alongside a local break-glass administrator account.
 - **Perimeter access control** (optional) - e.g. corporate zero-trust gateway, VPN, or CDN access
   rules in front of staff URLs. This complements, but does not replace, application RBAC.
@@ -78,8 +79,8 @@ Sessions are **server-side** (opaque token, hash stored in the database). Cookie
 common web hardening (`httpOnly`, `SameSite`, `secure` in production).
 Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker**
 (at boot and about every 24 hours). Operators can also run
-`npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
-to preview counts).
+`docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview
+counts (drop `--dry-run` to run it); the production image ships no `npm`.
 **Trusted-device persistence across sign-out.** Signing out (`POST /logout` in the staff UI, or
 `POST /api/auth/logout`) revokes the session but intentionally does **not** clear the
 `admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
@@ -120,9 +121,10 @@ sane threshold, and the API rejects a save where the idle timeout would exceed t
 absolute lifetime.
 
 **Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
-change, self-service Account change, admin-initiated create/reset) now rejects the ~250 most common
-passwords and trivial patterns (a single repeated character, a simple ascending/descending run) -
-enforced server-side, not just the strength meter shown while typing - per NIST SP 800-63B-4
+change, self-service Account change, admin-initiated create/reset) requires at least 12 characters
+and rejects a built-in list of 143 very common passwords plus trivial patterns (a password made of
+very few distinct characters such as `aaaaaaaaaaaa` or `ababababab`, or a simple ascending/descending
+run of six or more characters) - enforced server-side, not just the strength meter shown while typing - per NIST SP 800-63B-4
 §3.1.1.2's requirement to check candidates against a blocklist instead of relying on
 character-composition rules.
 
@@ -138,8 +140,14 @@ Brute-force is mitigated instead by:
   `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`) event into the System logs live
   tail and writes a durable `SecurityAuditLog` row, for an operator to find on review.
 
-This never blocks the account, and there is no email, webhook, or other push notification, so an
-operator who isn't actively watching those logs will not be proactively alerted in the moment.
+This never blocks the account. Repeated failed sign-ins on an admin or superadmin account also raise
+a security alert (Organisation Settings → Notifications): an in-app notification and an email to
+the organisation's admins, plus the organisation's optional Discord, Slack or generic-JSON webhook,
+each switchable per alert type (all on by default). The same mechanism alerts on emergency
+two-factor bypass use, login or security settings changes, an admin sign-in from a new country and
+an admin or superadmin role being granted, and it sends mandatory self-alerts to the account owner
+(password or two-factor change, sign-in from a new location, reused two-factor code). Repeated
+failed MFA codes (`auth.mfa.repeated_failures`) are audit-only and send no notification.
 
 ### Implemented in codebase
 
@@ -151,10 +159,15 @@ These capabilities exist in the application - they are **not** roadmap-only clai
 | WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/mfa/webauthn.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
 | OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
 | Local break-glass admin | Local account provider alongside OIDC |
+| Emergency check-in bearer token | Off by default. `ALLOW_CHECKIN_BEARER=true` plus a `CHECKIN_OPERATOR_TOKEN` of at least 32 characters re-enables a shared bearer token for the check-in scan/lookup API only (break-glass; rate limits are keyed per IP instead of per user) |
 
-Effective controls still depend on **customer configuration** (OIDC disabled by default; TOTP
-required only when policy flags are set). Confirm your deployment runbook matches your security
-policy.
+Effective controls still depend on **customer configuration** (OIDC is disabled by default).
+Two-factor authentication is required by default for the `admin` and `superadmin` roles
+(`MFA_REQUIRED_ROLES`, default `admin,superadmin`; a superadmin can change the list in
+Settings → Security unless the environment variable locks it), and those users must enrol TOTP or a
+passkey/security key at first sign-in. Operator accounts have no second factor by default, because a
+check-in station must stay usable on event day (the `operator` role can be added to the required-role
+list in Settings → Security). Confirm your deployment runbook matches your security policy.
 
 ---
 
@@ -198,8 +211,10 @@ up to roughly 2x the stated limit in the worst case - a common, accepted trade-o
 extra cost of a true sliding window. Limits apply per bucket key; HTTP **429** when exceeded.
 Structured audit events: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
 
-**Store:** in-memory per process when `REDIS_URL` is unset; **Redis recommended in production** so
-limits are shared across replicas and survive restarts.
+**Store:** Redis. `REDIS_URL` (with a password of at least 16 characters) is required outside
+development and test, and the application refuses to boot without it, so limits are shared across
+replicas and survive restarts. Only development and test runs fall back to an in-memory store per
+process.
 
 ### Public and authentication
 
@@ -211,7 +226,34 @@ limits are shared across replicas and survive restarts.
 | `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
+| `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 10 / 60 s | no |
+| all `/api/account/*` routes except the notification unread-count poll (which has its own per-user bucket, 20 / 60 s) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
+| `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
+
+### Check-in live updates (SSE stream)
+
+`GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
+Reports page. Connects and reconnects are limited per operator per event and per operator overall, and
+the number of simultaneously open streams is capped. The defaults below are read once at startup from
+the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
+whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the
+container recreated, not just restarted.
+
+| Bucket | Default | Variable |
+|--------|---------|----------|
+| connects and reconnects, per operator per event | 120 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` |
+| connects and reconnects, per operator across events | 240 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` |
+| window | 60 s | `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` |
+| open streams, per operator per event | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
+| open streams, per operator overall | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
+
+The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in
+memory **per application process**, so with several application replicas the effective ceiling is
+the figure above multiplied by the number of replicas.
+
+The check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a
+minute when the rate limit is hit; scanning itself is not affected.
 
 ### Operations probes
 
@@ -219,10 +261,12 @@ limits are shared across replicas and survive restarts.
 |---------|--------|----------------|------|
 | `GET /healthz` | replica + client IP | 120 / 60 s | none (liveness; runs `SELECT 1`) |
 | `GET /readyz` | client IP | 10 / 60 s | `OPS_HEALTH_TOKEN` (disabled when unset) |
+| `POST /api/ops/system-logs` (worker to app log bridge) | client IP | 120 / 60 s | `OPS_HEALTH_TOKEN` |
 
 Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scoped per process
-(`hostname`) so replica probes are not summed into one bucket. External monitors should not poll
-`/healthz` faster than a few requests per minute per source IP, or they may hit 429.
+(`hostname`) so replica probes are not summed into one bucket. External monitors receive 429
+only above 120 requests per minute per source IP (per replica); a poll every 10-30 seconds is well
+within the limit.
 
 ### Staff admin (authenticated)
 
@@ -232,15 +276,26 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST …/import/commit` | user + event | 5 / 60 s | event admin |
 | `POST …/template/preview` | user + event | 20 / 60 s | event admin |
 | `POST …/template/test-send` | user + event | 5 / 60 s burst, 20 / h sustained | event admin |
-| `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
-| `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
-| `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
-| single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 60 s | event admin |
+| `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
+| `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
+| `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | admin (operators search through the check-in lookup) |
+| single-attendee wallet actions (void/restore/reissue/refresh status/delete/remove from provider) | user + event | 10 / 60 s | event admin |
 | bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
-| attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
-| attendee export, deliveries export, reports export, audit-log export, security-audit-log export | user + route | 10 / h | admin |
-| attendee PII export | user + route | 5 / h | admin |
+| bulk wallet actions (void/reissue/refresh status/delete/remove from provider for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
+| event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) - one background job per event at a time, no 100-attendee cap | user + event | 10 / 10 min | event admin |
+| polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
+| `PATCH …/attendees/:id` | user + attendee | 20 / 60 s | event admin |
+| `POST …/attendees/:id/resend` | user + attendee; and per user | 5 / 60 s; 30 / h | event admin |
+| bulk resend / bulk send (real sends; dry-run exempt) | user | 3 / 10 min | event admin |
+| `POST …/wallet-message/send` (real send; dry-run exempt) | user + event | 10 / 10 min | event admin |
+| cancel a running bulk send | user + event | 30 / 60 s | event admin |
+| `POST /api/admin/users/:id/revoke-sessions` | actor + target user | 10 / 60 s | admin |
+| geocoding search / timezone lookup | user | 40 / 60 s; 60 / 60 s | admin |
+| live health probes | user | 5 / 60 s | admin |
+| check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
+| attendee export, deliveries export, reports export | user + route | 10 / h | admin |
+| audit-log export, security-audit-log export | user + route | 10 / h | superadmin |
+| attendee PII export | user + route | 5 / h | superadmin |
 
 All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also
 share one additional budget on top of their own per-user/event bucket: **5 / hour per recipient
@@ -285,7 +340,8 @@ Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/ra
 (the `TRUSTED_PROXY_CIDRS` peer check), consumed by
 [`client-ip.ts`](../../apps/web/src/rate-limit/client-ip.ts),
 [`same-origin-post.ts`](../../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in
-[`auth/routes.ts`](../../apps/web/src/auth/routes.ts).
+[`is-secure-request.ts`](../../apps/web/src/is-secure-request.ts) (used for the session cookie
+`Secure` flag).
 
 **Operator requirement:** the edge proxy must set a **single** trusted client IP (e.g. nginx
 `proxy_set_header X-Forwarded-For $remote_addr`). If the proxy **appends** to a client-sent
@@ -377,6 +433,13 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
 | Geocoding | Nominatim base URL | `apps/web/src/maps/nominatim-provider.ts` |
 | Map tiles | Map tile-server URL | `apps/web/src/maps/static-map.ts` |
 
+**Notification webhook destination.** The organisation's alert webhook (Organisation Settings →
+Notifications, superadmin only) is checked by `assertSafeWebhookUrl`
+(`packages/notifications/src/channels/webhook.ts`) when saved, and re-resolved and pinned to the
+validated address at every send, with a 15 s timeout. HTTPS is required (plain HTTP loopback only
+outside production) and private, loopback, link-local and cloud-metadata hosts are rejected. There
+is no allowlist escape hatch for this destination. The Send test action is rate limited per user.
+
 **PassCreator call pacing (not SSRF - availability/abuse hardening).** Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`, which paces requests proactively rather than reacting to a 429 after PassCreator's own limit is already exceeded:
 
 - **Spacing:** at least 150ms between calls, across every caller - single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save - regardless of how many separate requests or client instances are triggering them concurrently. This keeps Admitto's outbound traffic under PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at once).
@@ -403,7 +466,7 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
   best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60
   days by default. `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker,
   `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike. Preview with
-  `npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
+  `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
 - **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
   (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
   service; database dumps are **not** written during migrate. Operators take a pre-upgrade dump
@@ -421,9 +484,9 @@ Be explicit with auditors about what is **out of product scope** today:
     [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a short, in-memory live tail for day-to-day
     diagnostics. It is **not** a substitute for a SIEM: it holds only the last 1000 entries and is
     emptied on every restart.
-  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for fifteen
-    auth/security event types (login, MFA, logout, OIDC, access-denied, trusted-device, superadmin
-    bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in
+  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for sixteen
+    auth/security event types (login, repeated-failure alerts, new-country admin login, MFA, logout,
+    OIDC, access-denied, trusted-device, superadmin bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in
     [DATA-PROTECTION.md](../../DATA-PROTECTION.md). This is a queryable incident-review trail, not
     a general-purpose log platform, and rate-limit/system log signals stay ephemeral and
     operator-shipped as above.
@@ -433,12 +496,13 @@ Be explicit with auditors about what is **out of product scope** today:
     (30 days by default).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge, email delivery snapshot nullification, and security audit log purge run on the
+  auth-state purge, email delivery snapshot nullification, security audit log purge and in-app notification purge run on the
   Admitto **worker** at boot and about every 24 hours, and are also available as CLI maintenance
   commands).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
 - No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot - minimum
-  length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
+  length only (32 characters for both; a shorter `OPS_HEALTH_TOKEN` leaves `/readyz` disabled);
+  operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
 - Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
   controls in front of the origin.
 - **OIDC roles are reconciled at login only (JIT):** group→role mappings are fully evaluated on

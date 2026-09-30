@@ -2,7 +2,7 @@
 
 One interface for sending email, four interchangeable transports. The rest of Admitto
 calls `mailer.send(message)` without knowing which transport is active - the choice
-is a configuration concern (ultimately from the UI Settings screen).
+is a configuration concern: in the app it is resolved per event by [`@admitto/mailer-config`](../mailer-config/README.md) from env, event and organisation settings (Settings → Mail).
 
 ```text
             ┌─────────────────────────────┐
@@ -26,9 +26,9 @@ is a configuration concern (ultimately from the UI Settings screen).
 ## Usage
 
 ```ts
-import { createMailer, sendBatch, type MailMessage } from "@admitto/mailer";
+import { createMailer, closeMailer, sendBatch, type MailMessage } from "@admitto/mailer";
 
-const mailer = createMailer({
+const mailer = await createMailer({
   provider: "powerautomate",
   url: process.env.POWER_AUTOMATE_URL!,
   key: process.env.POWER_AUTOMATE_KEY,
@@ -44,7 +44,11 @@ const res = await mailer.send({
 // res: { status: "accepted"|"sent"|"failed"|"rejected", provider, retryable?, ... }
 
 const summary = await sendBatch(mailer, messages, { concurrency: 3 });
+
+await closeMailer(mailer); // releases the SMTP pool
 ```
+
+`createMailer` is `async`: it also resolves the SMTP host or Power Automate URL and can reject with `MailDestinationError`.
 
 Each adapter exposes `capabilities` so callers never assume Graph-like Sent Items behaviour.
 
@@ -55,7 +59,7 @@ control characters and is quoted in SMTP From headers. Power Automate URLs must 
 
 ## Configuration
 
-`MailerConfig` is a zod discriminated union on `provider`. Build from env via `configFromEnv()`.
+`MailerConfig` is a zod discriminated union on `provider`. In the app the config comes from `@admitto/mailer-config`; `configFromEnv()` builds one from env only and is used by this package's test-send CLI, not by the app.
 See `.env.example` for `EMAIL_PROVIDER`, `MAIL_FROM_*`, `SMTP_*`, `GRAPH_*`, `POWER_AUTOMATE_*`.
 
 | provider | key fields |
@@ -65,18 +69,24 @@ See `.env.example` for `EMAIL_PROVIDER`, `MAIL_FROM_*`, `SMTP_*`, `GRAPH_*`, `PO
 | `powerautomate` | `url`, `key?`, sender fields |
 | `export_only` | sender fields only |
 
+### Destination safety (SSRF guard)
+
+SMTP `host` and the Power Automate `url` must not be private, loopback, link-local or cloud-metadata addresses. This is checked when the config is parsed and again at connect time: `createMailer` resolves the hostname and throws `MailDestinationError` (`mail_destination_blocked` or `mail_destination_unresolved`). A production deployment with an SMTP relay on a private address must list its exact hostname or IP in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated; set it on the app and the worker). `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` is a lab-only bypass and is ignored when `NODE_ENV=production`.
+
 ### SMTP rate limit
 
 `rateLimitPerMinute` maps to nodemailer `rateLimit` + `rateDelta: 60000` (messages per minute).
 
 ## CLI (manual test send)
 
-Copy `.env.example` → `.env`, set `EMAIL_PROVIDER` and transport fields. Then:
+Copy `packages/mailer/.env.example` → `packages/mailer/.env`, set `EMAIL_PROVIDER` and the transport fields. Then, from the repo root:
 
 ```bash
-npm run send -- --to someone@example.com
-npm run send -- --csv recipients.csv          # columns: email,first_name
+npm run send -w @admitto/mailer -- --to someone@example.com
+npm run send -w @admitto/mailer -- --csv recipients.csv          # columns: email,first_name
 ```
+
+The repo root also has `npm run mail:test-send`, which runs the event-aware `@admitto/mail-delivery` test send.
 
 ## Tests
 

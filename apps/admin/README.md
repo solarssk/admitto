@@ -1,6 +1,6 @@
 # @admitto/admin
 
-Staff **React SPA** - events picker, event admin sections, operator check-in UI, and instance Settings (including Identity & SSO). Served by `@admitto/web` at `/admin/*` (and related API routes).
+Staff **React SPA** - events picker, event admin sections, operator check-in UI, and instance Settings (including Identity & SSO). Served by `@admitto/web` at `/admin/*`, `/operator/*` (check-in) and `/account` (and related API routes).
 
 Login, first-run setup, and MFA enrollment remain **server-rendered HTML** from `apps/web`. Settings → Identity uses the SPA: OIDC provider list, OIDC provider editor, and Cloudflare Access editor all live under `/admin/settings/identity/*` (`/providers`, `/providers/new`, `/providers/:id`, `/cloudflare`).
 
@@ -9,7 +9,7 @@ Login, first-run setup, and MFA enrollment remain **server-rendered HTML** from 
 Same as the monorepo dev stack - see [README.md](../../README.md#quick-start) and [infra/README.md](../../infra/README.md):
 
 - Postgres (and optional Redis) via `infra/docker-compose.yml`
-- `packages/db/.env` with `DATABASE_URL`
+- `apps/web/.env` (with `DATABASE_URL`, `ENCRYPTION_KEY`, `BASE_URL`) for the web server, and `packages/db/.env` for the db scripts
 - A bootstrapped superadmin (`npm run auth:bootstrap`)
 - `@admitto/web` running on port `3000`
 
@@ -22,7 +22,7 @@ npm run dev -w @admitto/web    # http://localhost:3000 - API, login/setup/MFA SS
 npm run dev -w @admitto/admin  # http://localhost:5173 - Vite dev server
 ```
 
-Vite proxies `/api`, `/login`, `/logout`, and `/mfa` to `:3000` (MFA enrollment stays server-rendered during first login). Open **http://localhost:5173**, sign in, and work on React pages with HMR.
+Vite proxies `/api`, `/login`, `/logout`, `/mfa` and `/healthz` to `:3000` (MFA enrollment stays server-rendered during first login). Open **http://localhost:5173**, sign in, and work on React pages with HMR.
 
 ## Dev - single server (production-like)
 
@@ -66,7 +66,7 @@ disposable Postgres database.
 > [!WARNING]
 > Do not point this at your shared local `admitto` dev database. `apps/admin/e2e/seed.ts` resets
 > its fixture attendee's admitted status on every run, and it upserts a synthetic operator account
-> with a fixed password into `DATABASE_URL`.
+> and a synthetic superadmin account, each with a fixed password, into `DATABASE_URL`.
 
 That's why it requires `E2E_SEED_ALLOW_WRITE=true` as a deliberate, separate opt-in. Set it only
 once you have double-checked `DATABASE_URL` is the disposable `admitto_e2e` database below, not a

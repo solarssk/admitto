@@ -7,6 +7,15 @@ with a real `SONAR_TOKEN` and does ingest coverage now. The rest of this documen
 and `sonar-project.properties` for the current live config, not the "currently runs..." framing
 below.
 
+**Current state:** the `sonarcloud` job in `.github/workflows/ci.yml` (named "Code quality
+(SonarCloud)", `needs` the `changes` job and the three test jobs) is report-only:
+`sonar.qualitygate.wait` is not set and the job is not a required check. It is skipped for fork
+PRs and Dependabot PRs (neither gets `SONAR_TOKEN`) and for documentation-only diffs.
+`sonar-project.properties` also sets `sonar.sources`, `sonar.coverage.exclusions` and a migrations
+exclusion, and `.sonarcloud.properties` has been removed. The sections below keep the original
+plan and its sourced reasoning; where they differ from `ci.yml` (action pins, `needs`, skip
+conditions), `ci.yml` is right.
+
 This repo's SonarCloud project (`solarssk_admitto`) used to run **Automatic Analysis** (the
 GitHub App, no `sonar-scanner`/`sonarqube-scan-action` step in any workflow file) and had **no
 `coverage` / `new_coverage` metric at all**, even though `npm run coverage` already produces LCOV
@@ -19,7 +28,7 @@ can never fire: with no coverage metric reported, SonarCloud has nothing to eval
 - [Sourced answer: Automatic Analysis cannot ingest coverage, under any configuration](#sourced-answer-automatic-analysis-cannot-ingest-coverage-under-any-configuration)
 - [What's already prepared in this repo (no secret needed)](#whats-already-prepared-in-this-repo-no-secret-needed)
 - [Exact human steps](#exact-human-steps)
-- [Exact CI changes (apply once the two steps above are done)](#exact-ci-changes-apply-once-the-two-steps-above-are-done)
+- [Historical: the CI changes as planned](#historical-the-ci-changes-as-planned)
 - [Verification after the follow-up PR merges](#verification-after-the-follow-up-pr-merges)
 - [Alternative / complement: gate on Codecov instead](#alternative--complement-gate-on-codecov-instead)
 - [Sources](#sources)
@@ -54,7 +63,7 @@ top of it.
 
 ## What's already prepared in this repo (no secret needed)
 
-- **`sonar-project.properties`** (repo root) carries four things:
+- **`sonar-project.properties`** (repo root) carries these things (and, today, a few more; read the file):
   - The project key and organization.
   - The same `sonar.tests` classification as `.sonarcloud.properties`. It's a literal list, not a
     glob: `sonar.tests` never accepts wildcards, under either analysis mode, per SonarSource's
@@ -66,7 +75,7 @@ top of it.
     the same fix `.sonarcloud.properties` already needed, mirrored here.
   - `sonar.javascript.lcov.reportPaths`, pointing at every workspace's LCOV output.
 
-  This file is **inert today**: Automatic Analysis never reads `sonar-project.properties` (it reads
+  Before the migration this file was **inert**: Automatic Analysis never reads `sonar-project.properties` (it reads
   `.sonarcloud.properties` instead, per SonarSource's own docs on that file). It only takes effect
   once the workflow step below exists and Automatic Analysis is off.
 
@@ -91,11 +100,11 @@ Nothing else in SonarCloud's UI needs to change - `sonar-project.properties` alr
 project key (`solarssk_admitto`) and organization (`recmedia`), read from this repo's existing
 public SonarCloud project via `api/components/show?component=solarssk_admitto`.
 
-## Exact CI changes (apply once the two steps above are done)
+## Historical: the CI changes as planned
 
 Not applied in this PR - merging a scan step against a secret that doesn't exist yet would fail on
 every run, and this repo's own rule is "do not push on red." This is the literal patch to apply in
-a follow-up PR right after `SONAR_TOKEN` exists and Automatic Analysis is off.
+a follow-up PR right after `SONAR_TOKEN` exists and Automatic Analysis is off. (It was applied in #1245 with different pins, `needs` and skip conditions; do not copy it, read `ci.yml`.)
 
 Each of `test-web`, `test-admin`, and `test-rest` in `.github/workflows/ci.yml` already produces
 LCOV as its own job, run in parallel - none of them has the full set of reports on its own, so a

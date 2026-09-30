@@ -1,22 +1,34 @@
 # @admitto/mail-delivery
 
-Orchestrates ticket email delivery: resolve config/template → issue ticket → render → atomic claim → send → `EmailDelivery` persistence.
+Orchestrates ticket email delivery: resolve config/template → issue ticket → render a frozen snapshot → atomic claim (an `EmailDelivery` row in status `queued`) → the Admitto **worker** drains the queued rows (`drainPendingDeliveries`) and sends through the mailer → status updates (`accepted` / `sent` / `failed` / ...). `sendTicketEmails` only enqueues unless it is called with `deliverImmediately: true` (tests and legacy callers), so a running worker is required for mail to leave the system.
 
 ## Exports
 
 ### Ticket pipeline
 
-- `sendTicketEmails(eventId, options?, prisma, env?, deps?)`
-- `resendTicketEmail(attendeeId, prisma, env?, deps?)`
-- `retryDelivery(deliveryId, prisma, env?, deps?)`
+- `sendTicketEmails(eventId, options, prisma, env?, deps?)` - `options` is required (`SendTicketEmailsOptions`: `attendeeIds?`, `templateId?`, `purpose?`, `recipientEmail?`, `baseUrl?`, `timezone?`, `actorUserId?`, `sessionId?`, `deliverImmediately?`)
+- `resendTicketEmail(attendeeId, prisma, env?, deps?, options?)`
+- `retryDelivery(deliveryId, prisma, env?, deps?, options?)`
 - `recordTicketViewed(attendeeId, eventId, prisma)`
 - `buildAttendeeMailLinks`, `mapSendResultToDelivery`, `claimInitialDelivery`
 
 ### Operator preflight (v0.3 PR5)
 
-- `sendTestEmail({ eventId, toAddress }, prisma, env?, deps?)` - one test mail with **sample** template data (`previewTemplate`); does **not** create `EmailDelivery` rows
+- `sendTestEmail({ eventId, toAddress, templateId? }, prisma, env?, deps?, options?)` - one test mail with **sample** template data (the default ticket template via `previewTemplate`, or the template passed as `templateId`); sample ticket, QR and wallet links are replaced by inert placeholders; does **not** create `EmailDelivery` rows
 - `getMailConfigDescription(eventId, prisma, env?)` - masked read-only config (passthrough to `describeMailConfig`)
-- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` - returns `{ items, total }`; safe delivery log projection (no `rendered_html` body)
+- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` - returns `{ items, total }`; safe delivery log projection (no `rendered_html` body; it does include `rendered_subject`, which is the row's title in the log)
+
+### Queue and lifecycle
+
+`drainPendingDeliveries` (capped by `DEFAULT_MAIL_DRAIN_LIMIT` per worker tick), `cancelBulkSendBatch`, `MAX_MAIL_DRAIN_ATTEMPTS`, `mailDrainRetryBackoffMs`, `isMailDrainRetryDue`, `nullifyDeliverySnapshots`.
+
+### Delivery log and detail
+
+`countDeliveries`, `getDeliveryWithTimeline`, `getRenderedDelivery` (the only function that returns the `rendered_html` / `rendered_subject` bodies), `toDeliveryDto`, `toDeliveryDetailDto`.
+
+### Transport diagnostics and bounce ingest
+
+`sendTransportTestEmail`, `sendEventTransportTestEmail`, `runEventBounceProbe`, and the bounce-ingest API used by the worker and the admin app (`ingestBounces`, `testBounceImapConnection`, `ImapInboundProvider`, `parseBounceLines`, `applyBounceResult`). Also exported: `resolveBaseUrl`, `sanitizeDeliveryError` / `clientSafeDeliveryError`, `claimInitialDelivery`, `createResendDelivery`.
 
 ## Test-send vs ticket send
 
@@ -33,7 +45,8 @@ Requires `DATABASE_URL` (from `.env` in monorepo root, `packages/db/.env`, or th
 ```bash
 npm run cli -w @admitto/mail-delivery -- test-send --to operator@example.com --event <eventId>
 npm run cli -w @admitto/mail-delivery -- config-describe --event <eventId>
-npm run cli -w @admitto/mail-delivery -- deliveries --event <eventId> [--status accepted] [--purpose initial]
+npm run cli -w @admitto/mail-delivery -- deliveries --event <eventId> [--status accepted] [--purpose initial|resend] [--attendee <attendeeId>]
+npm run cli -w @admitto/mail-delivery -- ingest-bounces [--event-id <eventId>]
 npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots [--dry-run]
 ```
 
@@ -45,7 +58,7 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 
 ## Frozen snapshot (no plaintext tokens in DB)
 
-`rendered_html` / `rendered_subject` are stored with literal `{{ticket_url}}` / `{{qr_image_url}}` placeholders. Ticket links are materialized only at send/retry via `materializeStoredDeliveryMessage` (decrypt `token_enc` at point of use). This preserves keyless DB leak resistance from ADR 0006.
+`rendered_html` / `rendered_subject` are stored with literal `{{ticket_url}}`, `{{qr_image_url}}`, `{{apple_wallet_url}}` and `{{google_wallet_url}}` placeholders. The links are materialized only when the message is actually delivered (the worker drain, a retry or an immediate send) via `materializeStoredDeliveryMessage` from `@admitto/mail-templates` (decrypt `token_enc` at point of use). This preserves keyless DB leak resistance from ADR 0006.
 
 ## Retry vs resend
 
@@ -55,9 +68,10 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 ## Snapshot retention
 
 Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days (override with
-`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`), the Admitto **worker** (boot + ~24h),
+`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) the Admitto **worker** (once at boot, then about every 24h),
 `admitto retention run` and `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject`
-while preserving delivery log metadata. All three read the same variable.
+while preserving delivery log metadata. A failed row loses `retryable` at the same time, so it can no
+longer be retried. All three read the same variable.
 
 ## Tests
 
