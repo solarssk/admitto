@@ -2,7 +2,7 @@
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { Component, Suspense, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { lazyRoute, trackChunk, useChunkLoading } from "../../src/utils/lazy-route.js";
+import { lazyRoute, supersedePendingChunks, trackChunk, useChunkLoading } from "../../src/utils/lazy-route.js";
 import { LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 
 afterEach(() => {
@@ -48,6 +48,51 @@ describe("useChunkLoading / trackChunk", () => {
     await act(async () => {
       chunk.reject(new Error("Failed to fetch dynamically imported module"));
       await chunk.promise.catch(() => undefined);
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it("stops counting a download once a newer page has rendered, even while it is still running", async () => {
+    const { result } = renderHook(() => useChunkLoading());
+    const abandoned = deferred<string>();
+    act(() => {
+      void trackChunk(abandoned.promise);
+    });
+    expect(result.current).toBe(true);
+
+    act(() => {
+      supersedePendingChunks();
+    });
+    expect(result.current).toBe(false);
+
+    await act(async () => {
+      abandoned.resolve("late");
+      await abandoned.promise;
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it("keeps counting a download started after the newer page rendered, and the old one settling does not cancel it", async () => {
+    const { result } = renderHook(() => useChunkLoading());
+    const old = deferred<string>();
+    const current = deferred<string>();
+    act(() => {
+      void trackChunk(old.promise);
+      supersedePendingChunks();
+      void trackChunk(current.promise);
+    });
+    expect(result.current).toBe(true);
+
+    await act(async () => {
+      old.resolve("old");
+      await old.promise;
+    });
+    // The old download settling must not take the current one's count with it.
+    expect(result.current).toBe(true);
+
+    await act(async () => {
+      current.resolve("current");
+      await current.promise;
     });
     expect(result.current).toBe(false);
   });

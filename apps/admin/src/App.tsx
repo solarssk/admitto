@@ -17,7 +17,7 @@ import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvent } from "./api/client.js";
 import { useDelayedLoading, useLoadingGate } from "./hooks/useDelayedLoading.js";
 import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "./utils/loading-timing.js";
-import { lazyRoute, useChunkLoading } from "./utils/lazy-route.js";
+import { lazyRoute, supersedePendingChunks, useChunkLoading } from "./utils/lazy-route.js";
 import type { EventDto } from "./api/types.js";
 
 // Route-level code-splitting: each page below loads on demand so the initial
@@ -328,8 +328,18 @@ export function RouteFallback() {
  * stays visible meanwhile). Shown after the shared 200ms delay, so a warm cache never flashes it,
  * and only after the first page has rendered: at start the full-screen loader already says it.
  * After 8 seconds the bar gets the "taking longer than usual" line.
+ *
+ * `locationKey` changes when a navigation commits (React Router keeps the old location until the new
+ * page has rendered). A download still running from before that belongs to a page the user has
+ * already left, so it stops holding the bar up.
  */
-export function PageChangeProgress({ enabled }: Readonly<{ enabled: boolean }>) {
+export function PageChangeProgress({
+  enabled,
+  locationKey,
+}: Readonly<{ enabled: boolean; locationKey?: string }>) {
+  useEffect(() => {
+    supersedePendingChunks();
+  }, [locationKey]);
   const chunkLoading = useChunkLoading();
   const waiting = enabled && chunkLoading;
   const { showIndicator } = useLoadingGate(waiting);
@@ -340,6 +350,7 @@ export function PageChangeProgress({ enabled }: Readonly<{ enabled: boolean }>) 
 export default function App() {
   const [routesReady, setRoutesReady] = useState(false);
   const markRoutesReady = useCallback(() => setRoutesReady(true), []);
+  const location = useLocation();
   return (
     <ErrorBoundary>
       <ToastProvider>
@@ -349,7 +360,7 @@ export default function App() {
               <StaffRoutes />
               <RoutesReadyMarker onReady={markRoutesReady} />
             </Suspense>
-            <PageChangeProgress enabled={routesReady} />
+            <PageChangeProgress enabled={routesReady} locationKey={location.key} />
           </ConnectionStateProvider>
         </AuthProvider>
       </ToastProvider>

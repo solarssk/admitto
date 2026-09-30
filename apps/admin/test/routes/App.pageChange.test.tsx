@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App, { PageChangeProgress, RouteFallback, RoutesReadyMarker } from "../../src/App.js";
 import { SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
@@ -125,6 +125,46 @@ describe("PageChangeProgress", () => {
   });
 });
 
+describe("PageChangeProgress when the user has moved on", () => {
+  it("lets go of a download that belongs to a page the user has already left, bar and slow line included", async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<PageChangeProgress enabled locationKey="a" />);
+    const abandoned = deferred();
+    act(() => {
+      void trackChunk(abandoned.promise);
+    });
+    await advance(200);
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+
+    // A newer page rendered (the location changed): the first download is still running but obsolete.
+    rerender(<PageChangeProgress enabled locationKey="b" />);
+    await advance(0);
+    await advance(400);
+    await advance(300);
+    expect(screen.queryByRole("status", { name: "Loading page" })).toBeNull();
+    await advance(9000);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+
+    abandoned.resolve();
+    await advance(0);
+    expect(screen.queryByRole("status", { name: "Loading page" })).toBeNull();
+  });
+
+  it("still shows the bar for a download started after the page changed", async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<PageChangeProgress enabled locationKey="a" />);
+    rerender(<PageChangeProgress enabled locationKey="b" />);
+    const next = deferred();
+    act(() => {
+      void trackChunk(next.promise);
+    });
+    await advance(200);
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+    next.resolve();
+    await advance(0);
+  });
+});
+
 describe("PageChangeProgress slow note", () => {
   it("adds the taking-longer line to the bar after 8 seconds, and takes it away when the page arrives", async () => {
     vi.useFakeTimers();
@@ -172,6 +212,48 @@ describe("RouteFallback", () => {
   });
 });
 
+describe("App when a newer page renders while an older download is still running", () => {
+  it("stops showing the bar, and its slow line, for the download of the page that was left", async () => {
+    let go!: (to: string) => void;
+    function Nav() {
+      const navigate = useNavigate();
+      go = (to) => void navigate(to);
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/admin/events/evt-1/overview", state: { event } }]}>
+        <Nav />
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("mapped event overview")).toBeTruthy();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    vi.useFakeTimers();
+    const abandoned = deferred();
+    act(() => {
+      void trackChunk(abandoned.promise);
+    });
+    await advance(200);
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+
+    // The user moves on to a page that renders at once; the first download is still running.
+    act(() => {
+      go("/admin/events/evt-1/overview?tab=2");
+    });
+    await advance(0);
+    await advance(400);
+    await advance(300);
+    expect(screen.queryByRole("status", { name: "Loading page" })).toBeNull();
+    await advance(9000);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    abandoned.resolve();
+    await advance(0);
+  });
+});
+
 describe("App", () => {
   it("shows the page-change bar only once the first page has rendered", async () => {
     render(
@@ -180,6 +262,11 @@ describe("App", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText("mapped event overview")).toBeTruthy();
+    // EventLayout replaces the entry that carried the event in its state, which is one more committed
+    // location; let it land before the clock is faked, or it would supersede the download below.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
 
     vi.useFakeTimers();
     const slow = deferred();
