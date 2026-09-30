@@ -475,8 +475,8 @@ function SendTicketsDialog({
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
-            {busy ? "Sending…" : "Send tickets"}
+          <Button type="button" variant="primary" disabled={busy} loading={busy} loadingLabel="Sending…" onClick={onConfirm}>
+            Send tickets
           </Button>
         </div>
       </div>
@@ -618,9 +618,10 @@ function CardPickerDialog<T>({
                 type="button"
                 variant="primary"
                 disabled={busy || !armed || (requireValue ? !value : false)}
+                loading={busy}
                 onClick={onConfirm}
               >
-                {busy ? "Applying…" : "Apply"}
+                Apply
               </Button>
             </Tooltip>
             {!armed && confirmDelaySeconds !== undefined && (
@@ -716,8 +717,8 @@ function BulkTextFieldDialog({
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy || !trimmed} onClick={onConfirm}>
-            {busy ? "Applying…" : "Apply"}
+          <Button type="button" variant="primary" disabled={busy || !trimmed} loading={busy} onClick={onConfirm}>
+            Apply
           </Button>
         </div>
       </div>
@@ -846,7 +847,8 @@ function HeaderMoreMenu({
               {walletPlatforms.any && walletConfigured && (
                 <MoreActionsMenuItem
                   icon="refresh-dot"
-                  label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
+                  label="Push updates"
+                  loading={eventWidePushBusy}
                   hint="Send the latest details to every installed pass"
                   disabled={archived || eventWidePushBusy}
                   tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -860,7 +862,8 @@ function HeaderMoreMenu({
                 <>
                   <MoreActionsMenuItem
                     icon="cloud-download"
-                    label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
+                    label="Refresh status"
+                    loading={eventWideRefreshStatusBusy}
                     hint="Get the latest status of every active pass"
                     disabled={eventWideRefreshStatusBusy}
                     onClick={() => {
@@ -871,7 +874,9 @@ function HeaderMoreMenu({
                   <MoreActionsMenuItem
                     icon="wallet-off"
                     variant="warning"
-                    label={eventWideVoidActiveBusy ? "Voiding passes…" : "Void active passes"}
+                    label="Void active passes"
+                    loading={eventWideVoidActiveBusy}
+                    loadingLabel="Voiding passes…"
                     hint="Make every active wallet pass invalid"
                     disabled={eventWideVoidActiveBusy}
                     onClick={() => {
@@ -882,7 +887,9 @@ function HeaderMoreMenu({
                   <MoreActionsMenuItem
                     icon="cloud-off"
                     variant="danger"
-                    label={eventWideRemoveInactiveBusy ? "Removing passes…" : "Remove inactive passes"}
+                    label="Remove inactive passes"
+                    loading={eventWideRemoveInactiveBusy}
+                    loadingLabel="Removing passes…"
                     hint="Delete voided or expired passes from the wallet service"
                     disabled={eventWideRemoveInactiveBusy}
                     onClick={() => {
@@ -948,9 +955,10 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={exportingFormat !== null}
+        loading={exportingFormat !== null}
         onClick={() => setOpen((o) => !o)}
       >
-        {exportingFormat ? `Exporting ${exportingFormat.toUpperCase()}…` : "Export"}
+        Export
       </Button>
       {open && (
         <div className="attendees-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
@@ -2349,6 +2357,7 @@ export function AttendeesPage() {
           setBulkDeleteConfirmOpen(true);
         }}
         eventTimezone={event.timezone}
+        eventId={event.id}
         event={event}
         walletPlatforms={walletPlatforms}
         walletConfigured={event.wallet_configured}

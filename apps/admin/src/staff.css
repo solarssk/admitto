@@ -5,6 +5,13 @@
   display: none !important;
 }
 
+/* Icons are glyphs of the icon font. Until it has loaded they would be drawn as empty boxes, so they
+   stay invisible (keeping their room, so nothing moves) until main.tsx sets `icons-ready` on <html>
+   (see utils/icon-font.ts). */
+html:not(.icons-ready) .ti {
+  visibility: hidden;
+}
+
 .sidebar__brand-mark {
   width: 32px;
   height: 32px;

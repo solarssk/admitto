@@ -214,7 +214,7 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
     expect(screen.queryByRole("menuitem", { name: /Revoke check-in/ })).toBeNull();
   });
 
-  it("shows 'Revoking check-in…' and disables the item while busy", () => {
+  it("keeps 'Revoke check-in', marks it busy and disables the item while busy", () => {
     render(
       <AttendeesTable
         {...tableProps}
@@ -224,8 +224,10 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const item = screen.getByRole("menuitem", { name: /Revoking check-in…/ }) as HTMLButtonElement;
+    const item = screen.getByRole("menuitem", { name: /Revoke check-in/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText(/Revoking check-in…/)).toBeNull();
   });
 
   it("explains the archived reason on the Revoke check-in item's tooltip, not just the no-one-checked-in reason (code review)", () => {
@@ -326,12 +328,14 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     expect(screen.queryByRole("menuitem", { name: /Revoke items/ })).toBeNull();
   });
 
-  it("shows 'Revoking items…' and disables the item while busy", () => {
+  it("keeps 'Revoke items', marks it busy and disables the item while busy", () => {
     render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set(["att-1"])} bulkRevokeItemsBusy />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const item = screen.getByRole("menuitem", { name: /Revoking items…/ }) as HTMLButtonElement;
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText(/Revoking items…/)).toBeNull();
     expect(item.disabled).toBe(true);
   });
 
@@ -444,7 +448,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     expect(screen.queryByRole("menuitem", { name: /Revoke pass/ })).toBeNull();
   });
 
-  it("shows 'Revoking pass…' and disables the item while busy", () => {
+  it("keeps 'Revoke pass', marks it busy and disables the item while busy", () => {
     render(
       <AttendeesTable
         {...tableProps}
@@ -454,7 +458,9 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const item = screen.getByRole("menuitem", { name: /Revoking pass…/ }) as HTMLButtonElement;
+    const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
+    expect(item.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText(/Revoking pass…/)).toBeNull();
     expect(item.disabled).toBe(true);
   });
 

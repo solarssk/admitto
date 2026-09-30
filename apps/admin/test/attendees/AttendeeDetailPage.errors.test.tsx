@@ -97,6 +97,146 @@ describe("AttendeeDetailPage operator errors", () => {
     expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
   });
 
+  it("holds the skeleton's space invisibly for the first 200ms, then fades it in", () => {
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    const page = () => document.querySelector(".attendee-detail-skeleton")?.closest(".attendee-detail-page");
+    expect(page()?.className).toContain("at-loading-hold");
+    expect(page()?.getAttribute("aria-busy")).toBe("true");
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(page()?.className).toContain("at-fade-in");
+    expect(page()?.className).not.toContain("at-loading-hold");
+  });
+
+  it("fades the page in when it replaces the skeleton, as a new element", async () => {
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250); // skeleton shown at 200ms
+    });
+    const skeletonRoot = document.querySelector(".attendee-detail-page") as HTMLElement;
+    expect(skeletonRoot.getAttribute("aria-busy")).toBe("true");
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    const pageRoot = document.querySelector(".attendee-detail-page") as HTMLElement;
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+    expect(pageRoot.className).toContain("at-fade-in");
+    // A new element, so the 150ms fade runs again instead of carrying on from the skeleton's.
+    expect(pageRoot).not.toBe(skeletonRoot);
+    expect(pageRoot.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("fades the not-found notice in too, when the attendee turns out not to exist after a skeleton", async () => {
+    let rejectLoad!: (reason: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectLoad = reject;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    await act(async () => {
+      rejectLoad(new ApiError(404, "not_found"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByText("Attendee not found")).toBeTruthy();
+    expect(document.querySelector(".attendee-detail-page")?.className).toContain("at-fade-in");
+  });
+
+  it("fades the error in too, when the load fails after a skeleton", async () => {
+    let rejectLoad!: (reason: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectLoad = reject;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    await act(async () => {
+      rejectLoad(new ApiError(500, "secret_internal"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByText("Could not load attendee")).toBeTruthy();
+    expect(document.querySelector(".attendee-detail-page")?.className).toContain("at-fade-in");
+  });
+
+  it("never shows the skeleton for a load that answers within 200ms", async () => {
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+  });
+
+  it("keeps a skeleton that did appear for at least 400ms before the attendee replaces it", async () => {
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250); // the skeleton appeared at 200ms
+    });
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    act(() => {
+      vi.advanceTimersByTime(349); // 599ms: 1ms short of its 400ms minimum
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Anna" })).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+  });
+
   it("shows load failure, and retries the load on demand", async () => {
     loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();

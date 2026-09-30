@@ -10,6 +10,12 @@
   pointer-events: none;
 }
 
+/* On a card or list: the caller's container is `position: relative`, so the bar rides its top edge. */
+.at-topbar--container {
+  position: absolute;
+  z-index: 1;
+}
+
 /* The "taking longer than usual" line after 8 seconds: a small label under the bar, top centre. */
 .at-topbar-note {
   position: fixed;

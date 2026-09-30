@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * Delays showing a loading state by `delayMs` so a request that resolves
@@ -60,12 +60,22 @@ export function useLoadingGate(
 ): LoadingGate {
   const [showIndicator, setShowIndicator] = useState(false);
   const shownAt = useRef<number | null>(null);
+  // Whether the wait is still going, as of the last commit. A layout effect runs as part of the commit
+  // itself, so this is right before any timer can fire after it; the effect below only runs later.
+  const stillLoading = useRef(isLoading);
+  useLayoutEffect(() => {
+    stillLoading.current = isLoading;
+  });
 
   useEffect(() => {
     if (isLoading) {
       // An overlapping reload while the indicator is already up keeps it up.
       if (shownAt.current !== null) return undefined;
       const timer = setTimeout(() => {
+        // The wait can end after this timer was already due but before React has run this effect's
+        // cleanup (a slow commit): the content is on screen, so covering it with an indicator for a
+        // wait that is over would hide it for the whole minimum time.
+        if (!stillLoading.current) return;
         shownAt.current = Date.now();
         setShowIndicator(true);
       }, delayMs);
@@ -87,4 +97,35 @@ export function useLoadingGate(
   }, [isLoading, delayMs, minVisibleMs]);
 
   return { showIndicator, showContent: !isLoading && !showIndicator };
+}
+
+/**
+ * For a busy state the user asked for with a click (a Retry, a Save): true from the first render in
+ * which `busy` is true, and for at least `minMs` from then on, however quickly the work ends. Offline,
+ * a request fails within a few milliseconds with the same message as the last time, and without this
+ * the click would look like nothing happened. Unlike `useLoadingGate` it has no start delay, and so no
+ * timer that could lose the race against a fast answer.
+ */
+export function useMinimumBusy(busy: boolean, minMs = 400): boolean {
+  const [holding, setHolding] = useState(false);
+  const since = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (busy) {
+      since.current ??= Date.now();
+      setHolding(true);
+      return undefined;
+    }
+    if (since.current === null) return undefined;
+    const timer = setTimeout(
+      () => {
+        since.current = null;
+        setHolding(false);
+      },
+      Math.max(0, minMs - (Date.now() - since.current)),
+    );
+    return () => clearTimeout(timer);
+  }, [busy, minMs]);
+
+  return busy || holding;
 }

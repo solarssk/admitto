@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -25,23 +26,352 @@ afterEach(() => {
 });
 
 describe("AddAttendeeModal delayed loading", () => {
-  it("shows both loading hints once the fetches have genuinely taken a moment", () => {
+  const skeleton = () => screen.queryByText("Loading attendee form");
+  const fields = () => document.querySelector(".add-attendee-modal__fields") as HTMLElement;
+
+  function renderWithPendingFetches() {
     mockFetchEventCustomFields.mockImplementation(() => new Promise(() => {}));
     mockFetchTicketTypes.mockImplementation(() => new Promise(() => {}));
-    try {
-      vi.useFakeTimers();
-      render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-      expect(screen.getByText("Loading attribute fields…")).toBeTruthy();
-      expect(screen.getByText("Loading ticket types…")).toBeTruthy();
-    } finally {
-      // Never-resolving mocks would otherwise leak into every later test in this file.
-      mockFetchEventCustomFields.mockResolvedValue([]);
-      mockFetchTicketTypes.mockResolvedValue([]);
-    }
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+  }
+
+  afterEach(() => {
+    // Never-resolving mocks would otherwise leak into every later test in this file.
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
   });
+
+  it("holds the whole form back, invisible, while the catalogs load, and draws a skeleton over it after 200ms", () => {
+    renderWithPendingFetches();
+    act(() => {
+      vi.advanceTimersByTime(199);
+    });
+    expect(fields().className).toContain("at-loading-hold");
+    expect(fields().getAttribute("aria-busy")).toBe("true");
+    expect(skeleton()).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(skeleton()).toBeTruthy();
+    expect(fields().className).toContain("at-loading-hold");
+    // The two lines of text and the loader that used to sit in the middle of the form are gone.
+    expect(screen.queryByText(/Loading attribute fields/)).toBeNull();
+    expect(screen.queryByText(/Loading ticket types/)).toBeNull();
+    expect(screen.queryByRole("status", { name: "Loading fields" })).toBeNull();
+  });
+
+  it("shows the whole form at once, fading in, when the catalogs arrive before the 200ms are up", async () => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await waitFor(() => expect(fields().className).toContain("at-fade-in"));
+    expect(fields().className).not.toContain("at-loading-hold");
+    expect(fields().getAttribute("aria-busy")).toBeNull();
+    expect(skeleton()).toBeNull();
+  });
+});
+
+describe("AddAttendeeModal when a catalog request stalls", () => {
+  /** A request that never answers but, like fetch, rejects when its signal is aborted. */
+  function stalledUntilAborted() {
+    const signals: AbortSignal[] = [];
+    const impl = (_eventId: string, signal?: AbortSignal) =>
+      new Promise<never>((_resolve, reject) => {
+        if (signal) signals.push(signal);
+        signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+      });
+    return { signals, impl };
+  }
+
+  afterEach(() => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+  });
+
+  it("gives up after the load timeout, shows why, and releases the form it was holding back", async () => {
+    const stalled = stalledUntilAborted();
+    mockFetchEventCustomFields.mockImplementation(stalled.impl as never);
+    mockFetchTicketTypes.mockImplementation(stalled.impl as never);
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    const fields = () => document.querySelector(".add-attendee-modal__fields") as HTMLElement;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS - 1);
+    });
+    expect(fields().className).toContain("at-loading-hold");
+    expect(screen.queryByText(new RegExp(LOAD_TIMEOUT_MESSAGE))).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fields().className).not.toContain("at-loading-hold");
+    expect(screen.queryByText("Loading attendee form")).toBeNull();
+    // Both failures are said, with the reason and what to do: each has its own Retry.
+    expect(screen.getByText(new RegExp(`Could not load ticket types. ${LOAD_TIMEOUT_MESSAGE}`))).toBeTruthy();
+    expect(screen.getByText(new RegExp(`Could not load custom fields. ${LOAD_TIMEOUT_MESSAGE}`))).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(2);
+    expect(screen.queryByText(/Reopen the dialog/)).toBeNull();
+  });
+
+  it.each([
+    ["custom fields", mockFetchEventCustomFields, "Could not load custom fields."],
+    ["ticket types", mockFetchTicketTypes, "Could not load ticket types."],
+  ])("gives a retry of the %s its own 30 seconds, with the Retry button busy meanwhile", async (_name, mock, message) => {
+    const stalled = stalledUntilAborted();
+    mock.mockImplementation(stalled.impl as never);
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    const settle = async (ms: number) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    };
+    const retry = () => screen.getByRole("button", { name: "Retry" });
+
+    await settle(LOAD_TIMEOUT_MS);
+    expect(retry().getAttribute("aria-busy")).toBeNull();
+
+    fireEvent.click(retry());
+    expect(stalled.signals).toHaveLength(2);
+    expect(retry().getAttribute("aria-busy")).toBe("true");
+    // The error stays on screen while the retry runs, so the notice does not jump.
+    expect(screen.getByText(new RegExp(message))).toBeTruthy();
+
+    await settle(LOAD_TIMEOUT_MS - 1);
+    expect(retry().getAttribute("aria-busy")).toBe("true");
+    await settle(1);
+    expect(retry().getAttribute("aria-busy")).toBeNull();
+    expect(stalled.signals[0]?.aborted).toBe(true);
+    expect(stalled.signals[1]?.aborted).toBe(true);
+  });
+
+  it("aborts both requests when the dialog goes away, and says nothing about it", async () => {
+    const stalled = stalledUntilAborted();
+    mockFetchEventCustomFields.mockImplementation(stalled.impl as never);
+    mockFetchTicketTypes.mockImplementation(stalled.impl as never);
+    const { rerender } = render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    expect(stalled.signals).toHaveLength(2);
+    expect(stalled.signals.every((s) => !s.aborted)).toBe(true);
+
+    rerender(<AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />);
+    expect(stalled.signals.every((s) => s.aborted)).toBe(true);
+    await act(async () => {});
+    expect(screen.queryByText(new RegExp(LOAD_TIMEOUT_MESSAGE))).toBeNull();
+  });
+
+  it("leaves no timeout behind once the catalogs have answered", async () => {
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The 30 second timeouts are cleared; only the loading gates' own short timers may remain.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS + 1000);
+    });
+    expect(screen.queryByText(new RegExp(LOAD_TIMEOUT_MESSAGE))).toBeNull();
+  });
+});
+
+describe("AddAttendeeModal Retry for a failed catalog", () => {
+  const dietary = {
+    id: "fld-1",
+    source_field: "dietary",
+    label: "Dietary",
+    description: null,
+    type: "text" as const,
+    required: false,
+    options: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+  const vip = { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" };
+  const fieldsWrapper = () => document.querySelector(".add-attendee-modal__fields") as HTMLElement;
+  const addButton = () => screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement;
+
+  function typeAttendee() {
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+  }
+
+  function expectTypedAttendeeKept() {
+    expect((screen.getByLabelText("First name *") as HTMLInputElement).value).toBe("Jan");
+    expect((screen.getByLabelText("Last name *") as HTMLInputElement).value).toBe("Kowalski");
+    expect((screen.getByLabelText("Email *") as HTMLInputElement).value).toBe("jan@example.com");
+  }
+
+  afterEach(() => {
+    mockFetchEventCustomFields.mockReset().mockResolvedValue([]);
+    mockFetchTicketTypes.mockReset().mockResolvedValue([]);
+  });
+
+  /** What must hold for the whole time a Retry is running: the form stays as it is, the error stays, and the button is busy. */
+  async function expectFormUntouchedWhileRetrying(errorText: string) {
+    const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(retry.disabled).toBe(true);
+    expect(screen.getByText(errorText)).toBeTruthy();
+    // What is on screen stays on screen: no invisible form, no skeleton over it (not even once the
+    // 200ms a skeleton would wait for have passed).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    expect(fieldsWrapper().className).not.toContain("at-loading-hold");
+    expect(fieldsWrapper().getAttribute("aria-busy")).toBeNull();
+    expect(screen.queryByText("Loading attendee form")).toBeNull();
+    expectTypedAttendeeKept();
+  }
+
+  it("reruns only the custom fields in place, keeping what was typed and not holding the form back again", async () => {
+    let answerRetry!: (fields: unknown[]) => void;
+    mockFetchEventCustomFields
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)) as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByText("Could not load custom fields.");
+    typeAttendee();
+    // The failed custom fields keep the form from being submitted: that is what Retry is for.
+    expect(addButton().disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await expectFormUntouchedWhileRetrying("Could not load custom fields.");
+    expect(addButton().disabled).toBe(true);
+
+    await act(async () => answerRetry([dietary]));
+    await waitFor(() => expect(screen.queryByText("Could not load custom fields.")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByLabelText("Dietary")).toBeTruthy();
+    expectTypedAttendeeKept();
+    await waitFor(() => expect(addButton().disabled).toBe(false));
+    // Only the catalog that failed was asked again.
+    expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(2);
+    expect(mockFetchTicketTypes).toHaveBeenCalledTimes(1);
+  });
+
+  it("reruns only the ticket types in place, keeping what was typed and not holding the form back again", async () => {
+    let answerRetry!: (types: unknown[]) => void;
+    mockFetchEventCustomFields.mockResolvedValue([dietary]);
+    mockFetchTicketTypes
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)) as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByText("Could not load ticket types.");
+    typeAttendee();
+    fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegan" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await expectFormUntouchedWhileRetrying("Could not load ticket types.");
+    expect((screen.getByLabelText("Dietary") as HTMLInputElement).value).toBe("vegan");
+
+    await act(async () => answerRetry([vip]));
+    await waitFor(() => expect(screen.queryByText("Could not load ticket types.")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    expect(await screen.findByRole("button", { name: "VIP" })).toBeTruthy();
+    expectTypedAttendeeKept();
+    expect((screen.getByLabelText("Dietary") as HTMLInputElement).value).toBe("vegan");
+    // Only the catalog that failed was asked again, and what loaded the first time was not touched.
+    expect(mockFetchTicketTypes).toHaveBeenCalledTimes(2);
+    expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the error, and lets the operator try again, when the retry fails too", async () => {
+    mockFetchEventCustomFields
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockRejectedValueOnce(new Error("still down"))
+      .mockResolvedValueOnce([]);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByText("Could not load custom fields.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull(), {
+      timeout: 2000,
+    });
+    expect(screen.getByText("Could not load custom fields.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByText("Could not load custom fields.")).toBeNull());
+    expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["custom fields", () => mockFetchEventCustomFields, "Retry", "Could not load custom fields."],
+    ["ticket types", () => mockFetchTicketTypes, "Retry", "Could not load ticket types."],
+  ])("shows a retry of the %s running for at least 400ms even when it fails again at once", async (_name, mock, label, message) => {
+    mock().mockRejectedValue(new Error("offline"));
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const retry = () => screen.getByRole("button", { name: label });
+    expect(retry().getAttribute("aria-busy")).toBeNull();
+
+    fireEvent.click(retry());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The request has already failed again, with the same text as before.
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(retry().getAttribute("aria-busy")).toBe("true");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(398);
+    });
+    expect(retry().getAttribute("aria-busy")).toBe("true");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
+    });
+    expect(retry().getAttribute("aria-busy")).toBeNull();
+  });
+
+  it.each([
+    [
+      "custom fields",
+      () => mockFetchEventCustomFields,
+      () => mockFetchTicketTypes,
+      "Could not load custom fields.",
+    ],
+    [
+      "ticket types",
+      () => mockFetchTicketTypes,
+      () => mockFetchEventCustomFields,
+      "Could not load ticket types.",
+    ],
+  ])(
+    "starts the next opening clean after the %s were retried: old error gone, form held back again",
+    async (_name, retried, other, message) => {
+      // The retried catalog fails twice, so its error is on screen when the dialog is closed.
+      retried().mockRejectedValueOnce(new Error("network down")).mockRejectedValueOnce(new Error("still down"));
+      const { rerender } = render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+      await screen.findByText(message);
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(retried()).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull(), {
+        timeout: 2000,
+      });
+      expect(screen.getByText(message)).toBeTruthy();
+
+      rerender(<AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />);
+      // On the next opening the retried catalog never answers and the other one answers at once:
+      // the form may only be held back by the one that was retried, so its counter must be back at 0.
+      retried().mockImplementation(() => new Promise(() => {}));
+      other().mockResolvedValue([]);
+      rerender(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+      await act(async () => {});
+      expect(screen.queryByText(message)).toBeNull();
+      expect(fieldsWrapper().className).toContain("at-loading-hold");
+      expect(fieldsWrapper().getAttribute("aria-busy")).toBe("true");
+    },
+  );
 });
 
 describe("AddAttendeeModal", () => {
@@ -246,8 +576,8 @@ describe("AddAttendeeModal", () => {
     );
   });
 
-  // AddAttendeeModal has no Retry button for either load - closing and reopening the dialog
-  // re-runs the load effect, which is this component's retry path for both.
+  // Closing and reopening the dialog re-runs both loads; the Retry buttons in each notice (covered
+  // below) rerun just the one that failed.
   async function expectDismissableLoadErrorAlert(message: string) {
     const { rerender } = render(
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
@@ -270,7 +600,7 @@ describe("AddAttendeeModal", () => {
 
   it("shows an inline alert when the attribute-field registry fails to load, and clears it on reopen", async () => {
     mockFetchEventCustomFields.mockRejectedValueOnce(new Error("network down"));
-    await expectDismissableLoadErrorAlert("Could not load attribute fields. Try reopening the dialog.");
+    await expectDismissableLoadErrorAlert("Could not load custom fields.");
   });
 
   it("shows an inline alert when the ticket-type catalog fails to load, and clears it on reopen", async () => {
@@ -306,7 +636,7 @@ describe("AddAttendeeModal", () => {
     );
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
-    await screen.findByText("Loading ticket types…");
+    await screen.findByText("Loading attendee form");
     fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
     fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
@@ -318,8 +648,9 @@ describe("AddAttendeeModal", () => {
     );
 
     resolveTicketTypes([]);
+    // The loader has been up since 200ms, so it stays for its 400ms minimum before it leaves.
     await waitFor(() => {
-      expect(screen.queryByText("Loading ticket types…")).toBeNull();
+      expect(screen.queryByText("Loading attendee form")).toBeNull();
     });
     expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
       false,

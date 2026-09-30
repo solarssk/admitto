@@ -106,35 +106,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("AttendeesTable wallet bulk-action busy labels", () => {
-  it("shows the busy label while a bulk void is in flight", () => {
-    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkVoidWalletBusy />);
+describe("AttendeesTable wallet bulk-action busy state", () => {
+  // The menu is as wide as its widest row and a row swaps its text, so a busy text longer than the
+  // resting one (AGENTS.md: loadingLabel) would widen it while the job runs: the row keeps its own
+  // label and only the spinner, aria-busy and the disabled state say it is busy.
+  it.each([
+    ["void", "bulkVoidWalletBusy", /^Void wallet pass/, /Voiding wallet passes…/],
+    ["reissue", "bulkReissueWalletBusy", /^Push updates/, /Pushing updates…/],
+    ["delete", "bulkDeleteWalletBusy", /^Delete wallet pass/, /Deleting wallet passes…/],
+    ["remove", "bulkRemoveWalletBusy", /^Remove from provider/, /Removing from provider…/],
+    ["refresh status", "bulkRefreshWalletStatusBusy", /^Refresh status/, /Refreshing status…/],
+  ])("keeps its label, marks itself busy and is disabled while a bulk %s is in flight", (_what, busyProp, resting, longer) => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} {...{ [busyProp]: true }} />);
     const menu = openMoreActionsMenu();
-    expect(menu.getByRole("menuitem", { name: /^Voiding wallet passes…/ })).toBeTruthy();
-  });
-
-  it("shows the busy label while a bulk reissue is in flight", () => {
-    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkReissueWalletBusy />);
-    const menu = openMoreActionsMenu();
-    expect(menu.getByRole("menuitem", { name: /^Pushing updates…/ })).toBeTruthy();
-  });
-
-  it("shows the busy label while a bulk delete is in flight", () => {
-    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkDeleteWalletBusy />);
-    const menu = openMoreActionsMenu();
-    expect(menu.getByRole("menuitem", { name: /^Deleting wallet passes…/ })).toBeTruthy();
-  });
-
-  it("shows the busy label while a bulk remove is in flight", () => {
-    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkRemoveWalletBusy />);
-    const menu = openMoreActionsMenu();
-    expect(menu.getByRole("menuitem", { name: /^Removing from provider…/ })).toBeTruthy();
-  });
-
-  it("shows the busy label while a bulk refresh status is in flight", () => {
-    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkRefreshWalletStatusBusy />);
-    const menu = openMoreActionsMenu();
-    expect(menu.getByRole("menuitem", { name: /^Refreshing status…/ })).toBeTruthy();
+    const item = menu.getByRole("menuitem", { name: resting }) as HTMLButtonElement;
+    expect(item.getAttribute("aria-busy")).toBe("true");
+    expect(item.disabled).toBe(true);
+    expect(menu.queryByText(longer)).toBeNull();
   });
 });
 

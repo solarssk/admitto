@@ -53,7 +53,7 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import {
   formatAdmissionDisplayParts,
@@ -1499,9 +1499,10 @@ function AttendeeNotesTab({
             variant="secondary"
             size="sm"
             disabled={mutationsDisabled || !draft.trim() || submitting}
+            loading={submitting}
             onClick={onSubmit}
           >
-            {submitting ? "Adding…" : "Add"}
+            Add
           </Button>
         </div>
       </div>
@@ -1568,9 +1569,10 @@ function AttendeeNotesTab({
                           editState.submitting ||
                           editState.draft.trim() === note.body.trim()
                         }
+                        loading={editState.submitting}
                         onClick={onSaveEdit}
                       >
-                        {editState.submitting ? "Saving…" : "Save"}
+                        Save
                       </Button>
                     </div>
                   </div>
@@ -2517,10 +2519,11 @@ export function AttendeeDetailPage() {
     }
   }
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the skeleton on and off faster than it can register as loading — show it only once
-  // the fetch has genuinely taken a moment.
-  const showLoadingSkeleton = useDelayedLoading(loading);
+  // Only the first load of an attendee has nothing to show yet. A fetch that resolves near-instantly
+  // (localhost, a warm cache) shows no skeleton at all; a slower one shows it for at least 400ms so it
+  // never flickers, and until its 200ms have passed it is in the page but invisible, so the space is
+  // already reserved and nothing jumps.
+  const { showIndicator: showLoadingSkeleton, showContent } = useLoadingGate(loading && !detail);
 
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
@@ -2537,19 +2540,25 @@ export function AttendeeDetailPage() {
     }
   };
 
-  if (loading && !detail) {
-    return whenShown(
-      showLoadingSkeleton,
-      <div className="attendee-detail-page screen">
+  if (!showContent) {
+    return (
+      <div
+        key="loading"
+        className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
+        aria-busy="true"
+      >
+        <output className="sr-only">Loading attendee</output>
         <Skeleton variant="text" lines={2} />
         <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
-      </div>,
+      </div>
     );
   }
 
+  // The page, the not-found notice and the error all replace the skeleton (same key: none of them
+  // renders next to another), fading in over 150ms.
   if (notFound) {
     return (
-      <div className="attendee-detail-page screen">
+      <div key="page" className="attendee-detail-page screen at-fade-in">
         <PageHeader title="Attendee not found" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         <p>The attendee could not be found or you do not have access.</p>
       </div>
@@ -2558,7 +2567,7 @@ export function AttendeeDetailPage() {
 
   if (!detail || !form) {
     return (
-      <div className="attendee-detail-page screen">
+      <div key="page" className="attendee-detail-page screen at-fade-in">
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         {error && (
           <EmptyState
@@ -2615,7 +2624,7 @@ export function AttendeeDetailPage() {
     : null;
 
   return (
-    <div className="attendee-detail-page screen">
+    <div key="page" className="attendee-detail-page screen at-fade-in">
       <PageHeader
         title={detail.name}
         subtitle="Manage this attendee's profile, ticket, and check-in status."
@@ -2820,8 +2829,9 @@ export function AttendeeDetailPage() {
                     size="sm"
                     onClick={() => void handleReload()}
                     disabled={reloading}
+                    loading={reloading}
                   >
-                    {reloading ? "Reloading…" : "Reload"}
+                    Reload
                   </Button>
                 }
               >
@@ -2956,8 +2966,8 @@ export function AttendeeDetailPage() {
                 disabled={saving || reloading || staleWrite || !isDirty}
               >
                 {(guard) => (
-                  <Button type="submit" variant="primary" {...guard}>
-                    {saving ? "Saving…" : "Save"}
+                  <Button type="submit" variant="primary" {...guard} loading={saving}>
+                    Save
                   </Button>
                 )}
               </ArchivedGuard>
@@ -2987,7 +2997,9 @@ export function AttendeeDetailPage() {
             )}
             <div className="attendee-form__actions">
               <Button type="button" variant="secondary" onClick={() => setResendOpen(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" disabled={resending}>{resending ? "Sending…" : "Send"}</Button>
+              <Button type="submit" variant="primary" disabled={resending} loading={resending}>
+                Send
+              </Button>
             </div>
           </form>
         </dialog>
