@@ -538,4 +538,31 @@ describe("healthCheckGuidance", () => {
     }
     expect(healthCheckGuidance(checkRow("email_sending", "not_configured"))?.cause).toBeUndefined();
   });
+
+  it("gives a row whose state could not be read the lookup-failed guidance whatever its id or status", () => {
+    const unreadable: Array<[string, HealthRowStatus]> = [
+      ["data_encryption", "down"],
+      ["data_encryption", "degraded"],
+      ["rate_limit_storage", "down"],
+      ["rate_limit_storage", "degraded"],
+      ["database", "degraded"],
+      ["instance_url", "degraded"],
+      ["file_storage", "degraded"],
+    ];
+    for (const [id, status] of unreadable) {
+      const guidance = healthCheckGuidance(checkRow(id, status, [{ key: "reason", value: "lookup_failed" }]));
+      expect(guidance?.cause, `${id} ${status}`).toBe(
+        "An error occurred while Admitto was reading the data for this check.",
+      );
+      // In particular never the key, the Redis or the address advice.
+      expect(JSON.stringify(guidance), `${id} ${status}`).not.toMatch(/ENCRYPTION_KEY|Redis|BASE_URL/);
+    }
+  });
+
+  it("gives file_storage down with a provider reason, and degraded with no reason, no provider guidance", () => {
+    expect(
+      healthCheckGuidance(checkRow("file_storage", "down", [{ key: "reason", value: "not_implemented" }])),
+    ).toBe(UNRECOGNISED_STATE_GUIDANCE);
+    expect(healthCheckGuidance(checkRow("file_storage", "degraded"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
+  });
 });

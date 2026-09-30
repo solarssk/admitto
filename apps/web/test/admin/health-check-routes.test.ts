@@ -483,6 +483,8 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
     event: {
       count: vi.fn().mockResolvedValue(0),
     },
+    // Batch form only: the wallet counts run as [count, count] in one transaction.
+    $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
     ...overrides,
   } as unknown as PrismaClient;
 }
@@ -1255,6 +1257,26 @@ describe("collectAdminHealth", () => {
     expect(wallet?.summary).toBe("Configured for 1 event");
   });
 
+  it("reads the wallet counts in one repeatable read transaction", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const $transaction = vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops));
+    await collectAdminHealth({
+      db: healthDb({ $transaction, event: { count: vi.fn().mockResolvedValue(0) } }),
+      rateLimitStore: {} as never,
+    });
+
+    expect($transaction).toHaveBeenCalledTimes(1);
+    expect($transaction).toHaveBeenCalledWith(expect.any(Array), { isolationLevel: "RepeatableRead" });
+  });
+
   it("reports how many events have Wallet on and how many of those are not fully set up", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
@@ -1320,7 +1342,16 @@ describe("collectAdminHealth", () => {
     });
 
     expect(report.groups).toHaveLength(2);
-    expect(report.groups[0]!.checks.find((c) => c.id === "database")?.status).toBe("down");
+    // The setup collection failed but the independent database probe is fine, so the state of the
+    // four setup rows is unknown, not "down".
+    for (const id of ["database", "rate_limit_storage", "data_encryption", "instance_url"]) {
+      const row = report.groups[0]!.checks.find((c) => c.id === id);
+      expect(row?.status, id).toBe("degraded");
+      expect(row?.details, id).toContainEqual({ key: "reason", value: "lookup_failed" });
+    }
+    expect(report.groups[0]!.checks.find((c) => c.id === "data_encryption")?.summary).toBe(
+      "Could not evaluate data encryption",
+    );
     expect(report.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe("degraded");
     expect(report.groups[1]!.checks.find((c) => c.id === "identity_providers")?.status).toBe(
       "degraded",
@@ -1328,6 +1359,22 @@ describe("collectAdminHealth", () => {
     expect(report.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.status).toBe(
       "degraded",
     );
+  });
+
+  it("keeps the database row down when the setup collection fails and its own probe says down", async () => {
+    collectSetupChecks.mockRejectedValueOnce(new Error("setup boom"));
+    checkDatabase.mockResolvedValueOnce({ status: "down", latency_ms: 0 });
+
+    const report = await collectAdminHealth({ db: healthDb(), rateLimitStore: {} as never });
+
+    const core = report.groups[0]!.checks;
+    expect(core.find((c) => c.id === "database")?.status).toBe("down");
+    // Nothing else about the setup is known, and it must not be blamed on a key or a URL.
+    for (const id of ["rate_limit_storage", "data_encryption", "instance_url"]) {
+      const row = core.find((c) => c.id === id);
+      expect(row?.status, id).toBe("degraded");
+      expect(row?.details, id).toContainEqual({ key: "reason", value: "lookup_failed" });
+    }
   });
 
   it("runs Nominatim live probe when live=true", async () => {

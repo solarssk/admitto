@@ -400,13 +400,16 @@ export function healthCheckGuidance(check: HealthCheckRowDto): HealthCheckGuidan
   }
   if (check.status !== "down" && check.status !== "degraded") return null;
 
+  // A row whose state could not be read says nothing about its cause, so no id-specific advice
+  // (an invalid ENCRYPTION_KEY, an unreachable Redis, a bad BASE_URL) applies, whatever its status.
+  if (detailValue(check, "reason") === "lookup_failed") return LOOKUP_FAILED_GUIDANCE;
+
   const specific = check.id.startsWith("identity_provider_")
     ? identityProviderGuidance(check)
     : (GUIDANCE_BY_ID.get(check.id)?.(check) ?? null);
   if (specific) return specific;
 
   if (check.status === "degraded") {
-    if (detailValue(check, "reason") === "lookup_failed") return LOOKUP_FAILED_GUIDANCE;
     // mail_delivery_queue's own "could not read queue depth" state has no reason key at all -
     // it signals the same failure with a missing `queued` detail instead (health-check-routes.ts
     // mailQueueRow(), the `queued < 0` branch). mailDeliveryQueueGuidance() above already
