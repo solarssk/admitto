@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Notice, SectionLoader } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
 import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
@@ -39,6 +39,21 @@ function add409ErrorMessage(err: ApiError): string {
     return `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before adding this attendee.`;
   }
   return "This email is already registered for this event.";
+}
+
+/** The dialog's fields while they load: the five text fields and the ticket type, drawn over the (still invisible) real ones. */
+function FieldsSkeleton() {
+  return (
+    <div className="add-attendee-modal__fields-skeleton">
+      <output className="sr-only">Loading attendee form</output>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div className="add-attendee-modal__skeleton-field" key={i}>
+          <Skeleton variant="rect" width="28%" height={14} />
+          <Skeleton variant="rect" height={36} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
@@ -208,10 +223,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     }
   };
 
-  // Both catalogs load as the dialog opens. A fetch that resolves near-instantly (localhost, a warm
-  // cache) shows nothing at all; one that takes longer shows a single loader in the place where the
-  // ticket type and the custom fields appear, for at least 400ms so it never flickers.
+  // Both catalogs (ticket types, custom fields) load as the dialog opens, and the form appears as one
+  // piece once they are in: until then the fields are in the dialog but invisible (so the dialog
+  // already has its size), and a skeleton of the same shape is drawn over them after 200ms and kept
+  // for at least 400ms. A fetch that answers faster shows nothing at all.
   const fieldsGate = useLoadingGate(attributeFieldsLoading || ticketTypesLoading);
+  const fieldsHeld = !fieldsGate.showContent;
 
   if (!open) return null;
 
@@ -241,7 +258,11 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             {ticketTypesError}
           </Notice>
         )}
-        <div className="add-attendee-modal__fields">
+        <div
+          className={`add-attendee-modal__fields ${fieldsHeld ? "at-loading-hold" : "at-fade-in"}`}
+          aria-busy={fieldsHeld || undefined}
+        >
+          {fieldsHeld && fieldsGate.showIndicator && <FieldsSkeleton />}
           <Input
             label="Email *"
             type="text"
@@ -316,14 +337,13 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
                 { id: "", label: "No ticket type" },
                 ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
               ]}
-              disabled={submitting || fieldsGate.showIndicator}
+              disabled={submitting}
               onChange={(id) => {
                 setTicketType(id);
                 setError(null);
               }}
             />
           </div>
-          {fieldsGate.showIndicator && <SectionLoader label="Loading fields" minHeight="5rem" className="at-fade-in" />}
           {attributeFields.map((field) => (
             <CustomDataFieldInput
               key={field.source_field}

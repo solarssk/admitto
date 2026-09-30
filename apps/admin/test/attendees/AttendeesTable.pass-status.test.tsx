@@ -58,6 +58,7 @@ const tableProps = {
   bulkSendBusy: false,
   canBulkSend: true,
   eventTimezone: "UTC",
+  eventId: "evt-1",
   event: { archived_at: null as string | null },
   walletPlatforms: { apple: true, google: true, samsung: false, any: true },
   walletConfigured: true,
@@ -71,6 +72,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  localStorage.clear();
 });
 
 describe("AttendeesTable pass status badge", () => {
@@ -353,6 +355,73 @@ describe("AttendeesTable loading states (#271)", () => {
     rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading items={[]} total={0} />);
     expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
     expect(screen.getByText("No matches")).toBeTruthy();
+  });
+
+  describe("skeleton size", () => {
+    const skeletonRows = (container: HTMLElement) =>
+      container.querySelectorAll("table[aria-hidden='true'] tbody tr").length;
+    const renderFirstLoad = () =>
+      render(<AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />);
+
+    it("draws the default number of rows when it does not know the list's size", () => {
+      expect(skeletonRows(renderFirstLoad().container)).toBe(6);
+    });
+
+    it("draws as many rows as this event's list had last time", () => {
+      localStorage.setItem("admitto_attendees_rows_evt-1", "3");
+      expect(skeletonRows(renderFirstLoad().container)).toBe(3);
+    });
+
+    it("does not use another event's size", () => {
+      localStorage.setItem("admitto_attendees_rows_evt-2", "3");
+      expect(skeletonRows(renderFirstLoad().container)).toBe(6);
+    });
+
+    it("never draws fewer than one row, nor more than fifty", () => {
+      localStorage.setItem("admitto_attendees_rows_evt-1", "0");
+      expect(skeletonRows(renderFirstLoad().container)).toBe(1);
+      cleanup();
+      localStorage.setItem("admitto_attendees_rows_evt-1", "500");
+      expect(skeletonRows(renderFirstLoad().container)).toBe(50);
+    });
+
+    it("ignores a remembered value that is not a number", () => {
+      localStorage.setItem("admitto_attendees_rows_evt-1", "many");
+      expect(skeletonRows(renderFirstLoad().container)).toBe(6);
+    });
+
+    it("sizes the mobile card skeleton the same way", () => {
+      mockMatchMedia(false);
+      localStorage.setItem("admitto_attendees_rows_evt-1", "2");
+      const { container } = renderFirstLoad();
+      expect(container.querySelectorAll(".attendees-cards .attendees-card")).toHaveLength(2);
+    });
+
+    it("remembers how many rows a finished load showed", () => {
+      render(<AttendeesTable {...tableProps} loading={false} items={[baseRow, { ...baseRow, id: "att-2" }]} />);
+      expect(localStorage.getItem("admitto_attendees_rows_evt-1")).toBe("2");
+    });
+
+    it("remembers nothing while the first load is still running", () => {
+      renderFirstLoad();
+      expect(localStorage.getItem("admitto_attendees_rows_evt-1")).toBeNull();
+    });
+
+    it("keeps working when the browser refuses storage", () => {
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new Error("denied");
+      });
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("denied");
+      });
+      const { container } = renderFirstLoad();
+      expect(skeletonRows(container)).toBe(6);
+      cleanup();
+      expect(() =>
+        render(<AttendeesTable {...tableProps} loading={false} items={[baseRow]} />),
+      ).not.toThrow();
+      vi.restoreAllMocks();
+    });
   });
 
   it("omits the Wallet column from the shimmer skeleton too when no wallet platform is enabled", () => {

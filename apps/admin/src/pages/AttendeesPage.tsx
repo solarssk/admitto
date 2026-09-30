@@ -619,7 +619,6 @@ function CardPickerDialog<T>({
                 variant="primary"
                 disabled={busy || !armed || (requireValue ? !value : false)}
                 loading={busy}
-                loadingLabel="Applying…"
                 onClick={onConfirm}
               >
                 Apply
@@ -718,7 +717,7 @@ function BulkTextFieldDialog({
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy || !trimmed} loading={busy} loadingLabel="Applying…" onClick={onConfirm}>
+          <Button type="button" variant="primary" disabled={busy || !trimmed} loading={busy} onClick={onConfirm}>
             Apply
           </Button>
         </div>
@@ -959,7 +958,6 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
         aria-expanded={open}
         disabled={exportingFormat !== null}
         loading={exportingFormat !== null}
-        loadingLabel="Exporting…"
         onClick={() => setOpen((o) => !o)}
       >
         Export
@@ -2361,6 +2359,7 @@ export function AttendeesPage() {
           setBulkDeleteConfirmOpen(true);
         }}
         eventTimezone={event.timezone}
+        eventId={event.id}
         event={event}
         walletPlatforms={walletPlatforms}
         walletConfigured={event.wallet_configured}

@@ -1500,7 +1500,6 @@ function AttendeeNotesTab({
             size="sm"
             disabled={mutationsDisabled || !draft.trim() || submitting}
             loading={submitting}
-            loadingLabel="Adding…"
             onClick={onSubmit}
           >
             Add
@@ -1571,7 +1570,6 @@ function AttendeeNotesTab({
                           editState.draft.trim() === note.body.trim()
                         }
                         loading={editState.submitting}
-                        loadingLabel="Saving…"
                         onClick={onSaveEdit}
                       >
                         Save
@@ -2826,7 +2824,6 @@ export function AttendeeDetailPage() {
                     onClick={() => void handleReload()}
                     disabled={reloading}
                     loading={reloading}
-                    loadingLabel="Reloading…"
                   >
                     Reload
                   </Button>
@@ -2963,7 +2960,7 @@ export function AttendeeDetailPage() {
                 disabled={saving || reloading || staleWrite || !isDirty}
               >
                 {(guard) => (
-                  <Button type="submit" variant="primary" {...guard} loading={saving} loadingLabel="Saving…">
+                  <Button type="submit" variant="primary" {...guard} loading={saving}>
                     Save
                   </Button>
                 )}
@@ -2994,7 +2991,7 @@ export function AttendeeDetailPage() {
             )}
             <div className="attendee-form__actions">
               <Button type="button" variant="secondary" onClick={() => setResendOpen(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" disabled={resending} loading={resending} loadingLabel="Sending…">
+              <Button type="submit" variant="primary" disabled={resending} loading={resending}>
                 Send
               </Button>
             </div>

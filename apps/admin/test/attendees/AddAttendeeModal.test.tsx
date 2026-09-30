@@ -25,7 +25,8 @@ afterEach(() => {
 });
 
 describe("AddAttendeeModal delayed loading", () => {
-  const loader = () => screen.queryByRole("status", { name: "Loading fields" });
+  const skeleton = () => screen.queryByText("Loading attendee form");
+  const fields = () => document.querySelector(".add-attendee-modal__fields") as HTMLElement;
 
   function renderWithPendingFetches() {
     mockFetchEventCustomFields.mockImplementation(() => new Promise(() => {}));
@@ -40,29 +41,34 @@ describe("AddAttendeeModal delayed loading", () => {
     mockFetchTicketTypes.mockResolvedValue([]);
   });
 
-  it("shows nothing for the first 200ms and one loader once the fetches have genuinely taken a moment", () => {
+  it("holds the whole form back, invisible, while the catalogs load, and draws a skeleton over it after 200ms", () => {
     renderWithPendingFetches();
     act(() => {
       vi.advanceTimersByTime(199);
     });
-    expect(loader()).toBeNull();
+    expect(fields().className).toContain("at-loading-hold");
+    expect(fields().getAttribute("aria-busy")).toBe("true");
+    expect(skeleton()).toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(loader()).toBeTruthy();
+    expect(skeleton()).toBeTruthy();
+    expect(fields().className).toContain("at-loading-hold");
+    // The two lines of text and the loader that used to sit in the middle of the form are gone.
     expect(screen.queryByText(/Loading attribute fields/)).toBeNull();
     expect(screen.queryByText(/Loading ticket types/)).toBeNull();
+    expect(screen.queryByRole("status", { name: "Loading fields" })).toBeNull();
   });
 
-  it("holds the ticket type select back while the loader is up, so nobody picks from a half-loaded list", () => {
-    renderWithPendingFetches();
-    const select = () => screen.getByRole("button", { name: /^Ticket type,/ }) as HTMLButtonElement;
-    expect(select().disabled).toBe(false);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(select().disabled).toBe(true);
+  it("shows the whole form at once, fading in, when the catalogs arrive before the 200ms are up", async () => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await waitFor(() => expect(fields().className).toContain("at-fade-in"));
+    expect(fields().className).not.toContain("at-loading-hold");
+    expect(fields().getAttribute("aria-busy")).toBeNull();
+    expect(skeleton()).toBeNull();
   });
 });
 
@@ -328,7 +334,7 @@ describe("AddAttendeeModal", () => {
     );
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
-    await screen.findByRole("status", { name: "Loading fields" });
+    await screen.findByText("Loading attendee form");
     fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
     fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
@@ -342,7 +348,7 @@ describe("AddAttendeeModal", () => {
     resolveTicketTypes([]);
     // The loader has been up since 200ms, so it stays for its 400ms minimum before it leaves.
     await waitFor(() => {
-      expect(screen.queryByRole("status", { name: "Loading fields" })).toBeNull();
+      expect(screen.queryByText("Loading attendee form")).toBeNull();
     });
     expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
       false,

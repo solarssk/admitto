@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, TopProgressBar } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type {
@@ -27,12 +27,20 @@ import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
+import { readRememberedRowCount, rememberRowCount } from "./rememberedRowCount.js";
 import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 import "./attendees.css";
 
+/** Rows a skeleton draws when it does not know how many the list will have. */
+const DEFAULT_TABLE_SKELETON_ROWS = 6;
+const DEFAULT_CARDS_SKELETON_ROWS = 4;
+
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
-function AttendeesTableSkeleton({ walletColumnVisible }: Readonly<{ walletColumnVisible: boolean }>) {
+function AttendeesTableSkeleton({
+  walletColumnVisible,
+  rows,
+}: Readonly<{ walletColumnVisible: boolean; rows: number }>) {
   return (
     <div className="attendees-table-wrap attendees-list-table-wrap" aria-busy="true">
       <output className="sr-only">Loading attendees</output>
@@ -51,7 +59,7 @@ function AttendeesTableSkeleton({ walletColumnVisible }: Readonly<{ walletColumn
           </tr>
         </thead>
         <tbody>
-          {Array.from({ length: 6 }, (_, i) => (
+          {Array.from({ length: rows }, (_, i) => (
             <tr key={i}>
               <td colSpan={walletColumnVisible ? 9 : 8}>
                 <Skeleton variant="rect" height={44} />
@@ -65,11 +73,11 @@ function AttendeesTableSkeleton({ walletColumnVisible }: Readonly<{ walletColumn
 }
 
 /** First-load placeholder for the mobile card list (< 768px — mirrors the table skeleton). */
-function AttendeesCardsSkeleton() {
+function AttendeesCardsSkeleton({ rows }: Readonly<{ rows: number }>) {
   return (
     <div className="attendees-cards" aria-busy="true">
       <output className="sr-only">Loading attendees</output>
-      {Array.from({ length: 4 }, (_, i) => (
+      {Array.from({ length: rows }, (_, i) => (
         <div className="attendees-card" key={i}>
           <Skeleton variant="rect" height={64} />
         </div>
@@ -271,6 +279,8 @@ export interface AttendeesTableProps {
   bulkRemoveWalletBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
+  /** Keys what the list remembers about itself between visits (how many rows, for its skeleton). */
+  eventId: string;
   event: ArchivedGuardEvent;
   walletPlatforms: EnabledWalletPlatforms;
   /** The event has a template and a working API key (EventDto.wallet_configured), whatever the
@@ -1081,7 +1091,6 @@ function BulkBar({
               icon={<i className="ti ti-qrcode" aria-hidden="true" />}
               {...guard}
               loading={bulkCheckInBusy}
-              loadingLabel="Checking in…"
               onClick={onBulkCheckIn}
             >
               Check in
@@ -1406,6 +1415,8 @@ function hasWalletColumn(walletPlatforms: EnabledWalletPlatforms): boolean {
 }
 
 type AttendeesListContentProps = Readonly<{
+  /** Rows the list had last time for this event (null if unknown): the skeleton is drawn that size. */
+  rememberedRows: number | null;
   loading: boolean;
   hasLoadedOnce: boolean;
   items: AttendeeRowDto[];
@@ -1434,7 +1445,7 @@ type AttendeesListContentProps = Readonly<{
  * - every later fetch keeps the rows on screen: clicks are blocked at once (stale rows must not be
  *   acted on), and after 200ms the rows are dimmed and a thin bar runs along the top of the list. */
 function AttendeesListContent(props: AttendeesListContentProps): ReactNode {
-  const { loading, hasLoadedOnce, isDesktop, walletPlatforms } = props;
+  const { loading, hasLoadedOnce, isDesktop, walletPlatforms, rememberedRows } = props;
   const firstLoad = useLoadingGate(loading && !hasLoadedOnce);
   const refetch = useLoadingGate(loading && hasLoadedOnce);
 
@@ -1442,9 +1453,12 @@ function AttendeesListContent(props: AttendeesListContentProps): ReactNode {
     return (
       <div key="skeleton" className={firstLoad.showIndicator ? "at-fade-in" : "at-loading-hold"}>
         {isDesktop ? (
-          <AttendeesTableSkeleton walletColumnVisible={hasWalletColumn(walletPlatforms)} />
+          <AttendeesTableSkeleton
+            walletColumnVisible={hasWalletColumn(walletPlatforms)}
+            rows={Math.max(1, rememberedRows ?? DEFAULT_TABLE_SKELETON_ROWS)}
+          />
         ) : (
-          <AttendeesCardsSkeleton />
+          <AttendeesCardsSkeleton rows={Math.max(1, rememberedRows ?? DEFAULT_CARDS_SKELETON_ROWS)} />
         )}
       </div>
     );
@@ -1475,7 +1489,7 @@ function AttendeesListRows({
   eventTimezone,
   walletPlatforms,
 }: Readonly<
-  Omit<AttendeesListContentProps, "loading" | "hasLoadedOnce"> & {
+  Omit<AttendeesListContentProps, "loading" | "hasLoadedOnce" | "rememberedRows"> & {
     /** A fetch is in flight: block clicks on the stale rows and mark the list busy. */
     busy: boolean;
     /** The fetch has taken long enough (see `useLoadingGate`) to dim the stale rows. */
@@ -1699,6 +1713,7 @@ export function AttendeesTable({
   bulkRemoveWalletBusy,
   onBulkDelete,
   eventTimezone,
+  eventId,
   event,
   walletPlatforms,
   walletConfigured,
@@ -1764,6 +1779,12 @@ export function AttendeesTable({
   // isInitialLoad gates footSummary's 3-way branch so a fast response never renders "0 attendees"
   // against a "total" that hasn't been set from a real response yet.
   const isInitialLoad = loading && items.length === 0;
+  // The skeleton is drawn as many rows as this event's list had last time, so the list does not change
+  // size when the real rows replace it. Read once per event; written whenever a load has finished.
+  const rememberedRows = useMemo(() => readRememberedRowCount(eventId), [eventId]);
+  useEffect(() => {
+    if (hasLoadedOnce && !loading) rememberRowCount(eventId, items.length);
+  }, [eventId, hasLoadedOnce, loading, items.length]);
 
   return (
     <Card padded={false}>
@@ -1847,6 +1868,7 @@ export function AttendeesTable({
         />
       )}
       <AttendeesListContent
+        rememberedRows={rememberedRows}
         loading={loading}
         hasLoadedOnce={hasLoadedOnce}
         items={items}
