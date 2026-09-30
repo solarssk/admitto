@@ -24,7 +24,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/communication/SentMessagePreviewModal.tsx": 1,
     "apps/admin/src/components/EventImageAssetLibrary.tsx": 1,
     "apps/admin/src/identity/IdentityMappingRepeater.tsx": 1,
-    "apps/admin/src/pages/CheckInEntryPage.tsx": 1,
     "apps/admin/src/pages/CommunicationPage.tsx": 1,
     "apps/admin/src/pages/CustomFieldsReportsTab.tsx": 1,
     "apps/admin/src/pages/EventOverviewPage.tsx": 4,
@@ -54,8 +53,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/settings/TicketTypesCard.tsx": 1,
   },
   "busy-label-swap": {
-    "apps/admin/src/checkin/AttendeeCard.tsx": 1,
-    "apps/admin/src/checkin/NoteModal.tsx": 1,
     "apps/admin/src/communication/CommunicationSendPanel.tsx": 2,
     "apps/admin/src/communication/CreateTemplateDialog.tsx": 1,
     "apps/admin/src/communication/DeliveryLogTable.tsx": 1,

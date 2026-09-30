@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useParams } from "react-router";
-import { Button, Card, Notice, PageHeader, useToast } from "@admitto/ui";
+import { Button, Card, Notice, PageHeader, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -65,7 +65,7 @@ import {
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent, type StreamStatus } from "../hooks/useEventStream.js";
 import { checkinSearchFieldAttrs, scanFieldInputMode } from "../checkin/searchFieldAttrs.js";
-import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
+import { ScanHistoryList, type ScanHistoryStatus } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
@@ -279,6 +279,7 @@ interface CheckInScanBarProps {
   inputRef: RefObject<HTMLInputElement | null>;
   buffer: string;
   busy: boolean;
+  searching: boolean;
   canAct: boolean;
   suggestions: Awaited<ReturnType<typeof lookupCheckInAttendees>>;
   showMobileOverlay: boolean;
@@ -294,6 +295,7 @@ function CheckInScanBar({
   inputRef,
   buffer,
   busy,
+  searching,
   canAct,
   suggestions,
   showMobileOverlay,
@@ -326,13 +328,19 @@ function CheckInScanBar({
             aria-busy={busy}
             {...checkinSearchFieldAttrs}
           />
+          {/* The moment a scan or search is sent, not after a delay: the operator at the door is waiting on it. */}
+          {searching && (
+            <span className="ck-scan-bar__status" aria-hidden="true">
+              Checking…
+            </span>
+          )}
           <button
             type="submit"
             className="ck-scan-bar__submit"
             aria-label="Search"
             disabled={busy || !buffer.trim() || !canAct}
           >
-            <i className="ti ti-arrow-right" aria-hidden="true" />
+            {searching ? <Spinner size="sm" label="Checking" /> : <i className="ti ti-arrow-right" aria-hidden="true" />}
           </button>
         </form>
         {suggestions.length > 0 && !showMobileOverlay && (
@@ -383,6 +391,7 @@ interface CheckInScanResultViewProps {
   eventTimezone: string;
   pending: boolean;
   busy: boolean;
+  admitting: boolean;
   canAct: boolean;
   buffer: string;
   admitOrigin: "scan" | "manual";
@@ -408,6 +417,7 @@ type CheckInAttendeeCardProps = Pick<
   | "ticketTypes"
   | "pending"
   | "busy"
+  | "admitting"
   | "canAct"
   | "admitOrigin"
   | "showUndo"
@@ -428,6 +438,7 @@ function CheckInAttendeeCard({
   ticketTypes,
   pending,
   busy,
+  admitting,
   canAct,
   admitOrigin,
   showUndo,
@@ -450,6 +461,7 @@ function CheckInAttendeeCard({
       scanStatus={scanResult?.status}
       confirmed={scanResult?.confirmed}
       pending={pending}
+      admitting={admitting}
       canAct={canAct && !busy}
       onCheckIn={
         card.check_in_status === "not_admitted"
@@ -482,6 +494,7 @@ function CheckInScanResultView({
   ticketTypes,
   pending,
   busy,
+  admitting,
   canAct,
   buffer,
   admitOrigin,
@@ -506,6 +519,7 @@ function CheckInScanResultView({
       ticketTypes={ticketTypes}
       pending={pending}
       busy={busy}
+      admitting={admitting}
       canAct={canAct}
       admitOrigin={admitOrigin}
       showUndo={showUndo}
@@ -565,6 +579,10 @@ interface CheckInMobileOverlayProps {
   eventTimezone: string;
   eventDate: string | null;
   admittedCount: number;
+  historyLoading: boolean;
+  historyError: boolean;
+  historyRetrying: boolean;
+  onRetryHistory: () => void;
   history: CheckInHistoryEntry[];
   buffer: string;
   onClose: () => void;
@@ -579,6 +597,7 @@ interface CheckInMobileOverlayProps {
   pending: boolean;
   canAct: boolean;
   busy: boolean;
+  admitting: boolean;
   admitOrigin: "scan" | "manual";
   onAdmitCurrent: (attendeeId: string, method?: "scan" | "manual") => Promise<void>;
   onReset: () => void;
@@ -601,6 +620,10 @@ function CheckInMobileOverlay({
   eventTimezone,
   eventDate,
   admittedCount,
+  historyLoading,
+  historyError,
+  historyRetrying,
+  onRetryHistory,
   history,
   buffer,
   onClose,
@@ -615,6 +638,7 @@ function CheckInMobileOverlay({
   pending,
   canAct,
   busy,
+  admitting,
   admitOrigin,
   onAdmitCurrent,
   onReset,
@@ -635,6 +659,10 @@ function CheckInMobileOverlay({
       eventTimezone={eventTimezone}
       eventDate={eventDate}
       admittedCount={admittedCount}
+      historyLoading={historyLoading}
+      historyError={historyError}
+      historyRetrying={historyRetrying}
+      onRetryHistory={onRetryHistory}
       history={history}
       wedgeActive={buffer.trim().length > 0}
       onClose={onClose}
@@ -648,6 +676,7 @@ function CheckInMobileOverlay({
       scanResult={scanResult}
       card={card}
       pending={pending}
+      admitting={admitting}
       canAct={canAct && !busy}
       onConfirm={
         card && scanResult?.status === "PREVIEW"
@@ -824,6 +853,12 @@ export function CheckInPage({
 
   const [buffer, setBuffer] = useState("");
   const [busy, setBusy] = useState(false);
+  // Only the Confirm check-in request: `busy` is shared by every door action, and a spinner on Confirm
+  // while an item is being handed out would be on the wrong button.
+  const [admitting, setAdmitting] = useState(false);
+  // Only a scan, a search or opening an attendee from the suggestions: the scan bar says "Checking…" for
+  // those, not for handing out an item, an undo or a note, which also keep `busy` up.
+  const [searching, setSearching] = useState(false);
   const [pending, setPending] = useState(false);
   const [transportError, setTransportError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<CheckInScanResponse | null>(null);
@@ -833,6 +868,10 @@ export function CheckInPage({
   historyRef.current = history;
   const [admittedCount, setAdmittedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  // The sidebar's first load: until it is in, the counts and the history are not zero and empty, they
+  // are unknown, and a failure of it says so instead of leaving "0 admitted" and "No scans yet" standing.
+  const [sidebarStatus, setSidebarStatus] = useState<ScanHistoryStatus>("loading");
+  const [sidebarRetrying, setSidebarRetrying] = useState(false);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto>(DEFAULT_OPS_CONFIG);
@@ -947,6 +986,8 @@ export function CheckInPage({
       const stats = await fetchCheckInStats(eventId);
       setAdmittedCount(stats.admitted_count);
       setTotalCount(stats.total_count);
+      // The server answers again after a failed first load: the error card has nothing left to say.
+      setSidebarStatus((current) => (current === "error" ? "ready" : current));
     } catch {
       /* read-only context */
     }
@@ -967,15 +1008,32 @@ export function CheckInPage({
       });
       setAdmittedCount(stats.admitted_count);
       setTotalCount(stats.total_count);
+      setSidebarStatus("ready");
     } catch {
-      /* read-only context */
+      // A refresh that fails after the first load keeps what is on screen (read-only context); one
+      // that fails before it leaves nothing to show, so that is the error state.
+      setSidebarStatus((current) => (current === "ready" ? current : "error"));
     }
+  }, [eventId]);
+
+  // A different event starts over from "not loaded yet".
+  useEffect(() => {
+    setSidebarStatus("loading");
   }, [eventId]);
 
   useEffect(() => {
     focusScan();
     void refreshSidebar();
   }, [focusScan, eventId, refreshSidebar]);
+
+  const retrySidebar = async () => {
+    setSidebarRetrying(true);
+    try {
+      await refreshSidebar();
+    } finally {
+      setSidebarRetrying(false);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -1163,6 +1221,7 @@ export function CheckInPage({
     async (scanned: string, fallbackToLookup = false): Promise<boolean> => {
       if (!eventId) return false;
       setBusy(true);
+      setSearching(true);
       setTransportError(null);
       try {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
@@ -1215,6 +1274,7 @@ export function CheckInPage({
         return false;
       } finally {
         setBusy(false);
+        setSearching(false);
         focusScan();
       }
     },
@@ -1277,6 +1337,7 @@ export function CheckInPage({
     runExclusive(async () => {
       if (!eventId || !canAct) return;
       setBusy(true);
+      setAdmitting(true);
       setTransportError(null);
       try {
         const response = await runWithPending(() =>
@@ -1296,6 +1357,7 @@ export function CheckInPage({
         handleApiFailure(err);
       } finally {
         setBusy(false);
+        setAdmitting(false);
         focusScan();
       }
     });
@@ -1306,6 +1368,7 @@ export function CheckInPage({
   const openLookupResultImpl = async (attendeeId: string) => {
     if (!eventId) return;
     setBusy(true);
+    setSearching(true);
     // Clear any prior failure banner so a retry that now succeeds doesn't
     // leave a stale "Request failed" over a successful outcome — every other
     // mutation handler in this file already does this (review finding).
@@ -1322,6 +1385,7 @@ export function CheckInPage({
       handleApiFailure(err);
     } finally {
       setBusy(false);
+      setSearching(false);
       focusScan();
     }
   };
@@ -1402,6 +1466,8 @@ export function CheckInPage({
       }
 
       setBusy(true);
+
+      setSearching(true);
       setTransportError(null);
       setOverlayManualError(null);
       try {
@@ -1413,6 +1479,7 @@ export function CheckInPage({
         return false;
       } finally {
         setBusy(false);
+        setSearching(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openLookupResultImpl, reportManualIssue, resolveLookupErrorMessage, and handleLookupResults are plain component functions (not useCallback); adding them would recreate this callback every render — to be refactored in #280
@@ -1734,6 +1801,7 @@ export function CheckInPage({
             inputRef={inputRef}
             buffer={buffer}
             busy={busy}
+            searching={searching}
             canAct={canAct}
             suggestions={suggestions}
             showMobileOverlay={showMobileOverlay}
@@ -1759,6 +1827,7 @@ export function CheckInPage({
             eventTimezone={eventTimezone}
             pending={pending}
             busy={busy}
+            admitting={admitting}
             canAct={canAct}
             buffer={buffer}
             admitOrigin={admitOrigin}
@@ -1780,12 +1849,16 @@ export function CheckInPage({
         <aside className="ck-side">
           <Card>
             <ScanHistoryList
+              eventId={eventId}
               admittedCount={admittedCount}
               totalCount={totalCount}
               history={history}
               eventDate={eventDate}
               ticketTypes={ticketTypes}
               onSelectAttendee={openLookupResult}
+              status={sidebarStatus}
+              retrying={sidebarRetrying}
+              onRetry={() => void retrySidebar()}
             />
           </Card>
         </aside>
@@ -1798,6 +1871,10 @@ export function CheckInPage({
         eventTimezone={eventTimezone}
         eventDate={eventDate}
         admittedCount={admittedCount}
+        historyLoading={sidebarStatus === "loading"}
+        historyError={sidebarStatus === "error"}
+        historyRetrying={sidebarRetrying}
+        onRetryHistory={() => void retrySidebar()}
         history={history}
         buffer={buffer}
         onClose={() => setCameraActive(false)}
@@ -1812,6 +1889,7 @@ export function CheckInPage({
         pending={pending}
         canAct={canAct}
         busy={busy}
+        admitting={admitting}
         admitOrigin={admitOrigin}
         onAdmitCurrent={admitCurrent}
         onReset={resetScan}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@admitto/ui";
+import { Button, Skeleton } from "@admitto/ui";
 import type {
   AttendeeCardDto,
   CheckInHistoryEntry,
@@ -9,7 +9,9 @@ import type {
 } from "../api/types.js";
 import { CameraScanner } from "./CameraScanner.js";
 import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { CkRecentScans } from "./CkRecentScans.js";
+import { ScanHistoryError } from "./ScanHistoryList.js";
 import { CameraOverlayManualSearch } from "./CameraOverlayManualSearch.js";
 import { CameraOverlayItemIssuing } from "./CameraOverlayItemIssuing.js";
 import { BrandMark } from "../layouts/BrandMark.js";
@@ -25,6 +27,12 @@ type CameraOverlayProps = {
   eventTimezone: string;
   eventDate?: string | null;
   admittedCount: number;
+  /** The first load of the counts and the history is still running (they are unknown, not zero and empty). */
+  historyLoading?: boolean;
+  /** The first load failed: the bar and the list say so, with a Retry, instead of "0 checked in" and "No scans yet". */
+  historyError?: boolean;
+  historyRetrying?: boolean;
+  onRetryHistory?: () => void;
   history: CheckInHistoryEntry[];
   wedgeActive: boolean;
   onClose: () => void;
@@ -39,6 +47,8 @@ type CameraOverlayProps = {
   card: AttendeeCardDto | null;
   ticketTypes?: TicketTypeDto[];
   pending: boolean;
+  /** The Confirm check-in request is in flight. */
+  admitting?: boolean;
   canAct: boolean;
   /** handleApiFailure's message — rendered inside the overlay (see
    * .ck-overlay__transport-error) since the page's own transport-error
@@ -67,6 +77,10 @@ export function CameraOverlay({
   eventTimezone,
   eventDate = null,
   admittedCount,
+  historyLoading = false,
+  historyError = false,
+  historyRetrying = false,
+  onRetryHistory,
   history,
   wedgeActive,
   onClose,
@@ -81,6 +95,7 @@ export function CameraOverlay({
   card,
   ticketTypes = [],
   pending,
+  admitting = false,
   canAct,
   onConfirm,
   onReset,
@@ -94,6 +109,10 @@ export function CameraOverlay({
   onToggleTorch,
 }: Readonly<CameraOverlayProps>) {
   const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
+  // The count in the bar and the recent scans are unknown until the first load is in: a placeholder
+  // (after 200ms, for at least 400ms) instead of "0 checked in" and "No scans yet".
+  const historyGate = useLoadingGate(historyLoading);
+  const historyPlaceholder = !historyGate.showContent;
   const [manualMode, setManualMode] = useState(false);
   const manualSearchButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -170,6 +189,7 @@ export function CameraOverlay({
           card={card}
           ticketTypes={ticketTypes}
           pending={pending}
+          admitting={admitting}
           canAct={canAct}
           eventTimezone={eventTimezone}
           onConfirm={onConfirm}
@@ -203,7 +223,25 @@ export function CameraOverlay({
           <BrandMark />
           <span>Check-in</span>
         </div>
-        <span className="ck-overlay__admitted">{admittedCount} checked in</span>
+        <span className="ck-overlay__admitted">
+          {historyError ? (
+            "Count unavailable"
+          ) : (
+            <>
+              {historyPlaceholder ? (
+                <Skeleton
+                  variant="rect"
+                  width={20}
+                  height={14}
+                  className={historyGate.showIndicator ? undefined : "at-loading-hold"}
+                />
+              ) : (
+                admittedCount
+              )}{" "}
+              checked in
+            </>
+          )}
+        </span>
         <button
           type="button"
           className="ck-overlay__mute"
@@ -275,14 +313,20 @@ export function CameraOverlay({
         </div>
 
         <aside className="ck-overlay__aside">
-          <CkRecentScans
-            history={history}
-            eventDate={eventDate}
-            compact
-            limit={6}
-            ticketTypes={ticketTypes}
-            onSelectAttendee={onSelectAttendee}
-          />
+          {historyError ? (
+            <ScanHistoryError retrying={historyRetrying} onRetry={onRetryHistory} />
+          ) : (
+            <CkRecentScans
+              history={history}
+              eventDate={eventDate}
+              compact
+              limit={6}
+              ticketTypes={ticketTypes}
+              onSelectAttendee={onSelectAttendee}
+              loading={historyPlaceholder}
+              held={!historyGate.showIndicator}
+            />
+          )}
         </aside>
       </div>
 
