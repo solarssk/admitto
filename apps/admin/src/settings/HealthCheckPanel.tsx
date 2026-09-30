@@ -608,17 +608,19 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
           </div>
         }
       >
-        <p className="settings-card-intro">
-          Review whether this instance and its integrations are healthy before an event, or copy a
-          sanitized snapshot when opening a support issue.
-        </p>
-        <p className="health-check__meta">
-          Generated{" "}
-          <time dateTime={report.generated_at}>
-            {formatEventDateTime(report.generated_at, timezone)}
-          </time>
-          {runningBuildLabel()}
-        </p>
+        <div className="health-check__intro">
+          <p className="settings-card-intro">
+            Review whether this instance and its integrations are healthy before an event, or copy a
+            sanitized snapshot when opening a support issue.
+          </p>
+          <p className="health-check__meta">
+            Generated{" "}
+            <time dateTime={report.generated_at}>
+              {formatEventDateTime(report.generated_at, timezone)}
+            </time>
+            {runningBuildLabel()}
+          </p>
+        </div>
 
         <Notice as="p" variant={healthVerdictVariant(report)} className="health-check__verdict">
           {healthVerdictText(report)}

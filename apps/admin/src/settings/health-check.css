@@ -8,6 +8,15 @@
   height: auto;
 }
 
+/* The card body owns the spacing between its blocks (intro, verdict, groups) with one gap, the
+   standard step between sibling blocks. The verdict Notice and the blocks around it carry no
+   margin of their own, like the base .at-notice. */
+.health-check__card .at-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .health-check__card .at-card__actions {
   /* Let .health-check__actions own the toolbar layout. */
   display: contents;
@@ -41,9 +50,10 @@
 }
 
 /* "Generated ... · vX · sha" is the second line of the intro caption: same size, colour and
-   typeface as the sentence above it, wrapping like normal text on narrow screens. */
+   typeface as the sentence above it, wrapping like normal text on narrow screens. Only the small
+   step under the sentence is its own; the space below the pair is the card body's gap. */
 .health-check__meta {
-  margin: var(--space-1) 0 var(--space-4);
+  margin: var(--space-1) 0 0;
   font-size: var(--fs-sm);
   color: var(--text-muted, var(--tblr-secondary));
   overflow-wrap: anywhere;
@@ -53,10 +63,6 @@
    (media query below), where the standalone button is hidden instead. */
 .health-check__live-menu-item {
   display: none;
-}
-
-.health-check__verdict {
-  margin: 0 0 var(--space-4);
 }
 
 .health-check__groups {
