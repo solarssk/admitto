@@ -6,6 +6,8 @@
 @import './tokens/base.css';
 @import './components.css';
 @import './components/spinner.css';
+@import './components/loader.css';
+@import './components/topbar.css';
 @import './components/empty-state.css';
 @import './components/skeleton.css';
 @import './components/toast.css';
