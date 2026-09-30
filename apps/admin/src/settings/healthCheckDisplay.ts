@@ -6,6 +6,11 @@ import { formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckM
  * `last_checked` is a bookkeeping timestamp with no operator value on its own. */
 const ALWAYS_HIDDEN_DETAIL_KEYS = new Set(["status", "last_checked"]);
 
+/** Counts of different sets of events that Wallet passes lists side by side. A number they share
+ * with the row's summary ("Configured for 1 event") is coincidence, not repetition, so hiding it
+ * would leave a breakdown with a missing line. */
+const NEVER_DEDUPED_DETAIL_KEYS = new Set(["wallet_enabled_events", "configured_events", "wallet_incomplete_events"]);
+
 /** `Map`, not a plain object: `reason`/`live_check` are server-controlled today (a closed set
  * of literals), but this module has no way to enforce that stays true, and a plain object's
  * `["__proto__"]`/`["constructor"]` lookup returns a real (truthy) value instead of undefined,
@@ -18,6 +23,10 @@ const REASON_SENTENCES = new Map<string, string>([
   ["not_implemented", "Not implemented"],
   ["unknown_provider", "Unknown provider"],
   ["write_probe_failed", "Write test did not pass"],
+  ["not_a_directory", "Not a folder"],
+  ["not_writable", "Not writable"],
+  ["missing_directory", "Missing folder"],
+  ["cannot_create_directory", "Cannot create the folder"],
   ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
 ]);
 
@@ -66,13 +75,15 @@ export function formatHealthDisplayValue(key: string, value: string, timezone: s
 
 /**
  * The detail list for an expanded row: always drops `status`/`last_checked`, and drops any other
- * detail whose formatted value already appears in the row's own summary text, so a number isn't
- * repeated (a degraded `rate_limit_storage` already names its latency in the summary; a healthy
- * Database, whose summary is just "Connected", still shows its own Latency).
+ * detail whose formatted value already appears in the row's own summary text (except the Wallet
+ * event counts, see NEVER_DEDUPED_DETAIL_KEYS), so a number isn't repeated (a degraded
+ * `rate_limit_storage` already names its latency in the summary; a healthy Database, whose summary
+ * is just "Connected", still shows its own Latency).
  */
 export function visibleHealthDetails(check: HealthCheckRowDto, timezone: string): HealthDetailDto[] {
   return check.details.filter((d) => {
     if (ALWAYS_HIDDEN_DETAIL_KEYS.has(d.key)) return false;
+    if (NEVER_DEDUPED_DETAIL_KEYS.has(d.key)) return true;
     const displayValue = formatHealthDisplayValue(d.key, d.value, timezone);
     // An empty display value (e.g. an unset worker hostname, `beat.hostname ?? ""`) is a
     // substring of every string, so without this guard it would look like a duplicate of the

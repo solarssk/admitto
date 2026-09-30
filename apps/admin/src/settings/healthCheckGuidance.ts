@@ -2,7 +2,11 @@ import type { HealthCheckRowDto } from "../api/types.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 
 export type HealthCheckGuidance = {
-  impact: string;
+  /** Why the row is in this state, in one sentence (the "Why" line). Omitted for the quiet
+   * informational note, which is not a problem. */
+  cause?: string;
+  /** Omitted only for {@link UNRECOGNISED_STATE_GUIDANCE}, which does not guess what is affected. */
+  impact?: string;
   nextStep: string;
   link?: { label: string; to: string };
   /** A quiet, non-alarming note (email_sending with no mail provider set) rather than guidance
@@ -15,7 +19,8 @@ function detailValue(check: HealthCheckRowDto, key: string): string | undefined 
 }
 
 const LOOKUP_FAILED_GUIDANCE: HealthCheckGuidance = {
-  impact: "Admitto could not read the data for this check, so it cannot tell whether it works.",
+  cause: "An error occurred while Admitto was reading the data for this check.",
+  impact: "Admitto cannot tell whether this part works.",
   nextStep:
     "Reload this page. If the Database row is also down, fix that first. If the problem stays, use Copy for GitHub Issue and open an issue.",
 };
@@ -25,12 +30,14 @@ function databaseGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null 
   if (check.status === "down") {
     if (migrations === undefined) {
       return {
+        cause: "Admitto could not connect to the database.",
         impact: "Admitto cannot read or save attendees, events or settings.",
         nextStep: "Check that the database service is running and that DATABASE_URL is correct.",
       };
     }
     if (migrations === "pending") {
       return {
+        cause: "A new version was installed, but its database update has not run yet.",
         impact: "The database has not been updated for this version of Admitto.",
         nextStep:
           "Run the pending database update. In Docker Compose that is the migrate service, so start it and read its log.",
@@ -40,6 +47,7 @@ function databaseGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null 
   }
   if (check.status === "degraded" && migrations === "current") {
     return {
+      cause: "The database answered the last check slowly.",
       impact: "Pages may load slowly.",
       nextStep: "Reload this page to check again. If it stays slow, check how busy the database server is.",
     };
@@ -48,10 +56,30 @@ function databaseGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null 
 }
 
 function rateLimitStorageGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  if (check.status === "degraded") {
+    return {
+      cause: "Redis answered the last check slowly.",
+      impact: "Requests that are rate limited may be slower.",
+      nextStep: "Reload this page to check again. If it stays slow, check how busy the Redis server is.",
+    };
+  }
   if (check.status !== "down") return null;
   return {
+    cause: "Admitto could not connect to Redis.",
     impact: "Rate limits still apply, but each server counts on its own until Redis is running again.",
     nextStep: "Check that the Redis service is running and that REDIS_URL is correct.",
+  };
+}
+
+/** Only reached for down: the row is down exactly when ENCRYPTION_KEY is missing (outside
+ * development) or fails Admitto's own key validation. */
+function dataEncryptionGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  if (check.status !== "down") return null;
+  return {
+    cause: "ENCRYPTION_KEY is missing, or is not a valid 32-byte key.",
+    impact: "Admitto cannot read or save secrets such as mail and identity provider credentials.",
+    nextStep:
+      "Set ENCRYPTION_KEY in your deployment configuration (for example the output of openssl rand -base64 32) and restart Admitto. If secrets are already saved, use the key they were saved with.",
   };
 }
 
@@ -60,12 +88,14 @@ function backgroundWorkerGuidance(check: HealthCheckRowDto): HealthCheckGuidance
   const reason = detailValue(check, "reason");
   if (reason === "never_ran") {
     return {
+      cause: "The worker has never reported that it is running.",
       impact: "Queued emails, imports, exports and bounce checks may not run.",
       nextStep: "Start the worker service, then reload this page.",
     };
   }
   if (reason === "stale") {
     return {
+      cause: "The worker has stopped reporting that it is running.",
       impact: "Queued emails, imports, exports and bounce checks may not run.",
       nextStep: "Check that the worker is running and restart it if it is not.",
     };
@@ -78,6 +108,7 @@ function mailDeliveryQueueGuidance(check: HealthCheckRowDto): HealthCheckGuidanc
   const failedRetryable = Number(detailValue(check, "failed_retryable"));
   if (Number.isFinite(failedRetryable) && failedRetryable > 0) {
     return {
+      cause: "The mail service did not accept some emails, or could not be reached.",
       impact: "Some emails could not be sent yet. The worker retries them automatically, a limited number of times.",
       nextStep: "If the number does not go down, check that the worker is running and that Email sending works.",
     };
@@ -86,6 +117,7 @@ function mailDeliveryQueueGuidance(check: HealthCheckRowDto): HealthCheckGuidanc
   const threshold = Number(detailValue(check, "degraded_threshold"));
   if (Number.isFinite(queued) && Number.isFinite(threshold) && queued >= threshold) {
     return {
+      cause: "More emails were queued than the worker has sent so far.",
       impact: "Emails are waiting to be sent. This is normal right after sending many emails at once.",
       nextStep: "If the number does not go down, check the Background worker, Email sending and Instance URL rows.",
     };
@@ -96,7 +128,8 @@ function mailDeliveryQueueGuidance(check: HealthCheckRowDto): HealthCheckGuidanc
 function emailSendingGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   if (check.status === "down" && detailValue(check, "live_check") === "failed") {
     return {
-      impact: "The mail connection test did not pass. Organisation emails may not be sent.",
+      cause: "The connection test to the mail service did not pass.",
+      impact: "Organisation emails may not be sent.",
       nextStep:
         "Check the mail settings and credentials, and that this server can reach the mail service. Then run live checks again.",
       link: { label: "Open Mail settings", to: "/admin/settings?tab=mail" },
@@ -104,7 +137,8 @@ function emailSendingGuidance(check: HealthCheckRowDto): HealthCheckGuidance | n
   }
   if (check.status === "degraded" && detailValue(check, "reason") === "mail_secret_decryption_failed") {
     return {
-      impact: "Admitto cannot read the saved mail credentials.",
+      cause: "The saved mail credentials were probably encrypted with a different ENCRYPTION_KEY.",
+      impact: "Admitto cannot read the saved mail credentials, so organisation emails may not be sent.",
       nextStep: "Enter the mail credentials again in Mail settings, or restore the previous ENCRYPTION_KEY.",
       link: { label: "Open Mail settings", to: "/admin/settings?tab=mail" },
     };
@@ -119,11 +153,13 @@ function emailSendingGuidance(check: HealthCheckRowDto): HealthCheckGuidance | n
 function instanceUrlGuidance(check: HealthCheckRowDto): HealthCheckGuidance {
   if (check.status === "degraded") {
     return {
+      cause: "BASE_URL is not set, so Admitto falls back to the address saved in General settings.",
       impact: "Links in emails and tickets use the address saved in General settings, so they keep working.",
       nextStep: "Set the BASE_URL environment variable to the same address in your deployment configuration.",
     };
   }
   return {
+    cause: "BASE_URL or the address saved in General settings is missing or not a valid URL.",
     impact: "Admitto cannot build links for emails, tickets and wallet passes.",
     nextStep:
       "If BASE_URL is set, correct it or remove it, because it takes priority over General settings. Otherwise enter a valid Instance URL in General settings.",
@@ -134,6 +170,7 @@ function instanceUrlGuidance(check: HealthCheckRowDto): HealthCheckGuidance {
 function identityProviderGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   if (check.status !== "down" || detailValue(check, "live_check") !== "failed") return null;
   return {
+    cause: "The connection test to this provider did not pass.",
     impact: "Staff may not be able to sign in with this provider.",
     nextStep:
       "Check the provider's URLs in Identity settings and that this server can reach them. Then run live checks again.",
@@ -146,14 +183,16 @@ function cloudflareAccessGuidance(check: HealthCheckRowDto): HealthCheckGuidance
   const directIdp = detailValue(check, "direct_identity_provider");
   if (directIdp === "missing" || directIdp === "disabled") {
     return {
-      impact: "Cloudflare Access is turned on but has no enabled direct identity provider.",
+      cause: "Cloudflare Access is turned on, but no direct identity provider is enabled for it.",
+      impact: "Sign-ins through Cloudflare Access may not work.",
       nextStep: "Choose an enabled direct identity provider in the Cloudflare Access settings.",
       link: { label: "Open Cloudflare Access settings", to: IDENTITY_CLOUDFLARE_ROUTE },
     };
   }
   if (detailValue(check, "live_check") === "failed") {
     return {
-      impact: "The Cloudflare Access connection test did not pass, so sign-ins through it may not work.",
+      cause: "The connection test to Cloudflare Access did not pass.",
+      impact: "Sign-ins through Cloudflare Access may not work.",
       nextStep: "Check the Cloudflare team URL in the Cloudflare Access settings and that this server can reach it.",
       link: { label: "Open Cloudflare Access settings", to: IDENTITY_CLOUDFLARE_ROUTE },
     };
@@ -170,13 +209,30 @@ const FILE_STORAGE_FOLDER_PROBLEM_REASONS = new Set([
   "cannot_create_directory",
 ]);
 
+/** `s3` is a recognised STORAGE_PROVIDER value that Admitto does not implement yet, and any other
+ * value that is not `local` is unknown - both leave uploads without a working store. The unknown
+ * provider's real value is deliberately not repeated here (see `provider_raw` on the server row). */
+const FILE_STORAGE_PROVIDER_PROBLEMS = new Map<string, string>([
+  ["not_implemented", "STORAGE_PROVIDER is set to s3, which Admitto does not support yet."],
+  ["unknown_provider", "STORAGE_PROVIDER is set to a value Admitto does not recognise."],
+]);
+
 function fileStorageGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   const reason = detailValue(check, "reason");
+  const providerProblem = check.status === "degraded" ? FILE_STORAGE_PROVIDER_PROBLEMS.get(reason ?? "") : undefined;
+  if (providerProblem) {
+    return {
+      cause: providerProblem,
+      impact: "Logos, imports and exports cannot be stored.",
+      nextStep: "Set STORAGE_PROVIDER to local, or remove it, in your deployment configuration, then restart Admitto.",
+    };
+  }
   const isFolderProblem =
     (check.status === "down" && FILE_STORAGE_FOLDER_PROBLEM_REASONS.has(reason ?? "")) ||
     (check.status === "degraded" && reason === "write_probe_failed");
   if (!isFolderProblem) return null;
   return {
+    cause: "The upload folder is missing, is not a folder, or Admitto cannot write to it.",
     impact: "Logos, imports and exports need this folder.",
     nextStep:
       "Make sure UPLOAD_DIR exists and Admitto can write to it. In Docker Compose that is the uploads folder on the host.",
@@ -190,6 +246,7 @@ function addressLookupGuidance(check: HealthCheckRowDto): HealthCheckGuidance | 
   // could-not-read fallback, which is also degraded with no other distinguishing key.
   if (check.status === "degraded" && detailValue(check, "reason") === undefined) {
     return {
+      cause: "The address service answered the last check slowly.",
       impact: "Address suggestions may be slow.",
       nextStep:
         "Check the geocoding address under Maps in External services and that this server can reach it. Then run live checks again.",
@@ -198,6 +255,7 @@ function addressLookupGuidance(check: HealthCheckRowDto): HealthCheckGuidance | 
   }
   if (check.status === "down") {
     return {
+      cause: "Admitto could not reach the address service.",
       impact: "Address suggestions may not work.",
       nextStep:
         "Check the geocoding address under Maps in External services and that this server can reach it. Then run live checks again.",
@@ -225,6 +283,7 @@ function weatherGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   // WEATHER_DEGRADED_MS) is also degraded, with live_check=ok rather than missing entirely.
   if (check.status === "degraded" && liveCheck === "ok") {
     return {
+      cause: "The weather provider answered the last check slowly.",
       impact: "Weather forecasts may be slow to load.",
       nextStep:
         "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
@@ -233,6 +292,7 @@ function weatherGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   }
   if (check.status === "down" && liveCheck !== undefined && WEATHER_UNREACHABLE_LIVE_CHECKS.has(liveCheck)) {
     return {
+      cause: "Admitto could not reach the weather provider.",
       impact: "Weather forecasts may be missing.",
       nextStep:
         "Check the weather provider in External services and that this server can reach it. Then run live checks again.",
@@ -244,7 +304,8 @@ function weatherGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
 
 function weatherSupportContactGuidance(): HealthCheckGuidance {
   return {
-    impact: "Weather forecasts are not available until a support contact is set.",
+    cause: "MET Norway requires a contact address in each request, and no support contact is set.",
+    impact: "Weather forecasts are not available.",
     nextStep: "Add a support contact in General settings.",
     link: { label: "Open General settings", to: "/admin/settings?tab=general" },
   };
@@ -257,6 +318,7 @@ function bounceIngestGuidance(check: HealthCheckRowDto): HealthCheckGuidance | n
   // problem_events key.
   if (check.status !== "degraded" || detailValue(check, "reason") !== undefined) return null;
   return {
+    cause: "For some events, the last bounce check failed or is overdue.",
     impact: "Bounced emails may not be detected for those events.",
     nextStep:
       "Check the Background worker row first. Then open Event settings for events with bounce detection turned on.",
@@ -301,6 +363,7 @@ const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheck
   ["database", databaseGuidance],
   ["instance_url", instanceUrlGuidance],
   ["rate_limit_storage", rateLimitStorageGuidance],
+  ["data_encryption", dataEncryptionGuidance],
   ["background_worker", backgroundWorkerGuidance],
   ["mail_delivery_queue", mailDeliveryQueueGuidance],
   ["email_sending", emailSendingGuidance],
@@ -311,11 +374,21 @@ const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheck
   ["bounce_ingest", bounceIngestGuidance],
 ]);
 
+/** A down or degraded state this table has no specific guidance for: one the server gained after
+ * the table was written, or one that was never expected. No cause or impact is guessed, only how
+ * to get more help. */
+export const UNRECOGNISED_STATE_GUIDANCE: HealthCheckGuidance = {
+  cause: "Admitto does not recognise this state yet, so it has no specific explanation for it.",
+  nextStep:
+    "Reload this page and run live checks again. If the problem stays, use Copy for GitHub Issue and open an issue.",
+};
+
 /**
- * One impact sentence and one next-step sentence (plus an optional link to the relevant
- * settings tab) for a problem row, shown above its detail list when expanded. Detection is by
+ * One cause sentence, one impact sentence and one next-step sentence (plus an optional link to
+ * the relevant settings tab) for a problem row, shown above its detail list when expanded. Detection is by
  * exact match on the check's id, status and existing detail values - returns null for a healthy
- * row, or for any down/degraded state this module doesn't recognise, rather than guessing.
+ * row, and {@link UNRECOGNISED_STATE_GUIDANCE} for any down/degraded state this module doesn't
+ * recognise, rather than guessing.
  *
  * The one exception is email_sending's own not_configured state, which gets a quiet informational
  * note (no organisation mail provider set) rather than problem guidance - see
@@ -327,13 +400,16 @@ export function healthCheckGuidance(check: HealthCheckRowDto): HealthCheckGuidan
   }
   if (check.status !== "down" && check.status !== "degraded") return null;
 
+  // A row whose state could not be read says nothing about its cause, so no id-specific advice
+  // (an invalid ENCRYPTION_KEY, an unreachable Redis, a bad BASE_URL) applies, whatever its status.
+  if (detailValue(check, "reason") === "lookup_failed") return LOOKUP_FAILED_GUIDANCE;
+
   const specific = check.id.startsWith("identity_provider_")
     ? identityProviderGuidance(check)
     : (GUIDANCE_BY_ID.get(check.id)?.(check) ?? null);
   if (specific) return specific;
 
   if (check.status === "degraded") {
-    if (detailValue(check, "reason") === "lookup_failed") return LOOKUP_FAILED_GUIDANCE;
     // mail_delivery_queue's own "could not read queue depth" state has no reason key at all -
     // it signals the same failure with a missing `queued` detail instead (health-check-routes.ts
     // mailQueueRow(), the `queued < 0` branch). mailDeliveryQueueGuidance() above already
@@ -342,5 +418,5 @@ export function healthCheckGuidance(check: HealthCheckRowDto): HealthCheckGuidan
       return LOOKUP_FAILED_GUIDANCE;
     }
   }
-  return null;
+  return UNRECOGNISED_STATE_GUIDANCE;
 }

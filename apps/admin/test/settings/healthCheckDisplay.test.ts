@@ -56,6 +56,10 @@ describe("formatHealthDisplayValue", () => {
     ["not_implemented", "Not implemented"],
     ["unknown_provider", "Unknown provider"],
     ["write_probe_failed", "Write test did not pass"],
+    ["not_a_directory", "Not a folder"],
+    ["not_writable", "Not writable"],
+    ["missing_directory", "Missing folder"],
+    ["cannot_create_directory", "Cannot create the folder"],
     ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
   ])("gives reason=%s the sentence %j", (code, sentence) => {
     expect(formatHealthDisplayValue("reason", code, TZ)).toBe(sentence);
@@ -181,6 +185,27 @@ describe("visibleHealthDetails", () => {
       details: [{ key: "hostname", value: "" }],
     });
     expect(visibleHealthDetails(check, TZ)).toEqual([{ key: "hostname", value: "" }]);
+  });
+});
+
+describe("visibleHealthDetails for Wallet passes", () => {
+  it("keeps every event count even when a number matches the summary", () => {
+    const check = checkRow({
+      id: "wallet_passes",
+      summary: "Configured for 1 event",
+      details: [
+        { key: "status", value: "ok" },
+        { key: "wallet_enabled_events", value: "1" },
+        { key: "configured_events", value: "1" },
+        { key: "wallet_incomplete_events", value: "0" },
+        { key: "last_checked", value: "2026-08-03T12:00:00.000Z" },
+      ],
+    });
+    expect(healthDetailRows(check, TZ, "2026-08-03T12:54:24.000Z")).toEqual([
+      { key: "wallet_enabled_events", label: "Events with Wallet on", value: "1" },
+      { key: "configured_events", label: "Events fully set up", value: "1" },
+      { key: "wallet_incomplete_events", label: "Events not fully set up", value: "0" },
+    ]);
   });
 });
 

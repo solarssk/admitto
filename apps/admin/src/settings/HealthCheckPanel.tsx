@@ -245,10 +245,18 @@ function HealthCheckRowView({
                 guidance.quiet ? "health-check__guidance health-check__guidance--quiet" : "health-check__guidance"
               }
             >
-              <div className="health-check__detail">
-                <dt>What it affects</dt>
-                <dd>{guidance.impact}</dd>
-              </div>
+              {guidance.cause && (
+                <div className="health-check__detail">
+                  <dt>Why</dt>
+                  <dd>{guidance.cause}</dd>
+                </div>
+              )}
+              {guidance.impact && (
+                <div className="health-check__detail">
+                  <dt>What it affects</dt>
+                  <dd>{guidance.impact}</dd>
+                </div>
+              )}
               <div className="health-check__detail">
                 <dt>What to do</dt>
                 <dd>
