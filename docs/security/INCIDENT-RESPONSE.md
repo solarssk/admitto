@@ -70,7 +70,7 @@ Treat any secret exposed in logs, tickets, or version control as **compromised**
 | Mail integration | Rotate in M365 / SMTP provider and application settings |
 | Encryption key | Major incident - plan re-encryption with maintenance window |
 | Monitoring token | Regenerate and update observability tools |
-| Session compromise | Invalidate active sessions; force staff re-authentication |
+| Session compromise | Invalidate active sessions; force staff re-authentication. For a lost or stolen check-in tablet, revoke its session in **Users & roles** (the user's active sessions) straight away: an operator who ticked **Keep me signed in** stays signed in for up to 14 days (3 by default) and operator accounts have no second factor by design. A superadmin can also set **Operator "Keep me signed in" duration** to 0 to stop new remembered sessions, but that does not shorten ones that already exist |
 
 See [SECURITY.md](../../SECURITY.md) for the project secret policy.
 

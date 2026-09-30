@@ -7,7 +7,7 @@ Authentication and authorization for Admitto - local accounts, opaque DB session
 | Area | What lives here |
 |------|-----------------|
 | **Local auth** | Argon2 passwords, login/logout, session cookies |
-| **Sessions** | Opaque server-side sessions; separate TTL for admin vs operator |
+| **Sessions** | Opaque server-side sessions; separate TTL and idle timeout for admin vs operator. An operator who ticks "Keep me signed in" gets one configurable lifetime instead (`operator_remember_me_days`, 0 to 14, default 3) with no shorter idle window; admins and superadmins never do |
 | **MFA** | TOTP enrollment, backup codes, trusted devices, break-glass recovery |
 | **OIDC** | Provider CRUD, PKCE authorize flow, group→role mapping, external identity JIT |
 | **Cloudflare Access** | `Cf-Access-Jwt-Assertion` validation on admin collision paths |

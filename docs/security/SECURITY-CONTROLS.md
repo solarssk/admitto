@@ -213,6 +213,26 @@ limits are shared across replicas and survive restarts.
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 
+### Check-in live updates (SSE stream)
+
+`GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
+Reports page. Connects and reconnects are limited per operator per event and per operator overall, and
+the number of simultaneously open streams is capped. The defaults below are read once at startup from
+the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
+whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the
+container recreated, not just restarted.
+
+| Bucket | Default | Variable |
+|--------|---------|----------|
+| connects and reconnects, per operator per event | 120 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` |
+| connects and reconnects, per operator across events | 240 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` |
+| window | 60 s | `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` |
+| open streams, per operator per event | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
+| open streams, per operator overall | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
+
+The check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a
+minute when the rate limit is hit; scanning itself is not affected.
+
 ### Operations probes
 
 | Surface | Bucket | Limit / window | Auth |
@@ -235,9 +255,11 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
-| single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 60 s | event admin |
+| single-attendee wallet actions (void/restore/reissue/refresh status/delete/remove from provider) | user + event | 10 / 60 s | event admin |
 | bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
+| bulk wallet actions (void/reissue/refresh status/delete/remove from provider for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
+| event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) - one background job per event at a time, no 100-attendee cap | user + event | 10 / 10 min | event admin |
+| polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
 | attendee export, deliveries export, reports export, audit-log export, security-audit-log export | user + route | 10 / h | admin |
 | attendee PII export | user + route | 5 / h | admin |

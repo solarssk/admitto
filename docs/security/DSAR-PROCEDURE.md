@@ -59,6 +59,13 @@ flowchart TD
        admin-audit-log entry naming the erased attendee(s) and event. See
        [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for why
        the central entry retains identity, unlike the per-attendee trail.
+     - **Wallet pass at the provider:** after the local delete, Admitto also asks the wallet
+       provider to delete each erased attendee's pass, so their name no longer sits there. This is
+       best effort: if a provider call fails, the attendee is still erased locally and a
+       `wallet_pass_erasure_delete_failed` entry appears in **System logs** (live tail,
+       superadmin). Check that log after an erasure and remove any remaining pass by hand in the
+       provider's own console. Nothing is sent to the provider when the event has no wallet
+       template and key configured.
      - **Direct-API fallback:** if the SPA is unavailable, call the endpoint directly with an
        authenticated staff session and CSRF token (same session model as other admin mutations).
   2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
@@ -68,7 +75,9 @@ flowchart TD
 
 If the API is unavailable, operators may erase by direct database operation. Dependent rows must be
 removed before the attendee because `EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees
-with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML.
+with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML. A direct database erasure also does not
+contact the wallet provider, so delete any wallet pass of the erased attendee in the provider's own
+console yourself.
 
 > **Warning: this bypasses both audit writers the API path uses** (the per-attendee
 > `AttendeeActionLog` entry and the central `AdminAuditLog` entry - see

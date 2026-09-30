@@ -74,7 +74,7 @@ The application and background worker are separate processes from the same conta
 0042), not the same process under different threads. Only the application accepts inbound HTTP
 traffic; the worker has no listening port and is not reachable from the edge. The worker runs
 scheduled/queued jobs against the same database (mail delivery drain, bounce ingest, attendee
-import commit, retention purges) and coordinates with the application over Redis (job locks, and
+import commit, wallet sync and the event-wide wallet jobs, wallet pass expiry, retention purges) and coordinates with the application over Redis (job locks, and
 pub/sub so a worker-driven change reflects live in an open admin session without the operator
 having to refresh).
 
@@ -109,6 +109,7 @@ The table below lists every event that causes Admitto to do something, for a rev
 | Add to Wallet (attendee action) | Attendee, from the ticket page | Create or reuse a wallet pass via the configured provider (PassCreator) | Attendee receives a digital wallet pass carrying the same QR token as the ticket |
 | Scan a QR code, or a manual name lookup | Operator | Validate the token, apply an atomic compare-and-set check-in | Check-in is recorded exactly once; a second scan of the same ticket is reported as already used, never double-counted |
 | A wallet pass is voided, restored, or an attendee's details change | Staff, or automatically as a side effect of revoking/restoring a ticket | Push the updated state to the wallet provider | The attendee's wallet pass reflects the new status/details (a lock-screen update, not a new pass) |
+| Void active passes / Remove inactive passes for a whole event, or Remove from provider for one attendee or a selection | Staff (event-wide actions run as one background job per event) | Void, or delete, the pass at the wallet provider; the local record and its history are kept | A removed pass no longer exists at the provider (so it no longer holds the attendee's name there); the local record stays until the attendee is erased |
 | Mail bounces | External mail system | The worker's bounce-ingest process reads the bounce mailbox and marks the affected delivery | Delivery status changes to "bounced"; surfaced to staff in-app (no outbound alert is sent - see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
 | Retention window elapses (sessions, trusted devices, security audit log, mail-body snapshots) | Automatic - the worker, on a fixed interval | Purge or nullify the expired rows | Reduces what's retained without staff action; see the Retention table in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
@@ -196,7 +197,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Artefact | Location |
 |----------|----------|
 | Release tags | Project releases - created by CI as ordinary, unsigned GitHub tags by default; a manual signed-tag path exists for emergencies, see [VERSIONING.md](../../VERSIONING.md) |
-| Container SBOM | `.github/workflows/publish-container.yml` - CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets; BuildKit SBOM and SLSA provenance attestations are also attached to the published image |
+| Container SBOM | `.github/workflows/publish-container.yml` - CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets together with a Sigstore signature per SBOM and a provenance file; BuildKit SBOM and SLSA provenance attestations are also attached to the published image |
 | Container vulnerability scan | `.github/workflows/publish-container.yml` - Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` - `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` - `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |

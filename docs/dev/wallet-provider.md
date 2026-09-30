@@ -78,8 +78,9 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   column exists to avoid re-introducing. An older read can never overwrite a newer one this way (a
   stale "voided" would otherwise stick, since nothing polls a voided pass to correct it). A pass
   that turns voided/expired keeps the counts of that read; nothing polls it afterwards. The
-  periodic sync and Refresh status only read `active` passes (sync also skips archived events);
-  Refresh status is read-only, so it ignores the wallet master switch and the archived guard.
+  periodic sync and Refresh status only read `active` passes (sync also skips archived events).
+  Refresh status applies the same reconciliation (it can move a pass to `voided`/`expired`) but
+  changes nothing at the provider, so it ignores the wallet master switch and the archived guard.
 - **A webhook is a signal, not a state.** `pass_voided` re-reads the pass through the same
   reconciliation. 200 means dealt with (including "not ours" and "already inactive"); 503 means the
   re-read could not be completed (provider error, or a no-match that survived the retry), so
@@ -92,12 +93,32 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   webhooks only ever update counts. `expired` is irreversible - the public Add-to-Wallet flow
   never tries to recreate or recover it (that would have PassCreator's own duplicate-rejection
   recover into a false "active" without ever clearing the provider-side expiration), and the admin
-  UI offers only Delete for it, never Restore. The receiver resolves the
+  UI offers only Delete wallet pass and Remove from provider for it, never Restore. The receiver resolves the
   provider from the event's credentials alone, not the wallet master switch: switching Wallet off
   does not unsubscribe the hooks, so deliveries for existing passes keep arriving. A "suppressed"
   outcome still wrote the registration counts, so a caller that only reports on those (a bulk
   selection, the event-wide job) counts it as refreshed, not skipped - only the webhook path treats
   it as retryable.
+- **"Remove from provider" deletes the remote pass and keeps the local row.** Only a `voided` or
+  `expired` pass can be removed. After a successful `deletePass`, `WalletPass.provider_removed_at`
+  is stamped and the row keeps its status, history and Reports numbers as a frozen last-known
+  snapshot. A removed pass is never synced again (the sync candidate index excludes it), Restore and
+  Push updates answer 409 `wallet_pass_removed`, and the webhook receiver acks its deliveries with
+  200 before any provider call or write. The event-wide jobs use the same path: **Void active
+  passes** (`wallet_void_active`) and **Remove inactive passes** (`wallet_remove_inactive`), the
+  latter only for passes voided or expired for at least a day (`WALLET_REMOVE_INACTIVE_GRACE_MS`).
+  Delete wallet pass is the different action that also deletes the local row.
+- **Expiration is Admitto's own date, not something read from the provider.** With Event Settings →
+  Wallet → Pass expiration set to "Expire when the event ends", every created or updated pass gets
+  `WalletPass.expires_at` (the event's end, from `eventEndsAtUtc`) and the provider receives it as
+  `expirationDate`, a "Y-m-d H:i" wall-clock string with no time zone that the provider reads in
+  its own account time zone. It only works if the template has "different for each pass" switched
+  on; `describeTemplate()` reports that as `perPassExpirationReady`, and the mode cannot be turned
+  on (or the Template ID or API key changed while it is on) unless the check passes. Turning it off
+  is blocked once any pass has been issued, since there is no confirmed way to clear an
+  already-sent date. The worker's `wallet_expire` job then marks a due pass `expired` locally,
+  without contacting the provider, once the event's own end has also passed (`runWalletExpiry`,
+  `packages/wallet/src/expire-passes.ts`).
 - **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.
   Without it, a reset must retire the old remote object (void/expire) and issue the next pass under
   a *new* provider identity (a generation counter mixed into it), because today's stable
