@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-30
+
 ### Added
 
 - The Security settings page now has an **Operator "Keep me signed in" duration (days)** field (0 to 14, 3 by default), so a superadmin can change how long a remembered operator session lasts, or set 0 to hide the sign-in checkbox, without editing environment variables. It is read-only when `OPERATOR_REMEMBER_ME_DAYS` is set.
@@ -1576,7 +1578,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/solarssk/admitto/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/solarssk/admitto/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/solarssk/admitto/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/solarssk/admitto/compare/v0.7.0...v0.7.1
