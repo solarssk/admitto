@@ -63,7 +63,7 @@ updates:
   # semgrep.yml's hash-pinned toolchain (Scorecard's Pinned-Dependencies check) - Dependabot
   # resolves pip-compile's requirements.in/.txt pair and regenerates the hashes on a bump.
   # Exception while semgrep still declares pyjwt~=2.13.0 (semgrep/semgrep#11925): the .txt
-  # hand-pins pyjwt 2.14.0 for security fixes, and any regeneration reverts it to 2.13.0. Such a
+  # hand-pins pyjwt 2.15.0 for security fixes, and any regeneration reverts it to 2.13.0. Such a
   # PR fails the required "Dependency and license review" and "Code security scan (Semgrep)"
   # checks; re-apply the pin on the PR branch (see the notes in semgrep.yml) before merging.
   - package-ecosystem: "pip"
