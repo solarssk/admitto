@@ -4500,6 +4500,27 @@ output.mail-field-hint {
   color: var(--status-warn-fg);
 }
 
+/* The Retry in a one-line hint (RetryHint) is a Button, for its busy contract (aria-disabled, keeps keyboard
+   focus), drawn as the underlined text link it replaced. Compound selectors, so they win over .at-btn and its
+   hover rule whatever order the stylesheets load in. */
+.retry-hint .at-btn.retry-hint__button {
+  display: inline-flex;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link, var(--primary));
+  font-size: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.retry-hint .at-btn.retry-hint__button:hover:not(:disabled, [aria-disabled="true"]) {
+  background: none;
+  color: var(--text-link, var(--primary));
+}
+
 .mail-transport__desc {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);

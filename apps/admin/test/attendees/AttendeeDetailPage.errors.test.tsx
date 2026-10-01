@@ -268,6 +268,42 @@ describe("AttendeeDetailPage operator errors", () => {
     await waitFor(() => expect(screen.queryByText("Could not load ticket types.")).toBeNull());
   });
 
+  it("keeps the ticket-type notice and a busy Retry on screen, focus included, while a retry runs, and announces again when it fails again", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Anna" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const message = await screen.findByText("Could not load ticket types.");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    let failRetry: (error: Error) => void = () => {};
+    vi.mocked(fetchTicketTypes).mockImplementationOnce(
+      () => new Promise((_, reject) => {
+        failRetry = reject;
+      }),
+    );
+    retry.focus();
+    fireEvent.click(retry);
+
+    // Still there, the same button, busy, with focus: nothing was unmounted around it.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Could not load ticket types.")).toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => failRetry(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    // Same text again: a new message node is what a live region announces. The button is the same node.
+    expect(screen.getByText("Could not load ticket types.")).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+  });
+
   it("shows the items-load-warning Notice when custom attribute fields fail to load", async () => {
     loadAttendeeDetailData.mockResolvedValueOnce({
       detail,

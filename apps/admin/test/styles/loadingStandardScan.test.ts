@@ -126,8 +126,10 @@ describe("loading-standard scanner: forms the standard itself allows", () => {
 });
 
 describe("error-state scanner: a failed load must be announced", () => {
-  const count = (source: string, rule: "error-state-not-an-alert" | "retry-outside-an-alert" | "raw-button-busy-disabled") =>
-    code(source)[rule];
+  const count = (
+    source: string,
+    rule: "error-state-not-an-alert" | "retry-outside-an-alert" | "retry-in-a-raw-button" | "raw-button-busy-disabled",
+  ) => code(source)[rule];
 
   it("counts an EmptyState with a Retry, or a 'Could not load' title, that has no variant=\"error\"", () => {
     expect(count('<EmptyState title="Could not load attendees" description={error} />', "error-state-not-an-alert")).toBe(1);
@@ -257,6 +259,24 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count(withRole, "retry-outside-an-alert")).toBe(0);
     const withoutRole = ['<Notice variant="error">', "  {error}", "  <Button onClick={load}>Retry</Button>", "</Notice>"].join("\n");
     expect(count(withoutRole, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("counts a Retry or Reload that is the label of a raw <button>, however it is classed or laid out", () => {
+    expect(count('<p role="alert">{error} <button type="button" className="link-btn" onClick={retry}>Retry</button></p>', "retry-in-a-raw-button")).toBe(1);
+    const spread = ['<div role="alert">', "  <button", '    type="button"', '    className="notif-bell__retry"', "    onClick={() => void load()}", "  >", "    Retry", "  </button>", "</div>"].join("\n");
+    expect(count(spread, "retry-in-a-raw-button")).toBe(1);
+    expect(count("<button onClick={retry}>Retry now</button>", "retry-in-a-raw-button")).toBe(1);
+    expect(count("<button onClick={again}>Reload page</button>", "retry-in-a-raw-button")).toBe(1);
+    expect(count("<button onClick={retry}><i className=\"ti ti-refresh\" /> Retry</button>", "retry-in-a-raw-button")).toBe(1);
+  });
+
+  it("does not count a kit Button, a menu command, or a Retry that sits after the raw button has closed", () => {
+    expect(count('<Button variant="ghost" loading={busy} onClick={retry}>Retry</Button>', "retry-in-a-raw-button")).toBe(0);
+    expect(count('<Notice role="alert" action={<Button onClick={retry}>Retry</Button>}>{error}</Notice>', "retry-in-a-raw-button")).toBe(0);
+    expect(count('<button type="button" role="menuitem" onClick={onRetry}>{label}</button>', "retry-in-a-raw-button")).toBe(0);
+    expect(count('<button type="button" onClick={save}>Save</button>\n<Button onClick={retry}>\n  Retry\n</Button>', "retry-in-a-raw-button")).toBe(0);
+    expect(count("<button-group>Retry</button-group>", "retry-in-a-raw-button")).toBe(0);
+    expect(count("<button />\n<Button onClick={retry}>Retry</Button>", "retry-in-a-raw-button")).toBe(0);
   });
 
   it("does not look at a command that merely mentions retry, or at comments", () => {
