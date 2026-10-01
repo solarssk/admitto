@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Spinner, Tooltip, useToast } from "@admitto/ui";
+import { Badge, IconButton, Spinner, Tooltip, useToast } from "@admitto/ui";
 import {
   clearAllAccountNotifications,
   fetchAccountNotifications,
@@ -319,28 +319,26 @@ export function NotificationBell() {
             <div className="notif-bell__head-actions">
               {unreadCount > 0 && (
                 <Tooltip content="Mark all as read">
-                  <button
-                    type="button"
+                  <IconButton
+                    icon={<i className="ti ti-checks" aria-hidden="true" />}
+                    label="Mark all as read"
+                    size="sm"
                     className="notif-bell__icon-action"
-                    aria-label={markingAll ? "Marking…" : "Mark all as read"}
-                    disabled={markingAll}
+                    loading={markingAll}
                     onClick={() => void handleMarkAllRead()}
-                  >
-                    {markingAll ? <Spinner size="sm" label="Marking" /> : <i className="ti ti-checks" aria-hidden="true" />}
-                  </button>
+                  />
                 </Tooltip>
               )}
               {notifications.length > 0 && (
                 <Tooltip content="Clear all">
-                  <button
-                    type="button"
+                  <IconButton
+                    icon={<i className="ti ti-trash" aria-hidden="true" />}
+                    label="Clear all"
+                    size="sm"
                     className="notif-bell__icon-action"
-                    aria-label="Clear all"
-                    disabled={clearing}
+                    loading={clearing}
                     onClick={() => setClearConfirmOpen(true)}
-                  >
-                    <i className="ti ti-trash" aria-hidden="true" />
-                  </button>
+                  />
                 </Tooltip>
               )}
             </div>

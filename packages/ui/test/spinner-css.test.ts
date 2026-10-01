@@ -44,6 +44,7 @@ function declarations(body: string): Record<string, string> {
 describe.each([
   { name: "Spinner ring", css: spinnerCss, selector: ".at-spinner__ring" },
   { name: "busy Button spinner", css: componentsCss, selector: ".at-btn__spinner" },
+  { name: "busy IconButton spinner", css: componentsCss, selector: ".at-iconbtn__spinner" },
 ])("$name in forced-colors mode (Windows High Contrast)", ({ css, selector }) => {
   const forcedRing = () => declarations(blockOf(blockOf(css, FORCED_COLORS), selector));
 
@@ -59,7 +60,10 @@ describe.each([
   });
 
   it("comes after the ring's own rule, so it wins on equal specificity", () => {
-    expect(css.indexOf(FORCED_COLORS)).toBeGreaterThan(css.indexOf(`\n${selector} {`));
+    // The ring's own rule may list several selectors (`.at-btn__spinner,\n.at-iconbtn__spinner {`).
+    const ownRule = css.search(new RegExp(`\\n${selector.replaceAll(".", "\\.")}\\s*[,{]`));
+    expect(ownRule, `the ring's own rule for ${selector} exists`).toBeGreaterThan(-1);
+    expect(css.indexOf(FORCED_COLORS)).toBeGreaterThan(ownRule);
   });
 
   it("leaves the turning alone: the rule changes colours only", () => {

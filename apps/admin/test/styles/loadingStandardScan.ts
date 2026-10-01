@@ -32,7 +32,7 @@ export const RULE_HINTS: Record<Rule, string> = {
   "retry-in-a-raw-button":
     "Use <Button loading> for a Retry (or Reload), with the hook useRetry for a request that is run again (a <RetryHint> for a one-line hint). A raw <button> cannot show that it is working and keep keyboard focus, so a click on it drops the focus to the page behind.",
   "raw-button-busy-disabled":
-    "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <MoreActionsMenuItem loading>), which stays focusable.",
+    "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <IconButton loading>, <MoreActionsMenuItem loading>), which stays focusable; a link-style button keeps `disabled` for what cannot change and uses aria-disabled plus an early return in onClick while it works. If the button is only disabled because ANOTHER control is busy (the user pressed a different one), add it to DISABLED_WHILE_ANOTHER_ACTION_RUNS in loading-standard.test.ts with the reason.",
 };
 
 /** Files that implement the busy contract itself, so they may name a busy flag next to `disabled`. */
