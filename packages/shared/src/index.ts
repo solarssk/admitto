@@ -39,7 +39,15 @@ export {
   type PreferredTimeFormat,
 } from "./preferredTimeFormat.js";
 export { zonedWallClockToUtcIso } from "./zonedWallClock.js";
-export { eventEndsAtUtc, eventEndsAtLocal, isWalletAddClosed, type EventEndInput } from "./eventEnd.js";
+export {
+  eventEndsAtUtc,
+  eventEndsAtLocal,
+  eventDayWindow,
+  isWalletAddClosed,
+  EVENT_DAY_GRACE_LOCAL_TIME,
+  type EventDayWindow,
+  type EventEndInput,
+} from "./eventEnd.js";
 export { MAIL_PROVIDER_LABELS, type MailProviderId } from "./mailProviderLabels.js";
 export {
   celsiusToFahrenheit,

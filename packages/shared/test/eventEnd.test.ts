@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventEndsAtLocal, eventEndsAtUtc, isWalletAddClosed } from "../src/eventEnd.js";
+import { eventDayWindow, eventEndsAtLocal, eventEndsAtUtc, isWalletAddClosed } from "../src/eventEnd.js";
 
 // `date` is the display-only sentinel anchored at noon UTC.
 const day = (yyyyMmDd: string) => new Date(`${yyyyMmDd}T12:00:00.000Z`);
@@ -130,5 +130,81 @@ describe("isWalletAddClosed", () => {
   it("defaults `now` to the current time", () => {
     expect(isWalletAddClosed({ ...event, date: day("2000-01-01") })).toBe(true);
     expect(isWalletAddClosed({ ...event, date: day("2999-01-01") })).toBe(false);
+  });
+});
+
+describe("eventDayWindow", () => {
+  const noHours = { eventHoursStart: null, eventHoursEnd: null };
+  const iso = (w: ReturnType<typeof eventDayWindow>) =>
+    w && { start: w.start.toISOString(), end: w.end.toISOString(), sessionEnd: w.sessionEnd.toISOString() };
+
+  it("runs from local midnight to the next local midnight, ending the session at 06:00 the next morning", () => {
+    // Warsaw is UTC+2 in September.
+    expect(iso(eventDayWindow({ date: day("2026-09-01"), ...noHours, timezone: "Europe/Warsaw" }))).toEqual({
+      start: "2026-08-31T22:00:00.000Z",
+      end: "2026-09-01T22:00:00.000Z",
+      sessionEnd: "2026-09-02T04:00:00.000Z",
+    });
+  });
+
+  it("uses the UTC calendar day of the noon sentinel, so a +14 zone keeps the day it was picked for", () => {
+    expect(iso(eventDayWindow({ date: day("2026-10-03"), ...noHours, timezone: "Pacific/Kiritimati" }))).toEqual({
+      start: "2026-10-02T10:00:00.000Z",
+      end: "2026-10-03T10:00:00.000Z",
+      sessionEnd: "2026-10-03T16:00:00.000Z",
+    });
+  });
+
+  it("follows local midnight on a 23 hour spring-forward day (Warsaw, 2026-03-29)", () => {
+    const w = eventDayWindow({ date: day("2026-03-29"), ...noHours, timezone: "Europe/Warsaw" });
+    expect(iso(w)).toEqual({
+      start: "2026-03-28T23:00:00.000Z",
+      end: "2026-03-29T22:00:00.000Z",
+      sessionEnd: "2026-03-30T04:00:00.000Z",
+    });
+    expect((w!.end.getTime() - w!.start.getTime()) / 3_600_000).toBe(23);
+  });
+
+  it("follows local midnight on a 25 hour fall-back day (Warsaw, 2026-10-25)", () => {
+    const w = eventDayWindow({ date: day("2026-10-25"), ...noHours, timezone: "Europe/Warsaw" });
+    expect(iso(w)).toEqual({
+      start: "2026-10-24T22:00:00.000Z",
+      end: "2026-10-25T23:00:00.000Z",
+      sessionEnd: "2026-10-26T05:00:00.000Z",
+    });
+    expect((w!.end.getTime() - w!.start.getTime()) / 3_600_000).toBe(25);
+  });
+
+  it("handles a zone west of UTC across its own spring-forward day (New York, 2026-03-08)", () => {
+    expect(iso(eventDayWindow({ date: day("2026-03-08"), ...noHours, timezone: "America/New_York" }))).toEqual({
+      start: "2026-03-08T05:00:00.000Z",
+      end: "2026-03-09T04:00:00.000Z",
+      sessionEnd: "2026-03-09T10:00:00.000Z",
+    });
+  });
+
+  it("lets an overnight event that ends after 06:00 keep its own end as the session end", () => {
+    const w = eventDayWindow({ date: day("2026-09-01"), eventHoursStart: "20:00", eventHoursEnd: "08:00", timezone: "UTC" });
+    expect(w!.sessionEnd.toISOString()).toBe("2026-09-02T08:00:00.000Z");
+    // An overnight event ending before 06:00 is covered by the 06:00 grace.
+    const early = eventDayWindow({ date: day("2026-09-01"), eventHoursStart: "20:00", eventHoursEnd: "02:00", timezone: "UTC" });
+    expect(early!.sessionEnd.toISOString()).toBe("2026-09-02T06:00:00.000Z");
+  });
+
+  it("keeps accepting sign-ins after local midnight while an overnight event is still running", () => {
+    // Ends 08:00 the next morning: a sign-in at 01:00 still counts.
+    const late = eventDayWindow({ date: day("2026-09-01"), eventHoursStart: "20:00", eventHoursEnd: "08:00", timezone: "UTC" });
+    expect(late!.end.toISOString()).toBe("2026-09-02T08:00:00.000Z");
+    // Ends 02:00: sign-ins count until then, a little past midnight.
+    const early = eventDayWindow({ date: day("2026-09-01"), eventHoursStart: "20:00", eventHoursEnd: "02:00", timezone: "UTC" });
+    expect(early!.end.toISOString()).toBe("2026-09-02T02:00:00.000Z");
+    // Ends the same evening, or has no hours: the next local midnight, exactly as before.
+    const evening = eventDayWindow({ date: day("2026-09-01"), eventHoursStart: "10:00", eventHoursEnd: "18:00", timezone: "UTC" });
+    expect(evening!.end.toISOString()).toBe("2026-09-02T00:00:00.000Z");
+  });
+
+  it("fails closed instead of falling back to UTC for an unreadable timezone or date", () => {
+    expect(eventDayWindow({ date: day("2026-09-01"), ...noHours, timezone: "Not/AZone" })).toBeNull();
+    expect(eventDayWindow({ date: new Date(Number.NaN), ...noHours, timezone: "UTC" })).toBeNull();
   });
 });

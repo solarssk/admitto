@@ -106,6 +106,70 @@ async function runOidcCallback(startQuery = ""): Promise<Response> {
   );
 }
 
+/** The full Set-Cookie line (attributes included) of the session cookie, which extractSessionCookie
+ * above deliberately cuts down to name=value. */
+function sessionSetCookieLine(res: Response): string | undefined {
+  return res.headers.getSetCookie().find((line) => line.startsWith(`${SESSION_COOKIE_NAME}=`));
+}
+
+/** runOidcCallback with `Date` frozen at `instant`, so the session's "now" is exactly the instant
+ * the test built its event date from and a run that crosses UTC midnight cannot move the event
+ * day. Only Date is faked: the HTTP round trips, Prisma and the DB's own NOW() keep real time, so
+ * `instant` must be (close to) the real current time for the OIDC state row to still be valid. */
+async function runOidcCallbackAt(instant: Date): Promise<Response> {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(instant);
+  try {
+    return await runOidcCallback();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+const EVENT_DAY_ORG_ID = "oidc-event-day-org";
+const EVENT_DAY_EVENT_ID = "oidc-event-day-event";
+
+/** Noon UTC of `instant`'s UTC calendar day, `offsetDays` later: what Event.date stores. */
+function eventDateSentinel(instant: Date, offsetDays = 0): Date {
+  return new Date(
+    Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate() + offsetDays, 12),
+  );
+}
+
+/** Like withOidcLinkedUser for an operator assigned to a real UTC event on `eventDate`, the
+ * account an event-day session is granted to. */
+async function withEventOperator(
+  email: string,
+  eventDate: Date,
+  run: (userId: string) => Promise<void>,
+): Promise<void> {
+  await prisma.event.deleteMany({ where: { id: EVENT_DAY_EVENT_ID } });
+  await prisma.organization.deleteMany({ where: { id: EVENT_DAY_ORG_ID } });
+  await prisma.organization.create({
+    data: { id: EVENT_DAY_ORG_ID, name: "OIDC Event Day Org", slug: "oidc-event-day-org" },
+  });
+  await prisma.event.create({
+    data: {
+      id: EVENT_DAY_EVENT_ID,
+      organization_id: EVENT_DAY_ORG_ID,
+      title: "OIDC Event Day Event",
+      slug: "oidc-event-day-event",
+      date: eventDate,
+      timezone: "UTC",
+    },
+  });
+  try {
+    await withOidcLinkedUser(
+      email,
+      { role: "operator", scope_type: "event", scope_id: EVENT_DAY_EVENT_ID },
+      async () => run((await prisma.user.findUniqueOrThrow({ where: { email } })).id),
+    );
+  } finally {
+    await prisma.event.deleteMany({ where: { id: EVENT_DAY_EVENT_ID } });
+    await prisma.organization.deleteMany({ where: { id: EVENT_DAY_ORG_ID } });
+  }
+}
+
 async function withOidcLinkedUser(
   email: string,
   assignment: { role: string; scope_type: string; scope_id: string | null },
@@ -513,6 +577,55 @@ describe("oidc routes", () => {
       headers: { Cookie: sessionCookie! },
     });
     expect(me.status).toBe(200);
+  });
+
+  it("callback persists the session cookie for an operator signing in on the day of an assigned event", async () => {
+    const instant = new Date();
+    await withEventOperator("oidc-event-day-operator@example.com", eventDateSentinel(instant), async (userId) => {
+      const res = await runOidcCallbackAt(instant);
+      expect(res.status).toBe(302);
+
+      // UTC event without event hours: the session runs until 06:00 UTC the next morning.
+      const sessionEnd = eventDateSentinel(instant, 1);
+      sessionEnd.setUTCHours(6);
+      const maxAge = Math.floor((sessionEnd.getTime() - instant.getTime()) / 1000);
+      expect(sessionSetCookieLine(res)).toContain(`Max-Age=${maxAge}`);
+
+      const session = await prisma.session.findFirstOrThrow({ where: { user_id: userId } });
+      expect(session.remember_me).toBe(true);
+      expect(session.expires_at).toEqual(sessionEnd);
+    });
+  });
+
+  it("callback keeps a browser-session cookie for an operator whose assigned event is not today", async () => {
+    const instant = new Date();
+    await withEventOperator("oidc-event-day-yesterday@example.com", eventDateSentinel(instant, -1), async (userId) => {
+      const res = await runOidcCallbackAt(instant);
+      expect(res.status).toBe(302);
+
+      const cookie = sessionSetCookieLine(res);
+      expect(cookie).toBeDefined();
+      expect(cookie).not.toContain("Max-Age");
+      const session = await prisma.session.findFirstOrThrow({ where: { user_id: userId } });
+      expect(session.remember_me).toBe(false);
+    });
+  });
+
+  it("callback keeps a browser-session cookie for an administrator even on the day of an assigned event", async () => {
+    const instant = new Date();
+    await withEventOperator("oidc-event-day-admin@example.com", eventDateSentinel(instant), async (userId) => {
+      await prisma.roleAssignment.create({
+        data: { user_id: userId, role: "admin", scope_type: "organization", scope_id: EVENT_DAY_ORG_ID },
+      });
+      const res = await runOidcCallbackAt(instant);
+      expect(res.status).toBe(302);
+
+      const cookie = sessionSetCookieLine(res);
+      expect(cookie).toBeDefined();
+      expect(cookie).not.toContain("Max-Age");
+      const session = await prisma.session.findFirstOrThrow({ where: { user_id: userId } });
+      expect(session.remember_me).toBe(false);
+    });
   });
 
   it("successful link flow creates a new ExternalIdentity for an already-logged-in user and fires account.auth_factor.changed (bot review finding, PR #1304)", async () => {

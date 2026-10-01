@@ -11,7 +11,7 @@ import {
   SETTING_SESSION_IDLE_TIMEOUT,
   SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
-  SETTING_OPERATOR_REMEMBER_ME_DAYS,
+  SETTING_OPERATOR_EVENT_DAY_SESSIONS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_INSTANCE_URL,
   SETTING_CSP_TRUSTED_ORIGINS,
@@ -40,7 +40,7 @@ const MANAGED_SETTING_KEYS = [
   SETTING_SESSION_IDLE_TIMEOUT,
   SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
-  SETTING_OPERATOR_REMEMBER_ME_DAYS,
+  SETTING_OPERATOR_EVENT_DAY_SESSIONS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_INSTANCE_URL,
   SETTING_CSP_TRUSTED_ORIGINS,
@@ -153,7 +153,7 @@ type SecurityDto = {
   session_idle_timeout_ms: SettingField<number>;
   operator_session_idle_timeout_ms: SettingField<number>;
   trusted_device_days: SettingField<number>;
-  operator_remember_me_days: SettingField<number>;
+  operator_event_day_sessions: SettingField<boolean>;
   mfa_required_roles: SettingField<string[]>;
   instance_url: SettingField<string | null>;
   csp_trusted_origins: SettingField<string[]>;
@@ -174,7 +174,7 @@ describe("GET /api/admin/system-settings", () => {
     expect(body.session_idle_timeout_ms.source).toBe("default");
     expect(body.operator_session_idle_timeout_ms.source).toBe("default");
     expect(body.trusted_device_days.source).toBe("default");
-    expect(body.operator_remember_me_days).toEqual({ value: 3, source: "default" });
+    expect(body.operator_event_day_sessions).toEqual({ value: true, source: "default" });
     expect(body.mfa_required_roles.source).toBe("default");
     expect(body.instance_url.source).toBe("default");
     expect(body.instance_url.value).toBeNull();
@@ -536,56 +536,91 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(res.status).toBe(403);
   });
 
-  it("updates operator_remember_me_days and source becomes db", async () => {
+  it("turns operator_event_day_sessions off, persists it, and source becomes db", async () => {
     const res = await app.request("/api/admin/system-settings", {
       method: "PATCH",
       headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ operator_remember_me_days: 7 }),
+      body: JSON.stringify({ operator_event_day_sessions: false }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as SecurityDto;
-    expect(body.operator_remember_me_days).toEqual({ value: 7, source: "db" });
+    expect(((await res.json()) as SecurityDto).operator_event_day_sessions).toEqual({
+      value: false,
+      source: "db",
+    });
+
+    const getRes = await app.request("/api/admin/system-settings", {
+      headers: { Cookie: superCookie },
+    });
+    expect(((await getRes.json()) as SecurityDto).operator_event_day_sessions).toEqual({
+      value: false,
+      source: "db",
+    });
   });
 
-  it("accepts operator_remember_me_days=0 (option off) and the 14 day maximum", async () => {
-    for (const days of [0, 14]) {
-      const res = await app.request("/api/admin/system-settings", {
-        method: "PATCH",
-        headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
-        body: JSON.stringify({ operator_remember_me_days: days }),
-      });
-      expect(res.status).toBe(200);
-      expect(((await res.json()) as SecurityDto).operator_remember_me_days.value).toBe(days);
-    }
+  it("resets operator_event_day_sessions to the default (on) when patched with null", async () => {
+    const headers = { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin };
+    await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ operator_event_day_sessions: false }),
+    });
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ operator_event_day_sessions: null }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as SecurityDto).operator_event_day_sessions).toEqual({
+      value: true,
+      source: "default",
+    });
   });
 
-  it.each([-1, 15, 2.5, "3"])("rejects operator_remember_me_days=%s", async (bad) => {
+  it.each(["true", 1, "yes", 3])("rejects non-boolean operator_event_day_sessions=%s", async (bad) => {
     const res = await app.request("/api/admin/system-settings", {
       method: "PATCH",
       headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ operator_remember_me_days: bad }),
+      body: JSON.stringify({ operator_event_day_sessions: bad }),
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toBe("validation_error");
   });
 
-  it("resets operator_remember_me_days to the default when patched with null", async () => {
-    const headers = { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin };
-    await app.request("/api/admin/system-settings", {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({ operator_remember_me_days: 9 }),
-    });
+  it("rejects the removed operator_remember_me_days key (strict schema)", async () => {
     const res = await app.request("/api/admin/system-settings", {
       method: "PATCH",
-      headers,
-      body: JSON.stringify({ operator_remember_me_days: null }),
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ operator_remember_me_days: 7 }),
     });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as SecurityDto).operator_remember_me_days).toEqual({
-      value: 3,
-      source: "default",
-    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("validation_error");
+  });
+
+  it("env-locked operator_event_day_sessions reports source=env and rejects a PATCH", async () => {
+    const prev = process.env.OPERATOR_EVENT_DAY_SESSIONS;
+    process.env.OPERATOR_EVENT_DAY_SESSIONS = "false";
+    try {
+      const getRes = await app.request("/api/admin/system-settings", {
+        headers: { Cookie: superCookie },
+      });
+      expect(((await getRes.json()) as SecurityDto).operator_event_day_sessions).toEqual({
+        value: false,
+        source: "env",
+      });
+
+      const res = await app.request("/api/admin/system-settings", {
+        method: "PATCH",
+        headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ operator_event_day_sessions: true }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; field: string };
+      expect(body.error).toBe("managed by environment");
+      expect(body.field).toBe("operator_event_day_sessions");
+    } finally {
+      if (prev === undefined) delete process.env.OPERATOR_EVENT_DAY_SESSIONS;
+      else process.env.OPERATOR_EVENT_DAY_SESSIONS = prev;
+    }
   });
 
   it("accepts trusted_device_days=0 (feature: disabled)", async () => {

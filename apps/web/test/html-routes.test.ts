@@ -255,24 +255,16 @@ describe("html-routes", () => {
     expect(res.headers.get("location")).toBe("/change-password");
   });
 
-  it("shows the Keep me signed in checkbox by default", async () => {
+  // "Keep me signed in" is gone: an operator-only account that signs in on an event day gets a
+  // longer session automatically, so the form neither offers nor reads any option for it.
+  it("shows no Keep me signed in option on the sign-in page", async () => {
     const html = await (await makeApp().request("/login")).text();
-    expect(html).toContain('name="remember_me"');
-    expect(html).toContain("Keep me signed in");
+    expect(html).not.toContain("remember_me");
+    expect(html).not.toContain("Keep me signed in");
+    expect(html).not.toContain("shared event device");
   });
 
-  it("hides the Keep me signed in checkbox when operator_remember_me_days is 0", async () => {
-    const db = {
-      systemSettings: {
-        findUnique: async ({ where }: { where: { key: string } }) =>
-          where.key === "operator_remember_me_days" ? { value_json: "0" } : null,
-      },
-    } as unknown as PrismaClient;
-    const html = await (await makeApp(db).request("/login")).text();
-    expect(html).not.toContain('name="remember_me"');
-  });
-
-  it("keeps the checkbox on the form re-rendered after a failed sign-in", async () => {
+  it("shows no Keep me signed in option on the form re-rendered after a failed sign-in", async () => {
     mockLogin.mockResolvedValue({ ok: false, reason: "invalid_credentials" });
     const res = await makeApp().request("/login", {
       method: "POST",
@@ -280,30 +272,50 @@ describe("html-routes", () => {
       body: "email=ops%40example.com&password=bad",
     });
     expect(res.status).toBe(401);
-    expect(await res.text()).toContain('name="remember_me"');
+    const html = await res.text();
+    expect(html).not.toContain("remember_me");
+    expect(html).not.toContain("Keep me signed in");
+    expect(html).not.toContain("shared event device");
   });
 
-  it("passes rememberMe to login and makes the session cookie persistent when the box is ticked", async () => {
+  it("passes no rememberMe to login, even when a stale form still posts remember_me", async () => {
     mockLogin.mockResolvedValue({
       ok: true,
       next: LOGIN_NEXT.COMPLETE,
       rawToken: "tok",
       userId: "u1",
       sessionId: "s1",
-      cookieMaxAgeSeconds: 259200,
     } as Awaited<ReturnType<typeof login>>);
-    const res = await makeApp().request("/login", {
+    await makeApp().request("/login", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "email=ops%40example.com&password=good-password&remember_me=1",
       redirect: "manual",
     });
-    expect(mockLogin).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ rememberMe: true }));
-    const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
-    expect(sessionCookie).toContain("Max-Age=259200");
+    expect(mockLogin).toHaveBeenCalledTimes(1);
+    expect(mockLogin.mock.lastCall?.[1]).not.toHaveProperty("rememberMe");
   });
 
-  it("keeps a browser-session cookie and rememberMe false when the box is not ticked", async () => {
+  it("makes the session cookie persistent when login reports an event-day session", async () => {
+    mockLogin.mockResolvedValue({
+      ok: true,
+      next: LOGIN_NEXT.COMPLETE,
+      rawToken: "tok",
+      userId: "u1",
+      sessionId: "s1",
+      cookieMaxAgeSeconds: 3600,
+    } as Awaited<ReturnType<typeof login>>);
+    const res = await makeApp().request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "email=ops%40example.com&password=good-password",
+      redirect: "manual",
+    });
+    const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    expect(sessionCookie).toContain("Max-Age=3600");
+  });
+
+  it("keeps a browser-session cookie when login reports no cookie lifetime", async () => {
     mockLogin.mockResolvedValue({
       ok: true,
       next: LOGIN_NEXT.COMPLETE,
@@ -317,8 +329,8 @@ describe("html-routes", () => {
       body: "email=ops%40example.com&password=good-password",
       redirect: "manual",
     });
-    expect(mockLogin).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ rememberMe: false }));
     const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    expect(sessionCookie).toBeDefined();
     expect(sessionCookie).not.toContain("Max-Age");
   });
 

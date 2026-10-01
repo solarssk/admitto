@@ -50,6 +50,43 @@ export function eventEndsAtUtc(event: EventEndInput): Date {
   }
 }
 
+/** Local wall-clock time on the morning after the event day until which a session granted on the
+ * event day may keep running, so an event that finishes late does not sign the tablet out
+ * mid-shift. */
+export const EVENT_DAY_GRACE_LOCAL_TIME = "06:00";
+
+/** The window in which a sign-in counts as "on the event day", plus the instant a session granted
+ * inside it should end. `start` (local midnight) is inclusive; `end` is exclusive and is the later
+ * of the next local midnight and the event's own end, so an overnight event still covers a
+ * sign-in at 01:00 the next morning. */
+export interface EventDayWindow {
+  start: Date;
+  end: Date;
+  sessionEnd: Date;
+}
+
+/** The event's own local calendar day, read the same way as eventEndsAtLocal (UTC components of
+ * the noon-UTC `date` sentinel), with every bound converted from wall-clock time so a 23 or 25
+ * hour day on a daylight-saving change still runs from local midnight to local midnight.
+ * `sessionEnd` is the later of 06:00 the next morning and the event's own end (an overnight event
+ * can end after 06:00). Null when the date or the timezone cannot be read: unlike eventEndsAtUtc
+ * this never falls back to UTC, because it gates a longer-lived session and must fail closed. */
+export function eventDayWindow(event: EventEndInput): EventDayWindow | null {
+  if (Number.isNaN(event.date.getTime())) return null;
+  try {
+    const day = utcDay(event.date, 0);
+    const nextDay = utcDay(event.date, 1);
+    const start = new Date(zonedWallClockToUtcIso(day, "00:00:00.000", event.timezone));
+    const end = new Date(zonedWallClockToUtcIso(nextDay, "00:00:00.000", event.timezone));
+    const grace = new Date(zonedWallClockToUtcIso(nextDay, `${EVENT_DAY_GRACE_LOCAL_TIME}:00.000`, event.timezone));
+    const over = eventEndsAtUtc(event);
+    const later = (a: Date, b: Date) => (a.getTime() > b.getTime() ? a : b);
+    return { start, end: later(end, over), sessionEnd: later(over, grace) };
+  } catch {
+    return null;
+  }
+}
+
 /** True once an attendee may no longer add a wallet pass for this event: it is archived, or it is
  * over (see eventEndsAtUtc). Shared by the public Add to Wallet route, the ticket page (which
  * hides the buttons) and the server-side Restore gate, so all three agree on one moment. */

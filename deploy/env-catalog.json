@@ -741,13 +741,13 @@
       "summary": "MFA trusted-device cookie lifetime in days."
     },
     {
-      "name": "OPERATOR_REMEMBER_ME_DAYS",
+      "name": "OPERATOR_EVENT_DAY_SESSIONS",
       "group": "sessions",
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
       "ui": "Settings → Security (preferred); env locks UI",
-      "summary": "Lifetime in days (0 to 14, default 3) of an operator session started with Keep me signed in; 0 hides the option."
+      "summary": "Whether an operator-only account stays signed in, with no inactivity timeout, until the day of an event it is assigned to is over (true, false, 1 or 0; default true)."
     },
     {
       "name": "MFA_REQUIRED_ROLES",

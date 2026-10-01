@@ -999,8 +999,10 @@ model Session {
   timezone         String?
   created_at       DateTime          @default(now())
   last_seen_at     DateTime          @default(now())
-  // Started with "Keep me signed in" (operators only). Read again when a partial session is promoted
-  // to full, so the longer TTL and idle window survive the MFA / forced-password-change steps.
+  // True for an event-day session (operator-only account signing in on the day of an event it is
+  // assigned to): expires at the end of that day and has no inactivity window. Decided again when a
+  // partial session is promoted to full. The column keeps the name it had when it was set by a
+  // sign-in checkbox.
   remember_me      Boolean           @default(false)
   expires_at       DateTime
   revoked_at       DateTime?

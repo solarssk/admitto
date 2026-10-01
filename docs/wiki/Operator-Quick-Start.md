@@ -12,7 +12,7 @@ Prepare your device, scan an attendee ticket, and respond safely to the result s
 
 Sign in with your own account and open the assigned event. Confirm the event title and date with an Organisation Admin. Prepare the camera or scanner and scan one approved synthetic test ticket.
 
-On a check-in tablet that stays at the entrance, tick **Keep me signed in** on the sign-in page so the session survives breaks and closing the app. It works only when you sign in with your email and password, not with a passkey or single sign-on. It keeps you signed in for a few days (3 by default, up to 14; your instance administrator sets the length). Only tick it on a device that stays with the event team, and select **Sign out** when the event ends. If you do not see the checkbox, your instance administrator has turned it off.
+On the day of your event, Admitto keeps you signed in by itself (unless your instance administrator has turned this off), even when the tablet sits idle or you close the app. Sign in on that day: signing in the evening before does not count. It lasts until 06:00 the next morning, or until the event ends if that is later. Select **Sign out** when the event ends.
 
 ## Steps
 
@@ -44,7 +44,7 @@ A successful admission updates the attendee and event reports immediately when c
 
 ## Common problems
 
-- **You are asked to sign in again during the event:** without **Keep me signed in**, a session ends by default after two hours without activity or twelve hours in total. Sign in again and tick the box on a shared event device.
+- **You are asked to sign in again during the event:** you stay signed in only if you signed in on the day of your event and this feature is on. Sign in again, and ask an Organisation Admin to check the event date and timezone, or your instance administrator to check that the feature is turned on.
 - **The camera does not scan:** check permission and lighting, or use the configured scanner.
 - **The result is already checked in, revoked, or invalid:** pause and follow [Scanning Tickets and Results](Scanning-Tickets-and-Results).
 - **Manual lookup is not available:** it has not been enabled for this event; ask an Organisation Admin.

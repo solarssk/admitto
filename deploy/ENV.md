@@ -146,7 +146,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | optional | app | Settings → Security (preferred); env locks UI | no | Idle timeout for elevated sessions (ms). Must not exceed admin TTL. |
 | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | optional | app | Settings → Security (preferred); env locks UI | no | Idle timeout for operator sessions (ms). |
 | `TRUSTED_DEVICE_DAYS` | optional | app | Settings → Security (preferred); env locks UI | no | MFA trusted-device cookie lifetime in days. |
-| `OPERATOR_REMEMBER_ME_DAYS` | optional | app | Settings → Security (preferred); env locks UI | no | Lifetime in days (0 to 14, default 3) of an operator session started with Keep me signed in; 0 hides the option. |
+| `OPERATOR_EVENT_DAY_SESSIONS` | optional | app | Settings → Security (preferred); env locks UI | no | Whether an operator-only account stays signed in, with no inactivity timeout, until the day of an event it is assigned to is over (true, false, 1 or 0; default true). |
 | `MFA_REQUIRED_ROLES` | optional | app | Settings → Security (preferred); env locks UI | no | Comma-separated roles that must enroll MFA (default admin,superadmin). |
 | `WEBAUTHN_ENABLED` | optional | app | Settings → Security (preferred); env locks UI | no | Whether passkey/security-key (WebAuthn) MFA is offered (default true). |
 | `CSP_TRUSTED_ORIGINS` | optional | app | Settings → Security (preferred); env locks UI | no | JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages. |
