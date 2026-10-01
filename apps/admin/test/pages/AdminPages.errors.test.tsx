@@ -267,6 +267,20 @@ describe("EventsPickerPage operator errors", () => {
     expect(await screen.findByText("Could not load events.")).toBeTruthy();
     expect(screen.queryByText("network transport detail")).toBeNull();
   });
+
+  it("announces a failed events load as an alert and offers a Retry that loads them again", async () => {
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network transport detail")).mockResolvedValueOnce([]);
+    renderEventsPicker();
+
+    expect(await screen.findByText("Could not load events")).toBeTruthy();
+    expect(screen.getByText("Could not load events").closest("[role='alert']")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("No events yet")).toBeTruthy();
+    expect(screen.queryByText("Could not load events")).toBeNull();
+    expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("EventSettingsPage operator errors", () => {
@@ -422,6 +436,7 @@ describe("UsersPage operator errors", () => {
     await waitFor(() => {
       expect(screen.getByText(/Could not load users/)).toBeTruthy();
     });
+    expect(screen.getByText(/Could not load users/).closest("[role='alert']")).not.toBeNull();
   });
 
 });
@@ -467,6 +482,7 @@ describe("RoleAssignmentsTab operator errors", () => {
     await waitFor(() => {
       expect(screen.getByText(/Could not load role assignments/)).toBeTruthy();
     });
+    expect(screen.getByText(/Could not load role assignments/).closest("[role='alert']")).not.toBeNull();
   });
 });
 

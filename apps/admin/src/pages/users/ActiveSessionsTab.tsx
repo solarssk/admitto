@@ -242,7 +242,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         {loading && showLoading && <p className="sessions-status">Loading…</p>}
 
         {!loading && error && (
-          <div className="sessions-status">
+          <div className="sessions-status" role="alert">
             <p>{error}</p>
             <Button type="button" variant="secondary" onClick={() => void load()}>
               Retry

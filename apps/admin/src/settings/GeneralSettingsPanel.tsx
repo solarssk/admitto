@@ -217,6 +217,7 @@ export function GeneralSettingsPanel() {
     return (
       <Card title="Instance URL">
         <EmptyState
+          variant="error"
           title="Could not load organisation settings"
           description={loadError}
           action={

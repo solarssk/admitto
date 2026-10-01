@@ -140,6 +140,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     return (
       <div className="shell-loading" style={{ padding: "2rem" }}>
         <EmptyState
+          variant="error"
           title="Could not load session"
           description={authError}
           action={

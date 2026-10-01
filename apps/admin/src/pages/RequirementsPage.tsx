@@ -434,6 +434,7 @@ export function RequirementsPage() {
       />
       {loadError && !loading ? (
         <EmptyState
+          variant="error"
           title={accessDenied ? "You do not have access to this event" : "Could not load requirements"}
           description={loadError}
           action={

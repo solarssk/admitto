@@ -683,6 +683,7 @@ function LogListContent({
   if (error) {
     return (
       <EmptyState
+        variant="error"
         title={errorTitle}
         description={error}
         action={

@@ -122,6 +122,7 @@ export function CheckInBehaviourPanel({
   if (loadError) {
     return (
       <EmptyState
+        variant="error"
         title="Could not load check-in behaviour"
         description={loadError}
         action={

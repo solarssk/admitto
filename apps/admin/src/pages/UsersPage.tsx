@@ -380,7 +380,7 @@ export function UsersPage() {
           {loading && showLoadingSkeleton && <StaffUsersSkeleton />}
 
           {!loading && error && (
-            <div className="users-page__status">
+            <div className="users-page__status" role="alert">
               <p>{error}</p>
               <Button type="button" variant="secondary" onClick={() => void load()}>
                 Retry

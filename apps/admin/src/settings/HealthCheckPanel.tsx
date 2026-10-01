@@ -550,6 +550,7 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
     return (
       <div className="settings-sections">
         <EmptyState
+          variant="error"
           title="Could not load health checks"
           description={error ?? "Could not load health checks."}
           action={

@@ -406,6 +406,7 @@ export function NotificationsPanel() {
   if (loadError && !data) {
     return (
       <EmptyState
+        variant="error"
         title="Could not load notification settings"
         description={loadError}
         action={

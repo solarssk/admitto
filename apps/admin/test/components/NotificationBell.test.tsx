@@ -206,6 +206,7 @@ describe("NotificationBell dropdown", () => {
     await act(async () => {});
     openBell();
     expect(await screen.findByText("Could not load notifications.")).toBeTruthy();
+    expect(screen.getByText("Could not load notifications.").closest("[role='alert']")).not.toBeNull();
 
     fetchAccountNotifications.mockResolvedValueOnce({ notifications: [], unread_count: 0 });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

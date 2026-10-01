@@ -122,6 +122,7 @@ describe("SecurityPanel operator errors", () => {
     expect(document.querySelector(".sessions-status p")?.textContent).toMatch(
       /Could not load security settings/,
     );
+    expect(document.querySelector(".sessions-status")?.getAttribute("role")).toBe("alert");
   });
 
   it("toasts on save failure", async () => {

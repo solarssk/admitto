@@ -90,7 +90,7 @@ function renderConsoleBody(
   }
   if (error) {
     return (
-      <div className="system-log-panel__console-empty system-log-panel__console-empty--error">
+      <div className="system-log-panel__console-empty system-log-panel__console-empty--error" role="alert">
         <p>{error}</p>
         <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
           Retry

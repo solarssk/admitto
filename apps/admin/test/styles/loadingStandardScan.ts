@@ -5,7 +5,14 @@ import { fileURLToPath } from "node:url";
 const ADMIN_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../src");
 const REPO_ROOT = join(ADMIN_SRC, "../../..");
 
-export const RULES = ["hand-rolled-spinner-css", "bare-loading-text", "busy-label-swap"] as const;
+export const RULES = [
+  "hand-rolled-spinner-css",
+  "bare-loading-text",
+  "busy-label-swap",
+  "error-state-not-an-alert",
+  "retry-outside-an-alert",
+  "raw-button-busy-disabled",
+] as const;
 export type Rule = (typeof RULES)[number];
 export type Counts = Record<string, number>;
 
@@ -17,7 +24,16 @@ export const RULE_HINTS: Record<Rule, string> = {
     'Do not render "Loading…" text. Use Skeleton when the shape is known, SectionLoader (once per view) when it is not, PageLoader only for a whole screen, all behind useLoadingGate. See AGENTS.md "Loading and busy states".',
   "busy-label-swap":
     'Do not swap a button label for "Saving…" by hand. Use <Button loading loadingLabel="Saving…">, which keeps the width and disables the button.',
+  "error-state-not-an-alert":
+    'A failed load shown in an <EmptyState> (a "Could not load …" title, or a Retry) needs variant="error", so assistive tech announces it as an alert like every other failed load.',
+  "retry-outside-an-alert":
+    'A Retry for a failed load belongs in the `action` of an <EmptyState variant="error"> or of an element that has role="alert" itself (a <Notice> leaves its role to the caller), or inside an element with role="alert", so the failure is announced.',
+  "raw-button-busy-disabled":
+    "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <MoreActionsMenuItem loading>), which stays focusable.",
 };
+
+/** Files that implement the busy contract itself, so they may name a busy flag next to `disabled`. */
+const BUSY_DISABLED_KIT_FILES = new Set(["apps/admin/src/components/MoreActionsMenuItem.tsx"]);
 
 function walk(dir: string, exts: RegExp, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -119,6 +135,146 @@ function stripJsxProp(source: string, prop: string): string {
  */
 const COMPLIANT_PROPS = ["aria-label", "loadingLabel"];
 
+/** Index just past the `>` that closes the JSX opening tag starting at `start` (braces and quotes are balanced). */
+/** Index just past the `>` that ends the opening tag starting at `start`, or -1 when the tag never ends. */
+function jsxOpeningTagEnd(source: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < source.length; i++) {
+    const c = source[i];
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (depth === 0 && (c === '"' || c === "'")) i = source.indexOf(c, i + 1);
+    else if (c === ">" && depth === 0 && source[i - 1] !== "=") return i + 1;
+    if (i === -1) break;
+  }
+  return -1;
+}
+
+/** The opening tags of one JSX element name, as written (so `<Button` does not match `<ButtonGroup`). */
+interface TagSpan {
+  name: string;
+  start: number;
+  end: number;
+  tag: string;
+}
+/**
+ * Every opening tag whose name matches `namePattern` (a regex source), with where it starts and ends, so a caller
+ * can ask what sits inside it. A tag that never ends (a stray quote swallowing the rest of the file) is skipped
+ * instead of excusing everything after it.
+ */
+function tagSpans(source: string, namePattern: string): TagSpan[] {
+  const spans: TagSpan[] = [];
+  for (const match of source.matchAll(new RegExp(`<(${namePattern})(?![\\w.-])`, "g"))) {
+    const end = jsxOpeningTagEnd(source, match.index + match[0].length);
+    if (end === -1) continue; // ran to the end of the file: not a tag that ends
+    spans.push({ name: match[1]!, start: match.index, end, tag: source.slice(match.index, end) });
+  }
+  return spans;
+}
+function openingTags(source: string, name: string): string[] {
+  return tagSpans(source, name).map((span) => span.tag);
+}
+
+// A load error: an EmptyState that offers a Retry, or whose title says "Could not ...".
+const COULD_NOT_TITLE = /\btitle=(?:"Could not\b|\{[^}]*"Could not\b)/;
+// Words a busy flag is named with, as part of any identifier (`bulkSendBusy`, `isSaving`, `exporting`).
+const BUSY_WORDS = /busy|saving|loading|submitting|pending|sending|working|reloading|revoking|deleting/i;
+// A busy flag is also named after what is happening, in any verb: `markingAll`, `clearing`, `isExporting`. Each camelCase
+// word of the expression that ends in -ing counts, except the ones that are plain nouns or prepositions.
+const NOT_A_BUSY_WORD = new Set(["string", "thing", "nothing", "something", "anything", "everything", "during", "setting", "building", "warning", "ceiling", "morning", "evening", "sibling", "spring"]);
+function namesABusyFlag(expression: string): boolean {
+  if (BUSY_WORDS.test(expression)) return true;
+  const words = expression.split(/[^A-Za-z]+/).flatMap((chunk) => chunk.split(/(?<=[a-z])(?=[A-Z])/));
+  return words.some((word) => /^[a-z]{3,}ing$/i.test(word) && !NOT_A_BUSY_WORD.has(word.toLowerCase()));
+}
+// How far above a Retry button an alert, an EmptyState or a Notice may sit and still be what shows it.
+// role="alert" as an attribute of its own (not data-role or aria-role), in the spellings JSX allows.
+const ALERT_ROLE_ATTR = /(?<![\w-])role=(?:"alert"|'alert'|\{\s*(?:"alert"|'alert'|`alert`)\s*\})/;
+// A Retry button: the word on its own, at the start of a line or right after a tag or an expression (an icon before it).
+const RETRY_BUTTON_TEXT = /(?:^\s*|[>}]\s*)Retry(?=\s*(?:<|$))/g;
+
+/** EmptyStates that show a failed load but lack `variant="error"`. */
+function countErrorEmptyStatesWithoutVariant(text: string): number {
+  return openingTags(text, "EmptyState").filter((tag) => {
+    const ownProps = stripJsxProp(tag, "action"); // the Retry button has a `variant` of its own
+    const isLoadError = tag.includes("Retry") || COULD_NOT_TITLE.test(ownProps);
+    return isLoadError && !/\bvariant="error"/.test(ownProps);
+  }).length;
+}
+
+/**
+ * The tag with every `name={...}` value dropped except the one of `role`, so a role that sits inside another prop
+ * (`title={<span role="alert">…`) or in the Retry's action is not mistaken for the tag's own role.
+ */
+function ownRoleProps(tag: string): string {
+  let out = "";
+  let cursor = 0;
+  for (const m of tag.matchAll(/(?<![\w-])([\w-]+)=(?=\{)/g)) {
+    if (m.index < cursor || m[1] === "role") continue;
+    const valueStart = m.index + m[0].length;
+    out += tag.slice(cursor, valueStart);
+    cursor = propValueEnd(tag, valueStart);
+  }
+  return out + tag.slice(cursor);
+}
+
+/** True when a `role="alert"` element that has not closed yet encloses the text at `at`. */
+function insideAlertElement(source: string, tags: TagSpan[], at: number): boolean {
+  const selfClosing = (span: TagSpan) => span.tag.trimEnd().endsWith("/>");
+  return tags.some((alert) => {
+    if (alert.end > at || selfClosing(alert) || !ALERT_ROLE_ATTR.test(ownRoleProps(alert.tag))) return false;
+    // Walk the same-named elements between the alert and `at` in order: the alert is still open unless a closing
+    // tag brings the depth back to zero before `at` (a later sibling of the same name must not bring it back).
+    const closing = new RegExp(`</${alert.name.replaceAll(".", "\\.")}\\s*>`, "g");
+    const moves = [
+      ...tags.filter((t) => t.name === alert.name && t.start >= alert.end && t.start < at && !selfClosing(t)).map((t) => ({ at: t.start, by: 1 })),
+      ...[...source.slice(alert.end, at).matchAll(closing)].map((m) => ({ at: alert.end + m.index, by: -1 })),
+    ].sort((a, b) => a.at - b.at);
+    let depth = 1;
+    for (const move of moves) {
+      depth += move.by;
+      if (depth === 0) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Retry buttons for a failed load that nothing announces. A Retry in the props of an EmptyState is left to
+ * error-state-not-an-alert, which requires variant="error" there. Any other Retry needs role="alert" on the element
+ * whose props hold it (a Notice leaves its role to the caller, so the name alone says nothing), or on an element
+ * that has not closed yet around it.
+ */
+function countRetriesOutsideAnAlert(text: string): number {
+  const tags = tagSpans(text, "[A-Za-z][\\w.]*");
+  let count = 0;
+  let lineStart = 0;
+  for (const line of text.split("\n")) {
+    const offset = lineStart;
+    lineStart += line.length + 1;
+    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) {
+      const at = offset + found.index + found[0].length - "Retry".length;
+      // The innermost tag whose own props hold the Retry (its action prop, usually).
+      const owner = tags.findLast((span) => span.start <= at && at < span.end);
+      if (owner?.name === "EmptyState") continue;
+      // The action holds the Retry button itself, so only the tag's own role counts.
+      if (owner && ALERT_ROLE_ATTR.test(ownRoleProps(owner.tag))) continue;
+      if (!insideAlertElement(text, tags, at)) count++;
+    }
+  }
+  return count;
+}
+
+/** Raw `<button>`s whose `disabled` names a busy flag. */
+function countRawButtonsDisabledWhileBusy(text: string): number {
+  return openingTags(text, "button").filter((tag) => {
+    const at = tag.search(/\bdisabled=\{/);
+    if (at === -1) return false;
+    const valueStart = tag.indexOf("{", at);
+    return namesABusyFlag(tag.slice(valueStart, propValueEnd(tag, valueStart)));
+  }).length;
+}
+
 /** Violations of each rule in one source file. `kind` picks the CSS rule or the TS/TSX rules. */
 export function countLoadingViolations(source: string, kind: "css" | "code"): Partial<Record<Rule, number>> {
   const text = stripBlockAndLineComments(source);
@@ -129,20 +285,22 @@ export function countLoadingViolations(source: string, kind: "css" | "code"): Pa
   return {
     "bare-loading-text": (visible.match(LOADING_TEXT) ?? []).length,
     "busy-label-swap": countBusyTernaries(visible),
+    "error-state-not-an-alert": countErrorEmptyStatesWithoutVariant(text),
+    "retry-outside-an-alert": countRetriesOutsideAnAlert(text),
+    "raw-button-busy-disabled": countRawButtonsDisabledWhileBusy(text),
   };
 }
 
 /** Violation counts per rule and per file (path relative to the repo root), over apps/admin/src. */
 export function scanLoadingViolations(): Record<Rule, Counts> {
-  const result: Record<Rule, Counts> = {
-    "hand-rolled-spinner-css": {},
-    "bare-loading-text": {},
-    "busy-label-swap": {},
-  };
+  const result = Object.fromEntries(RULES.map((rule) => [rule, {}])) as Record<Rule, Counts>;
   for (const file of walk(ADMIN_SRC, /\.(css|tsx?)$/)) {
     const rel = relative(REPO_ROOT, file).split(sep).join("/");
     const counts = countLoadingViolations(readFileSync(file, "utf8"), file.endsWith(".css") ? "css" : "code");
-    for (const rule of RULES) bump(result[rule], rel, counts[rule] ?? 0);
+    for (const rule of RULES) {
+      if (rule === "raw-button-busy-disabled" && BUSY_DISABLED_KIT_FILES.has(rel)) continue;
+      bump(result[rule], rel, counts[rule] ?? 0);
+    }
   }
   return result;
 }

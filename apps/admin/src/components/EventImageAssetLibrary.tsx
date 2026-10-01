@@ -413,6 +413,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     if (loadError) {
       return (
         <EmptyState
+          variant="error"
           title="Could not load images"
           description={loadError}
           action={

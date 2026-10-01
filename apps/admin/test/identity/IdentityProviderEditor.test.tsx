@@ -269,6 +269,7 @@ describe("IdentityProviderEditor — edit", () => {
     await waitFor(() => {
       expect(screen.getByText("This provider no longer exists.")).toBeTruthy();
     });
+    expect(screen.getByText("This provider no longer exists.").closest("[role='alert']")).not.toBeNull();
   });
 
   it("re-fetches when navigating from one provider edit URL to another (no stale save)", async () => {
@@ -339,6 +340,7 @@ describe("IdentityProviderEditor — edit", () => {
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByText("Could not load this provider.");
+    expect(screen.getByText("Could not load this provider.").closest("[role='alert']")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByDisplayValue("Google")).toBeTruthy();
   });

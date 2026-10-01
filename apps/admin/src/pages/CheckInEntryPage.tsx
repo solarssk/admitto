@@ -83,6 +83,7 @@ export function CheckInEntryPage() {
     return (
       <div className="at-fade-in">
         <EmptyState
+          variant="error"
           title="Could not load check-in events"
           description={error}
           action={

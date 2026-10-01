@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RULES, RULE_HINTS, scanLoadingViolations, type Counts, type Rule } from "./loadingStandardScan.js";
 
 /**
- * Drift guard for the admin SPA's loading and busy states (AGENTS.md "Loading and busy states").
+ * Drift guard for the admin SPA's loading, busy and failed-load states (AGENTS.md "Admin SPA loading and busy states").
  *
  * This is a ratchet: the table below is every place that still uses an old idiom when the
  * standard was introduced. A file may not gain a violation, and the count for a file may only go
@@ -88,6 +88,19 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/settings/GeneralSettingsPanel.tsx": 1,
     "apps/admin/src/settings/NotificationsPanel.tsx": 1,
     "apps/admin/src/settings/mailTransportFormParts.tsx": 2,
+  },
+  "error-state-not-an-alert": {},
+  "retry-outside-an-alert": {},
+  // Hand-made busy states on a raw <button>, each to move to <Button loading> with the screen that owns it.
+  "raw-button-busy-disabled": {
+    "apps/admin/src/checkin/CameraOverlayItemIssuing.tsx": 1,
+    "apps/admin/src/components/NotificationBell.tsx": 2,
+    "apps/admin/src/pages/AttendeeDetailPage.tsx": 3,
+    "apps/admin/src/pages/CheckInPage.tsx": 2,
+    "apps/admin/src/pages/ImportPage.tsx": 1,
+    "apps/admin/src/pages/ReportsPage.tsx": 1,
+    "apps/admin/src/pages/users/UserEditModal.tsx": 2,
+    "apps/admin/src/settings/LocationSettingsPanel.tsx": 1,
   },
 };
 

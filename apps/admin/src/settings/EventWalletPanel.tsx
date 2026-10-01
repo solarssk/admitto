@@ -272,6 +272,7 @@ function WalletPushHistoryCard({
   if (error) {
     body = (
       <EmptyState
+        variant="error"
         title="Could not load wallet push history"
         description={error}
         action={

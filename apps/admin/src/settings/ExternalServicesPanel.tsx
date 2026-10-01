@@ -359,6 +359,7 @@ export function ExternalServicesPanel() {
   if (loadError && !data) {
     return (
       <EmptyState
+        variant="error"
         title="Could not load external services"
         description={loadError}
         action={

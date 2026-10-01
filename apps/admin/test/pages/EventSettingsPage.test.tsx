@@ -432,6 +432,8 @@ describe("EventSettingsPage unavailable event", () => {
     expect(
       screen.getByText("The event could not be found or you do not have access."),
     ).toBeTruthy();
+    // A page that cannot be shown is announced at once, like a failed load.
+    expect(screen.getByText("Event not found").closest("[role='alert']")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("event overview")).toBeTruthy();

@@ -939,6 +939,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     renderPage();
 
     expect(await screen.findByText("Could not load import history.")).toBeTruthy();
+    expect(screen.getByText("Could not load import history.").closest("[role='alert']")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });

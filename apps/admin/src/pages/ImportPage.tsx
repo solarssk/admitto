@@ -139,7 +139,7 @@ interface ImportHistoryCardProps {
 function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showLoading }: ImportHistoryCardProps) {
   if (error) {
     return (
-      <div className="import-history__error">
+      <div className="import-history__error" role="alert">
         <p className="import-hint">{error}</p>
         <Button variant="secondary" onClick={onRetry}>
           Retry
