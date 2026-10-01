@@ -22,7 +22,7 @@ import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import {
   formatUtcPrimaryTime,
@@ -1430,7 +1430,7 @@ interface LogViewProps {
   exportButton: ReactNode;
   liveButton: ReactNode;
   pollDegraded: boolean;
-  onRetryNow: () => void;
+  onRetryNow: () => Promise<void>;
   listContent: ReactNode;
   loading: boolean;
   error: string | null;
@@ -1477,6 +1477,18 @@ function LogView({
   goToPage,
   totalPages,
 }: Readonly<LogViewProps>) {
+  // Retry now is busy from the click until the reload has answered, and for at least 400ms, so one that fails
+  // again at once still shows it ran. Its own flag, not `loading`: a page or filter change loads too.
+  const [retryingNow, setRetryingNow] = useState(false);
+  const retryBusy = useMinimumBusy(retryingNow);
+  const retryNow = async () => {
+    setRetryingNow(true);
+    try {
+      await onRetryNow();
+    } finally {
+      setRetryingNow(false);
+    }
+  };
   return (
     <>
       <div ref={rootRef} className="audit-log-toolbar">
@@ -1533,11 +1545,18 @@ function LogView({
       </div>
 
       {pollDegraded && (
-        <Notice variant="warning" as="output" className="audit-log-poll-warning">
-          Live updates stopped coming through - the rows below may be out of date.{" "}
-          <button type="button" className="audit-log-poll-warning-retry" onClick={onRetryNow}>
-            Retry now
-          </button>
+        <Notice
+          variant="warning"
+          role="alert"
+          actionBusy={retryBusy}
+          className="audit-log-poll-warning"
+          action={
+            <Button type="button" variant="secondary" size="sm" loading={retryBusy} onClick={() => void retryNow()}>
+              Retry now
+            </Button>
+          }
+        >
+          Live updates stopped coming through - the rows below may be out of date.
         </Notice>
       )}
 
@@ -2058,7 +2077,7 @@ export function AuditLogPanel() {
             exportButton={exportButton}
             liveButton={auditLiveButton}
             pollDegraded={live && pollDegraded}
-            onRetryNow={() => void load()}
+            onRetryNow={() => load()}
             listContent={listContent}
             loading={loading}
             error={error}
@@ -2089,7 +2108,7 @@ export function AuditLogPanel() {
             liveButton={securityLiveButton}
             exportButton={securityExportButton}
             pollDegraded={security.live && security.pollDegraded}
-            onRetryNow={() => void security.reload()}
+            onRetryNow={() => security.reload()}
             listContent={securityListContent}
             loading={security.loading}
             error={security.error}

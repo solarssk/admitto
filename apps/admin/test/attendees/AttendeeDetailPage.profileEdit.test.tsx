@@ -456,6 +456,8 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
       "Someone else updated this attendee. Reload and reapply your edits.",
     );
     expect(staleNotice.closest(".at-notice--warning")).toBeTruthy();
+    // The save shows no toast, so the notice itself is what assistive tech hears.
+    expect(staleNotice.closest('[role="alert"]')).toBeTruthy();
     const reloadButton = (await screen.findByRole("button", { name: "Reload" })) as HTMLButtonElement;
     expect(reloadButton.disabled).toBe(false);
 
@@ -467,6 +469,34 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
         screen.queryByText("Someone else updated this attendee. Reload and reapply your edits."),
       ).toBeNull(),
     );
+  });
+
+  it("announces the stale-write warning again when Reload fails once more, without remounting the Reload button", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(409, "stale", "stale_write"));
+    loadAttendeeDetailData.mockRejectedValueOnce(new Error("network hiccup")); // the automatic reload
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const text = "Someone else updated this attendee. Reload and reapply your edits.";
+    await screen.findByText(text);
+    const reloadButton = await screen.findByRole("button", { name: "Reload" });
+    await waitFor(() => expect(reloadButton.getAttribute("aria-busy")).toBeNull());
+    const messageBefore = screen.getByText(text);
+
+    loadAttendeeDetailData.mockRejectedValueOnce(new Error("still down"));
+    fireEvent.click(reloadButton);
+    expect(reloadButton.getAttribute("aria-busy")).toBe("true");
+    await waitFor(() => expect(reloadButton.getAttribute("aria-busy")).toBeNull());
+
+    // Same text again: a fresh message node is what a live region announces. The button is the same node.
+    expect(screen.getByText(text)).not.toBe(messageBefore);
+    expect(screen.getByRole("button", { name: "Reload" })).toBe(reloadButton);
   });
 
   it("disables Save with no actual changes and never calls the API", async () => {

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
-import { exportAttendees, fetchEventAttendees, makeRow, reportApiError } from "./attendeesPageSetup.js";
+import { exportAttendees, fetchEventAttendees, fetchEventCustomFields, makeRow, reportApiError } from "./attendeesPageSetup.js";
 
 function AttendeeRouteProbe() {
   const { attendeeId } = useParams();
@@ -88,7 +88,49 @@ describe("AttendeesPage load errors", () => {
     }
   });
 
-  it("shows a small inline retryable error next to the Type filter when only the ticket-type catalog fails, without blocking the attendee list (CodeRabbit review)", async () => {
+  /** The one visually hidden alert that is always mounted, which is all that can speak while Filters is closed. */
+  function announcer(): HTMLElement {
+    const found = screen.getAllByRole("alert").find((el) => el.classList.contains("sr-only"));
+    if (!found) throw new Error("no announcer");
+    return found;
+  }
+
+  it("announces a failed ticket-type catalog at page entry, before Filters is ever opened, and the list still shows (CodeRabbit review)", async () => {
+    const { fetchTicketTypes } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    await screen.findByText("Ada");
+    await waitFor(() => expect(announcer().textContent).toBe("Could not load types."));
+    // The failure is not a page-level error: the list is there, and nothing else is an alert.
+    expect(screen.queryByText("Could not load attendees")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("announces a failed custom-field catalog and a failed item catalog at page entry too, in one message", async () => {
+    const { fetchEventItems } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
+    fetchEventCustomFields.mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    await screen.findByText("Ada");
+    await waitFor(() => expect(announcer().textContent).toBe("Could not load custom fields. Could not load items."));
+  });
+
+  it("says nothing while every catalog loads, and keeps one empty alert mounted for a failure to be added to", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Ada");
+    expect(announcer().textContent).toBe("");
+  });
+
+  it("shows the failure with its Retry inside the Filters panel, without blocking the attendee list (CodeRabbit review)", async () => {
     const { fetchTicketTypes } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({
       items: [],
@@ -100,18 +142,111 @@ describe("AttendeesPage load errors", () => {
 
     renderPage();
 
-    // The error sits inside the Filters dropdown panel now (PO review) - open it to see it.
+    // The hint sits inside the Filters dropdown panel (PO review) - open it to see it.
     fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
-    await screen.findByText("Could not load types.");
+    const panel = screen.getByRole("group", { name: "Filters" });
+    await within(panel).findByText("Could not load types.");
     // The list itself isn't replaced by an error - only the Type filter is affected.
     expect(screen.queryByText("Could not load attendees")).toBeNull();
 
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
       { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Retry" }));
 
+    // Both the hint and the announcer go once the catalog is in.
     await waitFor(() => expect(screen.queryByText("Could not load types.")).toBeNull());
+  });
+
+  it("keeps the hint and a busy Retry on screen, focus included, while a retry runs, and announces again when it fails again", async () => {
+    const { fetchTicketTypes } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+    const panel = screen.getByRole("group", { name: "Filters" });
+    await within(panel).findByText("Could not load types.");
+    const retry = within(panel).getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    const hintBefore = within(panel).getByText("Could not load types.");
+    const announcerBefore = announcer();
+
+    let failRetry: (error: Error) => void = () => {};
+    vi.mocked(fetchTicketTypes).mockImplementationOnce(
+      () => new Promise((_, reject) => {
+        failRetry = reject;
+      }),
+    );
+    retry.focus();
+    fireEvent.click(retry);
+
+    // Still there, the same button, busy, with focus: nothing was unmounted around it.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(within(panel).getByText("Could not load types.")).toBe(hintBefore);
+    expect(within(panel).getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => failRetry(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    // Same text again: the message and the announcer are new nodes (a live region announces additions), the button is not.
+    expect(within(panel).getByText("Could not load types.")).not.toBe(hintBefore);
+    expect(announcer()).not.toBe(announcerBefore);
+    expect(announcer().textContent).toBe("Could not load types.");
+    expect(within(panel).getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("clears the custom-field failure, hint and announcer both, once a retry has the catalog", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
+    fetchEventCustomFields.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+    const panel = screen.getByRole("group", { name: "Filters" });
+    await within(panel).findByText("Could not load custom fields.");
+
+    fetchEventCustomFields.mockResolvedValueOnce([]);
+    fireEvent.click(within(panel).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(screen.queryByText("Could not load custom fields.")).toBeNull());
+    expect(announcer().textContent).toBe("");
+  });
+
+  it("does the same for a failed custom-field catalog: hint and busy Retry stay while it retries, a repeat failure is announced again", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
+    fetchEventCustomFields.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+    const panel = screen.getByRole("group", { name: "Filters" });
+    const hintBefore = await within(panel).findByText("Could not load custom fields.");
+    const retry = within(panel).getByRole("button", { name: "Retry" });
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    const announcerBefore = announcer();
+
+    let failRetry: (error: Error) => void = () => {};
+    fetchEventCustomFields.mockImplementationOnce(
+      () => new Promise((_, reject) => {
+        failRetry = reject;
+      }),
+    );
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(within(panel).getByText("Could not load custom fields.")).toBe(hintBefore);
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => failRetry(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+    expect(within(panel).getByText("Could not load custom fields.")).not.toBe(hintBefore);
+    expect(announcer()).not.toBe(announcerBefore);
+    expect(within(panel).getByRole("button", { name: "Retry" })).toBe(retry);
   });
 });
 

@@ -71,6 +71,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { useRetry } from "../hooks/useRetry.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import { pluralize } from "../utils/pluralize.js";
 import "../attendees/add-attendee-modal.css";
@@ -1070,10 +1071,12 @@ export function AttendeesPage() {
   const [sortDir, setSortDir] = useState<AttendeeSortDir>("asc");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
-  const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  const ticketTypesRetry = useRetry();
+  const { token: ticketTypesToken, begin: beginTicketTypes, end: endTicketTypes } = ticketTypesRetry;
   const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
   const [customFieldsError, setCustomFieldsError] = useState<string | null>(null);
-  const [customFieldsRetryToken, setCustomFieldsRetryToken] = useState(0);
+  const customFieldsRetry = useRetry();
+  const { token: customFieldsToken, begin: beginCustomFields, end: endCustomFields } = customFieldsRetry;
   // select/boolean fields: source_field -> selected option values (empty/absent = no filter).
   const [customFieldSelectValues, setCustomFieldSelectValues] = useState<Record<string, string[]>>({});
   // text fields: source_field -> contains-text query, committed after the same debounce as the
@@ -1089,7 +1092,8 @@ export function AttendeesPage() {
   // the full item catalog here, unlike ticketTypes above (whose labels/colors ARE rendered).
   const [eventItemCount, setEventItemCount] = useState(0);
   const [eventItemsError, setEventItemsError] = useState<string | null>(null);
-  const [eventItemsRetryToken, setEventItemsRetryToken] = useState(0);
+  const eventItemsRetry = useRetry();
+  const { token: eventItemsToken, begin: beginEventItems, end: endEventItems } = eventItemsRetry;
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [loading, setLoading] = useState(true);
   // True once the very first fetch (success or failure) has settled - distinguishes the
@@ -1196,20 +1200,25 @@ export function AttendeesPage() {
     // compare by value, so setting the same "" was already a no-op).
     setTicketTypeFilter((current) => (current.length === 0 ? current : []));
     setTicketTypes([]);
-    setTicketTypesError(null);
+    // A retry keeps its error, and the busy Retry next to it, on screen until the answer is in.
+    if (!beginTicketTypes()) setTicketTypesError(null);
     const ac = new AbortController();
     fetchTicketTypes(eventId, ac.signal)
       .then((types) => {
         if (ac.signal.aborted) return;
         setTicketTypes(types);
+        setTicketTypesError(null);
       })
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
         setTicketTypes([]);
         setTicketTypesError(operatorApiErrorMessage(err, "Could not load types."));
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) endTicketTypes();
       });
     return () => ac.abort();
-  }, [eventId, ticketTypesRetryToken]);
+  }, [eventId, ticketTypesToken, beginTicketTypes, endTicketTypes]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -1228,20 +1237,24 @@ export function AttendeesPage() {
     // loadList dependency, so a fresh `[]` here (or from the resolved fetch, when it happens to
     // also come back empty) would double-fire loadList the same way an unguarded array reset did.
     setCustomFields((current) => (current.length === 0 ? current : []));
-    setCustomFieldsError(null);
+    if (!beginCustomFields()) setCustomFieldsError(null);
     const ac = new AbortController();
     fetchEventCustomFields(eventId, ac.signal)
       .then((fields) => {
         if (ac.signal.aborted) return;
         setCustomFields((current) => (current.length === 0 && fields.length === 0 ? current : fields));
+        setCustomFieldsError(null);
       })
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
         setCustomFields((current) => (current.length === 0 ? current : []));
         setCustomFieldsError(operatorApiErrorMessage(err, "Could not load custom fields."));
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) endCustomFields();
       });
     return () => ac.abort();
-  }, [eventId, customFieldsRetryToken]);
+  }, [eventId, customFieldsToken, beginCustomFields, endCustomFields]);
 
   // Commits each custom text field's typed value to its own query after the same pause the main
   // search box uses, one independent timer per field so typing in one doesn't reset another's -
@@ -1276,20 +1289,24 @@ export function AttendeesPage() {
   useEffect(() => {
     if (!eventId) return;
     setEventItemCount(0);
-    setEventItemsError(null);
+    if (!beginEventItems()) setEventItemsError(null);
     const ac = new AbortController();
     fetchEventItems(eventId, ac.signal)
       .then((fetchedItems) => {
         if (ac.signal.aborted) return;
         setEventItemCount(fetchedItems.length);
+        setEventItemsError(null);
       })
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
         setEventItemCount(0);
         setEventItemsError(operatorApiErrorMessage(err, "Could not load items."));
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) endEventItems();
       });
     return () => ac.abort();
-  }, [eventId, eventItemsRetryToken]);
+  }, [eventId, eventItemsToken, beginEventItems, endEventItems]);
 
   // Whether the header "Send tickets" button should work at all — shared with the Attendee
   // Detail page's "Resend ticket" gate via useMailConfigured.
@@ -2235,10 +2252,12 @@ export function AttendeesPage() {
         mailStatusFilter={mailStatusFilter}
         ticketTypes={ticketTypes}
         ticketTypesError={ticketTypesError}
-        onRetryTicketTypes={() => setTicketTypesRetryToken((n) => n + 1)}
+        onRetryTicketTypes={ticketTypesRetry.retry}
+        ticketTypesRetrying={ticketTypesRetry.busy}
         customFields={customFields}
         customFieldsError={customFieldsError}
-        onRetryCustomFields={() => setCustomFieldsRetryToken((n) => n + 1)}
+        onRetryCustomFields={customFieldsRetry.retry}
+        customFieldsRetrying={customFieldsRetry.busy}
         customFieldSelectValues={customFieldSelectValues}
         onCustomFieldSelectChange={(sourceField, values) => {
           setCustomFieldSelectValues((current) => ({ ...current, [sourceField]: values }));
@@ -2320,7 +2339,8 @@ export function AttendeesPage() {
         }}
         itemCount={eventItemCount}
         itemsError={eventItemsError}
-        onRetryItems={() => setEventItemsRetryToken((n) => n + 1)}
+        onRetryItems={eventItemsRetry.retry}
+        itemsRetrying={eventItemsRetry.busy}
         onBulkRevokeItems={() => {
           setBulkRevokeItemsError(null);
           setBulkRevokeItemsConfirmOpen(true);

@@ -113,6 +113,8 @@ Profile changes take effect immediately and are visible to administrators viewin
 ## Common problems
 
 - **Save stays disabled:** nothing has changed yet. Save only activates once a field differs from its saved value.
+- **The page shows grey boxes, or says "Taking longer than usual":** the page is waiting for the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows "The server did not answer in time" with a **Retry** button. The Sessions and Notifications cards show their own message and **Retry**, so a problem in one card does not hide the rest of the page.
+- **A warning says "Could not refresh this page, so it may show older details":** what you saved was saved, but loading the page again afterwards failed, so some details on screen may be out of date. Press **Retry** in the warning to load the current details. Nothing you typed or opened is lost while you do.
 - **Can't change email:** email isn't editable from this page by design; ask your administrator.
 - **Password section is missing:** the account is SSO-only (no local password). Sign-in and password are managed by the linked identity provider instead.
 - **Lost access to the authenticator app:** use a saved backup code to sign in, then reset 2FA and set it up again from this page.
