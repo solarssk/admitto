@@ -52,6 +52,7 @@ describe("SecurityPanel: operators stay signed in on event day", () => {
 
     await screen.findByText(SWITCH_NAME, { selector: "strong" });
     expect(screen.getByText(/if they sign in on\s+the day of an event they are assigned to/)).toBeTruthy();
+    expect(screen.getByText(/06:00 the next morning, or the\s+event's end if later/)).toBeTruthy();
     expect(screen.getByText(/Not\s+for administrators/)).toBeTruthy();
     expect(eventDaySwitch().id).toBe("security-operator-event-day-sessions");
     expect(screen.queryByLabelText(/Keep me signed in/)).toBeNull();

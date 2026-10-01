@@ -322,8 +322,8 @@ export function SecurityPanel() {
               <strong>Operators stay signed in on event day</strong>
               <p>
                 Operators stay signed in, even when idle or after closing the app, if they sign in on
-                the day of an event they are assigned to. It lasts until 06:00 the next morning. Not
-                for administrators.
+                the day of an event they are assigned to. It lasts until 06:00 the next morning, or the
+                event&apos;s end if later. Not for administrators.
               </p>
             </div>
             <div className="security-settings-row__control">

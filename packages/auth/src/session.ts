@@ -114,10 +114,10 @@ async function resolveEventDaySessionEnd(
   if (!(await getOperatorEventDaySessionsEnabled(prisma))) return null;
   if (await hasElevatedRole(prisma, userId)) return null;
   const assignments = await prisma.roleAssignment.findMany({
-    where: { user_id: userId, role: "operator", scope_type: "event" },
+    where: { user_id: userId, role: "operator", scope_type: "event", scope_id: { not: null } },
     select: { scope_id: true },
   });
-  const eventIds = assignments.flatMap((a) => (a.scope_id ? [a.scope_id] : []));
+  const eventIds = assignments.map((a) => a.scope_id).filter((id): id is string => id !== null);
   if (eventIds.length === 0) return null;
   const events = await prisma.event.findMany({
     where: {
