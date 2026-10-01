@@ -670,6 +670,7 @@
    bar along its top; the dimming starts once the wait is noticeable, so a quick refresh never flickers. */
 .account-refetch {
   position: relative;
+  pointer-events: none;
 }
 
 .account-refetch--dim {

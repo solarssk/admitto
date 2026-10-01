@@ -4478,6 +4478,87 @@ describe("AccountPage on the loading standard", () => {
       expect(after).not.toBe(before);
     });
 
+    it("a saved profile stays saved when the refresh that follows fails: Save does not light up again for what was just saved", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      await act(async () => refresh.failRefresh(new Error("network down")));
+      await screen.findByText(/Could not refresh this page/);
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBeNull());
+      // The saved values are the baseline, though the page still holds the older account.
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("an older answer never replaces a newer one: two refreshes that resolve out of order leave the newest snapshot", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      let answerFirst!: (account: AccountDto) => void;
+      let answerSecond!: (account: AccountDto) => void;
+      mockFetchAccount
+        .mockResolvedValueOnce(baseAccount)
+        .mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
+        .mockReturnValueOnce(new Promise((resolve) => (answerSecond = resolve)));
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+      mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
+
+      await saveNewDisplayName(); // the first refresh is on its way
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      fillPasswordForm();
+      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true })); // and a second one
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
+
+      await act(async () => answerSecond({ ...baseAccount, email: "new@example.com" }));
+      await act(async () => answerFirst({ ...baseAccount, email: "old@example.com" }));
+      expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("new@example.com");
+    });
+
+    it("an older refresh that fails after a newer one worked does not put the warning back", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      let failFirst!: (error: Error) => void;
+      let answerSecond!: (account: AccountDto) => void;
+      mockFetchAccount
+        .mockResolvedValueOnce(baseAccount)
+        .mockReturnValueOnce(new Promise((_resolve, reject) => (failFirst = reject)))
+        .mockReturnValueOnce(new Promise((resolve) => (answerSecond = resolve)));
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+      mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      fillPasswordForm();
+      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true }));
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
+
+      await act(async () => answerSecond({ ...baseAccount, email: "new@example.com" }));
+      await act(async () => failFirst(new Error("network down")));
+      // The newest snapshot is on screen and current: nothing says it may be out of date.
+      expect(screen.queryByText(/Could not refresh this page/)).toBeNull();
+      expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("new@example.com");
+    });
+
+    it("while the account is refreshed its cards cannot be clicked, are marked busy, and are dimmed with a bar; none is inert, so the pressed button keeps keyboard focus", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      const refreshing = () => [...document.querySelectorAll<HTMLElement>(".at-card.account-refetch")];
+      // Profile, Password and Two-factor: the cards that show the account. Not the sessions or notifications cards.
+      await waitFor(() => expect(refreshing()).toHaveLength(3));
+      expect(refreshing().every((card) => card.getAttribute("aria-busy") === "true")).toBe(true);
+      expect(refreshing().some((card) => card.hasAttribute("inert"))).toBe(false);
+
+      await waitFor(() => expect(refreshing().every((card) => card.className.includes("account-refetch--dim"))).toBe(true));
+      expect(await screen.findAllByLabelText("Refreshing account")).toHaveLength(3);
+
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      await waitFor(() => expect(refreshing()).toHaveLength(0));
+    });
+
     it("does not overwrite what is being typed into the profile form while the refresh is on its way", async () => {
       mockFetchSessions.mockResolvedValue({ sessions: [] });
       const refresh = slowSecondAccountFetch();

@@ -422,6 +422,14 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * The account as it is once a profile Save has been answered: the saved values are the new baseline even if the
+ * refresh that follows cannot complete, otherwise Save would light up again for what was just saved.
+ */
+function withSavedProfile(account: AccountDto | null, saved: Awaited<ReturnType<typeof patchAccountProfile>>): AccountDto | null {
+  return account && { ...account, ...saved };
+}
+
 /** The text for a failed load: the time limit's own message, or the server's (through the audience-tiered copy rules). */
 function loadFailureMessage(limit: { timedOut: () => boolean }, err: unknown, fallback: string): string {
   return limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, fallback);
@@ -563,6 +571,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   // refresh after saving something keeps what is on screen, and whatever is open on it (a dialog, a form
   // in progress), exactly where it is, instead of unmounting the page for the length of the request.
   const accountLoadedRef = useRef(false);
+  const accountRequestRef = useRef(0);
   const sessionsLoadedRef = useRef(false);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
@@ -570,9 +579,14 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     if (first) setLoading(true);
     else setRefreshing(true);
     setError(null);
+    // An answer that is no longer the latest ask (a newer refresh started meanwhile) is dropped, so an older
+    // snapshot can never replace a newer one.
+    const mine = ++accountRequestRef.current;
+    const superseded = () => signal?.aborted || mine !== accountRequestRef.current;
     const limit = loadWithTimeout(signal);
     try {
       const data = await fetchAccount(limit.signal);
+      if (superseded()) return;
       accountLoadedRef.current = true;
       setAccount(data);
       // The profile form is filled in once. A refresh after another change must not overwrite what is being
@@ -588,7 +602,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       setPreferredTimeFormatStore(data.preferred_time_format);
       setRefreshError(null);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (superseded()) return;
       if (redirectToLoginIfUnauthorized(err)) return;
       if (first) {
         setError(loadFailureMessage(limit, err, "Could not load account."));
@@ -600,7 +614,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       }
     } finally {
       limit.done();
-      if (!signal?.aborted) {
+      if (!superseded()) {
         setLoading(false);
         setRefreshing(false);
       }
@@ -706,6 +720,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const notifPrefsGate = useLoadingGate(notifPrefsLoading && !loading);
   // The refresh of the sessions list after a revoke: dimmed once it is noticeable, with the thin bar along the card.
   const sessionsRefetch = useLoadingGate(sessionsRefreshing);
+  // The same for the account-backed cards (Profile, Password, Two-factor) while the account is refreshed after a change.
+  const accountRefetch = useLoadingGate(refreshing);
   // A Retry on the refresh warning that fails at once still shows that it ran, and is announced again.
   const refreshRetrying = useMinimumBusy(refreshing);
   const sessionsSlow = useDelayedLoading(sessionsLoading && !loading, SLOW_NOTICE_MS);
@@ -1276,6 +1292,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       setPhoneNumber(result.phone_number ?? "");
       setPreferredLocaleStore(result.preferred_locale ?? undefined);
       setPreferredTimeFormatStore(result.preferred_time_format);
+      setAccount((prev) => withSavedProfile(prev, result));
       addToast(
         localeChanged
           ? "Profile saved. Reload this page to refresh session timestamps below."
@@ -1369,7 +1386,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   function renderPasswordCard() {
     if (!account) return null;
     return (
-      <Card title={<HintLabel hint={PASSWORD_HINT}>Password</HintLabel>}>
+      <Card title={<HintLabel hint={PASSWORD_HINT}>Password</HintLabel>} {...refetchCardProps(refreshing, accountRefetch.showIndicator, false)}>
+        <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
       {account.has_local_password && (
         <p className="account-info-block">
           Use at least 12 characters, mixing upper and lowercase letters, numbers, and symbols for a stronger password.
@@ -1947,7 +1965,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             />
           ) : undefined
         }
+        {...refetchCardProps(refreshing, accountRefetch.showIndicator, false)}
       >
+          <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
           {/* Methods list, every action opens its own popup now (decision 6), so this stays
               visible at all times instead of being replaced by an inline form. */}
           {renderMfaMethodsList()}
@@ -2282,7 +2302,10 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             onUnlinkClick={() => setUnlinkSsoOpen(true)}
           />
         }
-        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" loading={profileSaving} disabled={!profileDirty} onClick={() => void handleProfileSave(account)}>Save</Button></div>}>
+        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" loading={profileSaving} disabled={!profileDirty} onClick={() => void handleProfileSave(account)}>Save</Button></div>}
+        {...refetchCardProps(refreshing, accountRefetch.showIndicator, false)}
+      >
+        <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
         <div className="account-profile-editable">
           <Input
             id="account-display-name"
