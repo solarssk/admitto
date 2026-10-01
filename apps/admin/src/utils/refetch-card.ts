@@ -10,7 +10,7 @@ const swallow = (event: SyntheticEvent) => {
  * loading and busy states"). While it is refreshing (`refreshing`) nothing in it can be used (see below) and it is
  * marked busy. Once the wait is noticeable (`noticeable`, from `useLoadingGate`, which also keeps it for at least
  * 400ms) it is dimmed, so stale data does not look current, and the thin bar (`TopProgressBar
- * placement="container"`) runs along its top; the `account-refetch` class is the box that bar is positioned in, so
+ * placement="container"`) runs along its top; the `refetch-card` class is the box that bar is positioned in, so
  * it stays for as long as the bar does, which can be a little longer than the refresh.
  *
  * Keys are stopped too, one of two ways. By default the card is `inert`: nothing in it can be focused or
@@ -22,9 +22,9 @@ const swallow = (event: SyntheticEvent) => {
  */
 export function refetchCardProps(refreshing: boolean, noticeable: boolean, keepFocus = false) {
   if (!refreshing && !noticeable) return {};
-  const classes = ["account-refetch"];
-  if (refreshing) classes.push("account-refetch--busy");
-  if (noticeable) classes.push("account-refetch--dim");
+  const classes = ["refetch-card"];
+  if (refreshing) classes.push("refetch-card--busy");
+  if (noticeable) classes.push("refetch-card--dim");
   if (!refreshing) return { className: classes.join(" ") };
   const blocked = keepFocus ? { onClickCapture: swallow, onSubmitCapture: swallow } : { inert: true };
   return { className: classes.join(" "), "aria-busy": true, ...blocked };

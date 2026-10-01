@@ -31,7 +31,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/pages/MailReportsTab.tsx": 1,
     "apps/admin/src/pages/RequirementsPage.tsx": 1,
     "apps/admin/src/pages/WalletsReportsTab.tsx": 1,
-    "apps/admin/src/pages/users/ActiveSessionsTab.tsx": 1,
     "apps/admin/src/pages/wizard/WizardStep2Mail.tsx": 1,
     "apps/admin/src/pages/wizard/WizardStep3Branding.tsx": 1,
     "apps/admin/src/requirements/EventCustomFieldsCard.tsx": 1,

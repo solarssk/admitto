@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button, Card, EmptyState, HintLabel, Tooltip, useToast } from "@admitto/ui";
-import {
-  fetchAdminEvents,
-  fetchSessions,
-  revokeAllOperatorSessions,
-  revokeSessionById,
-} from "../../api/client.js";
+import { fetchSessions, revokeAllOperatorSessions, revokeSessionById } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import type { EventDto, SessionListDto } from "../../api/types.js";
+import type { SessionListDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { FiltersMenu } from "../../components/FiltersMenu.js";
 import { PaginationFooter } from "../../components/PaginationFooter.js";
+import { RefetchRegion } from "../../components/RefetchRegion.js";
+import { ListFailure } from "../../components/ListFailure.js";
+import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../../components/Segmented.js";
 import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
 import { LOGGED_IN_HINT, SessionCard, SessionTableRow } from "./SessionListItem.js";
-import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "../../hooks/useDelayedLoading.js";
+import { useEventOptions } from "../../hooks/useEventOptions.js";
 import { useIsDesktop } from "../../hooks/useIsDesktop.js";
+import { useListLoad } from "../../hooks/useListLoad.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
+import { SLOW_NOTICE_MS } from "../../utils/loading-timing.js";
+import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 
 type FilterValue = "all" | "admin" | "operator";
 type SignInFilterValue = "all" | "local" | "oidc";
@@ -30,6 +32,20 @@ const FILTER_OPTIONS: ReadonlyArray<SegmentedOption<FilterValue>> = [
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const DEFAULT_PAGE_SIZE = 25;
+const NO_SESSIONS: SessionListDto[] = [];
+// The placeholder of the list: five rows and three cards, each about as tall as a real one.
+const SESSION_COLUMNS: ReadonlyArray<SkeletonColumn> = [
+  { id: "user", label: "User" },
+  { id: "role", label: "Role" },
+  { id: "device", label: "Device", className: "sessions-col-tablet-hide" },
+  { id: "ip", label: "IP address", className: "sessions-col-tablet-hide" },
+  { id: "logged-in", label: "Logged in" },
+  { id: "last-active", label: "Last active" },
+  { id: "sign-in", label: "Sign-in", className: "sessions-col-tablet-hide" },
+  { id: "action", label: <span className="sr-only">Action</span>, className: "sessions-action-col" },
+];
+// The sessions are listed whole and filtered and paged here, so one request serves the tab.
+const fetchAllSessions = (signal: AbortSignal) => fetchSessions(undefined, signal);
 
 interface ActiveSessionsTabProps {
   /** Reports the loaded (unfiltered) session count up to the parent tab bar, mirroring how
@@ -40,9 +56,6 @@ interface ActiveSessionsTabProps {
 /** Users & roles — Active sessions tab: lists active staff sessions, per-session revoke, and bulk operator-session revoke by event. */
 export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabProps>) {
   const { addToast } = useToast();
-  const [sessions, setSessions] = useState<SessionListDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>("all");
   const [signInFilter, setSignInFilter] = useState<SignInFilterValue>("all");
   const [searchInput, setSearchInput] = useState("");
@@ -55,34 +68,23 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
 
   const [editTarget, setEditTarget] = useState<SessionListDto | null>(null);
 
-  const [events, setEvents] = useState<EventDto[]>([]);
+  const eventOptions = useEventOptions();
   const [selectedEventId, setSelectedEventId] = useState("");
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkRevoking, setBulkRevoking] = useState(false);
   const [bulkRevokeError, setBulkRevokeError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchSessions();
-      setSessions(data.sessions);
-      onCountChange?.(data.sessions.length);
-    } catch (err) {
-      const message = operatorApiErrorMessage(err, "Could not load sessions.");
-      setError(message);
-      addToast(message, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast, onCountChange]);
-
-  useEffect(() => {
-    void load();
-    fetchAdminEvents({ includeArchived: true })
-      .then(setEvents)
-      .catch(() => {});
-  }, [load]);
+  const list = useListLoad({
+    fetcher: fetchAllSessions,
+    fallback: "Could not load sessions.",
+    onData: (data) => onCountChange?.(data.sessions.length),
+  });
+  const sessions = list.data?.sessions ?? NO_SESSIONS;
+  // The first load: a placeholder after 200ms (held before, so its room is in the page), kept at least 400ms,
+  // "Taking longer than usual" after 8 seconds. A refresh after an action never gets here: the rows stay.
+  const gate = useLoadingGate(list.loading);
+  const slow = useDelayedLoading(list.loading, SLOW_NOTICE_MS);
+  const listReady = gate.showContent && !list.error && list.data !== null;
 
   const search = searchInput.trim().toLowerCase();
   const displayed = sessions.filter((s) => {
@@ -109,17 +111,19 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     setRevokeError(null);
     try {
       await revokeSessionById(confirmTarget.id);
-      setConfirmTarget(null);
-      addToast("Session revoked.", "success");
-      await load();
     } catch (err) {
       // Shown inside the still-open dialog (errorMessage), not a toast - ConfirmDialog sits above
       // the toast stack (--z-modal > --z-toast), so a toast-only failure would render invisibly
       // behind the dialog's own backdrop while it stays open (bot review finding).
       setRevokeError(operatorApiErrorMessage(err, "Failed to revoke session."));
+      return;
     } finally {
+      // The revoke is done (or failed): the dialog's busy state ends with it, not with the list refresh behind it.
       setRevoking(false);
     }
+    setConfirmTarget(null);
+    addToast("Session revoked.", "success");
+    void list.reload();
   };
 
   const handleBulkRevoke = async () => {
@@ -136,25 +140,22 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         "success",
       );
       setBulkConfirmOpen(false);
-      await load();
     } catch (err) {
       // Same reasoning as handleRevoke's own errorMessage: ConfirmDialog sits above the toast
       // stack, so failures must show inside the still-open dialog instead.
       setBulkRevokeError(operatorApiErrorMessage(err, "Failed to revoke sessions."));
+      return;
     } finally {
       setBulkRevoking(false);
     }
+    void list.reload();
   };
 
-  const selectedEvent = events.find((e) => e.id === selectedEventId);
+  const selectedEvent = eventOptions.events.find((e) => e.id === selectedEventId);
   const confirmDeviceSuffix = confirmTarget?.deviceLabel
     ? ` (${confirmTarget.deviceLabel})`
     : "";
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" text on and off faster than it can register as loading — show it only
-  // once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
   // Desktop table vs. stacked mobile cards, same breakpoint-driven switch as AuditLogPanel -
   // only one ever renders (not both-with-CSS-hiding), so a row's content never appears twice.
   const isDesktop = useIsDesktop();
@@ -239,18 +240,24 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           </Tooltip>
         </div>
 
-        {loading && showLoading && <p className="sessions-status">Loading…</p>}
-
-        {!loading && error && (
-          <div className="sessions-status" role="alert">
-            <p>{error}</p>
-            <Button type="button" variant="secondary" onClick={() => void load()}>
-              Retry
-            </Button>
-          </div>
+        {!gate.showContent && (
+          <UsersListSkeleton
+            label="Loading sessions"
+            held={!gate.showIndicator}
+            slow={slow}
+            columns={SESSION_COLUMNS}
+            rows={5}
+            rowHeight={52}
+            cards={3}
+            cardHeight={300}
+          />
         )}
 
-        {!loading && !error && total === 0 && sessions.length === 0 && (
+        {gate.showContent && (
+          <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="sessions-status" />
+        )}
+
+        {listReady && total === 0 && sessions.length === 0 && (
           <EmptyState
             icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
             title="No active sessions"
@@ -258,7 +265,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           />
         )}
 
-        {!loading && !error && total === 0 && sessions.length > 0 && (
+        {listReady && total === 0 && sessions.length > 0 && (
           <EmptyState
             icon={<i className="ti ti-filter-off" aria-hidden="true" />}
             title="No sessions match this filter"
@@ -287,8 +294,8 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           />
         )}
 
-        {!loading && !error && total > 0 && (
-          <>
+        {listReady && total > 0 && (
+          <RefetchRegion refreshing={list.refreshing} label="Refreshing sessions">
             {isDesktop ? (
               <div className="users-page__table-wrap">
                 <table className="table">
@@ -338,7 +345,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
               onPrevious={() => setPage(Math.max(1, effectivePage - 1))}
               onNext={() => setPage(Math.min(totalPages, effectivePage + 1))}
             />
-          </>
+          </RefetchRegion>
         )}
       </Card>
 
@@ -357,7 +364,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             value={selectedEventId}
             options={[
               { id: "", label: "Select event…" },
-              ...events.map((e) => ({
+              ...eventOptions.events.map((e) => ({
                 id: e.id,
                 label: `${e.title}${e.archived_at ? " (archived)" : ""}`,
                 icon: "calendar-event",
@@ -375,6 +382,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             Revoke all
           </Button>
         </div>
+        {eventOptions.error && (
+          <RetryHint message={eventOptions.error} busy={eventOptions.retrying} onRetry={eventOptions.retry} />
+        )}
       </Card>
 
       <ConfirmDialog
@@ -403,7 +413,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         onClose={() => setEditTarget(null)}
         onSaved={() => {
           addToast("Device label updated.", "success");
-          void load();
+          void list.reload();
         }}
       />
 

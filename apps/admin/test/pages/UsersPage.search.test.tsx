@@ -4,8 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { UsersPage } from "../../src/pages/UsersPage.js";
-import { makeSuperadminAssignment, mockMatchMedia } from "../test-utils.js";
-import type { UserListItemDto } from "../../src/api/types.js";
+import { makeStaffUser, makeSuperadminAssignment, mockMatchMedia } from "../test-utils.js";
 
 const SUPERADMIN_ASSIGNMENTS = [makeSuperadminAssignment()];
 const useAuthMock = vi.fn(() => ({
@@ -48,25 +47,6 @@ import {
   patchAdminUser,
   revokeUserRole,
 } from "../../src/api/client.js";
-
-function makeUser(id: string, displayName: string): UserListItemDto {
-  return {
-    id,
-    email: `${id}@example.com`,
-    display_name: displayName,
-    phone_country_code: null,
-    phone_number: null,
-    is_active: true,
-    must_change_password: false,
-    created_at: "2026-01-01T00:00:00.000Z",
-    last_login_at: null,
-    active_sessions_count: 0,
-    has_mfa: false,
-    has_sso: false,
-    external_identities: [],
-    roles: [],
-  };
-}
 
 beforeEach(() => {
   vi.mocked(fetchRoleAssignments).mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
@@ -182,7 +162,7 @@ describe("UsersPage header", () => {
 
   it("shows a toast (falling back to the email when there's no display name) and refreshes the list after deleting a user from the Edit modal", async () => {
     vi.mocked(fetchAdminUsers).mockResolvedValue({
-      users: [{ ...makeUser("user-1", "Jane Doe"), display_name: null }],
+      users: [{ ...makeStaffUser("user-1", "Jane Doe"), display_name: null }],
       total: 1,
       page: 1,
       pageSize: 25,
@@ -216,7 +196,7 @@ describe("UsersPage Edit modal sync", () => {
   it("commits a staged role grant on Save changes and refreshes the Staff users list", async () => {
     vi.mocked(fetchAdminUsers)
       .mockResolvedValueOnce({
-        users: [makeUser("user-1", "Jane Doe")],
+        users: [makeStaffUser("user-1", "Jane Doe")],
         total: 1,
         page: 1,
         pageSize: 25,
@@ -224,7 +204,7 @@ describe("UsersPage Edit modal sync", () => {
       .mockResolvedValueOnce({
         users: [
           {
-            ...makeUser("user-1", "Jane Doe"),
+            ...makeStaffUser("user-1", "Jane Doe"),
             roles: [
               { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false },
             ],
@@ -249,7 +229,7 @@ describe("UsersPage Edit modal sync", () => {
     vi.mocked(grantUserRole).mockResolvedValueOnce({
       assignment: { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1" },
     });
-    vi.mocked(patchAdminUser).mockResolvedValueOnce({ user: makeUser("user-1", "Jane Doe") });
+    vi.mocked(patchAdminUser).mockResolvedValueOnce({ user: makeStaffUser("user-1", "Jane Doe") });
 
     renderAt("/admin/users");
     await screen.findAllByText("user-1@example.com");
@@ -360,7 +340,7 @@ describe("UsersPage search debounce", () => {
 
   it("does not reset to page 1 when the debounce timer fires with an unchanged search value while paginated", async () => {
     vi.mocked(fetchAdminUsers).mockResolvedValue({
-      users: [makeUser("user-1", "Jane Doe")],
+      users: [makeStaffUser("user-1", "Jane Doe")],
       // > PAGE_SIZE (25) so a second page exists to navigate to.
       total: 30,
       page: 1,
@@ -459,7 +439,7 @@ describe("UsersPage cross-tab sync", () => {
     // the open Edit user modal then has to pick up the freshly-fetched `users` array itself -
     // both halves of this only fire when the fetched user object is a genuinely new reference
     // with different roles, not just a rerender.
-    const original = makeUser("user-1", "Jane Doe");
+    const original = makeStaffUser("user-1", "Jane Doe");
     const updated = { ...original, roles: [] };
     vi.mocked(fetchAdminUsers)
       .mockResolvedValueOnce({ users: [original], total: 1, page: 1, pageSize: 25 })

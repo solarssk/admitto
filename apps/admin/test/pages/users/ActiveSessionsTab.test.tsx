@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../../src/api/client.js";
 import { ActiveSessionsTab } from "../../../src/pages/users/ActiveSessionsTab.js";
 import type { EventDto, SessionListDto } from "../../../src/api/types.js";
-import { mockMatchMedia, renderWithToast } from "../../test-utils.js";
+import { advanceTimers, deferred, mockMatchMedia, renderWithToast } from "../../test-utils.js";
 
 const EDIT_NAME = /^Edit device label for/;
 const REVOKE_NAME = /^Revoke session for/;
@@ -234,6 +234,8 @@ describe("ActiveSessionsTab rendering", () => {
     expect(document.querySelector(".sessions-status p")?.textContent).toMatch(/Could not load sessions/);
     expect(document.querySelector(".sessions-status[role='alert'] p")?.textContent).toMatch(/Could not load sessions/);
     expect(screen.queryByText("secret_internal")).toBeNull();
+    // The alert in the card is the message: it is not said a second time as a toast.
+    expect(screen.queryByTestId("at-toast")).toBeNull();
 
     fireEvent.click(retry);
 
@@ -720,16 +722,138 @@ describe("ActiveSessionsTab pagination", () => {
   });
 });
 
-describe("ActiveSessionsTab delayed loading", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    vi.mocked(fetchSessions).mockImplementationOnce(() => new Promise(() => {}));
-    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
+describe("ActiveSessionsTab on the loading standard", () => {
+  const region = () => screen.queryByLabelText("Loading sessions");
+
+  it("holds the placeholder's room from the first frame, draws it after 200ms, keeps it for 400ms, and says so after 8 seconds", async () => {
+    const first = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions).mockReturnValue(first.promise);
     vi.useFakeTimers();
     renderWithToast(<ActiveSessionsTab />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
+    await advanceTimers(0);
+
+    expect(region()?.className).toContain("at-loading-hold");
+    await advanceTimers(199);
+    expect(region()?.className).toContain("at-loading-hold");
+    await advanceTimers(1);
+    expect(region()?.className).not.toContain("at-loading-hold");
+    expect(screen.queryByText("Loading…")).toBeNull();
+
+    await advanceTimers(7800);
+    expect(region()?.textContent).toContain("Taking longer than usual");
+    await act(async () => first.resolve({ sessions: [makeSession()] }));
+    await advanceTimers(400);
+    expect(region()).toBeNull();
+    expect(screen.getByRole("table")).toBeTruthy();
+  });
+
+  it("gives up after 30 seconds with an error and Retry, and a Retry is a first load again", async () => {
+    const signals: AbortSignal[] = [];
+    vi.mocked(fetchSessions).mockImplementation(
+      (_role, signal) =>
+        new Promise((_resolve, reject) => {
+          if (signal) signals.push(signal);
+          signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+        }),
+    );
+    vi.useFakeTimers();
+    renderWithToast(<ActiveSessionsTab />);
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(screen.getByText("The server did not answer in time. Check your connection and try again.")).toBeTruthy();
+    expect(signals[0]?.aborted).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(0);
+    expect(region()).not.toBeNull();
+    expect(signals).toHaveLength(2);
+  });
+
+  it("keeps the rows while the refresh after a revoke is on its way: blocked, dimmed with a bar once it is noticeable, and no placeholder", async () => {
+    const refresh = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1" }), makeSession({ id: "s2", userEmail: "second@example.com" })] })
+      .mockReturnValueOnce(refresh.promise);
+    vi.mocked(revokeSessionById).mockResolvedValue(undefined);
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_NAME })[0]!);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(fetchSessions).toHaveBeenCalledTimes(2));
+
+    // The rows stay, blocked at once; a click on one of them does nothing.
+    expect(screen.getByRole("table")).toBeTruthy();
+    expect(region()).toBeNull();
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card--busy")).toHaveLength(1));
+    fireEvent.click(screen.getAllByRole("button", { name: EDIT_NAME })[0]!);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Once the wait is noticeable: dimmed, with the bar.
+    await waitFor(() => expect(document.querySelector(".refetch-card--dim")).not.toBeNull());
+    expect(await screen.findByLabelText("Refreshing sessions")).toBeTruthy();
+
+    await act(async () => refresh.resolve({ sessions: [makeSession({ id: "s2", userEmail: "second@example.com" })] }));
+    await waitFor(() => expect(screen.queryByText("user@example.com")).toBeNull());
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card")).toHaveLength(0));
+  });
+
+  it("keeps the rows and says so when the refresh after a revoke fails, instead of replacing them with an error", async () => {
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession()] })
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce({ sessions: [makeSession()] });
+    vi.mocked(revokeSessionById).mockResolvedValue(undefined);
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: REVOKE_NAME }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+
+    expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+    expect(screen.getByRole("table")).toBeTruthy();
+    expect(screen.queryByText("Could not load sessions.")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByText(/Could not refresh this list/)).toBeNull());
+  });
+
+  it("ends the bulk revoke dialog's busy state with the revoke, not with the refresh behind it", async () => {
+    const refresh = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1" })] })
+      .mockReturnValueOnce(refresh.promise);
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 1 });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(fetchSessions).toHaveBeenCalledTimes(2));
+
+    // The refresh is still pending, and the list is blocked. Revoke all lies outside the list, and its dialog is
+    // not busy: the flag ended with the revoke.
+    expect(document.querySelectorAll(".refetch-card--busy")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    const confirm = within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" });
+    expect(confirm.getAttribute("aria-busy")).toBeNull();
+    await act(async () => refresh.resolve({ sessions: [] }));
+  });
+
+  it("says when the events for the bulk revoke could not load, with a Retry that reruns only that request", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce([sampleEvent]);
+    renderWithToast(<ActiveSessionsTab />);
+    expect(await screen.findByText("Could not load events.")).toBeTruthy();
+    const sessionCalls = vi.mocked(fetchSessions).mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByText("Could not load events.")).toBeNull());
+    expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetchSessions).mock.calls.length).toBe(sessionCalls);
   });
 });
 

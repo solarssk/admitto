@@ -295,6 +295,16 @@
   border-radius: var(--radius);
 }
 
+/* The placeholder of a list is a status region (an <output>, inline by default) around a table and cards. */
+.users-page__skeleton {
+  display: block;
+}
+
+/* A KPI tile's placeholder lines sit 4px apart, like the text lines they stand in for. */
+.users-page__stat-skeleton-line {
+  margin-top: 4px;
+}
+
 .users-page__card-head {
   display: flex;
   align-items: flex-start;
