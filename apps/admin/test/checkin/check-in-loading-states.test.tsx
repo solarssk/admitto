@@ -251,7 +251,7 @@ const previewCard: AttendeeCardDto = {
 };
 
 describe("Confirm check-in is busy as soon as that request is in flight", () => {
-  it("on the attendee card: a spinner, disabled, same button", () => {
+  it("on the attendee card: a spinner, aria-disabled, same button", () => {
     const { rerender } = render(
       <AttendeeCard card={previewCard} scanStatus="PREVIEW" canAct pending={false} onCheckIn={vi.fn()} />,
     );
@@ -262,7 +262,8 @@ describe("Confirm check-in is busy as soon as that request is in flight", () => 
     rerender(<AttendeeCard card={previewCard} scanStatus="PREVIEW" canAct={false} pending={false} admitting onCheckIn={vi.fn()} />);
     const busy = screen.getByRole("button", { name: /Confirm check-in|Checking in/ });
     expect(busy.getAttribute("aria-busy")).toBe("true");
-    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    // Busy, not switched off: it keeps keyboard focus, and a click on it does nothing.
+    expect(busy.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("on the camera result panel", () => {
@@ -295,7 +296,7 @@ describe("Confirm check-in is busy as soon as that request is in flight", () => 
 });
 
 describe("NoteModal while the note is being saved", () => {
-  it("keeps the button, marks it busy and disables it, instead of swapping its text", async () => {
+  it("keeps the button, marks it busy and aria-disabled, instead of swapping its text", async () => {
     let finish!: () => void;
     const onSubmit = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     render(<NoteModal open onClose={() => {}} onSubmit={onSubmit} />);
@@ -306,7 +307,7 @@ describe("NoteModal while the note is being saved", () => {
     fireEvent.click(add);
     const busy = screen.getByRole("button", { name: /Add note|Saving/ });
     expect(busy.getAttribute("aria-busy")).toBe("true");
-    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(busy.getAttribute("aria-disabled")).toBe("true");
     await act(async () => finish());
   });
 });

@@ -266,7 +266,8 @@ describe("CheckInPage door actions show they are working at once", () => {
 
     fireEvent.click(confirm);
     await waitFor(() => expect(screen.getByRole("button", { name: /Confirm check-in|Checking in/ }).getAttribute("aria-busy")).toBe("true"));
-    expect((screen.getByRole("button", { name: /Confirm check-in|Checking in/ }) as HTMLButtonElement).disabled).toBe(true);
+    // Busy buttons stay focusable (aria-disabled, not disabled), and a click on them does nothing.
+    expect(screen.getByRole("button", { name: /Confirm check-in|Checking in/ }).getAttribute("aria-disabled")).toBe("true");
 
     admit({
       status: "VALID",
