@@ -474,6 +474,25 @@ describe("EventCustomFieldModal — edit", () => {
     });
   });
 
+  it("keeps focus inside the modal when the Retry that held it goes away, instead of dropping it on the page behind", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockRejectedValueOnce(new Error("network error"));
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    renderModal(shirtField);
+    expect(await screen.findByText(/Could not load how many attendees use each option/)).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+
+    fireEvent.click(retry);
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    });
+    await waitForUsageLoaded();
+
+    const active = document.activeElement;
+    expect(active).not.toBe(document.body);
+    expect(screen.getByRole("dialog").contains(active)).toBe(true);
+  });
+
   it("pressing Escape while the risky-rename confirmation is open dismisses only the confirmation, not the whole modal", async () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
     const onClose = vi.fn();
