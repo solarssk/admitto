@@ -187,9 +187,11 @@
     animation: none;
   }
 
-  /* Slowed, not stopped: a completely still ring reads as a hung page. */
+  /* Slowed, not stopped: a completely still ring reads as a hung page. 2s, not the 2.5s of the lone
+     Spinner: the shared phase is the clock modulo 2s (loader-clock.ts), so a turn that does not divide
+     it would make a ring that replaces another jump back. */
   .at-loader__ring {
-    animation-duration: 2.5s;
+    animation-duration: 2s;
   }
 }
 

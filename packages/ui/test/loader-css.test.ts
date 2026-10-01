@@ -56,9 +56,19 @@ describe("loader layout CSS", () => {
 
   it("slows the ring for prefers-reduced-motion instead of stopping it", () => {
     const media = loaderCss.indexOf("@media (prefers-reduced-motion: reduce)");
-    const slowed = loaderCss.search(/\.at-loader__ring\s*\{\s*animation-duration:\s*2\.5s/);
+    const slowed = loaderCss.search(/\.at-loader__ring\s*\{\s*animation-duration:/);
     expect(slowed).toBeGreaterThan(media);
     expect(loaderCss).not.toMatch(/\.at-loader__ring\s*\{\s*animation:\s*none/);
+  });
+
+  it("slows it to a turn that still divides the shared cycle, so a ring that replaces another does not jump back", () => {
+    // The phase of a new loader is the clock modulo LOADER_CYCLE_MS; a turn of another length would start
+    // it at the wrong angle once the clock has passed one cycle.
+    const normal = Number(/at-loader-spin\s+([\d.]+)s/.exec(decls(loaderCss, ".at-loader__ring").animation ?? "")?.[1]);
+    const reducedAt = loaderCss.search(/\.at-loader__ring\s*\{\s*animation-duration:/);
+    const reduced = Number(/animation-duration:\s*([\d.]+)s/.exec(loaderCss.slice(reducedAt))?.[1]);
+    expect(reduced).toBeGreaterThan(normal);
+    expect(LOADER_CYCLE_MS % (reduced * 1000)).toBe(0);
   });
 
   it("keeps room for the line inside a panel's reserved height, so it is not clipped in a small box", () => {
