@@ -178,14 +178,85 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count('<div className="status"><p>{error}</p><Button onClick={load}>Retry</Button></div>', "retry-outside-an-alert")).toBe(1);
   });
 
-  it("does not count a Retry inside an alert container, an EmptyState action or a Notice action", () => {
+  it("does not count a Retry inside an alert container or an EmptyState action", () => {
     const alert = ['<div className="status" role="alert">', "  <p>{error}</p>", "  <Button onClick={load}>", "    Retry", "  </Button>", "</div>"].join("\n");
     expect(count(alert, "retry-outside-an-alert")).toBe(0);
     expect(count('<div className="status" role="alert"><p>{error}</p><Button onClick={load}>Retry</Button></div>', "retry-outside-an-alert")).toBe(0);
     const empty = ['<EmptyState', '  title="Could not load x"', "  action={", "    <Button onClick={load}>", "      Retry", "    </Button>", "  }", "/>"].join("\n");
     expect(count(empty, "retry-outside-an-alert")).toBe(0);
-    const notice = ['<Notice variant="error" action={', "  <Button onClick={load}>Retry</Button>", "}>", "  {error}", "</Notice>"].join("\n");
-    expect(count(notice, "retry-outside-an-alert")).toBe(0);
+  });
+
+  it("does not count a Retry in the action of a Notice that has role=\"alert\" itself, wherever the role sits", () => {
+    const before = ['<Notice variant="error" role="alert" action={', "  <Button onClick={load}>Retry</Button>", "}>", "  {error}", "</Notice>"].join("\n");
+    expect(count(before, "retry-outside-an-alert")).toBe(0);
+    // The role may come after the action prop, past the line the Retry is on.
+    const after = ['<Notice variant="error" action={', "  <Button onClick={load}>Retry</Button>", '} role="alert">', "  {error}", "</Notice>"].join("\n");
+    expect(count(after, "retry-outside-an-alert")).toBe(0);
+    expect(count('<Notice variant="error" role={"alert"} action={<Button onClick={load}>Retry</Button>}>{error}</Notice>', "retry-outside-an-alert")).toBe(0);
+  });
+
+  it("counts a Retry in the action of a Notice that leaves its role out, or gives it another one", () => {
+    // A Notice leaves its role to the caller, so the component name alone announces nothing.
+    const bare = ['<Notice variant="error" action={', "  <Button onClick={load}>Retry</Button>", "}>", "  {error}", "</Notice>"].join("\n");
+    expect(count(bare, "retry-outside-an-alert")).toBe(1);
+    expect(count('<Notice variant="error" role="status" action={<Button onClick={load}>Retry</Button>}>{error}</Notice>', "retry-outside-an-alert")).toBe(1);
+    // data-role and aria-role are not a role, and a role inside another prop is not the Notice's own.
+    expect(count('<Notice variant="error" data-role="alert" action={<Button onClick={load}>Retry</Button>}>{error}</Notice>', "retry-outside-an-alert")).toBe(1);
+    expect(count('<Notice variant="error" aria-role="alert" action={<Button onClick={load}>Retry</Button>}>{error}</Notice>', "retry-outside-an-alert")).toBe(1);
+    const nested = ['<Notice', '  variant="error"', '  title={<span role="alert">Failed</span>}', "  action={<Button onClick={load}>Retry</Button>}", ">", "  {error}", "</Notice>"].join("\n");
+    expect(count(nested, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("accepts every spelling of role=\"alert\" JSX allows", () => {
+    for (const role of ['role="alert"', "role='alert'", 'role={"alert"}', "role={'alert'}", "role={`alert`}"]) {
+      expect(count(`<Notice variant="error" ${role} action={<Button onClick={load}>Retry</Button>}>{error}</Notice>`, "retry-outside-an-alert")).toBe(0);
+      expect(count(`<div ${role}><Button onClick={load}>Retry</Button></div>`, "retry-outside-an-alert")).toBe(0);
+    }
+  });
+
+  it("accepts any element that carries the role itself, not only a Notice, wherever the role sits among its props", () => {
+    const banner = ['<Banner variant="error" action={', "  <Button onClick={load}>Retry</Button>", '} role="alert">', "  {error}", "</Banner>"].join("\n");
+    expect(count(banner, "retry-outside-an-alert")).toBe(0);
+    // A component with an action prop that is not an alert announces nothing.
+    expect(count('<Card action={<Button onClick={load}>Retry</Button>}>x</Card>', "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("only counts an alert that still encloses the Retry, however long the alert is", () => {
+    const closed = ['<p role="alert">{formError}</p>', '<p className="hint">', "  {ticketTypesError}", "  <button type=\"button\" onClick={retry}>", "    Retry", "  </button>", "</p>"].join("\n");
+    expect(count(closed, "retry-outside-an-alert")).toBe(1);
+    const long = ['<div role="alert">', ...Array.from({ length: 30 }, () => "  <p>detail</p>"), "  <Button onClick={load}>Retry</Button>", "</div>"].join("\n");
+    expect(count(long, "retry-outside-an-alert")).toBe(0);
+    const nestedSame = ['<div role="alert">', "  <div>", "    <p>inner</p>", "  </div>", "  <Button onClick={load}>Retry</Button>", "</div>"].join("\n");
+    expect(count(nestedSame, "retry-outside-an-alert")).toBe(0);
+    const selfClosing = ['<Notice variant="error" role="alert" />', "<Button onClick={load}>Retry</Button>"].join("\n");
+    expect(count(selfClosing, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("sees a Retry that follows an icon or an expression on its line, and every Retry on a line", () => {
+    const icon = ['<div className="status">', "  <Button onClick={load}>", '    <i className="ti ti-refresh" aria-hidden="true" /> Retry', "  </Button>", "</div>"].join("\n");
+    expect(count(icon, "retry-outside-an-alert")).toBe(1);
+    expect(count('<button onClick={load}>{icon}Retry</button>', "retry-outside-an-alert")).toBe(1);
+    const two = '<Notice role="alert" variant="error" action={<Button>Retry</Button>}>a</Notice><Notice variant="error" action={<Button>Retry</Button>}>b</Notice>';
+    expect(count(two, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("is not swallowed by a tag that never ends (a stray quote in a trailing comment)", () => {
+    const stray = ['<EmptyState', '  variant="error" // it\'s a failed load', '  title="Could not load x"', "/>", ...Array.from({ length: 30 }, () => "<p>filler</p>"), "<div>", "  <Button onClick={again}>Retry</Button>", "</div>"].join("\n");
+    expect(count(stray, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("does not let an unrelated Notice or action prop above excuse a Retry that sits in no alert", () => {
+    const unrelatedNotice = ['<Notice variant="info">Saved.</Notice>', '<div className="status">', "  <Button onClick={load}>Retry</Button>", "</div>"].join("\n");
+    expect(count(unrelatedNotice, "retry-outside-an-alert")).toBe(1);
+    const unrelatedAction = ['<Card action={<Button onClick={add}>Add</Button>}>', '  <div className="status">', "    <Button onClick={load}>Retry</Button>", "  </div>", "</Card>"].join("\n");
+    expect(count(unrelatedAction, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("checks a Retry that is a child of a Notice against the role in the lines above it", () => {
+    const withRole = ['<Notice variant="error" role="alert">', "  {error}", "  <Button onClick={load}>Retry</Button>", "</Notice>"].join("\n");
+    expect(count(withRole, "retry-outside-an-alert")).toBe(0);
+    const withoutRole = ['<Notice variant="error">', "  {error}", "  <Button onClick={load}>Retry</Button>", "</Notice>"].join("\n");
+    expect(count(withoutRole, "retry-outside-an-alert")).toBe(1);
   });
 
   it("does not look at buttons that merely mention retry, or at comments", () => {

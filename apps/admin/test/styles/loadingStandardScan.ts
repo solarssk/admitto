@@ -27,7 +27,7 @@ export const RULE_HINTS: Record<Rule, string> = {
   "error-state-not-an-alert":
     'A failed load shown in an <EmptyState> (a "Could not load …" title, or a Retry) needs variant="error", so assistive tech announces it as an alert like every other failed load.',
   "retry-outside-an-alert":
-    'A Retry for a failed load belongs in the `action` of an <EmptyState variant="error"> or a <Notice role="alert">, or in a container with role="alert", so the failure is announced.',
+    'A Retry for a failed load belongs in the `action` of an <EmptyState variant="error"> or of an element that has role="alert" itself (a <Notice> leaves its role to the caller), or inside an element with role="alert", so the failure is announced.',
   "raw-button-busy-disabled":
     "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <MoreActionsMenuItem loading>), which stays focusable.",
 };
@@ -136,6 +136,7 @@ function stripJsxProp(source: string, prop: string): string {
 const COMPLIANT_PROPS = ["aria-label", "loadingLabel"];
 
 /** Index just past the `>` that closes the JSX opening tag starting at `start` (braces and quotes are balanced). */
+/** Index just past the `>` that ends the opening tag starting at `start`, or -1 when the tag never ends. */
 function jsxOpeningTagEnd(source: string, start: number): number {
   let depth = 0;
   for (let i = start; i < source.length; i++) {
@@ -146,16 +147,32 @@ function jsxOpeningTagEnd(source: string, start: number): number {
     else if (c === ">" && depth === 0 && source[i - 1] !== "=") return i + 1;
     if (i === -1) break;
   }
-  return source.length;
+  return -1;
 }
 
 /** The opening tags of one JSX element name, as written (so `<Button` does not match `<ButtonGroup`). */
-function openingTags(source: string, name: string): string[] {
-  const tags: string[] = [];
-  for (const match of source.matchAll(new RegExp(`<${name}(?![\\w.-])`, "g"))) {
-    tags.push(source.slice(match.index, jsxOpeningTagEnd(source, match.index + match[0].length)));
+interface TagSpan {
+  name: string;
+  start: number;
+  end: number;
+  tag: string;
+}
+/**
+ * Every opening tag whose name matches `namePattern` (a regex source), with where it starts and ends, so a caller
+ * can ask what sits inside it. A tag that never ends (a stray quote swallowing the rest of the file) is skipped
+ * instead of excusing everything after it.
+ */
+function tagSpans(source: string, namePattern: string): TagSpan[] {
+  const spans: TagSpan[] = [];
+  for (const match of source.matchAll(new RegExp(`<(${namePattern})(?![\\w.-])`, "g"))) {
+    const end = jsxOpeningTagEnd(source, match.index + match[0].length);
+    if (end === -1) continue; // ran to the end of the file: not a tag that ends
+    spans.push({ name: match[1]!, start: match.index, end, tag: source.slice(match.index, end) });
   }
-  return tags;
+  return spans;
+}
+function openingTags(source: string, name: string): string[] {
+  return tagSpans(source, name).map((span) => span.tag);
 }
 
 // A load error: an EmptyState that offers a Retry, or whose title says "Could not ...".
@@ -163,8 +180,10 @@ const COULD_NOT_TITLE = /\btitle=(?:"Could not\b|\{[^}]*"Could not\b)/;
 // Words a busy flag is named with, as part of any identifier (`bulkSendBusy`, `isSaving`, `exporting`).
 const BUSY_WORDS = /busy|saving|loading|submitting|pending|sending|working|reloading|revoking|deleting/i;
 // How far above a Retry button an alert, an EmptyState or a Notice may sit and still be what shows it.
-const RETRY_LOOKBACK_LINES = 14;
-const ALERT_AROUND_RETRY = /role="alert"|<EmptyState\b|<Notice\b|\baction=\{/;
+// role="alert" as an attribute of its own (not data-role or aria-role), in the spellings JSX allows.
+const ALERT_ROLE_ATTR = /(?<![\w-])role=(?:"alert"|'alert'|\{\s*(?:"alert"|'alert'|`alert`)\s*\})/;
+// A Retry button: the word on its own, at the start of a line or right after a tag or an expression (an icon before it).
+const RETRY_BUTTON_TEXT = /(?:^\s*|[>}]\s*)Retry(?=\s*(?:<|$))/g;
 
 /** EmptyStates that show a failed load but lack `variant="error"`. */
 function countErrorEmptyStatesWithoutVariant(text: string): number {
@@ -175,14 +194,65 @@ function countErrorEmptyStatesWithoutVariant(text: string): number {
   }).length;
 }
 
-/** Retry buttons for a failed load with no alert, EmptyState or Notice action in the lines above them. */
+/**
+ * The tag with every `name={...}` value dropped except the one of `role`, so a role that sits inside another prop
+ * (`title={<span role="alert">…`) or in the Retry's action is not mistaken for the tag's own role.
+ */
+function ownRoleProps(tag: string): string {
+  let out = "";
+  let cursor = 0;
+  for (const m of tag.matchAll(/(?<![\w-])([\w-]+)=(?=\{)/g)) {
+    if (m.index < cursor || m[1] === "role") continue;
+    const valueStart = m.index + m[0].length;
+    out += tag.slice(cursor, valueStart);
+    cursor = propValueEnd(tag, valueStart);
+  }
+  return out + tag.slice(cursor);
+}
+
+/** True when a `role="alert"` element that has not closed yet encloses the text at `at`. */
+function insideAlertElement(source: string, tags: TagSpan[], at: number): boolean {
+  const selfClosing = (span: TagSpan) => span.tag.trimEnd().endsWith("/>");
+  return tags.some((alert) => {
+    if (alert.end > at || selfClosing(alert) || !ALERT_ROLE_ATTR.test(ownRoleProps(alert.tag))) return false;
+    // Walk the same-named elements between the alert and `at` in order: the alert is still open unless a closing
+    // tag brings the depth back to zero before `at` (a later sibling of the same name must not bring it back).
+    const closing = new RegExp(`</${alert.name.replaceAll(".", "\\.")}\\s*>`, "g");
+    const moves = [
+      ...tags.filter((t) => t.name === alert.name && t.start >= alert.end && t.start < at && !selfClosing(t)).map((t) => ({ at: t.start, by: 1 })),
+      ...[...source.slice(alert.end, at).matchAll(closing)].map((m) => ({ at: alert.end + m.index, by: -1 })),
+    ].sort((a, b) => a.at - b.at);
+    let depth = 1;
+    for (const move of moves) {
+      depth += move.by;
+      if (depth === 0) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Retry buttons for a failed load that nothing announces. A Retry in the props of an EmptyState is left to
+ * error-state-not-an-alert, which requires variant="error" there. Any other Retry needs role="alert" on the element
+ * whose props hold it (a Notice leaves its role to the caller, so the name alone says nothing), or on an element
+ * that has not closed yet around it.
+ */
 function countRetriesOutsideAnAlert(text: string): number {
-  const lines = text.split("\n");
+  const tags = tagSpans(text, "[A-Za-z][\\w.]*");
   let count = 0;
-  for (const [i, line] of lines.entries()) {
-    if (!/(?:^\s*|>)Retry(?:<|\s*$)/.test(line)) continue;
-    const window = lines.slice(Math.max(0, i - RETRY_LOOKBACK_LINES), i + 1).join("\n");
-    if (!ALERT_AROUND_RETRY.test(window)) count++;
+  let lineStart = 0;
+  for (const line of text.split("\n")) {
+    const offset = lineStart;
+    lineStart += line.length + 1;
+    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) {
+      const at = offset + found.index + found[0].length - "Retry".length;
+      // The innermost tag whose own props hold the Retry (its action prop, usually).
+      const owner = tags.findLast((span) => span.start <= at && at < span.end);
+      if (owner?.name === "EmptyState") continue;
+      // The action holds the Retry button itself, so only the tag's own role counts.
+      if (owner && ALERT_ROLE_ATTR.test(ownRoleProps(owner.tag))) continue;
+      if (!insideAlertElement(text, tags, at)) count++;
+    }
   }
   return count;
 }
