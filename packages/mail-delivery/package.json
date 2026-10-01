@@ -34,7 +34,7 @@
     "iconv-lite": "^0.7.3",
     "imapflow": "^2.0.2",
     "libmime": "^5.4.1",
-    "libqp": "^2.1.1"
+    "libqp": "^2.1.2"
   },
   "devDependencies": {
     "@prisma/client": "^7.10.0",
