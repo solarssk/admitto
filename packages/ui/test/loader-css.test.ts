@@ -64,16 +64,24 @@ describe("loader layout CSS", () => {
   it("keeps room for the line inside a panel's reserved height, so it is not clipped in a small box", () => {
     const section = decls(loaderCss, ".at-loader--section");
     expect(section["box-sizing"]).toBe("border-box");
-    // 14px gap plus one 14px line at 1.4.
-    expect(parseInt(section["padding-bottom"] ?? "0", 10)).toBeGreaterThanOrEqual(34);
+    // 14px gap plus one 16px line at 1.4 (22.4px).
+    expect(parseInt(section["padding-bottom"] ?? "0", 10)).toBeGreaterThanOrEqual(37);
   });
 
-  it("writes the line in the body text colour: muted grey is under 4.5:1 on the page background", () => {
+  it("writes the caption in --text-secondary: muted grey is under 4.5:1 on the page background", () => {
     expect(decls(loaderCss, ".at-loader").color).toBe("var(--text-secondary)");
   });
 
-  it("uses the same font stack as the splash, which renders before any font has loaded", () => {
-    expect(decls(loaderCss, ".at-loader__text")["font-family"]).toMatch(/^system-ui,/);
+  it("styles the line with the design system's own text tokens, like the title of an empty or error state", () => {
+    const label = decls(loaderCss, ".at-loader__label");
+    expect(label.color).toBe("var(--text-primary)");
+    expect(label["font-size"]).toBe("var(--fs-h3)");
+    expect(label["font-weight"]).toBe("var(--fw-medium)");
+  });
+
+  it("does not pick a font of its own: the line follows the page (Inter, or the organisation's font)", () => {
+    expect(decls(loaderCss, ".at-loader__text")["font-family"]).toBeUndefined();
+    expect(decls(loaderCss, ".at-loader__label")["font-family"]).toBeUndefined();
   });
 
   it("hides the line while the start loader fades out over the app, which may be waiting with another one", () => {

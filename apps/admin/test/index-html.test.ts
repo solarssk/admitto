@@ -59,16 +59,22 @@ describe("apps/admin/index.html splash", () => {
       expect(label.transform).toBe(text.transform);
     });
 
-    it("writes the label in the same size, line height, font stack and colour as PageLoader", () => {
+    it("writes the label in the same weight, size, line height, font stack and colour as PageLoader", () => {
+      // The splash cannot use the design tokens (no stylesheet yet), so it must hold the same values.
       const label = decls(html, ".at-splash__label");
-      const fontSize = /--fs-body:\s*([\d.]+)rem/.exec(tokens("typography.css"))?.[1];
-      const lineHeight = /--lh-snug:\s*([\d.]+)/.exec(tokens("typography.css"))?.[1];
-      expect(label.font).toMatch(new RegExp(`^${Number(fontSize) * 16}px/${lineHeight} `));
-      const family = decls(loaderCss, ".at-loader__text")["font-family"] ?? "";
-      expect(label.font).toContain(family.replaceAll('"', "'"));
-      // --text-secondary is --at-gray-600: the splash cannot use the token, so it must hold the same value.
-      const gray600 = /--at-gray-600:\s*(#[0-9a-fA-F]{6})/.exec(tokens("colors.css"))?.[1];
-      expect(label.color.toLowerCase()).toBe(gray600?.toLowerCase());
+      const type = tokens("typography.css");
+      const weight = /--fw-medium:\s*(\d+)/.exec(type)?.[1];
+      const size = Number(/--fs-h3:\s*([\d.]+)rem/.exec(type)?.[1]) * 16;
+      const lineHeight = /--lh-snug:\s*([\d.]+)/.exec(type)?.[1];
+      const family = /--font-sans:\s*([^;]+);/.exec(type)?.[1];
+      expect(label.font).toBe(`${weight} ${size}px/${lineHeight} ${family}`);
+      expect(label["-webkit-font-smoothing"]).toBe("antialiased");
+
+      // PageLoader takes these from the same tokens: the title step of an empty or error state.
+      const pageLabel = decls(loaderCss, ".at-loader__label");
+      expect([pageLabel["font-size"], pageLabel["font-weight"], pageLabel.color]).toEqual(["var(--fs-h3)", "var(--fw-medium)", "var(--text-primary)"]);
+      const ink = /--at-ink:\s*(#[0-9a-fA-F]{6})/.exec(tokens("colors.css"))?.[1];
+      expect(label.color.toLowerCase()).toBe(ink?.toLowerCase());
     });
 
     it("lets the loaders' shared clock find the mark inside the real splash markup (hand-over is detected)", () => {

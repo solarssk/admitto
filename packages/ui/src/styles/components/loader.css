@@ -4,8 +4,8 @@
    restart the drawing. The static splash in apps/admin/index.html uses the same timings.
    A whole screen shows the mark, a panel shows a ring (1s a turn, a divisor of the 2s cycle, so it
    shares the same phase); both have the line saying what is loading under them. */
-/* --text-secondary, not --text-muted: the line is now the thing to read on every wait, and muted grey is
-   4.3:1 on the page background (--surface-page), under the 4.5:1 minimum for text this size. */
+/* --text-secondary, not --text-muted, for the caption: muted grey is 4.3:1 on the page background
+   (--surface-page), under the 4.5:1 minimum for text this size. */
 .at-loader {
   display: flex;
   align-items: center;
@@ -30,13 +30,13 @@
   min-height: 16rem;
 }
 
-/* The room for the line hanging under the ring (its 14px gap and one line), inside the reserved
-   height (border-box), so the ring and its line sit together in the middle and nothing is clipped in
-   a small box. */
+/* The room for the line hanging under the ring (its 14px gap and one 16px line at 1.4, 36.4px), inside
+   the reserved height (border-box), so the ring and its line sit together in the middle and nothing is
+   clipped in a small box. */
 .at-loader--section {
   box-sizing: border-box;
   width: 100%;
-  padding-bottom: 34px;
+  padding-bottom: 38px;
 }
 
 .at-loader__mark {
@@ -102,11 +102,16 @@
   max-width: min(28ch, calc(100vw - 2rem));
   margin-top: 14px;
   transform: translateX(-50%);
-  /* The same stack as the splash in apps/admin/index.html, which renders before any font has loaded,
-     so the line does not change face when React takes over. */
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: var(--fs-body);
   line-height: var(--lh-snug);
+}
+
+/* The app's own text styles (Inter, or the organisation's font, from the page): the same step, weight
+   and colour as the title of an empty or error state, which is what the start screen turns into when
+   the session cannot be loaded. */
+.at-loader__label {
+  color: var(--text-primary);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-medium);
 }
 
 .at-loader__caption {
