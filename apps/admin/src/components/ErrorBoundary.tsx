@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.hasError) {
       return (
         <div className="error-boundary">
-          <div className="error-boundary__panel">
+          <div className="error-boundary__panel" role="alert">
             <h1 className="error-boundary__title">Something went wrong</h1>
             <p className="error-boundary__message">
               An unexpected error occurred. Reload the page to continue.
