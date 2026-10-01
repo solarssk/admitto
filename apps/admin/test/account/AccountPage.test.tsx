@@ -307,10 +307,15 @@ describe("AccountPage delayed loading", () => {
     mockFetchSessions.mockImplementation(() => new Promise(() => {}));
     vi.useFakeTimers();
     renderWithToast(<AccountPage />);
+    // In the page from the first frame (so its space is held), but not painted before 200ms.
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(199);
     });
-    expect(screen.getByLabelText("Loading account")).toBeTruthy();
+    expect(screen.getByLabelText("Loading account").closest(".at-card")?.className).toContain("at-loading-hold");
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByLabelText("Loading account").closest(".at-card")?.className).not.toContain("at-loading-hold");
   });
 
   it("shows the sessions spinner once the fetch has genuinely taken a moment", async () => {
@@ -350,16 +355,17 @@ describe("AccountPage delayed loading", () => {
     });
 
     // Only 50ms further (200ms total since mount), not nearly enough for the sessions
-    // card's own fresh 200ms window, which only starts once it becomes visible here.
+    // card's own fresh 200ms window, which only starts once it becomes visible here: its loader
+    // is in the card (so the space is held) but not painted.
     act(() => {
       vi.advanceTimersByTime(50);
     });
-    expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+    expect(screen.getByLabelText("Loading sessions").className).toContain("at-loading-hold");
 
     act(() => {
       vi.advanceTimersByTime(150);
     });
-    expect(screen.getByLabelText("Loading sessions")).toBeTruthy();
+    expect(screen.getByLabelText("Loading sessions").className).not.toContain("at-loading-hold");
   });
 });
 
@@ -3728,7 +3734,7 @@ describe("AccountPage: Backup codes", () => {
     expect(screen.queryByText("Backup codes")).toBeNull();
   });
 
-  it("leaves the row blank rather than crashing the page when the status fetch fails", async () => {
+  it("says the status is unavailable, rather than loading for good or crashing the page, when the status fetch fails", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockRejectedValueOnce(new Error("network down"));
@@ -3737,13 +3743,11 @@ describe("AccountPage: Backup codes", () => {
     await waitFor(() => {
       expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(1);
     });
-    // The catch is a silent no-op (no error state to assert on) - flush the rejected promise's
-    // microtask queue so the catch itself has actually run before this test (and its coverage
-    // snapshot) completes, rather than "Loading..." being trivially true from the initial render.
     await act(async () => {
       await Promise.resolve();
     });
-    expect(within(backupCodesRow()).getByText("Loading…")).toBeTruthy();
+    expect(within(backupCodesRow()).getByText("Status unavailable")).toBeTruthy();
+    expect(within(backupCodesRow()).queryByText("Loading…")).toBeNull();
   });
 
   it("redirects to login when the status fetch fails with a 401", async () => {
@@ -4158,4 +4162,836 @@ describe("AccountPage: Notifications", () => {
 
     expect(await screen.findByText(TYPE_A.label)).toBeTruthy();
   });
+});
+
+describe("AccountPage on the loading standard", () => {
+  const HOLD = "at-loading-hold";
+  const accountLoader = () => document.querySelector('[aria-label="Loading account"]') as HTMLElement | null;
+  const slowRequest = (signals: AbortSignal[]) =>
+    ((...args: unknown[]) => {
+      const signal = args.find((arg): arg is AbortSignal => arg instanceof AbortSignal);
+      if (signal) signals.push(signal);
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+      });
+    }) as never;
+
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  afterEach(() => {
+    // Whatever a test here left behind must not answer the next test's first call.
+    mockFetchAccount.mockReset();
+    mockFetchSessions.mockReset();
+    mockFetchBackupCodesStatus.mockReset();
+    mockFetchNotificationPreferences.mockReset().mockResolvedValue({ notification_types: [] });
+    mockPatchProfile.mockReset();
+  });
+
+  describe("the first load", () => {
+    it("holds the space, draws the loader after 200ms, keeps it for 400ms, and says so after 8 seconds", async () => {
+      let answer!: (account: AccountDto) => void;
+      mockFetchAccount.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+
+      expect(accountLoader()?.closest(".at-card")?.className).toContain(HOLD);
+      await advance(199);
+      expect(accountLoader()?.closest(".at-card")?.className).toContain(HOLD);
+      await advance(1);
+      expect(accountLoader()?.closest(".at-card")?.className).not.toContain(HOLD);
+      expect(screen.queryByText("Taking longer than usual. Check your connection.")).toBeNull();
+
+      // The answer comes 50ms after the loader was drawn: it stays until 400ms have passed.
+      await advance(50);
+      await act(async () => {
+        answer(baseAccount);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(accountLoader()).not.toBeNull();
+      await advance(349);
+      expect(accountLoader()).not.toBeNull();
+      await advance(1);
+      expect(accountLoader()).toBeNull();
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    it("draws the shape of the profile form (a label, a control and a hint per field, and the Save button) instead of a spinner or the logo", async () => {
+      mockFetchAccount.mockReturnValue(new Promise(() => {}));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+      await advance(200);
+
+      const region = accountLoader()!;
+      // Laid out by the form's own grid, so the real form replaces it without moving anything.
+      expect(region.classList.contains("account-profile-editable")).toBe(true);
+      expect(region.querySelectorAll(".at-field")).toHaveLength(8);
+      const heights = [...region.querySelectorAll<HTMLElement>(".at-field > .at-skeleton")].map((el) => el.style.height);
+      expect(heights).toEqual(Array.from({ length: 8 }, () => ["14px", "36px", "12px"]).flat());
+      expect(region.closest(".at-card")?.querySelector(".mail-transport-footer .at-skeleton")).not.toBeNull();
+      expect(document.querySelector(".at-loader, .at-spinner")).toBeNull();
+    });
+
+    describe("the placeholder follows the tab the page was opened on, so nothing below it jumps", () => {
+      const opened = async (tab: "password" | "sessions" | "notifications") => {
+        mockFetchAccount.mockReturnValue(new Promise(() => {}));
+        mockFetchSessions.mockResolvedValue({ sessions: [] });
+        vi.useFakeTimers();
+        renderWithToast(<AccountPage activeTab={tab} />);
+      };
+      const titles = () => [...document.querySelectorAll(".at-card__title")].map((el) => el.textContent);
+
+      it("Password: the two cards of the tab (the password form and the two-factor methods), held for 200ms as one", async () => {
+        await opened("password");
+        const region = accountLoader()!;
+        expect(region.classList.contains("account-security-grid")).toBe(true);
+        expect(region.className).toContain(HOLD);
+        expect(titles()).toEqual(["Password", "Two-factor authentication"]);
+        // The form: an explanation and three fields; the methods: three rows.
+        expect(region.querySelectorAll(".at-field")).toHaveLength(3);
+        expect(region.querySelectorAll(".at-card")[1]?.querySelectorAll(".at-skeleton")).toHaveLength(3);
+        await advance(200);
+        expect(region.className).not.toContain(HOLD);
+      });
+
+      it("Sessions: the Active sessions card with rows, and no Profile card", async () => {
+        await opened("sessions");
+        expect(titles()).toEqual(["Active sessions"]);
+        expect(accountLoader()?.closest(".at-card")?.className).toContain(HOLD);
+        expect([...accountLoader()!.querySelectorAll<HTMLElement>(":scope > .at-skeleton")].map((bar) => bar.style.height)).toEqual(["44px", "44px", "44px"]);
+        await advance(200);
+        expect(accountLoader()?.closest(".at-card")?.className).not.toContain(HOLD);
+      });
+
+      it("Notifications: the Notifications card with its own explanation (not data) and rows", async () => {
+        await opened("notifications");
+        expect(titles()).toEqual(["Notifications"]);
+        expect(screen.getByText(/Choose which of your enabled security alert types/)).toBeTruthy();
+        expect([...accountLoader()!.querySelectorAll<HTMLElement>(":scope > .at-skeleton")].map((bar) => bar.style.height)).toEqual(["56px", "56px", "56px", "56px"]);
+        expect(accountLoader()?.closest(".at-card")?.className).toContain(HOLD);
+      });
+
+      it("says it is taking longer than usual in the placeholder of every tab", async () => {
+        await opened("password");
+        await advance(8000);
+        const message = screen.getByText("Taking longer than usual. Check your connection.");
+        expect(message.closest('[aria-label="Loading account"]')).toBe(accountLoader());
+        // On the Password tab the line sits on the page background, where muted grey is under 4.5:1.
+        expect(message.style.color).toBe("var(--text-secondary)");
+      });
+    });
+
+    it("the sessions wait starts only when its card can render: an answer that came while the account placeholder was still held is shown at once", async () => {
+      let answerAccount!: (account: AccountDto) => void;
+      let answerSessions!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchAccount.mockReturnValue(new Promise((resolve) => (answerAccount = resolve)));
+      mockFetchSessions.mockReturnValue(new Promise((resolve) => (answerSessions = resolve)));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="sessions" />);
+
+      await advance(250); // the account placeholder was drawn at 200ms
+      await act(async () => answerAccount(baseAccount)); // answered at 250ms, but the placeholder stays until 600ms
+      await advance(250);
+      // 500ms: counted from the answer, the sessions placeholder would have been drawn at 450ms and held for 400ms.
+      await act(async () => answerSessions({ sessions: [] }));
+      await advance(0);
+
+      await advance(110); // 610ms: the account placeholder is gone and the card can render
+      expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+      expect(screen.getByText("No active sessions.")).toBeTruthy();
+    });
+
+    it("the notifications wait starts only when its card can render, too", async () => {
+      let answerAccount!: (account: AccountDto) => void;
+      let answerPrefs!: (value: { notification_types: never[] }) => void;
+      mockFetchAccount.mockReturnValue(new Promise((resolve) => (answerAccount = resolve)));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchNotificationPreferences.mockReturnValue(new Promise((resolve) => (answerPrefs = resolve)));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="notifications" />);
+
+      await advance(250);
+      await act(async () => answerAccount(baseAccount));
+      await advance(250);
+      await act(async () => answerPrefs({ notification_types: [] }));
+      await advance(0);
+
+      await advance(110); // 610ms: the account placeholder is gone and the card can render
+      expect(screen.queryByLabelText("Loading notification preferences")).toBeNull();
+      expect(screen.queryByLabelText("Loading account")).toBeNull();
+    });
+
+    it("puts the 8 second message inside the region, so it is announced and takes a full row of the grid", async () => {
+      mockFetchAccount.mockReturnValue(new Promise(() => {}));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+      await advance(8000);
+      const message = screen.getByText("Taking longer than usual. Check your connection.");
+      expect(message.closest('[aria-label="Loading account"]')).toBe(accountLoader());
+      expect(message.style.gridColumn).toBe("1 / -1");
+    });
+
+    it("says it is taking longer than usual after 8 seconds", async () => {
+      mockFetchAccount.mockReturnValue(new Promise(() => {}));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+      await advance(7999);
+      expect(screen.queryByText("Taking longer than usual. Check your connection.")).toBeNull();
+      await advance(1);
+      expect(screen.getByText("Taking longer than usual. Check your connection.")).toBeTruthy();
+    });
+
+    it("gives up after 30 seconds with an error and Retry, and a retry gets its own 30 seconds", async () => {
+      const signals: AbortSignal[] = [];
+      mockFetchAccount.mockImplementation(slowRequest(signals));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+
+      await advance(29_999);
+      expect(screen.queryByText("Could not load account")).toBeNull();
+      await advance(1);
+      await advance(600);
+      expect(screen.getByText("Could not load account")).toBeTruthy();
+      expect(screen.getByText("The server did not answer in time. Check your connection and try again.")).toBeTruthy();
+      expect(signals[0]?.aborted).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(signals).toHaveLength(2);
+      expect(signals[1]?.aborted).toBe(false);
+      await advance(29_999);
+      expect(signals[1]?.aborted).toBe(false);
+    });
+
+    it("sessions: a request that never answers ends in the error with Retry, not a loader for good", async () => {
+      const signals: AbortSignal[] = [];
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockImplementation(slowRequest(signals));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await advance(30_000);
+      await advance(600);
+      expect(screen.getByText("The server did not answer in time. Check your connection and try again.")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+
+    it("notifications: a request that never answers ends in the error with Retry", async () => {
+      const signals: AbortSignal[] = [];
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchNotificationPreferences.mockImplementation(slowRequest(signals));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="notifications" />);
+      await advance(30_000);
+      await advance(600);
+      expect(screen.getAllByText("The server did not answer in time. Check your connection and try again.").length).toBeGreaterThan(0);
+    });
+
+    it("backup codes: a placeholder while the count is on its way, and 'unavailable' when it never comes", async () => {
+      const signals: AbortSignal[] = [];
+      mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchBackupCodesStatus.mockImplementation(slowRequest(signals));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="password" />);
+      // Let the account answer be committed first: inside one act, a single long advance would run the
+      // loader's 200ms timer before React had rendered the answer that ends the wait.
+      await advance(0);
+      await advance(1000);
+      expect(within(backupCodesRow()).queryByText("Loading…")).toBeNull();
+      expect(backupCodesRow().querySelector(".at-skeleton")).not.toBeNull();
+      expect(within(backupCodesRow()).queryByText("Status unavailable")).toBeNull();
+
+      await advance(30_000);
+      expect(within(backupCodesRow()).getByText("Status unavailable")).toBeTruthy();
+      expect(backupCodesRow().querySelector(".at-skeleton")).toBeNull();
+    });
+  });
+
+  describe("a refresh after saving", () => {
+    function slowSecondAccountFetch() {
+      let answerRefresh!: (account: AccountDto) => void;
+      let failRefresh!: (error: Error) => void;
+      mockFetchAccount
+        .mockResolvedValueOnce(baseAccount)
+        .mockReturnValueOnce(new Promise((resolve, reject) => { answerRefresh = resolve; failRefresh = reject; }));
+      return { answerRefresh: (a: AccountDto) => answerRefresh(a), failRefresh: (e: Error) => failRefresh(e) };
+    }
+
+    async function saveNewDisplayName() {
+      renderWithToast(<AccountPage />);
+      const name = (await screen.findByLabelText("Display name")) as HTMLInputElement;
+      fireEvent.change(name, { target: { value: "Renamed Admin" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(mockPatchProfile).toHaveBeenCalled());
+    }
+
+    it("keeps the page, and whatever is open on it, instead of replacing it with a loader", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      // The refresh is still on its way: nothing was unmounted.
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+      expect(accountLoader()).toBeNull();
+      expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("Renamed Admin");
+
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    it("keeps the Save button in place while it saves, marked busy instead of swapping its text", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      const save = screen.getByRole("button", { name: "Save" });
+      expect(save.getAttribute("aria-busy")).toBe("true");
+      expect(save.getAttribute("aria-disabled")).toBe("true");
+
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBeNull());
+    });
+
+    it("keeps the page when the refresh itself fails, and says so in the page with a Retry, instead of replacing it with an error", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      await act(async () => refresh.failRefresh(new Error("network down")));
+
+      // Not a toast that is gone in seconds: what the page shows may be older than what was saved.
+      const notice = await screen.findByText(/Could not refresh this page, so it may show older details/);
+      expect(notice.closest('[role="alert"]')).not.toBeNull();
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+      expect(screen.queryByText("Could not load account")).toBeNull();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+
+    it("Retry in that notice asks again in place, busy meanwhile, and the notice goes when it works", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      let answerRetry!: (account: AccountDto) => void;
+      mockFetchAccount
+        .mockResolvedValueOnce(baseAccount)
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)));
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await screen.findByText(/Could not refresh this page/);
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+      expect(screen.getByText(/Could not refresh this page/)).toBeTruthy();
+      expect(accountLoader()).toBeNull();
+
+      await act(async () => answerRetry({ ...baseAccount, display_name: "Renamed Admin" }));
+      await waitFor(() => expect(screen.queryByText(/Could not refresh this page/)).toBeNull());
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    it("a Retry that fails again at once still shows that it ran: busy for at least 400ms, and the warning is announced again", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchAccount
+        .mockResolvedValueOnce(baseAccount)
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockRejectedValueOnce(new Error("network down"));
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      const before = await screen.findByText(/Could not refresh this page/);
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
+      // The request has failed already (microtasks), and the button is still busy: the hold is 400ms from the click.
+      await act(async () => {});
+      expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true");
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull(), { timeout: 2000 });
+      // The same text again, but a new element: that is what makes the live region read it out once more.
+      const after = screen.getByText(/Could not refresh this page/);
+      expect(after).not.toBe(before);
+    });
+
+    it("a saved profile stays saved when the refresh that follows fails: Save does not light up again for what was just saved", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      await act(async () => refresh.failRefresh(new Error("network down")));
+      await screen.findByText(/Could not refresh this page/);
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBeNull());
+      // The saved values are the baseline, though the page still holds the older account.
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    /**
+     * Two refreshes of the account at once. The cards that show the account swallow every click while one is
+     * on its way, so the only way to start a second is from a dialog, which lives outside them: the "Forget all
+     * trusted devices" dialog is opened first, then a profile Save starts the first refresh, then the dialog's
+     * action starts the second.
+     */
+    async function overlappingRefreshes() {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const answers = {} as {
+        answerFirst: (account: AccountDto) => void;
+        failFirst: (error: Error) => void;
+        answerSecond: (account: AccountDto) => void;
+      };
+      mockFetchAccount
+        .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 3 })
+        .mockReturnValueOnce(new Promise((resolve, reject) => { answers.answerFirst = resolve; answers.failFirst = reject; }))
+        .mockReturnValueOnce(new Promise((resolve) => (answers.answerSecond = resolve)));
+      mockPatchProfile.mockResolvedValue({ ...totpEnrolledAccount, display_name: "Renamed Admin" } as never);
+      mockForgetAllTrustedDevices.mockResolvedValue({ devices_revoked: 0 });
+
+      renderWithToast(<AccountPage />);
+      const name = (await screen.findByLabelText("Display name")) as HTMLInputElement;
+      fireEvent.click(await screen.findByRole("button", { name: "Two-factor authentication options", hidden: true }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/, hidden: true }));
+      const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+
+      fireEvent.change(name, { target: { value: "Renamed Admin" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save", hidden: true }));
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
+      return answers;
+    }
+
+    it("an older answer never replaces a newer one: two refreshes that resolve out of order leave the newest snapshot", async () => {
+      const answers = await overlappingRefreshes();
+
+      await act(async () => answers.answerSecond({ ...totpEnrolledAccount, email: "new@example.com" }));
+      await act(async () => answers.answerFirst({ ...totpEnrolledAccount, email: "old@example.com" }));
+      expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("new@example.com");
+    });
+
+    it("an older refresh that fails after a newer one worked does not put the warning back", async () => {
+      const answers = await overlappingRefreshes();
+
+      await act(async () => answers.answerSecond({ ...totpEnrolledAccount, email: "new@example.com" }));
+      await act(async () => answers.failFirst(new Error("network down")));
+      // The newest snapshot is on screen and current: nothing says it may be out of date.
+      expect(screen.queryByText(/Could not refresh this page/)).toBeNull();
+      expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("new@example.com");
+    });
+
+    it("an older answer that arrives first leaves the cards blocked until the newest one is in", async () => {
+      const answers = await overlappingRefreshes();
+      mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
+      const busy = () => document.querySelectorAll(".at-card.account-refetch--busy");
+
+      await act(async () => answers.answerFirst({ ...totpEnrolledAccount, email: "old@example.com" }));
+      // The newest refresh is still on its way: Profile, Password and Two-factor stay blocked.
+      expect(busy()).toHaveLength(3);
+      fillPasswordForm();
+      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true }));
+      expect(mockPatchPassword).not.toHaveBeenCalled();
+
+      await act(async () => answers.answerSecond({ ...totpEnrolledAccount, email: "new@example.com" }));
+      await waitFor(() => expect(busy()).toHaveLength(0));
+    });
+
+    it("while the account is refreshed no other action in its cards can be started, by a click or by the key press that makes one, though the cards are not inert", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockFetchAccount.mockResolvedValue(baseAccount); // any refresh after the two above
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+      mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      fillPasswordForm();
+      const change = screen.getByRole("button", { name: "Change password", hidden: true });
+      const form = document.querySelector("form.account-password-form") as HTMLFormElement;
+
+      // Pressing Enter or Space on a button makes a click, and Enter in a field submits the form: both are swallowed.
+      fireEvent.click(change);
+      fireEvent.submit(form);
+      expect(mockPatchPassword).not.toHaveBeenCalled();
+      // Not inert, so the button that was pressed keeps keyboard focus, and typing still works.
+      expect(change.closest(".at-card")?.hasAttribute("inert")).toBe(false);
+      fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "typed meanwhile" } });
+      expect((screen.getByLabelText("Current password") as HTMLInputElement).value).toBe("typed meanwhile");
+
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      await waitFor(() => expect(document.querySelectorAll(".at-card.account-refetch--busy")).toHaveLength(0));
+      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true }));
+      await waitFor(() => expect(mockPatchPassword).toHaveBeenCalledTimes(1));
+    });
+
+    it("tells a screen reader that the account is being refreshed and that actions are paused, once the wait is noticeable", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      expect(await screen.findByText("Refreshing your account. Actions are paused until it finishes.")).toBeTruthy();
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      await waitFor(() => expect(screen.queryByText(/Refreshing your account/)).toBeNull());
+    });
+
+    it("the refresh warning does not appear with a busy Retry, nor announce itself twice, when the refresh itself is what failed", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      // The refresh runs for a moment before it fails (a request that fails in the same tick would not show this).
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      await act(async () => refresh.failRefresh(new Error("network down")));
+      const message = await screen.findByText(/Could not refresh this page/);
+      expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull();
+      // Nobody pressed Retry: the message stays the same element (a new one is what a live region reads out again).
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(screen.getByText(/Could not refresh this page/)).toBe(message);
+      expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull();
+    });
+
+    describe("the profile form after a refresh", () => {
+      async function forgetDevicesRefresh(freshName: string, typed?: string) {
+        mockFetchAccount
+          .mockResolvedValueOnce({ ...totpEnrolledAccount, display_name: "Admin", trusted_devices_count: 3 })
+          .mockResolvedValueOnce({ ...totpEnrolledAccount, display_name: freshName, trusted_devices_count: 0 });
+        mockFetchSessions.mockResolvedValue({ sessions: [] });
+        mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 3 });
+
+        renderWithToast(<AccountPage activeTab="password" />);
+        const name = (await screen.findByLabelText("Display name")) as HTMLInputElement;
+        if (typed !== undefined) fireEvent.change(name, { target: { value: typed } });
+        fireEvent.click(await screen.findByRole("button", { name: "Two-factor authentication options" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+        const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+        fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+        await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(document.querySelectorAll(".at-card.account-refetch--busy")).toHaveLength(0));
+        return name;
+      }
+      const save = () => screen.getByRole("button", { name: "Save", hidden: true }) as HTMLButtonElement;
+
+      it("takes the new value of a field nobody has touched, so a change made elsewhere does not light Save up with the old one", async () => {
+        const name = await forgetDevicesRefresh("Changed elsewhere");
+        expect(name.value).toBe("Changed elsewhere");
+        expect(save().disabled).toBe(true);
+      });
+
+      it("keeps what was typed into a field, and Save compares it with the newest account", async () => {
+        const name = await forgetDevicesRefresh("Changed elsewhere", "Typed meanwhile");
+        expect(name.value).toBe("Typed meanwhile");
+        expect(save().disabled).toBe(false);
+      });
+    });
+
+    it("sessions: an older list that arrives last never replaces a newer one, and the password change refreshes the sessions at once, not after the account", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValueOnce(baseAccount).mockReturnValue(new Promise(() => {})); // the refresh after the password change never answers
+      let answerOlder!: (value: { sessions: SessionListDto[] }) => void;
+      let answerNewer!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockReturnValueOnce(new Promise((resolve) => (answerOlder = resolve)))
+        .mockReturnValueOnce(new Promise((resolve) => (answerNewer = resolve)));
+      mockPatchPassword.mockResolvedValue({ sessions_revoked: 1 });
+      mockDeleteSession.mockResolvedValue(undefined);
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      const dialog = await screen.findByRole("dialog");
+
+      fillPasswordForm();
+      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true }));
+      // The account refresh is pending for good, and the sessions are already being refreshed (and blocked).
+      await waitFor(() => expect(mockFetchSessions).toHaveBeenCalledTimes(2));
+      const card = screen.getByText("Active sessions").closest(".at-card") as HTMLElement;
+      await waitFor(() => expect(card.hasAttribute("inert")).toBe(true));
+
+      fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+      await waitFor(() => expect(mockFetchSessions).toHaveBeenCalledTimes(3));
+      await act(async () => answerNewer({ sessions: [currentSession] }));
+      await act(async () => answerOlder({ sessions: [currentSession, otherSession] }));
+      expect(screen.queryByText("Other")).toBeNull();
+    });
+
+    it("while the account is refreshed its cards cannot be clicked, are marked busy, and are dimmed with a bar; none is inert, so the pressed button keeps keyboard focus", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      const refreshing = () => [...document.querySelectorAll<HTMLElement>(".at-card.account-refetch")];
+      // Profile, Password and Two-factor: the cards that show the account. Not the sessions or notifications cards.
+      await waitFor(() => expect(refreshing()).toHaveLength(3));
+      expect(refreshing().every((card) => card.getAttribute("aria-busy") === "true")).toBe(true);
+      expect(refreshing().some((card) => card.hasAttribute("inert"))).toBe(false);
+
+      await waitFor(() => expect(refreshing().every((card) => card.className.includes("account-refetch--dim"))).toBe(true));
+      expect(await screen.findAllByLabelText("Refreshing account")).toHaveLength(3);
+
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      await waitFor(() => expect(refreshing()).toHaveLength(0));
+    });
+
+    it("does not overwrite what is being typed into the profile form while the refresh is on its way", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      const refresh = slowSecondAccountFetch();
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
+      fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Typed meanwhile" } });
+
+      await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
+      expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("Typed meanwhile");
+    });
+
+    it("sessions: Retry after a failed refresh shows the loader again, instead of the stale list", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      let answerRetry!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)));
+      mockDeleteSession.mockResolvedValue(undefined);
+      vi.useFakeTimers();
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await advance(0);
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      await advance(0);
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await advance(0);
+      await advance(0);
+      expect(screen.getByText("Could not load sessions.")).toBeTruthy();
+      // The older snapshot is still held, but nothing in the card acts on it: not the header action either.
+      expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await advance(250);
+      // The stale list (with the session just revoked) is not shown as current while it is asked for again.
+      expect(screen.queryByText("Other")).toBeNull();
+      expect(screen.getByLabelText("Loading sessions").className).not.toContain("at-loading-hold");
+      expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
+
+      await act(async () => answerRetry({ sessions: [currentSession] }));
+      await advance(500);
+      expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+      expect(screen.queryByText("Could not load sessions.")).toBeNull();
+    });
+
+    it("sessions: while the list is refreshed after a revoke nothing in the card can be used, and it is dimmed with a bar once the wait is noticeable", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      let answerRefresh!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockReturnValueOnce(new Promise((resolve) => (answerRefresh = resolve)));
+      mockDeleteSession.mockResolvedValue(undefined);
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy());
+      const card = () => screen.getByText("Active sessions").closest(".at-card") as HTMLElement;
+      // Not refreshing: usable.
+      expect(card().hasAttribute("inert")).toBe(false);
+      expect(card().getAttribute("aria-busy")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await waitFor(() => expect(mockFetchSessions).toHaveBeenCalledTimes(2));
+
+      // At once: inert (no click and no key reaches the stale row's Revoke) and busy; the rows stay.
+      await waitFor(() => expect(card().hasAttribute("inert")).toBe(true));
+      expect(card().getAttribute("aria-busy")).toBe("true");
+      expect(card().className).toContain("account-refetch");
+      expect(screen.getByText("Other")).toBeTruthy();
+
+      // Once the wait is noticeable (200ms, from useLoadingGate): dimmed, and the bar runs along the card.
+      await waitFor(() => expect(card().className).toContain("account-refetch--dim"));
+      expect(await screen.findByLabelText("Refreshing sessions")).toBeTruthy();
+
+      await act(async () => answerRefresh({ sessions: [currentSession] }));
+      await waitFor(() => expect(card().hasAttribute("inert")).toBe(false));
+      expect(card().getAttribute("aria-busy")).toBeNull();
+      // The box the bar is positioned in stays for as long as the bar does (a little after the answer), then goes.
+      await waitFor(() => expect(card().className).not.toContain("account-refetch"));
+    });
+
+    it("sessions: the header action comes back with the list once a Retry has loaded it", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] });
+      mockDeleteSession.mockResolvedValue(undefined);
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await screen.findByText("Could not load sessions.");
+      expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(await screen.findByRole("button", { name: "Revoke all other sessions" })).toBeTruthy();
+      expect(screen.getByText("Other")).toBeTruthy();
+    });
+
+    it("sessions: the list stays on screen while it is refreshed after a revoke", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      let answerRefresh!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockReturnValueOnce(new Promise((resolve) => (answerRefresh = resolve)));
+      mockDeleteSession.mockResolvedValue(undefined);
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await waitFor(() => expect(mockFetchSessions).toHaveBeenCalledTimes(2));
+
+      // The refresh has not answered: the table is still there, and no loader took its place.
+      expect(screen.getByText("Other")).toBeTruthy();
+      expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+
+      await act(async () => answerRefresh({ sessions: [currentSession] }));
+      await waitFor(() => expect(screen.queryByText("Other")).toBeNull());
+    });
+  });
+
+  describe("more of the first load", () => {
+    it("account: Retry after a failed first load shows the loader again, then the page", async () => {
+      let answerRetry!: (account: AccountDto) => void;
+      mockFetchAccount
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+      await advance(0);
+      await advance(600);
+      expect(screen.getByText("Could not load account")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await advance(250);
+      expect(accountLoader()?.closest(".at-card")?.className).not.toContain(HOLD);
+      expect(screen.queryByText("Could not load account")).toBeNull();
+
+      await act(async () => answerRetry(baseAccount));
+      await advance(500);
+      expect(accountLoader()).toBeNull();
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    it("notifications: the loader holds its space, is drawn after 200ms, and says so after 8 seconds", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchNotificationPreferences.mockReturnValue(new Promise(() => {}));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="notifications" />);
+      await advance(0);
+      const loader = () => screen.getByLabelText("Loading notification preferences");
+      expect(loader().className).toContain(HOLD);
+      await advance(200);
+      expect(loader().className).not.toContain(HOLD);
+      await advance(7800);
+      expect(screen.getByText("Taking longer than usual. Check your connection.")).toBeTruthy();
+    });
+
+    it("sessions and notifications draw rows, one bar per row, not a spinner or the logo", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockReturnValue(new Promise(() => {}));
+      mockFetchNotificationPreferences.mockReturnValue(new Promise(() => {}));
+      vi.useFakeTimers();
+      const sessions = renderWithToast(<AccountPage activeTab="sessions" />);
+      await advance(0); // the account answers and the cards appear before their own 200ms start
+      await advance(200);
+      const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>(":scope > .at-skeleton")].map((bar) => bar.style.height);
+      expect(rows(screen.getByLabelText("Loading sessions"))).toEqual(["44px", "44px", "44px"]);
+      expect(screen.getByLabelText("Loading sessions").classList.contains("at-skeleton-stack")).toBe(true);
+      sessions.unmount();
+
+      renderWithToast(<AccountPage activeTab="notifications" />);
+      await advance(0);
+      await advance(200);
+      expect(rows(screen.getByLabelText("Loading notification preferences"))).toEqual(["56px", "56px", "56px", "56px"]);
+      expect(document.querySelector(".at-loader, .at-spinner")).toBeNull();
+    });
+
+    it("sessions: the loader says so after 8 seconds too", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockReturnValue(new Promise(() => {}));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await advance(0);
+      await advance(7999);
+      expect(screen.queryByText("Taking longer than usual. Check your connection.")).toBeNull();
+      await advance(1);
+      expect(screen.getByText("Taking longer than usual. Check your connection.")).toBeTruthy();
+    });
+
+    it("leaving the page abandons the requests quietly and leaves no timer behind", async () => {
+      const signals: AbortSignal[] = [];
+      mockFetchAccount.mockImplementation(slowRequest(signals));
+      mockFetchSessions.mockImplementation(slowRequest(signals));
+      mockFetchNotificationPreferences.mockImplementation(slowRequest(signals));
+      mockFetchBackupCodesStatus.mockImplementation(slowRequest(signals));
+      vi.useFakeTimers();
+      const { unmount } = renderWithToast(<AccountPage />);
+      await advance(0);
+      expect(signals).toHaveLength(4);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+      // The four requests each hold a 30 second timer.
+      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(4);
+
+      unmount();
+      await advance(0);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      // Counted straight away, before any of them could have fired: every one was cleared when its request settled.
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe("buttons", () => {
+    it("Change password keeps its place while it runs, marked busy instead of switched off", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      let answerPatch!: (value: { sessions_revoked: number }) => void;
+      mockPatchPassword.mockReturnValue(new Promise((resolve) => (answerPatch = resolve)));
+
+      await renderAndFillPasswordForm();
+      const change = screen.getByRole("button", { name: "Change password" });
+      expect(change.getAttribute("aria-busy")).toBeNull();
+      fireEvent.click(change);
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Change password" }).getAttribute("aria-busy")).toBe("true"));
+      expect(screen.getByRole("button", { name: "Change password" }).getAttribute("aria-disabled")).toBe("true");
+
+      await act(async () => answerPatch({ sessions_revoked: 0 }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Change password" }).getAttribute("aria-busy")).toBeNull());
+    });
+  });
+
 });

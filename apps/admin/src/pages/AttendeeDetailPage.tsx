@@ -55,6 +55,7 @@ import {
 } from "../attendees/attendeeDetailForm.js";
 import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { useRetry } from "../hooks/useRetry.js";
 import {
   formatAdmissionDisplayParts,
   formatEventDateTime,
@@ -1911,6 +1912,8 @@ export function AttendeeDetailPage() {
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
+  const ticketTypesRetry = useRetry();
+  const { token: ticketTypesToken, begin: beginTicketTypes, end: endTicketTypes } = ticketTypesRetry;
   const [form, setForm] = useState<AttendeeFormState | null>(null);
   const [initialEmail, setInitialEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -2044,21 +2047,26 @@ export function AttendeeDetailPage() {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId };
     setTicketTypes([]);
-    setTicketTypesError(null);
+    // A retry keeps its error, and the busy Retry next to it, on screen until the answer is in.
+    if (!beginTicketTypes()) setTicketTypesError(null);
     fetchTicketTypes(eventId)
       .then((types) => {
         if (!isStillSelected(target)) return;
         setTicketTypes(types);
+        setTicketTypesError(null);
       })
       .catch((err: unknown) => {
         if (!isStillSelected(target)) return;
         setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
+      })
+      .finally(() => {
+        if (isStillSelected(target)) endTicketTypes();
       });
-  }, [eventId, attendeeId]);
+  }, [eventId, attendeeId, beginTicketTypes, endTicketTypes]);
 
   useEffect(() => {
     loadTicketTypes();
-  }, [loadTicketTypes]);
+  }, [loadTicketTypes, ticketTypesToken]);
 
   // Whether "Resend ticket" should work at all — same check as the Attendees list's "Send
   // tickets" button, shared via useMailConfigured.
@@ -2822,6 +2830,8 @@ export function AttendeeDetailPage() {
             {staleWrite && (
               <Notice
                 variant="warning"
+                role="alert"
+                actionBusy={reloading}
                 className="attendee-form__warn"
                 action={
                   <Button
@@ -2933,8 +2943,15 @@ export function AttendeeDetailPage() {
                   <Notice
                     variant="error"
                     role="alert"
+                    actionBusy={ticketTypesRetry.busy}
                     action={
-                      <Button type="button" variant="ghost" size="sm" onClick={loadTicketTypes}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        loading={ticketTypesRetry.busy}
+                        onClick={ticketTypesRetry.retry}
+                      >
                         Retry
                       </Button>
                     }

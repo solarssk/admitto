@@ -18,7 +18,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/staff.css": 2,
   },
   "bare-loading-text": {
-    "apps/admin/src/account/AccountPage.tsx": 1,
     "apps/admin/src/communication/DeliveryDetailsModal.tsx": 1,
     "apps/admin/src/communication/DeliveryLogTable.tsx": 1,
     "apps/admin/src/communication/SentMessagePreviewModal.tsx": 1,
@@ -92,6 +91,11 @@ const ALLOWED: Record<Rule, Counts> = {
   },
   "error-state-not-an-alert": {},
   "retry-outside-an-alert": {},
+  // A Retry drawn as a raw <button>, each to move to <Button loading> with the screen that owns it.
+  "retry-in-a-raw-button": {
+    "apps/admin/src/components/NotificationBell.tsx": 1,
+    "apps/admin/src/settings/EventBounceIngestPanel.tsx": 1,
+  },
   // Hand-made busy states on a raw <button>, each to move to <Button loading> with the screen that owns it.
   "raw-button-busy-disabled": {
     "apps/admin/src/checkin/CameraOverlayItemIssuing.tsx": 1,
