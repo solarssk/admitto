@@ -18,7 +18,7 @@ function leftAloneNote(skipped: number, reason: string): string {
 function pendingGraceNote(pendingGraceCount: number): string {
   if (pendingGraceCount <= 0) return "";
   const verb = pendingGraceCount === 1 ? "is" : "are";
-  return ` ${passes(pendingGraceCount)} ${verb} voided or expired, but less than a day old. Admitto waits 24 hours before removing a pass from the wallet service, in case an admin needs to restore it by mistake. Run this again after that.`;
+  return ` ${passes(pendingGraceCount)} ${verb} less than a day old - not yet eligible, in case one needs restoring.`;
 }
 
 const VOID_ACTIVE_COPY = {

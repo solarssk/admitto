@@ -39,7 +39,7 @@ import {
 
 const WALLET_CARD_HINT = "Per-event Apple/Google Wallet pass configuration.";
 const WALLET_CARD_INTRO =
-  "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
+  "Lets attendees add their ticket to Apple or Google Wallet. The API key and template are specific to this event.";
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 // PassCreator scopes a pass lookup to one template, permanently - once a pass has been issued
@@ -49,7 +49,7 @@ const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 // 409 wallet_template_locked) - this disables the field proactively so the operator doesn't type
 // a change the save will reject anyway.
 const WALLET_TEMPLATE_LOCKED_HINT =
-  "Can't be changed once wallet passes have been issued for this event - the wallet provider can't move an existing pass to a different template.";
+  "Can't be changed once passes have been issued - the wallet provider can't move a pass to a different template.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 const WALLET_EXPIRATION_MODE_HINT =
   "Whether an issued pass ever expires on its own, without an admin voiding it.";
@@ -61,13 +61,13 @@ const WALLET_EXPIRATION_MODE_EVENT_END_LABEL = "Expire when the event ends";
 const WALLET_EXPIRATION_MODE_NOT_READY_HINT =
   "Test connection to confirm this template supports a per-pass expiration date before turning this on.";
 const WALLET_EXPIRATION_MODE_LOCKED_HINT =
-  "Can't be turned off once wallet passes have been issued for this event - PassCreator has no live-verified way to clear an already-sent expiration date.";
+  "Can't be turned off once passes have been issued - PassCreator has no verified way to clear an already-sent expiration date.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
   "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
 const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
-  "No fields mapped yet - only the QR code is sent to PassCreator. Add a field for each value your template should show (name, event date, ticket type, and so on).";
+  "No fields mapped yet, so only the QR code is sent. Add one for each value your template should show.";
 const WALLET_FIELD_MAPPING_SEMANTIC_TAGS_NOTICE =
-  "Mapping a field here sends its value to PassCreator, but Siri Suggestions, Maps, and Calendar smart data also needs that value bound in PassCreator's own Semantic Tags panel to a matching {CustomFieldName} placeholder - mapping alone is not enough.";
+  "Sends the value to PassCreator, but Siri Suggestions, Maps, and Calendar smart data also need it bound in PassCreator's own Semantic Tags panel to a matching {CustomFieldName} placeholder.";
 
 /** Placeholders whose real value depends on which attendee gets the pass, not on the event alone
  * - there's no single "value for this event" to preview on this page. */
@@ -349,10 +349,8 @@ function WalletPushHistoryCard({
   return (
     <Card title="Wallet push history" className="event-settings-card wallet-push-history-card" padded={false}>
       <p className="settings-card-intro wallet-push-history-card__intro">
-        Automatic pushes that refresh data (name, ticket type, venue, etc.) already on an
-        attendee's issued wallet pass, triggered by a bulk ticket-type change or a wallet-relevant
-        event settings/location save. Not a custom message - send those from Communication &gt;
-        Wallets.
+        Automatic refreshes of data already on an issued pass, triggered by a ticket-type change
+        or a relevant settings save. For a custom message, use Communication &gt; Wallets.
       </p>
       {body}
       {total > 0 && (

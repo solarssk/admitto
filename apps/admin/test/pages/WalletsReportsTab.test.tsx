@@ -523,11 +523,11 @@ describe("WalletsReportsTab", () => {
   it.each([
     [
       1,
-      "1 voided or expired pass is less than 24 hours old, so Remove inactive passes can't remove it yet. Admitto waits a full day before deleting a pass from the wallet service, in case it needs to be restored by mistake. Ready to remove once that day has passed.",
+      "1 voided or expired pass is less than a day old, so not eligible to remove yet - Admitto waits 24 hours in case one needs restoring.",
     ],
     [
       3,
-      "3 voided or expired passes are less than 24 hours old, so Remove inactive passes can't remove them yet. Admitto waits a full day before deleting a pass from the wallet service, in case it needs to be restored by mistake. Ready to remove once that day has passed.",
+      "3 voided or expired passes are less than a day old, so not eligible to remove yet - Admitto waits 24 hours in case one needs restoring.",
     ],
   ])("shows the pending-removal Notice on Provider state when pending_removal is %i, with correct singular/plural wording", async (pendingRemoval, expectedText) => {
     fetchEventWalletReports.mockResolvedValue(fixture({ pending_removal: pendingRemoval }));
@@ -592,15 +592,12 @@ describe("WalletsReportsTab", () => {
     const notice = document.querySelector(".wallets-truncated-notice");
     expect(notice).toBeTruthy();
     expect(notice?.textContent).toContain(
-      "This event has more issued wallet passes than a single report can process at once",
+      "This event has too many issued passes for one report to process at once",
     );
-    // pass validity, provider state, and registration state (wallet_lifecycle) are all computed
-    // from the same WALLET_AGGREGATE_MAX-capped passes array as platform/devices-per-attendee/
-    // adoption-by-type/time-to-tap - the notice must say so for all three, not just the two that
-    // predate this card split (a regression that dropped one of these three words from the notice
-    // string would otherwise pass unnoticed, since the assertion above only checks the leading,
-    // unchanged sentence).
-    expect(notice?.textContent).toContain("pass validity, provider state, registration state");
+    // Cumulative passes issued and admission rate by wallet status are the two exact (non-sampled)
+    // numbers on this tab - the notice must keep naming both, so a regression that dropped one
+    // wouldn't pass unnoticed.
+    expect(notice?.textContent).toContain("Cumulative passes issued and admission rate by wallet status are exact");
   });
 
   it("shows the CumulativeChart's own empty copy when no passes have been issued yet", async () => {
