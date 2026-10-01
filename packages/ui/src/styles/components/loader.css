@@ -193,6 +193,17 @@
   }
 }
 
+@media (forced-colors: active) {
+  .at-loader__ring {
+    /* Windows High Contrast replaces every border colour with one system colour, so the bright head and
+       the faint track merge into a uniform circle and the rotation cannot be seen. Opting out and picking
+       two different system colours keeps the head visible against the track. */
+    forced-color-adjust: none;
+    border-color: GrayText;
+    border-top-color: Highlight;
+  }
+}
+
 /* Content that replaces a loading indicator fades in over 150ms. The indicator stays at least
    400ms once shown (useLoadingGate), so its own fade-in is always over before it is removed. */
 .at-fade-in {

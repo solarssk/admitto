@@ -92,3 +92,33 @@ describe("loader layout CSS", () => {
     expect(loaderCss).toContain("@keyframes at-loader-soft");
   });
 });
+
+// Windows High Contrast turns every border colour of the ring into one colour (measured in Chrome with forced
+// colours on: all four sides computed to rgb(0, 0, 0)), which makes the turning head and the faint track one
+// uniform circle.
+describe("loader ring in forced-colors mode (Windows High Contrast)", () => {
+  const forcedAt = loaderCss.indexOf("@media (forced-colors: active)");
+  const forcedRing = () => {
+    expect(forcedAt, "forced-colors block exists").toBeGreaterThan(-1);
+    return decls(loaderCss.slice(forcedAt), "  .at-loader__ring");
+  };
+
+  it("opts the ring out of the single forced border colour", () => {
+    expect(forcedRing()["forced-color-adjust"]).toBe("none");
+  });
+
+  it("draws the head and the track in two different system colours, so the turning head can be seen", () => {
+    const ring = forcedRing();
+    expect(ring["border-color"]).toBe("GrayText");
+    expect(ring["border-top-color"]).toBe("Highlight");
+    expect(ring["border-top-color"]).not.toBe(ring["border-color"]);
+  });
+
+  it("comes after the ring's own rule, so it wins on equal specificity", () => {
+    expect(forcedAt).toBeGreaterThan(loaderCss.indexOf("\n.at-loader__ring {"));
+  });
+
+  it("leaves the turning alone: the rule changes colours only", () => {
+    expect(forcedRing()).not.toHaveProperty("animation");
+  });
+});
