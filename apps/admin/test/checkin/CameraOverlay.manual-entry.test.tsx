@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CameraOverlay } from "../../src/checkin/CameraOverlay.js";
 import type { LookupAttendeeResult } from "../../src/api/types.js";
+import { bitwardenTreatsAsSearchField } from "./bitwardenSearchField.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
@@ -278,5 +279,16 @@ describe("CameraOverlay manual search (#433)", () => {
       target: { value: "a" },
     });
     expect(onClearManualError).toHaveBeenCalled();
+  });
+});
+
+describe("CameraOverlay manual search and password managers", () => {
+  it("reads as a search box to Bitwarden, whatever the placeholder says", () => {
+    render(
+      <CameraOverlay {...baseProps} onSearch={vi.fn().mockResolvedValue([])} onSelectAttendee={vi.fn()} onManualEntry={vi.fn()} />,
+    );
+    openManualSearch();
+    const input = screen.getByLabelText<HTMLInputElement>("Search by name or email");
+    expect(bitwardenTreatsAsSearchField(input)).toBe(true);
   });
 });

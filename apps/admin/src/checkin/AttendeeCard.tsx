@@ -16,6 +16,8 @@ type Props = {
   scanStatus?: CheckInStatus;
   confirmed?: boolean;
   pending?: boolean;
+  /** The Confirm check-in request is in flight: the button is busy, at once. */
+  admitting?: boolean;
   canAct: boolean;
   onCheckIn?: () => void;
   onItemAction?: (itemKey: string, targetState: string) => Promise<boolean> | void;
@@ -125,6 +127,7 @@ export function AttendeeCard({
   scanStatus,
   confirmed,
   pending,
+  admitting = false,
   canAct,
   onCheckIn,
   onItemAction,
@@ -152,18 +155,29 @@ export function AttendeeCard({
   // item so their ids can't collide); the other guards the single Undo button.
   const itemGuard = useInFlightIds();
   const undoGuard = useInFlightIds();
+  // Which control of an item is running. An item's action and its Revoke share one in-flight guard (so
+  // both stay disabled meanwhile), but the spinner belongs on the button that was pressed only.
+  const [busyControl, setBusyControl] = useState<string | null>(null);
 
   // Extracted out of the item row's onClick (Sonar S2004: >4 levels of
   // nested functions once this lived inline inside items.map > actions.map
   // > onClick > .finally).
   function handleItemAction(itemKey: string, action: string) {
     if (!itemGuard.start(itemKey)) return;
-    void Promise.resolve(onItemAction?.(itemKey, action)).finally(() => itemGuard.finish(itemKey));
+    setBusyControl(`action:${itemKey}:${action}`);
+    void Promise.resolve(onItemAction?.(itemKey, action)).finally(() => {
+      itemGuard.finish(itemKey);
+      setBusyControl(null);
+    });
   }
 
   function handleRevokeItem(itemKey: string) {
     if (!itemGuard.start(itemKey)) return;
-    void Promise.resolve(onRevokeItem?.(itemKey)).finally(() => itemGuard.finish(itemKey));
+    setBusyControl(`revoke:${itemKey}`);
+    void Promise.resolve(onRevokeItem?.(itemKey)).finally(() => {
+      itemGuard.finish(itemKey);
+      setBusyControl(null);
+    });
   }
 
   async function handleRevokeConfirm() {
@@ -236,6 +250,8 @@ export function AttendeeCard({
               variant="primary"
               size="lg"
               block
+              loading={admitting}
+              loadingLabel="Checking in…"
               disabled={!canAct || pending}
               onClick={onCheckIn}
             >
@@ -283,6 +299,7 @@ export function AttendeeCard({
                         type="button"
                         variant="success"
                         size="sm"
+                        loading={busyControl === `action:${item.key}:${action}`}
                         disabled={!canAct || pending || isBlocked || itemGuard.ids.has(item.key)}
                         aria-label={itemActionAriaLabel(item.key, action)}
                         onClick={() => handleItemAction(item.key, action)}
@@ -312,6 +329,7 @@ export function AttendeeCard({
                     variant="ghost"
                     size="sm"
                     className="checkin-card__item-revoke checkin-card__aux-btn--danger"
+                    loading={busyControl === `revoke:${item.key}`}
                     disabled={!canAct || pending || itemGuard.ids.has(item.key)}
                     aria-label={`Revoke ${item.label}`}
                     onClick={() => handleRevokeItem(item.key)}
@@ -364,6 +382,7 @@ export function AttendeeCard({
                 variant="ghost"
                 size="sm"
                 className="checkin-card__aux-btn"
+                loading={undoGuard.ids.has("undo")}
                 disabled={!canAct || pending || undoGuard.ids.has("undo")}
                 onClick={() => {
                   if (!undoGuard.start("undo")) return;
@@ -425,7 +444,7 @@ export function AttendeeCard({
           open={revokeOpen}
           title="Revoke check-in?"
           message={`This un-admits ${card.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
-          confirmLabel={revokeBusy ? "Revoking…" : "Revoke"}
+          confirmLabel="Revoke"
           confirmVariant="warning"
           loading={revokeBusy}
           errorMessage={revokeError}

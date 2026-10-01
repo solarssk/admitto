@@ -1,3 +1,5 @@
+import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
+
 /**
  * `inputmode` for the check-in scan field. Hardware wedge scanners type into the focused field
  * without a keyboard, so a device with no touch input suppresses the on-screen keyboard ("none").
@@ -11,13 +13,13 @@ export function scanFieldInputMode(): "text" | "none" {
   return window.matchMedia("(any-pointer: coarse)").matches ? "text" : "none";
 }
 
-/** Discourage password managers from treating check-in search fields as login forms. */
+/** Discourage password managers from treating check-in search fields as login forms: the shared opt-out
+ * (`NO_AUTOFILL_PROPS`, honoured by 1Password and LastPass) plus what makes it a search box. Bitwarden honours
+ * the opt-out only for users who switched that on, so these fields' `name` and `id` must also read as a search
+ * box to its own heuristics ("search" in one of them; see test/checkin/bitwardenSearchField.ts), whatever the
+ * placeholder says. */
 export const checkinSearchFieldAttrs = {
-  autoComplete: "off",
+  ...NO_AUTOFILL_PROPS,
   role: "searchbox",
   spellCheck: false,
-  "data-bwignore": "",
-  "data-lpignore": "true",
-  "data-1p-ignore": "",
-  "data-form-type": "other",
 } as const;

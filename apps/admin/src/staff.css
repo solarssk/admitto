@@ -1521,6 +1521,19 @@ html:not(.icons-ready) .ti {
   cursor: not-allowed;
 }
 
+/* "Checking…" beside the scan field while a scan or search is on its way (shown at once, no delay). */
+.ck-scan-bar__status {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* The submit is a plain button, not an .at-btn, so its spinner would otherwise keep the brand colour and
+   vanish on the brand-coloured background. */
+.ck-scan-bar__submit .at-spinner {
+  color: inherit;
+}
+
 .ck-hint {
   margin: 0;
   font-size: var(--fs-sm);
@@ -1645,6 +1658,23 @@ html:not(.icons-ready) .ti {
   gap: 10px;
   padding: 9px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* A placeholder row is as tall as a real one (two text lines, 9px padding, 1px rule), so the card does not
+   grow when the history arrives. */
+.ck-recent__row--skeleton {
+  box-sizing: border-box;
+  min-height: 58px;
+}
+
+.ck-recent__row--skeleton:last-child {
+  min-height: 57px;
+}
+
+.ck-recent__row--skeleton .ck-recent__info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .ck-recent__row:last-child {
@@ -1808,6 +1838,12 @@ html:not(.icons-ready) .ti {
   color: rgba(255, 255, 255, 0.75);
 }
 
+/* The count's placeholder shares the line with "checked in" instead of stacking above it. */
+.ck-overlay__admitted .at-skeleton {
+  display: inline-block;
+  vertical-align: middle;
+}
+
 .ck-overlay__close,
 .ck-overlay__mute,
 .ck-overlay__torch {
@@ -1898,6 +1934,29 @@ html:not(.icons-ready) .ti {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+/* "Checking…" over the bottom of the camera frame while a scan is on its way (shown at once, no delay). It does
+   not take any room of its own, so nothing moves when it appears. */
+.ck-overlay__checking {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ck-overlay__checking .at-spinner {
+  color: inherit;
 }
 
 /* left:50%+transform (no width) let the shrink-to-fit width calculation see

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import { bitwardenTreatsAsSearchField } from "./bitwardenSearchField.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
@@ -308,7 +309,17 @@ describe("CheckInPage scan-bar lookup", () => {
     const input = await scanInput();
     expect(input.getAttribute("data-bwignore")).not.toBeNull();
     expect(input.getAttribute("data-lpignore")).toBe("true");
-    expect(input.getAttribute("name")).toBe("checkin-scan");
+    expect(input.getAttribute("name")).toBe("checkin-search");
+  });
+
+  it("reads as a search box to Bitwarden, which honours data-bwignore only when its user opted in", async () => {
+    mockPageBootstrap();
+    renderPage();
+
+    const input = await scanInput();
+    // The placeholder says "name/email", which on its own makes it offer to fill an email address.
+    expect(input.placeholder).toMatch(/email/i);
+    expect(bitwardenTreatsAsSearchField(input)).toBe(true);
   });
 });
 

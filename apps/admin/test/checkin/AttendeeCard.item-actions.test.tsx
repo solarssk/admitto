@@ -82,12 +82,15 @@ describe("AttendeeCard — item action button (review finding)", () => {
 
     const button = screen.getByRole("button", { name: "Mark badge issued" }) as HTMLButtonElement;
     fireEvent.click(button);
-    expect(button.disabled).toBe(true);
+    // Busy, not switched off: a busy button keeps keyboard focus, so it carries aria-disabled and swallows clicks.
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("aria-busy")).toBe("true");
 
     await act(async () => {
       resolveAction(false);
       await Promise.resolve();
     });
+    expect(button.getAttribute("aria-disabled")).toBeNull();
     expect(button.disabled).toBe(false);
 
     fireEvent.click(button);

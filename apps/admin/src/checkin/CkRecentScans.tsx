@@ -1,3 +1,4 @@
+import { Skeleton } from "@admitto/ui";
 import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
 import { formatRelativeAdmissionDisplay, getBrowserTimeZone } from "../utils/event-dates.js";
@@ -38,7 +39,36 @@ type CkRecentScansProps = {
    * attendee's card — lets an operator revisit a recent scan (e.g. to hand
    * out a missed item) without re-scanning the QR (PO review). */
   onSelectAttendee?: (attendeeId: string) => void;
+  /** The history has not arrived: rows of placeholder instead of a "No scans yet" that would be untrue. */
+  loading?: boolean;
+  /** The placeholder is in the page but not painted yet (the loading gate's 200ms), so its space is reserved. */
+  held?: boolean;
+  /** How many placeholder rows to draw (the number this list had last time); defaults to a few. */
+  skeletonRows?: number;
 };
+
+/** How many placeholder rows stand in for a history that is on its way. */
+const SKELETON_ROWS = 4;
+
+function RecentScansSkeleton({ rows }: Readonly<{ rows: number }>) {
+  return (
+    <ul className="ck-recent__list" aria-hidden="true">
+      {Array.from({ length: Math.max(rows, 1) }, (_, i) => (
+        <li key={i} className="ck-recent__row ck-recent__row--skeleton">
+          <Skeleton variant="circle" width={8} height={8} />
+          <div className="ck-recent__info">
+            <Skeleton variant="rect" width="55%" height={14} />
+            <Skeleton variant="rect" width="35%" height={11} />
+          </div>
+          <div className="ck-recent__right">
+            <Skeleton variant="rect" width={56} height={11} />
+            <Skeleton variant="rect" width={40} height={11} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function CkRecentScans({
   history,
@@ -47,6 +77,9 @@ export function CkRecentScans({
   limit,
   ticketTypes = [],
   onSelectAttendee,
+  loading = false,
+  held = false,
+  skeletonRows,
 }: Readonly<CkRecentScansProps>) {
   const rows = limit != null ? history.slice(0, limit) : history;
   // Matches what's actually rendered below (`rows`), not the raw fetched
@@ -56,14 +89,23 @@ export function CkRecentScans({
   const count = rows.length;
 
   return (
-    <div className={`ck-recent${compact ? " ck-recent--compact" : ""}`}>
+    <div
+      className={`ck-recent${compact ? " ck-recent--compact" : ""}${loading && held ? " at-loading-hold" : ""}`}
+      aria-busy={loading || undefined}
+    >
       <div className="ck-recent__header">
         <span className="ck-recent__title">Recent scans</span>
-        <span className="ck-recent__count">{count}</span>
+        {loading ? (
+          <Skeleton variant="rect" width={28} height={23.5} />
+        ) : (
+          <span className="ck-recent__count">{count}</span>
+        )}
       </div>
-      {rows.length === 0 ? (
-        <p className="ck-recent__empty">No scans yet</p>
-      ) : (
+      {loading && (
+        <RecentScansSkeleton rows={skeletonRows ?? (limit == null ? SKELETON_ROWS : Math.min(limit, SKELETON_ROWS))} />
+      )}
+      {!loading && rows.length === 0 && <p className="ck-recent__empty">No scans yet</p>}
+      {!loading && rows.length > 0 && (
         <ul className="ck-recent__list at-scroll">
           {rows.map((row) => {
             const ticketTypeLabel = resolveTicketTypeLabel(row.attendee.ticket_type, ticketTypes);
