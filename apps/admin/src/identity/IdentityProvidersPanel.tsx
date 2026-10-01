@@ -253,6 +253,7 @@ export function IdentityProvidersPanel() {
         {providersState === "loading" && showProvidersSkeleton && <ProviderListSkeleton />}
         {providersState === "error" && (
           <EmptyState
+            variant="error"
             title="Could not load providers"
             description={providersError}
             action={<Button variant="secondary" onClick={retryProviders}>Retry</Button>}
@@ -286,6 +287,7 @@ export function IdentityProvidersPanel() {
         {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
         {cfState === "error" && (
           <EmptyState
+            variant="error"
             title="Could not load Cloudflare Access"
             description={cfError}
             action={<Button variant="secondary" onClick={retryCf}>Retry</Button>}

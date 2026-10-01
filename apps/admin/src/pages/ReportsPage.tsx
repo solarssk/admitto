@@ -1122,6 +1122,7 @@ export function ReportsPage() {
 
       {activeTab === "eventday" && !loading && error && (
         <EmptyState
+          variant="error"
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
           title="Could not load report"
           description={error}

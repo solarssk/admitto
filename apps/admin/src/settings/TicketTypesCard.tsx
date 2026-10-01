@@ -513,6 +513,7 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
           </p>
           {loadError ? (
             <EmptyState
+              variant="error"
               title="Could not load ticket types"
               description={loadError}
               action={

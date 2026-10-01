@@ -204,6 +204,7 @@ export function MailTransportPanel() {
     return (
       <Card title="Mail transport">
         <EmptyState
+          variant="error"
           title="Could not load mail settings"
           description={loadError}
           action={

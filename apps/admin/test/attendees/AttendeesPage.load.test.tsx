@@ -34,6 +34,8 @@ describe("AttendeesPage load errors", () => {
       expect(screen.getByText("Could not load attendees")).toBeTruthy();
     });
     expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
+    // A failed load is announced at once, not politely like an empty list.
+    expect(screen.getByText("Could not load attendees").closest("[role='alert']")).not.toBeNull();
     expect(screen.queryByText(/No attendees yet/i)).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });

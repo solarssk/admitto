@@ -663,6 +663,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card title="Profile">
         <EmptyState
+          variant="error"
           title="Could not load account"
           description={error}
           action={
@@ -1971,7 +1972,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             </div>
           )}
           {!notifPrefsLoading && notifPrefsError && (
-            <div className="sessions-status">
+            <div className="sessions-status" role="alert">
               <p>{notifPrefsError}</p>
               <Button type="button" variant="secondary" onClick={() => void loadNotificationPreferences()}>
                 Retry
@@ -2046,7 +2047,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           </div>
         )}
         {!sessionsLoading && sessionsError && (
-          <div className="sessions-status"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
+          <div className="sessions-status" role="alert"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
         )}
         {!sessionsLoading && !sessionsError && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
         {/* Only Sign-in drops in the 768-1180px tablet range (.sessions-col-tablet-hide) - unlike

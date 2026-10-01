@@ -225,7 +225,7 @@ export function SecurityPanel() {
   if (error || !settings || !draft) {
     return (
       <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}>
-        <div className="sessions-status">
+        <div className="sessions-status" role="alert">
           <p>{error ?? "Unexpected error."}</p>
           <Button type="button" variant="secondary" onClick={() => void load()}>
             Retry

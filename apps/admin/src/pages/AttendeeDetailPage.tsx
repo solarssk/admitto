@@ -2571,6 +2571,7 @@ export function AttendeeDetailPage() {
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         {error && (
           <EmptyState
+            variant="error"
             title="Could not load attendee"
             description={error}
             action={
@@ -2931,6 +2932,7 @@ export function AttendeeDetailPage() {
                 {ticketTypesError && (
                   <Notice
                     variant="error"
+                    role="alert"
                     action={
                       <Button type="button" variant="ghost" size="sm" onClick={loadTicketTypes}>
                         Retry
