@@ -664,3 +664,15 @@
 .account-mfa-method__action {
   flex-shrink: 0;
 }
+
+/* A card whose data is being refreshed after a change (the sessions list): the rows stay, and cannot be
+   clicked or reached by keyboard meanwhile (inert, set in refetch.ts). `position` is the anchor for the thin
+   bar along its top; the dimming starts once the wait is noticeable, so a quick refresh never flickers. */
+.account-refetch {
+  position: relative;
+}
+
+.account-refetch--dim {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast);
+}

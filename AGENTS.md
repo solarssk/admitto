@@ -150,7 +150,7 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Whole screen: app start, session check, switching event | `PageLoader` (the logo, 88px, with a line under it saying what is loading) | from the first frame |
 | Panel, card or dialog whose shape is not known | `SectionLoader` (a 32px ring and the same line, no logo) with `minHeight`, at most one per view | after 200ms |
 | Shape is known: table rows, KPI tiles, forms, a dialog's content | `Skeleton` in the same shape | after 200ms |
-| Data is already on screen and is refetched (filter, search, page) | keep the data, block clicks at once, dim it and run `<TopProgressBar placement="container">` along the card | dim and bar after 200ms |
+| Data is already on screen and is refetched (filter, search, page) | keep the data, block clicks at once (and keys, with `inert`, when it holds actions), dim it and run `<TopProgressBar placement="container">` along the card | dim and bar after 200ms |
 | Page change | `TopProgressBar`, the old page stays (after 8s it also says it is taking longer than usual, `note`) | after 200ms |
 | The user clicked a button | `<Button loading>`, with `loadingLabel` only when it is no longer than the label at rest (a row in a More actions menu: `<MoreActionsMenuItem loading>`, same rule) | immediately |
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |

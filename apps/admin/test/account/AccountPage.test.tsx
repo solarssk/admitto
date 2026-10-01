@@ -4233,6 +4233,52 @@ describe("AccountPage on the loading standard", () => {
       expect(document.querySelector(".at-loader, .at-spinner")).toBeNull();
     });
 
+    describe("the placeholder follows the tab the page was opened on, so nothing below it jumps", () => {
+      const opened = async (tab: "password" | "sessions" | "notifications") => {
+        mockFetchAccount.mockReturnValue(new Promise(() => {}));
+        mockFetchSessions.mockResolvedValue({ sessions: [] });
+        vi.useFakeTimers();
+        renderWithToast(<AccountPage activeTab={tab} />);
+      };
+      const titles = () => [...document.querySelectorAll(".at-card__title")].map((el) => el.textContent);
+
+      it("Password: the two cards of the tab (the password form and the two-factor methods), held for 200ms as one", async () => {
+        await opened("password");
+        const region = accountLoader()!;
+        expect(region.classList.contains("account-security-grid")).toBe(true);
+        expect(region.className).toContain(HOLD);
+        expect(titles()).toEqual(["Password", "Two-factor authentication"]);
+        // The form: an explanation and three fields; the methods: three rows.
+        expect(region.querySelectorAll(".at-field")).toHaveLength(3);
+        expect(region.querySelectorAll(".at-card")[1]?.querySelectorAll(".at-skeleton")).toHaveLength(3);
+        await advance(200);
+        expect(region.className).not.toContain(HOLD);
+      });
+
+      it("Sessions: the Active sessions card with rows, and no Profile card", async () => {
+        await opened("sessions");
+        expect(titles()).toEqual(["Active sessions"]);
+        expect(accountLoader()?.closest(".at-card")?.className).toContain(HOLD);
+        expect([...accountLoader()!.querySelectorAll<HTMLElement>(":scope > .at-skeleton")].map((bar) => bar.style.height)).toEqual(["44px", "44px", "44px"]);
+        await advance(200);
+        expect(accountLoader()?.closest(".at-card")?.className).not.toContain(HOLD);
+      });
+
+      it("Notifications: the Notifications card with its own explanation (not data) and rows", async () => {
+        await opened("notifications");
+        expect(titles()).toEqual(["Notifications"]);
+        expect(screen.getByText(/Choose which of your enabled security alert types/)).toBeTruthy();
+        expect([...accountLoader()!.querySelectorAll<HTMLElement>(":scope > .at-skeleton")].map((bar) => bar.style.height)).toEqual(["56px", "56px", "56px", "56px"]);
+        expect(accountLoader()?.closest(".at-card")?.className).toContain(HOLD);
+      });
+
+      it("says it is taking longer than usual in the placeholder of every tab", async () => {
+        await opened("password");
+        await advance(8000);
+        expect(screen.getByText("Taking longer than usual. Check your connection.").closest('[aria-label="Loading account"]')).toBe(accountLoader());
+      });
+    });
+
     it("puts the 8 second message inside the region, so it is announced and takes a full row of the grid", async () => {
       mockFetchAccount.mockReturnValue(new Promise(() => {}));
       mockFetchSessions.mockResolvedValue({ sessions: [] });
@@ -4409,6 +4455,29 @@ describe("AccountPage on the loading standard", () => {
       expect(screen.getByLabelText("Display name")).toBeTruthy();
     });
 
+    it("a Retry that fails again at once still shows that it ran: busy for at least 400ms, and the warning is announced again", async () => {
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchAccount
+        .mockResolvedValueOnce(baseAccount)
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockRejectedValueOnce(new Error("network down"));
+      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
+
+      await saveNewDisplayName();
+      const before = await screen.findByText(/Could not refresh this page/);
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
+      // The request has failed already (a few milliseconds), and the button is still busy.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true");
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull(), { timeout: 2000 });
+      // The same text again, but a new element: that is what makes the live region read it out once more.
+      const after = screen.getByText(/Could not refresh this page/);
+      expect(after).not.toBe(before);
+    });
+
     it("does not overwrite what is being typed into the profile form while the refresh is on its way", async () => {
       mockFetchSessions.mockResolvedValue({ sessions: [] });
       const refresh = slowSecondAccountFetch();
@@ -4452,6 +4521,42 @@ describe("AccountPage on the loading standard", () => {
       await advance(500);
       expect(screen.queryByLabelText("Loading sessions")).toBeNull();
       expect(screen.queryByText("Could not load sessions.")).toBeNull();
+    });
+
+    it("sessions: while the list is refreshed after a revoke nothing in the card can be used, and it is dimmed with a bar once the wait is noticeable", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      let answerRefresh!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockReturnValueOnce(new Promise((resolve) => (answerRefresh = resolve)));
+      mockDeleteSession.mockResolvedValue(undefined);
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy());
+      const card = () => screen.getByText("Active sessions").closest(".at-card") as HTMLElement;
+      // Not refreshing: usable.
+      expect(card().hasAttribute("inert")).toBe(false);
+      expect(card().getAttribute("aria-busy")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await waitFor(() => expect(mockFetchSessions).toHaveBeenCalledTimes(2));
+
+      // At once: inert (no click and no key reaches the stale row's Revoke) and busy; the rows stay.
+      await waitFor(() => expect(card().hasAttribute("inert")).toBe(true));
+      expect(card().getAttribute("aria-busy")).toBe("true");
+      expect(card().className).toContain("account-refetch");
+      expect(screen.getByText("Other")).toBeTruthy();
+
+      // Once the wait is noticeable (200ms, from useLoadingGate): dimmed, and the bar runs along the card.
+      await waitFor(() => expect(card().className).toContain("account-refetch--dim"));
+      expect(await screen.findByLabelText("Refreshing sessions")).toBeTruthy();
+
+      await act(async () => answerRefresh({ sessions: [currentSession] }));
+      await waitFor(() => expect(card().hasAttribute("inert")).toBe(false));
+      expect(card().getAttribute("aria-busy")).toBeNull();
+      expect(card().className).not.toContain("account-refetch");
     });
 
     it("sessions: the list stays on screen while it is refreshed after a revoke", async () => {

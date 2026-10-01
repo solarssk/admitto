@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
-import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Skeleton, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Skeleton, Switch, TopProgressBar, useToast } from "@admitto/ui";
 import {
   ApiError,
   beginWebauthnRegistration,
@@ -49,7 +49,7 @@ import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../c
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
-import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { formatRelativeTime, formatUtcPrimaryTime } from "../utils/event-dates.js";
@@ -63,7 +63,8 @@ import {
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import type { AccountTab } from "./accountTabs.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
-import { ProfileFieldsSkeleton, RowsSkeleton } from "./AccountSkeletons.js";
+import { AccountLoadingSkeleton, NOTIFICATIONS_INTRO, RowsSkeleton } from "./AccountSkeletons.js";
+import { refetchCardProps } from "./refetch.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 
@@ -421,6 +422,11 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
+/** The text for a failed load: the time limit's own message, or the server's (through the audience-tiered copy rules). */
+function loadFailureMessage(limit: { timedOut: () => boolean }, err: unknown, fallback: string): string {
+  return limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, fallback);
+}
+
 /** Every panel stays mounted - AccountPage already loads all of its data up front on mount
  * (loadAccount/loadSessions/loadNotificationPreferences run together, regardless of which tab is
  * active), so there's no per-tab fetch to defer the way EventSettingsPage's tabs do. Only
@@ -472,6 +478,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const [resetError, setResetError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  // The list is refreshed after a revoke: its rows stay on screen but cannot be used until the answer is in.
+  const [sessionsRefreshing, setSessionsRefreshing] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionsPage, setSessionsPage] = useState(1);
   const [sessionsPageSize, setSessionsPageSize] = useState<number>(SESSIONS_DEFAULT_PAGE_SIZE);
@@ -583,11 +591,11 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
       if (first) {
-        setError(limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load account."));
+        setError(loadFailureMessage(limit, err, "Could not load account."));
       } else {
         // The page stays, and says that it may be out of date until the next refresh works (a toast would be
         // gone in seconds, leaving old security details looking current).
-        const detail = limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Check your connection and try again.");
+        const detail = loadFailureMessage(limit, err, "Check your connection and try again.");
         setRefreshError(`Could not refresh this page, so it may show older details. ${detail}`);
       }
     } finally {
@@ -600,7 +608,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   }, []);
 
   const loadSessions = useCallback(async (signal?: AbortSignal) => {
-    if (!sessionsLoadedRef.current) setSessionsLoading(true);
+    if (sessionsLoadedRef.current) setSessionsRefreshing(true);
+    else setSessionsLoading(true);
     setSessionsError(null);
     const limit = loadWithTimeout(signal);
     try {
@@ -612,10 +621,13 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       if (redirectToLoginIfUnauthorized(err)) return;
       // The error replaces the list, so the next try is a first load again: Retry shows the loader.
       sessionsLoadedRef.current = false;
-      setSessionsError(limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load sessions."));
+      setSessionsError(loadFailureMessage(limit, err, "Could not load sessions."));
     } finally {
       limit.done();
-      if (!signal?.aborted) setSessionsLoading(false);
+      if (!signal?.aborted) {
+        setSessionsLoading(false);
+        setSessionsRefreshing(false);
+      }
     }
   }, []);
 
@@ -630,9 +642,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setNotifPrefsError(
-        limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load notification preferences."),
-      );
+      setNotifPrefsError(loadFailureMessage(limit, err, "Could not load notification preferences."));
     } finally {
       limit.done();
       if (!signal?.aborted) setNotifPrefsLoading(false);
@@ -694,6 +704,10 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   // card's window before it's ever shown).
   const sessionsGate = useLoadingGate(sessionsLoading && !loading);
   const notifPrefsGate = useLoadingGate(notifPrefsLoading && !loading);
+  // The refresh of the sessions list after a revoke: dimmed once it is noticeable, with the thin bar along the card.
+  const sessionsRefetch = useLoadingGate(sessionsRefreshing);
+  // A Retry on the refresh warning that fails at once still shows that it ran, and is announced again.
+  const refreshRetrying = useMinimumBusy(refreshing);
   const sessionsSlow = useDelayedLoading(sessionsLoading && !loading, SLOW_NOTICE_MS);
   const notifPrefsSlow = useDelayedLoading(notifPrefsLoading && !loading, SLOW_NOTICE_MS);
   // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
@@ -702,15 +716,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const isSessionsDesktop = useIsDesktop();
 
   if (!accountGate.showContent) {
-    return (
-      <Card
-        title="Profile"
-        className={accountGate.showIndicator ? undefined : "at-loading-hold"}
-        footer={<div className="mail-transport-footer"><Skeleton variant="rect" width={64} height={36} /></div>}
-      >
-        <ProfileFieldsSkeleton slow={accountSlow} />
-      </Card>
-    );
+    return <AccountLoadingSkeleton tab={activeTab} held={!accountGate.showIndicator} slow={accountSlow} />;
   }
   if (error) {
     return (
@@ -2015,10 +2021,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card title="Notifications">
         <div className="settings-card-stack">
-          <p className="settings-card-intro">
-            Choose which of your enabled security alert types you receive by email or see in-app.
-            The shared team webhook (if configured) is managed separately in Organisation Settings.
-          </p>
+          <p className="settings-card-intro">{NOTIFICATIONS_INTRO}</p>
           {!notifPrefsGate.showContent && (
             <RowsSkeleton
               label="Loading notification preferences"
@@ -2097,7 +2100,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   function renderSessionsCard() {
     return (
-      <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
+      <Card
+        title="Active sessions"
+        actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
+        {...refetchCardProps(sessionsRefreshing, sessionsRefetch.showIndicator)}
+      >
+        <TopProgressBar active={sessionsRefetch.showIndicator} placement="container" label="Refreshing sessions" />
         {!sessionsGate.showContent && (
           <RowsSkeleton
             label="Loading sessions"
@@ -2249,9 +2257,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           variant="warning"
           role="alert"
           className="account-warn-block"
-          actionBusy={refreshing}
+          actionBusy={refreshRetrying}
           action={
-            <Button type="button" variant="secondary" size="sm" loading={refreshing} onClick={() => void loadAccount()}>
+            <Button type="button" variant="secondary" size="sm" loading={refreshRetrying} onClick={() => void loadAccount()}>
               Retry
             </Button>
           }
