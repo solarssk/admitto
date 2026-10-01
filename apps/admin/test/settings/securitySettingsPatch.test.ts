@@ -14,7 +14,7 @@ const baseSettings: SystemSettingsDto = {
   session_idle_timeout_ms: { value: 1_800_000, source: "default" },
   operator_session_idle_timeout_ms: { value: 7_200_000, source: "default" },
   trusted_device_days: { value: 30, source: "default" },
-  operator_remember_me_days: { value: 3, source: "default" },
+  operator_event_day_sessions: { value: true, source: "default" },
   mfa_required_roles: { value: ["superadmin"], source: "default" },
   instance_url: { value: null, source: "default" },
   csp_trusted_origins: { value: [], source: "default" },
@@ -29,7 +29,7 @@ const baseDraft = {
   sessionIdleM: "30",
   opIdleM: "120",
   trustedDays: "30",
-  rememberMeDays: "3",
+  operatorEventDaySessions: true,
   mfaRoles: ["superadmin"],
   cspTrustedOriginsRaw: "",
   webauthnEnabled: true,
@@ -67,6 +67,16 @@ describe("previewDraftInt", () => {
 describe("draftFromSettings", () => {
   it("maps persisted settings to editable string fields", () => {
     expect(draftFromSettings(baseSettings)).toEqual(baseDraft);
+  });
+
+  it("maps operator_event_day_sessions.value to the boolean operatorEventDaySessions", () => {
+    expect(draftFromSettings(baseSettings).operatorEventDaySessions).toBe(true);
+    expect(
+      draftFromSettings({
+        ...baseSettings,
+        operator_event_day_sessions: { value: false, source: "db" },
+      }).operatorEventDaySessions,
+    ).toBe(false);
   });
 });
 
@@ -113,31 +123,44 @@ describe("buildSecurityPatchBody", () => {
     });
   });
 
-  it("includes operator_remember_me_days when it changes, including 0 to turn the option off", () => {
-    const changed = buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "7" }, fieldLocked);
-    expect(changed.hasChanges).toBe(true);
-    expect(changed.body).toEqual({ operator_remember_me_days: 7 });
-
-    const off = buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "0" }, fieldLocked);
-    expect(off.body).toEqual({ operator_remember_me_days: 0 });
-  });
-
-  it("clamps operator_remember_me_days to 0 to 14 and falls back when empty", () => {
-    expect(
-      buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "99" }, fieldLocked).body,
-    ).toEqual({ operator_remember_me_days: 14 });
-    expect(
-      buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "-4" }, fieldLocked).body,
-    ).toEqual({ operator_remember_me_days: 0 });
-    expect(
-      buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "" }, fieldLocked).hasChanges,
-    ).toBe(false);
-  });
-
-  it("skips an env-locked operator_remember_me_days", () => {
+  it("sends operator_event_day_sessions when the toggle is switched off", () => {
     const result = buildSecurityPatchBody(
-      { ...baseSettings, operator_remember_me_days: { value: 3, source: "env" } },
-      { ...baseDraft, rememberMeDays: "7" },
+      baseSettings,
+      { ...baseDraft, operatorEventDaySessions: false },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(true);
+    expect(result.body).toEqual({ operator_event_day_sessions: false });
+  });
+
+  it("sends operator_event_day_sessions when the toggle is switched back on", () => {
+    const result = buildSecurityPatchBody(
+      { ...baseSettings, operator_event_day_sessions: { value: false, source: "db" } },
+      { ...baseDraft, operatorEventDaySessions: true },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(true);
+    expect(result.body).toEqual({ operator_event_day_sessions: true });
+  });
+
+  it("sends nothing for operator_event_day_sessions when the toggle matches the saved value", () => {
+    const on = buildSecurityPatchBody(baseSettings, baseDraft, fieldLocked);
+    expect(on.hasChanges).toBe(false);
+    expect(on.body).not.toHaveProperty("operator_event_day_sessions");
+
+    const off = buildSecurityPatchBody(
+      { ...baseSettings, operator_event_day_sessions: { value: false, source: "db" } },
+      { ...baseDraft, operatorEventDaySessions: false },
+      fieldLocked,
+    );
+    expect(off.hasChanges).toBe(false);
+    expect(off.body).toEqual({});
+  });
+
+  it("skips an env-locked operator_event_day_sessions", () => {
+    const result = buildSecurityPatchBody(
+      { ...baseSettings, operator_event_day_sessions: { value: true, source: "env" } },
+      { ...baseDraft, operatorEventDaySessions: false },
       fieldLocked,
     );
     expect(result.hasChanges).toBe(false);

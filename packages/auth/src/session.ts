@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
 import { generateToken, hashToken } from "@admitto/tickets";
+import { eventDayWindow } from "@admitto/shared";
 import { SESSION_LAST_SEEN_THROTTLE_MS, SESSION_STAGE, AUTH_METHOD, type SessionStage, type AuthMethod } from "./constants.js";
 import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "./constants.js";
 import {
@@ -8,7 +9,7 @@ import {
   getSessionIdleTimeoutAdminMs,
   getSessionIdleTimeoutOperatorMs,
   getMfaRequiredRoles,
-  getOperatorRememberMeDays,
+  getOperatorEventDaySessionsEnabled,
 } from "./settings/resolver.js";
 import {
   userRequiresMfa,
@@ -30,8 +31,6 @@ export interface CreateSessionInput {
   timezone?: string | null;
   /** Which IdP this login came from, for RP-initiated logout. Ignored for authMethod "local". */
   oidcProviderId?: string;
-  /** "Keep me signed in" was ticked. Only honored for operator-only users while `operator_remember_me_days` > 0. */
-  rememberMe?: boolean;
 }
 
 /** Active full session after cookie token validation. */
@@ -75,42 +74,80 @@ async function resolveFullTtlMs(
  * Resolve the idle timeout (inactivity window) for a `full` session, based on role.
  * Separate from the absolute lifetime above (P0 security review): a session is now
  * ended by whichever limit is hit first — long inactivity, or the absolute TTL.
+ * Null means no inactivity window at all, for an event-day session (see
+ * {@link resolveEventDaySessionEnd}): the check-in tablet sits idle between shifts and the end of
+ * the event day, which is the session's own expiry, is the only limit. The role and the master
+ * switch are re-read here on every request, so an admin role granted after sign-in, or the switch
+ * turned off mid-event, puts the normal inactivity window back at once.
  */
 async function resolveIdleTimeoutMs(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
-  rememberMe: boolean,
-): Promise<number> {
-  // A "Keep me signed in" session has no inactivity window shorter than its own lifetime: the
-  // tablet sits idle between shifts and the absolute TTL is what ends the session.
-  if (rememberMe) {
-    const rememberMs = await resolveRememberMs(prisma, userId);
-    if (rememberMs !== null) return rememberMs;
-  }
+  eventDaySession: boolean,
+): Promise<number | null> {
   const elevated = await hasElevatedRole(prisma, userId);
+  if (eventDaySession && !elevated && (await getOperatorEventDaySessionsEnabled(prisma))) return null;
   return elevated
     ? getSessionIdleTimeoutAdminMs(prisma)
     : getSessionIdleTimeoutOperatorMs(prisma);
 }
 
+/** How far the Event.date noon-UTC sentinel can sit from `now` while the sign-in still falls in the
+ * event's window, as a cheap query prefilter: up to 26 hours ahead (UTC+14 at its local midnight)
+ * and, behind, nearly 48 hours (an overnight event in UTC-12 that ends late the next day). 72
+ * hours leaves margin on both sides. The exact check is eventDayWindow. */
+const EVENT_DAY_PREFILTER_MS = 72 * 60 * 60 * 1000;
+
 /**
- * Lifetime of a "Keep me signed in" session in ms, or null when it does not apply: the user holds
- * an admin/superadmin role (their limits stay fixed) or the option is switched off
- * (`operator_remember_me_days` = 0).
+ * The instant an event-day session started `now` should end, or null when none applies. It does
+ * when the master switch (`operator_event_day_sessions`) is on, the user is an operator-only
+ * account (no admin or superadmin role, in any scope) and one of the non-archived events it is
+ * assigned to is happening today in that event's own timezone; the latest end wins when there are
+ * several. The role decides, nobody is asked. An event whose date or timezone cannot be read is
+ * skipped, so a bad row means normal limits and never a longer session.
  */
-async function resolveRememberMs(
+async function resolveEventDaySessionEnd(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
-): Promise<number | null> {
+  now: Date,
+): Promise<Date | null> {
+  if (!(await getOperatorEventDaySessionsEnabled(prisma))) return null;
   if (await hasElevatedRole(prisma, userId)) return null;
-  const days = await getOperatorRememberMeDays(prisma);
-  return days > 0 ? days * 24 * 60 * 60 * 1000 : null;
+  const assignments = await prisma.roleAssignment.findMany({
+    where: { user_id: userId, role: "operator", scope_type: "event", scope_id: { not: null } },
+    select: { scope_id: true },
+  });
+  const eventIds = assignments.map((a) => a.scope_id).filter((id): id is string => id !== null);
+  if (eventIds.length === 0) return null;
+  const events = await prisma.event.findMany({
+    where: {
+      id: { in: eventIds },
+      archived_at: null,
+      date: {
+        gt: new Date(now.getTime() - EVENT_DAY_PREFILTER_MS),
+        lt: new Date(now.getTime() + EVENT_DAY_PREFILTER_MS),
+      },
+    },
+    select: { date: true, timezone: true, event_hours_start: true, event_hours_end: true },
+  });
+  let end: Date | null = null;
+  for (const event of events) {
+    const window = eventDayWindow({
+      date: event.date,
+      eventHoursStart: event.event_hours_start,
+      eventHoursEnd: event.event_hours_end,
+      timezone: event.timezone,
+    });
+    if (!window || now < window.start || now >= window.end) continue;
+    if (!end || window.sessionEnd > end) end = window.sessionEnd;
+  }
+  return end;
 }
 
 /**
- * `Max-Age` (seconds) for the session cookie of a `full` "Keep me signed in" session, so the
- * cookie survives the browser or tablet app being closed; undefined for every other session,
- * which keeps a browser-session cookie.
+ * `Max-Age` (seconds) for the session cookie of a `full` event-day session, so the cookie
+ * survives the browser or tablet app being closed; undefined for every other session, which keeps
+ * a browser-session cookie.
  */
 export function persistentCookieMaxAgeSeconds(
   session: { remember_me: boolean; stage: string; expires_at: Date },
@@ -168,10 +205,15 @@ export async function createSession(
       : await resolveInitialSessionStage(prisma, input.userId, input.stage);
   const now = new Date();
 
-  const rememberMs = input.rememberMe ? await resolveRememberMs(prisma, input.userId) : null;
+  // Partial stages (MFA, enrollment, ...) keep their short TTL: the event-day session is decided
+  // when the session becomes `full`, see promoteSessionToFull.
+  const eventDayEnd =
+    stage === SESSION_STAGE.FULL ? await resolveEventDaySessionEnd(prisma, input.userId, now) : null;
   let ttlMs = MFA_PENDING_SESSION_TTL_MS;
   if (stage === SESSION_STAGE.FULL) {
-    ttlMs = rememberMs ?? (await resolveFullTtlMs(prisma, input.userId));
+    ttlMs = eventDayEnd
+      ? eventDayEnd.getTime() - now.getTime()
+      : await resolveFullTtlMs(prisma, input.userId);
   }
   const expires_at = new Date(now.getTime() + ttlMs);
 
@@ -186,7 +228,7 @@ export async function createSession(
       user_agent: input.userAgent ?? null,
       device_label: input.deviceLabel ? input.deviceLabel.slice(0, DEVICE_LABEL_MAX_LEN) : null,
       timezone: input.timezone ?? null,
-      remember_me: rememberMs !== null,
+      remember_me: eventDayEnd !== null,
       last_seen_at: now,
       expires_at,
     },
@@ -217,7 +259,7 @@ async function lookupSessionByToken(
   // (MFA_PENDING_SESSION_TTL_MS) that serves the same purpose.
   if (session.stage === SESSION_STAGE.FULL) {
     const idleTimeoutMs = await resolveIdleTimeoutMs(prisma, session.user_id, session.remember_me);
-    if (now.getTime() - session.last_seen_at.getTime() >= idleTimeoutMs) {
+    if (idleTimeoutMs !== null && now.getTime() - session.last_seen_at.getTime() >= idleTimeoutMs) {
       // Revoke permanently so a later idle-timeout increase cannot resurrect a
       // session that already exceeded its inactivity window.
       await prisma.session.updateMany({
@@ -352,18 +394,17 @@ export async function promoteSessionToFull(
     targetStage === SESSION_STAGE.BACKUP_CODES_REQUIRED
       ? BACKUP_CODES_STEP_TTL_MS
       : MFA_PENDING_SESSION_TTL_MS;
-  let ttlMs = nonFullTtlMs;
-  let remembered = false;
-  if (targetStage === SESSION_STAGE.FULL) {
-    const row = await prisma.session.findUnique({
-      where: { id: sessionId },
-      select: { remember_me: true },
-    });
-    const rememberMs = row?.remember_me ? await resolveRememberMs(prisma, userId) : null;
-    remembered = rememberMs !== null;
-    ttlMs = rememberMs ?? (await resolveFullTtlMs(prisma, userId));
-  }
   const now = new Date();
+  let ttlMs = nonFullTtlMs;
+  let eventDayEnd: Date | null = null;
+  if (targetStage === SESSION_STAGE.FULL) {
+    // Decided here, not carried over from sign-in: the MFA or password-change step in between can
+    // cross midnight of the event day, or an admin role can have been granted meanwhile.
+    eventDayEnd = await resolveEventDaySessionEnd(prisma, userId, now);
+    ttlMs = eventDayEnd
+      ? eventDayEnd.getTime() - now.getTime()
+      : await resolveFullTtlMs(prisma, userId);
+  }
   const rawToken = generateToken();
   const result = await prisma.session.updateMany({
     where: {
@@ -388,6 +429,7 @@ export async function promoteSessionToFull(
       stage: targetStage,
       token_hash: hashToken(rawToken),
       expires_at: new Date(now.getTime() + ttlMs),
+      remember_me: eventDayEnd !== null,
       last_seen_at: now,
     },
   });
@@ -395,7 +437,7 @@ export async function promoteSessionToFull(
   return {
     stage: targetStage,
     rawToken,
-    cookieMaxAgeSeconds: remembered ? Math.floor(ttlMs / 1000) : undefined,
+    cookieMaxAgeSeconds: eventDayEnd ? Math.floor(ttlMs / 1000) : undefined,
   };
 }
 

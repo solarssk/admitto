@@ -256,7 +256,7 @@ describe("mfa-html-routes", () => {
     expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Foperator");
   });
 
-  it("makes the rotated session cookie persistent after MFA for a Keep me signed in session", async () => {
+  it("makes the rotated session cookie persistent after MFA for an event-day session", async () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.FULL,
@@ -661,7 +661,7 @@ describe("mfa-html-routes", () => {
     expect(res.headers.get("location")).toBe("/change-password");
   });
 
-  it("makes the rotated session cookie persistent after backup-codes ack for a Keep me signed in session", async () => {
+  it("makes the rotated session cookie persistent after backup-codes ack for an event-day session", async () => {
     stashEnrollmentBackupCodes("s1", tenCodes());
     mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token", cookieMaxAgeSeconds: 259200 });
     const { app } = makeApp({

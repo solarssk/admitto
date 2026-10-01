@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,14 @@ import {
   promoteSessionToFull,
   persistentCookieMaxAgeSeconds,
 } from "../src/session.js";
-import { SESSION_STAGE, SESSION_IDLE_TIMEOUT_OPERATOR_MS, AUTH_METHOD } from "../src/constants.js";
+import {
+  SESSION_STAGE,
+  SESSION_IDLE_TIMEOUT_OPERATOR_MS,
+  SESSION_TTL_OPERATOR_MS,
+  SESSION_TTL_ADMIN_MS,
+  MFA_PENDING_SESSION_TTL_MS,
+  AUTH_METHOD,
+} from "../src/constants.js";
 import {
   canPerformCheckIn,
   canManageEvent,
@@ -166,24 +173,6 @@ describe("login", () => {
     if (!result.ok) expect(result.reason).toBe("inactive");
   });
 
-  it("returns a persistent cookie lifetime only when an operator signs in with Keep me signed in", async () => {
-    const remembered = await login(prisma, {
-      email: "operator-a@example.com",
-      password: "test-password-123",
-      rememberMe: true,
-    });
-    const normal = await login(prisma, {
-      email: "operator-a@example.com",
-      password: "test-password-123",
-    });
-    expect(remembered.ok && normal.ok).toBe(true);
-    if (remembered.ok && normal.ok) {
-      expect(remembered.cookieMaxAgeSeconds).toBeGreaterThan(3 * 24 * 60 * 60 - 60);
-      expect(remembered.cookieMaxAgeSeconds).toBeLessThanOrEqual(3 * 24 * 60 * 60);
-      expect(normal.cookieMaxAgeSeconds).toBeUndefined();
-    }
-  });
-
   it("rejects a nonexistent email with invalid_credentials (enumeration-safe)", async () => {
     const result = await login(prisma, {
       email: "no-such-user@example.com",
@@ -318,9 +307,14 @@ describe("session", () => {
       update: { value_json: String(24 * 60 * 60 * 1000) },
     });
 
-    expect(await validateSession(prisma, rawToken)).toBeNull();
-    const stillRevoked = await prisma.session.findUnique({ where: { id: session.id } });
-    expect(stillRevoked?.revoked_at).not.toBeNull();
+    try {
+      expect(await validateSession(prisma, rawToken)).toBeNull();
+      const stillRevoked = await prisma.session.findUnique({ where: { id: session.id } });
+      expect(stillRevoked?.revoked_at).not.toBeNull();
+    } finally {
+      // Left in place it widened the operator idle window for every later test in the file.
+      await prisma.systemSettings.deleteMany({ where: { key: "operator_session_idle_timeout" } });
+    }
   });
 
   it("keeps full session alive within the idle window", async () => {
@@ -351,129 +345,340 @@ describe("session", () => {
     ).toBe(0);
   });
 
-  describe("keep me signed in", () => {
-    const DAY_MS = 24 * 60 * 60 * 1000;
+  describe("event-day session", () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    const PASSWORD = "test-password-123";
+    // Warsaw is UTC+2 in June 2030: the local day of EVENT_DAY runs 2030-06-14T22:00Z to
+    // 2030-06-15T22:00Z, and a session granted inside it ends at 06:00 the next morning, 04:00Z.
+    const DAY_START = "2030-06-14T22:00:00.000Z";
+    const DAY_END = "2030-06-15T22:00:00.000Z";
+    const SESSION_END = "2030-06-16T04:00:00.000Z";
+    const MIDDAY = "2030-06-15T08:00:00.000Z";
 
-    async function setRememberDays(days: number | null) {
-      if (days === null) {
-        await prisma.systemSettings.deleteMany({ where: { key: "operator_remember_me_days" } });
-        return;
-      }
-      await prisma.systemSettings.upsert({
-        where: { key: "operator_remember_me_days" },
-        create: { key: "operator_remember_me_days", value_json: String(days) },
-        update: { value_json: String(days) },
+    const EVENT_DAY = "event-day-auth";
+    const EVENT_DAY_LA = "event-day-la-auth";
+    const EVENT_DAY_TOKYO = "event-day-tokyo-auth";
+    const EVENT_DAY_KIRI = "event-day-kiri-auth";
+    const EVENT_DAY_WEST = "event-day-west-auth";
+    const EVENT_DAY_OVERNIGHT = "event-day-overnight-auth";
+    const EVENT_DAY_ARCHIVED = "event-day-archived-auth";
+    const EVENT_DAY_BAD_TZ = "event-day-bad-tz-auth";
+    const OP_DAY = "user-op-day-auth";
+    const OP_LATE = "user-op-late-auth";
+    const OP_MULTI = "user-op-multi-auth";
+    const OP_KIRI = "user-op-kiri-auth";
+    const OP_WEST = "user-op-west-auth";
+    const SUPER_DAY = "user-super-day-auth";
+    const OP_NIGHT = "user-op-night-auth";
+    const OP_ARCHIVED = "user-op-archived-auth";
+    const OP_BAD_TZ = "user-op-bad-tz-auth";
+    const ADMIN_DAY = "user-admin-day-auth";
+    // Its own organisation: "listAdminEvents - scoped by org" asserts ORG_A holds only EVENT_A.
+    const ORG_DAY = "org-day-auth";
+
+    const setNow = (iso: string) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(iso));
+      return new Date(iso);
+    };
+    const setSwitch = (enabled: boolean | null) =>
+      enabled === null
+        ? prisma.systemSettings.deleteMany({ where: { key: "operator_event_day_sessions" } })
+        : prisma.systemSettings.upsert({
+            where: { key: "operator_event_day_sessions" },
+            create: { key: "operator_event_day_sessions", value_json: String(enabled) },
+            update: { value_json: String(enabled) },
+          });
+
+    beforeAll(async () => {
+      await prisma.organization.create({ data: { id: ORG_DAY, name: "Org Day", slug: ORG_DAY } });
+      const day = new Date("2030-06-15T12:00:00Z");
+      const event = (id: string, extra: Record<string, unknown>) => ({
+        id,
+        title: id,
+        slug: id,
+        date: day,
+        organization_id: ORG_DAY,
+        ...extra,
       });
-    }
+      await prisma.event.createMany({
+        data: [
+          event(EVENT_DAY, { timezone: "Europe/Warsaw" }),
+          event(EVENT_DAY_LA, { timezone: "America/Los_Angeles" }),
+          event(EVENT_DAY_TOKYO, { timezone: "Asia/Tokyo" }),
+          event(EVENT_DAY_KIRI, { timezone: "Pacific/Kiritimati" }),
+          event(EVENT_DAY_WEST, { timezone: "Etc/GMT+12" }),
+          event(EVENT_DAY_OVERNIGHT, { timezone: "UTC", event_hours_start: "20:00", event_hours_end: "08:00" }),
+          event(EVENT_DAY_ARCHIVED, { timezone: "Europe/Warsaw", archived_at: new Date("2030-06-01T00:00:00Z") }),
+          event(EVENT_DAY_BAD_TZ, { timezone: "Not/AZone" }),
+        ],
+      });
+      const password_hash = await hashPassword(PASSWORD);
+      await prisma.user.createMany({
+        data: [OP_DAY, OP_LATE, OP_MULTI, OP_NIGHT, OP_ARCHIVED, OP_BAD_TZ, OP_KIRI, OP_WEST, ADMIN_DAY, SUPER_DAY].map((id) => ({
+          id,
+          email: `${id}@example.com`,
+          password_hash,
+        })),
+      });
+      await prisma.roleAssignment.createMany({
+        data: [
+          { user_id: OP_DAY, role: "operator", scope_type: "event", scope_id: EVENT_DAY },
+          { user_id: OP_LATE, role: "operator", scope_type: "event", scope_id: EVENT_DAY },
+          { user_id: OP_MULTI, role: "operator", scope_type: "event", scope_id: EVENT_DAY },
+          { user_id: OP_MULTI, role: "operator", scope_type: "event", scope_id: EVENT_DAY_LA },
+          { user_id: OP_MULTI, role: "operator", scope_type: "event", scope_id: EVENT_DAY_TOKYO },
+          { user_id: OP_KIRI, role: "operator", scope_type: "event", scope_id: EVENT_DAY_KIRI },
+          { user_id: OP_WEST, role: "operator", scope_type: "event", scope_id: EVENT_DAY_WEST },
+          { user_id: OP_NIGHT, role: "operator", scope_type: "event", scope_id: EVENT_DAY_OVERNIGHT },
+          { user_id: OP_ARCHIVED, role: "operator", scope_type: "event", scope_id: EVENT_DAY_ARCHIVED },
+          { user_id: OP_BAD_TZ, role: "operator", scope_type: "event", scope_id: EVENT_DAY_BAD_TZ },
+          // Both rows on purpose: the API keeps roles exclusive by type, the database does not.
+          { user_id: ADMIN_DAY, role: "admin", scope_type: "organization", scope_id: ORG_DAY },
+          { user_id: ADMIN_DAY, role: "operator", scope_type: "event", scope_id: EVENT_DAY },
+          { user_id: SUPER_DAY, role: "superadmin", scope_type: "instance", scope_id: null },
+          { user_id: SUPER_DAY, role: "operator", scope_type: "event", scope_id: EVENT_DAY },
+        ],
+      });
+    });
 
     afterEach(async () => {
-      await setRememberDays(null);
+      vi.useRealTimers();
+      await setSwitch(null);
     });
 
-    it("gives an operator session the remember-me lifetime and marks the row", async () => {
-      const { session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
-      expect(session.remember_me).toBe(true);
+    it("ends an operator's session at 06:00 the next local morning when they sign in on the event day", async () => {
+      const now = setNow(MIDDAY);
+      const { session } = await createSession(prisma, { userId: OP_DAY });
       expect(session.stage).toBe(SESSION_STAGE.FULL);
-      const lifetime = session.expires_at.getTime() - session.created_at.getTime();
-      expect(Math.abs(lifetime - 3 * DAY_MS)).toBeLessThan(60_000);
+      expect(session.remember_me).toBe(true);
+      expect(session.expires_at.toISOString()).toBe(SESSION_END);
+      expect(persistentCookieMaxAgeSeconds(session, now)).toBe((Date.parse(SESSION_END) - Date.parse(MIDDAY)) / 1000);
     });
 
-    it("uses the configured number of days", async () => {
-      await setRememberDays(5);
-      const { session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
-      const lifetime = session.expires_at.getTime() - session.created_at.getTime();
-      expect(Math.abs(lifetime - 5 * DAY_MS)).toBeLessThan(60_000);
-    });
-
-    it("ignores the option when it is switched off (0 days)", async () => {
-      await setRememberDays(0);
-      const { session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
-      expect(session.remember_me).toBe(false);
-      expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
-    });
-
-    it("does not extend a session that did not ask for it", async () => {
-      const { session } = await createSession(prisma, { userId: USER_OP_A });
-      expect(session.remember_me).toBe(false);
-      expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
-    });
-
-    it("ignores the option for admin and superadmin accounts", async () => {
-      for (const userId of [USER_ADMIN_A, USER_SUPER]) {
-        const { session } = await createSession(prisma, {
-          userId,
-          stage: SESSION_STAGE.FULL,
-          authMethod: AUTH_METHOD.OIDC,
-          rememberMe: true,
-        });
-        expect(session.remember_me).toBe(false);
-        expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
-      }
-    });
-
-    it("keeps a remembered session alive through inactivity that would end a normal one", async () => {
-      const remembered = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+    it("keeps an event-day session alive through inactivity that ends a normal operator session", async () => {
+      const now = setNow(MIDDAY);
+      const eventDay = await createSession(prisma, { userId: OP_DAY });
       const normal = await createSession(prisma, { userId: USER_OP_A });
-      const twoDaysAgo = new Date(Date.now() - 2 * DAY_MS);
+      expect(normal.session.remember_me).toBe(false);
+      const fiveHoursAgo = new Date(now.getTime() - 5 * HOUR_MS);
+      expect(5 * HOUR_MS).toBeGreaterThan(SESSION_IDLE_TIMEOUT_OPERATOR_MS);
       await prisma.session.updateMany({
-        where: { id: { in: [remembered.session.id, normal.session.id] } },
-        data: { last_seen_at: twoDaysAgo },
+        where: { id: { in: [eventDay.session.id, normal.session.id] } },
+        data: { last_seen_at: fiveHoursAgo },
       });
 
-      expect(await validateSession(prisma, remembered.rawToken)).not.toBeNull();
+      expect(await validateSession(prisma, eventDay.rawToken)).not.toBeNull();
       expect(await validateSession(prisma, normal.rawToken)).toBeNull();
     });
 
-    it("still ends a remembered session after its own remember window of inactivity", async () => {
-      const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
-      await prisma.session.update({
-        where: { id: session.id },
-        data: { last_seen_at: new Date(Date.now() - 4 * DAY_MS) },
-      });
+    it("ends the event-day session at its end time, not before", async () => {
+      setNow(MIDDAY);
+      const { rawToken } = await createSession(prisma, { userId: OP_DAY });
+      setNow("2030-06-16T03:59:59.000Z");
+      expect(await validateSession(prisma, rawToken)).not.toBeNull();
+      setNow(SESSION_END);
       expect(await validateSession(prisma, rawToken)).toBeNull();
     });
 
-    it("keeps the remember-me lifetime when a partial session is promoted to full", async () => {
+    it("applies from local midnight of the event day up to, not including, the next local midnight", async () => {
+      const before = setNow("2030-06-14T21:59:59.000Z");
+      const dayBefore = await createSession(prisma, { userId: OP_DAY });
+      expect(dayBefore.session.remember_me).toBe(false);
+      expect(dayBefore.session.expires_at.getTime() - before.getTime()).toBe(SESSION_TTL_OPERATOR_MS);
+
+      setNow(DAY_START);
+      expect((await createSession(prisma, { userId: OP_DAY })).session.remember_me).toBe(true);
+
+      setNow("2030-06-15T21:59:59.000Z");
+      expect((await createSession(prisma, { userId: OP_DAY })).session.remember_me).toBe(true);
+
+      const after = setNow(DAY_END);
+      const dayAfter = await createSession(prisma, { userId: OP_DAY });
+      expect(dayAfter.session.remember_me).toBe(false);
+      expect(dayAfter.session.expires_at.getTime() - after.getTime()).toBe(SESSION_TTL_OPERATOR_MS);
+    });
+
+    it("gives no event-day session when the master switch is off, and takes the idle window back if it is turned off mid-event", async () => {
+      const now = setNow(MIDDAY);
+      const live = await createSession(prisma, { userId: OP_DAY });
+      expect(live.session.remember_me).toBe(true);
+
+      await setSwitch(false);
+      const off = await createSession(prisma, { userId: OP_DAY });
+      expect(off.session.remember_me).toBe(false);
+      expect(off.session.expires_at.getTime() - now.getTime()).toBe(SESSION_TTL_OPERATOR_MS);
+
+      await prisma.session.update({
+        where: { id: live.session.id },
+        data: { last_seen_at: new Date(now.getTime() - 5 * HOUR_MS) },
+      });
+      expect(await validateSession(prisma, live.rawToken)).toBeNull();
+    });
+
+    it("never gives it to an account with an admin role, even one that is also assigned to the event", async () => {
+      const now = setNow(MIDDAY);
       const { session } = await createSession(prisma, {
-        userId: USER_OP_A,
-        stage: SESSION_STAGE.MFA_PENDING,
-        rememberMe: true,
+        userId: ADMIN_DAY,
+        stage: SESSION_STAGE.FULL,
+        authMethod: AUTH_METHOD.OIDC,
+      });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - now.getTime()).toBe(SESSION_TTL_ADMIN_MS);
+    });
+
+    it("never gives it to a superadmin, even one that is also assigned to the event", async () => {
+      const now = setNow(MIDDAY);
+      const { session } = await createSession(prisma, {
+        userId: SUPER_DAY,
+        stage: SESSION_STAGE.FULL,
+        authMethod: AUTH_METHOD.OIDC,
+      });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - now.getTime()).toBe(SESSION_TTL_ADMIN_MS);
+    });
+
+    it("puts the normal inactivity window back at once when an admin role is granted after sign-in", async () => {
+      const now = setNow(MIDDAY);
+      // An OIDC session on purpose: a local one is also rejected by the MFA policy as soon as an
+      // admin role is granted, which would end it whatever the inactivity window says.
+      const { rawToken, session } = await createSession(prisma, {
+        userId: OP_LATE,
+        stage: SESSION_STAGE.FULL,
+        authMethod: AUTH_METHOD.OIDC,
       });
       expect(session.remember_me).toBe(true);
-      // Still on the short partial-stage TTL until promotion.
-      expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { last_seen_at: new Date(now.getTime() - HOUR_MS) },
+      });
+      expect(await validateSession(prisma, rawToken)).not.toBeNull();
 
-      const promoted = await promoteSessionToFull(prisma, session.id, USER_OP_A);
+      const grant = await prisma.roleAssignment.create({
+        data: { user_id: OP_LATE, role: "admin", scope_type: "organization", scope_id: ORG_DAY },
+      });
+      try {
+        await prisma.session.update({
+          where: { id: session.id },
+          data: { last_seen_at: new Date(now.getTime() - HOUR_MS) },
+        });
+        // One hour idle is fine for the event-day window but past the 30 minute admin window.
+        expect(await validateSession(prisma, rawToken)).toBeNull();
+      } finally {
+        await prisma.roleAssignment.delete({ where: { id: grant.id } });
+      }
+    });
+
+    it("ignores an archived event", async () => {
+      setNow(MIDDAY);
+      expect((await createSession(prisma, { userId: OP_ARCHIVED })).session.remember_me).toBe(false);
+    });
+
+    it("fails closed to a normal session when the event timezone cannot be read", async () => {
+      const now = setNow(MIDDAY);
+      const { session } = await createSession(prisma, { userId: OP_BAD_TZ });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - now.getTime()).toBe(SESSION_TTL_OPERATOR_MS);
+    });
+
+    it("gives no event-day session to an operator whose event is on another day", async () => {
+      const now = setNow(MIDDAY);
+      const { session } = await createSession(prisma, { userId: USER_OP_A });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - now.getTime()).toBe(SESSION_TTL_OPERATOR_MS);
+    });
+
+    it("takes the latest end when several assigned events are happening today", async () => {
+      setNow(MIDDAY);
+      // Warsaw ends 2030-06-16T04:00Z, Los Angeles (UTC-7) 13:00Z and Tokyo (UTC+9) 2030-06-15T21:00Z.
+      // The latest is the middle one in id order, so neither the first nor the last row wins by accident.
+      const { session } = await createSession(prisma, { userId: OP_MULTI });
+      expect(session.expires_at.toISOString()).toBe("2030-06-16T13:00:00.000Z");
+    });
+
+    it("finds an event up to 26 hours ahead (UTC+14 at its local midnight) and one at the far west edge of its day", async () => {
+      // Kiritimati local day D starts 2030-06-14T10:00Z, 26 hours before the event's noon-UTC date.
+      setNow("2030-06-14T10:00:00.000Z");
+      expect((await createSession(prisma, { userId: OP_KIRI })).session.remember_me).toBe(true);
+      // Etc/GMT+12 (UTC-12) local day D ends 2030-06-16T12:00Z; one second before it is still D.
+      setNow("2030-06-16T11:59:59.000Z");
+      expect((await createSession(prisma, { userId: OP_WEST })).session.remember_me).toBe(true);
+      setNow("2030-06-16T12:00:00.000Z");
+      expect((await createSession(prisma, { userId: OP_WEST })).session.remember_me).toBe(false);
+    });
+
+    it("keeps an overnight event's own end when it is later than 06:00", async () => {
+      setNow(MIDDAY);
+      const { session } = await createSession(prisma, { userId: OP_NIGHT });
+      expect(session.expires_at.toISOString()).toBe("2030-06-16T08:00:00.000Z");
+    });
+
+    it("still counts a sign-in after local midnight while an overnight event is running", async () => {
+      // 20:00 to 08:00 UTC: a sign-in at 01:00 the next morning is during the event.
+      setNow("2030-06-16T01:00:00.000Z");
+      const during = await createSession(prisma, { userId: OP_NIGHT });
+      expect(during.session.remember_me).toBe(true);
+      expect(during.session.expires_at.toISOString()).toBe("2030-06-16T08:00:00.000Z");
+      // At its end it is over.
+      setNow("2030-06-16T08:00:00.000Z");
+      expect((await createSession(prisma, { userId: OP_NIGHT })).session.remember_me).toBe(false);
+    });
+
+    it("keeps the short partial-stage lifetime until the session becomes full", async () => {
+      const now = setNow(MIDDAY);
+      const { session } = await createSession(prisma, { userId: OP_DAY, stage: SESSION_STAGE.MFA_PENDING });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - now.getTime()).toBe(MFA_PENDING_SESSION_TTL_MS);
+    });
+
+    it("decides the event-day session when a partial session is promoted to full", async () => {
+      setNow(MIDDAY);
+      const { session } = await createSession(prisma, { userId: OP_DAY, stage: SESSION_STAGE.MFA_PENDING });
+      const promotedAt = setNow("2030-06-15T08:05:00.000Z");
+      const promoted = await promoteSessionToFull(prisma, session.id, OP_DAY);
       expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
-      expect(promoted?.cookieMaxAgeSeconds).toBe(3 * 24 * 60 * 60);
+      expect(promoted?.cookieMaxAgeSeconds).toBe((Date.parse(SESSION_END) - promotedAt.getTime()) / 1000);
 
       const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
       expect(row.remember_me).toBe(true);
-      expect(Math.abs(row.expires_at.getTime() - Date.now() - 3 * DAY_MS)).toBeLessThan(60_000);
+      expect(row.expires_at.toISOString()).toBe(SESSION_END);
     });
 
-    it("falls back to the normal idle timeout once the option is switched off after sign-in", async () => {
-      const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
-      await setRememberDays(0);
-      await prisma.session.update({
-        where: { id: session.id },
-        data: { last_seen_at: new Date(Date.now() - 2 * DAY_MS) },
-      });
-      expect(await validateSession(prisma, rawToken)).toBeNull();
-    });
+    it("recomputes at promotion, so a partial session promoted after the event day has ended is a normal one", async () => {
+      setNow("2030-06-15T21:50:00.000Z");
+      const { session } = await createSession(prisma, { userId: OP_DAY, stage: SESSION_STAGE.MFA_PENDING });
+      const promotedAt = setNow("2030-06-15T22:03:00.000Z");
+      const promoted = await promoteSessionToFull(prisma, session.id, OP_DAY);
+      expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
+      expect(promoted?.cookieMaxAgeSeconds).toBeUndefined();
 
-    it("does not promote a session that does not exist", async () => {
-      expect(await promoteSessionToFull(prisma, "no-such-session", USER_OP_A)).toBeNull();
+      const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
+      expect(row.remember_me).toBe(false);
+      expect(row.expires_at.getTime() - promotedAt.getTime()).toBe(SESSION_TTL_OPERATOR_MS);
     });
 
     it("promotes a normal partial session without a persistent cookie", async () => {
-      const { session } = await createSession(prisma, {
-        userId: USER_OP_A,
-        stage: SESSION_STAGE.MFA_PENDING,
-      });
+      const { session } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.MFA_PENDING });
       const promoted = await promoteSessionToFull(prisma, session.id, USER_OP_A);
       expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
       expect(promoted?.cookieMaxAgeSeconds).toBeUndefined();
+    });
+
+    it("does not promote a session that does not exist", async () => {
+      expect(await promoteSessionToFull(prisma, "no-such-session", OP_DAY)).toBeNull();
+    });
+
+    it("returns a persistent cookie lifetime from a password sign-in only on the event day", async () => {
+      const now = setNow(MIDDAY);
+      const onTheDay = await login(prisma, { email: `${OP_DAY}@example.com`, password: PASSWORD });
+      expect(onTheDay.ok).toBe(true);
+      if (onTheDay.ok) {
+        expect(onTheDay.cookieMaxAgeSeconds).toBe((Date.parse(SESSION_END) - now.getTime()) / 1000);
+      }
+
+      const otherDay = await login(prisma, { email: "operator-a@example.com", password: PASSWORD });
+      expect(otherDay.ok).toBe(true);
+      if (otherDay.ok) expect(otherDay.cookieMaxAgeSeconds).toBeUndefined();
     });
   });
 

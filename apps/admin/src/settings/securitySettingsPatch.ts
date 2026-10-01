@@ -1,4 +1,3 @@
-import { MAX_OPERATOR_REMEMBER_ME_DAYS } from "@admitto/auth/constants";
 import { isValidCspTrustedOrigin, MAX_CSP_TRUSTED_ORIGINS } from "@admitto/auth/csp-trusted-origins";
 import type { PatchSystemSettingsBody, SettingSource, SystemSettingsDto } from "../api/types.js";
 import { parseListInput, joinListInput } from "../identity/cfAccessValidation.js";
@@ -12,7 +11,7 @@ export interface SecuritySettingsDraft {
   sessionIdleM: string;
   opIdleM: string;
   trustedDays: string;
-  rememberMeDays: string;
+  operatorEventDaySessions: boolean;
   mfaRoles: string[];
   cspTrustedOriginsRaw: string;
   webauthnEnabled: boolean;
@@ -44,7 +43,7 @@ export function draftFromSettings(s: SystemSettingsDto): SecuritySettingsDraft {
     sessionIdleM: String(Math.round(s.session_idle_timeout_ms.value / MS_PER_MINUTE)),
     opIdleM: String(Math.round(s.operator_session_idle_timeout_ms.value / MS_PER_MINUTE)),
     trustedDays: String(s.trusted_device_days.value),
-    rememberMeDays: String(s.operator_remember_me_days.value),
+    operatorEventDaySessions: s.operator_event_day_sessions.value,
     mfaRoles: [...s.mfa_required_roles.value],
     cspTrustedOriginsRaw: joinListInput(s.csp_trusted_origins.value),
     webauthnEnabled: s.webauthn_enabled.value,
@@ -96,12 +95,6 @@ export function buildSecurityPatchBody(
   const sessionIdleM = parseDraftInt(draft.sessionIdleM, 5, 240, savedSessionIdleM);
   const opIdleM = parseDraftInt(draft.opIdleM, 5, 480, savedOpIdleM);
   const trustedDays = parseDraftInt(draft.trustedDays, 0, 90, settings.trusted_device_days.value);
-  const rememberMeDays = parseDraftInt(
-    draft.rememberMeDays,
-    0,
-    MAX_OPERATOR_REMEMBER_ME_DAYS,
-    settings.operator_remember_me_days.value,
-  );
 
   const applyIfEditable = (locked: boolean, changed: boolean, apply: () => void) => {
     if (locked || !changed) return;
@@ -145,10 +138,10 @@ export function buildSecurityPatchBody(
     },
   );
   applyIfEditable(
-    fieldLocked(settings.operator_remember_me_days.source),
-    rememberMeDays !== settings.operator_remember_me_days.value,
+    fieldLocked(settings.operator_event_day_sessions.source),
+    draft.operatorEventDaySessions !== settings.operator_event_day_sessions.value,
     () => {
-      body.operator_remember_me_days = rememberMeDays;
+      body.operator_event_day_sessions = draft.operatorEventDaySessions;
     },
   );
   applyIfEditable(
