@@ -40,7 +40,7 @@
     "@hono/node-server": "^2.1.1",
     "@prisma/client": "^7.10.0",
     "@simplewebauthn/server": "^14.0.3",
-    "@tabler/icons-webfont": "3.46.0",
+    "@tabler/icons-webfont": "3.48.0",
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "geo-tz": "^8.1.8",
