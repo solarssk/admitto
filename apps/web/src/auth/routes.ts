@@ -81,9 +81,9 @@ function sessionCookieOptions(c: Context): {
 }
 
 /**
- * Set httpOnly session cookie after successful login. `maxAgeSeconds` is passed only for a
- * "Keep me signed in" session so the cookie outlives the browser or tablet app being closed;
- * every other session keeps a browser-session cookie.
+ * Set httpOnly session cookie after successful login. `maxAgeSeconds` is passed only for an
+ * event-day session so the cookie outlives the browser or tablet app being closed; every other
+ * session keeps a browser-session cookie.
  */
 export function setSessionCookie(c: Context, rawToken: string, maxAgeSeconds?: number): void {
   setCookie(c, SESSION_COOKIE_NAME, rawToken, {
@@ -133,7 +133,7 @@ export async function handleLogin(
     return c.json(AUTH_ERROR, 401);
   }
 
-  const { email, password, remember_me: rememberMe } = body as Record<string, unknown>;
+  const { email, password } = body as Record<string, unknown>;
   if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
     return c.json(AUTH_ERROR, 401);
   }
@@ -147,7 +147,6 @@ export async function handleLogin(
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken,
     timezone: resolveClientTimezone(c),
-    rememberMe: rememberMe === true,
   });
 
   if (!result.ok) {
@@ -650,7 +649,7 @@ export async function handlePostPasskeyLoginFinish(
     return c.json({ code: "invalid_webauthn" }, 401);
   }
 
-  setSessionCookie(c, result.rawToken);
+  setSessionCookie(c, result.rawToken, result.cookieMaxAgeSeconds);
 
   const next = await resolvePostMfaLandingPath(
     c,

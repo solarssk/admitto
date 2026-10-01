@@ -8,7 +8,7 @@ import {
   getSessionIdleTimeoutAdminMs,
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
-  getOperatorRememberMeDays,
+  getOperatorEventDaySessionsEnabled,
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
   getPasskeyConditionalUiEnabled,
@@ -18,7 +18,6 @@ import {
 import {
   DEFAULT_MFA_REQUIRED_ROLES,
   DEFAULT_TRUSTED_DEVICE_DAYS,
-  DEFAULT_OPERATOR_REMEMBER_ME_DAYS,
   SESSION_TTL_ADMIN_MS,
   SESSION_TTL_OPERATOR_MS,
   SESSION_IDLE_TIMEOUT_ADMIN_MS,
@@ -107,34 +106,46 @@ describe("env lock parsing", () => {
   });
 });
 
-describe("getOperatorRememberMeDays", () => {
+describe("getOperatorEventDaySessionsEnabled", () => {
   afterEach(() => {
-    delete process.env.OPERATOR_REMEMBER_ME_DAYS;
+    delete process.env.OPERATOR_EVENT_DAY_SESSIONS;
   });
 
-  it("defaults to 3 days", async () => {
-    await expect(getOperatorRememberMeDays(envOnlyMockPrisma)).resolves.toBe(DEFAULT_OPERATOR_REMEMBER_ME_DAYS);
-    expect(DEFAULT_OPERATOR_REMEMBER_ME_DAYS).toBe(3);
+  it("is on by default", async () => {
+    await expect(getOperatorEventDaySessionsEnabled(envOnlyMockPrisma)).resolves.toBe(true);
   });
 
-  it("accepts 0 (off) and the 14 day maximum", async () => {
-    await expect(getOperatorRememberMeDays(settingsMockPrisma({ operator_remember_me_days: 0 }))).resolves.toBe(0);
-    await expect(getOperatorRememberMeDays(settingsMockPrisma({ operator_remember_me_days: 14 }))).resolves.toBe(14);
+  it("resolves the persisted value", async () => {
+    await expect(
+      getOperatorEventDaySessionsEnabled(settingsMockPrisma({ operator_event_day_sessions: false })),
+    ).resolves.toBe(false);
+    await expect(
+      getOperatorEventDaySessionsEnabled(settingsMockPrisma({ operator_event_day_sessions: true })),
+    ).resolves.toBe(true);
   });
 
-  it.each([-1, 15, 90, 2.5, "3"])("falls back to the default for the invalid stored value %s", async (bad) => {
-    await expect(getOperatorRememberMeDays(settingsMockPrisma({ operator_remember_me_days: bad }))).resolves.toBe(
-      DEFAULT_OPERATOR_REMEMBER_ME_DAYS,
-    );
+  it.each([0, 1, "false", "true", null, "off"])(
+    "turns the feature off for the non-boolean stored value %s, so a hand-edited row never leaves it on",
+    async (bad) => {
+      await expect(
+        getOperatorEventDaySessionsEnabled(settingsMockPrisma({ operator_event_day_sessions: bad })),
+      ).resolves.toBe(false);
+    },
+  );
+
+  it("is locked by OPERATOR_EVENT_DAY_SESSIONS", async () => {
+    process.env.OPERATOR_EVENT_DAY_SESSIONS = "false";
+    expect(isSettingEnvLocked("operator_event_day_sessions")).toBe(true);
+    await expect(getOperatorEventDaySessionsEnabled(envOnlyMockPrisma)).resolves.toBe(false);
+
+    process.env.OPERATOR_EVENT_DAY_SESSIONS = "1";
+    await expect(getOperatorEventDaySessionsEnabled(envOnlyMockPrisma)).resolves.toBe(true);
   });
 
-  it("is locked by OPERATOR_REMEMBER_ME_DAYS and still range-checked", async () => {
-    process.env.OPERATOR_REMEMBER_ME_DAYS = "7";
-    expect(isSettingEnvLocked("operator_remember_me_days")).toBe(true);
-    await expect(getOperatorRememberMeDays(envOnlyMockPrisma)).resolves.toBe(7);
-
-    process.env.OPERATOR_REMEMBER_ME_DAYS = "365";
-    await expect(getOperatorRememberMeDays(envOnlyMockPrisma)).resolves.toBe(DEFAULT_OPERATOR_REMEMBER_ME_DAYS);
+  it("turns off for an env value that is not true/false/1/0, so a typo like \"off\" never leaves the feature on", async () => {
+    process.env.OPERATOR_EVENT_DAY_SESSIONS = "off";
+    expect(isSettingEnvLocked("operator_event_day_sessions")).toBe(true);
+    await expect(getOperatorEventDaySessionsEnabled(envOnlyMockPrisma)).resolves.toBe(false);
   });
 });
 

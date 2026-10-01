@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
@@ -179,6 +179,61 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       orderBy: { created_at: "desc" },
     });
     expect((row?.metadata as { method?: string } | null)?.method).toBe("passkey");
+  });
+
+  describe("session cookie lifetime", () => {
+    const EVENT_ID = "evt-passkey-login";
+
+    async function finishPasskeyLogin() {
+      await setPasskeyLoginEnabled(true);
+      const authenticator = await registerCredential(userId);
+      const { body: beginBody } = await begin();
+      const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
+      return app.request("/api/auth/login/webauthn/finish", {
+        method: "POST",
+        headers: { ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ ceremony: beginBody.ceremony, response }),
+      });
+    }
+
+    afterEach(async () => {
+      vi.useRealTimers();
+      await prisma.event.deleteMany({ where: { id: EVENT_ID } });
+    });
+
+    it("persists the cookie until the end of the event day for an operator whose event is today", async () => {
+      // Date is frozen at the real current instant (the ceremony state is checked against the
+      // database clock, so a far-off instant would look expired) and the event date is built from
+      // that same instant, so crossing UTC midnight mid-test cannot change the answer.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const now = new Date();
+      vi.setSystemTime(now);
+      const day = now.toISOString().slice(0, 10);
+      await prisma.event.create({
+        data: {
+          id: EVENT_ID,
+          title: "Passkey login event",
+          slug: EVENT_ID,
+          date: new Date(`${day}T12:00:00.000Z`),
+          timezone: "UTC",
+          organization_id: ORG_PL,
+        },
+      });
+      const sessionEnd = Date.parse(`${day}T00:00:00.000Z`) + 30 * 60 * 60 * 1000; // 06:00 UTC the next morning
+
+      const res = await finishPasskeyLogin();
+      expect(res.status).toBe(200);
+      const cookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+      expect(cookie).toContain(`Max-Age=${Math.floor((sessionEnd - now.getTime()) / 1000)}`);
+    });
+
+    it("keeps a browser-session cookie for an operator with no event today", async () => {
+      const res = await finishPasskeyLogin();
+      expect(res.status).toBe(200);
+      const cookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+      expect(cookie).toBeDefined();
+      expect(cookie).not.toMatch(/Max-Age/i);
+    });
   });
 
   it("returns 400 challenge_expired when the ceremony token is unknown", async () => {

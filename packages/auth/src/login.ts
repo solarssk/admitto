@@ -53,8 +53,6 @@ export interface LoginInput {
   trustedDeviceToken?: string;
   /** Browser IANA timezone when captured at sign-in. */
   timezone?: string | null;
-  /** "Keep me signed in" was ticked; only takes effect for operator-only users, see `createSession`. */
-  rememberMe?: boolean;
 }
 
 /** Discriminated result after password verification. */
@@ -65,7 +63,7 @@ export type LoginResult =
       sessionId: string;
       userId: string;
       next: LoginNext;
-      /** Set only for a `full` "Keep me signed in" session: make the session cookie persistent. */
+      /** Set only for a `full` event-day session: make the session cookie persistent. */
       cookieMaxAgeSeconds?: number;
     }
   | { ok: false; reason: "invalid_credentials" | "inactive" };
@@ -163,7 +161,6 @@ interface FinalizeLoginInput {
   userAgent?: string;
   deviceLabel?: string;
   timezone?: string | null;
-  rememberMe?: boolean;
 }
 
 /**
@@ -213,7 +210,6 @@ async function finalizeLoginSession(
     userAgent: input.userAgent,
     deviceLabel: input.deviceLabel,
     timezone: input.timezone,
-    rememberMe: input.rememberMe,
   });
 
   // Runs before logLoginSuccess persists this login's own SecurityAuditLog row - see
@@ -319,7 +315,7 @@ export interface CompleteMfaResult {
   stage?: SessionStage;
   /** Rotated session token from the promotion - caller must set a fresh cookie from this. */
   sessionRawToken?: string;
-  /** Set only when the promoted session is a "Keep me signed in" one: persist the cookie this long. */
+  /** Set only when the promoted session is an event-day one: persist the cookie this long. */
   cookieMaxAgeSeconds?: number;
 }
 

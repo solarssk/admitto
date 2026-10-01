@@ -1,5 +1,4 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
-import { MAX_OPERATOR_REMEMBER_ME_DAYS } from "../constants.js";
 import { SETTING_DEFAULTS, SETTING_ENV_LOCKS } from "./defaults.js";
 
 function parseEnvValue(raw: string, fallback: unknown): unknown {
@@ -135,17 +134,20 @@ export async function getTrustedDeviceDays(
 }
 
 /**
- * Lifetime in days of an operator session started with "Keep me signed in", from SystemSettings
- * (`operator_remember_me_days`). 0 means the option is off. Out-of-range or non-integer values fall
- * back to the default so a bad DB row or env value can never silently lengthen sessions.
+ * Whether an operator-only account gets the event-day session (stays signed in, with no inactivity
+ * timeout, until the day of an event it is assigned to has ended), from SystemSettings
+ * (`operator_event_day_sessions`, default on). A value that is set but is not a boolean (an env
+ * value other than true/false/1/0, a hand-edited row) turns the feature off.
  */
-export async function getOperatorRememberMeDays(
+export async function getOperatorEventDaySessionsEnabled(
   prisma: PrismaClient | Prisma.TransactionClient,
-): Promise<number> {
-  const v = await getSetting<number>(prisma, "operator_remember_me_days");
-  return Number.isInteger(v) && v >= 0 && v <= MAX_OPERATOR_REMEMBER_ME_DAYS
-    ? v
-    : (SETTING_DEFAULTS.get("operator_remember_me_days") as number);
+): Promise<boolean> {
+  // getSetting returns the built-in default (a boolean) when nothing is set, so anything else is a
+  // value someone did set that cannot be read: an env value such as OPERATOR_EVENT_DAY_SESSIONS=off,
+  // or a hand-edited row. This switch loosens session limits, so that turns it off instead of
+  // falling back to the default of on.
+  const v = await getSetting<unknown>(prisma, "operator_event_day_sessions");
+  return typeof v === "boolean" ? v : false;
 }
 
 /** Whether passkey / security-key (WebAuthn) MFA is offered, from SystemSettings

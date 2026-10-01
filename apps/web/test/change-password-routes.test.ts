@@ -201,7 +201,7 @@ describe("change-password-routes", () => {
     );
   });
 
-  it("makes the rotated session cookie persistent when the promoted session is a Keep me signed in one", async () => {
+  it("makes the rotated session cookie persistent when the promoted session is an event-day one", async () => {
     promote.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token", cookieMaxAgeSeconds: 259200 });
     const app = makeApp(makeDb({}), { userId: "u1", sessionId: "s1" });
     const res = await app.request("/change-password", {

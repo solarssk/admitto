@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MAX_OPERATOR_REMEMBER_ME_DAYS } from "@admitto/auth/constants";
 import { Button, Card, HintLabel, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
@@ -72,7 +71,7 @@ function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
     settings.operator_session_ttl_ms.source,
     settings.operator_session_idle_timeout_ms.source,
     settings.trusted_device_days.source,
-    settings.operator_remember_me_days.source,
+    settings.operator_event_day_sessions.source,
   ].some(fieldLocked);
 }
 
@@ -236,6 +235,7 @@ export function SecurityPanel() {
     );
   }
 
+  const eventDaySessionsLocked = fieldLocked(settings.operator_event_day_sessions.source);
   const mfaLocked = fieldLocked(settings.mfa_required_roles.source);
   const mfaEmpty = draft.mfaRoles.length === 0;
   const cspTrustedOriginsLocked = fieldLocked(settings.csp_trusted_origins.source);
@@ -294,7 +294,7 @@ export function SecurityPanel() {
           <SecurityNumericRow
             id="security-operator-ttl-hours"
             label="Operator session maximum lifetime (hours)"
-            description="Hard cap for operator (check-in) sessions, even if the station stays active. Allowed range: 1–168 hours."
+            description="Hard cap for operator (check-in) sessions, even if the station stays active, except on an event day (see the switch below). Allowed range: 1–168 hours."
             value={draft.opTtlH}
             min={1}
             max={168}
@@ -307,7 +307,7 @@ export function SecurityPanel() {
           <SecurityNumericRow
             id="security-operator-idle-minutes"
             label="Operator session inactivity timeout (minutes)"
-            description="Sign out operators after this long without activity at the check-in station. Allowed range: 5–480 minutes."
+            description="Sign out operators after this long without activity at the check-in station, except on an event day (see the switch below). Allowed range: 5–480 minutes."
             value={draft.opIdleM}
             min={5}
             max={480}
@@ -317,17 +317,29 @@ export function SecurityPanel() {
             onChange={(opIdleM) => setDraft({ ...draft, opIdleM })}
           />
 
-          <SecurityNumericRow
-            id="security-operator-remember-me-days"
-            label='Operator "Keep me signed in" duration (days)'
-            description={`How long an operator stays signed in after ticking "Keep me signed in" on the sign-in page. It replaces the operator maximum lifetime and inactivity timeout above for that session, and the cookie survives closing the browser. Administrators are not affected. Set 0 to hide the checkbox. Allowed range: 0–${MAX_OPERATOR_REMEMBER_ME_DAYS} days.`}
-            value={draft.rememberMeDays}
-            min={0}
-            max={MAX_OPERATOR_REMEMBER_ME_DAYS}
-            savedValue={settings.operator_remember_me_days.value}
-            source={settings.operator_remember_me_days.source}
-            onChange={(rememberMeDays) => setDraft({ ...draft, rememberMeDays })}
-          />
+          <div className="security-settings-item">
+            <div className="settings-row__text">
+              <strong>Operators stay signed in on event day</strong>
+              <p>
+                Operators stay signed in, even when idle or after closing the app, if they sign in on
+                the day of an event they are assigned to. It lasts until 06:00 the next morning. Not
+                for administrators.
+              </p>
+            </div>
+            <div className="security-settings-row__control">
+              <Switch
+                id="security-operator-event-day-sessions"
+                aria-label="Operators stay signed in on event day"
+                label={draft.operatorEventDaySessions ? "On" : "Off"}
+                checked={draft.operatorEventDaySessions}
+                disabled={eventDaySessionsLocked}
+                onChange={() =>
+                  setDraft({ ...draft, operatorEventDaySessions: !draft.operatorEventDaySessions })
+                }
+              />
+            </div>
+            <div className="security-settings-row-divider" aria-hidden="true" />
+          </div>
 
           <SecurityNumericRow
             id="security-trusted-device-days"
