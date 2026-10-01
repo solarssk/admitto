@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On a slow connection the icons, such as the Apple and Google Wallet marks in the Attendees list, no longer show as empty boxes until the icon font has loaded: they stay invisible and appear together, instead of the Samsung mark (an image) appearing alone first.
 - Choosing an event on the check-in entry screen no longer flashes "No events with check-in access were found for your account" for a moment before opening check-in when you have access to exactly one event.
 - The check-in search field is no longer offered an email address by the Bitwarden browser extension. Bitwarden now ignores a page's own "ignore this field" marking unless its user turns on "Allow websites to exclude fields to autofill", so the field's name now says it is a search box, which Bitwarden skips on its own.
+- A Retry in a dialog that fails again with the same message is now announced again by screen readers, so it is clear that Retry did something (the Add attendee dialog's ticket types and custom fields), and when the control that has keyboard focus disappears from a dialog, such as that Retry once it worked, focus now moves to the first control in the dialog instead of falling to the page behind it, where the next Tab could leave the dialog, and a button that was switched off while it worked gets the focus back once it is on again.
 
 ## [0.7.4] - 2026-09-30
 
