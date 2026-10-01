@@ -314,7 +314,7 @@ function CheckInScanBar({
           <input
             ref={inputRef}
             id="checkin-scan-field"
-            name="checkin-scan"
+            name="checkin-search"
             className="ck-scan-bar__input"
             value={buffer}
             onChange={(e) => onBufferChange(e.target.value, e.timeStamp)}

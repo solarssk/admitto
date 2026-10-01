@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Attendees → **More actions** → **Remove inactive passes** used to report "There were no wallet passes ready to remove" the same way whether nothing was voided or expired at all, or some passes were but had not yet sat inactive for their required 24 hours - both looked exactly like the action had done nothing. The message now says how many are still within that 24-hour window when that is the reason, and the Wallets report's **Provider state** card shows the same count at any time, without having to run the action first.
 - On a slow connection the icons, such as the Apple and Google Wallet marks in the Attendees list, no longer show as empty boxes until the icon font has loaded: they stay invisible and appear together, instead of the Samsung mark (an image) appearing alone first.
 - Choosing an event on the check-in entry screen no longer flashes "No events with check-in access were found for your account" for a moment before opening check-in when you have access to exactly one event.
+- The check-in search field is no longer offered an email address by the Bitwarden browser extension. Bitwarden now ignores a page's own "ignore this field" marking unless its user turns on "Allow websites to exclude fields to autofill", so the field's name now says it is a search box, which Bitwarden skips on its own.
 
 ## [0.7.4] - 2026-09-30
 

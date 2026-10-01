@@ -11,7 +11,10 @@ export function scanFieldInputMode(): "text" | "none" {
   return window.matchMedia("(any-pointer: coarse)").matches ? "text" : "none";
 }
 
-/** Discourage password managers from treating check-in search fields as login forms. */
+/** Discourage password managers from treating check-in search fields as login forms. The ignore attributes
+ * are honoured by 1Password and LastPass, but Bitwarden honours `data-bwignore` only for users who have
+ * switched that on, so the fields' `name` and `id` must also read as a search box to its own heuristics
+ * ("search" in one of them; see test/checkin/bitwardenSearchField.ts) whatever the placeholder says. */
 export const checkinSearchFieldAttrs = {
   autoComplete: "off",
   role: "searchbox",
