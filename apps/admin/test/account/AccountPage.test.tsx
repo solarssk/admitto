@@ -4279,6 +4279,26 @@ describe("AccountPage on the loading standard", () => {
       });
     });
 
+    it("the sessions wait starts only when its card can render: an answer that came while the account placeholder was still held is shown at once", async () => {
+      let answerAccount!: (account: AccountDto) => void;
+      let answerSessions!: (value: { sessions: SessionListDto[] }) => void;
+      mockFetchAccount.mockReturnValue(new Promise((resolve) => (answerAccount = resolve)));
+      mockFetchSessions.mockReturnValue(new Promise((resolve) => (answerSessions = resolve)));
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage activeTab="sessions" />);
+
+      await advance(250); // the account placeholder was drawn at 200ms
+      await act(async () => answerAccount(baseAccount)); // answered at 250ms, but the placeholder stays until 600ms
+      await advance(250);
+      // 500ms: counted from the answer, the sessions placeholder would have been drawn at 450ms and held for 400ms.
+      await act(async () => answerSessions({ sessions: [] }));
+      await advance(0);
+
+      await advance(110); // 610ms: the account placeholder is gone and the card can render
+      expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+      expect(screen.getByText("No active sessions.")).toBeTruthy();
+    });
+
     it("puts the 8 second message inside the region, so it is announced and takes a full row of the grid", async () => {
       mockFetchAccount.mockReturnValue(new Promise(() => {}));
       mockFetchSessions.mockResolvedValue({ sessions: [] });
@@ -4493,47 +4513,53 @@ describe("AccountPage on the loading standard", () => {
       expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
     });
 
-    it("an older answer never replaces a newer one: two refreshes that resolve out of order leave the newest snapshot", async () => {
+    /**
+     * Two refreshes of the account at once. The cards that show the account swallow every click while one is
+     * on its way, so the only way to start a second is from a dialog, which lives outside them: the "Forget all
+     * trusted devices" dialog is opened first, then a profile Save starts the first refresh, then the dialog's
+     * action starts the second.
+     */
+    async function overlappingRefreshes() {
       mockFetchSessions.mockResolvedValue({ sessions: [] });
-      let answerFirst!: (account: AccountDto) => void;
-      let answerSecond!: (account: AccountDto) => void;
+      const answers = {} as {
+        answerFirst: (account: AccountDto) => void;
+        failFirst: (error: Error) => void;
+        answerSecond: (account: AccountDto) => void;
+      };
       mockFetchAccount
-        .mockResolvedValueOnce(baseAccount)
-        .mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
-        .mockReturnValueOnce(new Promise((resolve) => (answerSecond = resolve)));
-      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
-      mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
+        .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 3 })
+        .mockReturnValueOnce(new Promise((resolve, reject) => { answers.answerFirst = resolve; answers.failFirst = reject; }))
+        .mockReturnValueOnce(new Promise((resolve) => (answers.answerSecond = resolve)));
+      mockPatchProfile.mockResolvedValue({ ...totpEnrolledAccount, display_name: "Renamed Admin" } as never);
+      mockForgetAllTrustedDevices.mockResolvedValue({ devices_revoked: 0 });
 
-      await saveNewDisplayName(); // the first refresh is on its way
+      renderWithToast(<AccountPage />);
+      const name = (await screen.findByLabelText("Display name")) as HTMLInputElement;
+      fireEvent.click(await screen.findByRole("button", { name: "Two-factor authentication options", hidden: true }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/, hidden: true }));
+      const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+
+      fireEvent.change(name, { target: { value: "Renamed Admin" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save", hidden: true }));
       await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
-      fillPasswordForm();
-      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true })); // and a second one
+      fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
       await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
+      return answers;
+    }
 
-      await act(async () => answerSecond({ ...baseAccount, email: "new@example.com" }));
-      await act(async () => answerFirst({ ...baseAccount, email: "old@example.com" }));
+    it("an older answer never replaces a newer one: two refreshes that resolve out of order leave the newest snapshot", async () => {
+      const answers = await overlappingRefreshes();
+
+      await act(async () => answers.answerSecond({ ...totpEnrolledAccount, email: "new@example.com" }));
+      await act(async () => answers.answerFirst({ ...totpEnrolledAccount, email: "old@example.com" }));
       expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("new@example.com");
     });
 
     it("an older refresh that fails after a newer one worked does not put the warning back", async () => {
-      mockFetchSessions.mockResolvedValue({ sessions: [] });
-      let failFirst!: (error: Error) => void;
-      let answerSecond!: (account: AccountDto) => void;
-      mockFetchAccount
-        .mockResolvedValueOnce(baseAccount)
-        .mockReturnValueOnce(new Promise((_resolve, reject) => (failFirst = reject)))
-        .mockReturnValueOnce(new Promise((resolve) => (answerSecond = resolve)));
-      mockPatchProfile.mockResolvedValue({ ...baseAccount, display_name: "Renamed Admin" } as never);
-      mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
+      const answers = await overlappingRefreshes();
 
-      await saveNewDisplayName();
-      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
-      fillPasswordForm();
-      fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true }));
-      await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(3));
-
-      await act(async () => answerSecond({ ...baseAccount, email: "new@example.com" }));
-      await act(async () => failFirst(new Error("network down")));
+      await act(async () => answers.answerSecond({ ...totpEnrolledAccount, email: "new@example.com" }));
+      await act(async () => answers.failFirst(new Error("network down")));
       // The newest snapshot is on screen and current: nothing says it may be out of date.
       expect(screen.queryByText(/Could not refresh this page/)).toBeNull();
       expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("new@example.com");

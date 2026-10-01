@@ -711,21 +711,21 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   // first frame (AGENTS.md "Admin SPA loading and busy states"). A refresh after a save never gets here.
   const accountGate = useLoadingGate(loading);
   const accountSlow = useDelayedLoading(loading, SLOW_NOTICE_MS);
-  // Gated on `!loading` too, not just `sessionsLoading` on its own - the sessions card
-  // only becomes visible once the account section's own loading gate above clears, so its
-  // no-flash window must start counting from there, not from mount (when the account fetch
-  // may still have most of its own 200ms left to run, silently eating into the sessions
-  // card's window before it's ever shown).
-  const sessionsGate = useLoadingGate(sessionsLoading && !loading);
-  const notifPrefsGate = useLoadingGate(notifPrefsLoading && !loading);
+  // Gated on `accountGate.showContent` too, not just on `sessionsLoading` on its own, and not on a bare
+  // `!loading`: these cards only become visible once the account section's own gate has cleared, which is
+  // later than the answer (a placeholder that was drawn stays for 400ms). Their 200ms delay and 400ms
+  // minimum must start counting from then. Counted earlier, a placeholder could be shown, and held, behind
+  // the account placeholder, and then appear over data that was ready by the time the cards can render.
+  const sessionsGate = useLoadingGate(sessionsLoading && accountGate.showContent);
+  const notifPrefsGate = useLoadingGate(notifPrefsLoading && accountGate.showContent);
   // The refresh of the sessions list after a revoke: dimmed once it is noticeable, with the thin bar along the card.
   const sessionsRefetch = useLoadingGate(sessionsRefreshing);
   // The same for the account-backed cards (Profile, Password, Two-factor) while the account is refreshed after a change.
   const accountRefetch = useLoadingGate(refreshing);
   // A Retry on the refresh warning that fails at once still shows that it ran, and is announced again.
   const refreshRetrying = useMinimumBusy(refreshing);
-  const sessionsSlow = useDelayedLoading(sessionsLoading && !loading, SLOW_NOTICE_MS);
-  const notifPrefsSlow = useDelayedLoading(notifPrefsLoading && !loading, SLOW_NOTICE_MS);
+  const sessionsSlow = useDelayedLoading(sessionsLoading && accountGate.showContent, SLOW_NOTICE_MS);
+  const notifPrefsSlow = useDelayedLoading(notifPrefsLoading && accountGate.showContent, SLOW_NOTICE_MS);
   // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
   // roles' own Active sessions tab - only one ever renders (not both, CSS-hidden), so a row's
   // content never appears twice in the accessibility tree.
@@ -1386,7 +1386,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   function renderPasswordCard() {
     if (!account) return null;
     return (
-      <Card title={<HintLabel hint={PASSWORD_HINT}>Password</HintLabel>} {...refetchCardProps(refreshing, accountRefetch.showIndicator, false)}>
+      <Card title={<HintLabel hint={PASSWORD_HINT}>Password</HintLabel>} {...refetchCardProps(refreshing, accountRefetch.showIndicator, true)}>
         <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
       {account.has_local_password && (
         <p className="account-info-block">
@@ -1965,7 +1965,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             />
           ) : undefined
         }
-        {...refetchCardProps(refreshing, accountRefetch.showIndicator, false)}
+        {...refetchCardProps(refreshing, accountRefetch.showIndicator, true)}
       >
           <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
           {/* Methods list, every action opens its own popup now (decision 6), so this stays
@@ -2303,7 +2303,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           />
         }
         footer={<div className="mail-transport-footer"><Button type="button" variant="primary" loading={profileSaving} disabled={!profileDirty} onClick={() => void handleProfileSave(account)}>Save</Button></div>}
-        {...refetchCardProps(refreshing, accountRefetch.showIndicator, false)}
+        {...refetchCardProps(refreshing, accountRefetch.showIndicator, true)}
       >
         <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
         <div className="account-profile-editable">
