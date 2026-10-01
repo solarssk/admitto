@@ -7,7 +7,7 @@ import { CheckInCameraResultPanel } from "../../src/checkin/CheckInCameraResultP
 import { CkRecentScans } from "../../src/checkin/CkRecentScans.js";
 import { CkStats } from "../../src/checkin/CkStats.js";
 import { NoteModal } from "../../src/checkin/NoteModal.js";
-import { ScanHistoryList, type ScanHistoryStatus } from "../../src/checkin/ScanHistoryList.js";
+import { ScanHistoryError, ScanHistoryList, type ScanHistoryStatus } from "../../src/checkin/ScanHistoryList.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -141,6 +141,23 @@ describe("ScanHistoryList first load", () => {
     await advance(10);
     expect(container.textContent).toContain("7");
     expect(screen.queryByText("Could not load the counts and recent scans.")).toBeNull();
+  });
+});
+
+describe("ScanHistoryList without an event id, and the error card without a Retry", () => {
+  it("draws the default placeholder and remembers nothing when it is not told which event it is for", async () => {
+    const { container, rerender } = render(<ScanHistoryList admittedCount={0} totalCount={0} history={[]} status="loading" />);
+    await advance(200);
+    expect(container.querySelectorAll(".ck-recent__row--skeleton")).toHaveLength(4);
+    rerender(<ScanHistoryList admittedCount={0} totalCount={0} history={[]} status="ready" />);
+    await advance(500);
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("shows only the message when there is nothing to retry", () => {
+    render(<ScanHistoryError />);
+    expect(screen.getByText("Could not load the counts and recent scans.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 });
 

@@ -106,3 +106,21 @@ describe("CameraOverlay when the first load of the counts and history failed", (
     expect(screen.queryByText("Could not load the counts and recent scans.")).toBeNull();
   });
 });
+
+describe("CameraOverlay: a failure that comes while the placeholder is up", () => {
+  it("waits for the placeholder's 400ms, as the sidebar does, instead of flashing it", async () => {
+    const { rerender } = render(<CameraOverlay {...baseProps} admittedCount={0} historyLoading onRetryHistory={vi.fn()} />);
+    await advance(250);
+    expect(document.querySelector(".ck-overlay__aside .at-skeleton")).not.toBeNull();
+
+    // The request fails 50ms after the placeholder was drawn: it stays until 400ms have passed.
+    rerender(<CameraOverlay {...baseProps} admittedCount={0} historyLoading={false} historyError onRetryHistory={vi.fn()} />);
+    expect(screen.queryByText("Could not load the counts and recent scans.")).toBeNull();
+    expect(document.querySelector(".ck-overlay__admitted")?.textContent).not.toBe("Count unavailable");
+    await advance(349);
+    expect(screen.queryByText("Could not load the counts and recent scans.")).toBeNull();
+    await advance(1);
+    expect(screen.getByText("Could not load the counts and recent scans.")).toBeTruthy();
+    expect(document.querySelector(".ck-overlay__admitted")?.textContent).toBe("Count unavailable");
+  });
+});

@@ -65,6 +65,7 @@ import {
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent, type StreamStatus } from "../hooks/useEventStream.js";
 import { checkinSearchFieldAttrs, scanFieldInputMode } from "../checkin/searchFieldAttrs.js";
+import { LOAD_TIMEOUT_MS } from "../utils/loading-timing.js";
 import { ScanHistoryList, type ScanHistoryStatus } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
@@ -872,6 +873,10 @@ export function CheckInPage({
   // are unknown, and a failure of it says so instead of leaving "0 admitted" and "No scans yet" standing.
   const [sidebarStatus, setSidebarStatus] = useState<ScanHistoryStatus>("loading");
   const [sidebarRetrying, setSidebarRetrying] = useState(false);
+  // Bumped when the event changes: an answer that was requested for the event left behind must not
+  // fill in, or mark as loaded, the new one.
+  const sidebarGenerationRef = useRef(0);
+  const sidebarEventRef = useRef(eventId);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto>(DEFAULT_OPS_CONFIG);
@@ -995,11 +1000,17 @@ export function CheckInPage({
 
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
+    const generation = sidebarGenerationRef.current;
+    // The first load shows placeholders until it ends, so a request that stalls must end in the error
+    // state (with Retry) instead of leaving them up for good.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
     try {
       const [h, stats] = await Promise.all([
-        fetchCheckInHistory(eventId, 8),
-        fetchCheckInStats(eventId),
+        fetchCheckInHistory(eventId, 8, controller.signal),
+        fetchCheckInStats(eventId, controller.signal),
       ]);
+      if (generation !== sidebarGenerationRef.current) return;
       setHistory((prev) => {
         const merged = mergeCheckInHistory(h, prev, HISTORY_CAP);
         historyRef.current = merged;
@@ -1010,14 +1021,24 @@ export function CheckInPage({
       setTotalCount(stats.total_count);
       setSidebarStatus("ready");
     } catch {
+      if (generation !== sidebarGenerationRef.current) return;
       // A refresh that fails after the first load keeps what is on screen (read-only context); one
       // that fails before it leaves nothing to show, so that is the error state.
       setSidebarStatus((current) => (current === "ready" ? current : "error"));
+    } finally {
+      clearTimeout(timeout);
     }
   }, [eventId]);
 
-  // A different event starts over from "not loaded yet".
+  // A different event starts over from "not loaded yet", with nothing of the last one left to merge in.
   useEffect(() => {
+    if (sidebarEventRef.current === eventId) return;
+    sidebarEventRef.current = eventId;
+    sidebarGenerationRef.current += 1;
+    historyRef.current = [];
+    setHistory([]);
+    setAdmittedCount(0);
+    setTotalCount(0);
     setSidebarStatus("loading");
   }, [eventId]);
 

@@ -113,6 +113,8 @@ export function CameraOverlay({
   // (after 200ms, for at least 400ms) instead of "0 checked in" and "No scans yet".
   const historyGate = useLoadingGate(historyLoading);
   const historyPlaceholder = !historyGate.showContent;
+  // A failure that comes while the placeholder is still inside its 400ms waits for it, as the sidebar does.
+  const historyFailed = historyError && !historyPlaceholder;
   const [manualMode, setManualMode] = useState(false);
   const manualSearchButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -224,7 +226,7 @@ export function CameraOverlay({
           <span>Check-in</span>
         </div>
         <span className="ck-overlay__admitted">
-          {historyError ? (
+          {historyFailed ? (
             "Count unavailable"
           ) : (
             <>
@@ -313,7 +315,7 @@ export function CameraOverlay({
         </div>
 
         <aside className="ck-overlay__aside">
-          {historyError ? (
+          {historyFailed ? (
             <ScanHistoryError retrying={historyRetrying} onRetry={onRetryHistory} />
           ) : (
             <CkRecentScans

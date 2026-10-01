@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -52,6 +52,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
 }));
 
 const LOAD_ERROR = "Could not load the counts and recent scans.";
+const LOAD_TIMEOUT_MS = 30_000;
 
 function mockBootstrap() {
   fetchCheckInOpsConfig.mockResolvedValue({
@@ -472,5 +473,141 @@ describe("CheckInPage on a phone: the camera overlay shows the same first-load s
       expect(overlay().getByRole("button", { name: /Confirm check-in|Checking in/ }).getAttribute("aria-busy")).toBe("true"),
     );
     admit({ status: "VALID", confirmed: true, admittedAt: "2026-09-01T09:44:00.000Z", attendeeId: "att-1" });
+  });
+});
+
+describe("CheckInPage sidebar: a request that never answers", () => {
+  /** A request that never answers but, like fetch, rejects when its signal is aborted. */
+  function stalledUntilAborted(signals: AbortSignal[]) {
+    return (...args: unknown[]) => {
+      const signal = args.find((arg): arg is AbortSignal => arg instanceof AbortSignal);
+      if (signal) signals.push(signal);
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+      });
+    };
+  }
+
+  it("gives up after 30 seconds and says so with Retry, instead of showing placeholders for good", async () => {
+    mockBootstrap();
+    const signals: AbortSignal[] = [];
+    fetchCheckInStats.mockImplementation(stalledUntilAborted(signals));
+    fetchCheckInHistory.mockImplementation(stalledUntilAborted(signals));
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS - 1);
+      });
+      expect(screen.queryByText(LOAD_ERROR)).toBeNull();
+      expect(signals).toHaveLength(2);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      expect(screen.getByText(LOAD_ERROR)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("CheckInPage sidebar: another event does not inherit the last one's numbers or scans", () => {
+  const entry = (id: string, name: string, eventId: string) => ({
+    id,
+    event_id: eventId,
+    attendee_id: `att-${id}`,
+    status: "admitted",
+    checked_in_at: "2026-09-01T09:44:00.000Z",
+    checked_in_by: null,
+    device_id: null,
+    source: null,
+    attendee: { name, ticket_type: null },
+  });
+
+  function renderWithEventSwitch() {
+    return render(
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
+          <Link to="/admin/events/evt-other/checkin">other event</Link>
+          <Routes>
+            <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>,
+    );
+  }
+
+  it("clears the last event's scans and counts, so they are not merged into the new event's", async () => {
+    mockBootstrap();
+    fetchCheckInHistory.mockImplementation(async (eventId: string) =>
+      eventId === "evt-live" ? [entry("h1", "Alice Alpha", "evt-live")] : [entry("h2", "Bob Beta", "evt-other")],
+    );
+    fetchCheckInStats.mockImplementation(async (eventId: string) =>
+      eventId === "evt-live" ? { admitted_count: 1, total_count: 5 } : { admitted_count: 2, total_count: 9 },
+    );
+    renderWithEventSwitch();
+    await screen.findByText("Alice Alpha");
+
+    fireEvent.click(screen.getByText("other event"));
+    await screen.findByText("Bob Beta");
+    expect(screen.queryByText("Alice Alpha")).toBeNull();
+    expect(stats()?.textContent).toContain("9");
+  });
+
+  it("ignores an answer for the last event that arrives after the switch", async () => {
+    mockBootstrap();
+    let answerLateStats!: (value: unknown) => void;
+    let answerLateHistory!: (value: unknown) => void;
+    fetchCheckInStats.mockImplementation((eventId: string) =>
+      eventId === "evt-live"
+        ? new Promise((resolve) => (answerLateStats = resolve))
+        : Promise.resolve({ admitted_count: 2, total_count: 9 }),
+    );
+    fetchCheckInHistory.mockImplementation((eventId: string) =>
+      eventId === "evt-live"
+        ? new Promise((resolve) => (answerLateHistory = resolve))
+        : Promise.resolve([entry("h2", "Bob Beta", "evt-other")]),
+    );
+    renderWithEventSwitch();
+    await scanInput();
+
+    fireEvent.click(screen.getByText("other event"));
+    await screen.findByText("Bob Beta");
+    expect(stats()?.textContent).toContain("9");
+
+    await act(async () => {
+      answerLateStats({ admitted_count: 99, total_count: 99 });
+      answerLateHistory([entry("h1", "Stale Person", "evt-live")]);
+    });
+    await wait(50);
+    expect(screen.queryByText("Stale Person")).toBeNull();
+    expect(stats()?.textContent).toContain("9");
+    expect(stats()?.textContent).not.toContain("99");
+  });
+
+  it("does not turn the new event's loading into an error when the last event's request fails late", async () => {
+    mockBootstrap();
+    let failLate!: (error: Error) => void;
+    fetchCheckInStats.mockImplementation((eventId: string) =>
+      eventId === "evt-live" ? new Promise((_resolve, reject) => (failLate = reject)) : new Promise(() => {}),
+    );
+    fetchCheckInHistory.mockImplementation(() => new Promise(() => {}));
+    renderWithEventSwitch();
+    await scanInput();
+
+    fireEvent.click(screen.getByText("other event"));
+    await waitFor(() => expect(stats()?.getAttribute("aria-busy")).toBe("true"));
+
+    await act(async () => failLate(new Error("network down")));
+    await wait(50);
+    expect(screen.queryByText(LOAD_ERROR)).toBeNull();
+    expect(stats()?.getAttribute("aria-busy")).toBe("true");
   });
 });
