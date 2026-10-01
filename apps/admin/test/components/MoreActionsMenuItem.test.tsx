@@ -51,22 +51,56 @@ describe("MoreActionsMenuItem", () => {
     expect(container.querySelector(".more-actions-menu__icon > .at-spinner")).not.toBeNull();
   });
 
-  it("is busy, disabled and shows the busy label while loading, and ignores a click", () => {
+  it("is busy and aria-disabled, shows the busy label while loading, and ignores a click", () => {
     const onClick = vi.fn();
     render(
       <MoreActionsMenuItem icon="send" label="Send tickets" loadingLabel="Sending…" loading hint="Email" onClick={onClick} />,
     );
     const item = screen.getByRole("menuitem", { name: /Sending…/ }) as HTMLButtonElement;
     expect(item.getAttribute("aria-busy")).toBe("true");
-    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
     expect(screen.queryByText("Send tickets")).toBeNull();
     fireEvent.click(item);
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("keeps its focus when it turns busy, so arrow keys carry on from it, and the click does not reach the menu", () => {
+    const onMenuClick = vi.fn();
+    const props = { icon: "send", label: "Send tickets", hint: "Email", onClick: () => {} };
+    const { rerender } = render(
+      <div role="presentation" onClick={onMenuClick}>
+        <MoreActionsMenuItem {...props} loading={false} />
+      </div>,
+    );
+    const item = screen.getByRole("menuitem") as HTMLButtonElement;
+    item.focus();
+
+    rerender(
+      <div role="presentation" onClick={onMenuClick}>
+        <MoreActionsMenuItem {...props} loading />
+      </div>,
+    );
+    fireEvent.click(item);
+
+    expect(item.disabled).toBe(false);
+    expect(document.activeElement).toBe(item);
+    expect(onMenuClick).not.toHaveBeenCalled();
+  });
+
   it("keeps its label while loading when no loadingLabel is given", () => {
     render(<MoreActionsMenuItem icon="send" label="Send tickets" loading hint="Email" onClick={() => {}} />);
     expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("is not `disabled` while busy even when `disabled` is set too, and is again afterwards", () => {
+    const props = { icon: "send", label: "Send", hint: "Email", onClick: () => {} };
+    const { rerender } = render(<MoreActionsMenuItem {...props} loading disabled />);
+    const item = screen.getByRole("menuitem") as HTMLButtonElement;
+    expect(item.disabled).toBe(false);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
+
+    rerender(<MoreActionsMenuItem {...props} loading={false} disabled />);
+    expect(item.disabled).toBe(true);
   });
 
   it("stays disabled for its own reason when it is not loading", () => {

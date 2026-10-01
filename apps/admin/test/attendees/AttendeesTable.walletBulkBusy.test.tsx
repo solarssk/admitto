@@ -121,7 +121,7 @@ describe("AttendeesTable wallet bulk-action busy state", () => {
     const menu = openMoreActionsMenu();
     const item = menu.getByRole("menuitem", { name: resting }) as HTMLButtonElement;
     expect(item.getAttribute("aria-busy")).toBe("true");
-    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
     expect(menu.queryByText(longer)).toBeNull();
   });
 });

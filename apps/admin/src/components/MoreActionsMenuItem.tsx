@@ -8,9 +8,10 @@ import "./more-actions-menu.css";
  * wiring in that case, and `.more-actions-menu__item-wrapper` keeps stacked list layout.
  *
  * `loading` is the busy state of the action the row starts (the same contract as `<Button loading>`):
- * the icon is replaced by a spinner in the same slot, the row is disabled and `aria-busy`, and the
- * label becomes `loadingLabel` ("Sending…"). Pass it (true or false) for every action that can be
- * busy; a row that never passes it renders exactly as before.
+ * the icon is replaced by a spinner in the same slot, the row is `aria-busy` and `aria-disabled` (a
+ * click does nothing, but it keeps its focus, so arrow keys carry on from it), and the label becomes
+ * `loadingLabel` ("Sending…"). Pass it (true or false) for every action that can be busy; a row that
+ * never passes it renders exactly as before.
  *
  * `loadingLabel` swaps the text instead of reserving both, and the menu is as wide as its widest row,
  * so pass one only when it is not longer than `label` ("Send tickets" → "Sending…"); otherwise leave it
@@ -53,9 +54,18 @@ export function MoreActionsMenuItem({
         className={["more-actions-menu__item", variant && `more-actions-menu__item--${variant}`]
           .filter(Boolean)
           .join(" ")}
-        disabled={disabled || loading === true}
+        disabled={disabled && loading !== true}
+        aria-disabled={loading === true || undefined}
         aria-busy={loading || undefined}
-        onClick={onClick}
+        onClick={(event) => {
+          // Swallowed whole while busy, as `disabled` used to: no second run, nothing reaches the menu.
+          if (loading === true) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          onClick();
+        }}
       >
         {loading === undefined ? (
           <i className={`ti ti-${icon}`} aria-hidden="true" />
