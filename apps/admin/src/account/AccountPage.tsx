@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
-import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Spinner, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Skeleton, Switch, TopProgressBar, useToast } from "@admitto/ui";
 import {
   ApiError,
   beginWebauthnRegistration,
@@ -49,10 +49,12 @@ import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../c
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { formatRelativeTime, formatUtcPrimaryTime } from "../utils/event-dates.js";
+import { loadWithTimeout } from "../utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import {
   LOCALE_OPTIONS,
   setPreferredLocale as setPreferredLocaleStore,
@@ -61,6 +63,8 @@ import {
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import type { AccountTab } from "./accountTabs.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
+import { AccountLoadingSkeleton, NOTIFICATIONS_INTRO, RowsSkeleton } from "./AccountSkeletons.js";
+import { refetchCardProps } from "./refetch.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 
@@ -418,6 +422,64 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * The account as it is once a profile Save has been answered: the saved values are the new baseline even if the
+ * refresh that follows cannot complete, otherwise Save would light up again for what was just saved.
+ */
+function withSavedProfile(account: AccountDto | null, saved: Awaited<ReturnType<typeof patchAccountProfile>>): AccountDto | null {
+  return account && { ...account, ...saved };
+}
+
+interface ProfileFormSetters {
+  setDisplayName: Dispatch<SetStateAction<string>>;
+  setPreferredLocale: Dispatch<SetStateAction<string | null>>;
+  setPreferredTimeFormat: Dispatch<SetStateAction<"12h" | "24h" | null>>;
+  setPhoneCountryCode: Dispatch<SetStateAction<string>>;
+  setPhoneNumber: Dispatch<SetStateAction<string>>;
+}
+
+/**
+ * Brings the profile form up to date with a fresh account, field by field: a field nobody has touched (still
+ * what the previous account said, `baseline`) takes the fresh value, so a change made elsewhere shows up and
+ * does not make Save light up with the old one; a field that has been edited keeps what was typed, so a refresh
+ * after another action never overwrites it. The first load has no baseline: every field is filled.
+ */
+function syncProfileForm(set: ProfileFormSetters, baseline: AccountDto | null, fresh: AccountDto): void {
+  const next = <T,>(current: T, was: T | undefined, now: T): T => (was === undefined || current === was ? now : current);
+  const was = baseline && {
+    displayName: baseline.display_name ?? "",
+    locale: baseline.preferred_locale,
+    timeFormat: baseline.preferred_time_format,
+    phoneCountryCode: baseline.phone_country_code ?? "",
+    phoneNumber: baseline.phone_number ?? "",
+  };
+  set.setDisplayName((cur) => next(cur, was?.displayName, fresh.display_name ?? ""));
+  set.setPreferredLocale((cur) => next(cur, was?.locale, fresh.preferred_locale));
+  set.setPreferredTimeFormat((cur) => next(cur, was?.timeFormat, fresh.preferred_time_format));
+  set.setPhoneCountryCode((cur) => next(cur, was?.phoneCountryCode, fresh.phone_country_code ?? ""));
+  set.setPhoneNumber((cur) => next(cur, was?.phoneNumber, fresh.phone_number ?? ""));
+}
+
+/**
+ * Whether "Revoke all other sessions" is offered: only while the list it acts on is on screen. After a refresh that
+ * failed, or while its Retry is loading a new list, `sessions` still holds the older snapshot, and the action would
+ * revoke what the operator can no longer see.
+ */
+function canRevokeOthers(listShown: boolean, error: string | null, otherCount: number): boolean {
+  return listShown && !error && otherCount > 0;
+}
+
+/** What a screen reader is told while the account or the sessions list is being refreshed (once it is noticeable): the cards ignore clicks meanwhile. */
+function refreshStatusText(accountRefreshing: boolean, sessionsRefreshing: boolean): string {
+  if (accountRefreshing) return "Refreshing your account. Actions are paused until it finishes.";
+  return sessionsRefreshing ? "Refreshing your sessions. Actions are paused until it finishes." : "";
+}
+
+/** The text for a failed load: the time limit's own message, or the server's (through the audience-tiered copy rules). */
+function loadFailureMessage(limit: { timedOut: () => boolean }, err: unknown, fallback: string): string {
+  return limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, fallback);
+}
+
 /** Every panel stays mounted - AccountPage already loads all of its data up front on mount
  * (loadAccount/loadSessions/loadNotificationPreferences run together, regardless of which tab is
  * active), so there's no per-tab fetch to defer the way EventSettingsPage's tabs do. Only
@@ -440,6 +502,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const [account, setAccount] = useState<AccountDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A refresh after saving something failed: the page stays, but what it shows may be older than what was saved.
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [preferredLocale, setPreferredLocale] = useState<string | null>(null);
   const [preferredTimeFormat, setPreferredTimeFormat] = useState<"12h" | "24h" | null>(null);
@@ -466,6 +531,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const [resetError, setResetError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  // The list is refreshed after a revoke: its rows stay on screen but cannot be used until the answer is in.
+  const [sessionsRefreshing, setSessionsRefreshing] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionsPage, setSessionsPage] = useState(1);
   const [sessionsPageSize, setSessionsPageSize] = useState<number>(SESSIONS_DEFAULT_PAGE_SIZE);
@@ -536,6 +603,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const [removingTotp, setRemovingTotp] = useState(false);
   const [removeTotpError, setRemoveTotpError] = useState<string | null>(null);
   const [backupCodesStatus, setBackupCodesStatus] = useState<BackupCodesStatusResponse | null>(null);
+  const [backupCodesStatusFailed, setBackupCodesStatusFailed] = useState(false);
   const [manageBackupCodesOpen, setManageBackupCodesOpen] = useState(false);
   const [regenerateBackupCodesCode, setRegenerateBackupCodesCode] = useState("");
   const [regenerateBackupCodesCodeRequired, setRegenerateBackupCodesCodeRequired] = useState(false);
@@ -544,69 +612,123 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const [regeneratedBackupCodes, setRegeneratedBackupCodes] = useState<string[] | null>(null);
   const identityActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
+  // Only the first load of each part (or a retry after that failed) puts a loader in its place. Every
+  // refresh after saving something keeps what is on screen, and whatever is open on it (a dialog, a form
+  // in progress), exactly where it is, instead of unmounting the page for the length of the request.
+  const accountLoadedRef = useRef(false);
+  const accountRequestRef = useRef(0);
+  // The account the page holds now: the baseline the profile form is compared with (profileDirty) and refreshed against.
+  const accountRef = useRef<AccountDto | null>(null);
+  const commitAccount = useCallback((next: AccountDto | null) => {
+    accountRef.current = next;
+    setAccount(next);
+  }, []);
+  const sessionsLoadedRef = useRef(false);
+  const sessionsRequestRef = useRef(0);
+
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
+    const first = !accountLoadedRef.current;
+    if (first) setLoading(true);
+    else setRefreshing(true);
     setError(null);
+    // An answer that is no longer the latest ask (a newer refresh started meanwhile) is dropped, so an older
+    // snapshot can never replace a newer one.
+    const mine = ++accountRequestRef.current;
+    const superseded = () => signal?.aborted || mine !== accountRequestRef.current;
+    const limit = loadWithTimeout(signal);
     try {
-      const data = await fetchAccount(signal);
-      setAccount(data);
-      setDisplayName(data.display_name ?? "");
-      setPreferredLocale(data.preferred_locale);
-      setPreferredTimeFormat(data.preferred_time_format);
-      setPhoneCountryCode(data.phone_country_code ?? "");
-      setPhoneNumber(data.phone_number ?? "");
+      const data = await fetchAccount(limit.signal);
+      if (superseded()) return;
+      accountLoadedRef.current = true;
+      // Before the account is replaced: the form is brought up to date against the account it replaces.
+      syncProfileForm({ setDisplayName, setPreferredLocale, setPreferredTimeFormat, setPhoneCountryCode, setPhoneNumber }, accountRef.current, data);
+      commitAccount(data);
       setPreferredLocaleStore(data.preferred_locale ?? undefined);
       setPreferredTimeFormatStore(data.preferred_time_format);
+      setRefreshError(null);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (superseded()) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setError(operatorApiErrorMessage(err, "Could not load account."));
+      if (first) {
+        setError(loadFailureMessage(limit, err, "Could not load account."));
+      } else {
+        // The page stays, and says that it may be out of date until the next refresh works (a toast would be
+        // gone in seconds, leaving old security details looking current).
+        const detail = loadFailureMessage(limit, err, "Check your connection and try again.");
+        setRefreshError(`Could not refresh this page, so it may show older details. ${detail}`);
+      }
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      limit.done();
+      if (!superseded()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, []);
+  }, [commitAccount]);
 
   const loadSessions = useCallback(async (signal?: AbortSignal) => {
-    setSessionsLoading(true);
+    if (sessionsLoadedRef.current) setSessionsRefreshing(true);
+    else setSessionsLoading(true);
     setSessionsError(null);
+    // As for the account: an answer that is no longer the latest ask is dropped, so an older list never replaces a newer one.
+    const mine = ++sessionsRequestRef.current;
+    const superseded = () => signal?.aborted || mine !== sessionsRequestRef.current;
+    const limit = loadWithTimeout(signal);
     try {
-      const data = await fetchAccountSessions(signal);
+      const data = await fetchAccountSessions(limit.signal);
+      if (superseded()) return;
+      sessionsLoadedRef.current = true;
       setSessions(data.sessions);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (superseded()) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setSessionsError(operatorApiErrorMessage(err, "Could not load sessions."));
+      // The error replaces the list, so the next try is a first load again: Retry shows the loader.
+      sessionsLoadedRef.current = false;
+      setSessionsError(loadFailureMessage(limit, err, "Could not load sessions."));
     } finally {
-      if (!signal?.aborted) setSessionsLoading(false);
+      limit.done();
+      if (!superseded()) {
+        setSessionsLoading(false);
+        setSessionsRefreshing(false);
+      }
     }
   }, []);
 
   const loadNotificationPreferences = useCallback(async (signal?: AbortSignal) => {
+    // Run on mount and from its own Retry only, so it is always a first load: the loader takes the card's place.
     setNotifPrefsLoading(true);
     setNotifPrefsError(null);
+    const limit = loadWithTimeout(signal);
     try {
-      const data = await fetchAccountNotificationPreferences(signal);
+      const data = await fetchAccountNotificationPreferences(limit.signal);
       setNotifPrefs(data.notification_types);
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setNotifPrefsError(operatorApiErrorMessage(err, "Could not load notification preferences."));
+      setNotifPrefsError(loadFailureMessage(limit, err, "Could not load notification preferences."));
     } finally {
+      limit.done();
       if (!signal?.aborted) setNotifPrefsLoading(false);
     }
   }, []);
 
   /** GET /api/account/mfa/backup-codes doesn't come for free with loadAccount() (unlike
    * webauthn credentials, which ride along on AccountDto.mfa_methods) - fetched once on mount
-   * the same way sessions are. A failure here just leaves the Backup codes row's count blank;
-   * the rest of the page is fully usable without it, so it's not worth its own retry/EmptyState. */
+   * the same way sessions are. A failure (or no answer after 30 seconds) leaves the Backup codes row saying its
+   * status is unavailable; the rest of the page is fully usable without it, so it's not worth its own
+   * retry/EmptyState. */
   const loadBackupCodesStatus = useCallback(async (signal?: AbortSignal) => {
+    const limit = loadWithTimeout(signal);
     try {
-      const data = await fetchBackupCodesStatus(signal);
+      const data = await fetchBackupCodesStatus(limit.signal);
       setBackupCodesStatus(data);
+      setBackupCodesStatusFailed(false);
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
+      setBackupCodesStatusFailed(true);
+    } finally {
+      limit.done();
     }
   }, []);
 
@@ -634,30 +756,38 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     };
   }, []);
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would
-  // otherwise flash the spinner on and off faster than it can register as
-  // "loading", show it only once the fetch has genuinely taken a moment.
-  const showAccountSpinner = useDelayedLoading(loading);
-  // Gated on `!loading` too, not just `sessionsLoading` on its own - the sessions card
-  // only becomes visible once the account section's own loading gate above clears, so its
-  // no-flash window must start counting from there, not from mount (when the account fetch
-  // may still have most of its own 200ms left to run, silently eating into the sessions
-  // card's window before it's ever shown).
-  const showSessionsSpinner = useDelayedLoading(sessionsLoading && !loading);
+  // The first load only: a loader appears after 200ms, stays at least 400ms, and its space is held from the
+  // first frame (AGENTS.md "Admin SPA loading and busy states"). A refresh after a save never gets here.
+  const accountGate = useLoadingGate(loading);
+  const accountSlow = useDelayedLoading(loading, SLOW_NOTICE_MS);
+  // Gated on `accountGate.showContent` too, not just on `sessionsLoading` on its own, and not on a bare
+  // `!loading`: these cards only become visible once the account section's own gate has cleared, which is
+  // later than the answer (a placeholder that was drawn stays for 400ms). Their 200ms delay and 400ms
+  // minimum must start counting from then. Counted earlier, a placeholder could be shown, and held, behind
+  // the account placeholder, and then appear over data that was ready by the time the cards can render.
+  const sessionsGate = useLoadingGate(sessionsLoading && accountGate.showContent);
+  const notifPrefsGate = useLoadingGate(notifPrefsLoading && accountGate.showContent);
+  // The refresh of the sessions list after a revoke: dimmed once it is noticeable, with the thin bar along the card.
+  const sessionsRefetch = useLoadingGate(sessionsRefreshing);
+  // The same for the account-backed cards (Profile, Password, Two-factor) while the account is refreshed after a change.
+  const accountRefetch = useLoadingGate(refreshing);
+  // A Retry on the refresh warning that fails at once still shows that it ran, and is announced again. Driven by
+  // the click on that Retry, not by every refresh: otherwise the warning would first appear with a busy Retry.
+  const [retryingRefresh, setRetryingRefresh] = useState(false);
+  const refreshRetrying = useMinimumBusy(retryingRefresh);
+  const retryRefresh = () => {
+    setRetryingRefresh(true);
+    void loadAccount().finally(() => setRetryingRefresh(false));
+  };
+  const sessionsSlow = useDelayedLoading(sessionsLoading && accountGate.showContent, SLOW_NOTICE_MS);
+  const notifPrefsSlow = useDelayedLoading(notifPrefsLoading && accountGate.showContent, SLOW_NOTICE_MS);
   // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
   // roles' own Active sessions tab - only one ever renders (not both, CSS-hidden), so a row's
   // content never appears twice in the accessibility tree.
   const isSessionsDesktop = useIsDesktop();
 
-  if (loading) {
-    if (!showAccountSpinner) return null;
-    return (
-      <Card title="Profile">
-        <div className="sessions-status">
-          <Spinner label="Loading account" />
-        </div>
-      </Card>
-    );
+  if (!accountGate.showContent) {
+    return <AccountLoadingSkeleton tab={activeTab} held={!accountGate.showIndicator} slow={accountSlow} />;
   }
   if (error) {
     return (
@@ -738,8 +868,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     const sessionsRevokedSuffix =
       sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessionsRevokedPlural} revoked.` : "";
     addToast(`Password changed.${sessionsRevokedSuffix}`, "success");
-    await loadAccount();
-    await loadSessions();
+    // Together: the sessions list is refreshing (and blocked) from the start, not only once the account is back.
+    await Promise.all([loadAccount(), loadSessions()]);
   }
 
   /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
@@ -798,7 +928,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     const mfaSessionsRevokedSuffix =
       sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
     addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
-    await loadAccount(); await loadSessions();
+    await Promise.all([loadAccount(), loadSessions()]);
   }
 
   /** Shared by the confirm dialog's own submit and the step-up dialog's confirm, `proof` is only
@@ -815,8 +945,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     setUnlinkSsoOpen(false);
     setUnlinkStepUpOpen(false);
     addToast("SSO unlinked. Sign in with your new password next time.", "success");
-    await loadAccount();
-    await loadSessions();
+    await Promise.all([loadAccount(), loadSessions()]);
   }
 
   async function handleUnlinkSsoConfirm(): Promise<void> {
@@ -1218,6 +1347,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       setPhoneNumber(result.phone_number ?? "");
       setPreferredLocaleStore(result.preferred_locale ?? undefined);
       setPreferredTimeFormatStore(result.preferred_time_format);
+      commitAccount(withSavedProfile(accountRef.current, result));
       addToast(
         localeChanged
           ? "Profile saved. Reload this page to refresh session timestamps below."
@@ -1311,7 +1441,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   function renderPasswordCard() {
     if (!account) return null;
     return (
-      <Card title={<HintLabel hint={PASSWORD_HINT}>Password</HintLabel>}>
+      <Card title={<HintLabel hint={PASSWORD_HINT}>Password</HintLabel>} {...refetchCardProps(refreshing, accountRefetch.showIndicator, true)}>
+        <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
       {account.has_local_password && (
         <p className="account-info-block">
           Use at least 12 characters, mixing upper and lowercase letters, numbers, and symbols for a stronger password.
@@ -1388,7 +1519,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
               error={passwordMismatch ? "Passwords do not match." : undefined}
             />
             <div className="mail-transport-footer">
-              <Button type="submit" variant="primary" disabled={passwordSaving || !passwordFormValid}>
+              <Button type="submit" variant="primary" loading={passwordSaving} disabled={!passwordFormValid}>
                 Change password
               </Button>
             </div>
@@ -1797,7 +1928,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     if (!account) return null;
     if (!totpEnrolled && !hasConfirmedWebauthnMethod(account)) return null;
     const hasCodes = !!backupCodesStatus && backupCodesStatus.total > 0;
-    let codesStatusLabel = "Loading…";
+    // Until it has arrived the count is unknown, not zero: a placeholder, or "unavailable" if it never will.
+    let codesStatusLabel: ReactNode = backupCodesStatusFailed ? "Status unavailable" : <Skeleton variant="rect" width={96} height={14} />;
     if (backupCodesStatus?.total === 0) {
       codesStatusLabel = "None generated yet";
     } else if (backupCodesStatus) {
@@ -1888,7 +2020,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             />
           ) : undefined
         }
+        {...refetchCardProps(refreshing, accountRefetch.showIndicator, true)}
       >
+          <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
           {/* Methods list, every action opens its own popup now (decision 6), so this stays
               visible at all times instead of being replaced by an inline form. */}
           {renderMfaMethodsList()}
@@ -1962,16 +2096,17 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card title="Notifications">
         <div className="settings-card-stack">
-          <p className="settings-card-intro">
-            Choose which of your enabled security alert types you receive by email or see in-app.
-            The shared team webhook (if configured) is managed separately in Organisation Settings.
-          </p>
-          {notifPrefsLoading && (
-            <div className="sessions-status">
-              <Spinner label="Loading notification preferences" />
-            </div>
+          <p className="settings-card-intro">{NOTIFICATIONS_INTRO}</p>
+          {!notifPrefsGate.showContent && (
+            <RowsSkeleton
+              label="Loading notification preferences"
+              slow={notifPrefsSlow}
+              held={!notifPrefsGate.showIndicator}
+              rows={4}
+              rowHeight={56}
+            />
           )}
-          {!notifPrefsLoading && notifPrefsError && (
+          {notifPrefsGate.showContent && notifPrefsError && (
             <div className="sessions-status" role="alert">
               <p>{notifPrefsError}</p>
               <Button type="button" variant="secondary" onClick={() => void loadNotificationPreferences()}>
@@ -1979,7 +2114,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
               </Button>
             </div>
           )}
-          {!notifPrefsLoading && !notifPrefsError && (
+          {notifPrefsGate.showContent && !notifPrefsError && (
             <div className="notifications-type-matrix-wrap">
               <table className="table notifications-type-matrix">
                 <thead>
@@ -2040,21 +2175,30 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   function renderSessionsCard() {
     return (
-      <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
-        {sessionsLoading && showSessionsSpinner && (
-          <div className="sessions-status">
-            <Spinner label="Loading sessions" />
-          </div>
+      <Card
+        title="Active sessions"
+        actions={canRevokeOthers(sessionsGate.showContent, sessionsError, otherSessions.length) ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
+        {...refetchCardProps(sessionsRefreshing, sessionsRefetch.showIndicator)}
+      >
+        <TopProgressBar active={sessionsRefetch.showIndicator} placement="container" label="Refreshing sessions" />
+        {!sessionsGate.showContent && (
+          <RowsSkeleton
+            label="Loading sessions"
+            slow={sessionsSlow}
+            held={!sessionsGate.showIndicator}
+            rows={3}
+            rowHeight={44}
+          />
         )}
-        {!sessionsLoading && sessionsError && (
+        {sessionsGate.showContent && sessionsError && (
           <div className="sessions-status" role="alert"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
         )}
-        {!sessionsLoading && !sessionsError && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
+        {sessionsGate.showContent && !sessionsError && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
         {/* Only Sign-in drops in the 768-1180px tablet range (.sessions-col-tablet-hide) - unlike
             Users & roles' own 8-column table, this one only has 5 content columns to begin with,
             and Device/IP address are both things an admin reviewing their own sessions wants to
             keep seeing (PO review) rather than trimmed down to just Logged in/Last active. */}
-        {!sessionsLoading && !sessionsError && sessions.length > 0 && isSessionsDesktop && (
+        {sessionsGate.showContent && !sessionsError && sessions.length > 0 && isSessionsDesktop && (
           <div className="account-sessions-table-wrap">
             <table className="table">
               <thead>
@@ -2109,7 +2253,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             </table>
           </div>
         )}
-        {!sessionsLoading && !sessionsError && sessions.length > 0 && !isSessionsDesktop && (
+        {sessionsGate.showContent && !sessionsError && sessions.length > 0 && !isSessionsDesktop && (
           <div className="account-sessions-cards">
             {sessionsPageSlice.map((s) => (
               <article key={s.id} className="account-sessions-card">
@@ -2160,7 +2304,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             ))}
           </div>
         )}
-        {!sessionsLoading && !sessionsError && sessions.length > 0 && (
+        {sessionsGate.showContent && !sessionsError && sessions.length > 0 && (
           <PaginationFooter
             idPrefix="account-sessions"
             page={sessionsEffectivePage}
@@ -2183,6 +2327,23 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   return (
     <>
+      {/* Outside the cards (which are busy, and one inert): what a screen reader is told about the pause. */}
+      <output className="sr-only">{refreshStatusText(accountRefetch.showIndicator, sessionsRefetch.showIndicator)}</output>
+      {refreshError && (
+        <Notice
+          variant="warning"
+          role="alert"
+          className="account-warn-block"
+          actionBusy={refreshRetrying}
+          action={
+            <Button type="button" variant="secondary" size="sm" loading={refreshRetrying} onClick={retryRefresh}>
+              Retry
+            </Button>
+          }
+        >
+          {refreshError}
+        </Notice>
+      )}
       {!account.roles.some(isUsableRoleAssignment) && (
         <Notice variant="warning" role="alert" className="account-warn-block">
           Your account doesn't have any role assigned yet, so there's nothing to access yet. You can still update your password and two-factor settings in the Password tab. Contact an administrator to request access.
@@ -2198,7 +2359,10 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             onUnlinkClick={() => setUnlinkSsoOpen(true)}
           />
         }
-        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={() => void handleProfileSave(account)}>Save</Button></div>}>
+        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" loading={profileSaving} disabled={!profileDirty} onClick={() => void handleProfileSave(account)}>Save</Button></div>}
+        {...refetchCardProps(refreshing, accountRefetch.showIndicator, true)}
+      >
+        <TopProgressBar active={accountRefetch.showIndicator} placement="container" label="Refreshing account" />
         <div className="account-profile-editable">
           <Input
             id="account-display-name"

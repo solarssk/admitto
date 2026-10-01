@@ -5,7 +5,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 
 type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
@@ -192,6 +192,10 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   // sustained run of them must not leave the Live pill green and the lines silently stale
   // forever (external review on PR #593).
   const [pollDegraded, setPollDegraded] = useState(false);
+  // The "Retry now" in the banner above the console is working: from its click until the snapshot it asks
+  // for has answered (the same flag an automatic reload by a filter change must not set).
+  const [retryingNow, setRetryingNow] = useState(false);
+  const retryBusy = useMinimumBusy(retryingNow);
   const { addToast } = useToast();
   const cursorRef = useRef(0);
   const pollFailureCountRef = useRef(0);
@@ -237,13 +241,19 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
         forceScrollToBottomRef.current = true;
         setEntries(data.entries);
         cursorRef.current = data.cursor;
+        // The endpoint answered, so a "Live updates stopped" banner (and the Retry now that asked for this
+        // snapshot) is over now, not only at the next successful poll tick.
+        pollFailureCountRef.current = 0;
+        setPollDegraded(false);
       })
       .catch((err) => {
         if (ac.signal.aborted) return;
         setError(operatorApiErrorMessage(err, "Could not load system logs."));
       })
       .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
+        if (ac.signal.aborted) return;
+        setLoading(false);
+        setRetryingNow(false);
       });
     return () => ac.abort();
   }, [level, source, search, retryTick]);
@@ -470,11 +480,27 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       </div>
 
       {live && pollDegraded && (
-        <Notice variant="warning" as="output" className="system-log-panel__poll-warning">
-          Live updates stopped coming through - the lines below may be out of date.{" "}
-          <button type="button" className="system-log-panel__poll-warning-retry" onClick={() => setRetryTick((t) => t + 1)}>
-            Retry now
-          </button>
+        <Notice
+          variant="warning"
+          role="alert"
+          actionBusy={retryBusy}
+          className="system-log-panel__poll-warning"
+          action={
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              loading={retryBusy}
+              onClick={() => {
+                setRetryingNow(true);
+                setRetryTick((t) => t + 1);
+              }}
+            >
+              Retry now
+            </Button>
+          }
+        >
+          Live updates stopped coming through - the lines below may be out of date.
         </Notice>
       )}
 

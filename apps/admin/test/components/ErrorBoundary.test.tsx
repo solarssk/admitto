@@ -41,6 +41,8 @@ describe("ErrorBoundary", () => {
 
     expect(screen.getByText("Something went wrong")).toBeTruthy();
     expect(screen.queryByText("Real content")).toBeNull();
+    // The fallback replaces the whole screen, so it has to be announced, not just drawn.
+    expect(screen.getByRole("alert").textContent).toContain("Something went wrong");
 
     expect(reportClientError).toHaveBeenCalledTimes(1);
     const [error, context] = vi.mocked(reportClientError).mock.calls[0]!;
