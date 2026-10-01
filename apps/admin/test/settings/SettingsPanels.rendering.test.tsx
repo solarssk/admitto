@@ -59,6 +59,27 @@ function emptySecurityLog(total = 0): SecurityAuditLogResponse {
   return { entries: [], total, page: 1, pageSize: 25 };
 }
 
+/**
+ * A fetch mock that rejects until `stopFailing()`, and from then on holds every request until `answerAll(value)`:
+ * enough to push a live panel into its "Live updates stopped" banner, then watch what its Retry now does while
+ * the answer is still pending.
+ */
+function failUntilReleased<T>() {
+  const held: Array<(value: T) => void> = [];
+  let failing = true;
+  return {
+    impl: () => (failing ? Promise.reject(new Error("network error")) : new Promise<T>((resolve) => held.push(resolve))),
+    stopFailing: () => {
+      failing = false;
+    },
+    answerAll: async (value: T) => {
+      await act(async () => {
+        for (const resolve of held.splice(0)) resolve(value);
+      });
+    },
+  };
+}
+
 function makeAuditEntry(overrides: Partial<AuditLogEntryDto> = {}): AuditLogEntryDto {
   return {
     id: "audit-1",
@@ -1322,11 +1343,59 @@ describe("AuditLogPanel rendering", () => {
 
     const pollWarning = await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
     expect(pollWarning.closest(".at-notice--warning")).toBeTruthy();
+    // Inserted with its text in one go, a polite status is easily missed: an alert is announced.
+    expect(pollWarning.closest('[role="alert"]')).toBeTruthy();
 
     await waitFor(
       () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
       { timeout: 5000 },
     );
+  }, 20000);
+
+  it("Retry now in the live banner is busy until the reload has answered, then the banner goes", async () => {
+    setPollIntervalMsForTests(50); // see "silently re-fetches on a timer" above
+    const fetcher = failUntilReleased<AuditLogResponse>();
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce(emptyAuditLog()).mockImplementation(fetcher.impl);
+
+    renderAuditPanel();
+    await screen.findByText("No audit log entries yet");
+    await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+    fetcher.stopFailing();
+
+    const retry = screen.getByRole("button", { name: "Retry now" });
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    // A busy button swallows a second click instead of starting another reload.
+    const callsWhileBusy = vi.mocked(fetchAuditLog).mock.calls.length;
+    fireEvent.click(retry);
+    expect(vi.mocked(fetchAuditLog).mock.calls.length).toBe(callsWhileBusy);
+    // Past the 400ms floor it is still busy: it waits for the answer, it does not just time out.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await fetcher.answerAll(emptyAuditLog());
+    await waitFor(() => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull());
+  }, 20000);
+
+  it("Retry now that fails again shows it ran, is announced again, and stays the same pressable button", async () => {
+    setPollIntervalMsForTests(50); // see "silently re-fetches on a timer" above
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce(emptyAuditLog()).mockRejectedValue(new Error("network error"));
+
+    renderAuditPanel();
+    await screen.findByText("No audit log entries yet");
+    await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+
+    const retry = screen.getByRole("button", { name: "Retry now" });
+    const messageBefore = screen.getByText(/Live updates stopped coming through/);
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    // Offline the answer is a failure within milliseconds: it must stay busy for 400ms anyway.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+    expect(screen.getByText(/Live updates stopped coming through/)).not.toBe(messageBefore);
+    expect(screen.getByRole("button", { name: "Retry now" })).toBe(retry);
   }, 20000);
 });
 
@@ -2107,11 +2176,34 @@ describe("AuditLogPanel Security view rendering", () => {
 
     const pollWarning = await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
     expect(pollWarning.closest(".at-notice--warning")).toBeTruthy();
+    // Inserted with its text in one go, a polite status is easily missed: an alert is announced.
+    expect(pollWarning.closest('[role="alert"]')).toBeTruthy();
 
     await waitFor(
       () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
       { timeout: 5000 },
     );
+  }, 20000);
+
+  it("Retry now in the live banner is busy until the reload has answered, then the banner goes", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
+    const fetcher = failUntilReleased<SecurityAuditLogResponse>();
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce(emptySecurityLog()).mockImplementation(fetcher.impl);
+
+    renderSecurityPanel();
+    await screen.findByText("No security events yet");
+    await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+    fetcher.stopFailing();
+
+    const retry = screen.getByRole("button", { name: "Retry now" });
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    // Past the 400ms floor it is still busy: it waits for the answer, it does not just time out.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await fetcher.answerAll(emptySecurityLog());
+    await waitFor(() => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull());
   }, 20000);
 });
 
@@ -2561,11 +2653,63 @@ describe("SystemLogsPanel rendering", () => {
 
     const pollWarning = await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
     expect(pollWarning.closest(".at-notice--warning")).toBeTruthy();
+    // Inserted with its text in one go, a polite status is easily missed: an alert is announced.
+    expect(pollWarning.closest('[role="alert"]')).toBeTruthy();
 
     await waitFor(
       () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
       { timeout: 5000 },
     );
+  }, 20000);
+
+  it("Retry now in the live banner is busy until the snapshot it asks for has answered, then the banner goes", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    const fetcher = failUntilReleased<SystemLogResponse>();
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce(emptySystemLog()).mockImplementation(fetcher.impl);
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+    await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+    fetcher.stopFailing();
+
+    const retry = screen.getByRole("button", { name: "Retry now" });
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    // Past the 400ms floor it is still busy: it waits for the answer, it does not just time out.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await fetcher.answerAll(emptySystemLog());
+    await waitFor(() => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull());
+  }, 20000);
+
+  it("Retry now that fails again shows it ran, then is a Retry the operator can press once more", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce(emptySystemLog()).mockRejectedValue(new Error("network error"));
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+    await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+
+    const retry = screen.getByRole("button", { name: "Retry now" });
+    const messageBefore = screen.getByText(/Live updates stopped coming through/);
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    // Offline the answer is a failure within milliseconds: it must stay busy for 400ms anyway.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+    // Same text again, so the message is mounted afresh for a live region to announce it, while the button
+    // is the very same node: its focus was never taken away.
+    expect(screen.getByText(/Live updates stopped coming through/)).not.toBe(messageBefore);
+    expect(screen.getByRole("button", { name: "Retry now" })).toBe(retry);
   }, 20000);
 
   it("stops polling once Live is turned off", async () => {

@@ -5983,17 +5983,6 @@ output.mail-field-hint {
   margin-bottom: var(--space-2);
 }
 
-.audit-log-poll-warning-retry {
-  background: none;
-  border: none;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .audit-log-filter--search {
   position: relative;
   flex: 1 1 18rem;
@@ -6607,17 +6596,6 @@ output.mail-field-hint {
    unpredictably depending on lazy-CSS-chunk load order. */
 .at-notice.system-log-panel__poll-warning {
   margin-bottom: var(--space-2);
-}
-
-.system-log-panel__poll-warning-retry {
-  background: none;
-  border: none;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 .system-log-panel__console {

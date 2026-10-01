@@ -2822,6 +2822,8 @@ export function AttendeeDetailPage() {
             {staleWrite && (
               <Notice
                 variant="warning"
+                role="alert"
+                actionBusy={reloading}
                 className="attendee-form__warn"
                 action={
                   <Button

@@ -259,9 +259,21 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count(withoutRole, "retry-outside-an-alert")).toBe(1);
   });
 
-  it("does not look at buttons that merely mention retry, or at comments", () => {
-    expect(count('<Button onClick={retry}>Retry now</Button>', "retry-outside-an-alert")).toBe(0);
+  it("does not look at a command that merely mentions retry, or at comments", () => {
+    // A menu item that re-runs a catalog load is a command in a menu, not the failure's own control.
+    expect(count('<RetryMenuItem onRetry={retry} label="Retry loading items" />', "retry-outside-an-alert")).toBe(0);
+    expect(count("<button role=\"menuitem\" onClick={retry}>\n  Retry loading items\n</button>", "retry-outside-an-alert")).toBe(0);
+    expect(count('<Button onClick={retry}>Try again later</Button>', "retry-outside-an-alert")).toBe(0);
     expect(count("// Retry\nconst a = 1;", "retry-outside-an-alert")).toBe(0);
+  });
+
+  it("counts every control that offers to run a failed load again, not only one worded exactly Retry", () => {
+    // "Retry now" (a live poll that stopped) and "Reload" / "Reload page" (a stale save, a crashed screen).
+    expect(count('<Notice variant="warning" as="output">Stopped. <button onClick={retry}>Retry now</button></Notice>', "retry-outside-an-alert")).toBe(1);
+    expect(count('<Notice variant="warning" action={<Button onClick={reload}>Reload</Button>}>Stale.</Notice>', "retry-outside-an-alert")).toBe(1);
+    expect(count('<div className="panel"><Button onClick={reload}>Reload page</Button></div>', "retry-outside-an-alert")).toBe(1);
+    expect(count('<Notice variant="warning" role="alert" action={<Button onClick={reload}>Reload</Button>}>Stale.</Notice>', "retry-outside-an-alert")).toBe(0);
+    expect(count('<div className="panel" role="alert"><Button onClick={reload}>Reload page</Button></div>', "retry-outside-an-alert")).toBe(0);
   });
 
   it("counts a raw <button> that is disabled while busy, whatever the flag is called", () => {
