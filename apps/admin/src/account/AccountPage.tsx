@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
-import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, SectionLoader, Skeleton, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   beginWebauthnRegistration,
@@ -54,7 +54,7 @@ import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { formatRelativeTime, formatUtcPrimaryTime } from "../utils/event-dates.js";
 import { loadWithTimeout } from "../utils/load-timeout.js";
-import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import {
   LOCALE_OPTIONS,
   setPreferredLocale as setPreferredLocaleStore,
@@ -63,6 +63,7 @@ import {
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import type { AccountTab } from "./accountTabs.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
+import { ProfileFieldsSkeleton, RowsSkeleton } from "./AccountSkeletons.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 
@@ -702,12 +703,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   if (!accountGate.showContent) {
     return (
-      <Card title="Profile" className={accountGate.showIndicator ? undefined : "at-loading-hold"}>
-        <SectionLoader
-          label="Loading account"
-          caption={accountSlow ? SLOW_NOTICE_TEXT : undefined}
-          minHeight="16rem"
-        />
+      <Card
+        title="Profile"
+        className={accountGate.showIndicator ? undefined : "at-loading-hold"}
+        footer={<div className="mail-transport-footer"><Skeleton variant="rect" width={64} height={36} /></div>}
+      >
+        <ProfileFieldsSkeleton slow={accountSlow} />
       </Card>
     );
   }
@@ -2019,11 +2020,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             The shared team webhook (if configured) is managed separately in Organisation Settings.
           </p>
           {!notifPrefsGate.showContent && (
-            <SectionLoader
+            <RowsSkeleton
               label="Loading notification preferences"
-              caption={notifPrefsSlow ? SLOW_NOTICE_TEXT : undefined}
-              minHeight="10rem"
-              className={notifPrefsGate.showIndicator ? undefined : "at-loading-hold"}
+              slow={notifPrefsSlow}
+              held={!notifPrefsGate.showIndicator}
+              rows={4}
+              rowHeight={56}
             />
           )}
           {notifPrefsGate.showContent && notifPrefsError && (
@@ -2097,11 +2099,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
         {!sessionsGate.showContent && (
-          <SectionLoader
+          <RowsSkeleton
             label="Loading sessions"
-            caption={sessionsSlow ? SLOW_NOTICE_TEXT : undefined}
-            minHeight="8rem"
-            className={sessionsGate.showIndicator ? undefined : "at-loading-hold"}
+            slow={sessionsSlow}
+            held={!sessionsGate.showIndicator}
+            rows={3}
+            rowHeight={44}
           />
         )}
         {sessionsGate.showContent && sessionsError && (

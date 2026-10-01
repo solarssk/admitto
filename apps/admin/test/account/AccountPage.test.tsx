@@ -4216,6 +4216,34 @@ describe("AccountPage on the loading standard", () => {
       expect(screen.getByLabelText("Display name")).toBeTruthy();
     });
 
+    it("draws the shape of the profile form (a label, a control and a hint per field, and the Save button) instead of a spinner or the logo", async () => {
+      mockFetchAccount.mockReturnValue(new Promise(() => {}));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+      await advance(200);
+
+      const region = accountLoader()!;
+      // Laid out by the form's own grid, so the real form replaces it without moving anything.
+      expect(region.classList.contains("account-profile-editable")).toBe(true);
+      expect(region.querySelectorAll(".at-field")).toHaveLength(8);
+      const heights = [...region.querySelectorAll<HTMLElement>(".at-field > .at-skeleton")].map((el) => el.style.height);
+      expect(heights).toEqual(Array.from({ length: 8 }, () => ["14px", "36px", "12px"]).flat());
+      expect(region.closest(".at-card")?.querySelector(".mail-transport-footer .at-skeleton")).not.toBeNull();
+      expect(document.querySelector(".at-loader, .at-spinner")).toBeNull();
+    });
+
+    it("puts the 8 second message inside the region, so it is announced and takes a full row of the grid", async () => {
+      mockFetchAccount.mockReturnValue(new Promise(() => {}));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      vi.useFakeTimers();
+      renderWithToast(<AccountPage />);
+      await advance(8000);
+      const message = screen.getByText("Taking longer than usual. Check your connection.");
+      expect(message.closest('[aria-label="Loading account"]')).toBe(accountLoader());
+      expect(message.style.gridColumn).toBe("1 / -1");
+    });
+
     it("says it is taking longer than usual after 8 seconds", async () => {
       mockFetchAccount.mockReturnValue(new Promise(() => {}));
       mockFetchSessions.mockResolvedValue({ sessions: [] });
@@ -4487,6 +4515,26 @@ describe("AccountPage on the loading standard", () => {
       expect(loader().className).not.toContain(HOLD);
       await advance(7800);
       expect(screen.getByText("Taking longer than usual. Check your connection.")).toBeTruthy();
+    });
+
+    it("sessions and notifications draw rows, one bar per row, not a spinner or the logo", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockReturnValue(new Promise(() => {}));
+      mockFetchNotificationPreferences.mockReturnValue(new Promise(() => {}));
+      vi.useFakeTimers();
+      const sessions = renderWithToast(<AccountPage activeTab="sessions" />);
+      await advance(0); // the account answers and the cards appear before their own 200ms start
+      await advance(200);
+      const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>(":scope > .at-skeleton")].map((bar) => bar.style.height);
+      expect(rows(screen.getByLabelText("Loading sessions"))).toEqual(["44px", "44px", "44px"]);
+      expect(screen.getByLabelText("Loading sessions").classList.contains("at-skeleton-stack")).toBe(true);
+      sessions.unmount();
+
+      renderWithToast(<AccountPage activeTab="notifications" />);
+      await advance(0);
+      await advance(200);
+      expect(rows(screen.getByLabelText("Loading notification preferences"))).toEqual(["56px", "56px", "56px", "56px"]);
+      expect(document.querySelector(".at-loader, .at-spinner")).toBeNull();
     });
 
     it("sessions: the loader says so after 8 seconds too", async () => {
