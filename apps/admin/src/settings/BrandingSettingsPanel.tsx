@@ -872,6 +872,7 @@ export function BrandingSettingsPanel() {
     return (
       <Card title="Organisation branding">
         <EmptyState
+          variant="error"
           title="Could not load branding settings"
           description={loadError}
           action={

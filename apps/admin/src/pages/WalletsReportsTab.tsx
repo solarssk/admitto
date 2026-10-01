@@ -794,6 +794,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
   if (!loading && error) {
     return (
       <EmptyState
+        variant="error"
         icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
         title="Could not load wallet report"
         description={error}

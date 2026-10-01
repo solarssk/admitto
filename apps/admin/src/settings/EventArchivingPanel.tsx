@@ -304,6 +304,7 @@ export function EventArchivingPanel() {
 
         {!loading && error && (
           <EmptyState
+            variant="error"
             title="Could not load events"
             description={error}
             action={

@@ -124,3 +124,86 @@ describe("loading-standard scanner: forms the standard itself allows", () => {
     expect(code('<p data-aria-label="Loading…">x</p>')["bare-loading-text"]).toBe(1);
   });
 });
+
+describe("error-state scanner: a failed load must be announced", () => {
+  const count = (source: string, rule: "error-state-not-an-alert" | "retry-outside-an-alert" | "raw-button-busy-disabled") =>
+    code(source)[rule];
+
+  it("counts an EmptyState with a Retry, or a 'Could not load' title, that has no variant=\"error\"", () => {
+    expect(count('<EmptyState title="Could not load attendees" description={error} />', "error-state-not-an-alert")).toBe(1);
+    expect(
+      count('<EmptyState title="Oops" action={<Button variant="secondary" onClick={retry}>Retry</Button>} />', "error-state-not-an-alert"),
+    ).toBe(1);
+    expect(
+      count('<EmptyState title={denied ? "No access" : "Could not load template"} description={error} />', "error-state-not-an-alert"),
+    ).toBe(1);
+  });
+
+  it("does not count an error EmptyState, nor a plain empty state", () => {
+    expect(count('<EmptyState variant="error" title="Could not load attendees" description={error} />', "error-state-not-an-alert")).toBe(0);
+    expect(
+      count(
+        ['<EmptyState', '  variant="error"', '  title="Could not load x"', '  action={<Button variant="secondary" onClick={retry}>Retry</Button>}', '/>'].join("\n"),
+        "error-state-not-an-alert",
+      ),
+    ).toBe(0);
+    expect(count('<EmptyState title="No attendees yet" description="Import a file." />', "error-state-not-an-alert")).toBe(0);
+  });
+
+  it("is not fooled by the variant of the Retry button inside the action", () => {
+    // `variant="error"` only counts on the EmptyState itself, never on a Button inside its action.
+    expect(
+      count('<EmptyState title="Could not load x" action={<Button variant="error" onClick={retry}>Retry</Button>} />', "error-state-not-an-alert"),
+    ).toBe(1);
+  });
+
+  it("counts an error EmptyState whose variant is anything but \"error\"", () => {
+    expect(count('<EmptyState variant="default" title="Could not load x" />', "error-state-not-an-alert")).toBe(1);
+  });
+
+  it("does not take another component, whose name starts the same, for an EmptyState or a button", () => {
+    expect(count('<EmptyStateList title="Could not load x" />', "error-state-not-an-alert")).toBe(0);
+    expect(count('<button-group disabled={busy} />', "raw-button-busy-disabled")).toBe(0);
+    expect(count('<buttons disabled={busy} />', "raw-button-busy-disabled")).toBe(0);
+  });
+
+  it("counts a Retry that is far below the alert, not the one that sits right in it", () => {
+    const far = ['<div role="alert">', "  <p>{error}</p>", "</div>", ...Array.from({ length: 30 }, () => "<p>filler</p>"), "<Button onClick={load}>", "  Retry", "</Button>"].join("\n");
+    expect(count(far, "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("counts a Retry that sits in no alert, EmptyState or Notice", () => {
+    const bare = ['<div className="status">', "  <p>{error}</p>", "  <Button onClick={load}>", "    Retry", "  </Button>", "</div>"].join("\n");
+    expect(count(bare, "retry-outside-an-alert")).toBe(1);
+    expect(count('<div className="status"><p>{error}</p><Button onClick={load}>Retry</Button></div>', "retry-outside-an-alert")).toBe(1);
+  });
+
+  it("does not count a Retry inside an alert container, an EmptyState action or a Notice action", () => {
+    const alert = ['<div className="status" role="alert">', "  <p>{error}</p>", "  <Button onClick={load}>", "    Retry", "  </Button>", "</div>"].join("\n");
+    expect(count(alert, "retry-outside-an-alert")).toBe(0);
+    expect(count('<div className="status" role="alert"><p>{error}</p><Button onClick={load}>Retry</Button></div>', "retry-outside-an-alert")).toBe(0);
+    const empty = ['<EmptyState', '  title="Could not load x"', "  action={", "    <Button onClick={load}>", "      Retry", "    </Button>", "  }", "/>"].join("\n");
+    expect(count(empty, "retry-outside-an-alert")).toBe(0);
+    const notice = ['<Notice variant="error" action={', "  <Button onClick={load}>Retry</Button>", "}>", "  {error}", "</Notice>"].join("\n");
+    expect(count(notice, "retry-outside-an-alert")).toBe(0);
+  });
+
+  it("does not look at buttons that merely mention retry, or at comments", () => {
+    expect(count('<Button onClick={retry}>Retry now</Button>', "retry-outside-an-alert")).toBe(0);
+    expect(count("// Retry\nconst a = 1;", "retry-outside-an-alert")).toBe(0);
+  });
+
+  it("counts a raw <button> that is disabled while busy, whatever the flag is called", () => {
+    expect(count("<button type=\"button\" disabled={busy} onClick={go}>Go</button>", "raw-button-busy-disabled")).toBe(1);
+    expect(count("<button type=\"button\" disabled={!canSave || isSaving}>Save</button>", "raw-button-busy-disabled")).toBe(1);
+    expect(count("<button\n  type=\"button\"\n  disabled={bulkSendBusy}\n>Send</button>", "raw-button-busy-disabled")).toBe(1);
+  });
+
+  it("does not count a kit Button, a raw <button> disabled for another reason, or one with no disabled", () => {
+    expect(count("<Button loading={busy} disabled={busy}>Go</Button>", "raw-button-busy-disabled")).toBe(0);
+    expect(count("<button type=\"button\" disabled={!canSave}>Save</button>", "raw-button-busy-disabled")).toBe(0);
+    expect(count("<button type=\"button\" onClick={go}>Go</button>", "raw-button-busy-disabled")).toBe(0);
+    expect(count("<ButtonGroup disabled={busy} />", "raw-button-busy-disabled")).toBe(0);
+  });
+});
+

@@ -1006,6 +1006,7 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage activeTab="sessions" />);
     expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
+    expect(screen.getByText("Could not load sessions.").closest("[role='alert']")).not.toBeNull();
     expect(screen.queryByText("internal session transport detail")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -1332,6 +1333,7 @@ describe("AccountPage toasts", () => {
       expect(screen.getByText("Could not load account.")).toBeTruthy();
     });
     expect(screen.getByText("Could not load account")).toBeTruthy();
+    expect(screen.getByText("Could not load account").closest("[role='alert']")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -4149,6 +4151,7 @@ describe("AccountPage: Notifications", () => {
 
     renderWithToast(<AccountPage activeTab="notifications" />);
     expect(await screen.findByText("Could not load notification preferences.")).toBeTruthy();
+    expect(screen.getByText("Could not load notification preferences.").closest("[role='alert']")).not.toBeNull();
 
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

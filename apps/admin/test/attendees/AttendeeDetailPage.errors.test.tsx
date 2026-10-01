@@ -258,6 +258,7 @@ describe("AttendeeDetailPage operator errors", () => {
     await screen.findByRole("heading", { name: "Anna" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(await screen.findByText("Could not load ticket types.")).toBeTruthy();
+    expect(screen.getByText("Could not load ticket types.").closest("[role='alert']")).not.toBeNull();
 
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
       { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },

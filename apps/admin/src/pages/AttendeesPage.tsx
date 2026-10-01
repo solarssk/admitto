@@ -2210,6 +2210,7 @@ export function AttendeesPage() {
 
       {loadError && !loading ? (
         <EmptyState
+          variant="error"
           title="Could not load attendees"
           description={loadError}
           action={

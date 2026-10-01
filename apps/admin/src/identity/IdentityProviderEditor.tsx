@@ -687,7 +687,7 @@ export function IdentityProviderEditor({
   );
 
   const errorContent = (
-    <div className="identity-editor__error">
+    <div className="identity-editor__error" role="alert">
       <p>Could not load this provider.</p>
       <Button variant="secondary" onClick={retryLoad}>
         Retry
@@ -696,7 +696,7 @@ export function IdentityProviderEditor({
   );
 
   const notFoundContent = (
-    <div className="identity-editor__error">
+    <div className="identity-editor__error" role="alert">
       <p>This provider no longer exists.</p>
       <Button variant="secondary" onClick={() => void navigate(IDENTITY_PROVIDERS_ROUTE)}>
         Back to providers

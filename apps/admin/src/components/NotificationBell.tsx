@@ -351,7 +351,7 @@ export function NotificationBell() {
             </div>
           )}
           {!listLoading && listError && (
-            <div className="notif-bell__status">
+            <div className="notif-bell__status" role="alert">
               <p>{listError}</p>
               <button type="button" className="notif-bell__retry" onClick={() => void loadList()}>
                 Retry

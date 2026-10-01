@@ -187,6 +187,7 @@ function DeliveryListContent({
   if (error) {
     return (
       <EmptyState
+        variant="error"
         title="Could not load deliveries"
         description={error}
         action={

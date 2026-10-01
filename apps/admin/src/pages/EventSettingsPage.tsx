@@ -974,6 +974,7 @@ function renderEventSettingsEarlyExit({
     return (
       <div className="event-settings-page">
         <EmptyState
+          variant="error"
           title="Event not found"
           description="The event could not be found or you do not have access."
           action={

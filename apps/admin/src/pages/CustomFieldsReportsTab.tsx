@@ -219,6 +219,7 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
   if (!loading && error) {
     return (
       <EmptyState
+        variant="error"
         icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
         title="Could not load custom field report"
         description={error}

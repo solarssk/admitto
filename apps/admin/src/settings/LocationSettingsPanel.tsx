@@ -466,6 +466,7 @@ export function LocationSettingsPanel({
     return (
       <Card title="Address">
         <EmptyState
+          variant="error"
           title="Could not load location settings"
           description={loadError}
           action={

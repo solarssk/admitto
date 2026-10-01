@@ -108,6 +108,7 @@ describe("AuthProvider", () => {
       expect(screen.getByText("Could not load session")).toBeTruthy();
     });
     expect(screen.getByText("Could not load session.")).toBeTruthy();
+    expect(screen.getByText("Could not load session").closest("[role='alert']")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByTestId("child")).toBeNull();
   });

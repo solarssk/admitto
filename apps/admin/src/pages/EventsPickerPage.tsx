@@ -120,7 +120,16 @@ export function EventsPickerPage() {
         </output>
       )}
       {!loading && error && (
-        <EmptyState title="Could not load events" description={error} />
+        <EmptyState
+          variant="error"
+          title="Could not load events"
+          description={error}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
       )}
 
       {!loading && !error && tab === "active" && events.length === 0 && (

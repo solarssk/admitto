@@ -185,6 +185,7 @@ describe("AuditLogPanel rendering", () => {
 
     expect(await screen.findByText("Could not load audit log")).toBeTruthy();
     expect(screen.getByText("Could not load audit log.")).toBeTruthy();
+    expect(screen.getByText("Could not load audit log").closest("[role='alert']")).not.toBeNull();
     expect(screen.queryByText("secret_internal")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -2269,6 +2270,7 @@ describe("SystemLogsPanel rendering", () => {
     openSystemLogsView();
 
     await screen.findByText(/Could not load system logs/);
+    expect(screen.getByText(/Could not load system logs/).closest("[role='alert']")).not.toBeNull();
     vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
       entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
       cursor: 1,

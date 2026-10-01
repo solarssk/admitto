@@ -5,7 +5,14 @@ import { fileURLToPath } from "node:url";
 const ADMIN_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../src");
 const REPO_ROOT = join(ADMIN_SRC, "../../..");
 
-export const RULES = ["hand-rolled-spinner-css", "bare-loading-text", "busy-label-swap"] as const;
+export const RULES = [
+  "hand-rolled-spinner-css",
+  "bare-loading-text",
+  "busy-label-swap",
+  "error-state-not-an-alert",
+  "retry-outside-an-alert",
+  "raw-button-busy-disabled",
+] as const;
 export type Rule = (typeof RULES)[number];
 export type Counts = Record<string, number>;
 
@@ -17,7 +24,16 @@ export const RULE_HINTS: Record<Rule, string> = {
     'Do not render "Loading…" text. Use Skeleton when the shape is known, SectionLoader (once per view) when it is not, PageLoader only for a whole screen, all behind useLoadingGate. See AGENTS.md "Loading and busy states".',
   "busy-label-swap":
     'Do not swap a button label for "Saving…" by hand. Use <Button loading loadingLabel="Saving…">, which keeps the width and disables the button.',
+  "error-state-not-an-alert":
+    'A failed load shown in an <EmptyState> (a "Could not load …" title, or a Retry) needs variant="error", so assistive tech announces it as an alert like every other failed load.',
+  "retry-outside-an-alert":
+    'A Retry for a failed load belongs in the `action` of an <EmptyState variant="error"> or a <Notice role="alert">, or in a container with role="alert", so the failure is announced.',
+  "raw-button-busy-disabled":
+    "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <MoreActionsMenuItem loading>), which stays focusable.",
 };
+
+/** Files that implement the busy contract itself, so they may name a busy flag next to `disabled`. */
+const BUSY_DISABLED_KIT_FILES = new Set(["apps/admin/src/components/MoreActionsMenuItem.tsx"]);
 
 function walk(dir: string, exts: RegExp, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -119,6 +135,68 @@ function stripJsxProp(source: string, prop: string): string {
  */
 const COMPLIANT_PROPS = ["aria-label", "loadingLabel"];
 
+/** Index just past the `>` that closes the JSX opening tag starting at `start` (braces and quotes are balanced). */
+function jsxOpeningTagEnd(source: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < source.length; i++) {
+    const c = source[i];
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (depth === 0 && (c === '"' || c === "'")) i = source.indexOf(c, i + 1);
+    else if (c === ">" && depth === 0 && source[i - 1] !== "=") return i + 1;
+    if (i === -1) break;
+  }
+  return source.length;
+}
+
+/** The opening tags of one JSX element name, as written (so `<Button` does not match `<ButtonGroup`). */
+function openingTags(source: string, name: string): string[] {
+  const tags: string[] = [];
+  for (const match of source.matchAll(new RegExp(`<${name}(?![\\w.-])`, "g"))) {
+    tags.push(source.slice(match.index, jsxOpeningTagEnd(source, match.index + match[0].length)));
+  }
+  return tags;
+}
+
+// A load error: an EmptyState that offers a Retry, or whose title says "Could not ...".
+const COULD_NOT_TITLE = /\btitle=(?:"Could not\b|\{[^}]*"Could not\b)/;
+// Words a busy flag is named with, as part of any identifier (`bulkSendBusy`, `isSaving`, `exporting`).
+const BUSY_WORDS = /busy|saving|loading|submitting|pending|sending|working|reloading|revoking|deleting/i;
+// How far above a Retry button an alert, an EmptyState or a Notice may sit and still be what shows it.
+const RETRY_LOOKBACK_LINES = 14;
+const ALERT_AROUND_RETRY = /role="alert"|<EmptyState\b|<Notice\b|\baction=\{/;
+
+/** EmptyStates that show a failed load but lack `variant="error"`. */
+function countErrorEmptyStatesWithoutVariant(text: string): number {
+  return openingTags(text, "EmptyState").filter((tag) => {
+    const ownProps = stripJsxProp(tag, "action"); // the Retry button has a `variant` of its own
+    const isLoadError = tag.includes("Retry") || COULD_NOT_TITLE.test(ownProps);
+    return isLoadError && !/\bvariant="error"/.test(ownProps);
+  }).length;
+}
+
+/** Retry buttons for a failed load with no alert, EmptyState or Notice action in the lines above them. */
+function countRetriesOutsideAnAlert(text: string): number {
+  const lines = text.split("\n");
+  let count = 0;
+  for (const [i, line] of lines.entries()) {
+    if (!/(?:^\s*|>)Retry(?:<|\s*$)/.test(line)) continue;
+    const window = lines.slice(Math.max(0, i - RETRY_LOOKBACK_LINES), i + 1).join("\n");
+    if (!ALERT_AROUND_RETRY.test(window)) count++;
+  }
+  return count;
+}
+
+/** Raw `<button>`s whose `disabled` names a busy flag. */
+function countRawButtonsDisabledWhileBusy(text: string): number {
+  return openingTags(text, "button").filter((tag) => {
+    const at = tag.search(/\bdisabled=\{/);
+    if (at === -1) return false;
+    const valueStart = tag.indexOf("{", at);
+    return BUSY_WORDS.test(tag.slice(valueStart, propValueEnd(tag, valueStart)));
+  }).length;
+}
+
 /** Violations of each rule in one source file. `kind` picks the CSS rule or the TS/TSX rules. */
 export function countLoadingViolations(source: string, kind: "css" | "code"): Partial<Record<Rule, number>> {
   const text = stripBlockAndLineComments(source);
@@ -129,20 +207,22 @@ export function countLoadingViolations(source: string, kind: "css" | "code"): Pa
   return {
     "bare-loading-text": (visible.match(LOADING_TEXT) ?? []).length,
     "busy-label-swap": countBusyTernaries(visible),
+    "error-state-not-an-alert": countErrorEmptyStatesWithoutVariant(text),
+    "retry-outside-an-alert": countRetriesOutsideAnAlert(text),
+    "raw-button-busy-disabled": countRawButtonsDisabledWhileBusy(text),
   };
 }
 
 /** Violation counts per rule and per file (path relative to the repo root), over apps/admin/src. */
 export function scanLoadingViolations(): Record<Rule, Counts> {
-  const result: Record<Rule, Counts> = {
-    "hand-rolled-spinner-css": {},
-    "bare-loading-text": {},
-    "busy-label-swap": {},
-  };
+  const result = Object.fromEntries(RULES.map((rule) => [rule, {}])) as Record<Rule, Counts>;
   for (const file of walk(ADMIN_SRC, /\.(css|tsx?)$/)) {
     const rel = relative(REPO_ROOT, file).split(sep).join("/");
     const counts = countLoadingViolations(readFileSync(file, "utf8"), file.endsWith(".css") ? "css" : "code");
-    for (const rule of RULES) bump(result[rule], rel, counts[rule] ?? 0);
+    for (const rule of RULES) {
+      if (rule === "raw-button-busy-disabled" && BUSY_DISABLED_KIT_FILES.has(rel)) continue;
+      bump(result[rule], rel, counts[rule] ?? 0);
+    }
   }
   return result;
 }

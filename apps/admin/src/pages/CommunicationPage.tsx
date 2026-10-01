@@ -2042,6 +2042,7 @@ export function CommunicationPage() {
   if (error) {
     return (
       <EmptyState
+        variant="error"
         title={accessDenied ? "You do not have access to this event" : "Could not load template"}
         description={error}
         action={
