@@ -47,6 +47,10 @@
 .at-btn--loading-solo > span:not(.at-btn__spinner) { opacity: 0; }
 .at-btn__spinner--overlay { position: absolute; inset: 0; margin: auto; }
 @media (prefers-reduced-motion: reduce) { .at-btn__spinner { animation-duration: 2.5s; } }
+/* Same rule as `.at-spinner__ring` (see spinner.css): forced colours would draw head and track alike. */
+@media (forced-colors: active) {
+  .at-btn__spinner { forced-color-adjust: none; border-color: GrayText; border-top-color: Highlight; }
+}
 
 .at-btn--sm { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
 .at-btn--lg { height: var(--control-h-lg); font-size: var(--fs-h3); padding: 0 var(--space-5); }

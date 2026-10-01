@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/styles/components/spinner.css"), "utf8");
+const styles = join(dirname(fileURLToPath(import.meta.url)), "../src/styles");
+const spinnerCss = readFileSync(join(styles, "components/spinner.css"), "utf8");
+const componentsCss = readFileSync(join(styles, "components.css"), "utf8");
 
 const FORCED_COLORS = "@media (forced-colors: active)";
 
@@ -34,13 +36,17 @@ function declarations(body: string): Record<string, string> {
   return Object.fromEntries(pairs);
 }
 
-const forcedRing = () => declarations(blockOf(blockOf(css, FORCED_COLORS), ".at-spinner__ring"));
-
 // jsdom does not load the stylesheet, so a rule that goes missing changes nothing in the component tests.
-// This reads the source instead: Windows High Contrast turns every border colour of the ring into one
-// colour (measured in Chrome with forced colours on: all four sides computed to rgb(0, 0, 0)), which
-// makes the turning head and the faint track one uniform circle.
-describe("spinner ring in forced-colors mode (Windows High Contrast)", () => {
+// This reads the source instead: Windows High Contrast turns every border colour of a ring into one colour
+// (measured in Chrome with forced colours on: all four sides computed to rgb(0, 0, 0)), which makes the
+// turning head and the faint track one uniform circle. A ring built from a border needs the rule where it is
+// defined: `Spinner` in spinner.css, and the spinner inside a busy `Button` in components.css.
+describe.each([
+  { name: "Spinner ring", css: spinnerCss, selector: ".at-spinner__ring" },
+  { name: "busy Button spinner", css: componentsCss, selector: ".at-btn__spinner" },
+])("$name in forced-colors mode (Windows High Contrast)", ({ css, selector }) => {
+  const forcedRing = () => declarations(blockOf(blockOf(css, FORCED_COLORS), selector));
+
   it("opts the ring out of the single forced border colour", () => {
     expect(forcedRing()["forced-color-adjust"]).toBe("none");
   });
@@ -53,7 +59,7 @@ describe("spinner ring in forced-colors mode (Windows High Contrast)", () => {
   });
 
   it("comes after the ring's own rule, so it wins on equal specificity", () => {
-    expect(css.indexOf(FORCED_COLORS)).toBeGreaterThan(css.indexOf("\n.at-spinner__ring {"));
+    expect(css.indexOf(FORCED_COLORS)).toBeGreaterThan(css.indexOf(`\n${selector} {`));
   });
 
   it("leaves the turning alone: the rule changes colours only", () => {
