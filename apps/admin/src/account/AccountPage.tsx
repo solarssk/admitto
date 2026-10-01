@@ -460,6 +460,15 @@ function syncProfileForm(set: ProfileFormSetters, baseline: AccountDto | null, f
   set.setPhoneNumber((cur) => next(cur, was?.phoneNumber, fresh.phone_number ?? ""));
 }
 
+/**
+ * Whether "Revoke all other sessions" is offered: only while the list it acts on is on screen. After a refresh that
+ * failed, or while its Retry is loading a new list, `sessions` still holds the older snapshot, and the action would
+ * revoke what the operator can no longer see.
+ */
+function canRevokeOthers(listShown: boolean, error: string | null, otherCount: number): boolean {
+  return listShown && !error && otherCount > 0;
+}
+
 /** What a screen reader is told while the account or the sessions list is being refreshed (once it is noticeable): the cards ignore clicks meanwhile. */
 function refreshStatusText(accountRefreshing: boolean, sessionsRefreshing: boolean): string {
   if (accountRefreshing) return "Refreshing your account. Actions are paused until it finishes.";
@@ -2168,7 +2177,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card
         title="Active sessions"
-        actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
+        actions={canRevokeOthers(sessionsGate.showContent, sessionsError, otherSessions.length) ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
         {...refetchCardProps(sessionsRefreshing, sessionsRefetch.showIndicator)}
       >
         <TopProgressBar active={sessionsRefetch.showIndicator} placement="container" label="Refreshing sessions" />

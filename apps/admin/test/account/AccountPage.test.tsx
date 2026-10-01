@@ -4783,12 +4783,15 @@ describe("AccountPage on the loading standard", () => {
       await advance(0);
       await advance(0);
       expect(screen.getByText("Could not load sessions.")).toBeTruthy();
+      // The older snapshot is still held, but nothing in the card acts on it: not the header action either.
+      expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
 
       fireEvent.click(screen.getByRole("button", { name: "Retry" }));
       await advance(250);
       // The stale list (with the session just revoked) is not shown as current while it is asked for again.
       expect(screen.queryByText("Other")).toBeNull();
       expect(screen.getByLabelText("Loading sessions").className).not.toContain("at-loading-hold");
+      expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
 
       await act(async () => answerRetry({ sessions: [currentSession] }));
       await advance(500);
@@ -4831,6 +4834,27 @@ describe("AccountPage on the loading standard", () => {
       expect(card().getAttribute("aria-busy")).toBeNull();
       // The box the bar is positioned in stays for as long as the bar does (a little after the answer), then goes.
       await waitFor(() => expect(card().className).not.toContain("account-refetch"));
+    });
+
+    it("sessions: the header action comes back with the list once a Retry has loaded it", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] })
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockResolvedValueOnce({ sessions: [currentSession, otherSession] });
+      mockDeleteSession.mockResolvedValue(undefined);
+
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await screen.findByText("Could not load sessions.");
+      expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(await screen.findByRole("button", { name: "Revoke all other sessions" })).toBeTruthy();
+      expect(screen.getByText("Other")).toBeTruthy();
     });
 
     it("sessions: the list stays on screen while it is refreshed after a revoke", async () => {
