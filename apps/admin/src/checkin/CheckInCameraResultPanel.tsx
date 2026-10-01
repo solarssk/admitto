@@ -67,6 +67,8 @@ type CheckInCameraResultPanelProps = {
   card: AttendeeCardDto | null;
   ticketTypes?: TicketTypeDto[];
   pending: boolean;
+  /** The Confirm check-in request is in flight: the button is busy, at once. */
+  admitting?: boolean;
   canAct: boolean;
   eventTimezone: string;
   onConfirm?: () => void;
@@ -85,6 +87,7 @@ export function CheckInCameraResultPanel({
   card,
   ticketTypes = [],
   pending,
+  admitting = false,
   canAct,
   onConfirm,
   onReset,
@@ -123,6 +126,8 @@ export function CheckInCameraResultPanel({
             type="button"
             variant="primary"
             size="lg"
+            loading={admitting}
+            loadingLabel="Checking in…"
             disabled={!canAct || pending}
             onClick={onConfirm}
           >

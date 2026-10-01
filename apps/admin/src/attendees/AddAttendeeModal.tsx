@@ -270,8 +270,10 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   );
   const fieldsHeld = !fieldsGate.showContent;
   // A Retry is busy at once and for at least 400ms, so one that fails again right away still shows it ran.
-  const fieldsRetryBusy = useMinimumBusy(attributeFieldsLoading && fieldsRetries > 0);
-  const ticketTypesRetryBusy = useMinimumBusy(ticketTypesLoading && ticketTypesRetries > 0);
+  // The same flag tells the notice its Retry stopped while the error is still there: the message is
+  // then announced again, because a repeat failure has the same text and would otherwise be silent.
+  const fieldsRetrying = useMinimumBusy(attributeFieldsLoading && fieldsRetries > 0) || attributeFieldsLoading;
+  const ticketTypesRetrying = useMinimumBusy(ticketTypesLoading && ticketTypesRetries > 0) || ticketTypesLoading;
 
   if (!open) return null;
 
@@ -295,12 +297,13 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           <Notice
             variant="error"
             role="alert"
+            actionBusy={fieldsRetrying}
             action={
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                loading={attributeFieldsLoading || fieldsRetryBusy}
+                loading={fieldsRetrying}
                 onClick={() => setFieldsRetries((n) => n + 1)}
               >
                 Retry
@@ -314,12 +317,13 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           <Notice
             variant="error"
             role="alert"
+            actionBusy={ticketTypesRetrying}
             action={
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                loading={ticketTypesLoading || ticketTypesRetryBusy}
+                loading={ticketTypesRetrying}
                 onClick={() => setTicketTypesRetries((n) => n + 1)}
               >
                 Retry

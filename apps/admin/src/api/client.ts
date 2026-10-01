@@ -974,17 +974,19 @@ export async function deleteAttendeeNote(
 export async function fetchCheckInHistory(
   eventId: string,
   limit = 8,
+  signal?: AbortSignal,
 ): Promise<CheckInHistoryEntry[]> {
   const res = await fetch(
     `/api/checkin/history?eventId=${encodeURIComponent(eventId)}&limit=${limit}`,
-    { credentials: "same-origin" },
+    { credentials: "same-origin", signal },
   );
   return parseJson<CheckInHistoryEntry[]>(res);
 }
 
-export async function fetchCheckInStats(eventId: string): Promise<CheckInStatsResponse> {
+export async function fetchCheckInStats(eventId: string, signal?: AbortSignal): Promise<CheckInStatsResponse> {
   const res = await fetch(`/api/checkin/stats?eventId=${encodeURIComponent(eventId)}`, {
     credentials: "same-origin",
+    signal,
   });
   return parseJson<CheckInStatsResponse>(res);
 }

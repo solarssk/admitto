@@ -57,8 +57,15 @@ export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>)
           <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={!value.trim() || submitting} onClick={() => void handleSubmit()}>
-            {submitting ? "Saving…" : "Add note"}
+          <Button
+            type="button"
+            variant="primary"
+            loading={submitting}
+            loadingLabel="Saving…"
+            disabled={!value.trim() || submitting}
+            onClick={() => void handleSubmit()}
+          >
+            Add note
           </Button>
         </div>
       </div>

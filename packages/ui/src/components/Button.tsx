@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type MouseEvent, type ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "success" | "warning";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -12,10 +12,14 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Adds a trailing chevron-down — use on any button that opens a menu/submenu, so it always reads as "has more options" the same way. Takes precedence over iconRight. */
   hasMenu?: boolean;
   /**
-   * This button's own action is in flight. The button is disabled (so it cannot be double-fired),
-   * gets `aria-busy`, and shows a spinner immediately, with no delay: the user just clicked, so
-   * the reaction must be instant. Its width never changes. One flag per action: two buttons that
-   * can run independently must not share one `loading` state.
+   * This button's own action is in flight. It gets `aria-busy` and `aria-disabled` (not `disabled`)
+   * and shows a spinner immediately, with no delay: the user just clicked, so the reaction must be
+   * instant. A click on it does nothing, so it cannot be double-fired. It stays focusable on purpose:
+   * browsers drop the focus of a button that becomes `disabled`, so a keyboard user would lose their
+   * place the moment they pressed it and not be back on it when the work ends. So while busy it is
+   * never `disabled`, even when `disabled` is also set (callers often pass the same flag to both):
+   * `disabled` takes effect again when the work ends. Its width never changes. One flag per action:
+   * two buttons that can run independently must not share one `loading` state.
    */
   loading?: boolean;
   /**
@@ -43,6 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     type = "button",
     children,
     className,
+    onClick,
     ...rest
   },
   ref,
@@ -64,6 +69,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ]
     .filter(Boolean)
     .join(" ");
+
+  // What `disabled` used to do for a busy button, without losing its focus: the click (and Enter or Space,
+  // which become one) is swallowed whole, so it neither runs the action again, nor submits a form it is
+  // the submit button of, nor reaches a clickable ancestor.
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    if (loading) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    onClick?.(event);
+  };
 
   const spinner = <span className="at-btn__spinner" aria-hidden="true" />;
   const trailingIcon = hasMenu ? <i className="ti ti-chevron-down" aria-hidden="true" /> : iconRight;
@@ -92,8 +109,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cls}
-      disabled={disabled || loading}
+      disabled={disabled && !loading}
+      aria-disabled={loading || undefined}
       aria-busy={loading || undefined}
+      onClick={handleClick}
       {...rest}
     >
       {icon && (

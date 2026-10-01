@@ -98,4 +98,69 @@ describe("Notice", () => {
     expect(action?.querySelector("button")?.textContent).toBe("Retry");
     expect(notice?.querySelector(".at-notice__body")?.textContent).toBe("Something failed.");
   });
+
+  describe("actionBusy", () => {
+    const MESSAGE = "Could not load ticket types.";
+
+    function retryNotice(busy: boolean) {
+      return (
+        <Notice variant="error" role="alert" actionBusy={busy} action={<button type="button">Retry</button>}>
+          {MESSAGE}
+        </Notice>
+      );
+    }
+
+    it("mounts the message afresh when the action stops being busy, so the same text is a new addition to the alert", () => {
+      const { rerender } = render(retryNotice(false));
+      const alert = screen.getByRole("alert");
+      const before = screen.getByText(MESSAGE);
+      // What a screen reader hears is what a live region gains, so watch the alert itself.
+      const observer = new MutationObserver(() => {});
+      observer.observe(alert, { childList: true, subtree: true });
+
+      rerender(retryNotice(true));
+      expect(screen.getByText(MESSAGE)).toBe(before);
+
+      rerender(retryNotice(false));
+      expect(screen.getByText(MESSAGE)).not.toBe(before);
+      const added = observer
+        .takeRecords()
+        .flatMap((record) => Array.from(record.addedNodes, (node) => node.textContent));
+      expect(added).toContain(MESSAGE);
+      observer.disconnect();
+    });
+
+    it("leaves the alert and the action button themselves in place, so a focused Retry keeps its focus", () => {
+      const { rerender } = render(retryNotice(false));
+      const alert = screen.getByRole("alert");
+      const button = screen.getByRole("button", { name: "Retry" });
+      button.focus();
+
+      rerender(retryNotice(true));
+      rerender(retryNotice(false));
+
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(button);
+      expect(document.activeElement).toBe(button);
+    });
+
+    it("announces every further failure again, not only the first", () => {
+      const { rerender } = render(retryNotice(false));
+      const first = screen.getByText(MESSAGE);
+      rerender(retryNotice(true));
+      rerender(retryNotice(false));
+      const second = screen.getByText(MESSAGE);
+      rerender(retryNotice(true));
+      rerender(retryNotice(false));
+      const third = screen.getByText(MESSAGE);
+      expect(new Set([first, second, third]).size).toBe(3);
+    });
+
+    it("keeps the message mounted when the action never was busy", () => {
+      const { rerender } = render(retryNotice(false));
+      const before = screen.getByText(MESSAGE);
+      rerender(retryNotice(false));
+      expect(screen.getByText(MESSAGE)).toBe(before);
+    });
+  });
 });
