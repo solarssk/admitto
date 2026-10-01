@@ -151,7 +151,7 @@ describe("ScanHistoryList without an event id, and the error card without a Retr
     expect(container.querySelectorAll(".ck-recent__row--skeleton")).toHaveLength(4);
     rerender(<ScanHistoryList admittedCount={0} totalCount={0} history={[]} status="ready" />);
     await advance(500);
-    expect(localStorage.length).toBe(0);
+    expect(localStorage).toHaveLength(0);
   });
 
   it("shows only the message when there is nothing to retry", () => {

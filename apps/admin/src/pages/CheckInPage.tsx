@@ -584,6 +584,7 @@ interface CheckInMobileOverlayProps {
   historyError: boolean;
   historyRetrying: boolean;
   onRetryHistory: () => void;
+  searching: boolean;
   history: CheckInHistoryEntry[];
   buffer: string;
   onClose: () => void;
@@ -625,6 +626,7 @@ function CheckInMobileOverlay({
   historyError,
   historyRetrying,
   onRetryHistory,
+  searching,
   history,
   buffer,
   onClose,
@@ -664,6 +666,7 @@ function CheckInMobileOverlay({
       historyError={historyError}
       historyRetrying={historyRetrying}
       onRetryHistory={onRetryHistory}
+      searching={searching}
       history={history}
       wedgeActive={buffer.trim().length > 0}
       onClose={onClose}
@@ -987,8 +990,11 @@ export function CheckInPage({
 
   const refreshStatsOnly = useCallback(async () => {
     if (!eventId) return;
+    const generation = sidebarGenerationRef.current;
     try {
       const stats = await fetchCheckInStats(eventId);
+      // Asked for the event left behind: not this one's numbers, and no reason to clear its error.
+      if (generation !== sidebarGenerationRef.current) return;
       setAdmittedCount(stats.admitted_count);
       setTotalCount(stats.total_count);
       // The server answers again after a failed first load: the error card has nothing left to say.
@@ -1896,6 +1902,7 @@ export function CheckInPage({
         historyError={sidebarStatus === "error"}
         historyRetrying={sidebarRetrying}
         onRetryHistory={() => void retrySidebar()}
+        searching={searching}
         history={history}
         buffer={buffer}
         onClose={() => setCameraActive(false)}

@@ -22,6 +22,11 @@ describe("check-in loading states: CSS the tests in jsdom cannot see", () => {
     expect(rule(".ck-overlay__admitted .at-skeleton")).toMatch(/display:\s*inline-block/);
   });
 
+  it("the camera overlay's \"Checking…\" sits over the frame without taking room, and its spinner takes the pill's text colour", () => {
+    expect(rule(".ck-overlay__checking")).toMatch(/position:\s*absolute/);
+    expect(rule(".ck-overlay__checking .at-spinner")).toMatch(/color:\s*inherit/);
+  });
+
   it("a placeholder row in the recent scans list reserves the height of a real row", () => {
     expect(rule(".ck-recent__row--skeleton")).toMatch(/min-height:\s*58px/);
     expect(rule(".ck-recent__row--skeleton:last-child")).toMatch(/min-height:\s*57px/);

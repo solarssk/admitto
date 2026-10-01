@@ -5,8 +5,14 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
 
+// The camera's decode callback, so a test can scan "through" the camera overlay.
+const camera = vi.hoisted(() => ({ onScan: null as null | ((raw: string) => void) }));
+
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
-  CameraScanner: () => <div data-testid="camera-scanner" />,
+  CameraScanner: (props: { onScan: (raw: string) => void }) => {
+    camera.onScan = props.onScan;
+    return <div data-testid="camera-scanner" />;
+  },
 }));
 
 const fetchCheckInHistory = vi.fn();
@@ -450,6 +456,23 @@ describe("CheckInPage on a phone: the camera overlay shows the same first-load s
     expect(overlay().queryByText(LOAD_ERROR)).toBeNull();
   });
 
+  it("says 'Checking…' over the camera the moment a code is decoded, not behind it in the page's own scan bar", async () => {
+    viewport.desktop = false;
+    mockBootstrap();
+    let answerScan!: (value: unknown) => void;
+    submitCheckInScan.mockReturnValue(new Promise((resolve) => (answerScan = resolve)));
+    renderPage();
+    await screen.findByLabelText("Camera check-in");
+    expect(overlay().queryByText("Checking…")).toBeNull();
+
+    act(() => camera.onScan?.("QRTOKEN-DECODED-BY-THE-CAMERA-0001"));
+    await waitFor(() => expect(overlay().getByText("Checking…")).toBeTruthy());
+    expect(overlay().getByText("Checking…").closest(".ck-overlay__frame")).not.toBeNull();
+
+    await act(async () => answerScan({ status: "INVALID", confirmed: false }));
+    await waitFor(() => expect(overlay().queryByText("Checking…")).toBeNull());
+  });
+
   it("Confirm check-in in the overlay is busy while that request is in flight", async () => {
     viewport.desktop = false;
     mockBootstrap();
@@ -473,6 +496,59 @@ describe("CheckInPage on a phone: the camera overlay shows the same first-load s
       expect(overlay().getByRole("button", { name: /Confirm check-in|Checking in/ }).getAttribute("aria-busy")).toBe("true"),
     );
     admit({ status: "VALID", confirmed: true, admittedAt: "2026-09-01T09:44:00.000Z", attendeeId: "att-1" });
+  });
+});
+
+describe("CheckInPage sidebar: a stats-only refresh for the event left behind", () => {
+  it("does not write the last event's numbers into the new one, nor clear its error", async () => {
+    mockBootstrap();
+    const annaHit = { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" as const };
+    const card = { id: "att-1", name: "Anna Alpha", company: null, department: null, ticket_type: "vip", check_in_status: "not_admitted" as const, admitted_at: null, items: [], notes: [], blocked: false };
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue(card);
+    submitCheckInAdmit.mockResolvedValue({
+      status: "VALID",
+      confirmed: true,
+      admittedAt: "2026-09-01T09:44:00.000Z",
+      attendeeId: "att-1",
+      card: { ...card, check_in_status: "admitted", admitted_at: "2026-09-01T09:44:00.000Z" },
+    });
+    let answerLateStats!: (value: unknown) => void;
+    let liveStatsCalls = 0;
+    fetchCheckInStats.mockImplementation((eventId: string) => {
+      if (eventId !== "evt-live") return Promise.reject(new Error("network down"));
+      liveStatsCalls += 1;
+      // The first call is the sidebar's load; the second is the refresh after the admission.
+      return liveStatsCalls === 1
+        ? Promise.resolve({ admitted_count: 1, total_count: 5 })
+        : new Promise((resolve) => (answerLateStats = resolve));
+    });
+    render(
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
+          <Link to="/admin/events/evt-other/checkin">other event</Link>
+          <Routes>
+            <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>,
+    );
+    await waitFor(() => expect(stats()?.textContent).toContain("5"));
+
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm check-in" }));
+    await waitFor(() => expect(liveStatsCalls).toBe(2));
+
+    fireEvent.click(screen.getByText("other event"));
+    await screen.findByText(LOAD_ERROR);
+
+    await act(async () => answerLateStats({ admitted_count: 99, total_count: 99 }));
+    await wait(50);
+    expect(screen.getByText(LOAD_ERROR)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(stats()).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Skeleton } from "@admitto/ui";
+import { Button, Skeleton, Spinner } from "@admitto/ui";
 import type {
   AttendeeCardDto,
   CheckInHistoryEntry,
@@ -33,6 +33,8 @@ type CameraOverlayProps = {
   historyError?: boolean;
   historyRetrying?: boolean;
   onRetryHistory?: () => void;
+  /** A scan or search is in flight: the overlay covers the page's own scan bar, so it says so itself, at once. */
+  searching?: boolean;
   history: CheckInHistoryEntry[];
   wedgeActive: boolean;
   onClose: () => void;
@@ -81,6 +83,7 @@ export function CameraOverlay({
   historyError = false,
   historyRetrying = false,
   onRetryHistory,
+  searching = false,
   history,
   wedgeActive,
   onClose,
@@ -295,6 +298,12 @@ export function CameraOverlay({
               onTrackChange={onTrackChange}
             />
             {renderFrameContent()}
+            {searching && (
+              <div className="ck-overlay__checking">
+                <Spinner size="sm" label="Checking" />
+                <span aria-hidden="true">Checking…</span>
+              </div>
+            )}
           </div>
 
           <div className="ck-overlay__manual">
