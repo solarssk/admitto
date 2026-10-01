@@ -868,12 +868,9 @@ jobs:
           # action's own `purlsMatch()` explicitly ignores the version part of a purl, so a
           # version-qualified entry would silently exempt every future version too, defeating the
           # exact thing REVIEWED_PACKAGE_VERSIONS exists for (forcing re-review on a version bump -
-          # see that script's own comment). Confirmed this isn't theoretical: right now
-          # @img/sharp-libvips-darwin-arm64@1.3.3 and @img/sharp-wasm32@0.35.4 are already past
-          # their reviewed 1.3.2/0.35.3 entries and would fail scripts/check-licenses.mjs today if
-          # it were blocking. Leaving these packages off `allow-licenses` means a PR that bumps one
-          # of them will correctly fail this gate until a human re-reviews and updates both this
-          # list and REVIEWED_PACKAGE_VERSIONS - friction that's the point, not a bug.
+          # see that script's own comment). Confirmed this isn't theoretical: the sharp 0.35.5 bump
+          # (libvips 1.3.4) failed this gate until the libvips/sharp platform packages were reviewed and listed in
+          # `allow-dependencies-licenses` below.
           allow-licenses: MIT, ISC, Apache-2.0, BSD-3-Clause, BSD-2-Clause, BlueOak-1.0.0, Unlicense, OFL-1.1, MIT-0, CC0-1.0, 0BSD, CC-BY-4.0, Python-2.0, Zlib
           # SonarSource/sonarqube-scan-action is LGPL-3.0, which isn't on the list above.
           # Deliberately different case from the npm-package REVIEWED_PACKAGE_VERSIONS reasoning
@@ -900,6 +897,14 @@ jobs:
           # fail this specific gate the way a sharp/libvips bump would - re-review manually, the
           # same as a REVIEWED_PACKAGE_VERSIONS entry would need on a bump.
           #
+          # @img/sharp-libvips-* and the LGPL-carrying @img/sharp-wasm32 / @img/sharp-win32-* builds
+          # (via sharp) ARE real runtime dependencies shipped in the container image, so this is the
+          # same deliberate exception as ip-location-api, not the CI-only-tool reasoning: sharp is
+          # required (image handling), the licenses are LGPL-3.0-or-later (libvips linked as a
+          # prebuilt binary, never patched - see THIRD-PARTY-NOTICES.md) and this action cannot pin
+          # a version, so a future libvips bump will pass this gate silently. On every sharp bump
+          # re-review manually and update REVIEWED_PACKAGE_VERSIONS in scripts/check-licenses.mjs.
+          #
           # semgrep.yml's hash-pinned pip toolchain (semgrep-requirements.txt) surfaces the same
           # way ip-location-api's manifest-entry-diff did above: hash-pinning it for Scorecard's
           # Pinned-Dependencies check (see semgrep.yml) is what first made this action able to see
@@ -916,7 +921,7 @@ jobs:
           # axe-core and @axe-core/playwright are MPL-2.0 devDependencies of apps/admin, used only by
           # the Playwright accessibility scan (never shipped in the runtime image) - same
           # version-blindness trade-off as the CI-only tools above; re-review on a major bump.
-          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api, pkg:npm/axe-core, pkg:npm/%40axe-core/playwright, pkg:pypi/semgrep, pkg:pypi/certifi, pkg:pypi/protobuf, pkg:pypi/typing-extensions"
+          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api, pkg:npm/%40img/sharp-libvips-darwin-arm64, pkg:npm/%40img/sharp-libvips-darwin-x64, pkg:npm/%40img/sharp-libvips-linux-arm, pkg:npm/%40img/sharp-libvips-linux-arm64, pkg:npm/%40img/sharp-libvips-linux-ppc64, pkg:npm/%40img/sharp-libvips-linux-riscv64, pkg:npm/%40img/sharp-libvips-linux-s390x, pkg:npm/%40img/sharp-libvips-linux-x64, pkg:npm/%40img/sharp-libvips-linuxmusl-arm64, pkg:npm/%40img/sharp-libvips-linuxmusl-x64, pkg:npm/%40img/sharp-wasm32, pkg:npm/%40img/sharp-win32-arm64, pkg:npm/%40img/sharp-win32-ia32, pkg:npm/%40img/sharp-win32-x64, pkg:npm/axe-core, pkg:npm/%40axe-core/playwright, pkg:pypi/semgrep, pkg:pypi/certifi, pkg:pypi/protobuf, pkg:pypi/typing-extensions"
 
   docker-build:
     name: Docker image build
