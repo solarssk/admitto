@@ -15,8 +15,10 @@ function moveFocusIntoPanel(panel: HTMLElement) {
 }
 
 /** Trap focus inside a modal panel, close on Escape, lock body scroll while open. Keeps focus in the
- * panel when the control that holds it is removed (a Retry whose notice goes away once the retry worked):
- * the browser drops focus on `<body>` then, and the next Tab would start from the page behind the dialog.
+ * panel when the control that holds it goes away: removed (a Retry whose notice goes away once the retry
+ * worked), the browser drops focus on `<body>` and the next Tab would start from the page behind the dialog,
+ * so it moves to the first control; or only disabled while it works (a busy button), the browser drops it
+ * the same way, so it goes back to that control once it is enabled again.
  *
  * `focusWhenReady` is for a panel whose real content loads asynchronously after the
  * modal itself mounts (e.g. an always-routed editor showing a spinner first, unlike
@@ -45,22 +47,33 @@ export function useModalFocusTrap(
     const panel = panelRef.current;
     if (!panel) return;
 
-    // The control inside the panel that last held focus. When it has left the DOM and focus is nowhere,
-    // it was removed while focused. A control that is only disabled while it works stays in the DOM and
-    // is left alone, as is focus that went to another element (a nested dialog, a portalled menu).
-    let held: Element | null = panel.contains(document.activeElement) ? document.activeElement : null;
+    // The control inside the panel that last held focus. Browsers drop focus on <body> when that control is
+    // removed, or when it becomes disabled (it stays in the DOM, like a Retry that is busy). Removed: focus
+    // goes to the first control. Disabled: it gets focus back once it is enabled again. Focus that went to
+    // another element (a nested dialog, a portalled menu) is left alone.
+    let held = panel.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
+    let heldWasDisabled = false;
     const onFocusIn = (event: FocusEvent) => {
-      held = event.target as Element;
+      held = event.target as HTMLElement;
+      heldWasDisabled = false;
     };
     const observer = new MutationObserver(() => {
+      if (!held) return;
       const focusIsNowhere = !document.activeElement || document.activeElement === document.body;
-      if (held && !held.isConnected && focusIsNowhere) {
-        held = null;
-        moveFocusIntoPanel(panel);
+      if (!held.isConnected) {
+        if (focusIsNowhere) {
+          held = null;
+          moveFocusIntoPanel(panel);
+        }
+      } else if (held.matches(":disabled")) {
+        heldWasDisabled = true;
+      } else {
+        if (heldWasDisabled && focusIsNowhere) held.focus();
+        heldWasDisabled = false;
       }
     });
     panel.addEventListener("focusin", onFocusIn);
-    observer.observe(panel, { childList: true, subtree: true });
+    observer.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
     return () => {
       panel.removeEventListener("focusin", onFocusIn);
       observer.disconnect();

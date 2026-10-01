@@ -264,7 +264,7 @@ describe("useModalFocusTrap when the control that holds focus is removed", () =>
     expect(document.activeElement).toBe(nested);
   });
 
-  it("leaves a control alone that is only disabled while it works, instead of pulling focus away from it", async () => {
+  it("leaves a control alone that is only disabled while it works: no focus is moved while it is still disabled", async () => {
     const panel = makePanelWithNotice();
     renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
     const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
@@ -279,6 +279,152 @@ describe("useModalFocusTrap when the control that holds focus is removed", () =>
 
     expect(document.activeElement).toBe(document.body);
     expect(retry.isConnected).toBe(true);
+  });
+
+  it("gives focus back to a control that lost it by being disabled (a busy Retry that stays in the DOM) once it is enabled again", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+    expect(document.activeElement).toBe(document.body);
+
+    retry.disabled = false;
+    await settle();
+
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("does the same when the control is disabled by a <fieldset disabled> around it", async () => {
+    const panel = document.createElement("div");
+    panel.innerHTML = `<fieldset id="group"><button id="retry">Retry</button></fieldset><input id="field" />`;
+    document.body.appendChild(panel);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    const group = panel.querySelector<HTMLFieldSetElement>("#group")!;
+    retry.focus();
+    retry.blur();
+    group.disabled = true;
+    await settle();
+    expect(retry.matches(":disabled")).toBe(true);
+
+    group.disabled = false;
+    await settle();
+
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("moves to the first control when the disabled control is removed instead of enabled (the retry worked)", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+
+    panel.querySelector("#notice")!.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(panel.querySelector("#field"));
+  });
+
+  it("does not take focus back from where it went while the control was disabled", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+    const field = panel.querySelector<HTMLElement>("#field")!;
+    field.focus();
+
+    retry.disabled = false;
+    await settle();
+
+    expect(document.activeElement).toBe(field);
+  });
+
+  it("does not keep pulling focus back once it has been given back and the user left the control on purpose", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+    retry.disabled = false;
+    await settle();
+    expect(document.activeElement).toBe(retry);
+
+    retry.blur();
+    panel.appendChild(document.createElement("span"));
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not take focus back from an element outside the panel (a nested dialog) that got it while the control was disabled", async () => {
+    const panel = makePanelWithNotice();
+    const nested = document.createElement("button");
+    document.body.appendChild(nested);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+    nested.focus();
+
+    retry.disabled = false;
+    await settle();
+
+    expect(document.activeElement).toBe(nested);
+  });
+
+  it("forgets a disabled control once it was enabled while focus was elsewhere, instead of reclaiming focus later", async () => {
+    const panel = makePanelWithNotice();
+    const nested = document.createElement("button");
+    document.body.appendChild(nested);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+    nested.focus();
+    retry.disabled = false;
+    await settle();
+
+    // The nested element lets go of focus on purpose; nothing in the panel should grab it.
+    nested.blur();
+    panel.appendChild(document.createElement("span"));
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not pull focus back to a control the user left on purpose, because an earlier one had been disabled", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    retry.blur();
+    retry.disabled = true;
+    await settle();
+    const field = panel.querySelector<HTMLElement>("#field")!;
+    field.focus();
+    field.blur();
+
+    panel.appendChild(document.createElement("span"));
+    await settle();
+    retry.disabled = false;
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("does not take focus when nothing in the panel ever held it", async () => {
