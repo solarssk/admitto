@@ -1117,11 +1117,11 @@ html:not(.icons-ready) .ti {
   background: var(--at-blue);
 }
 
-.checkin-card__primary-actions .at-btn--primary:hover:not(:disabled) {
+.checkin-card__primary-actions .at-btn--primary:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--at-blue-600);
 }
 
-.checkin-card__primary-actions .at-btn--primary:active:not(:disabled) {
+.checkin-card__primary-actions .at-btn--primary:active:not(:disabled, [aria-disabled="true"]) {
   background: var(--at-blue-700);
 }
 
@@ -2104,7 +2104,7 @@ html:not(.icons-ready) .ti {
   border-color: transparent;
 }
 
-.ck-overlay .ck-overlay__result-actions .at-btn--primary:hover:not(:disabled) {
+.ck-overlay .ck-overlay__result-actions .at-btn--primary:hover:not(:disabled, [aria-disabled="true"]) {
   background: rgba(255, 255, 255, 0.9);
 }
 
@@ -2155,7 +2155,7 @@ html:not(.icons-ready) .ti {
    of reading the alpha-blended rgba in isolation as "white on white"
    (Sonar css:S7924 — a false positive from not modeling the real stacking
    context, but a solid value sidesteps it either way). */
-.ck-overlay__manual .at-btn--secondary:hover:not(:disabled) {
+.ck-overlay__manual .at-btn--secondary:hover:not(:disabled, [aria-disabled="true"]) {
   background: #32353a;
   color: #fff;
 }
@@ -2585,7 +2585,7 @@ html:not(.icons-ready) .ti {
   border-color: transparent;
 }
 
-.ck-items .at-btn.at-btn--primary:hover:not(:disabled) {
+.ck-items .at-btn.at-btn--primary:hover:not(:disabled, [aria-disabled="true"]) {
   filter: brightness(0.92);
 }
 
@@ -3567,7 +3567,7 @@ html:not(.icons-ready) .ti {
   }
 }
 
-.identity-mappings__remove .at-btn:hover:not(:disabled) {
+.identity-mappings__remove .at-btn:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--status-error-tint);
   color: var(--status-error-fg);
 }
