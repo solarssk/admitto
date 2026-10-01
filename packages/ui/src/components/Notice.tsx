@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import { useState, type HTMLAttributes, type ReactNode } from "react";
 
 /** "info" is a deliberately neutral/gray "permanent fact" tone (see the CSS). "highlight" is the
  * genuinely blue tone (shares the `--status-info*` tokens already used by `.at-badge--info` /
@@ -21,6 +21,11 @@ export interface NoticeProps extends HTMLAttributes<HTMLElement> {
    * item at the notice's edge instead of being absorbed into the wrapped body text - use
    * this instead of putting a button directly in `children`. */
   action?: ReactNode;
+  /** Set while the `action` is working (a Retry that has been clicked). When it stops and the notice
+   * is still on screen, the work failed again, so the message is announced again by assistive tech
+   * although its text is the same: only the message is mounted afresh, never the `action`, so a
+   * focused Retry keeps its place. Pass the same flag as the action button's `loading`. */
+  actionBusy?: boolean;
   /** "output" for a value derived from the surrounding form/state (mirrors Toast's own
    * success/info tag choice); "p" (default) for a standalone fact or warning. */
   as?: "p" | "output";
@@ -39,18 +44,31 @@ export function Notice({
   variant,
   children,
   action,
+  actionBusy = false,
   className,
   as: Tag = "p",
   icon,
   ...rest
 }: Readonly<NoticeProps>) {
+  // A live region says nothing when its text is replaced by the same text. Mounting the message
+  // afresh each time the action stops (the retry failed again) makes it a new addition, which is
+  // announced. Counted while rendering, so the new message is in the same commit that ends the busy
+  // state, not one frame after it.
+  const [wasBusy, setWasBusy] = useState(actionBusy);
+  const [attempts, setAttempts] = useState(0);
+  if (wasBusy !== actionBusy) {
+    setWasBusy(actionBusy);
+    if (wasBusy) setAttempts((n) => n + 1);
+  }
   const cls = ["at-notice", `at-notice--${variant}`, action ? "at-notice--has-action" : null, className]
     .filter(Boolean)
     .join(" ");
   return (
     <Tag className={cls} {...rest}>
       <i className={`ti ti-${icon ?? NOTICE_ICON[variant]} at-notice__icon`} aria-hidden="true" />
-      <span className="at-notice__body">{children}</span>
+      <span key={attempts} className="at-notice__body">
+        {children}
+      </span>
       {action ? <span className="at-notice__action">{action}</span> : null}
     </Tag>
   );

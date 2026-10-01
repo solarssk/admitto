@@ -2,7 +2,21 @@ import { useEffect, useRef, type RefObject } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { isAnyDropdownMenuOpen } from "./useDropdownMenu.js";
 
-/** Trap focus inside a modal panel, close on Escape, lock body scroll while open.
+/** Where focus goes when the control that held it is removed from the panel: the first control, as when
+ * the dialog opened, or the panel itself when nothing in it can take focus. */
+function moveFocusIntoPanel(panel: HTMLElement) {
+  const first = panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+  if (first) {
+    first.focus();
+    return;
+  }
+  panel.tabIndex = -1;
+  panel.focus();
+}
+
+/** Trap focus inside a modal panel, close on Escape, lock body scroll while open. Keeps focus in the
+ * panel when the control that holds it is removed (a Retry whose notice goes away once the retry worked):
+ * the browser drops focus on `<body>` then, and the next Tab would start from the page behind the dialog.
  *
  * `focusWhenReady` is for a panel whose real content loads asynchronously after the
  * modal itself mounts (e.g. an always-routed editor showing a spinner first, unlike
@@ -25,6 +39,33 @@ export function useModalFocusTrap(
     if (!open) return;
     panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
   }, [open, panelRef, focusWhenReady]);
+
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    // The control inside the panel that last held focus. When it has left the DOM and focus is nowhere,
+    // it was removed while focused. A control that is only disabled while it works stays in the DOM and
+    // is left alone, as is focus that went to another element (a nested dialog, a portalled menu).
+    let held: Element | null = panel.contains(document.activeElement) ? document.activeElement : null;
+    const onFocusIn = (event: FocusEvent) => {
+      held = event.target as Element;
+    };
+    const observer = new MutationObserver(() => {
+      const focusIsNowhere = !document.activeElement || document.activeElement === document.body;
+      if (held && !held.isConnected && focusIsNowhere) {
+        held = null;
+        moveFocusIntoPanel(panel);
+      }
+    });
+    panel.addEventListener("focusin", onFocusIn);
+    observer.observe(panel, { childList: true, subtree: true });
+    return () => {
+      panel.removeEventListener("focusin", onFocusIn);
+      observer.disconnect();
+    };
+  }, [open, panelRef]);
 
   useEffect(() => {
     if (!open) return;

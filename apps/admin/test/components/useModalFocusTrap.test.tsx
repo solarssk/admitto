@@ -177,3 +177,148 @@ describe("useModalFocusTrap focusWhenReady", () => {
     expect(document.activeElement).toBe(panel.querySelector("#first"));
   });
 });
+
+describe("useModalFocusTrap when the control that holds focus is removed", () => {
+  /** A form with a notice above it, like a dialog whose Retry notice goes away once the retry worked. */
+  function makePanelWithNotice(): HTMLDivElement {
+    const panel = document.createElement("div");
+    panel.innerHTML = `
+      <div id="notice"><button id="retry">Retry</button></div>
+      <input id="field" />
+      <button id="save">Save</button>
+    `;
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  /** The browser drops focus on <body> when the focused element is removed, and so does jsdom. A
+   * MutationObserver callback is a microtask, so let it run. */
+  const settle = () => act(async () => {});
+
+  it("moves focus to the first control instead of leaving it on <body>", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLElement>("#retry")!;
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    panel.querySelector("#notice")!.remove();
+    expect(document.activeElement).toBe(document.body);
+    await settle();
+
+    expect(document.activeElement).toBe(panel.querySelector("#field"));
+  });
+
+  it("keeps Tab inside the dialog afterwards, wrapping from the last control", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    panel.querySelector<HTMLElement>("#retry")!.focus();
+    panel.querySelector("#notice")!.remove();
+    await settle();
+
+    panel.querySelector<HTMLElement>("#save")!.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+
+    expect(document.activeElement).toBe(panel.querySelector("#field"));
+  });
+
+  it("follows focus: it is the control focused last that counts, not the one focused when the dialog opened", async () => {
+    const panel = document.createElement("div");
+    panel.innerHTML = `<input id="field" /><div id="later-wrap"><button id="later">Later</button></div>`;
+    document.body.appendChild(panel);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    expect(document.activeElement).toBe(panel.querySelector("#field"));
+    panel.querySelector<HTMLElement>("#later")!.focus();
+
+    panel.querySelector("#later-wrap")!.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(panel.querySelector("#field"));
+  });
+
+  it("falls back to the panel itself when nothing left in it can take focus", async () => {
+    const panel = document.createElement("div");
+    panel.innerHTML = `<div id="notice"><button id="retry">Retry</button></div><p>Nothing to press here.</p>`;
+    document.body.appendChild(panel);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    panel.querySelector<HTMLElement>("#retry")!.focus();
+
+    panel.querySelector("#notice")!.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(panel);
+    expect(panel.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("leaves focus alone when it already moved to another element, such as a nested dialog", async () => {
+    const panel = makePanelWithNotice();
+    const nested = document.createElement("button");
+    document.body.appendChild(nested);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    panel.querySelector<HTMLElement>("#retry")!.focus();
+    nested.focus();
+
+    panel.querySelector("#notice")!.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(nested);
+  });
+
+  it("leaves a control alone that is only disabled while it works, instead of pulling focus away from it", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const retry = panel.querySelector<HTMLButtonElement>("#retry")!;
+    retry.focus();
+    // What Chrome does to a focused button that becomes disabled: focus falls to <body>, the button stays.
+    // (jsdom cannot blur a disabled element, so drop the focus first.)
+    retry.blur();
+    retry.disabled = true;
+
+    panel.appendChild(document.createElement("span"));
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
+    expect(retry.isConnected).toBe(true);
+  });
+
+  it("does not take focus when nothing in the panel ever held it", async () => {
+    // A panel with nothing to focus yet, e.g. one still showing its loader.
+    const panel = document.createElement("div");
+    panel.innerHTML = `<p>Loading</p>`;
+    document.body.appendChild(panel);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+    const late = document.createElement("button");
+    panel.appendChild(late);
+    await settle();
+
+    late.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does nothing while the trap is not open", async () => {
+    const panel = makePanelWithNotice();
+    renderHook(() => useModalFocusTrap({ current: panel }, false, vi.fn()));
+    panel.querySelector<HTMLElement>("#retry")!.focus();
+
+    panel.querySelector("#notice")!.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("stops watching once the dialog is closed", async () => {
+    const panel = makePanelWithNotice();
+    const { rerender } = renderHook(({ open }) => useModalFocusTrap({ current: panel }, open, vi.fn()), {
+      initialProps: { open: true },
+    });
+    panel.querySelector<HTMLElement>("#retry")!.focus();
+    rerender({ open: false });
+
+    panel.querySelector("#notice")!.remove();
+    await settle();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+});
