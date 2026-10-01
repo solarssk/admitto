@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A screen that could not load (the "Could not load …" screens with a Retry, and the shorter error lines in Account, Users, Sessions, Security, Import, System logs, the notification bell and the identity editors) is now announced the same way by a screen reader, as an alert, as soon as it appears. Before, some were only a polite status and some were not announced at all. The look is unchanged.
 - The list of events on the start screen now has a **Retry** button when it fails to load, like every other screen that could not load (it only showed the error before).
 
+### Security
+
+- Admin and superadmin sessions now end after 12 hours at most, as the documentation always said. A database migration had stored 7 days as the setting on every instance, so the 12 hour default in the code was never used. A migration now moves a stored value of exactly 7 days to 12 hours; any other value set in Settings → Security is kept, so an instance that chose 7 days on purpose has to set it again. People already signed in keep their original end time, and the 30 minute inactivity limit ends most sessions sooner anyway. No schema change, one data migration.
+
 ## [0.7.4] - 2026-09-30
 
 ### Added
