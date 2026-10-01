@@ -880,6 +880,8 @@ export function CheckInPage({
   // fill in, or mark as loaded, the new one.
   const sidebarGenerationRef = useRef(0);
   const sidebarEventRef = useRef(eventId);
+  const sidebarStatusRef = useRef<ScanHistoryStatus>("loading");
+  sidebarStatusRef.current = sidebarStatus;
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto>(DEFAULT_OPS_CONFIG);
@@ -988,22 +990,6 @@ export function CheckInPage({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [showMobileOverlay]);
 
-  const refreshStatsOnly = useCallback(async () => {
-    if (!eventId) return;
-    const generation = sidebarGenerationRef.current;
-    try {
-      const stats = await fetchCheckInStats(eventId);
-      // Asked for the event left behind: not this one's numbers, and no reason to clear its error.
-      if (generation !== sidebarGenerationRef.current) return;
-      setAdmittedCount(stats.admitted_count);
-      setTotalCount(stats.total_count);
-      // The server answers again after a failed first load: the error card has nothing left to say.
-      setSidebarStatus((current) => (current === "error" ? "ready" : current));
-    } catch {
-      /* read-only context */
-    }
-  }, [eventId]);
-
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
     const generation = sidebarGenerationRef.current;
@@ -1035,6 +1021,26 @@ export function CheckInPage({
       clearTimeout(timeout);
     }
   }, [eventId]);
+
+  const refreshStatsOnly = useCallback(async () => {
+    if (!eventId) return;
+    // After a failed first load the history is missing too: ask for all of it again, so the sidebar is not
+    // marked as loaded on the numbers alone while the server's own history is silently left out.
+    if (sidebarStatusRef.current === "error") {
+      await refreshSidebar();
+      return;
+    }
+    const generation = sidebarGenerationRef.current;
+    try {
+      const stats = await fetchCheckInStats(eventId);
+      // Asked for the event left behind: not this one's numbers.
+      if (generation !== sidebarGenerationRef.current) return;
+      setAdmittedCount(stats.admitted_count);
+      setTotalCount(stats.total_count);
+    } catch {
+      /* read-only context */
+    }
+  }, [eventId, refreshSidebar]);
 
   // A different event starts over from "not loaded yet", with nothing of the last one left to merge in.
   useEffect(() => {

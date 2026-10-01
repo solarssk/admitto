@@ -387,30 +387,80 @@ describe("CheckInPage sidebar Retry", () => {
     expect(screen.getByText(LOAD_ERROR)).toBeTruthy();
   });
 
-  it("is not needed any more once the server answers again: a check-in's stats refresh brings the numbers back", async () => {
-    mockBootstrap();
-    fetchCheckInStats.mockRejectedValueOnce(new Error("network down"));
-    const annaHit = { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" as const };
-    const card = { id: "att-1", name: "Anna Alpha", company: null, department: null, ticket_type: "vip", check_in_status: "not_admitted" as const, admitted_at: null, items: [], notes: [], blocked: false };
+  const annaHit = { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" as const };
+  const annaCard = { id: "att-1", name: "Anna Alpha", company: null, department: null, ticket_type: "vip", check_in_status: "not_admitted" as const, admitted_at: null, items: [], notes: [], blocked: false };
+
+  function mockAdmission() {
     lookupCheckInAttendees.mockResolvedValue([annaHit]);
-    fetchAttendeeCard.mockResolvedValue(card);
+    fetchAttendeeCard.mockResolvedValue(annaCard);
     submitCheckInAdmit.mockResolvedValue({
       status: "VALID",
       confirmed: true,
       admittedAt: "2026-09-01T09:44:00.000Z",
       attendeeId: "att-1",
-      card: { ...card, check_in_status: "admitted", admitted_at: "2026-09-01T09:44:00.000Z" },
+      card: { ...annaCard, check_in_status: "admitted", admitted_at: "2026-09-01T09:44:00.000Z" },
     });
-    renderPage();
-    await screen.findByText(LOAD_ERROR);
+  }
 
+  async function admitAnna() {
     const input = await scanInput();
     fireEvent.change(input, { target: { value: "anna" } });
     fireEvent.keyDown(input, { key: "Enter" });
     fireEvent.click(await screen.findByRole("button", { name: "Confirm check-in" }));
+  }
+
+  it("a check-in after a failed first load asks for the whole sidebar again, and brings it back", async () => {
+    mockBootstrap();
+    fetchCheckInStats.mockRejectedValueOnce(new Error("network down"));
+    mockAdmission();
+    renderPage();
+    await screen.findByText(LOAD_ERROR);
+
+    await admitAnna();
 
     await waitFor(() => expect(screen.queryByText(LOAD_ERROR)).toBeNull(), { timeout: 3000 });
     expect(stats()?.textContent).toContain("20");
+  });
+
+  it("does not mark the sidebar loaded on the numbers alone when the history is what failed: the server's own history comes with it", async () => {
+    mockBootstrap();
+    const serverRow = {
+      id: "h-server",
+      event_id: "evt-live",
+      attendee_id: "att-9",
+      status: "admitted",
+      checked_in_at: "2026-09-01T08:00:00.000Z",
+      checked_in_by: null,
+      device_id: null,
+      source: null,
+      attendee: { name: "Server Side Sam", ticket_type: null },
+    };
+    fetchCheckInHistory.mockRejectedValueOnce(new Error("network down")).mockResolvedValue([serverRow]);
+    mockAdmission();
+    renderPage();
+    await screen.findByText(LOAD_ERROR);
+
+    await admitAnna();
+
+    // The earlier scan that only the server knew about is there, not just the one made on this device.
+    await screen.findByText("Server Side Sam", undefined, { timeout: 3000 });
+    expect(screen.queryByText(LOAD_ERROR)).toBeNull();
+  });
+
+  it("keeps the error, and its Retry, after a check-in while the history still cannot be loaded", async () => {
+    mockBootstrap();
+    fetchCheckInHistory.mockRejectedValue(new Error("network down"));
+    mockAdmission();
+    renderPage();
+    await screen.findByText(LOAD_ERROR);
+
+    await admitAnna();
+    await waitFor(() => expect(submitCheckInAdmit).toHaveBeenCalled());
+    await wait(100);
+
+    expect(screen.getByText(LOAD_ERROR)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("No scans yet")).toBeNull();
   });
 });
 

@@ -209,6 +209,18 @@ describe("ScanHistoryList placeholder rows follow what this event's list had las
     expect(rows(unknown.container)).toBe(4);
   });
 
+  it("uses each event's own remembered size when the same list switches to another event", async () => {
+    localStorage.setItem("admitto_checkin_scans_rows_evt-1", "8");
+    localStorage.setItem("admitto_checkin_scans_rows_evt-2", "1");
+    const { container, rerender } = render(<ScanHistoryList eventId="evt-1" admittedCount={0} totalCount={0} history={[]} status="loading" />);
+    await advance(200);
+    expect(rows(container)).toBe(8);
+
+    rerender(<ScanHistoryList eventId="evt-2" admittedCount={0} totalCount={0} history={[]} status="loading" />);
+    await advance(10);
+    expect(rows(container)).toBe(1);
+  });
+
   it("remembers how many rows it showed once loaded, per event, and not before", async () => {
     const { rerender } = render(
       <ScanHistoryList eventId="evt-1" admittedCount={3} totalCount={9} history={[entry(1), entry(2), entry(3)]} status="loading" />,

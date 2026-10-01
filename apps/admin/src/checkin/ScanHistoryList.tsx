@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Notice } from "@admitto/ui";
 import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { readRememberedRowCount, rememberRowCount } from "../attendees/rememberedRowCount.js";
@@ -74,7 +74,8 @@ export function ScanHistoryList({
   const gate = useLoadingGate(status === "loading");
   // Only a list that started out waiting has something to fade in.
   const [startedLoading] = useState(status === "loading");
-  const [rememberedRows] = useState(() => (eventId ? readRememberedRowCount(eventId, "checkin_scans") : null));
+  // Read again when the event changes, so each event is drawn with its own remembered size.
+  const rememberedRows = useMemo(() => (eventId ? readRememberedRowCount(eventId, "checkin_scans") : null), [eventId]);
   const limit = compact ? 3 : CK_RECENT_SCANS_SIDEBAR_LIMIT;
   const shownRows = Math.min(history.length, limit);
   useEffect(() => {
