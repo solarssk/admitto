@@ -44,3 +44,14 @@
     animation-duration: 2.5s;
   }
 }
+
+@media (forced-colors: active) {
+  .at-spinner__ring {
+    /* Windows High Contrast replaces every border colour with one system colour, so the bright head and
+       the faint track merge into a uniform circle and the rotation cannot be seen. Opting out and picking
+       two different system colours keeps the head visible against the track. */
+    forced-color-adjust: none;
+    border-color: GrayText;
+    border-top-color: Highlight;
+  }
+}

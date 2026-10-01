@@ -19,6 +19,7 @@ import {
   logOidcLoginSuccess,
   logRoleElevated,
   checkNewCountryLogin,
+  persistentCookieMaxAgeSeconds,
   SESSION_COOKIE_NAME,
   type ConsumedOidcAuthState,
   type ExternalIdentityClaims,
@@ -200,7 +201,7 @@ async function finalizeOidcLogin(
       return oidcFailedRedirect(c);
     }
 
-    setSessionCookie(c, rawToken);
+    setSessionCookie(c, rawToken, persistentCookieMaxAgeSeconds(session));
     // Before logOidcLoginSuccess persists this login's own SecurityAuditLog row - see
     // checkNewCountryLogin's own doc comment for why that ordering matters.
     await checkNewCountryLogin(db, { userId, ip: resolveClientIp(c), userAgent: c.req.header("user-agent") });
