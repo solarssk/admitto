@@ -129,9 +129,30 @@
 }
 
 .add-attendee-modal__fields {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* Drawn over the fields while they load. The fields themselves are hidden (.at-loading-hold), and
+   `visibility` is inherited, so the skeleton switches itself back on. Same gap and field height as
+   the real form (60px: a 20px label and a 36px control), so nothing moves when they replace it. */
+.add-attendee-modal__fields-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  visibility: visible;
+}
+
+.add-attendee-modal__skeleton-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 60px;
 }
 
 .add-attendee-modal__time-range {

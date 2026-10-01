@@ -19,9 +19,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    */
   loading?: boolean;
   /**
-   * Label shown while `loading` ("Saving…", "Sending…", "Testing…"): the verb of this action,
-   * never a generic "Working…". Optional. The button keeps the width of the longer of the two
-   * labels, so switching never shifts the layout next to it.
+   * Label shown while `loading` ("Sending…", "Testing…"): the verb of this action, never a generic
+   * "Working…". Optional. The button keeps the width of the longer of the two labels, so switching
+   * never shifts the layout next to it, which also means a busy label LONGER than the label at rest
+   * ("Save" → "Saving…") makes the button that much wider all the time. Pass one only when it is
+   * not longer; otherwise leave it out: the spinner replaces the icon, or covers the label when
+   * there is no icon, and the button stays as wide as it is at rest.
    */
   loadingLabel?: ReactNode;
 }

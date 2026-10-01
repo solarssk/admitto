@@ -25,12 +25,22 @@
   min-height: 200px;
 }
 
-/* Re-fetching with existing rows still on screen (filter/page change) — dim them
-   instead of leaving stale data looking indistinguishable from fresh data. */
+/* Re-fetching with existing rows still on screen (filter/page change): the rows cannot be
+   clicked at once, so nobody acts on data that is about to be replaced. */
 .attendees-table-wrap--loading {
+  pointer-events: none;
+}
+
+/* ...and once the fetch has taken long enough to notice (useLoadingGate, 200ms) they are dimmed,
+   so stale data does not look like fresh data. */
+.attendees-table-wrap--dim {
   opacity: 0.5;
   transition: opacity var(--dur-fast);
-  pointer-events: none;
+}
+
+/* Anchor for the thin refetch bar (TopProgressBar placement="container") along the top of the list. */
+.attendees-list-region {
+  position: relative;
 }
 
 .attendees-table-wrap .table {

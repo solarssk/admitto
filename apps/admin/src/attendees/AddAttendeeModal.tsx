@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
 import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
@@ -13,9 +13,10 @@ import {
 } from "./customData.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../utils/loading-timing.js";
 import "./add-attendee-modal.css";
 
 type AddAttendeeModalProps = {
@@ -41,6 +42,21 @@ function add409ErrorMessage(err: ApiError): string {
   return "This email is already registered for this event.";
 }
 
+/** The dialog's fields while they load: the five text fields and the ticket type, drawn over the (still invisible) real ones. */
+function FieldsSkeleton() {
+  return (
+    <div className="add-attendee-modal__fields-skeleton">
+      <output className="sr-only">Loading attendee form</output>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div className="add-attendee-modal__skeleton-field" key={i}>
+          <Skeleton variant="rect" width="28%" height={14} />
+          <Skeleton variant="rect" height={36} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -59,6 +75,10 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [attributeFieldsLoading, setAttributeFieldsLoading] = useState(false);
   const [attributeFieldsError, setAttributeFieldsError] = useState<string | null>(null);
+  // How often each catalog was retried from its error notice since the dialog opened. A retry reruns
+  // only that catalog, so what the operator typed in the meantime (and the other catalog) stays.
+  const [fieldsRetries, setFieldsRetries] = useState(0);
+  const [ticketTypesRetries, setTicketTypesRetries] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,27 +87,40 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     setAttributeFields([]);
     setCustomFields({});
     setAttributeFieldsLoading(true);
-    setAttributeFieldsError(null);
+    // A retry keeps the error (and its busy Retry button) on screen until the answer is in.
+    if (fieldsRetries === 0) setAttributeFieldsError(null);
     let cancelled = false;
-    fetchAttendeeCustomFields(eventId)
+    // The form is held back until this answers, so a request that stalls must not hold it forever:
+    // give up after LOAD_TIMEOUT_MS, which ends in the error below and releases the form.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+    fetchAttendeeCustomFields(eventId, controller.signal)
       .then((fields) => {
         if (cancelled) return;
         setAttributeFields(fields);
         setCustomFields(initialCustomFieldValues(fields));
+        setAttributeFieldsError(null);
       })
       .catch(() => {
         if (!cancelled) {
           setAttributeFields([]);
-          setAttributeFieldsError("Could not load attribute fields. Try reopening the dialog.");
+          setAttributeFieldsError(
+            controller.signal.aborted
+              ? `Could not load custom fields. ${LOAD_TIMEOUT_MESSAGE}`
+              : "Could not load custom fields.",
+          );
         }
       })
       .finally(() => {
+        clearTimeout(timeout);
         if (!cancelled) setAttributeFieldsLoading(false);
       });
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
-  }, [eventId, open]);
+  }, [eventId, open, fieldsRetries]);
 
   useEffect(() => {
     if (!open) return;
@@ -98,26 +131,45 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     // exist there at all, either way not what the admin intended when they picked it. Same fix
     // already applied to CommunicationSendDialog for the same stale-selection-on-switch pattern.
     setTicketType("");
-    setTicketTypesError(null);
+    if (ticketTypesRetries === 0) setTicketTypesError(null);
     setTicketTypesLoading(true);
     let cancelled = false;
-    fetchTicketTypes(eventId)
+    // Same as the custom fields above: a stalled request ends in an error after LOAD_TIMEOUT_MS.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+    fetchTicketTypes(eventId, controller.signal)
       .then((types) => {
-        if (!cancelled) setTicketTypes(types);
+        if (cancelled) return;
+        setTicketTypes(types);
+        setTicketTypesError(null);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setTicketTypes([]);
-          setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
+          setTicketTypesError(
+            controller.signal.aborted
+              ? `Could not load ticket types. ${LOAD_TIMEOUT_MESSAGE}`
+              : operatorApiErrorMessage(err, "Could not load ticket types."),
+          );
         }
       })
       .finally(() => {
+        clearTimeout(timeout);
         if (!cancelled) setTicketTypesLoading(false);
       });
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
-  }, [eventId, open]);
+  }, [eventId, open, ticketTypesRetries]);
+
+  // Every close starts the next open from a clean slate, including the form being held back again.
+  useEffect(() => {
+    if (open) return;
+    setFieldsRetries(0);
+    setTicketTypesRetries(0);
+  }, [open]);
 
   const resetForm = () => {
     setEmail("");
@@ -208,11 +260,18 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     }
   };
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // these "Loading…" hints on and off faster than they can register as loading — show them
-  // only once the fetch has genuinely taken a moment.
-  const showAttributeFieldsLoading = useDelayedLoading(attributeFieldsLoading);
-  const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
+  // Both catalogs (ticket types, custom fields) load as the dialog opens, and the form appears as one
+  // piece once they are in: until then the fields are in the dialog but invisible (so the dialog
+  // already has its size), and a skeleton of the same shape is drawn over them after 200ms and kept
+  // for at least 400ms. A fetch that answers faster shows nothing at all. A retry does not hold the
+  // form back again: it is on screen with what has been typed in it, and stays there.
+  const fieldsGate = useLoadingGate(
+    (attributeFieldsLoading && fieldsRetries === 0) || (ticketTypesLoading && ticketTypesRetries === 0),
+  );
+  const fieldsHeld = !fieldsGate.showContent;
+  // A Retry is busy at once and for at least 400ms, so one that fails again right away still shows it ran.
+  const fieldsRetryBusy = useMinimumBusy(attributeFieldsLoading && fieldsRetries > 0);
+  const ticketTypesRetryBusy = useMinimumBusy(ticketTypesLoading && ticketTypesRetries > 0);
 
   if (!open) return null;
 
@@ -233,22 +292,48 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           </Notice>
         )}
         {attributeFieldsError && (
-          <Notice variant="error" role="alert">
+          <Notice
+            variant="error"
+            role="alert"
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={attributeFieldsLoading || fieldsRetryBusy}
+                onClick={() => setFieldsRetries((n) => n + 1)}
+              >
+                Retry
+              </Button>
+            }
+          >
             {attributeFieldsError}
           </Notice>
         )}
         {ticketTypesError && (
-          <Notice variant="error" role="alert">
+          <Notice
+            variant="error"
+            role="alert"
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={ticketTypesLoading || ticketTypesRetryBusy}
+                onClick={() => setTicketTypesRetries((n) => n + 1)}
+              >
+                Retry
+              </Button>
+            }
+          >
             {ticketTypesError}
           </Notice>
         )}
-        {attributeFieldsLoading && showAttributeFieldsLoading && (
-          <p className="add-attendee-modal__hint">Loading attribute fields…</p>
-        )}
-        {ticketTypesLoading && showTicketTypesLoading && (
-          <p className="add-attendee-modal__hint">Loading ticket types…</p>
-        )}
-        <div className="add-attendee-modal__fields">
+        <div
+          className={`add-attendee-modal__fields ${fieldsHeld ? "at-loading-hold" : "at-fade-in"}`}
+          aria-busy={fieldsHeld || undefined}
+        >
+          {fieldsHeld && fieldsGate.showIndicator && <FieldsSkeleton />}
           <Input
             label="Email *"
             type="text"
@@ -349,8 +434,15 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="button" variant="primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
-              {submitting ? "Adding…" : "Add attendee"}
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!canSubmit}
+              loading={submitting}
+              loadingLabel="Adding…"
+              onClick={() => void handleSubmit()}
+            >
+              Add attendee
             </Button>
           </div>
         </div>
