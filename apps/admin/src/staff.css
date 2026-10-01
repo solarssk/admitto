@@ -813,15 +813,6 @@ html:not(.icons-ready) .ti {
   font-size: 1.5rem;
 }
 
-.notif-bell__retry {
-  border: 1px solid var(--border);
-  background: none;
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
 .notif-bell__list {
   display: flex;
   flex-direction: column;

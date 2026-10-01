@@ -35,13 +35,29 @@ describe("IconButton", () => {
   });
 
   describe("loading", () => {
-    it("is aria-busy and aria-disabled, shows a spinner in place of the icon and keeps its name", () => {
+    it("is aria-busy and aria-disabled and shows a spinner in place of the icon", () => {
       render(<IconButton icon={icon} label="Mark all as read" loading />);
       const btn = screen.getByRole("button", { name: "Mark all as read" });
       expect(btn.getAttribute("aria-busy")).toBe("true");
       expect(btn.getAttribute("aria-disabled")).toBe("true");
       expect(screen.queryByTestId("icon")).toBeNull();
       expect(btn.querySelector(".at-iconbtn__spinner")?.getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("names the button by `loadingLabel` while busy, and by `label` again afterwards", () => {
+      const { rerender } = render(<IconButton icon={icon} label="Mark all as read" loadingLabel="Marking…" loading />);
+      expect(screen.getByRole("button", { name: "Marking…" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Mark all as read" })).toBeNull();
+
+      rerender(<IconButton icon={icon} label="Mark all as read" loadingLabel="Marking…" loading={false} />);
+      expect(screen.getByRole("button", { name: "Mark all as read" })).toBeTruthy();
+    });
+
+    it("keeps its name while busy when no `loadingLabel` is given, and ignores one while it is not busy", () => {
+      const { rerender } = render(<IconButton icon={icon} label="Go" loading />);
+      expect(screen.getByRole("button", { name: "Go" })).toBeTruthy();
+      rerender(<IconButton icon={icon} label="Go" loadingLabel="Going…" />);
+      expect(screen.getByRole("button", { name: "Go" })).toBeTruthy();
     });
 
     it("ignores clicks: no handler, no bubbling to a clickable parent", () => {

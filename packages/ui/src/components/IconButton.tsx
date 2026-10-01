@@ -12,9 +12,14 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
    * `aria-disabled` (not `disabled`) and a click does nothing. It stays focusable on purpose: a browser
    * drops the focus of a button that becomes `disabled`, so a keyboard user would lose their place the
    * moment they pressed it. While busy it is never `disabled`, even when `disabled` is also set; that
-   * applies again when the work ends. Its accessible name stays `label`.
+   * applies again when the work ends.
    */
   loading?: boolean;
+  /**
+   * The accessible name while `loading`, the verb of this action ("Marking…"), as `Button`'s `loadingLabel`:
+   * there is no visible text to swap, so this is what assistive tech hears for the wait. Defaults to `label`.
+   */
+  loadingLabel?: string;
 }
 
 export function IconButton({
@@ -23,6 +28,7 @@ export function IconButton({
   label,
   className,
   loading: loadingProp,
+  loadingLabel,
   disabled = false,
   onClick,
   ...rest
@@ -43,7 +49,7 @@ export function IconButton({
     <button
       type="button"
       className={cls}
-      aria-label={label}
+      aria-label={loading && loadingLabel ? loadingLabel : label}
       disabled={disabled && !loading}
       aria-disabled={loading || undefined}
       aria-busy={loading || undefined}

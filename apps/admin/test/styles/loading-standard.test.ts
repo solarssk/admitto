@@ -126,10 +126,7 @@ const ALLOWED: Record<Rule, Counts> = {
   "error-state-not-an-alert": {},
   "retry-outside-an-alert": {},
   // A Retry drawn as a raw <button>, each to move to <Button loading> with the screen that owns it.
-  "retry-in-a-raw-button": {
-    "apps/admin/src/components/NotificationBell.tsx": 1,
-    "apps/admin/src/settings/EventBounceIngestPanel.tsx": 1,
-  },
+  "retry-in-a-raw-button": {},
   // Hand-made busy states on a raw <button>, each to move to <Button loading> with the screen that owns it.
   "raw-button-busy-disabled": Object.fromEntries(
     Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS).map(([file, { count }]) => [file, count]),
