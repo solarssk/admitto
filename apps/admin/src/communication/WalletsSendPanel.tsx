@@ -5,7 +5,9 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { TicketTypeDto, WalletMessageAttendeeDto, WalletMessageFilter } from "../api/types.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { RetryHint } from "../components/RetryHint.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { useRetry } from "../hooks/useRetry.js";
 import { AttendeePicker } from "./AttendeePicker.js";
 import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
 import "./communication.css";
@@ -74,7 +76,8 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<{ sent: number; skipped: number; errored: number } | null>(null);
-  const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  const ticketTypesRetry = useRetry();
+  const { token: ticketTypesToken, begin: beginTicketTypes, end: endTicketTypes } = ticketTypesRetry;
 
   const resetOutcome = useCallback(() => {
     runIdRef.current += 1;
@@ -102,20 +105,26 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
     setTicketType("");
     setTicketTypes([]);
     let cancelled = false;
-    setTicketTypesError(null);
+    // A retry keeps its error, and the busy Retry next to it, on screen until the answer is in.
+    if (!beginTicketTypes()) setTicketTypesError(null);
     fetchTicketTypes(eventId)
       .then((types) => {
-        if (!cancelled) setTicketTypes(types);
+        if (cancelled) return;
+        setTicketTypes(types);
+        setTicketTypesError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setTicketTypes([]);
         setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
+      })
+      .finally(() => {
+        if (!cancelled) endTicketTypes();
       });
     return () => {
       cancelled = true;
     };
-  }, [eventId, ticketTypesRetryToken]);
+  }, [eventId, ticketTypesToken, beginTicketTypes, endTicketTypes]);
 
   useEffect(() => {
     if (phase !== "polling" || !jobId) return;
@@ -275,16 +284,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
           </>
         )}
         {filterType === "ticket_type" && ticketTypesError && (
-          <p className="mail-field-hint" role="alert">
-            {ticketTypesError}{" "}
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => setTicketTypesRetryToken((n) => n + 1)}
-            >
-              Retry
-            </button>
-          </p>
+          <RetryHint message={ticketTypesError} busy={ticketTypesRetry.busy} onRetry={ticketTypesRetry.retry} />
         )}
         {filterType === "attendee_ids" && (
           <AttendeePicker<WalletMessageAttendeeDto>
