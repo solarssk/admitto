@@ -204,7 +204,11 @@ describe("RouteFallback", () => {
   it("shows the start loader at once and the taking-longer line only after 8 seconds", async () => {
     vi.useFakeTimers();
     render(<RouteFallback />);
-    expect(screen.getByRole("status", { name: "Loading" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+    // The line under the logo says what is loading, not just that something is.
+    expect(screen.getByText("Loading page…")).toBeTruthy();
+    // Structurally, too: the page-change bar has the same default name, so the name alone does not tell them apart.
+    expect(document.querySelector(".shell-loading .at-loader--page")).not.toBeNull();
     await advance(7999);
     expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
     await advance(1);

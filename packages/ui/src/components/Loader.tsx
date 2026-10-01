@@ -2,9 +2,13 @@ import { useState, type CSSProperties, type HTMLAttributes } from "react";
 import { LOADER_CYCLE_MS, loaderElapsedMs } from "../loader-clock.js";
 
 export interface LoaderProps extends Omit<HTMLAttributes<HTMLOutputElement>, "children"> {
-  /** Accessible name announced to assistive tech. Visible text is only ever the optional `caption`. */
-  label?: string;
-  /** Short visible line under the mark. Reserved for the "taking longer than usual" message. */
+  /**
+   * What is loading ("Loading sessions", without a closing ellipsis): the accessible name, and the line
+   * shown under the mark or ring. Required: a loader that does not say what it waits for is what
+   * operators complain about.
+   */
+  label: string;
+  /** The "taking longer than usual" message, shown under the label. */
   caption?: string;
 }
 
@@ -27,9 +31,14 @@ const MARK = (
   </svg>
 );
 
+/** A plain ring for panels. The logo is for whole screens only: in every card it is too much, and its
+ * drawn tick looks like a checkbox the user is meant to tick. Not `Spinner`: that one is a status region
+ * of its own, and this ring sits inside the loader's. Styled in `loader.css` (brand colour). */
+const RING = <span className="at-loader__ring" aria-hidden="true" />;
+
 function LoaderBody({
   size,
-  label = "Loading",
+  label,
   caption,
   className,
   style,
@@ -42,16 +51,24 @@ function LoaderBody({
   const merged = { "--at-loader-phase": `-${Math.round(phaseMs)}ms`, ...style } as CSSProperties;
   return (
     <output className={cls} aria-label={label} style={merged} {...rest}>
-      {MARK}
-      {caption ? <span className="at-loader__caption">{caption}</span> : null}
+      <span className="at-loader__stack">
+        {size === "page" ? MARK : RING}
+        <span className="at-loader__text">
+          {/* The name is already in aria-label: this line is for everyone else. */}
+          <span className="at-loader__label" aria-hidden="true">
+            {label}…
+          </span>
+          {caption ? <span className="at-loader__caption">{caption}</span> : null}
+        </span>
+      </span>
     </output>
   );
 }
 
 /**
  * Loading state for a whole screen (app start, session check, switching event): the Admitto mark
- * at 88px, centred in whatever box it fills. Never use it below 40px or inside a button; for those
- * use `Spinner`.
+ * at 88px, centred in whatever box it fills, with a line under it saying what is loading. Never use
+ * it inside a card or a button; for a panel use `SectionLoader`, `Skeleton` or `Spinner`.
  */
 export function PageLoader(props: Readonly<LoaderProps>) {
   return <LoaderBody size="page" {...props} />;
@@ -59,8 +76,10 @@ export function PageLoader(props: Readonly<LoaderProps>) {
 
 /**
  * Loading state for a panel, card or dialog whose final shape is not known (settings panels,
- * editors in dialogs): the mark at 52px inside a region that keeps `minHeight`. When the shape is
- * known, use `Skeleton` instead.
+ * editors in dialogs): a 32px ring and the line saying what is loading, inside a region that keeps
+ * `minHeight` (not less than 8rem, so the line and the "taking longer" message fit under the ring).
+ * Use it at most once per view. When the shape is known, or a view has several cards, use `Skeleton`
+ * instead.
  */
 export function SectionLoader({ minHeight = "12rem", style, ...props }: Readonly<SectionLoaderProps>) {
   return <LoaderBody size="section" style={{ minHeight, ...style }} {...props} />;

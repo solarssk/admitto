@@ -1,9 +1,9 @@
 /**
- * One animation clock shared by every logo loader (the static splash in `index.html`, the boot
- * loader, the event loader, a route fallback). Each of those is a separate element, so on their own
- * each would start its draw-in from the beginning and the tick would keep restarting as one
- * loader is swapped for the next. Giving every loader the same phase makes the animation carry on
- * across the swap.
+ * One animation clock shared by the static splash in `index.html` and every `PageLoader` and
+ * `SectionLoader` (the boot loader, the event loader, a route fallback, a panel). Each of those is a
+ * separate element, so on their own each would start its animation from the beginning and the tick
+ * (or the ring) would keep restarting as one loader is swapped for the next. Giving each the same
+ * phase makes the animation carry on across the swap.
  */
 
 /** Length of one loader animation cycle. Keep in step with `loader.css` and the splash in `apps/admin/index.html`. */

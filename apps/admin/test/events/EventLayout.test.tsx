@@ -96,6 +96,9 @@ describe("EventLayout (#274)", () => {
 
     // Pre-resolution: the loading state, not the shell.
     expect(document.querySelector(".shell-loading")).toBeTruthy();
+    // ...and it says what it is waiting for, so the logo on its own is not left to be guessed at.
+    expect(screen.getByRole("status", { name: "Loading event" })).toBeTruthy();
+    expect(screen.getByText("Loading event…")).toBeTruthy();
 
     await screen.findByText("shell:Spring Gala");
     expect(fetchAdminEvent).toHaveBeenCalledTimes(1);

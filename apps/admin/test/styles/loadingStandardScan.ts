@@ -14,7 +14,7 @@ export const RULE_HINTS: Record<Rule, string> = {
   "hand-rolled-spinner-css":
     "Use <Spinner> (or <Button loading> inside a button) from @admitto/ui. Do not define a *spin*/*shimmer* @keyframes or animate `at-spin` in admin CSS.",
   "bare-loading-text":
-    'Do not render "Loading…" text. Use PageLoader / SectionLoader for an unknown shape, Skeleton for a known one, all behind useLoadingGate. See AGENTS.md "Loading and busy states".',
+    'Do not render "Loading…" text. Use Skeleton when the shape is known, SectionLoader (once per view) when it is not, PageLoader only for a whole screen, all behind useLoadingGate. See AGENTS.md "Loading and busy states".',
   "busy-label-swap":
     'Do not swap a button label for "Saving…" by hand. Use <Button loading loadingLabel="Saving…">, which keeps the width and disables the button.',
 };

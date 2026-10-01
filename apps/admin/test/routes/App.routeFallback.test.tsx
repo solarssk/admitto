@@ -61,7 +61,11 @@ describe("App while the code of the first page is still downloading", () => {
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("status", { name: "Loading" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading page" })).toBeTruthy();
+    // The line under the logo says what is loading, not just that something is.
+    expect(screen.getByText("Loading page…")).toBeTruthy();
+    // Structurally, too: the page-change bar has the same default name, so the name alone does not tell them apart.
+    expect(document.querySelector(".shell-loading .at-loader--page")).not.toBeNull();
     expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
 
     await act(async () => {
