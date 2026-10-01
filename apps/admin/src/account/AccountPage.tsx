@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
 import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Skeleton, Switch, TopProgressBar, useToast } from "@admitto/ui";
 import {
@@ -430,6 +430,42 @@ function withSavedProfile(account: AccountDto | null, saved: Awaited<ReturnType<
   return account && { ...account, ...saved };
 }
 
+interface ProfileFormSetters {
+  setDisplayName: Dispatch<SetStateAction<string>>;
+  setPreferredLocale: Dispatch<SetStateAction<string | null>>;
+  setPreferredTimeFormat: Dispatch<SetStateAction<"12h" | "24h" | null>>;
+  setPhoneCountryCode: Dispatch<SetStateAction<string>>;
+  setPhoneNumber: Dispatch<SetStateAction<string>>;
+}
+
+/**
+ * Brings the profile form up to date with a fresh account, field by field: a field nobody has touched (still
+ * what the previous account said, `baseline`) takes the fresh value, so a change made elsewhere shows up and
+ * does not make Save light up with the old one; a field that has been edited keeps what was typed, so a refresh
+ * after another action never overwrites it. The first load has no baseline: every field is filled.
+ */
+function syncProfileForm(set: ProfileFormSetters, baseline: AccountDto | null, fresh: AccountDto): void {
+  const next = <T,>(current: T, was: T | undefined, now: T): T => (was === undefined || current === was ? now : current);
+  const was = baseline && {
+    displayName: baseline.display_name ?? "",
+    locale: baseline.preferred_locale,
+    timeFormat: baseline.preferred_time_format,
+    phoneCountryCode: baseline.phone_country_code ?? "",
+    phoneNumber: baseline.phone_number ?? "",
+  };
+  set.setDisplayName((cur) => next(cur, was?.displayName, fresh.display_name ?? ""));
+  set.setPreferredLocale((cur) => next(cur, was?.locale, fresh.preferred_locale));
+  set.setPreferredTimeFormat((cur) => next(cur, was?.timeFormat, fresh.preferred_time_format));
+  set.setPhoneCountryCode((cur) => next(cur, was?.phoneCountryCode, fresh.phone_country_code ?? ""));
+  set.setPhoneNumber((cur) => next(cur, was?.phoneNumber, fresh.phone_number ?? ""));
+}
+
+/** What a screen reader is told while the account or the sessions list is being refreshed (once it is noticeable): the cards ignore clicks meanwhile. */
+function refreshStatusText(accountRefreshing: boolean, sessionsRefreshing: boolean): string {
+  if (accountRefreshing) return "Refreshing your account. Actions are paused until it finishes.";
+  return sessionsRefreshing ? "Refreshing your sessions. Actions are paused until it finishes." : "";
+}
+
 /** The text for a failed load: the time limit's own message, or the server's (through the audience-tiered copy rules). */
 function loadFailureMessage(limit: { timedOut: () => boolean }, err: unknown, fallback: string): string {
   return limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, fallback);
@@ -572,7 +608,14 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   // in progress), exactly where it is, instead of unmounting the page for the length of the request.
   const accountLoadedRef = useRef(false);
   const accountRequestRef = useRef(0);
+  // The account the page holds now: the baseline the profile form is compared with (profileDirty) and refreshed against.
+  const accountRef = useRef<AccountDto | null>(null);
+  const commitAccount = useCallback((next: AccountDto | null) => {
+    accountRef.current = next;
+    setAccount(next);
+  }, []);
   const sessionsLoadedRef = useRef(false);
+  const sessionsRequestRef = useRef(0);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     const first = !accountLoadedRef.current;
@@ -588,16 +631,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       const data = await fetchAccount(limit.signal);
       if (superseded()) return;
       accountLoadedRef.current = true;
-      setAccount(data);
-      // The profile form is filled in once. A refresh after another change must not overwrite what is being
-      // typed into it meanwhile (a profile Save sets these fields from its own answer).
-      if (first) {
-        setDisplayName(data.display_name ?? "");
-        setPreferredLocale(data.preferred_locale);
-        setPreferredTimeFormat(data.preferred_time_format);
-        setPhoneCountryCode(data.phone_country_code ?? "");
-        setPhoneNumber(data.phone_number ?? "");
-      }
+      // Before the account is replaced: the form is brought up to date against the account it replaces.
+      syncProfileForm({ setDisplayName, setPreferredLocale, setPreferredTimeFormat, setPhoneCountryCode, setPhoneNumber }, accountRef.current, data);
+      commitAccount(data);
       setPreferredLocaleStore(data.preferred_locale ?? undefined);
       setPreferredTimeFormatStore(data.preferred_time_format);
       setRefreshError(null);
@@ -619,26 +655,30 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [commitAccount]);
 
   const loadSessions = useCallback(async (signal?: AbortSignal) => {
     if (sessionsLoadedRef.current) setSessionsRefreshing(true);
     else setSessionsLoading(true);
     setSessionsError(null);
+    // As for the account: an answer that is no longer the latest ask is dropped, so an older list never replaces a newer one.
+    const mine = ++sessionsRequestRef.current;
+    const superseded = () => signal?.aborted || mine !== sessionsRequestRef.current;
     const limit = loadWithTimeout(signal);
     try {
       const data = await fetchAccountSessions(limit.signal);
+      if (superseded()) return;
       sessionsLoadedRef.current = true;
       setSessions(data.sessions);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (superseded()) return;
       if (redirectToLoginIfUnauthorized(err)) return;
       // The error replaces the list, so the next try is a first load again: Retry shows the loader.
       sessionsLoadedRef.current = false;
       setSessionsError(loadFailureMessage(limit, err, "Could not load sessions."));
     } finally {
       limit.done();
-      if (!signal?.aborted) {
+      if (!superseded()) {
         setSessionsLoading(false);
         setSessionsRefreshing(false);
       }
@@ -722,8 +762,14 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const sessionsRefetch = useLoadingGate(sessionsRefreshing);
   // The same for the account-backed cards (Profile, Password, Two-factor) while the account is refreshed after a change.
   const accountRefetch = useLoadingGate(refreshing);
-  // A Retry on the refresh warning that fails at once still shows that it ran, and is announced again.
-  const refreshRetrying = useMinimumBusy(refreshing);
+  // A Retry on the refresh warning that fails at once still shows that it ran, and is announced again. Driven by
+  // the click on that Retry, not by every refresh: otherwise the warning would first appear with a busy Retry.
+  const [retryingRefresh, setRetryingRefresh] = useState(false);
+  const refreshRetrying = useMinimumBusy(retryingRefresh);
+  const retryRefresh = () => {
+    setRetryingRefresh(true);
+    void loadAccount().finally(() => setRetryingRefresh(false));
+  };
   const sessionsSlow = useDelayedLoading(sessionsLoading && accountGate.showContent, SLOW_NOTICE_MS);
   const notifPrefsSlow = useDelayedLoading(notifPrefsLoading && accountGate.showContent, SLOW_NOTICE_MS);
   // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
@@ -812,8 +858,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     const sessionsRevokedSuffix =
       sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessionsRevokedPlural} revoked.` : "";
     addToast(`Password changed.${sessionsRevokedSuffix}`, "success");
-    await loadAccount();
-    await loadSessions();
+    // Together: the sessions list is refreshing (and blocked) from the start, not only once the account is back.
+    await Promise.all([loadAccount(), loadSessions()]);
   }
 
   /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
@@ -872,7 +918,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     const mfaSessionsRevokedSuffix =
       sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
     addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
-    await loadAccount(); await loadSessions();
+    await Promise.all([loadAccount(), loadSessions()]);
   }
 
   /** Shared by the confirm dialog's own submit and the step-up dialog's confirm, `proof` is only
@@ -889,8 +935,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     setUnlinkSsoOpen(false);
     setUnlinkStepUpOpen(false);
     addToast("SSO unlinked. Sign in with your new password next time.", "success");
-    await loadAccount();
-    await loadSessions();
+    await Promise.all([loadAccount(), loadSessions()]);
   }
 
   async function handleUnlinkSsoConfirm(): Promise<void> {
@@ -1292,7 +1337,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       setPhoneNumber(result.phone_number ?? "");
       setPreferredLocaleStore(result.preferred_locale ?? undefined);
       setPreferredTimeFormatStore(result.preferred_time_format);
-      setAccount((prev) => withSavedProfile(prev, result));
+      commitAccount(withSavedProfile(accountRef.current, result));
       addToast(
         localeChanged
           ? "Profile saved. Reload this page to refresh session timestamps below."
@@ -2272,6 +2317,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   return (
     <>
+      {/* Outside the cards (which are busy, and one inert): what a screen reader is told about the pause. */}
+      <output className="sr-only">{refreshStatusText(accountRefetch.showIndicator, sessionsRefetch.showIndicator)}</output>
       {refreshError && (
         <Notice
           variant="warning"
@@ -2279,7 +2326,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           className="account-warn-block"
           actionBusy={refreshRetrying}
           action={
-            <Button type="button" variant="secondary" size="sm" loading={refreshRetrying} onClick={() => void loadAccount()}>
+            <Button type="button" variant="secondary" size="sm" loading={refreshRetrying} onClick={retryRefresh}>
               Retry
             </Button>
           }

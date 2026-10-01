@@ -25,9 +25,9 @@ function SkeletonRegion({ label, slow, held = false, className, children }: Read
   return (
     <output aria-label={label} className={cls || undefined}>
       {children}
-      {/* gridColumn: a full row when the region is a grid (the profile form, the two cards of Password), ignored in a stack. */}
+      {/* gridColumn: a full row when the region is a grid (the profile form, the two cards of Password), ignored in a stack. --text-secondary: on the Password tab the line sits on the page background, where muted grey is under 4.5:1. */}
       {slow ? (
-        <span className="at-hint" style={{ gridColumn: "1 / -1" }}>
+        <span className="at-hint" style={{ gridColumn: "1 / -1", color: "var(--text-secondary)" }}>
           {SLOW_NOTICE_TEXT}
         </span>
       ) : null}
