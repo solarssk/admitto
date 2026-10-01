@@ -664,3 +664,20 @@
 .account-mfa-method__action {
   flex-shrink: 0;
 }
+
+/* A card whose data is being refreshed after a change (the sessions list, and the cards that show the account): the
+   content stays. `.account-refetch` is the box the thin bar along its top is positioned in, and it stays as long as
+   the bar does; `--busy` stops the pointer while the refresh runs (the keys are stopped in refetch.ts, by inert
+   or by swallowing clicks); `--dim` starts once the wait is noticeable, so a quick refresh never flickers. */
+.account-refetch {
+  position: relative;
+}
+
+.account-refetch--busy {
+  pointer-events: none;
+}
+
+.account-refetch--dim {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast);
+}

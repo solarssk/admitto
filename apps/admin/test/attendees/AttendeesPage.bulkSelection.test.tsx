@@ -2955,6 +2955,43 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     });
     // The selection survives the retry — the whole point was not losing it.
     expect(bulkBar().getByText("1")).toBeTruthy();
+    // And the failure is over: it is no longer among the things the page says is wrong.
+    const spoken = screen.getAllByRole("alert").find((el) => el.classList.contains("sr-only"))!;
+    expect(spoken.textContent).not.toContain("Could not load items.");
+  });
+
+  it("says the items failure from page entry, keeps saying it while a retry runs, and says it again when the retry fails again", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    const announcer = () => screen.getAllByRole("alert").find((el) => el.classList.contains("sr-only"))!;
+    // Nothing is selected and no menu is open: the failure is already spoken. (This file never mocks the
+    // custom-field catalog, so that one is always among the messages too.)
+    await waitFor(() => expect(announcer().textContent).toContain("Could not load items."));
+    const before = announcer();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    let failRetry: (error: Error) => void = () => {};
+    fetchEventItems.mockImplementationOnce(
+      () => new Promise((_, reject) => {
+        failRetry = reject;
+      }),
+    );
+    fireEvent.click(bulkBar().getByText("Retry loading items"));
+    // The retry keeps the failure on screen (the same node, the same text) until it has an answer.
+    expect(announcer()).toBe(before);
+    expect(announcer().textContent).toContain("Could not load items.");
+
+    await act(async () => failRetry(new Error("still down")));
+    // Same text again, in a new node: that is what a live region announces. Retry has no busy flag of its own
+    // to wait for here, so the end of the retry is the signal.
+    await waitFor(() => expect(announcer()).not.toBe(before), { timeout: 3000 });
+    expect(announcer().textContent).toContain("Could not load items.");
   });
 });
 

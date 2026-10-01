@@ -16,6 +16,8 @@ import {
   type ArchivedGuardEvent,
 } from "../components/ArchivedGuard.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { RetryHint } from "../components/RetryHint.js";
+import { useBusyEndCount } from "../hooks/useRetry.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { MultiSelect } from "../components/MultiSelect.js";
@@ -222,12 +224,15 @@ export interface AttendeesTableProps {
    * filter, not a page-level error (CodeRabbit review, batch 04 / #351). */
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
+  /** The ticket-type Retry is working (its own flag, see useRetry). */
+  ticketTypesRetrying?: boolean;
   /** One filter row per event-defined custom field (Requirements page), rendered after the four
    * fixed filters - `select`/`boolean` as a MultiSelect over that field's own options, `text` as
    * a contains-text input. Empty array renders no divider/rows at all. */
   customFields?: EventCustomFieldDto[];
   customFieldsError?: string | null;
   onRetryCustomFields?: () => void;
+  customFieldsRetrying?: boolean;
   customFieldSelectValues: Readonly<Record<string, string[]>>;
   onCustomFieldSelectChange: (sourceField: string, values: string[]) => void;
   customFieldTextInputs: Readonly<Record<string, string>>;
@@ -263,6 +268,8 @@ export interface AttendeesTableProps {
   itemCount: number;
   itemsError?: string | null;
   onRetryItems?: () => void;
+  /** The items Retry is working (its own flag, see useRetry). */
+  itemsRetrying?: boolean;
   onBulkRevokeItems: () => void;
   bulkRevokeItemsBusy: boolean;
   onBulkRevokePass: () => void;
@@ -1175,6 +1182,7 @@ function FilterToolbar({
   ticketTypes,
   ticketTypesError,
   onRetryTicketTypes,
+  ticketTypesRetrying = false,
   rsvpStatusFilter,
   onRsvpStatusFilterChange,
   mailStatusFilter,
@@ -1182,6 +1190,7 @@ function FilterToolbar({
   customFields,
   customFieldsError,
   onRetryCustomFields,
+  customFieldsRetrying = false,
   customFieldSelectValues,
   onCustomFieldSelectChange,
   customFieldTextInputs,
@@ -1200,6 +1209,7 @@ function FilterToolbar({
   ticketTypes: TicketTypeDto[];
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
+  ticketTypesRetrying?: boolean;
   rsvpStatusFilter: RsvpStatus[];
   onRsvpStatusFilterChange: (value: RsvpStatus[]) => void;
   mailStatusFilter: AttendeeMailStatusFilter[];
@@ -1207,6 +1217,7 @@ function FilterToolbar({
   customFields: EventCustomFieldDto[];
   customFieldsError?: string | null;
   onRetryCustomFields?: () => void;
+  customFieldsRetrying?: boolean;
   customFieldSelectValues: Readonly<Record<string, string[]>>;
   onCustomFieldSelectChange: (sourceField: string, values: string[]) => void;
   customFieldTextInputs: Readonly<Record<string, string>>;
@@ -1273,14 +1284,7 @@ function FilterToolbar({
             panelMode="inline"
           />
           {ticketTypesError && (
-            <p className="mail-field-hint" role="alert">
-              {ticketTypesError}{" "}
-              {onRetryTicketTypes && (
-                <button type="button" className="link-btn" onClick={onRetryTicketTypes}>
-                  Retry
-                </button>
-              )}
-            </p>
+            <RetryHint message={ticketTypesError} busy={ticketTypesRetrying} onRetry={onRetryTicketTypes} />
           )}
         </div>
         <div className="attendees-toolbar__filter">
@@ -1384,14 +1388,7 @@ function FilterToolbar({
           );
         })}
         {customFieldsError && (
-          <p className="mail-field-hint" role="alert">
-            {customFieldsError}{" "}
-            {onRetryCustomFields && (
-              <button type="button" className="link-btn" onClick={onRetryCustomFields}>
-                Retry
-              </button>
-            )}
-          </p>
+          <RetryHint message={customFieldsError} busy={customFieldsRetrying} onRetry={onRetryCustomFields} />
         )}
       </FiltersMenu>
     </div>
@@ -1635,6 +1632,35 @@ function footSummary(isInitialLoad: boolean, total: number, from: number, to: nu
   return `Showing ${from}–${to} of ${total}`;
 }
 
+/**
+ * Says out loud, the moment it happens, that a catalog the filters and bulk actions depend on (ticket types,
+ * custom fields, items) failed to load. Their visible hints are inside the Filters panel, which only exists while
+ * it is open, and in the tooltip of a disabled menu item, so without this a failure at page entry is silent.
+ * Always mounted, so a message added to it is announced; visually hidden, because the hints stay where the
+ * operator can act on them. (`CheckinConnectionLiveRegion` is the same idea for the check-in screen.) A retry
+ * that ends with the same failure mounts it afresh, so it is announced again whichever Retry was pressed.
+ */
+function CatalogFailureAnnouncer({
+  ticketTypes,
+  customFields,
+  items,
+}: Readonly<{
+  ticketTypes: { error?: string | null; retrying?: boolean };
+  customFields: { error?: string | null; retrying?: boolean };
+  items: { error?: string | null; retrying?: boolean };
+}>) {
+  const retriesEnded =
+    useBusyEndCount(ticketTypes.retrying ?? false) +
+    useBusyEndCount(customFields.retrying ?? false) +
+    useBusyEndCount(items.retrying ?? false);
+  const message = [ticketTypes.error, customFields.error, items.error].filter(Boolean).join(" ");
+  return (
+    <div key={retriesEnded} className="sr-only" role="alert">
+      {message}
+    </div>
+  );
+}
+
 export function AttendeesTable({
   items,
   total,
@@ -1651,9 +1677,11 @@ export function AttendeesTable({
   ticketTypes = [],
   ticketTypesError,
   onRetryTicketTypes,
+  ticketTypesRetrying,
   customFields = [],
   customFieldsError,
   onRetryCustomFields,
+  customFieldsRetrying,
   customFieldSelectValues,
   onCustomFieldSelectChange,
   customFieldTextInputs,
@@ -1689,6 +1717,7 @@ export function AttendeesTable({
   itemCount,
   itemsError,
   onRetryItems,
+  itemsRetrying,
   onBulkRevokeItems,
   bulkRevokeItemsBusy,
   onBulkRevokePass,
@@ -1780,6 +1809,11 @@ export function AttendeesTable({
 
   return (
     <Card padded={false}>
+      <CatalogFailureAnnouncer
+        ticketTypes={{ error: ticketTypesError, retrying: ticketTypesRetrying }}
+        customFields={{ error: customFieldsError, retrying: customFieldsRetrying }}
+        items={{ error: itemsError, retrying: itemsRetrying }}
+      />
       {selectedIds.size > 0 ? (
         <BulkBar
           selectedIds={selectedIds}
@@ -1842,6 +1876,7 @@ export function AttendeesTable({
           ticketTypes={ticketTypes}
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
+          ticketTypesRetrying={ticketTypesRetrying}
           rsvpStatusFilter={rsvpStatusFilter}
           onRsvpStatusFilterChange={onRsvpStatusFilterChange}
           mailStatusFilter={mailStatusFilter}
@@ -1849,6 +1884,7 @@ export function AttendeesTable({
           customFields={customFields}
           customFieldsError={customFieldsError}
           onRetryCustomFields={onRetryCustomFields}
+          customFieldsRetrying={customFieldsRetrying}
           customFieldSelectValues={customFieldSelectValues}
           onCustomFieldSelectChange={onCustomFieldSelectChange}
           customFieldTextInputs={customFieldTextInputs}
