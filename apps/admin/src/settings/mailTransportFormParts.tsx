@@ -36,20 +36,11 @@ import {
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 import { describeSmtpBounceCode } from "../utils/smtpBounceCodes.js";
+import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 
-/** Every field here (SMTP username/password, Graph/Power Automate secrets, and every
- * email-typed field below) is something the operator types once and reuses — never
- * their own account's email or password — so browser-vendor and extension autofill
- * (1Password, LastPass, Bitwarden, iCloud Hide My Email, etc.) only gets in the way:
- * wrong suggestions, and some extensions inject an overlay button that shifts layout.
- * These are the conventional opt-out signals each of those checks for. */
-export const NO_AUTOFILL_PROPS = {
-  autoComplete: "off",
-  "data-1p-ignore": "true",
-  "data-lpignore": "true",
-  "data-bwignore": "true",
-  "data-form-type": "other",
-} as const;
+// Lives in utils/no-autofill.ts so the check-in screens can use it without pulling in this settings module;
+// re-exported here for the many forms that already import it from this file.
+export { NO_AUTOFILL_PROPS };
 
 export interface TestResult {
   kind: "ok" | "error";
