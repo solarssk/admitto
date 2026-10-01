@@ -48,7 +48,7 @@
     "ip-location-api": "5.0.2",
     "pdfkit": "^0.20.2",
     "redis": "^6.2.1",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "zod": "^4.6.4"
   },
   "devDependencies": {
