@@ -270,6 +270,18 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count("<button\n  type=\"button\"\n  disabled={bulkSendBusy}\n>Send</button>", "raw-button-busy-disabled")).toBe(1);
   });
 
+  it("counts a busy flag named after what is happening, in any verb", () => {
+    for (const flag of ["markingAll", "clearing", "isExporting", "reordering || !canSave", "!hasItems || isCancelling"]) {
+      expect(count(`<button type="button" disabled={${flag}} onClick={go}>Go</button>`, "raw-button-busy-disabled")).toBe(1);
+    }
+  });
+
+  it("does not take a plain noun that ends in -ing, or a flag that is not work in progress, for a busy flag", () => {
+    for (const flag of ["disabled", "isArchived", "bounceActionsLocked", "!hasCoordinates || isArchived", 'typeof value === "string"', "!settingsLoaded || !canConfirm", "!canAct"]) {
+      expect(count(`<button type="button" disabled={${flag}} onClick={go}>Go</button>`, "raw-button-busy-disabled")).toBe(0);
+    }
+  });
+
   it("does not count a kit Button, a raw <button> disabled for another reason, or one with no disabled", () => {
     expect(count("<Button loading={busy} disabled={busy}>Go</Button>", "raw-button-busy-disabled")).toBe(0);
     expect(count("<button type=\"button\" disabled={!canSave}>Save</button>", "raw-button-busy-disabled")).toBe(0);

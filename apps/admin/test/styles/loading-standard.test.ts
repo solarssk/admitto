@@ -95,6 +95,7 @@ const ALLOWED: Record<Rule, Counts> = {
   // Hand-made busy states on a raw <button>, each to move to <Button loading> with the screen that owns it.
   "raw-button-busy-disabled": {
     "apps/admin/src/checkin/CameraOverlayItemIssuing.tsx": 1,
+    "apps/admin/src/components/NotificationBell.tsx": 2,
     "apps/admin/src/pages/AttendeeDetailPage.tsx": 3,
     "apps/admin/src/pages/CheckInPage.tsx": 2,
     "apps/admin/src/pages/ImportPage.tsx": 1,

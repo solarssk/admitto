@@ -179,6 +179,14 @@ function openingTags(source: string, name: string): string[] {
 const COULD_NOT_TITLE = /\btitle=(?:"Could not\b|\{[^}]*"Could not\b)/;
 // Words a busy flag is named with, as part of any identifier (`bulkSendBusy`, `isSaving`, `exporting`).
 const BUSY_WORDS = /busy|saving|loading|submitting|pending|sending|working|reloading|revoking|deleting/i;
+// A busy flag is also named after what is happening, in any verb: `markingAll`, `clearing`, `isExporting`. Each camelCase
+// word of the expression that ends in -ing counts, except the ones that are plain nouns or prepositions.
+const NOT_A_BUSY_WORD = new Set(["string", "thing", "nothing", "something", "anything", "everything", "during", "setting", "building", "warning", "ceiling", "morning", "evening", "sibling", "spring"]);
+function namesABusyFlag(expression: string): boolean {
+  if (BUSY_WORDS.test(expression)) return true;
+  const words = expression.split(/[^A-Za-z]+/).flatMap((chunk) => chunk.split(/(?<=[a-z])(?=[A-Z])/));
+  return words.some((word) => /^[a-z]{3,}ing$/i.test(word) && !NOT_A_BUSY_WORD.has(word.toLowerCase()));
+}
 // How far above a Retry button an alert, an EmptyState or a Notice may sit and still be what shows it.
 // role="alert" as an attribute of its own (not data-role or aria-role), in the spellings JSX allows.
 const ALERT_ROLE_ATTR = /(?<![\w-])role=(?:"alert"|'alert'|\{\s*(?:"alert"|'alert'|`alert`)\s*\})/;
@@ -263,7 +271,7 @@ function countRawButtonsDisabledWhileBusy(text: string): number {
     const at = tag.search(/\bdisabled=\{/);
     if (at === -1) return false;
     const valueStart = tag.indexOf("{", at);
-    return BUSY_WORDS.test(tag.slice(valueStart, propValueEnd(tag, valueStart)));
+    return namesABusyFlag(tag.slice(valueStart, propValueEnd(tag, valueStart)));
   }).length;
 }
 
