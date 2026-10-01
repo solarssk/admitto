@@ -3097,7 +3097,7 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const busyItem = screen.getByRole("menuitem", { name: /^Push updates/ });
-    expect((busyItem as HTMLButtonElement).disabled).toBe(true);
+    expect(busyItem.getAttribute("aria-disabled")).toBe("true");
     expect(busyItem.getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByText(/Pushing updates…/)).toBeNull();
 
@@ -3381,7 +3381,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     const busyItem = screen.getByRole("menuitem", { name: /^Refresh status/ });
     expect(busyItem.getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByText(/Refreshing status…/)).toBeNull();
-    expect((busyItem as HTMLButtonElement).disabled).toBe(true);
+    expect(busyItem.getAttribute("aria-disabled")).toBe("true");
 
     // The dialog's backdrop is wired to onCancel unconditionally (unlike its Cancel button,
     // which the confirm-dialog component itself disables while loading) - onCancel's own busy
@@ -3717,7 +3717,7 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
     await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    expect((screen.getByRole("menuitem", { name: /^Voiding passes…/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("menuitem", { name: /^Voiding passes…/ }).getAttribute("aria-disabled")).toBe("true");
     // The backdrop is wired to onCancel unconditionally: the hook's own busy guard keeps it open.
     fireEvent.click(document.querySelector(".at-modal-backdrop")!);
     expect(screen.getByRole("dialog", { name: DIALOG })).toBeTruthy();
@@ -3983,7 +3983,7 @@ describe("AttendeesPage header 'Remove inactive passes' (event-wide, wallet conf
     await waitFor(() => expect(triggerEventWideWalletRemoveInactive).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    expect((screen.getByRole("menuitem", { name: /^Removing passes…/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("menuitem", { name: /^Removing passes…/ }).getAttribute("aria-disabled")).toBe("true");
 
     await act(async () => {
       resolveTrigger({ jobId: "job-1" });

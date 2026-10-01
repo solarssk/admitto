@@ -218,7 +218,7 @@ describe("AddAttendeeModal Retry for a failed catalog", () => {
   async function expectFormUntouchedWhileRetrying(errorText: string) {
     const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
     expect(retry.getAttribute("aria-busy")).toBe("true");
-    expect(retry.disabled).toBe(true);
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByText(errorText)).toBeTruthy();
     // What is on screen stays on screen: no invisible form, no skeleton over it (not even once the
     // 200ms a skeleton would wait for have passed).
@@ -281,6 +281,28 @@ describe("AddAttendeeModal Retry for a failed catalog", () => {
     // Only the catalog that failed was asked again, and what loaded the first time was not touched.
     expect(mockFetchTicketTypes).toHaveBeenCalledTimes(2);
     expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps keyboard focus on a busy Retry, and a second press on it does not ask again", async () => {
+    let answerRetry!: (fields: unknown[]) => void;
+    mockFetchEventCustomFields
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)) as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByText("Could not load custom fields.");
+    const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+    retry.focus();
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+
+    // Not `disabled`: a browser would have moved focus to <body> the moment the button turned busy.
+    expect(retry.disabled).toBe(false);
+    expect(document.activeElement).toBe(retry);
+    expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(2);
+    await act(async () => answerRetry([dietary]));
   });
 
   it("keeps the error, and lets the operator try again, when the retry fails too", async () => {

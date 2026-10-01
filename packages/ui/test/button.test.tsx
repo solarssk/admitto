@@ -18,7 +18,7 @@ describe("Button", () => {
   });
 
   describe("loading", () => {
-    it("is disabled and aria-busy, and ignores clicks (no double fire)", () => {
+    it("is aria-busy and aria-disabled, and ignores clicks (no double fire)", () => {
       const onClick = vi.fn();
       render(
         <Button loading onClick={onClick}>
@@ -26,10 +26,94 @@ describe("Button", () => {
         </Button>,
       );
       const btn = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
-      expect(btn.disabled).toBe(true);
       expect(btn.getAttribute("aria-busy")).toBe("true");
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
       fireEvent.click(btn);
       expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it("is not `disabled`, so a browser does not take its focus away when it turns busy", () => {
+      const { rerender } = render(<Button loading={false}>Retry</Button>);
+      const btn = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+      btn.focus();
+      expect(document.activeElement).toBe(btn);
+
+      rerender(<Button loading>Retry</Button>);
+
+      expect(btn.disabled).toBe(false);
+      expect(document.activeElement).toBe(btn);
+      rerender(<Button loading={false}>Retry</Button>);
+      expect(document.activeElement).toBe(btn);
+      expect(btn.hasAttribute("aria-disabled")).toBe(false);
+    });
+
+    it("swallows the click whole: it does not submit its form or reach a clickable parent", () => {
+      const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+      const onParentClick = vi.fn();
+      render(
+        <form onSubmit={onSubmit}>
+          <div onClick={onParentClick} role="presentation">
+            <Button type="submit" loading>
+              Save
+            </Button>
+          </div>
+        </form>,
+      );
+      const btn = screen.getByRole("button", { name: "Save" });
+
+      fireEvent.click(btn);
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onParentClick).not.toHaveBeenCalled();
+    });
+
+    it("runs its handler, submits and bubbles as usual once it is no longer busy", () => {
+      const onClick = vi.fn();
+      const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+      const onParentClick = vi.fn();
+      render(
+        <form onSubmit={onSubmit}>
+          <div onClick={onParentClick} role="presentation">
+            <Button type="submit" loading={false} onClick={onClick}>
+              Save
+            </Button>
+          </div>
+        </form>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onParentClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("hands its click event to the caller's handler", () => {
+      const onClick = vi.fn();
+      render(<Button onClick={onClick}>Save</Button>);
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      expect(onClick).toHaveBeenCalledWith(expect.objectContaining({ type: "click" }));
+    });
+
+    it("is not `disabled` while busy even when `disabled` is set too (callers pass the same flag to both), and is again afterwards", () => {
+      const onClick = vi.fn();
+      const { rerender } = render(
+        <Button loading disabled onClick={onClick}>
+          Save
+        </Button>,
+      );
+      const btn = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(btn);
+      expect(onClick).not.toHaveBeenCalled();
+
+      rerender(
+        <Button loading={false} disabled onClick={onClick}>
+          Save
+        </Button>,
+      );
+      expect(btn.disabled).toBe(true);
     });
 
     it("keeps the label and overlays a spinner when there is no icon and no loadingLabel", () => {

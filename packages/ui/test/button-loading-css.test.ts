@@ -20,9 +20,15 @@ describe("Button loading CSS (jsdom does not load the stylesheet, so the source 
     expect(rule).not.toMatch(/visibility|display\s*:\s*none|clip/);
   });
 
-  it("keeps the disabled-but-busy button fully opaque and shows a progress cursor", () => {
-    const rule = declarationsOf('.at-btn[aria-busy="true"]:disabled');
+  it("keeps the aria-disabled-but-busy button fully opaque and shows a progress cursor", () => {
+    const rule = declarationsOf('.at-btn[aria-busy="true"][aria-disabled="true"]');
     expect(rule).toMatch(/opacity:\s*1/);
     expect(rule).toMatch(/cursor:\s*progress/);
+  });
+
+  it("gives no hover or active colour to a button that is aria-disabled (busy), only to one that is neither disabled nor busy", () => {
+    const rules = css.split("\n").filter((line) => /^\.at-btn--[a-z]+:(hover|active)/.test(line));
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) expect(rule, rule).toContain(':not(:disabled, [aria-disabled="true"])');
   });
 });
