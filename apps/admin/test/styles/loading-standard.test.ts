@@ -18,7 +18,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/staff.css": 2,
   },
   "bare-loading-text": {
-    "apps/admin/src/account/AccountPage.tsx": 1,
     "apps/admin/src/communication/DeliveryDetailsModal.tsx": 1,
     "apps/admin/src/communication/DeliveryLogTable.tsx": 1,
     "apps/admin/src/communication/SentMessagePreviewModal.tsx": 1,

@@ -1368,7 +1368,7 @@ describe("AuditLogPanel rendering", () => {
     // A busy button swallows a second click instead of starting another reload.
     const callsWhileBusy = vi.mocked(fetchAuditLog).mock.calls.length;
     fireEvent.click(retry);
-    expect(vi.mocked(fetchAuditLog).mock.calls.length).toBe(callsWhileBusy);
+    expect(vi.mocked(fetchAuditLog).mock.calls).toHaveLength(callsWhileBusy);
     // Past the 400ms floor it is still busy: it waits for the answer, it does not just time out.
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(retry.getAttribute("aria-busy")).toBe("true");
