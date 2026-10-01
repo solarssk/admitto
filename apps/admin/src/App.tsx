@@ -318,7 +318,7 @@ export function RouteFallback() {
   const slow = useDelayedLoading(true, SLOW_NOTICE_MS);
   return (
     <div className="shell-loading">
-      <PageLoader caption={slow ? SLOW_NOTICE_TEXT : undefined} />
+      <PageLoader label="Loading page" caption={slow ? SLOW_NOTICE_TEXT : undefined} />
     </div>
   );
 }

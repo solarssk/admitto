@@ -459,6 +459,12 @@ html:has(.shell), body:has(.shell) {
   animation: shell-loading-leave 0.25s ease-out forwards;
 }
 
+/* The app underneath may itself be waiting and say something else ("Loading page"). The mark lines up
+   with its own, so it can cross-fade; two different lines of text at the same spot would overprint. */
+.shell-loading--leaving .at-loader__text {
+  visibility: hidden;
+}
+
 @keyframes shell-loading-leave {
   to {
     opacity: 0;

@@ -2,7 +2,7 @@
 export const SLOW_NOTICE_MS = 8_000;
 export const LOAD_TIMEOUT_MS = 30_000;
 
-/** Visible only after `SLOW_NOTICE_MS`; the one loading text besides a busy button's own label. */
+/** Visible only after `SLOW_NOTICE_MS`; it hangs under the loader's own line saying what is loading. */
 export const SLOW_NOTICE_TEXT = "Taking longer than usual. Check your connection.";
 
 /** Shown with a Retry once a request has been abandoned at `LOAD_TIMEOUT_MS`. */

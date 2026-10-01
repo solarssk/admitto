@@ -5,7 +5,7 @@ Design system for the staff SPA: Tabler-flavoured CSS tokens plus shared React p
 ## What lives here
 
 - **Tokens / theme** - CSS variables and theme helpers (`theme.ts`, `styles/`)
-- **Primitives** - `Button`, `Input`, `Select`, `Checkbox`, `Switch`, `ModalBackdrop` (the shell the admin modals build on), `Toast`, `Notice`, `EmptyState`, `PageHeader`, `Avatar`, `Card`, `Tooltip`, `HintLabel`, `IconButton`, `PasswordStrengthMeter`, `StatusBadge`, `TicketTypeBadge`, tabs, badges, `Skeleton`/`Spinner`, `PageLoader`/`SectionLoader` (the Admitto mark as a loading screen), `TopProgressBar` (viewport or `placement="container"`), `Button loading`, etc.
+- **Primitives** - `Button`, `Input`, `Select`, `Checkbox`, `Switch`, `ModalBackdrop` (the shell the admin modals build on), `Toast`, `Notice`, `EmptyState`, `PageHeader`, `Avatar`, `Card`, `Tooltip`, `HintLabel`, `IconButton`, `PasswordStrengthMeter`, `StatusBadge`, `TicketTypeBadge`, tabs, badges, `Skeleton`/`Spinner`, `PageLoader`/`SectionLoader` (the Admitto mark for a whole screen, a ring for a panel, each with a line saying what is loading), `TopProgressBar` (viewport or `placement="container"`), `Button loading`, etc.
 - **Assets** - shared static pieces under `src/assets/`, exported as source through `@admitto/ui/assets/*`
 
 This package does **not** own app routes or API calls. Page-level UI stays in `apps/admin`.

@@ -1,16 +1,27 @@
 /* One 2s cycle for every part of the mark. The tick draws in during the first quarter, stays, and
    fades just before the loop restarts. `--at-loader-phase` (a negative delay set per loader from a
    shared clock, see loader-clock.ts) starts each loader mid-cycle so swapping loaders does not
-   restart the drawing. The static splash in apps/admin/index.html uses the same timings. */
+   restart the drawing. The static splash in apps/admin/index.html uses the same timings.
+   A whole screen shows the mark, a panel shows a ring (1s a turn, a divisor of the 2s cycle, so it
+   shares the same phase); both have the line saying what is loading under them. */
+/* --text-secondary, not --text-muted: the line is now the thing to read on every wait, and muted grey is
+   4.3:1 on the page background (--surface-page), under the 4.5:1 minimum for text this size. */
 .at-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Exactly the size of the mark or ring, so that is what sits in the middle of the box. The text hangs
+   below it, out of flow: the mark does not move with or without a label or caption, and it lines up
+   with the static splash in apps/admin/index.html. */
+.at-loader__stack {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
-  color: var(--text-muted);
-  text-align: center;
 }
 
 .at-loader--page {
@@ -19,8 +30,13 @@
   min-height: 16rem;
 }
 
+/* The room for the line hanging under the ring (its 14px gap and one line), inside the reserved
+   height (border-box), so the ring and its line sit together in the middle and nothing is clipped in
+   a small box. */
 .at-loader--section {
+  box-sizing: border-box;
   width: 100%;
+  padding-bottom: 34px;
 }
 
 .at-loader__mark {
@@ -32,11 +48,6 @@
 .at-loader--page .at-loader__mark {
   width: 88px;
   height: 88px;
-}
-
-.at-loader--section .at-loader__mark {
-  width: 52px;
-  height: 52px;
 }
 
 /* --primary, not --at-blue: an organisation with its own brand colour gets a matching mark. */
@@ -64,27 +75,43 @@
   animation-delay: var(--at-loader-phase, 0ms);
 }
 
-/* Out of flow, hanging under the mark: the mark stays exactly centred with or without a caption,
-   so it does not jump when "Taking longer than usual" appears, and it lines up with the static
-   splash in apps/admin/index.html. Offsets are half the mark (44px / 26px) plus a 14px gap. */
-.at-loader__caption {
+/* A panel's loader: the brand colour like the mark's tile, so an organisation with its own colour gets
+   a matching ring. */
+.at-loader__ring {
+  display: block;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  border: 3px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: at-loader-spin 1s linear infinite;
+  animation-delay: var(--at-loader-phase, 0ms);
+}
+
+.at-loader__text {
   position: absolute;
+  top: 100%;
   left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   width: max-content;
-  max-width: 28ch;
+  /* Never wider than the screen, so a long message wraps instead of overflowing at a large text size. */
+  max-width: min(28ch, calc(100vw - 2rem));
+  margin-top: 14px;
   transform: translateX(-50%);
-  font-size: var(--fs-sm);
+  /* The same stack as the splash in apps/admin/index.html, which renders before any font has loaded,
+     so the line does not change face when React takes over. */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: var(--fs-body);
   line-height: var(--lh-snug);
 }
 
-.at-loader--page .at-loader__caption {
-  top: calc(50% + 44px + 14px);
+.at-loader__caption {
+  font-size: var(--fs-sm);
 }
-
-.at-loader--section .at-loader__caption {
-  top: calc(50% + 26px + 14px);
-}
-
 @keyframes at-loader-breath {
   0%,
   100% {
@@ -121,6 +148,13 @@
   }
 }
 
+@keyframes at-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Also used by the top progress bar (topbar.css) for its reduced-motion pulse. */
 @keyframes at-loader-soft {
   0%,
   100% {
@@ -146,6 +180,11 @@
 
   .at-loader__dot {
     animation: none;
+  }
+
+  /* Slowed, not stopped: a completely still ring reads as a hung page. */
+  .at-loader__ring {
+    animation-duration: 2.5s;
   }
 }
 

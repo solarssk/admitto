@@ -39,7 +39,7 @@ export interface LoadingGateOptions {
 }
 
 export interface LoadingGate {
-  /** Render the loading indicator (logo, skeleton, bar). */
+  /** Render the loading indicator (logo, ring, skeleton, bar). */
   showIndicator: boolean;
   /** Render the real content. False while loading and while the indicator is finishing its minimum time. */
   showContent: boolean;
