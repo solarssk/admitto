@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
 import { mockMatchMedia } from "../test-utils.js";
@@ -256,7 +256,8 @@ describe("AttendeesTable custom-field filter rows", () => {
     );
     openFilters();
 
-    expect(screen.getByText("Could not load custom fields.")).toBeTruthy();
+    // The hint inside the Filters panel (the visually hidden announcer says the same, outside it).
+    expect(within(screen.getByRole("group", { name: "Filters" })).getByText("Could not load custom fields.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetryCustomFields).toHaveBeenCalledOnce();
   });

@@ -7,7 +7,9 @@ import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { RetryHint } from "../components/RetryHint.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { useRetry } from "../hooks/useRetry.js";
 import { AttendeePicker } from "./AttendeePicker.js";
 import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
 import "./send-progress.css";
@@ -246,7 +248,8 @@ export function CommunicationSendPanel({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null);
-  const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  const ticketTypesRetry = useRetry();
+  const { token: ticketTypesToken, begin: beginTicketTypes, end: endTicketTypes } = ticketTypesRetry;
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
@@ -314,20 +317,26 @@ export function CommunicationSendPanel({
     setTicketType("");
     setTicketTypes([]);
     let cancelled = false;
-    setTicketTypesError(null);
+    // A retry keeps its error, and the busy Retry next to it, on screen until the answer is in.
+    if (!beginTicketTypes()) setTicketTypesError(null);
     fetchTicketTypes(eventId)
       .then((types) => {
-        if (!cancelled) setTicketTypes(types);
+        if (cancelled) return;
+        setTicketTypes(types);
+        setTicketTypesError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setTicketTypes([]);
         setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
+      })
+      .finally(() => {
+        if (!cancelled) endTicketTypes();
       });
     return () => {
       cancelled = true;
     };
-  }, [eventId, templateId, snapshotMissing, ticketTypesRetryToken]);
+  }, [eventId, templateId, snapshotMissing, ticketTypesToken, beginTicketTypes, endTicketTypes]);
 
   useEffect(() => {
     if (phase !== "polling" || !batchId) return;
@@ -574,16 +583,7 @@ export function CommunicationSendPanel({
           </>
         )}
         {filterType === "ticket_type" && ticketTypesError && (
-          <p className="mail-field-hint" role="alert">
-            {ticketTypesError}{" "}
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => setTicketTypesRetryToken((n) => n + 1)}
-            >
-              Retry
-            </button>
-          </p>
+          <RetryHint message={ticketTypesError} busy={ticketTypesRetry.busy} onRetry={ticketTypesRetry.retry} />
         )}
         {filterType === "attendee_ids" && (
           <AttendeePicker

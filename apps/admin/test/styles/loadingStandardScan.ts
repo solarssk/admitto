@@ -11,6 +11,7 @@ export const RULES = [
   "busy-label-swap",
   "error-state-not-an-alert",
   "retry-outside-an-alert",
+  "retry-in-a-raw-button",
   "raw-button-busy-disabled",
 ] as const;
 export type Rule = (typeof RULES)[number];
@@ -27,7 +28,9 @@ export const RULE_HINTS: Record<Rule, string> = {
   "error-state-not-an-alert":
     'A failed load shown in an <EmptyState> (a "Could not load …" title, or a Retry) needs variant="error", so assistive tech announces it as an alert like every other failed load.',
   "retry-outside-an-alert":
-    'A Retry for a failed load belongs in the `action` of an <EmptyState variant="error"> or of an element that has role="alert" itself (a <Notice> leaves its role to the caller), or inside an element with role="alert", so the failure is announced.',
+    'A Retry (or Reload) for a failed load belongs in the `action` of an <EmptyState variant="error"> or of an element that has role="alert" itself (a <Notice> leaves its role to the caller), or inside an element with role="alert", so the failure is announced.',
+  "retry-in-a-raw-button":
+    "Use <Button loading> for a Retry (or Reload), with the hook useRetry for a request that is run again (a <RetryHint> for a one-line hint). A raw <button> cannot show that it is working and keep keyboard focus, so a click on it drops the focus to the page behind.",
   "raw-button-busy-disabled":
     "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <MoreActionsMenuItem loading>), which stays focusable.",
 };
@@ -190,8 +193,10 @@ function namesABusyFlag(expression: string): boolean {
 // How far above a Retry button an alert, an EmptyState or a Notice may sit and still be what shows it.
 // role="alert" as an attribute of its own (not data-role or aria-role), in the spellings JSX allows.
 const ALERT_ROLE_ATTR = /(?<![\w-])role=(?:"alert"|'alert'|\{\s*(?:"alert"|'alert'|`alert`)\s*\})/;
-// A Retry button: the word on its own, at the start of a line or right after a tag or an expression (an icon before it).
-const RETRY_BUTTON_TEXT = /(?:^\s*|[>}]\s*)Retry(?=\s*(?:<|$))/g;
+// A button that offers to run a failed load again: "Retry", "Retry now", "Reload" or "Reload page" on its own, at the
+// start of a line or right after a tag or an expression (an icon before it). A longer label such as "Retry loading
+// items" is a menu command, not the failure's own control.
+const RETRY_BUTTON_TEXT = /(?:^\s*|[>}]\s*)(Retry(?: now)?|Reload(?: page)?)(?=\s*(?:<|$))/g;
 
 /** EmptyStates that show a failed load but lack `variant="error"`. */
 function countErrorEmptyStatesWithoutVariant(text: string): number {
@@ -239,8 +244,20 @@ function insideAlertElement(source: string, tags: TagSpan[], at: number): boolea
   });
 }
 
+/** Where each Retry / Reload text (see RETRY_BUTTON_TEXT) starts, as an offset into the source. */
+function retryTextOffsets(text: string): number[] {
+  const offsets: number[] = [];
+  let lineStart = 0;
+  for (const line of text.split("\n")) {
+    const offset = lineStart;
+    lineStart += line.length + 1;
+    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) offsets.push(offset + found.index + found[0].length - found[1]!.length);
+  }
+  return offsets;
+}
+
 /**
- * Retry buttons for a failed load that nothing announces. A Retry in the props of an EmptyState is left to
+ * Retry (or Reload) buttons for a failed load that nothing announces. A Retry in the props of an EmptyState is left to
  * error-state-not-an-alert, which requires variant="error" there. Any other Retry needs role="alert" on the element
  * whose props hold it (a Notice leaves its role to the caller, so the name alone says nothing), or on an element
  * that has not closed yet around it.
@@ -248,21 +265,29 @@ function insideAlertElement(source: string, tags: TagSpan[], at: number): boolea
 function countRetriesOutsideAnAlert(text: string): number {
   const tags = tagSpans(text, "[A-Za-z][\\w.]*");
   let count = 0;
-  let lineStart = 0;
-  for (const line of text.split("\n")) {
-    const offset = lineStart;
-    lineStart += line.length + 1;
-    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) {
-      const at = offset + found.index + found[0].length - "Retry".length;
-      // The innermost tag whose own props hold the Retry (its action prop, usually).
-      const owner = tags.findLast((span) => span.start <= at && at < span.end);
-      if (owner?.name === "EmptyState") continue;
-      // The action holds the Retry button itself, so only the tag's own role counts.
-      if (owner && ALERT_ROLE_ATTR.test(ownRoleProps(owner.tag))) continue;
-      if (!insideAlertElement(text, tags, at)) count++;
-    }
+  for (const at of retryTextOffsets(text)) {
+    // The innermost tag whose own props hold the Retry (its action prop, usually).
+    const owner = tags.findLast((span) => span.start <= at && at < span.end);
+    if (owner?.name === "EmptyState") continue;
+    // The action holds the Retry button itself, so only the tag's own role counts.
+    if (owner && ALERT_ROLE_ATTR.test(ownRoleProps(owner.tag))) continue;
+    if (!insideAlertElement(text, tags, at)) count++;
   }
   return count;
+}
+
+/**
+ * Retry (or Reload) controls drawn as a raw <button>. It cannot show that it is working and keep keyboard
+ * focus, which `<Button loading>` does, so a click on a Retry that takes the alert around it away with it (or
+ * disables itself) drops the focus to the page behind. A raw <button> is the one opened last before the text and not
+ * yet closed again.
+ */
+function countRetriesInRawButtons(text: string): number {
+  const buttons = tagSpans(text, "button");
+  return retryTextOffsets(text).filter((at) => {
+    const open = buttons.findLast((span) => span.end <= at && !span.tag.trimEnd().endsWith("/>"));
+    return open !== undefined && !/<\/button\s*>/.test(text.slice(open.end, at));
+  }).length;
 }
 
 /** Raw `<button>`s whose `disabled` names a busy flag. */
@@ -287,6 +312,7 @@ export function countLoadingViolations(source: string, kind: "css" | "code"): Pa
     "busy-label-swap": countBusyTernaries(visible),
     "error-state-not-an-alert": countErrorEmptyStatesWithoutVariant(text),
     "retry-outside-an-alert": countRetriesOutsideAnAlert(text),
+    "retry-in-a-raw-button": countRetriesInRawButtons(text),
     "raw-button-busy-disabled": countRawButtonsDisabledWhileBusy(text),
   };
 }

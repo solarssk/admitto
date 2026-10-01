@@ -733,6 +733,39 @@ describe("CommunicationSendPanel", () => {
     expect(await screen.findByRole("button", { name: "VIP" })).toBeTruthy();
   });
 
+  it("keeps the ticket-type hint and a busy Retry on screen, focus included, while a retry runs, and announces again when it fails again", async () => {
+    fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+    const message = await screen.findByText("Could not load ticket types.");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    let failRetry: (error: Error) => void = () => {};
+    fetchTicketTypes.mockImplementationOnce(
+      () => new Promise((_, reject) => {
+        failRetry = reject;
+      }),
+    );
+    retry.focus();
+    fireEvent.click(retry);
+
+    // Still there, the same button, busy, with focus: nothing was unmounted around it.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Could not load ticket types.")).toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => failRetry(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    // Same text again: a new message node is what a live region announces. The button is the same node.
+    expect(screen.getByText("Could not load ticket types.")).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+  });
+
   it("posts ticket_type / rsvp_status / no_delivery filters from Count recipients", async () => {
     fetchTicketTypes.mockResolvedValue([
       {
