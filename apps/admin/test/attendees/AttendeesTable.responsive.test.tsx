@@ -225,7 +225,7 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke check-in/ }) as HTMLButtonElement;
-    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
     expect(item.getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByText(/Revoking check-in…/)).toBeNull();
   });
@@ -336,7 +336,7 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByText(/Revoking items…/)).toBeNull();
-    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("reports how many of the selection actually have something issued, not the raw selection size (PO review)", () => {
@@ -461,7 +461,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
     expect(item.getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByText(/Revoking pass…/)).toBeNull();
-    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("shows the accurate active-pass count in the hint, not the raw selection size, for a mixed selection", () => {

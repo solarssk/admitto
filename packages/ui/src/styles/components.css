@@ -20,10 +20,10 @@
 .at-btn:disabled, .at-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .at-btn .at-btn__icon { font-size: 1.05em; line-height: 0; }
 
-/* Loading (`<Button loading>`): disabled for double-click safety but not dimmed to the "unavailable"
-   look, since it is busy, not off. Width never changes: the spinner takes the icon's slot, or sits
-   in the second stacked label, or overlays the hidden label. */
-.at-btn[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
+/* Loading (`<Button loading>`): `aria-disabled` (clicks are ignored, the button keeps its focus) but not
+   dimmed to the "unavailable" look, since it is busy, not off. Width never changes: the spinner takes
+   the icon's slot, or sits in the second stacked label, or overlays the hidden label. */
+.at-btn[aria-busy="true"][aria-disabled="true"] { opacity: 1; cursor: progress; }
 .at-btn__spinner {
   display: inline-block; flex: none; width: 1rem; height: 1rem; border-radius: 50%;
   border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
@@ -53,27 +53,27 @@
 .at-btn--block { display: flex; width: 100%; }
 
 .at-btn--primary { background: var(--primary); color: var(--text-on-primary); }
-.at-btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
-.at-btn--primary:active:not(:disabled) { background: var(--primary-active); }
+.at-btn--primary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--primary-hover); }
+.at-btn--primary:active:not(:disabled, [aria-disabled="true"]) { background: var(--primary-active); }
 
 .at-btn--secondary { background: var(--surface-card); color: var(--text-secondary); border-color: var(--border-strong); }
-.at-btn--secondary:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
-.at-btn--secondary:active:not(:disabled) { background: var(--at-gray-100); }
+.at-btn--secondary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--surface-hover); color: var(--text-primary); }
+.at-btn--secondary:active:not(:disabled, [aria-disabled="true"]) { background: var(--at-gray-100); }
 
 .at-btn--ghost { background: transparent; color: var(--text-secondary); }
-.at-btn--ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.at-btn--ghost:hover:not(:disabled, [aria-disabled="true"]) { background: var(--surface-hover); color: var(--text-primary); }
 
 .at-btn--danger { background: var(--status-error); color: var(--text-on-primary); }
-.at-btn--danger:hover:not(:disabled) { background: var(--status-error-hover); }
+.at-btn--danger:hover:not(:disabled, [aria-disabled="true"]) { background: var(--status-error-hover); }
 
 .at-btn--success { background: var(--status-ok-fg); color: var(--text-on-primary); }
-.at-btn--success:hover:not(:disabled) { background: color-mix(in srgb, var(--status-ok-fg), #000 15%); }
+.at-btn--success:hover:not(:disabled, [aria-disabled="true"]) { background: color-mix(in srgb, var(--status-ok-fg), #000 15%); }
 
 /* Caution tier, between primary and danger — reversible-but-impactful bulk actions (e.g. Revoke
    items/check-in). --status-warn-fg (not the raw, much brighter --status-warn) since there's no
    dedicated warn-hover shade in the palette yet; darkening on hover matches --danger/--success. */
 .at-btn--warning { background: var(--status-warn-fg); color: var(--text-on-primary); }
-.at-btn--warning:hover:not(:disabled) { filter: brightness(0.9); }
+.at-btn--warning:hover:not(:disabled, [aria-disabled="true"]) { filter: brightness(0.9); }
 
 /* ---------------- Modal backdrop ---------------- */
 .at-modal-backdrop {

@@ -79,7 +79,8 @@
   cursor: not-allowed;
 }
 
-.more-actions-menu__item:disabled:hover {
+.more-actions-menu__item:disabled:hover,
+.more-actions-menu__item[aria-disabled="true"]:hover {
   background: none;
 }
 
@@ -107,7 +108,7 @@
   visibility: hidden;
 }
 
-.more-actions-menu__item[aria-busy="true"]:disabled {
+.more-actions-menu__item[aria-busy="true"][aria-disabled="true"] {
   opacity: 1;
   cursor: progress;
 }
