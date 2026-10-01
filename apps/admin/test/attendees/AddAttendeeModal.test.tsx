@@ -325,6 +325,89 @@ describe("AddAttendeeModal Retry for a failed catalog", () => {
     expect(mockFetchEventCustomFields).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps focus inside the dialog when a successful Retry removes the notice that held it", async () => {
+    let answerRetry!: (fields: unknown[]) => void;
+    mockFetchEventCustomFields
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockReturnValueOnce(new Promise((resolve) => (answerRetry = resolve)) as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByText("Could not load custom fields.");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    fireEvent.click(retry);
+    await act(async () => answerRetry([dietary]));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry" })).toBeNull());
+
+    // Not on <body>: the next Tab would start from the page behind the dialog.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.querySelector(".add-attendee-modal__panel")?.contains(document.activeElement)).toBe(true);
+  });
+
+  describe("announcing a repeat failure", () => {
+    /** Every distinct node that carried `message` since watching began: each one is a fresh addition to the alert, so a screen reader reads it. */
+    function watchMessage(message: string) {
+      const seen = new Set<Element>();
+      const scan = () => {
+        for (const node of document.querySelectorAll(".at-notice__body")) {
+          if (node.textContent === message) seen.add(node);
+        }
+      };
+      scan();
+      const observer = new MutationObserver(scan);
+      observer.observe(document.body, { childList: true, subtree: true });
+      return {
+        mounts() {
+          observer.takeRecords();
+          scan();
+          return seen.size;
+        },
+        stop: () => observer.disconnect(),
+      };
+    }
+
+    it.each([
+      ["custom fields", () => mockFetchEventCustomFields, "Could not load custom fields."],
+      ["ticket types", () => mockFetchTicketTypes, "Could not load ticket types."],
+    ])("says the %s error again when the retry fails with the very same message, without remounting Retry", async (_name, mock, message) => {
+      mock().mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline"));
+      render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+      await screen.findByText(message);
+      const alert = screen.getByText(message).closest("[role='alert']");
+      const retry = screen.getByRole("button", { name: "Retry" });
+      const before = screen.getByText(message);
+      const watch = watchMessage(message);
+      expect(watch.mounts()).toBe(1);
+
+      fireEvent.click(retry);
+      await waitFor(() => expect(mock()).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull(), {
+        timeout: 2000,
+      });
+
+      // Same text, so a live region would stay silent unless the message is a new addition.
+      expect(screen.getByText(message).textContent).toBe(before.textContent);
+      expect(screen.getByText(message)).not.toBe(before);
+      expect(watch.mounts()).toBe(2);
+      expect(screen.getByText(message).closest("[role='alert']")).toBe(alert);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      watch.stop();
+    });
+
+    it("does not say a failure twice while it is still the first one", async () => {
+      mockFetchEventCustomFields.mockRejectedValueOnce(new Error("offline"));
+      const watch = watchMessage("Could not load custom fields.");
+      render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+      await screen.findByText("Could not load custom fields.");
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      expect(watch.mounts()).toBe(1);
+      watch.stop();
+    });
+  });
+
   it.each([
     ["custom fields", () => mockFetchEventCustomFields, "Retry", "Could not load custom fields."],
     ["ticket types", () => mockFetchTicketTypes, "Retry", "Could not load ticket types."],
