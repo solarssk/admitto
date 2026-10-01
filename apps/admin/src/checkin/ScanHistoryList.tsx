@@ -42,6 +42,7 @@ export function ScanHistoryError({
       variant="error"
       role="alert"
       className={className}
+      actionBusy={retryBusy}
       action={
         onRetry && (
           <Button type="button" variant="secondary" size="sm" loading={retryBusy} onClick={onRetry}>

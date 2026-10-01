@@ -154,6 +154,20 @@ describe("ScanHistoryList without an event id, and the error card without a Retr
     expect(localStorage).toHaveLength(0);
   });
 
+  it("says it again, for assistive tech, when a retry fails with the same message (Notice's actionBusy)", async () => {
+    const { container, rerender } = render(<ScanHistoryError onRetry={vi.fn()} retrying={false} />);
+    const before = container.querySelector(".at-notice__body")?.firstElementChild ?? container.querySelector(".at-notice__body");
+    expect(before).not.toBeNull();
+
+    rerender(<ScanHistoryError onRetry={vi.fn()} retrying />);
+    rerender(<ScanHistoryError onRetry={vi.fn()} retrying={false} />);
+    await advance(500);
+    const after = container.querySelector(".at-notice__body")?.firstElementChild ?? container.querySelector(".at-notice__body");
+    // The message is a new node, so the live region announces it again; the Retry button is the same one.
+    expect(after).not.toBe(before);
+    expect(screen.getByText("Could not load the counts and recent scans.")).toBeTruthy();
+  });
+
   it("shows only the message when there is nothing to retry", () => {
     render(<ScanHistoryError />);
     expect(screen.getByText("Could not load the counts and recent scans.")).toBeTruthy();
