@@ -1070,7 +1070,7 @@ describe("EventSettingsPage tabs", () => {
     const input = await screen.findByLabelText("Template ID");
     expect((input as HTMLInputElement).disabled).toBe(true);
     expect(
-      screen.getByText(/can't be changed once wallet passes have been issued/i),
+      screen.getByText(/can't be changed once passes have been issued/i),
     ).toBeTruthy();
   });
 
@@ -1432,7 +1432,7 @@ describe("EventSettingsPage tabs", () => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
 
-    expect(screen.getByText(/mapping alone is not enough/i)).toBeTruthy();
+    expect(screen.getByText(/bound in PassCreator's own Semantic Tags panel/i)).toBeTruthy();
   });
 
   it("saves the wallet API key and platform toggles through the event patch", async () => {
@@ -2369,7 +2369,7 @@ describe("EventSettingsPage tabs", () => {
     // Already the saved value - locked against turning off, not against staying on, so no fresh
     // Test connection is needed to keep it in its current state.
     expect(expirationSwitch.disabled).toBe(true);
-    expect(screen.getByText(/Can't be turned off once wallet passes have been issued/)).toBeTruthy();
+    expect(screen.getByText(/Can't be turned off once passes have been issued/)).toBeTruthy();
   });
 
   it("shows only one Field mapping notice at a time, not both stacked together (PO report)", async () => {
@@ -3729,7 +3729,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     expect(within(dialog).queryByText(/still at the wallet service/)).toBeNull();
   });
 
-  it("names how many inactive wallet passes are still at the wallet service, in the archive dialog, and says which action covers which of them", async () => {
+  it("names how many inactive wallet passes are still at the wallet service, in the archive dialog", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_passes_managed_at_provider_count: 3 });
     renderSettings();
     await openDangerZone();
@@ -3737,18 +3737,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
 
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByText(
-        /3 inactive wallet passes are still at the wallet service - archiving does not remove them\./,
-      ),
+      within(dialog).getByText(/3 inactive wallet passes are still at the wallet service - archiving won't remove them\./),
     ).toBeTruthy();
-    // The count includes passes Remove inactive passes does not reach yet (still within its
-    // one-day grace period), so the hint must not point at that one action for the whole count.
-    expect(
-      within(dialog).getByText(/Remove inactive passes on Attendees clears the ones voided or expired for at least a day/),
-    ).toBeTruthy();
-    expect(
-      within(dialog).getByText(/Remove from provider \(per attendee or a selection\) reaches the rest, including any from the last day\./),
-    ).toBeTruthy();
+    expect(within(dialog).getByText(/Clean them up from Attendees first if you want them gone\./)).toBeTruthy();
   });
 
   it("uses singular wording for exactly one inactive wallet pass, in the archive dialog", async () => {
@@ -3759,7 +3750,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
 
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByText(/1 inactive wallet pass is still at the wallet service - archiving does not remove them\./),
+      within(dialog).getByText(/1 inactive wallet pass is still at the wallet service - archiving won't remove them\./),
     ).toBeTruthy();
   });
 

@@ -23,13 +23,13 @@ describe("describeWalletPushConfirm", () => {
 describe("describeWalletKeyClearConfirm", () => {
   it("uses singular wording for exactly one issued pass", () => {
     expect(describeWalletKeyClearConfirm(1)).toBe(
-      "This event has 1 issued wallet pass. Clearing the API key stops syncing, voiding, restoring, and pushing updates to it until a working key is set again.",
+      "This event has 1 issued wallet pass. Clearing the API key stops syncing, voiding, restoring, and pushing updates to it.",
     );
   });
 
   it("uses plural wording for more than one issued pass", () => {
     expect(describeWalletKeyClearConfirm(4)).toBe(
-      "This event has 4 issued wallet passes. Clearing the API key stops syncing, voiding, restoring, and pushing updates to them until a working key is set again.",
+      "This event has 4 issued wallet passes. Clearing the API key stops syncing, voiding, restoring, and pushing updates to them.",
     );
   });
 });
@@ -37,13 +37,13 @@ describe("describeWalletKeyClearConfirm", () => {
 describe("describeWalletDisableConfirm", () => {
   it("uses singular wording for exactly one issued pass", () => {
     expect(describeWalletDisableConfirm(1)).toBe(
-      "This event has 1 issued wallet pass. Turning off wallet passes stops syncing, restoring, and pushing updates to it. You can still void, remove or delete it. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.",
+      "This event has 1 issued wallet pass. Turning this off stops syncing, restoring, and pushing updates to it. You can still void, remove, or delete it, and PassCreator's own notifications keep being applied - only the periodic check pauses.",
     );
   });
 
   it("uses plural wording for more than one issued pass", () => {
     expect(describeWalletDisableConfirm(4)).toBe(
-      "This event has 4 issued wallet passes. Turning off wallet passes stops syncing, restoring, and pushing updates to them. You can still void, remove or delete them. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.",
+      "This event has 4 issued wallet passes. Turning this off stops syncing, restoring, and pushing updates to them. You can still void, remove, or delete them, and PassCreator's own notifications keep being applied - only the periodic check pauses.",
     );
   });
 });
@@ -53,7 +53,7 @@ describe("describeWalletPlatformDisableConfirm", () => {
     expect(
       describeWalletPlatformDisableConfirm(["apple"], { apple: 1, google: 0, samsung: 0 }, false, 1),
     ).toBe(
-      "Apple Wallet (1 installed pass) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn't added it yet, and its status disappears from the Attendees list and attendee detail pages until you turn it back on. Nothing changes on attendees' actual devices.",
+      "Apple Wallet (1 installed pass) already has attendees using it. Turning this off hides the Add to Wallet button for new attendees, and hides existing status from the Attendees list until you turn it back on. Nothing changes on attendees' actual devices.",
     );
   });
 
@@ -61,7 +61,7 @@ describe("describeWalletPlatformDisableConfirm", () => {
     expect(
       describeWalletPlatformDisableConfirm(["samsung"], { apple: 0, google: 0, samsung: 3 }, false, 3),
     ).toBe(
-      "Samsung Wallet (3 installed passes) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn't added it yet, and its status disappears from the Attendees list and attendee detail pages until you turn it back on. Nothing changes on attendees' actual devices.",
+      "Samsung Wallet (3 installed passes) already has attendees using it. Turning this off hides the Add to Wallet button for new attendees, and hides existing status from the Attendees list until you turn it back on. Nothing changes on attendees' actual devices.",
     );
   });
 
@@ -69,7 +69,7 @@ describe("describeWalletPlatformDisableConfirm", () => {
     expect(
       describeWalletPlatformDisableConfirm(["apple", "google"], { apple: 2, google: 5, samsung: 0 }, false, 7),
     ).toBe(
-      "Apple Wallet (2 installed passes) and Google Wallet (5 installed passes) already have attendees who added them on their device. Turning these off hides the Add to Wallet button for anyone who hasn't added it yet, and their status disappears from the Attendees list and attendee detail pages until you turn them back on. Nothing changes on attendees' actual devices.",
+      "Apple Wallet (2 installed passes) and Google Wallet (5 installed passes) already have attendees using them. Turning these off hides the Add to Wallet button for new attendees, and hides existing status from the Attendees list until you turn them back on. Nothing changes on attendees' actual devices.",
     );
   });
 
@@ -80,7 +80,7 @@ describe("describeWalletPlatformDisableConfirm", () => {
     expect(
       describeWalletPlatformDisableConfirm(["apple"], { apple: 2, google: 0, samsung: 0 }, true, 6),
     ).toBe(
-      "Apple Wallet (2 installed passes) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn't added it yet, and its status disappears from the Attendees list and attendee detail pages until you turn it back on. This save will also push an update to 6 installed wallet passes across every platform.",
+      "Apple Wallet (2 installed passes) already has attendees using it. Turning this off hides the Add to Wallet button for new attendees, and hides existing status from the Attendees list until you turn it back on. This save will also push an update to 6 installed wallet passes across every platform.",
     );
   });
 });

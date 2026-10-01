@@ -162,7 +162,7 @@ function syncedHint(syncedAt: string | null): string {
   // Generic "each enabled wallet platform", not "Apple/Google" - registration_checked_at is one
   // shared timestamp covering whichever platforms the event actually offers, Samsung included now
   // that this tab reads its real registration data too (CodeRabbit review).
-  return `${label}. Reflects each enabled wallet platform's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
+  return `${label} - each enabled platform's last registration check, updated by the wallet-sync job, not on page load.`;
 }
 
 /** Pass validity's own hint - unlike syncedHint above, an admin's own Void/Restore takes effect
@@ -181,7 +181,7 @@ function syncedHint(syncedAt: string | null): string {
  * review, a second finding on the same hint). */
 function passValidityHint(syncedAt: string | null): string {
   const label = syncedAt ? `Most recently checked at ${viewerLocalTime(syncedAt)}` : "No pass checked yet";
-  return `${label} - the single most recently checked pass, not every pass counted here. Voiding a pass takes effect immediately, but the wallet service voiding or expiring a pass on its own is only noticed at that pass's own next sync or a manual Refresh status - which the background sync skips once the event is archived.`;
+  return `${label} (the most recently checked pass, not all of them). Void/Restore is instant, but the wallet service voiding a pass on its own is only caught by the next sync or a manual Refresh - skipped for archived events.`;
 }
 
 /** Provider state's own pending-removal note, shown only when EventWalletReportsResponse's own
@@ -194,7 +194,7 @@ function passValidityHint(syncedAt: string | null): string {
 function pendingRemovalNote(count: number): string {
   const verb = count === 1 ? "is" : "are";
   const noun = count === 1 ? "pass" : "passes";
-  return `${count} voided or expired ${noun} ${verb} less than 24 hours old, so Remove inactive passes can't remove ${count === 1 ? "it" : "them"} yet. Admitto waits a full day before deleting a pass from the wallet service, in case it needs to be restored by mistake. Ready to remove once that day has passed.`;
+  return `${count} voided or expired ${noun} ${verb} less than a day old, so not eligible to remove yet - Admitto waits 24 hours in case one needs restoring.`;
 }
 
 /** Devices per attendee's own hint - both totals here are scoped to platforms this event
@@ -204,7 +204,7 @@ function pendingRemovalNote(count: number): string {
  * those registrations drop out of this card's totals - worth saying explicitly, since it means
  * this can read lower than a wallet provider's own dashboard in that specific case (bot review). */
 function devicesPerAttendeeHint(): string {
-  return "Counts registrations on wallet platforms this event currently has enabled. Disabling a platform later doesn't remove it from devices that already installed on it, but those registrations drop out of the totals here - so this can read lower than your wallet provider's own dashboard if a platform with existing installs has since been turned off.";
+  return "Counts registrations on platforms this event currently has enabled. A disabled platform's own registrations still work on-device but drop out of this total, so it can read lower than your wallet provider's own dashboard.";
 }
 
 /** Two-stage funnel as one radialBar with two series, outer to inner: share of attendees the pass
@@ -829,12 +829,9 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
     <>
       {data.passes_truncated && (
         <Notice variant="warning" className="wallets-truncated-notice">
-          This event has more issued wallet passes than a single report can process at once, so
-          platform mix, devices per attendee, adoption by ticket type, pass validity, provider
-          state, registration state, time to wallet install, and time to install after reminder
-          below are based on a partial sample rather than every pass. Cumulative passes issued and
-          admission rate by wallet status are unaffected - both come from a full count, not a
-          sample.
+          This event has too many issued passes for one report to process at once, so most
+          numbers below are based on a partial sample, not every pass. Cumulative passes issued
+          and admission rate by wallet status are exact.
         </Notice>
       )}
       <div className="wallets-panels">
@@ -932,7 +929,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title={<HintLabel hint={passValidityHint(data.synced_at)}>Pass validity</HintLabel>}>
           <p className="wallets-description">
-            Every issued pass, grouped by whether it can still be used: active, voided, or expired. A voided pass can be brought back with Restore wallet pass, but only while the event is running, Wallet is on, and it hasn&rsquo;t also been removed from the wallet service (see Provider state).
+            Every issued pass, grouped by whether it can still be used: active, voided, or expired. Voided can be restored; expired can&rsquo;t.
           </p>
           <div className="wallets-adoption">
             <PassValidityDonut validity={data.pass_validity} gotPass={data.adoption.got_pass} isActive={isActive} />
@@ -943,7 +940,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
         <Card title="Provider state">
           <p className="wallets-description">
-            Every issued pass, grouped by whether Admitto has removed it from the wallet service (via Remove from provider or Remove inactive passes) or not - its record and history stay here either way. A pass deleted directly at the wallet service, outside Admitto, still shows as managed here until reached by one of those actions.
+            Every issued pass, grouped by whether it&rsquo;s still managed at the wallet service or removed. History stays here either way.
           </p>
           {data.pending_removal > 0 && (
             <Notice variant="info" className="wallets-pending-removal-notice">
@@ -962,7 +959,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Registration state (last known)">
           <p className="wallets-description">
-            Every issued pass, grouped by whether it&rsquo;s registered on a platform this event offers right now, has no registration there even though it has real installation history (which can include one still active on a platform since turned off), or was never installed at all.
+            Every issued pass, grouped by whether it&rsquo;s registered right now, was registered before but isn&rsquo;t now, or was never installed.
           </p>
           <div className="wallets-adoption">
             <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} gotPass={data.adoption.got_pass} isActive={isActive} />

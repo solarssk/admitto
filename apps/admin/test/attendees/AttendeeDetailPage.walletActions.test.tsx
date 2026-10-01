@@ -599,7 +599,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
   });
 
   describe("Delete wallet pass", () => {
-    it("shows the caveats list in the confirm dialog", async () => {
+    it("points to Remove from provider as the history-keeping alternative in the confirm dialog", async () => {
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
@@ -607,11 +607,8 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       openMoreActionsMenu();
       fireEvent.click(screen.getByRole("menuitem", { name: /Delete wallet pass/ }));
       const dialog = screen.getByRole("dialog", { name: "Delete wallet pass?" });
-      expect(
-        within(dialog).getByText(/Only they can remove it there \(Apple and Google do not let us\)/),
-      ).toBeTruthy();
-      expect(within(dialog).getByText(/Check-in is not affected/)).toBeTruthy();
-      expect(within(dialog).getByText(/They can only add a new pass from their ticket page while Wallet is on for this event and the event has not ended/)).toBeTruthy();
+      expect(within(dialog).getByText(/Deletes Anna's pass and its history from Reports/)).toBeTruthy();
+      expect(within(dialog).getByText(/Use Remove from provider instead to keep that history/)).toBeTruthy();
     });
 
     it("confirms, calls deleteWalletPass, toasts, and reloads detail", async () => {
@@ -748,8 +745,8 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       openMoreActionsMenu();
       fireEvent.click(screen.getByRole("menuitem", { name: /Remove from provider/ }));
       const dialog = screen.getByRole("dialog", { name: "Remove from provider?" });
-      expect(within(dialog).getByText(/keeps the pass record and its history in Reports/)).toBeTruthy();
-      expect(within(dialog).getByText(/You cannot undo this/)).toBeTruthy();
+      expect(within(dialog).getByText(/the pass record and history in Reports stay/)).toBeTruthy();
+      expect(within(dialog).getByText(/This can't be undone there/)).toBeTruthy();
     });
 
     it("confirms, calls removeWalletPassFromProvider, toasts, and reloads detail", async () => {
