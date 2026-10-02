@@ -782,6 +782,48 @@ describe("EventBounceIngestPanel on the loading standard", () => {
     await act(async () => refresh.resolve(bounceResponse({ smtp_reuse_available: true })));
   });
 
+  it("keeps what is being edited when the refresh answers, and takes the server's facts (SMTP reuse) from it", async () => {
+    const { ref } = renderPanel();
+    const host = (await screen.findByLabelText("IMAP host")) as HTMLInputElement;
+    fireEvent.change(host, { target: { value: "imap.other.example.com" } });
+    expect(screen.getByRole("switch", { name: "Use SMTP username and password" }).hasAttribute("disabled")).toBe(true);
+
+    mockFetch.mockResolvedValueOnce(bounceResponse({ imap_host: "imap.server.example.com", smtp_reuse_available: true }));
+    await act(async () => {
+      ref.current?.refresh();
+    });
+
+    expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.other.example.com");
+    expect(screen.getByRole("switch", { name: "Use SMTP username and password" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("takes the server's values from a refresh when nothing was edited", async () => {
+    const { ref } = renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    mockFetch.mockResolvedValueOnce(bounceResponse({ imap_host: "imap.server.example.com" }));
+    await act(async () => {
+      ref.current?.refresh();
+    });
+    expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.server.example.com");
+  });
+
+  it("keeps the loaded form, with a warning toast, when a refresh fails, instead of replacing it with the error", async () => {
+    const { ref } = renderPanel();
+    const host = (await screen.findByLabelText("IMAP host")) as HTMLInputElement;
+    fireEvent.change(host, { target: { value: "imap.other.example.com" } });
+
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    await act(async () => {
+      ref.current?.refresh();
+    });
+
+    expect(screen.getByLabelText("IMAP host")).toBe(host);
+    expect(host.value).toBe("imap.other.example.com");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not refresh the bounce detection settings/);
+  });
+
   it("shows Test connection busy as 'Testing…' while it probes, keeps its focus and ignores a second click", async () => {
     const probe = deferred<{ ok: boolean; message: string }>();
     mockTest.mockReturnValue(probe.promise);

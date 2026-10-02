@@ -268,8 +268,18 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
   const takenTokens = new Set(assets.map((a) => a.token));
   const previewToken = tokenTrimmed ? allocatePreviewToken(tokenTrimmed, takenTokens) : null;
   const tokenErrorText = imageNameValidationError(displayName, displayNameTouched);
+  // The names already taken (the preview of the name's variable) and the list an added image joins are the list's, so Add
+  // waits for the list; a file is neither picked nor dropped while the file before it is being prepared or added.
+  const listReady = panel.gate.showContent && !panel.error;
+  const working = uploading || adding;
   const canSubmit =
-    Boolean(file) && !tokenErrorText && Boolean(previewToken) && !uploading && !adding && !disabled;
+    Boolean(file) && !tokenErrorText && Boolean(previewToken) && !working && !disabled && listReady;
+  const addReasonId = "image-asset-library-add-reason";
+  const addReason = !listReady
+    ? "The images are still loading."
+    : !file
+      ? "Choose an image and give it a name first."
+      : undefined;
 
   const resetForm = () => {
     setDisplayName("");
@@ -295,6 +305,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
+    if (adding) return;
     const declared = sniffImageMime(picked);
     if (declared === "image/svg+xml") {
       setFormError("SVG is not supported. Use PNG, JPG, or WebP.");
@@ -337,7 +348,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
   };
 
   const openFilePicker = () => {
-    if (!disabled && !uploading) fileRef.current?.click();
+    if (!disabled && !working) fileRef.current?.click();
   };
 
   const handleSubmit = async () => {
@@ -518,7 +529,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
             className={[
               "image-asset-library__dropzone",
               dragging && "image-asset-library__dropzone--dragging",
-              uploading && "image-asset-library__dropzone--busy",
+              working && "image-asset-library__dropzone--busy",
               disabled && "image-asset-library__dropzone--disabled",
             ]
               .filter(Boolean)
@@ -528,13 +539,13 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
-              if (disabled || uploading) return;
+              if (disabled || working) return;
               const dropped = e.dataTransfer.files[0];
               if (dropped) void handleFilePick(dropped);
             }}
             onDragOver={(e) => {
               e.preventDefault();
-              if (!disabled && !uploading) setDragging(true);
+              if (!disabled && !working) setDragging(true);
             }}
             onDragLeave={() => setDragging(false)}
             onKeyDown={(e) => {
@@ -556,7 +567,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
                 <Input
                   label="Image name"
                   value={displayName}
-                  disabled={disabled || uploading || adding}
+                  disabled={disabled || working}
                   maxLength={DISPLAY_NAME_MAX}
                   onChange={(e) => setDisplayName(clampDisplayName(e.target.value))}
                   onBlur={() => setDisplayNameTouched(true)}
@@ -568,6 +579,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
                     type="button"
                     variant="secondary"
                     aria-disabled={!canSubmit}
+                    aria-describedby={!canSubmit && addReason ? addReasonId : undefined}
                     loading={adding}
                     loadingLabel="Adding…"
                     icon={<i className="ti ti-plus" aria-hidden="true" />}
@@ -575,6 +587,11 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
                   >
                     Add image
                   </Button>
+                  {!canSubmit && addReason && (
+                    <span id={addReasonId} className="sr-only">
+                      {addReason}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -596,7 +613,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
           type="file"
           accept="image/png,image/jpeg,image/webp"
           className="image-asset-library__file-input"
-          disabled={disabled || uploading}
+          disabled={disabled || working}
           onChange={(e) => void handleFilePick(e.target.files?.[0] ?? null)}
           aria-label="Image file"
           aria-hidden="true"

@@ -733,7 +733,7 @@ describe("EventImageAssetLibrary", () => {
 
 describe("EventImageAssetLibrary on the loading standard", () => {
   it("keeps the upload card from the first frame, draws tiles of placeholders after 200ms, says it is taking longer after 8 seconds and ends in an error with a Retry after 30", async () => {
-    mockFetch.mockImplementation(hangUntilAborted as never);
+    mockFetch.mockImplementationOnce(hangUntilAborted as never);
     vi.useFakeTimers();
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
 
@@ -741,7 +741,7 @@ describe("EventImageAssetLibrary on the loading standard", () => {
     expect(screen.getByLabelText("Loading images").className).toContain("at-loading-hold");
     await advanceTimers(200);
     expect(screen.getByLabelText("Loading images").className).not.toContain("at-loading-hold");
-    expect(document.querySelectorAll(".image-asset-library__skeleton .at-skeleton")).toHaveLength(3);
+    expect(document.querySelectorAll(".image-asset-library__skeleton .image-asset-library__grid .at-skeleton")).toHaveLength(3);
     await advanceTimers(7_800);
     expect(screen.getByLabelText("Loading images").textContent).toContain("Taking longer than usual");
 
@@ -769,6 +769,58 @@ describe("EventImageAssetLibrary on the loading standard", () => {
 
     await act(async () => answer.resolve([asset]));
     expect(await screen.findByText("sponsor.png")).toBeTruthy();
+    // The card that holds the list stays, so the focus goes there and not to the top of the tab.
+    await waitFor(() => expect(document.activeElement?.classList.contains("at-card")).toBe(true));
+    expect(document.activeElement?.textContent).toContain("sponsor.png");
+  });
+
+  it("keeps Add image off, with its reason, until the list has loaded, since the names already taken come from it", async () => {
+    const list = deferred<EventImageAssetDto[]>();
+    mockFetch.mockReturnValueOnce(list.promise);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
+    await pickImageAndApply(new File(["x"], "sponsor.png", { type: "image/png" }));
+    const add = screen.getByRole("button", { name: "Add image" });
+
+    expect(isOff(add)).toBe(true);
+    expect(document.getElementById(add.getAttribute("aria-describedby")!)?.textContent).toBe("The images are still loading.");
+    fireEvent.click(add);
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    await act(async () => list.resolve([]));
+    await waitFor(() => expect(isOff(screen.getByRole("button", { name: "Add image" }))).toBe(false));
+  });
+
+  it("says why Add image is off while no image has been chosen", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+    const add = screen.getByRole("button", { name: "Add image" });
+    expect(document.getElementById(add.getAttribute("aria-describedby")!)?.textContent).toBe("Choose an image and give it a name first.");
+  });
+
+  it("blocks the drop zone, the file picker and the drops while Add image runs, so the original it is sending cannot be deleted", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    const created = deferred<EventImageAssetDto>();
+    mockCreate.mockReturnValueOnce(created.promise);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
+    await pickImageAndApply(new File(["x"], "sponsor.png", { type: "image/png" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add image" }));
+    await screen.findByRole("button", { name: "Adding…" });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput.disabled).toBe(true);
+    expect(document.querySelector(".image-asset-library__dropzone--busy")).not.toBeNull();
+    mockUploadPreview.mockClear();
+    fireEvent.drop(document.querySelector(".image-asset-library__dropzone")!, {
+      dataTransfer: { files: [new File(["y"], "other.png", { type: "image/png" })] },
+    });
+    expect(mockUploadPreview).not.toHaveBeenCalled();
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
+
+    await act(async () => created.resolve(asset));
   });
 
   it("shows Add image busy as 'Adding…' while the image is added, keeps its focus, ignores a second click, and only then clears the form", async () => {

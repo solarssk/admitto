@@ -4496,11 +4496,13 @@ describe("EventSettingsPage Wallet tab on the loading standard", () => {
     expect(screen.getByText("Showing 1–1 of 1")).toBeTruthy();
   });
 
-  it("keeps the rows on screen, and the pager busy but focusable, while the next page is on its way", async () => {
+  it("keeps the rows on screen, blocked, and the pager busy but focusable, while the next page is on its way", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 15 } as never);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 25 } as never);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     const next = await screen.findByRole("button", { name: "Next" });
+    const previous = screen.getByRole("button", { name: "Previous" });
+    expect(next.getAttribute("aria-disabled")).toBeNull();
     next.focus();
     const page2 = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
     vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(page2.promise as never);
@@ -4509,17 +4511,57 @@ describe("EventSettingsPage Wallet tab on the loading standard", () => {
     await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
 
     // The pager already names the page that was asked for, while the rows of the one before stay, blocked.
-    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    expect(screen.getByText("Page 2 of 3")).toBeTruthy();
     expect(screen.getByText("Succeeded")).toBeTruthy();
     expect(historyPlaceholder()).toBeNull();
+    expect(document.querySelector(".refetch-card--busy")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Next" })).toBe(next);
     expect(next.getAttribute("aria-disabled")).toBe("true");
+    expect(previous.getAttribute("aria-disabled")).toBe("true");
     expect(next.hasAttribute("disabled")).toBe(false);
     expect(document.activeElement).toBe(next);
+    fireEvent.click(next);
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2);
 
-    await act(async () => page2.resolve({ items: [row("job-2")], total: 15 }));
-    await waitFor(() => expect(next.getAttribute("aria-disabled")).toBe("true"));
-    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    await act(async () => page2.resolve({ items: [{ ...row("job-2"), reissued: 7 }], total: 25 }));
+    await waitFor(() => expect(next.getAttribute("aria-disabled")).toBeNull());
+    expect(previous.getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(document.querySelector(".refetch-card--busy")).toBeNull();
+  });
+
+  it("keeps the pager busy, not live, for the read that follows a failed page, so Next cannot be mashed past pages", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 25 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(next);
+    await screen.findByText("Could not load wallet push history");
+
+    const again = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(again.promise as never);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(3));
+
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
+    await act(async () => again.resolve({ items: [row("job-3")], total: 25 }));
+  });
+
+  it("reads the history only while the Wallet tab is open, and again when it is opened again", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValue({ items: [row("job-1")], total: 1 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=general");
+    await screen.findByLabelText("Event title");
+    expect(fetchWalletPushHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
+    await screen.findByText("Showing 1–1 of 1");
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
   });
 
   it("replaces the rows with the error and a Retry when the next page cannot be read, since they no longer answer what was asked", async () => {

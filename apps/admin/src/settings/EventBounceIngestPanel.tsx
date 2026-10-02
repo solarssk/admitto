@@ -4,6 +4,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -314,8 +315,14 @@ export const EventBounceIngestPanel = forwardRef<
     clearResult: clearTestResult,
   } = useConnectionTest("Could not test the IMAP connection.");
 
+  // What a refresh needs to know without being remade for it: whether there is data on screen, and whether the form has edits.
+  const onScreenRef = useRef(false);
+  const dirtyRef = useRef(false);
+
   const load = useCallback(
     async (signal?: AbortSignal, keepError = false) => {
+      // A load that finds data on screen is a refresh (after the mail transport was saved): the form stays, and so do edits.
+      const refreshing = onScreenRef.current;
       setLoading(true);
       // A Retry keeps its error, and the busy Retry button next to it, on screen until the answer is in.
       if (!keepError) setLoadError(null);
@@ -325,6 +332,9 @@ export const EventBounceIngestPanel = forwardRef<
         if (signal?.aborted) return;
         setLoadError(null);
         setApiData(data);
+        onScreenRef.current = true;
+        // What is being edited is not replaced by the answer; the facts about the server (can SMTP be reused, the last run) are.
+        if (refreshing && dirtyRef.current) return;
         const d = draftFromApi(data);
         setDraft(d);
         setBaseline(d);
@@ -333,7 +343,13 @@ export const EventBounceIngestPanel = forwardRef<
         clearTestResult();
       } catch (err) {
         if (signal?.aborted) return;
-        setLoadError(limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load bounce detection settings."));
+        const message = limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load bounce detection settings.");
+        if (refreshing) {
+          // A loaded panel is never replaced by an error: what is on screen stays, and the viewer is told.
+          addToast(`Could not refresh the bounce detection settings. ${message}`, "warning");
+          return;
+        }
+        setLoadError(message);
       } finally {
         limit.done();
         if (!signal?.aborted) {
@@ -342,7 +358,7 @@ export const EventBounceIngestPanel = forwardRef<
         }
       }
     },
-    [clearTestResult, eventId, endLoad],
+    [addToast, clearTestResult, eventId, endLoad],
   );
 
   useEffect(() => {
@@ -367,6 +383,7 @@ export const EventBounceIngestPanel = forwardRef<
   }, [draft, baseline, secrets]);
 
   useEffect(() => {
+    dirtyRef.current = dirty;
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
 

@@ -91,8 +91,8 @@ export interface WalletPushHistoryState {
 /** Wallet push history: read each time the admin opens the Wallet tab (not just once: unlike the location preview above, it
  * reflects background jobs triggered from elsewhere, so it can go stale while the tab stays mounted between visits), and
  * again for every page or page size. It is a list on the loading standard (`useListLoad`): the first read is a placeholder,
- * a later page or visit keeps the rows on screen while it runs, and a read that fails after rows were shown keeps them with
- * a warning. The page is a fresh one for another event (`EventSettingsPage` is keyed by the event), so its page number
+ * a later page or visit keeps the rows on screen, blocked, while it runs, and a read that fails replaces them with the
+ * error (they no longer answer what was asked), with a Retry. The page is a fresh one for another event (`EventSettingsPage` is keyed by the event), so its page number
  * never carries over. */
 export function useWalletPushHistory(eventId: string, tab: EventSettingsTab): WalletPushHistoryState {
   const [page, setPage] = useState(1);

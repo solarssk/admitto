@@ -24,7 +24,8 @@ export function RetryEmptyState({
   retryLabel?: string;
 }>) {
   const retryRef = useRef<HTMLButtonElement>(null);
-  useRetryFocusHandover(retryRef);
+  // The card that holds the list stays when the list arrives: the focus goes there, not to the top of the tab.
+  useRetryFocusHandover(retryRef, ".at-card");
   const ends = useBusyEndCount(retrying);
   return (
     <EmptyState

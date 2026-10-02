@@ -158,7 +158,12 @@ export function VenueAutocomplete({
   const runSearch = async (query: string, opts?: { fromFindButton?: boolean }) => {
     const seq = ++seqRef.current;
     const surfaceLookupFeedback = opts?.fromFindButton === true || !showFindButton;
-    if (surfaceLookupFeedback) setSearching(true);
+    if (surfaceLookupFeedback) {
+      setSearching(true);
+      // A search that ends as the one before it did must still be announced again: the notice of the last outcome goes first.
+      setNoMatch(false);
+      setSearchError(null);
+    }
     try {
       const res = await searchGeocoding(query);
       if (seq !== seqRef.current) return;
@@ -177,7 +182,9 @@ export function VenueAutocomplete({
         setSearchError(operatorApiErrorMessage(err, "Address lookup failed. Try again shortly."));
       }
     } finally {
-      if (surfaceLookupFeedback && seq === seqRef.current) setSearching(false);
+      // Whichever kind of search is the newest ends the wait: a Find that a later, typed search took over from must not
+      // leave the button busy for good.
+      if (seq === seqRef.current) setSearching(false);
     }
   };
 
@@ -199,6 +206,8 @@ export function VenueAutocomplete({
   };
 
   const handleFind = () => {
+    // Enter in the field does not go through the busy button, which swallows a second click: a Find that is running is not started again.
+    if (searching) return;
     if (searchTimerRef.current != null) window.clearTimeout(searchTimerRef.current);
     const trimmed = value.trim();
     if (trimmed.length < MIN_QUERY_LENGTH) {

@@ -17,7 +17,6 @@ import type { WalletPushHistoryScope } from "../api/client.js";
 import type { EventCustomFieldDto, EventLocationDto, EventSettingsDto } from "../api/types.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
-import { RefreshWarning } from "../components/RefreshWarning.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { RowsSkeleton } from "../components/RowsSkeleton.js";
 import { useCardLoad } from "../hooks/useCardLoad.js";
@@ -203,7 +202,7 @@ export function computeWalletCustomFieldPreview(
  * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
  * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
  * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
-function computeWalletPlaceholderPreview(
+export function computeWalletPlaceholderPreview(
   id: string,
   form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone" | "eventType">,
   location: EventLocationDto | null | undefined,
@@ -343,11 +342,6 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
         or a relevant settings save. For a custom message, use Communication &gt; Wallets.
       </p>
       {body}
-      {list.refreshError && (
-        <div className="wallet-push-history-card__body-note">
-          <RefreshWarning message={list.refreshError} onRetry={list.reload} />
-        </div>
-      )}
       {total > 0 && (
         <div className="wallet-push-history-card__footer">
           <PaginationFooter
@@ -357,7 +351,7 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
             totalPages={totalPages}
             totalRows={total}
             pageSizeOptions={WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS}
-            busy={list.refreshing}
+            busy={list.refreshing || list.loading}
             onPageSizeChange={(size) => {
               setPageSize(size);
               setPage(1);
