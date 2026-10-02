@@ -44,6 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     loading: loadingProp,
     loadingLabel,
     disabled = false,
+    "aria-disabled": ariaDisabled,
     type = "button",
     children,
     className,
@@ -55,6 +56,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   // `undefined` means the caller never opted into loading: those buttons render exactly as before.
   const loadingAware = loadingProp !== undefined;
   const loading = loadingProp === true;
+  // A button that is off at the end of its range (a pager's Previous on page 1) passes `aria-disabled` instead of
+  // `disabled` to keep its focus, and is treated like a busy one: same attribute, same swallowed click. It is taken
+  // out of `rest` so that spreading it last can never replace the attribute a busy button has just been given.
+  const inert = loading || ariaDisabled === true || ariaDisabled === "true";
   const hasLoadingLabel = Boolean(children) && loadingLabel !== undefined && loadingLabel !== null;
   // No icon slot to swap and no second label to show: the spinner overlays the (hidden) label.
   const overlaySpinner = loading && !icon && !hasLoadingLabel;
@@ -74,7 +79,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   // which become one) is swallowed whole, so it neither runs the action again, nor submits a form it is
   // the submit button of, nor reaches a clickable ancestor.
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
-    if (loading) {
+    if (inert) {
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -110,7 +115,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       className={cls}
       disabled={disabled && !loading}
-      aria-disabled={loading || undefined}
+      aria-disabled={inert || undefined}
       aria-busy={loading || undefined}
       onClick={handleClick}
       {...rest}

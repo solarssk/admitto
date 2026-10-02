@@ -414,7 +414,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
       );
     });
 
-    expect(screen.getByRole("button", { name: "Previous" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("changes rows per page and resets to page 1", async () => {

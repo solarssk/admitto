@@ -1933,10 +1933,13 @@ export function AttendeesTable({
           </div>
         </div>
         <div className="attendees-table-foot__pager">
+          {/* aria-disabled, never disabled (the same rule as PaginationFooter): the button just pressed turns off
+              while the next page loads, and at the end of the list, on the same commit, and a browser drops the
+              focus of a button that becomes disabled. Button swallows the click of an aria-disabled button. */}
           <Button
             variant="secondary"
             size="sm"
-            disabled={page <= 1 || loading}
+            aria-disabled={page <= 1 || loading}
             onClick={() => onPageChange(page - 1)}
           >
             Previous
@@ -1947,7 +1950,7 @@ export function AttendeesTable({
           <Button
             variant="secondary"
             size="sm"
-            disabled={page >= totalPages || loading}
+            aria-disabled={page >= totalPages || loading}
             onClick={() => onPageChange(page + 1)}
           >
             Next

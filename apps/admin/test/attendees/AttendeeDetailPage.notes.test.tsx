@@ -256,6 +256,40 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(await screen.findByText("Newest")).toBeTruthy();
   });
 
+  it("keeps keyboard focus on Next when it becomes the last-page button, and does nothing when it is pressed", async () => {
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n1", body: "Newest" })],
+      notes_total: 51,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n51", body: "Oldest" })],
+      notes_total: 51,
+      notes_page: 2,
+      notes_page_size: 50,
+    }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    next.focus();
+    expect(next.hasAttribute("aria-disabled")).toBe(false);
+
+    fireEvent.click(next);
+    expect(await screen.findByText("Oldest")).toBeTruthy();
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+
+    // `disabled` would have made the browser drop the focus of the button that was just pressed.
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(document.activeElement).toBe(next);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    expect(next.disabled).toBe(false);
+    const loads = loadAttendeeDetailData.mock.calls.length;
+    fireEvent.click(next);
+    expect(loadAttendeeDetailData).toHaveBeenCalledTimes(loads);
+  });
+
   it("keeps notes pagination usable after adding a note from a later page", async () => {
     mockLoad(baseDetail({
       notes: [makeNote({ id: "n1", body: "Newest" })],

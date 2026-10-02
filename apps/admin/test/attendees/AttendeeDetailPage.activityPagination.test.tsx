@@ -180,8 +180,8 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     await openActivityTab();
 
     expect(screen.getByText("Showing 1–3 of 3")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("pages through the log, requesting only the activity page from the server", async () => {
@@ -196,7 +196,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     await openActivityTab();
 
     expect(screen.getByText("Page 1 of 2")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getByText("Page 2 of 2")).toBeTruthy());
@@ -210,7 +210,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
       "2026-06-01T09:00:00.000Z|log-3",
     );
     expect(screen.getAllByText("Ticket link copied")).toHaveLength(2);
-    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
     // Flipping a page never reloads the whole detail (that would reset the profile form).
     expect(loadAttendeeDetailData).toHaveBeenCalledTimes(1);
 
@@ -259,7 +259,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Could not load activity.")).toBeTruthy();
     expect(screen.getByText("Page 1 of 2")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Next" }).hasAttribute("aria-disabled")).toBe(false);
   });
 
   it("still derives the source from the oldest entry even when it is not on this page", async () => {
