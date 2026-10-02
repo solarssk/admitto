@@ -197,12 +197,11 @@
 
 @media (forced-colors: active) {
   .at-loader__ring {
-    /* Windows High Contrast replaces every border colour with one system colour, so the bright head and
-       the faint track merge into a uniform circle and the rotation cannot be seen. Opting out and picking
-       two different system colours keeps the head visible against the track. */
+    /* Same rule as `.at-spinner__ring` (see spinner.css): forced colours would draw head and track alike,
+       so only the head is drawn, in CanvasText. */
     forced-color-adjust: none;
-    border-color: GrayText;
-    border-top-color: Highlight;
+    border-color: transparent;
+    border-top-color: CanvasText;
   }
 }
 

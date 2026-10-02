@@ -48,10 +48,13 @@
 @media (forced-colors: active) {
   .at-spinner__ring {
     /* Windows High Contrast replaces every border colour with one system colour, so the bright head and
-       the faint track merge into a uniform circle and the rotation cannot be seen. Opting out and picking
-       two different system colours keeps the head visible against the track. */
+       the faint track merge into a uniform circle and the rotation cannot be seen. Opting out and drawing
+       only the head, in CanvasText (the colour the system guarantees to be readable on the page), leaves a
+       turning arc. A head and a track in two system colours (Highlight on GrayText was tried) have no
+       guaranteed contrast with each other: 1.2:1 and 1.5:1 in Chrome's light and dark palettes. Not
+       `currentColor`: with `forced-color-adjust: none` it is the author's colour again. */
     forced-color-adjust: none;
-    border-color: GrayText;
-    border-top-color: Highlight;
+    border-color: transparent;
+    border-top-color: CanvasText;
   }
 }
