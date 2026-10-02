@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { Button, Card, EmptyState, Notice, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Notice, Tooltip, useToast } from "@admitto/ui";
 import type { NoticeVariant } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { fetchAdminHealth, runAdminHealthLive } from "../api/client.js";
@@ -12,11 +12,19 @@ import type {
   HealthRowStatus,
 } from "../api/types.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 import { healthDetailRows } from "./healthCheckDisplay.js";
 import { healthCheckGuidance } from "./healthCheckGuidance.js";
 import { formatHealthCheckMarkdown } from "./healthCheckMarkdown.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import "./health-check.css";
+
+/** The card of the panel, for its placeholder: the overview with its intro and the groups of checks. */
+const HEALTH_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "overview", title: "Overview", intro: 2, rows: 15, rowHeight: 61 },
+];
 
 const CHECK_ICONS: Record<string, string> = {
   database: "database",
@@ -378,7 +386,8 @@ function HealthCheckMoreActions({
             icon="refresh"
             label="Run live checks"
             hint={LIVE_CHECKS_HINT}
-            disabled={liveLoading}
+            loading={liveLoading}
+            loadingLabel="Running…"
             onClick={() => {
               close();
               onRunLive();
@@ -416,9 +425,7 @@ function HealthCheckMoreActions({
 export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: boolean }> = {}) {
   const { addToast } = useToast();
   const [report, setReport] = useState<HealthReportDto | null>(null);
-  const [initialLoading, setInitialLoading] = useState(true);
   const [liveLoading, setLiveLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [expandOverride, setExpandOverride] = useState<Record<string, ExpandOverride>>({});
   // Bumped when an explicit load starts (first visit, Retry) and when live checks finish, so a plain
   // read that was still in flight cannot land afterwards and replace live results, or a report from
@@ -459,29 +466,21 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
     });
   }, [report]);
 
-  const loadPassive = useCallback(async (signal?: AbortSignal) => {
-    const generation = ++reportGeneration.current;
-    setInitialLoading(true);
-    setError(null);
-    try {
+  // The first read (and a Retry of it). It takes a generation when it starts and is dropped when live checks have
+  // finished since, so it can never replace their results (or a later read) with an older report.
+  const panel = usePanelLoad({
+    fetch: async (signal) => {
+      const generation = ++reportGeneration.current;
       const data = await fetchAdminHealth(signal);
-      if (signal?.aborted || generation !== reportGeneration.current) return;
-      setReport(data);
-      setError(null);
-    } catch (err) {
-      if (signal?.aborted || generation !== reportGeneration.current) return;
-      setError(operatorApiErrorMessage(err, "Could not load health checks."));
-      setReport(null);
-    } finally {
-      if (!signal?.aborted) setInitialLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    void loadPassive(ac.signal);
-    return () => ac.abort();
-  }, [loadPassive]);
+      // An empty answer is a failed load, not a report to show.
+      if (!data) throw new Error("empty health report");
+      return { data, generation };
+    },
+    apply: ({ data, generation }) => {
+      if (generation === reportGeneration.current) setReport(data);
+    },
+    fallback: "Could not load health checks.",
+  });
 
   // Returning to this tab reads the report again, quietly: the previous report stays on screen
   // (no loading state, and a failed read keeps it) and is replaced when the new one arrives.
@@ -536,30 +535,26 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
     }
   };
 
-  if (initialLoading && !report) {
-    return (
-      <div className="settings-sections">
-        <Card title="Overview">
-          <p className="settings-card-intro">Loading health checks…</p>
-        </Card>
-      </div>
-    );
-  }
-
   if (!report) {
-    return (
-      <div className="settings-sections">
-        <EmptyState
-          variant="error"
+    if (panel.error && panel.gate.showContent) {
+      return (
+        <PanelLoadError
+          cardTitle="Overview"
           title="Could not load health checks"
-          description={error ?? "Could not load health checks."}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void loadPassive()}>
-              Retry
-            </Button>
-          }
+          message={panel.error}
+          retrying={panel.retrying}
+          onRetry={panel.retry}
         />
-      </div>
+      );
+    }
+    return (
+      <SettingsPanelSkeleton
+        label="Loading health checks"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={HEALTH_SKELETON_CARDS}
+        footer={false}
+      />
     );
   }
 
@@ -584,7 +579,7 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
   const timezone = getBrowserTimeZone();
 
   return (
-    <div className="settings-sections health-check">
+    <div className="settings-sections health-check at-fade-in">
       <Card
         className="health-check__card"
         title="Overview"
@@ -595,15 +590,10 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
                 type="button"
                 variant="secondary"
                 size="sm"
-                icon={
-                  <i
-                    className={`ti ti-refresh${liveLoading ? " at-spin" : ""}`}
-                    aria-hidden="true"
-                  />
-                }
+                icon={<i className="ti ti-refresh" aria-hidden="true" />}
                 onClick={() => void handleLive()}
-                disabled={liveLoading}
-                aria-busy={liveLoading}
+                loading={liveLoading}
+                loadingLabel="Running…"
               >
                 Run live checks
               </Button>

@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button, Card, Notice } from "@admitto/ui";
+import { useRetryFocusHandover } from "../hooks/useRetryFocusHandover.js";
 
 /**
  * A settings panel whose first load failed: the card with its title, what failed and why (an alert), and a Retry that
@@ -18,21 +19,7 @@ export function PanelLoadError({
 }: Readonly<{ cardTitle: ReactNode; title: string; message: string; retrying: boolean; onRetry: () => Promise<void> }>) {
   const retryRef = useRef<HTMLButtonElement>(null);
 
-  useLayoutEffect(() => {
-    const retry = retryRef.current;
-    // React runs this cleanup before it takes the card out of the page, so the Retry still holds focus (and has its
-    // tab panel above it) here; by the time the microtask runs the form is in and the Retry is gone.
-    return () => {
-      if (!retry || document.activeElement !== retry) return;
-      const tabPanel = retry.closest<HTMLElement>('[role="tabpanel"]');
-      if (!tabPanel) return;
-      queueMicrotask(() => {
-        if (document.activeElement && document.activeElement !== document.body) return;
-        if (!tabPanel.hasAttribute("tabindex")) tabPanel.tabIndex = -1;
-        tabPanel.focus();
-      });
-    };
-  }, []);
+  useRetryFocusHandover(retryRef);
 
   return (
     <Card title={cardTitle}>

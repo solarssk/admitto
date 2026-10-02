@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 export interface EmptyStateProps {
   icon?: ReactNode;
   title: string;
-  description?: string;
+  /** Text, or an element when the text must be mounted afresh (a `key`) so a live region says it again. */
+  description?: ReactNode;
   action?: ReactNode;
   className?: string;
   /**
