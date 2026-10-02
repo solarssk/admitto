@@ -12,7 +12,7 @@ This file is informational. Prefer package-local license files in `node_modules`
 
 ## libvips (via sharp)
 
-- Packages: `sharp`, platform packages `@img/sharp-libvips-*`, and `@img/sharp-wasm32`
+- Packages: `sharp`, platform packages `@img/sharp-libvips-*`, `@img/sharp-wasm32` and `@img/sharp-win32-*`
 - License: LGPL-3.0-or-later for libvips / sharp-libvips native binaries and the wasm32 build; `sharp` itself is Apache-2.0 (see the sharp package `LICENSE`)
 - Notes: Admitto links to prebuilt libvips binaries. LGPL obligations apply to that library, not to Admitto application code. When distributing binaries that include libvips, retain LGPL notices and license text from the sharp / sharp-libvips / sharp-wasm32 packages.
 

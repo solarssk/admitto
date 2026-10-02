@@ -97,8 +97,20 @@ const ALLOWLIST = new Set([
 const REVIEWED_PACKAGE_VERSIONS = new Set([
   // libvips native binaries + wasm build (via sharp) - LGPL-3.0-or-later; Admitto links prebuilt
   // binaries and never patches libvips's own source. See THIRD-PARTY-NOTICES.md.
-  "@img/sharp-libvips-darwin-arm64@1.3.2",
-  "@img/sharp-wasm32@0.35.3",
+  "@img/sharp-libvips-darwin-arm64@1.3.4",
+  "@img/sharp-libvips-darwin-x64@1.3.4",
+  "@img/sharp-libvips-linux-arm@1.3.4",
+  "@img/sharp-libvips-linux-arm64@1.3.4",
+  "@img/sharp-libvips-linux-ppc64@1.3.4",
+  "@img/sharp-libvips-linux-riscv64@1.3.4",
+  "@img/sharp-libvips-linux-s390x@1.3.4",
+  "@img/sharp-libvips-linux-x64@1.3.4",
+  "@img/sharp-libvips-linuxmusl-arm64@1.3.4",
+  "@img/sharp-libvips-linuxmusl-x64@1.3.4",
+  "@img/sharp-wasm32@0.35.5",
+  "@img/sharp-win32-arm64@0.35.5",
+  "@img/sharp-win32-ia32@0.35.5",
+  "@img/sharp-win32-x64@0.35.5",
   // elkjs - EPL-2.0 (file-level copyleft); used only through its public API, unmodified.
   "elkjs@0.11.1",
   // lightningcss - MPL-2.0 (file-level copyleft); build/dev tooling only (Vite's CSS pipeline),
