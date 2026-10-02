@@ -52,7 +52,7 @@ export function IdentityEditorSkeleton({ label, held, slow, lead, cards }: Reado
         </div>
       ) : null}
       {cards.map((card) => (
-        <Card key={card.id} title={card.title}>
+        <Card key={card.id} title={card.title} aria-hidden="true">
           <div className="identity-editor__grid" aria-hidden="true">
             {card.intro ? (
               <div style={{ gridColumn: "1 / -1" }}>

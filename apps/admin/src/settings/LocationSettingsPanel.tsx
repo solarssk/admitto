@@ -28,6 +28,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
+import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
 import { AddressComponentsGrid } from "./AddressComponentsGrid.js";
 import { FixMapsLinkModal } from "./FixMapsLinkModal.js";
 import { componentsFromResult, enrichComponentsFromReverse } from "./locationGeocode.js";
@@ -85,6 +86,19 @@ const ACCESS_POINTS_HINT =
 const ACCESS_POINTS_INTRO =
   "General venue and access details, not specific to Wallet. Today they're used once mapped to a field in Event Settings → Wallet.";
 const OPENING_HOURS_INTRO = "All optional - fill in only the ones that apply to this event.";
+
+/** Map tiles are optional (#808): a tile-config read that has not answered after this long counts as failed, so that the
+ * location's own answer is shown (with the map off) and not held back for the 30 seconds of the whole load. */
+const MAP_TILE_CONFIG_TIMEOUT_MS = 10_000;
+
+async function fetchMapTileConfigWithLimit(signal: AbortSignal): Promise<MapTileConfigDto> {
+  const limit = loadWithTimeout(signal, MAP_TILE_CONFIG_TIMEOUT_MS);
+  try {
+    return await rejectOnAbort(fetchMapTileConfig(limit.signal), limit.signal);
+  } finally {
+    limit.done();
+  }
+}
 
 /** Used when map-tile config cannot be loaded. Keeps venue/notes editable without a MapPicker. */
 const MAPS_UNAVAILABLE_FALLBACK: MapTileConfigDto = {
@@ -191,7 +205,7 @@ function LocationSettingsPanelBody({
     fetch: async (signal) => {
       const [locationResult, tilesResult] = await Promise.allSettled([
         fetchEventLocation(eventId, signal),
-        fetchMapTileConfig(signal),
+        fetchMapTileConfigWithLimit(signal),
       ]);
       if (locationResult.status === "rejected") throw locationResult.reason;
       return {

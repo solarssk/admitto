@@ -4269,14 +4269,96 @@ describe("EventSettingsPage first load on the loading standard", () => {
     expect(document.activeElement?.getAttribute("role")).toBe("tabpanel");
   });
 
-  it("still says Event not found for a 404 or a 403 and offers Back, not a Retry", async () => {
+  it("leaves the focus alone when the Retry that worked was not the focused control", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const generalTab = screen.getByRole("tab", { name: "General" });
+    generalTab.focus();
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    // A click that does not focus the button (some browsers), while the focus is on a tab.
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+    expect(document.activeElement).toBe(generalTab);
+  });
+
+  it("does not pull the focus to the page when it was on nothing (a click that did not focus the Retry) while the Retry worked", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("moves the focus to Back when the Retry that was focused ends in Event not found", async () => {
     const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
     vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(404, "not_found", "not_found"));
+    fireEvent.click(retry);
+    await advanceTimers(500);
+
+    expect(screen.getByText("Event not found")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back" }));
+  });
+
+  it.each([404, 403])("still says Event not found for a %i and offers Back, not a Retry", async (status) => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(status, "not_found", "not_found"));
     renderSettings();
 
     expect(await screen.findByText("Event not found")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+  });
+
+  it.each([
+    ["general", "Basic information"],
+    ["location", "Address"],
+    ["ticket-types", "Ticket types"],
+    ["images", "Event logo"],
+    ["checkin-behaviour", "Check-in behaviour"],
+    ["mail", "Bounce detection"],
+    ["wallet", "Wallet"],
+    ["danger-zone", "Danger zone"],
+  ])("draws the cards of the %s tab as the placeholder while the event is read, under the real tab strip", async (tab, title) => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings(`/admin/events/evt-1/settings?tab=${tab}`);
+    await advanceTimers(200);
+
+    expect(within(placeholder()!).getAllByText(title).length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { selected: true })).toBeTruthy();
+  });
+
+  it("does not offer the superadmin-only tabs, nor draw their placeholder, to an organisation admin", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(200);
+
+    expect(screen.queryByRole("tab", { name: "Wallet" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Mailing" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "General", selected: true })).toBeTruthy();
+    expect(within(placeholder()!).getAllByText("Basic information").length).toBeGreaterThan(0);
   });
 
   it("keeps the page on screen and only toasts when the reload after an action fails", async () => {
@@ -4294,7 +4376,6 @@ describe("EventSettingsPage first load on the loading standard", () => {
   });
 
   it("starts a fresh page for another event, with its own placeholder, instead of the previous event's form", async () => {
-    const eventB = { ...activeEvent, id: "evt-3", title: "Gala" };
     vi.mocked(fetchEventSettings).mockImplementation(((id: string) =>
       id === "evt-1" ? Promise.resolve(activeEvent) : new Promise(() => {})) as never);
     const router = createMemoryRouter(
@@ -4309,7 +4390,6 @@ describe("EventSettingsPage first load on the loading standard", () => {
     });
     expect(screen.queryByDisplayValue("Summit")).toBeNull();
     expect(placeholder()).not.toBeNull();
-    expect(eventB.title).toBe("Gala");
   });
 });
 

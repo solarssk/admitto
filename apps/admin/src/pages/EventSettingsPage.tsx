@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -934,25 +935,63 @@ function computeSettingsDirty(form: SettingsForm | null, original: SettingsForm 
   }
 }
 
-/** The error of a failed first load is replaced by the whole page when a Retry works, so the tab panel that `PanelLoadError`
- * would hand the focus to is gone with it: once the page is there, the focus that was on the Retry (a browser drops it on
- * `<body>`) goes to the page's open tab panel instead, so a screen reader hears where it is and the next Tab goes into the
- * tab. Focus that is anywhere else by then is left alone. */
-function useFocusOpenTabAfterRetry(failed: boolean, ready: boolean, rootRef: RefObject<HTMLElement | null>): void {
+/** The error of a failed first load is replaced by the whole page when a Retry works (or by "Event not found", when the
+ * answer is a 403 or 404), so the tab panel that `PanelLoadError` would hand the focus to is gone with it: once the page
+ * is there, the focus that was on the Retry (a browser drops it on `<body>`) goes to the page's open tab panel instead, or
+ * to the Back button of "Event not found", so a screen reader hears where it is and the next Tab goes on from there. Focus
+ * that was never in the error (`errorHadFocusRef`: a mouse click does not focus a button in every browser, and the
+ * viewer may have moved to a tab), or is anywhere else by then, is left alone. */
+function useFocusOpenTabAfterRetry(
+  failed: boolean,
+  settled: boolean,
+  rootRef: RefObject<HTMLElement | null>,
+  errorHadFocusRef: RefObject<boolean>,
+): void {
   const wasFailed = useRef(false);
   useEffect(() => {
     if (failed) {
       wasFailed.current = true;
       return;
     }
-    if (!ready || !wasFailed.current) return;
+    if (!settled || !wasFailed.current) return;
     wasFailed.current = false;
+    const hadFocus = errorHadFocusRef.current;
+    errorHadFocusRef.current = false;
+    if (!hadFocus) return;
     if (document.activeElement && document.activeElement !== document.body) return;
-    const panel = rootRef.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])');
-    if (!panel) return;
-    if (!panel.hasAttribute("tabindex")) panel.tabIndex = -1;
-    panel.focus();
-  }, [failed, ready, rootRef]);
+    const target =
+      rootRef.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])') ??
+      rootRef.current?.querySelector<HTMLElement>("button");
+    if (!target) return;
+    if (!target.hasAttribute("tabindex") && target.getAttribute("role") === "tabpanel") target.tabIndex = -1;
+    target.focus();
+  }, [failed, settled, rootRef, errorHadFocusRef]);
+}
+
+/** The tab panel that holds the error of a failed first read. It notes whether the focus was inside it when it goes (React
+ * runs this cleanup before it takes the panel out of the page, so a focused Retry is still focused here). */
+function EventSettingsLoadError({
+  firstLoad,
+  errorHadFocusRef,
+}: Readonly<{ firstLoad: PanelLoad; errorHadFocusRef: RefObject<boolean> }>) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    return () => {
+      errorHadFocusRef.current = Boolean(panel?.contains(document.activeElement));
+    };
+  }, [errorHadFocusRef]);
+  return (
+    <div ref={panelRef} role="tabpanel" aria-label="Event settings" className="event-settings-tabpanel">
+      <PanelLoadError
+        cardTitle="Event settings"
+        title="Could not load event settings"
+        message={firstLoad.error ?? "Unexpected error."}
+        retrying={firstLoad.retrying}
+        onRetry={firstLoad.retry}
+      />
+    </div>
+  );
 }
 
 interface EventSettingsEarlyExitParams {
@@ -962,6 +1001,8 @@ interface EventSettingsEarlyExitParams {
   readonly isSuperadmin: boolean;
   readonly onTabChange: (id: string) => void;
   readonly goBack: () => void;
+  readonly pageRef: RefObject<HTMLDivElement | null>;
+  readonly errorHadFocusRef: RefObject<boolean>;
 }
 
 /** Early-exit states before the real Event Settings UI can render - the first read of the event still in flight (the
@@ -979,6 +1020,8 @@ function renderEventSettingsEarlyExit({
   isSuperadmin,
   onTabChange,
   goBack,
+  pageRef,
+  errorHadFocusRef,
 }: EventSettingsEarlyExitParams): ReactNode | undefined {
   const header = <EventSettingsHeader tab={tab} isSuperadmin={isSuperadmin} onTabChange={onTabChange} />;
   if (!firstLoad.gate.showContent) {
@@ -993,21 +1036,13 @@ function renderEventSettingsEarlyExit({
     return (
       <div className="event-settings-page screen">
         {header}
-        <div role="tabpanel" aria-label="Event settings" className="event-settings-tabpanel">
-          <PanelLoadError
-            cardTitle="Event settings"
-            title="Could not load event settings"
-            message={firstLoad.error}
-            retrying={firstLoad.retrying}
-            onRetry={firstLoad.retry}
-          />
-        </div>
+        <EventSettingsLoadError firstLoad={firstLoad} errorHadFocusRef={errorHadFocusRef} />
       </div>
     );
   }
   if (notFound) {
     return (
-      <div className="event-settings-page">
+      <div ref={pageRef} className="event-settings-page">
         <EmptyState
           variant="error"
           title="Event not found"
@@ -1358,7 +1393,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   }
 
   const pageRef = useRef<HTMLDivElement>(null);
-  useFocusOpenTabAfterRetry(Boolean(firstLoad.error), Boolean(event && form), pageRef);
+  const errorHadFocusRef = useRef(false);
+  useFocusOpenTabAfterRetry(Boolean(firstLoad.error), Boolean((event && form) || notFound), pageRef, errorHadFocusRef);
   const earlyExit = renderEventSettingsEarlyExit({
     firstLoad,
     notFound,
@@ -1366,6 +1402,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     isSuperadmin: isSa,
     onTabChange: handleTabChange,
     goBack,
+    pageRef,
+    errorHadFocusRef,
   });
   if (earlyExit !== undefined) return earlyExit;
   if (!event || !form) return null;

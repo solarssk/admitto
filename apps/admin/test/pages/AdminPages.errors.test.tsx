@@ -301,12 +301,15 @@ describe("EventSettingsPage operator errors", () => {
     );
   }
 
-  it("toasts on load failure", async () => {
+  it("shows an operator-safe error with a Retry on a failed first load, not a toast", async () => {
     vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderSettings();
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not load event settings/);
+      expect(screen.getByRole("alert").textContent).toMatch(/Could not load event settings/);
     });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText(/secret_internal/)).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("toasts on save failure", async () => {

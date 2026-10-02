@@ -99,9 +99,9 @@ describe("TicketTypesCard first load on the loading standard", () => {
     expect(document.activeElement).toBe(screen.getByRole("tabpanel", { name: "Ticket types" }));
   });
 
-  it("is a fresh card for another event: the previous event's rows are gone at once and its answer cannot land", async () => {
-    const first = deferred<TicketTypeDto[]>();
-    vi.mocked(fetchTicketTypes).mockReturnValueOnce(Promise.resolve([vip])).mockReturnValueOnce(first.promise);
+  it("is a fresh card for another event: the previous event's rows are gone at once", async () => {
+    const second = deferred<TicketTypeDto[]>();
+    vi.mocked(fetchTicketTypes).mockReturnValueOnce(Promise.resolve([vip])).mockReturnValueOnce(second.promise);
     const { rerender } = render(ui("evt-1"));
     await advanceTimers(0);
     expect(screen.getByDisplayValue("VIP")).toBeTruthy();
@@ -109,8 +109,44 @@ describe("TicketTypesCard first load on the loading standard", () => {
     rerender(ui("evt-2"));
     expect(screen.queryByDisplayValue("VIP")).toBeNull();
     expect(placeholder()).not.toBeNull();
-    await act(async () => first.resolve([staff]));
+    await act(async () => second.resolve([staff]));
     await advanceTimers(0);
     expect(screen.getByDisplayValue("Staff")).toBeTruthy();
+  });
+
+  it("drops the answer of the event that was open when it arrives after the next one was asked for", async () => {
+    const first = deferred<TicketTypeDto[]>();
+    const second = deferred<TicketTypeDto[]>();
+    vi.mocked(fetchTicketTypes).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { rerender } = render(ui("evt-1"));
+    await advanceTimers(0);
+
+    rerender(ui("evt-2"));
+    await act(async () => first.resolve([vip]));
+    await advanceTimers(0);
+    expect(screen.queryByDisplayValue("VIP")).toBeNull();
+    expect(placeholder()).not.toBeNull();
+
+    await act(async () => second.resolve([staff]));
+    await advanceTimers(0);
+    expect(screen.getByDisplayValue("Staff")).toBeTruthy();
+    expect(screen.queryByDisplayValue("VIP")).toBeNull();
+  });
+
+  it("shows no count and no working Add button over the error, nor while its Retry runs", async () => {
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    render(ui());
+    await advanceTimers(0);
+
+    expect(screen.getByText("Could not load ticket types")).toBeTruthy();
+    expect(screen.queryByText(/^\d+ types?$/)).toBeNull();
+    expect(isOff(screen.getByRole("button", { name: "Add ticket type" }))).toBe(true);
+
+    const answer = deferred<TicketTypeDto[]>();
+    vi.mocked(fetchTicketTypes).mockReturnValueOnce(answer.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(0);
+    expect(screen.queryByText(/^\d+ types?$/)).toBeNull();
+    expect(isOff(screen.getByRole("button", { name: "Add ticket type" }))).toBe(true);
   });
 });

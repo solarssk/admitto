@@ -301,6 +301,33 @@ describe("LocationSettingsPanel — loading", () => {
   });
 });
 
+describe("LocationSettingsPanel — map tiles are optional", () => {
+  it("shows the location after 10 seconds, with the map off, when only the tile config never answers, instead of failing the whole panel at 30", async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+      mockFetchTiles.mockImplementation(hangUntilAborted as never);
+      renderPanel();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9_999);
+      });
+      expect(screen.queryByDisplayValue("Springfield Hall")).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(screen.getByDisplayValue("Springfield Hall")).toBeTruthy();
+      expect(screen.queryByText(/The server did not answer in time/)).toBeNull();
+      expect(screen.queryByTestId("map-picker")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("LocationSettingsPanel — Retry and another event", () => {
   it("keeps the error on screen with a busy Retry until the answer is in, then shows the panel and moves the focus to the tab panel", async () => {
     mockFetchLocation.mockRejectedValueOnce(new Error("network down"));

@@ -80,6 +80,8 @@ describe("CfAccessEditor loading standard: the first load", () => {
     await advanceTimers(200);
     expect(placeholder()?.className).not.toContain("at-loading-hold");
     expect(screen.getByText("Configuration")).toBeTruthy();
+    // The cards are decoration for assistive tech: the region is named by its label and says only the slow note.
+    expect(screen.getByText("Configuration").closest('[aria-hidden="true"]')).not.toBeNull();
     expect(screen.queryByLabelText("Cloudflare team URL")).toBeNull();
     expect(screen.queryByText(/Taking longer than usual/)).toBeNull();
   });
