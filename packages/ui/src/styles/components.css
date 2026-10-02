@@ -372,7 +372,9 @@
 .at-switch input:checked + .at-switch__track { background: var(--primary); }
 .at-switch input:checked + .at-switch__track .at-switch__thumb { transform: translateX(1rem); }
 .at-switch input:focus-visible + .at-switch__track { box-shadow: var(--ring); }
-.at-switch:has(input:disabled) { cursor: not-allowed; opacity: 0.5; }
+.at-switch:has(input:disabled), .at-switch:has(input[aria-disabled="true"]) { cursor: not-allowed; opacity: 0.5; }
+/* Off because its own change is being saved (it stays focusable, so it is never `disabled`): dimmed like a disabled one, with the wait cursor. */
+.at-switch:has(input[aria-busy="true"]) { cursor: progress; }
 .at-switch__label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); white-space: nowrap; }
 
 /* ---------------- Badge / Tag ---------------- */

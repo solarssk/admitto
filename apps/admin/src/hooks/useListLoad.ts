@@ -103,6 +103,8 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
       ctx.setRefreshError(`${REFRESH_FAILED} ${message}`);
     } else {
       ctx.loadedRef.current = false;
+      // The rows are gone with this error, so an earlier "may show older details" warning about them has nothing to say.
+      ctx.setRefreshError(null);
       ctx.setError(message);
     }
   } finally {

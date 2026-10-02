@@ -173,7 +173,7 @@ describe("IdentityProvidersPanel", () => {
         "Could not fetch OIDC discovery from the issuer URL. Check the URL is reachable and exposes .well-known/openid-configuration.",
       ),
     ).toBeTruthy();
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading providers" });
     mockProviders.mockResolvedValueOnce({ providers: [] });
     fireEvent.click(retry);
     await waitFor(() => {
@@ -245,18 +245,20 @@ describe("IdentityProvidersPanel", () => {
     fireEvent.click(switches[0]!);
     fireEvent.click(switches[1]!);
 
-    // Both switches are disabled while their respective toggles are in flight —
+    // Both switches are off (aria-disabled, still focusable) while their respective toggles are in flight;
     // the second click must not re-enable the first row.
-    await waitFor(() => expect(switches[0]).property("disabled", true));
-    expect(switches[1]).property("disabled", true);
+    await waitFor(() => expect(switches[0]!.getAttribute("aria-disabled")).toBe("true"));
+    expect(switches[1]!.getAttribute("aria-disabled")).toBe("true");
+    expect(switches[0]!.getAttribute("aria-busy")).toBe("true");
+    expect(switches[0]).property("disabled", false);
 
     resolveP1({ id: "p1", enabled: false });
-    // After p1 settles, only p1's switch re-enables; p2 stays disabled.
-    await waitFor(() => expect(switches[0]).property("disabled", false));
-    expect(switches[1]).property("disabled", true);
+    // After p1 settles, only p1's switch re-enables; p2 stays off.
+    await waitFor(() => expect(switches[0]!.getAttribute("aria-disabled")).toBeNull());
+    expect(switches[1]!.getAttribute("aria-disabled")).toBe("true");
 
     resolveP2({ id: "p2", enabled: true });
-    await waitFor(() => expect(switches[1]).property("disabled", false));
+    await waitFor(() => expect(switches[1]!.getAttribute("aria-disabled")).toBeNull());
   });
 
   it("refetches the list when a toggle fails (e.g. 409 race) instead of reverting to a stale value", async () => {
@@ -356,7 +358,7 @@ describe("IdentityProvidersPanel", () => {
       protectedPrefixes: [],
       locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading Cloudflare Access" }));
     await waitFor(() => {
       expect(screen.getByText("No team domain configured.")).toBeTruthy();
     });

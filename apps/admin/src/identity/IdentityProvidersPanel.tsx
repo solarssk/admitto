@@ -1,16 +1,22 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Card, EmptyState, HintLabel, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
-  ApiError,
   fetchCfAccessSummary,
   fetchIdentityProviders,
   toggleIdentityProvider,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
+import { RefreshWarning } from "../components/RefreshWarning.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
+import { useListLoad, type ListLoad } from "../hooks/useListLoad.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { orLoginRedirect } from "./loginRedirect.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
 // Modal editors are only needed once an operator opens Add/Edit/Manage — keep them
@@ -39,60 +45,38 @@ function resolveModal(pathname: string, providerId: string | undefined): Modal {
   return { kind: "none" };
 }
 
-type LoadState = "loading" | "ready" | "error";
 /** Row shape is 1:1 with the API list DTO. */
 type ProviderRow = IdentityProviderListItem;
-
-/** Session expired mid-fetch: hand off to login with a return path (matches the
- * pattern used across the admin SPA, e.g. ReportsPage/AttendeesPage). */
-function redirectToLogin(): void {
-  const next = encodeURIComponent(window.location.pathname);
-  window.location.assign(`/login?next=${next}`);
-}
 
 function providerEditPath(id: string): string {
   return `/admin/settings/identity/providers/${encodeURIComponent(id)}`;
 }
 
-/** Load state + retry + delayed-loading skeleton flag for a single fetched resource -
- * `loadProviders`/`loadCf` were structurally identical copies of this shape before being
- * factored out. `fetchFn` must be a stable reference (a module-level import, or a value the
- * caller has itself memoized) - it's a `useCallback`/`useEffect` dependency. */
-function useLoadableResource<T>(fetchFn: (signal?: AbortSignal) => Promise<T>, initialValue: T, fallbackMessage: string) {
-  const [data, setData] = useState<T>(initialValue);
-  const [state, setState] = useState<LoadState>("loading");
-  const [error, setError] = useState(fallbackMessage);
-  const [retryTick, setRetryTick] = useState(0);
+/** The two reads of this screen: module level, so each is one stable request (a 401 hands over to the login page). */
+const fetchProviderRows = orLoginRedirect(async (signal: AbortSignal) => (await fetchIdentityProviders(signal)).providers);
+const fetchCfSummary = orLoginRedirect((signal: AbortSignal) => fetchCfAccessSummary(signal));
 
-  const load = useCallback(
-    async (signal: AbortSignal) => {
-      setState((prev) => (prev === "ready" ? prev : "loading"));
-      try {
-        setData(await fetchFn(signal));
-        setState("ready");
-      } catch (err) {
-        if (signal.aborted) return;
-        if (err instanceof ApiError && err.status === 401) {
-          redirectToLogin();
-          return;
-        }
-        setError(operatorApiErrorMessage(err, fallbackMessage));
-        setState("error");
-      }
-    },
-    [fetchFn, fallbackMessage],
+/**
+ * How one card of this screen is on screen: the placeholder of its first load (held for the first 200ms, "Taking longer
+ * than usual" after 8 seconds), the error with a Retry that stays on screen, busy, until the answer is in, or neither.
+ */
+function useCardLoad<T>(list: ListLoad<T>) {
+  const failure = useRetryKeepingError(list.error, list.reload);
+  const gate = useLoadingGate(list.loading && !failure.running);
+  const slow = useDelayedLoading(list.loading && !failure.running, SLOW_NOTICE_MS);
+  return { gate, slow, failure };
+}
+
+/** A card's placeholder: rows of the height of the real ones, in a status region named after what is loading. */
+function CardSkeleton({ label, held, slow, rows, rowHeight }: Readonly<{ label: string; held: boolean; slow: boolean; rows: number; rowHeight: number }>) {
+  return (
+    <output aria-label={label} className={held ? "identity-providers__skeleton at-loading-hold" : "identity-providers__skeleton"}>
+      {Array.from({ length: rows }, (_, row) => (
+        <Skeleton key={row} height={rowHeight} />
+      ))}
+      {slow ? <span className="at-hint" style={{ textAlign: "center", color: "var(--text-secondary)" }}>{SLOW_NOTICE_TEXT}</span> : null}
+    </output>
   );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load, retryTick]);
-
-  const retry = useCallback(() => setRetryTick((n) => n + 1), []);
-  const showSkeleton = useDelayedLoading(state === "loading");
-
-  return { data, setData, state, error, retry, showSkeleton };
 }
 
 const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
@@ -104,15 +88,6 @@ const CLOUDFLARE_ACCESS_HINT =
 
 function cfStatusBadge(cf: CfAccessSummaryDto): ReactNode {
   return cf.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>;
-}
-
-function ProviderListSkeleton() {
-  return (
-    <div className="identity-providers__skeleton" aria-hidden="true">
-      <Skeleton height={64} />
-      <Skeleton height={64} />
-    </div>
-  );
 }
 
 function ProviderRowItem({
@@ -146,9 +121,13 @@ function ProviderRowItem({
           id={labelId}
           aria-label={`${provider.display_name} enabled`}
           checked={provider.enabled}
-          disabled={disabled}
-          aria-busy={disabled}
-          onChange={() => onToggle(provider)}
+          // Off while its own toggle is in flight, but still focusable: a switch that turns `disabled` under the
+          // keyboard that has just flipped it would drop the focus on <body>.
+          aria-disabled={disabled || undefined}
+          aria-busy={disabled || undefined}
+          onChange={() => {
+            if (!disabled) onToggle(provider);
+          }}
         />
       </div>
     </div>
@@ -171,29 +150,17 @@ export function IdentityProvidersPanel() {
   // is still pending.
   const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
 
-  const fetchProviderRows = useCallback(
-    async (signal?: AbortSignal) => (await fetchIdentityProviders(signal)).providers,
-    [],
-  );
-  const {
-    data: providers,
-    setData: setProviders,
-    state: providersState,
-    error: providersError,
-    retry: retryProviders,
-    showSkeleton: showProvidersSkeleton,
-  } = useLoadableResource<ProviderRow[]>(fetchProviderRows, [], "Could not load identity providers.");
-  const {
-    data: cf,
-    state: cfState,
-    error: cfError,
-    retry: retryCf,
-    showSkeleton: showCfSkeleton,
-  } = useLoadableResource<CfAccessSummaryDto | null>(
-    fetchCfAccessSummary,
-    null,
-    "Could not load the Cloudflare Access configuration.",
-  );
+  const providers = useListLoad<ProviderRow[]>({ fetcher: fetchProviderRows, fallback: "Could not load identity providers." });
+  const cfLoad = useListLoad<CfAccessSummaryDto>({
+    fetcher: fetchCfSummary,
+    fallback: "Could not load the Cloudflare Access configuration.",
+  });
+  const providersCard = useCardLoad(providers);
+  const cfCard = useCardLoad(cfLoad);
+  const providerRows = providers.data ?? [];
+  const cf = cfLoad.data;
+  const { reload: reloadProviders, update: updateProviders } = providers;
+  const { reload: reloadCf } = cfLoad;
 
   // The list no longer unmounts when a modal route is visited (unlike a full page
   // navigation), so refresh both lists ourselves once a modal closes back to the
@@ -203,25 +170,21 @@ export function IdentityProvidersPanel() {
   useEffect(() => {
     const isOpen = modal.kind !== "none";
     if (modalWasOpenRef.current && !isOpen) {
-      retryProviders();
-      retryCf();
+      void reloadProviders();
+      void reloadCf();
     }
     modalWasOpenRef.current = isOpen;
-  }, [modal.kind, retryProviders, retryCf]);
+  }, [modal.kind, reloadProviders, reloadCf]);
 
   const handleToggle = useCallback(
     async (provider: ProviderRow) => {
       const next = !provider.enabled;
       // Optimistic flip so the switch feels instant.
-      setProviders((prev) =>
-        prev.map((row) => (row.id === provider.id ? { ...row, enabled: next } : row)),
-      );
+      updateProviders((rows) => rows.map((row) => (row.id === provider.id ? { ...row, enabled: next } : row)));
       startToggling(provider.id);
       try {
         const result = await toggleIdentityProvider(provider.id);
-        setProviders((prev) =>
-          prev.map((row) => (row.id === provider.id ? { ...row, enabled: result.enabled } : row)),
-        );
+        updateProviders((rows) => rows.map((row) => (row.id === provider.id ? { ...row, enabled: result.enabled } : row)));
         addToast(
           result.enabled ? "Provider enabled." : "Provider disabled.",
           result.enabled ? "success" : "info",
@@ -229,19 +192,22 @@ export function IdentityProvidersPanel() {
       } catch (err) {
         // Reconcile with the server: a 409 toggle_race (or any failure) means the
         // optimistic flip may not match the persisted state, so refetch the list
-        // instead of reverting to a stale closure value.
-        retryProviders();
+        // instead of reverting to a stale closure value. The page cannot tell what the server holds, so a refetch
+        // that fails too replaces the rows (which may show a flip the server never accepted) with the error.
+        void reloadProviders({ keepRowsOnFailure: false });
         const message = operatorApiErrorMessage(err, "Failed to toggle provider");
         addToast(message, "error");
       } finally {
         finishToggling(provider.id);
       }
     },
-    [addToast, retryProviders, setProviders, startToggling, finishToggling],
+    [addToast, reloadProviders, updateProviders, startToggling, finishToggling],
   );
 
   return (
-    <div className="settings-sections">
+    // A labelled tab panel like the in-page Settings tabs, so the focus of a Retry that works goes to it (a browser
+    // would drop it on <body>) and a screen reader hears where it is.
+    <div className="settings-sections" role="tabpanel" aria-label="Identity">
       <Card
         title={<HintLabel hint={IDENTITY_PROVIDERS_HINT}>Identity providers</HintLabel>}
         actions={
@@ -250,74 +216,87 @@ export function IdentityProvidersPanel() {
           </Link>
         }
       >
-        {providersState === "loading" && showProvidersSkeleton && <ProviderListSkeleton />}
-        {providersState === "error" && (
-          <EmptyState
-            variant="error"
+        {!providersCard.gate.showContent && (
+          <CardSkeleton label="Loading identity providers" held={!providersCard.gate.showIndicator} slow={providersCard.slow} rows={2} rowHeight={53} />
+        )}
+        {providersCard.gate.showContent && providersCard.failure.error && (
+          <RetryEmptyState
             title="Could not load providers"
-            description={providersError}
-            action={<Button variant="secondary" onClick={retryProviders}>Retry</Button>}
+            retryLabel="Retry loading providers"
+            message={providersCard.failure.error}
+            retrying={providersCard.failure.retrying}
+            onRetry={providersCard.failure.retry}
           />
         )}
-        {providersState === "ready" && providers.length === 0 && (
-          <EmptyState
-            icon={<i className="ti ti-shield-lock" />}
-            title="No identity providers yet"
-            description="Add an identity provider to enable single sign-on for your team."
-          />
-        )}
-        {providersState === "ready" && providers.length > 0 && (
-          <div className="identity-providers__list">
-            {providers.map((provider) => (
-              <ProviderRowItem
-                key={provider.id}
-                provider={provider}
-                onToggle={(provider) => void handleToggle(provider)}
-                disabled={togglingIds.has(provider.id)}
+        {providersCard.gate.showContent && !providersCard.failure.error && providers.data !== null && (
+          <RefetchRegion refreshing={providers.refreshing} label="Loading identity providers">
+            {providerRows.length === 0 ? (
+              <EmptyState
+                icon={<i className="ti ti-shield-lock" />}
+                title="No identity providers yet"
+                description="Add an identity provider to enable single sign-on for your team."
               />
-            ))}
-          </div>
+            ) : (
+              <div className="identity-providers__list">
+                {providerRows.map((provider) => (
+                  <ProviderRowItem
+                    key={provider.id}
+                    provider={provider}
+                    onToggle={(provider) => void handleToggle(provider)}
+                    disabled={togglingIds.has(provider.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </RefetchRegion>
         )}
+        {providers.refreshError && <RefreshWarning message={providers.refreshError} onRetry={providers.reload} />}
       </Card>
 
       <Card
         title={<HintLabel hint={CLOUDFLARE_ACCESS_HINT}>Cloudflare Access</HintLabel>}
-        actions={cfState === "ready" && cf ? cfStatusBadge(cf) : undefined}
+        actions={cfCard.gate.showContent && !cfCard.failure.error && cf ? cfStatusBadge(cf) : undefined}
       >
-        {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
-        {cfState === "error" && (
-          <EmptyState
-            variant="error"
+        {!cfCard.gate.showContent && (
+          <CardSkeleton label="Loading Cloudflare Access" held={!cfCard.gate.showIndicator} slow={cfCard.slow} rows={1} rowHeight={45} />
+        )}
+        {cfCard.gate.showContent && cfCard.failure.error && (
+          <RetryEmptyState
             title="Could not load Cloudflare Access"
-            description={cfError}
-            action={<Button variant="secondary" onClick={retryCf}>Retry</Button>}
+            retryLabel="Retry loading Cloudflare Access"
+            message={cfCard.failure.error}
+            retrying={cfCard.failure.retrying}
+            onRetry={cfCard.failure.retry}
           />
         )}
-        {cfState === "ready" && cf && (
-          <div className="settings-row cf-access-summary">
-            <div className="identity-row__main">
-              <div className="identity-row-icon" aria-hidden="true">
-                <i className="ti ti-brand-cloudflare" />
+        {cfCard.gate.showContent && !cfCard.failure.error && cf && (
+          <RefetchRegion refreshing={cfLoad.refreshing} label="Loading Cloudflare Access">
+            <div className="settings-row cf-access-summary">
+              <div className="identity-row__main">
+                <div className="identity-row-icon" aria-hidden="true">
+                  <i className="ti ti-brand-cloudflare" />
+                </div>
+                <div className="cf-access-summary__text">
+                  <strong>Cloudflare Zero Trust</strong>
+                  <p>
+                    {cf.teamDomain
+                      ? `Team domain: ${cf.teamDomain}`
+                      : "No team domain configured."}
+                  </p>
+                  {cf.locks.enabled && (
+                    <div className="cf-access-summary__badges">
+                      <Badge variant="warn">Managed by environment</Badge>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="cf-access-summary__text">
-                <strong>Cloudflare Zero Trust</strong>
-                <p>
-                  {cf.teamDomain
-                    ? `Team domain: ${cf.teamDomain}`
-                    : "No team domain configured."}
-                </p>
-                {cf.locks.enabled && (
-                  <div className="cf-access-summary__badges">
-                    <Badge variant="warn">Managed by environment</Badge>
-                  </div>
-                )}
-              </div>
+              <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
+                <span>Manage</span>
+              </Link>
             </div>
-            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
-              <span>Manage</span>
-            </Link>
-          </div>
+          </RefetchRegion>
         )}
+        {cfLoad.refreshError && <RefreshWarning message={cfLoad.refreshError} onRetry={cfLoad.reload} />}
       </Card>
 
       <Suspense fallback={null}>
