@@ -10,7 +10,8 @@ export function redirectToLogin(): void {
 /**
  * `load`, but a 401 hands the browser over to the login page instead of failing: the answer never comes (the page is
  * on its way out), so no error or Retry flashes up first. For the loads of an Identity screen, which are read through
- * `useListLoad` or `usePanelLoad`; it must be created once (module level), a new function is a new request.
+ * `useListLoad`, `usePanelLoad` or `useOptionsLoad` (the scope lookups of the mapping repeater); it must be created once
+ * (module level, or memoised), a new function is a new request.
  */
 export function orLoginRedirect<T>(load: (signal: AbortSignal) => Promise<T>): (signal: AbortSignal) => Promise<T> {
   return async (signal) => {
