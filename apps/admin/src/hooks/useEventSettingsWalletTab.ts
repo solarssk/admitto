@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   fetchEventCustomFields,
   fetchEventLocation,
   fetchWalletPushHistory,
-  type WalletPushHistoryEntry,
+  type WalletPushHistoryPage,
 } from "../api/client.js";
 import type { EventCustomFieldDto, EventLocationDto } from "../api/types.js";
 import type { EventSettingsTab } from "../settings/eventSettingsTabs.js";
 import { WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT } from "../settings/EventWalletPanel.js";
-import { useDelayedLoading } from "./useDelayedLoading.js";
+import { useListLoad, type ListLoad } from "./useListLoad.js";
 
 /** Read-only preview data for the Wallet tab's field mapping hint icons (computeWalletPlaceholder
  * Preview) - the event's own Location tab data, fetched independently of LocationSettingsPanel
@@ -80,79 +80,27 @@ export function useWalletCustomFields(
 }
 
 export interface WalletPushHistoryState {
-  walletPushHistory: WalletPushHistoryEntry[] | null;
-  walletPushHistoryTotal: number;
-  walletPushHistoryError: string | null;
-  showWalletPushHistoryLoading: boolean;
-  walletPushHistoryPage: number;
-  walletPushHistoryPageSize: number;
-  setWalletPushHistoryPage: (page: number) => void;
-  setWalletPushHistoryPageSize: (pageSize: number) => void;
-  retryWalletPushHistory: () => void;
+  /** The page of pushes on screen, with its load state (first load, refresh, failure). */
+  list: ListLoad<WalletPushHistoryPage>;
+  page: number;
+  pageSize: number;
+  setPage: (page: number) => void;
+  setPageSize: (pageSize: number) => void;
 }
 
-/** Wallet push history: re-fetched every time the admin switches to the Wallet tab (not just
- * once) - unlike useWalletLocationPreview above (a static reference value), this list reflects
- * background jobs triggered from elsewhere (currently only the Attendees list's bulk ticket-type
- * change), so it can go stale while this tab stays mounted between visits. Extracted out of
- * EventSettingsPage.tsx alongside useWalletLocationPreview, same SonarCloud S3776 reasoning. */
-export function useWalletPushHistory(eventId: string | undefined, tab: EventSettingsTab): WalletPushHistoryState {
-  const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
-  const [walletPushHistoryTotal, setWalletPushHistoryTotal] = useState(0);
-  const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
-  const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
-  const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
-  const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
-  const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(
-    WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT,
+/** Wallet push history: read each time the admin opens the Wallet tab (not just once: unlike the location preview above, it
+ * reflects background jobs triggered from elsewhere, so it can go stale while the tab stays mounted between visits), and
+ * again for every page or page size. It is a list on the loading standard (`useListLoad`): the first read is a placeholder,
+ * a later page or visit keeps the rows on screen while it runs, and a read that fails after rows were shown keeps them with
+ * a warning. The page is a fresh one for another event (`EventSettingsPage` is keyed by the event), so its page number
+ * never carries over. */
+export function useWalletPushHistory(eventId: string, tab: EventSettingsTab): WalletPushHistoryState {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
+  const fetcher = useCallback(
+    (signal: AbortSignal) => fetchWalletPushHistory(eventId, page, pageSize, signal),
+    [eventId, page, pageSize],
   );
-  const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
-  // Navigating from one event to another while the Wallet tab stays mounted must not keep the
-  // outgoing event's rows/total/page - a separate reset effect keyed on eventId alone would still
-  // let this effect run once more with the stale page for the new event first (both effects fire
-  // on the same eventId-change render pass, before the reset effect's setState is applied) -
-  // detecting the event change inline, in this same effect, is what actually avoids that request
-  // (CodeRabbit).
-  const walletPushHistoryEventIdRef = useRef(eventId);
-  useEffect(() => {
-    if (!eventId || tab !== "wallet") return;
-    const isNewEvent = eventId !== walletPushHistoryEventIdRef.current;
-    walletPushHistoryEventIdRef.current = eventId;
-    const page = isNewEvent ? 1 : walletPushHistoryPage;
-    if (isNewEvent) {
-      setWalletPushHistory(null);
-      setWalletPushHistoryTotal(0);
-      if (walletPushHistoryPage !== 1) setWalletPushHistoryPage(1);
-    }
-    const controller = new AbortController();
-    setWalletPushHistoryError(null);
-    setWalletPushHistoryLoading(true);
-    fetchWalletPushHistory(eventId, page, walletPushHistoryPageSize, controller.signal)
-      .then(({ items, total }) => {
-        setWalletPushHistory(items);
-        setWalletPushHistoryTotal(total);
-      })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setWalletPushHistoryError("Could not load wallet push history.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
-      });
-    return () => controller.abort();
-  }, [eventId, tab, walletPushHistoryToken, walletPushHistoryPage, walletPushHistoryPageSize]);
-
-  const retryWalletPushHistory = useCallback(() => setWalletPushHistoryToken((n) => n + 1), []);
-
-  return {
-    walletPushHistory,
-    walletPushHistoryTotal,
-    walletPushHistoryError,
-    showWalletPushHistoryLoading,
-    walletPushHistoryPage,
-    walletPushHistoryPageSize,
-    setWalletPushHistoryPage,
-    setWalletPushHistoryPageSize,
-    retryWalletPushHistory,
-  };
+  const list = useListLoad({ fetcher, fallback: "Could not load wallet push history.", enabled: tab === "wallet" });
+  return { list, page, pageSize, setPage, setPageSize };
 }

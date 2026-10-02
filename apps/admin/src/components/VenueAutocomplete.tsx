@@ -302,11 +302,13 @@ export function VenueAutocomplete({
             type="button"
             variant="secondary"
             className="venue-autocomplete__find"
-            disabled={disabled || searching}
+            disabled={disabled}
+            loading={searching}
+            loadingLabel="Searching…"
+            icon={<i className="ti ti-map-search" aria-hidden="true" />}
             onClick={handleFind}
           >
-            <i className="ti ti-map-search" aria-hidden="true" />
-            {searching ? "Searching…" : "Find on map"}
+            Find on map
           </Button>
         )}
       </div>

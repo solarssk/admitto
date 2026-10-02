@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PercentCrop } from "react-image-crop";
-import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, Notice, Skeleton, useToast } from "@admitto/ui";
 // Subpath only: the package root re-exports Prisma/mjml server modules. Importing the
 // barrel into the SPA pulled Node APIs (fileURLToPath) into Event Settings and crashed.
 import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates/placeholders";
@@ -14,10 +14,12 @@ import {
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto, LogoCropMeta } from "../api/types.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
+import { SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { RetryEmptyState } from "./RetryEmptyState.js";
 import { CropImageModal } from "./crop/CropImageModal.js";
 import { cropMetaToPercent, toLogoCropMeta } from "./crop/cropMeta.js";
 import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
@@ -35,6 +37,26 @@ const TOKEN_MAX_LENGTH = 40;
 const DISPLAY_NAME_MAX = 80;
 const TOKEN_PATTERN = /^[a-z][a-z0-9_]*$/;
 const ALLOWED_IMAGE_TYPES = ALLOWED_BRANDING_IMAGE_TYPES;
+
+/** The height of a tile of the library's grid, for its placeholder. */
+const ASSET_TILE_HEIGHT = 292;
+
+/** The tiles of "Your images" while the list loads: the grid of the real one, in a status region named after what loads. */
+function AssetGridSkeleton({ held, slow }: Readonly<{ held: boolean; slow: boolean }>) {
+  return (
+    <output aria-label="Loading images" className={held ? "image-asset-library__skeleton at-loading-hold" : "image-asset-library__skeleton"}>
+      <div aria-hidden="true">
+        <Skeleton variant="rect" width="38%" height={21} />
+      </div>
+      <div className="image-asset-library__grid" aria-hidden="true">
+        {[0, 1, 2].map((tile) => (
+          <Skeleton key={tile} variant="rect" height={ASSET_TILE_HEIGHT} />
+        ))}
+      </div>
+      {slow ? <span className="at-hint" style={{ display: "block", textAlign: "center", color: "var(--text-secondary)" }}>{SLOW_NOTICE_TEXT}</span> : null}
+    </output>
+  );
+}
 
 export interface EventImageAssetLibraryProps {
   readonly eventId: string;
@@ -180,19 +202,27 @@ function ImageNameHint({
 /**
  * Named branding image library for an event: upload extra images (e.g. sponsor logos) and give
  * each one a short token, then use `{{token}}` in an email template's body to insert it.
+ *
+ * One event, one library: a different `eventId` is a fresh library (its own load, list and form), never the previous
+ * event's images with new data under them.
  */
-export function EventImageAssetLibrary({ eventId, disabled = false }: EventImageAssetLibraryProps) {
+export function EventImageAssetLibrary(props: EventImageAssetLibraryProps) {
+  return <EventImageAssetLibraryBody key={props.eventId} {...props} />;
+}
+
+function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAssetLibraryProps) {
   const { addToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [assets, setAssets] = useState<EventImageAssetDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [displayNameTouched, setDisplayNameTouched] = useState(false);
+  /** The picked file is being uploaded for cropping. */
   const [uploading, setUploading] = useState(false);
+  /** The cropped image is being added to the library: Add image's own flag, apart from the upload above. */
+  const [adding, setAdding] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
   /** Original URL + crop framing for the file currently staged in `file`, once cropped - sent
@@ -212,8 +242,6 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBlockedByTemplate, setDeleteBlockedByTemplate] = useState(false);
 
-  const loadAbortRef = useRef<AbortController | null>(null);
-
   const discardPreCropUpload = () => {
     const url = preCropUrlRef.current;
     preCropUrlRef.current = null;
@@ -228,37 +256,20 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     };
   }, []);
 
-  const load = useCallback(() => {
-    loadAbortRef.current?.abort();
-    const controller = new AbortController();
-    loadAbortRef.current = controller;
-    setLoading(true);
-    setLoadError(null);
-    fetchEventImageAssets(eventId, controller.signal)
-      .then((items) => {
-        if (controller.signal.aborted) return;
-        setAssets(items);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        setLoadError(operatorApiErrorMessage(err, "Could not load images."));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-  }, [eventId]);
-
-  useEffect(() => {
-    load();
-    return () => loadAbortRef.current?.abort();
-  }, [load]);
+  // The first load of the list: nothing is drawn for 200ms, then tiles of placeholders, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer). The upload card above it is there from the start.
+  const panel = usePanelLoad({
+    fetch: (signal) => fetchEventImageAssets(eventId, signal),
+    apply: setAssets,
+    fallback: "Could not load images.",
+  });
 
   const tokenTrimmed = tokenFromDisplayName(displayName);
   const takenTokens = new Set(assets.map((a) => a.token));
   const previewToken = tokenTrimmed ? allocatePreviewToken(tokenTrimmed, takenTokens) : null;
   const tokenErrorText = imageNameValidationError(displayName, displayNameTouched);
   const canSubmit =
-    Boolean(file) && !tokenErrorText && Boolean(previewToken) && !uploading && !disabled;
+    Boolean(file) && !tokenErrorText && Boolean(previewToken) && !uploading && !adding && !disabled;
 
   const resetForm = () => {
     setDisplayName("");
@@ -331,7 +342,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
 
   const handleSubmit = async () => {
     if (!file || tokenErrorText || !previewToken) return;
-    setUploading(true);
+    setAdding(true);
     setFormError(null);
     try {
       const created = await createEventImageAsset(
@@ -349,7 +360,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     } catch (err) {
       setFormError(operatorApiErrorMessage(err, "Could not add image."));
     } finally {
-      setUploading(false);
+      setAdding(false);
     }
   };
 
@@ -403,24 +414,18 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   };
 
   const deletingAsset = assets.find((a) => a.id === confirmDeleteId) ?? null;
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" text on and off faster than it can register as loading - show it only
-  // once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
 
   function renderAssetsList(): ReactNode {
-    if (loading) return showLoading ? <p className="field-hint">Loading images…</p> : null;
-    if (loadError) {
+    if (!panel.gate.showContent) {
+      return <AssetGridSkeleton held={!panel.gate.showIndicator} slow={panel.slow} />;
+    }
+    if (panel.error) {
       return (
-        <EmptyState
-          variant="error"
+        <RetryEmptyState
           title="Could not load images"
-          description={loadError}
-          action={
-            <Button type="button" variant="secondary" onClick={load}>
-              Retry
-            </Button>
-          }
+          message={panel.error}
+          retrying={panel.retrying}
+          onRetry={panel.retry}
         />
       );
     }
@@ -551,7 +556,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                 <Input
                   label="Image name"
                   value={displayName}
-                  disabled={disabled || uploading}
+                  disabled={disabled || uploading || adding}
                   maxLength={DISPLAY_NAME_MAX}
                   onChange={(e) => setDisplayName(clampDisplayName(e.target.value))}
                   onBlur={() => setDisplayNameTouched(true)}
@@ -562,11 +567,13 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={!canSubmit}
+                    aria-disabled={!canSubmit}
+                    loading={adding}
+                    loadingLabel="Adding…"
                     icon={<i className="ti ti-plus" aria-hidden="true" />}
                     onClick={() => void handleSubmit()}
                   >
-                    {uploading ? "Adding…" : "Add image"}
+                    Add image
                   </Button>
                 </div>
               </div>

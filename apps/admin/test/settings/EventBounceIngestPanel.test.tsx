@@ -6,7 +6,8 @@ import {
   EventBounceIngestPanel,
   type EventBounceIngestPanelHandle,
 } from "../../src/settings/EventBounceIngestPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type { EventBounceIngestSettingsResponse } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -753,5 +754,74 @@ describe("EventBounceIngestPanel load Retry", () => {
     renderPanel();
     await screen.findByText(FAILED);
     expect(screen.getByRole("button", { name: "Retry" }).hasAttribute("aria-busy")).toBe(false);
+  });
+});
+
+describePanelLoading({
+  label: "Loading bounce detection",
+  errorTitle: "Could not load bounce detection",
+  render: () => renderPanel(),
+  hang: () => {
+    mockFetch.mockImplementation(hangUntilAborted as never);
+  },
+});
+
+describe("EventBounceIngestPanel on the loading standard", () => {
+  it("keeps the form on screen, with what was typed, while a refresh after the mail transport was saved runs", async () => {
+    const { ref } = renderPanel();
+    const host = (await screen.findByLabelText("IMAP host")) as HTMLInputElement;
+    fireEvent.change(host, { target: { value: "imap.other.example.com" } });
+
+    const refresh = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(refresh.promise);
+    act(() => ref.current?.refresh());
+
+    expect(screen.queryByLabelText("Loading bounce detection")).toBeNull();
+    expect(screen.getByLabelText("IMAP host")).toBe(host);
+    expect(host.value).toBe("imap.other.example.com");
+    await act(async () => refresh.resolve(bounceResponse({ smtp_reuse_available: true })));
+  });
+
+  it("shows Test connection busy as 'Testing…' while it probes, keeps its focus and ignores a second click", async () => {
+    const probe = deferred<{ ok: boolean; message: string }>();
+    mockTest.mockReturnValue(probe.promise);
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+    const test = screen.getByRole("button", { name: "Test connection" });
+    test.focus();
+
+    fireEvent.click(test);
+    const busy = await screen.findByRole("button", { name: "Testing…" });
+    expect(busy).toBe(test);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(mockTest).toHaveBeenCalledTimes(1);
+
+    await act(async () => probe.resolve({ ok: true, message: "Connected." }));
+    expect(screen.getByRole("button", { name: "Test connection" }).getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("shows Run check now busy, with its label unchanged and no hand-made spin class, and ignores a second click", async () => {
+    const run = deferred<Awaited<ReturnType<typeof runEventBounceIngestCheck>>>();
+    mockRun.mockReturnValue(run.promise);
+    renderPanel();
+    const button = await screen.findByRole("button", { name: "Run check now" });
+    button.focus();
+
+    fireEvent.click(button);
+    await waitFor(() => expect(button.getAttribute("aria-busy")).toBe("true"));
+    expect(isOff(button)).toBe(true);
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(button);
+    expect(document.querySelector(".at-spin")).toBeNull();
+    fireEvent.click(button);
+    expect(mockRun).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      run.resolve({ ok: true, message: "Check finished.", lastRun: null, recentRuns: [] } as never),
+    );
+    expect(screen.getByRole("button", { name: "Run check now" }).getAttribute("aria-busy")).toBeNull();
   });
 });

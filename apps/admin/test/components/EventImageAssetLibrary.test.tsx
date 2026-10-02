@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { ApiError } from "../../src/api/client.js";
 import { EventImageAssetLibrary } from "../../src/components/EventImageAssetLibrary.js";
-import { renderWithToast } from "../test-utils.js";
+import { advanceTimers, deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
 import type { EventImageAssetDto } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -74,21 +74,20 @@ afterEach(() => {
 });
 
 describe("EventImageAssetLibrary", () => {
-  it("shows a loading state, then an empty-state message when there are no assets", async () => {
-    mockFetch.mockResolvedValueOnce([]);
-    // useDelayedLoading only shows the text once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) - fake timers
-    // must be installed before render so the hook's setTimeout is one of ours, and the
-    // synchronous advance+assert below runs before the resolved fetch's microtask can flip
-    // `loading` back to false.
+  it("shows its placeholder only once the fetch has taken a moment, then an empty-state message when there are no assets", async () => {
+    const answer = deferred<EventImageAssetDto[]>();
+    mockFetch.mockReturnValueOnce(answer.promise);
     vi.useFakeTimers();
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading images…")).toBeTruthy();
+    expect(screen.getByLabelText("Loading images").className).toContain("at-loading-hold");
+    await advanceTimers(200);
+    expect(screen.getByLabelText("Loading images").className).not.toContain("at-loading-hold");
+
+    await act(async () => answer.resolve([]));
+    await advanceTimers(400);
     vi.useRealTimers();
     expect(await screen.findByText("No images yet")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading images")).toBeNull();
     expect(mockFetch).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });
 
@@ -158,18 +157,18 @@ describe("EventImageAssetLibrary", () => {
     await screen.findByText("No images yet");
 
     const addButton = screen.getByRole("button", { name: "Add image" });
-    expect(addButton.hasAttribute("disabled")).toBe(true);
+    expect(isOff(addButton)).toBe(true);
 
     fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
-    expect(addButton.hasAttribute("disabled")).toBe(true);
+    expect(isOff(addButton)).toBe(true);
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["x"], "sponsor.png", { type: "image/png" });
     fireEvent.change(fileInput, { target: { files: [file] } });
-    expect(addButton.hasAttribute("disabled")).toBe(true);
+    expect(isOff(addButton)).toBe(true);
     fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
-      expect(addButton.hasAttribute("disabled")).toBe(false);
+      expect(isOff(addButton)).toBe(false);
     });
   });
 
@@ -204,7 +203,7 @@ describe("EventImageAssetLibrary", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
     expect(screen.queryByText("sponsor.png")).toBeNull();
-    expect(screen.getByRole("button", { name: "Add image" }).hasAttribute("disabled")).toBe(true);
+    expect(isOff(screen.getByRole("button", { name: "Add image" }))).toBe(true);
     expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/events/evt-1/preview.png");
   });
 
@@ -378,7 +377,7 @@ describe("EventImageAssetLibrary", () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput.disabled).toBe(true);
     expect((screen.getByLabelText("Image name") as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByRole("button", { name: "Add image" }).hasAttribute("disabled")).toBe(true);
+    expect(isOff(screen.getByRole("button", { name: "Add image" }))).toBe(true);
     expect(screen.getByRole("button", { name: "Edit" }).hasAttribute("disabled")).toBe(true);
     expect(
       screen.getByRole("button", { name: "Remove sponsor.png" }).hasAttribute("disabled"),
@@ -729,5 +728,93 @@ describe("EventImageAssetLibrary", () => {
       expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
       expect(mockUpdate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("EventImageAssetLibrary on the loading standard", () => {
+  it("keeps the upload card from the first frame, draws tiles of placeholders after 200ms, says it is taking longer after 8 seconds and ends in an error with a Retry after 30", async () => {
+    mockFetch.mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+
+    expect(screen.getByText("Upload images")).toBeTruthy();
+    expect(screen.getByLabelText("Loading images").className).toContain("at-loading-hold");
+    await advanceTimers(200);
+    expect(screen.getByLabelText("Loading images").className).not.toContain("at-loading-hold");
+    expect(document.querySelectorAll(".image-asset-library__skeleton .at-skeleton")).toHaveLength(3);
+    await advanceTimers(7_800);
+    expect(screen.getByLabelText("Loading images").textContent).toContain("Taking longer than usual");
+
+    await advanceTimers(22_000);
+    await advanceTimers(0);
+    expect(screen.queryByLabelText("Loading images")).toBeNull();
+    expect(screen.getByText("Could not load images")).toBeTruthy();
+    expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("keeps the error on screen with a busy Retry until the answer is in", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    const answer = deferred<EventImageAssetDto[]>();
+    mockFetch.mockReturnValueOnce(answer.promise);
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByLabelText("Loading images")).toBeNull();
+
+    await act(async () => answer.resolve([asset]));
+    expect(await screen.findByText("sponsor.png")).toBeTruthy();
+  });
+
+  it("shows Add image busy as 'Adding…' while the image is added, keeps its focus, ignores a second click, and only then clears the form", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    const created = deferred<EventImageAssetDto>();
+    mockCreate.mockReturnValueOnce(created.promise);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
+    await pickImageAndApply(new File(["x"], "sponsor.png", { type: "image/png" }));
+    const add = screen.getByRole("button", { name: "Add image" });
+    add.focus();
+
+    fireEvent.click(add);
+    const busy = await screen.findByRole("button", { name: "Adding…" });
+    expect(busy).toBe(add);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+
+    await act(async () => created.resolve(asset));
+    expect(await screen.findByText("sponsor.png")).toBeTruthy();
+    // The button that did its job is off with aria-disabled, so it keeps the focus.
+    const idle = screen.getByRole("button", { name: "Add image" });
+    expect(idle).toBe(add);
+    expect(isOff(idle)).toBe(true);
+    expect(idle.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(idle);
+  });
+
+  it("does not call a file that is being prepared for cropping 'Adding…'", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    const prepared = deferred<{ url: string }>();
+    mockUploadPreview.mockReturnValueOnce(prepared.promise);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "sponsor.png", { type: "image/png" })] } });
+
+    const add = screen.getByRole("button", { name: "Add image" });
+    expect(add.getAttribute("aria-busy")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Adding…" })).toBeNull();
+    await act(async () => prepared.resolve({ url: "/uploads/default/events/evt-1/preview.png" }));
   });
 });

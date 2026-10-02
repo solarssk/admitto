@@ -32,11 +32,21 @@ import type {
 } from "../api/types.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useConnectionTest } from "../hooks/useConnectionTest.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useRetry } from "../hooks/useRetry.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
+import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
+
+/** The cards of the panel's placeholder: the mailbox settings, and the last automatic check. */
+export const BOUNCE_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "bounce", title: "Bounce detection", intro: 2, fields: 6, columns: 2, controlHeight: 44, rows: 2, rowHeight: 78 },
+  { id: "last-run", title: "Last automatic check", rows: 1, rowHeight: 280 },
+];
 
 const POLL_OPTIONS = [
   { value: 5, label: "5 minutes" },
@@ -277,11 +287,15 @@ export const EventBounceIngestPanel = forwardRef<
 ) {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
-  const showLoading = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadRetry = useRetry();
   const { token: loadToken, begin: beginLoad, end: endLoad } = loadRetry;
   const [apiData, setApiData] = useState<EventBounceIngestSettingsResponse | null>(null);
+  // The first read, with nothing on screen yet, is what a placeholder covers: after 200ms ("Taking longer than usual" after 8
+  // seconds), and a refresh keeps the form.
+  const firstRead = loading && !loadError && apiData === null;
+  const loadGate = useLoadingGate(firstRead);
+  const loadSlow = useDelayedLoading(firstRead, SLOW_NOTICE_MS);
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [baseline, setBaseline] = useState<Draft>(emptyDraft());
   const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
@@ -305,8 +319,9 @@ export const EventBounceIngestPanel = forwardRef<
       setLoading(true);
       // A Retry keeps its error, and the busy Retry button next to it, on screen until the answer is in.
       if (!keepError) setLoadError(null);
+      const limit = loadWithTimeout(signal);
       try {
-        const data = await fetchEventBounceIngestSettings(eventId, signal);
+        const data = await rejectOnAbort(fetchEventBounceIngestSettings(eventId, limit.signal), limit.signal);
         if (signal?.aborted) return;
         setLoadError(null);
         setApiData(data);
@@ -318,8 +333,9 @@ export const EventBounceIngestPanel = forwardRef<
         clearTestResult();
       } catch (err) {
         if (signal?.aborted) return;
-        setLoadError(operatorApiErrorMessage(err, "Could not load bounce detection settings."));
+        setLoadError(limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load bounce detection settings."));
       } finally {
+        limit.done();
         if (!signal?.aborted) {
           setLoading(false);
           endLoad();
@@ -458,32 +474,32 @@ export const EventBounceIngestPanel = forwardRef<
     }
   };
 
-  // While a Retry runs the error stays (with its busy button) instead of giving way to the loading card.
-  if (loading && !loadError) {
-    return whenShown(
-      showLoading,
-      <Card title={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}>
-        <p className="settings-card-intro">Loading…</p>
-      </Card>,
+  // Only the first read (nothing on screen yet) is a placeholder: a refresh after the mail transport was saved keeps the
+  // form where it is. While a Retry runs the error stays (with its busy button) instead of giving way to the placeholder.
+  if (!loadGate.showContent) {
+    return (
+      <SettingsPanelSkeleton
+        label="Loading bounce detection"
+        held={!loadGate.showIndicator}
+        slow={loadSlow}
+        cards={BOUNCE_SKELETON_CARDS}
+        footer={false}
+      />
     );
   }
 
   if (loadError) {
     return (
-      <Card title={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}>
-        <Notice
-          variant="error"
-          role="alert"
-          actionBusy={loadRetry.busy}
-          action={
-            <Button type="button" variant="secondary" size="sm" loading={loadRetry.busy} onClick={loadRetry.retry}>
-              Retry
-            </Button>
-          }
-        >
-          {loadError}
-        </Notice>
-      </Card>
+      <PanelLoadError
+        cardTitle={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}
+        title="Could not load bounce detection"
+        message={loadError}
+        retrying={loadRetry.busy}
+        onRetry={() => {
+          loadRetry.retry();
+          return Promise.resolve();
+        }}
+      />
     );
   }
 
@@ -638,12 +654,14 @@ export const EventBounceIngestPanel = forwardRef<
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={testing || testBlocked}
+                      disabled={testBlocked}
+                      loading={testing}
+                      loadingLabel="Testing…"
                       aria-describedby={testBlockedReason ? testReasonId : undefined}
                       onClick={() => void handleTest()}
                       icon={<i className="ti ti-plug" aria-hidden="true" />}
                     >
-                      {testing ? "Testing…" : "Test connection"}
+                      Test connection
                     </Button>
                   </Tooltip>
                   {testBlockedReason && (
@@ -689,15 +707,9 @@ export const EventBounceIngestPanel = forwardRef<
                 type="button"
                 variant="secondary"
                 size="sm"
-                icon={
-                  <i
-                    className={`ti ti-refresh${runningCheck ? " at-spin" : ""}`}
-                    aria-hidden="true"
-                  />
-                }
+                icon={<i className="ti ti-refresh" aria-hidden="true" />}
                 onClick={() => void handleRunCheck()}
-                disabled={runningCheck}
-                aria-busy={runningCheck}
+                loading={runningCheck}
               >
                 Run check now
               </Button>

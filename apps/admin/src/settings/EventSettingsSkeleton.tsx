@@ -1,4 +1,5 @@
 import { CHECKIN_BEHAVIOUR_SKELETON_CARDS } from "./CheckInBehaviourPanel.js";
+import { BOUNCE_SKELETON_CARDS } from "./EventBounceIngestPanel.js";
 import { EVENT_MAIL_SKELETON_CARDS } from "./EventMailSettingsCard.js";
 import { LOCATION_SKELETON_CARDS } from "./LocationSettingsPanel.js";
 import { type EventSettingsTab } from "./eventSettingsTabs.js";
@@ -29,7 +30,7 @@ const TAB_SKELETONS: Readonly<Record<EventSettingsTab, TabSkeleton>> = {
   "ticket-types": { cards: rowsCard("ticket-types", "Ticket types", 2, 56), footer: true },
   images: { cards: rowsCard("images", "Event logo", 2, 120), footer: true },
   "checkin-behaviour": { cards: CHECKIN_BEHAVIOUR_SKELETON_CARDS, footer: true },
-  mail: { cards: [...EVENT_MAIL_SKELETON_CARDS, ...rowsCard("bounce", "Bounce detection", 1, 56)], footer: true },
+  mail: { cards: [...EVENT_MAIL_SKELETON_CARDS, ...BOUNCE_SKELETON_CARDS], footer: true },
   wallet: { cards: rowsCard("wallet", "Wallet", 4, 76), footer: true },
   integrations: { cards: rowsCard("integrations", "Integrations", 3, 76), footer: false },
   "danger-zone": { cards: rowsCard("danger-zone", "Danger zone", 5, 72, false), footer: false },

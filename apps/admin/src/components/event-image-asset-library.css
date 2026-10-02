@@ -205,3 +205,8 @@
   color: var(--status-error);
   background: var(--status-error-tint);
 }
+
+/* The placeholder of the grid while the list loads: a block, so the tiles take the grid's own width. */
+.image-asset-library__skeleton {
+  display: block;
+}

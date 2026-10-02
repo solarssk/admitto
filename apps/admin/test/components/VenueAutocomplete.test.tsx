@@ -356,6 +356,32 @@ describe("VenueAutocomplete", () => {
     expect(await screen.findByText("Address lookup failed. Try again shortly.")).toBeTruthy();
   });
 
+  it("shows Find on map busy while it searches, keeps its focus, and ignores a second click", async () => {
+    const slow = createDeferred<GeocodingSearchResponse>();
+    mockSearch.mockReturnValue(slow.promise);
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), { target: { value: "Downing St" } });
+    const find = screen.getByRole("button", { name: "Find on map" });
+    find.focus();
+
+    fireEvent.click(find);
+    const busy = screen.getByRole("button", { name: "Searching…" });
+    expect(busy).toBe(find);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    const calls = mockSearch.mock.calls.length;
+    fireEvent.click(busy);
+    expect(mockSearch.mock.calls.length).toBe(calls);
+
+    slow.resolve({ results: [makeResult()], contact_configured: true });
+    await act(async () => {
+      await slow.promise;
+    });
+    expect(screen.getByRole("button", { name: "Find on map" }).getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Find on map" }));
+  });
+
   it("clears Searching… when the query is shortened below the minimum during an in-flight Find", async () => {
     const slow = createDeferred<GeocodingSearchResponse>();
     mockSearch.mockReturnValueOnce(slow.promise);

@@ -24,8 +24,8 @@ describe("computeWalletCustomFieldPreview", () => {
     expect(computeWalletCustomFieldPreview("full_name", [makeField()])).toBeUndefined();
   });
 
-  it("shows 'Loading…' while the event's custom fields haven't resolved yet", () => {
-    expect(computeWalletCustomFieldPreview("custom:t_shirt_size", undefined)).toBe("Loading…");
+  it("says 'Not loaded yet.', not 'not set', while the event's custom fields haven't resolved yet", () => {
+    expect(computeWalletCustomFieldPreview("custom:t_shirt_size", undefined)).toBe("Not loaded yet.");
   });
 
   it("shows an example of the select field's first option", () => {

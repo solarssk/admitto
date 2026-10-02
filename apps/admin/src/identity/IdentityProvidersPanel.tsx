@@ -12,11 +12,9 @@ import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { RowsSkeleton } from "../components/RowsSkeleton.js";
-import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
-import { useListLoad, type ListLoad } from "../hooks/useListLoad.js";
-import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
-import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
+import { useListLoad } from "../hooks/useListLoad.js";
 import { orLoginRedirect } from "./loginRedirect.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
@@ -56,17 +54,6 @@ function providerEditPath(id: string): string {
 /** The two reads of this screen: module level, so each is one stable request (a 401 hands over to the login page). */
 const fetchProviderRows = orLoginRedirect(async (signal: AbortSignal) => (await fetchIdentityProviders(signal)).providers);
 const fetchCfSummary = orLoginRedirect((signal: AbortSignal) => fetchCfAccessSummary(signal));
-
-/**
- * How one card of this screen is on screen: the placeholder of its first load (held for the first 200ms, "Taking longer
- * than usual" after 8 seconds), the error with a Retry that stays on screen, busy, until the answer is in, or neither.
- */
-function useCardLoad<T>(list: ListLoad<T>) {
-  const failure = useRetryKeepingError(list.error, list.reload);
-  const gate = useLoadingGate(list.loading && !failure.running);
-  const slow = useDelayedLoading(list.loading && !failure.running, SLOW_NOTICE_MS);
-  return { gate, slow, failure };
-}
 
 const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
 
