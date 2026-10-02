@@ -5106,6 +5106,36 @@ output.mail-field-hint {
   gap: var(--space-3);
 }
 
+/* A settings panel while it loads (SettingsPanelSkeleton): its cards one under the other with the gap of the real
+ * panel (.settings-sections), and a label and control per field with the real fields' gap. */
+.settings-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings-skeleton__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Two fields side by side: the grid of .mail-transport-section (listed after this rule) sets the columns. */
+.settings-skeleton__fields.mail-transport-section {
+  display: grid;
+}
+
+.settings-skeleton__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Two classes, to win over .settings-footer's space-between that comes later in this file. */
+.settings-footer.settings-skeleton__footer {
+  justify-content: flex-end;
+}
+
 .settings-card-intro {
   margin: 0;
   font-size: var(--fs-sm);

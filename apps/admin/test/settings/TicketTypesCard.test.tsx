@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventSettingsDto, TicketTypeDto } from "../../src/api/types.js";
 import { TicketTypesCard } from "../../src/settings/TicketTypesCard.js";
-import { renderWithToast } from "../test-utils.js";
+import { renderWithToast, isOff } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -76,7 +76,7 @@ describe("TicketTypesCard", () => {
     const { onDirtyChange } = renderCard([vipType]);
     await screen.findByDisplayValue("VIP");
 
-    expect(saveButton()).toHaveProperty("disabled", true);
+    expect(isOff(saveButton())).toBe(true);
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 
@@ -90,12 +90,12 @@ describe("TicketTypesCard", () => {
     const input = (await screen.findByDisplayValue("VIP")) as HTMLInputElement;
 
     fireEvent.blur(input);
-    expect(saveButton()).toHaveProperty("disabled", true);
+    expect(isOff(saveButton())).toBe(true);
 
     fireEvent.change(input, { target: { value: "  " } });
     fireEvent.blur(input);
     expect(input.value).toBe("VIP");
-    expect(saveButton()).toHaveProperty("disabled", true);
+    expect(isOff(saveButton())).toBe(true);
     expect(updateTicketType).not.toHaveBeenCalled();
   });
 
@@ -117,7 +117,7 @@ describe("TicketTypesCard", () => {
     // Only the field this draft actually changed is sent - never the untouched color, so a
     // concurrent edit to it by someone else can't be silently reverted (CodeRabbit review).
     await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" }));
-    await waitFor(() => expect(saveButton()).toHaveProperty("disabled", true));
+    await waitFor(() => expect(isOff(saveButton())).toBe(true));
   });
 
   it("commits the label on Enter, same as blur - still deferred until Save", async () => {
@@ -161,7 +161,7 @@ describe("TicketTypesCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
     expect(await screen.findByDisplayValue("VIP")).toBeTruthy();
-    expect(saveButton()).toHaveProperty("disabled", true);
+    expect(isOff(saveButton())).toBe(true);
     expect(updateTicketType).not.toHaveBeenCalled();
   });
 
@@ -233,7 +233,7 @@ describe("TicketTypesCard", () => {
     fireEvent.click(saveButton());
 
     await waitFor(() => expect(createTicketType).toHaveBeenCalledWith("evt-1", { label: "Staff", color: "blue" }));
-    await waitFor(() => expect(saveButton()).toHaveProperty("disabled", true));
+    await waitFor(() => expect(isOff(saveButton())).toBe(true));
     // Draft row's placeholder is replaced by the real, saved row - still showing the same label.
     expect(screen.getByDisplayValue("Staff")).toBeTruthy();
   });
@@ -445,7 +445,7 @@ describe("TicketTypesCard", () => {
       expect(onSaved).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.queryByDisplayValue("VIP")).toBeNull();
-      expect(saveButton()).toHaveProperty("disabled", true);
+      expect(isOff(saveButton())).toBe(true);
     });
 
     it("removes a not-yet-created pending row from the draft without calling deleteTicketType", async () => {
@@ -469,7 +469,7 @@ describe("TicketTypesCard", () => {
       expect(screen.queryByDisplayValue("Staff")).toBeNull();
       expect(screen.queryByRole("dialog")).toBeNull();
       // Removing it leaves the draft matching `saved` again (only the untouched VIP row remains).
-      await waitFor(() => expect(saveButton()).toHaveProperty("disabled", true));
+      await waitFor(() => expect(isOff(saveButton())).toBe(true));
       expect(onDirtyChange).toHaveBeenLastCalledWith(false);
     });
 

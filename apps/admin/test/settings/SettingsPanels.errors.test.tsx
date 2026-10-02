@@ -7,7 +7,8 @@ import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { BrandingSettingsPanel } from "../../src/settings/BrandingSettingsPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
-import { mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { hangUntilAborted, mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 
 // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
 // its tests exercise the <table> markup they assert against.
@@ -100,16 +101,13 @@ describe("Settings panels delayed loading", () => {
     });
     expect(screen.getByText("Loading branding settings…")).toBeTruthy();
   });
+});
 
-  it("EventArchivingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    vi.mocked(fetchAdminEvents).mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderWithToastAndRouter(<EventArchivingPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
-  });
+describePanelLoading({
+  label: "Loading events",
+  errorTitle: "Could not load events",
+  render: () => renderWithToastAndRouter(<EventArchivingPanel />),
+  hang: () => vi.mocked(fetchAdminEvents).mockImplementation(hangUntilAborted),
 });
 
 describe("SecurityPanel operator errors", () => {
@@ -119,10 +117,10 @@ describe("SecurityPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    expect(document.querySelector(".sessions-status p")?.textContent).toMatch(
-      /Could not load security settings/,
-    );
-    expect(document.querySelector(".sessions-status")?.getAttribute("role")).toBe("alert");
+    expect(screen.getByText("Could not load security settings")).toBeTruthy();
+    expect(screen.getByText("Could not load security settings.")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
   it("toasts on save failure", async () => {

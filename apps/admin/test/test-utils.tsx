@@ -170,3 +170,22 @@ export function makeStaffUser(id: string, displayName: string): UserListItemDto 
     roles: [],
   };
 }
+
+/**
+ * A request that never answers, and fails with an abort when it is abandoned: the 30 second limit's signal, or the page
+ * leaving. It finds the `AbortSignal` among its arguments (`fn(signal)`, `fn(id, signal)` or `fn({ signal })`), so one
+ * helper stands in for every API function.
+ */
+export function hangUntilAborted(...args: unknown[]): Promise<never> {
+  const holder = args.find((arg) => typeof arg === "object" && arg !== null && "signal" in arg) as { signal?: AbortSignal } | undefined;
+  const signal = args.find((arg): arg is AbortSignal => arg instanceof AbortSignal) ?? holder?.signal;
+  return new Promise((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+  });
+}
+
+/** Whether a button is off: really `disabled`, or marked `aria-disabled` (a button that keeps keyboard focus when it goes off). */
+export function isOff(button: HTMLElement): boolean {
+  return (button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true";
+}
+

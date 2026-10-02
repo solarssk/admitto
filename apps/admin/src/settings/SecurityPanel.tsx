@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button, Card, HintLabel, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemSettingsDto, SettingSource } from "../api/types.js";
 import { parseListInput, joinListInput } from "../identity/cfAccessValidation.js";
 import { EnvBadge, SettingsFooter } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton } from "./SettingsPanelSkeleton.js";
 import { CspTrustedOriginsModal } from "./CspTrustedOriginsModal.js";
 import {
   buildSecurityPatchBody,
@@ -16,6 +18,13 @@ import {
   previewDraftInt,
   type SecuritySettingsDraft,
 } from "./securitySettingsPatch.js";
+
+/** The cards of the panel, for its placeholder. */
+const SECURITY_SKELETON_CARDS = [
+  { id: "sessions", title: "Sessions", intro: true, rows: 5, rowHeight: 93 },
+  { id: "sign-in", title: "Sign-in", intro: true, rows: 5, rowHeight: 64 },
+  { id: "scripts", title: "Third-party scripts", fields: 1 },
+];
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_MINUTE = 60_000;
@@ -146,31 +155,18 @@ export function SecurityPanel() {
   const { addToast } = useToast();
   const validationErrorsRef = useRef<HTMLUListElement>(null);
   const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<SecuritySettingsDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [cspOriginsModalOpen, setCspOriginsModalOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchSecuritySettings();
+  const panel = usePanelLoad({
+    fetch: (signal) => fetchSecuritySettings(signal),
+    apply: (data) => {
       setSettings(data);
       setDraft(draftFromSettings(data));
-    } catch (err) {
-      const message = operatorApiErrorMessage(err, "Could not load security settings.");
-      setError(message);
-      addToast(message, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+    },
+    fallback: "Could not load security settings.",
+  });
 
   const handleSave = async () => {
     if (!settings || !draft) return;
@@ -208,30 +204,27 @@ export function SecurityPanel() {
     setDraft({ ...draft, mfaRoles: next });
   };
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" text on and off faster than it can register as loading — show it only
-  // once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
-
-  if (loading) {
-    if (!showLoading) return null;
+  if (!panel.gate.showContent) {
     return (
-      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}>
-        <p className="sessions-status">Loading…</p>
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading security settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={SECURITY_SKELETON_CARDS}
+      />
     );
   }
 
-  if (error || !settings || !draft) {
+  // A successful load always fills both; a failure is `panel.error`.
+  if (panel.error || !settings || !draft) {
     return (
-      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}>
-        <div className="sessions-status" role="alert">
-          <p>{error ?? "Unexpected error."}</p>
-          <Button type="button" variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        </div>
-      </Card>
+      <PanelLoadError
+        cardTitle={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}
+        title="Could not load security settings"
+        message={panel.error ?? "Unexpected error."}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
     );
   }
 
@@ -257,7 +250,7 @@ export function SecurityPanel() {
   const opIdleM = previewDraftInt(draft.opIdleM);
 
   return (
-    <>
+    <div className="settings-sections at-fade-in">
       <Card
         title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}
         actions={<EnvBadge locked={anySecurityEnvLocked(settings)} />}
@@ -507,6 +500,6 @@ export function SecurityPanel() {
         onReset={handleReset}
         onSave={() => void handleSave()}
       />
-    </>
+    </div>
   );
 }

@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
-import { renderWithToastAndRouter } from "../test-utils.js";
+import { renderWithToastAndRouter, isOff } from "../test-utils.js";
 
 const baseSettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
@@ -88,7 +88,7 @@ describe("SecurityPanel: operators stay signed in on event day", () => {
 
     await screen.findByRole("switch", { name: SWITCH_NAME });
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    expect(isOff(save)).toBe(true);
 
     fireEvent.click(eventDaySwitch());
     expect(eventDaySwitch().checked).toBe(false);

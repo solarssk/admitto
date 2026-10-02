@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExternalServicesPanel } from "../../src/settings/ExternalServicesPanel.js";
-import { renderWithToastAndRouter } from "../test-utils.js";
+import { renderWithToastAndRouter, isOff } from "../test-utils.js";
 import type { ExternalServicesResponse } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -183,7 +183,7 @@ describe("ExternalServicesPanel", () => {
 
   it("disables Save when there are no dirty fields", async () => {
     await renderLoaded();
-    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
     expect(mockSaveWeather).not.toHaveBeenCalled();
     expect(mockSaveMaps).not.toHaveBeenCalled();
   });

@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Button, Card, EmptyState, HintLabel, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
+import { RefreshWarning } from "../components/RefreshWarning.js";
 import { Segmented } from "../components/Segmented.js";
 import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useListLoad } from "../hooks/useListLoad.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
+import { UsersListSkeleton, type SkeletonColumn } from "../pages/users/UsersListSkeleton.js";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
 type View = "active" | "archived";
@@ -26,6 +31,15 @@ const VIEW_OPTIONS = [
   { value: "archived" as const, label: "Archived" },
 ];
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+/** The columns of the table, for its placeholder (the Archived column only exists in the Archived view). */
+const ARCHIVING_COLUMNS: ReadonlyArray<SkeletonColumn> = [
+  { id: "event", label: "Event" },
+  { id: "date", label: "Event date" },
+  { id: "attendees", label: "Attendees" },
+  { id: "created", label: "Created" },
+  { id: "action", label: <span className="sr-only">Action</span> },
+];
+const NO_EVENTS: EventDto[] = [];
 
 /** Best-effort "who" label for created_by/archived_by — display name, falling back to email,
  * falling back to "-" for events predating this attribution (or a deleted user). */
@@ -61,9 +75,6 @@ export function EventArchivingPanel() {
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
   const isDesktop = useIsDesktop();
-  const [events, setEvents] = useState<EventDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -71,28 +82,22 @@ export function EventArchivingPanel() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await fetchAdminEvents({ includeArchived: true, signal });
-      if (signal?.aborted) return;
-      setEvents(list);
-    } catch (err) {
-      if (signal?.aborted) return;
-      if (err instanceof ApiError) reportApiError(err.status);
-      const message = operatorApiErrorMessage(err, "Could not load events.");
-      setError(message);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [reportApiError]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+  const fetchEvents = useCallback(
+    async (signal: AbortSignal) => {
+      try {
+        return await fetchAdminEvents({ includeArchived: true, signal });
+      } catch (err) {
+        if (err instanceof ApiError) reportApiError(err.status);
+        throw err;
+      }
+    },
+    [reportApiError],
+  );
+  const list = useListLoad({ fetcher: fetchEvents, fallback: "Could not load events." });
+  const events = list.data ?? NO_EVENTS;
+  // The placeholder: after 200ms, "Taking longer than usual" after 8 seconds. A refresh after an action keeps the rows.
+  const gate = useLoadingGate(list.loading);
+  const slow = useDelayedLoading(list.loading, SLOW_NOTICE_MS);
 
   const activeEvents = useMemo(
     () => events.filter((e) => !e.archived_at),
@@ -118,15 +123,23 @@ export function EventArchivingPanel() {
     setActing(true);
     setActionError(null);
     try {
+      const { id } = confirmAction.event;
       if (confirmAction.type === "archive") {
-        await archiveEvent(confirmAction.event.id);
+        await archiveEvent(id);
         addToast("Event archived.", "success");
+        // It moves to the other view at once, whatever the refresh that follows says (who archived it comes with it).
+        list.update((current) => current.map((e) => (e.id === id ? { ...e, archived_at: new Date().toISOString() } : e)));
       } else {
-        await unarchiveEvent(confirmAction.event.id);
+        await unarchiveEvent(id);
         addToast("Event restored.", "success");
+        list.update((current) =>
+          current.map((e) =>
+            e.id === id ? { ...e, archived_at: null, archived_by_display_name: null, archived_by_email: null, archived_by_timezone: null } : e,
+          ),
+        );
       }
       setConfirmAction(null);
-      await load();
+      void list.reload();
     } catch (err) {
       setActionError(operatorApiErrorMessage(err, "Action failed."));
     } finally {
@@ -157,11 +170,6 @@ export function EventArchivingPanel() {
   const restoreMessage = confirmAction
     ? `"${confirmAction.event.title}" will become active again. Editing and check-in will be allowed, and it will show up in default event lists.`
     : "";
-
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" text on and off faster than it can register as loading — show it only
-  // once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
 
   let content: ReactNode;
   if (displayedRows.length === 0) {
@@ -300,23 +308,38 @@ export function EventArchivingPanel() {
       >
         <div className="settings-card-stack">
           <p className="settings-card-intro">{CARD_INTRO}</p>
-        {loading && showLoading && <p className="archiving-status">Loading…</p>}
+        {!gate.showContent && (
+          <UsersListSkeleton
+            label="Loading events"
+            held={!gate.showIndicator}
+            slow={slow}
+            columns={ARCHIVING_COLUMNS}
+            rows={5}
+            rowHeight={62}
+            cards={3}
+            cardHeight={170}
+          />
+        )}
 
-        {!loading && error && (
+        {gate.showContent && list.error && (
           <EmptyState
             variant="error"
             title="Could not load events"
-            description={error}
+            description={list.error}
             action={
-              <Button type="button" variant="secondary" onClick={() => void load()}>
+              <Button type="button" variant="secondary" onClick={() => void list.reload()}>
                 Retry
               </Button>
             }
           />
         )}
 
-        {!loading && !error && (
-          <>
+        {gate.showContent && !list.error && list.refreshError && (
+          <RefreshWarning message={list.refreshError} onRetry={list.reload} />
+        )}
+
+        {gate.showContent && !list.error && list.data !== null && (
+          <RefetchRegion refreshing={list.refreshing} label="Refreshing events">
             {content}
 
             {rows.length > 0 && (
@@ -335,7 +358,7 @@ export function EventArchivingPanel() {
                 onNext={() => setPage(Math.min(totalPages, currentPage + 1))}
               />
             )}
-          </>
+          </RefetchRegion>
         )}
         </div>
       </Card>

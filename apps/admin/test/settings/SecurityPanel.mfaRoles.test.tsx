@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
-import { renderWithToastAndRouter, getTooltipText } from "../test-utils.js";
+import { hangUntilAborted, isOff, renderWithToastAndRouter, getTooltipText } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 
 const baseSettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
@@ -39,15 +40,23 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("SecurityPanel delayed loading", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    vi.mocked(fetchSecuritySettings).mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
+describePanelLoading({
+  label: "Loading security settings",
+  errorTitle: "Could not load security settings",
+  render: () => renderWithToastAndRouter(<SecurityPanel />),
+  hang: () => vi.mocked(fetchSecuritySettings).mockImplementation(hangUntilAborted),
+});
+
+describe("SecurityPanel first load failing", () => {
+  it("is an error with a Retry that loads it again, and not also a toast", async () => {
+    vi.mocked(fetchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal")).mockResolvedValueOnce(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
+
+    expect(await screen.findByText("Could not load security settings")).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByLabelText<HTMLInputElement>("Admin session maximum lifetime (hours)")).toBeTruthy();
   });
 });
 
@@ -226,7 +235,7 @@ describe("SecurityPanel — save and reset", () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
 
-    expect(await screen.findByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    expect(isOff(await screen.findByRole("button", { name: "Save" }))).toBe(true);
     expect(patchSecuritySettings).not.toHaveBeenCalled();
   });
 
@@ -283,3 +292,22 @@ describe("SecurityPanel — idle-vs-absolute server error mapping", () => {
     });
   });
 });
+
+describe("SecurityPanel busy Save", () => {
+  it("keeps Save where it is, busy and with its own label, while the settings are saved", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    vi.mocked(patchSecuritySettings).mockImplementation(() => new Promise(() => {}));
+    renderWithToastAndRouter(<SecurityPanel />);
+    const input = await screen.findByLabelText<HTMLInputElement>("Admin session maximum lifetime (hours)");
+    fireEvent.change(input, { target: { value: "48" } });
+    fireEvent.blur(input);
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(save);
+    expect(patchSecuritySettings).toHaveBeenCalledTimes(1);
+  });
+});
+

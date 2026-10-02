@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import { loadWithTimeout, type LoadTimeout } from "../utils/load-timeout.js";
+import { loadWithTimeout, rejectOnAbort, type LoadTimeout } from "../utils/load-timeout.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 
 export interface ListLoadOptions<T> {
@@ -83,7 +83,7 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
   const superseded = () => signal?.aborted || mine !== ctx.requestRef.current;
   const limit = loadWithTimeout(signal);
   try {
-    const next = await ctx.fetcher(limit.signal);
+    const next = await rejectOnAbort(ctx.fetcher(limit.signal), limit.signal);
     if (superseded()) return;
     ctx.loadedRef.current = true;
     ctx.answeredRef.current = ctx.fetcher;
