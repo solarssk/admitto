@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { IconButton, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
+import { useRef, useState } from "react";
+import { Button, IconButton, ModalBackdrop, Notice } from "@admitto/ui";
 import { fetchRenderedDelivery } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
+import { SentMessageSkeleton } from "./DeliveryModalSkeleton.js";
 import { makeEmailPreviewInert } from "./inertEmailPreview.js";
 import "./delivery-modals.css";
 
@@ -17,33 +18,28 @@ export interface SentMessagePreviewModalProps {
 /** Read-only preview of a sent message's rendered content, fetched fresh from the `/rendered`
  * endpoint (see communication-api-routes.ts handleGetRenderedEventDelivery), with the
  * recipient's real ticket link and QR code materialized in - same admin/superadmin access as
- * "Copy ticket link", which already exposes the same ticket_url. */
-export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<SentMessagePreviewModalProps>) {
+ * "Copy ticket link", which already exposes the same ticket_url.
+ *
+ * It reads the message it was opened for once: another delivery is a fresh modal (`key`), so its load never has to
+ * follow a changing prop. */
+export function SentMessagePreviewModal(props: Readonly<SentMessagePreviewModalProps>) {
+  return <SentMessagePreviewModalBody key={`${props.eventId}/${props.row.id}`} {...props} />;
+}
+
+function SentMessagePreviewModalBody({ eventId, row, onClose }: Readonly<SentMessagePreviewModalProps>) {
   const [rendered, setRendered] = useState<RenderedDeliveryDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Subject/iframe don't exist in the DOM until the fetch resolves - retry initial focus once
-  // `loading` flips to false (IdentityProviderEditor's loadState convention).
-  useModalFocusTrap(panelRef, true, onClose, loading);
+  // The first load: nothing is drawn for 200ms, then the shape of the message, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer).
+  const panel = usePanelLoad({
+    fetch: (signal) => fetchRenderedDelivery(eventId, row.id, signal),
+    apply: setRendered,
+    fallback: "Could not load the sent message.",
+  });
+  const view = panelView(panel);
+  useModalFocusTrap(panelRef, true, onClose);
   useOverscrollBounceGuard(scrollRef);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetchRenderedDelivery(eventId, row.id, controller.signal)
-      .then((data) => setRendered(data))
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Could not load the sent message."));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [eventId, row.id]);
 
   return (
     <dialog open className="delivery-modal" aria-modal="true" aria-labelledby="sent-message-modal-title">
@@ -62,18 +58,25 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
           </div>
           <div className="delivery-modal__body">
-            {loading && (
-              <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
-                <span className="sr-only">Loading message…</span>
-                <Skeleton variant="text" lines={2} width="50%" />
-                <Skeleton variant="rect" height={320} className="delivery-modal-skeleton-frame" />
-              </div>
+            {view === "loading" && <SentMessageSkeleton held={!panel.gate.showIndicator} slow={panel.slow} />}
+            {view === "error" && (
+              <Notice
+                variant="error"
+                role="alert"
+                actionBusy={panel.retrying}
+                action={
+                  <Button type="button" variant="secondary" size="sm" loading={panel.retrying} onClick={() => void panel.retry()}>
+                    Retry
+                  </Button>
+                }
+              >
+                {panel.error}
+              </Notice>
             )}
-            {!loading && error && <Notice variant="error" role="alert">{error}</Notice>}
-            {!loading && !error && !rendered?.html && (
+            {view === "ready" && !rendered?.html && (
               <Notice variant="info">This message&apos;s stored content is no longer available.</Notice>
             )}
-            {!loading && !error && rendered?.html && (
+            {view === "ready" && rendered?.html && (
               <>
                 <div className="delivery-modal-preview-subject">
                   <strong>Subject</strong>
