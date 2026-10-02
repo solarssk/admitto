@@ -34,7 +34,7 @@ describe("SettingsPanelSkeleton", () => {
     expect(container.querySelectorAll(".settings-skeleton__field")).toHaveLength(3);
     expect(container.querySelector(".settings-skeleton__fields.mail-transport-section")).not.toBeNull();
     // intro (1) + two fields' labels and controls (3 x 2) + rows (3) + footer buttons (2)
-    expect(container.querySelectorAll(".at-skeleton").length).toBe(1 + 6 + 3 + 2);
+    expect(container.querySelectorAll(".at-skeleton")).toHaveLength(1 + 6 + 3 + 2);
     expect(container.querySelector(".settings-skeleton__footer")).not.toBeNull();
   });
 
