@@ -6,8 +6,9 @@ export interface IdentitySkeletonCard {
   /** The card's real title: it is known before the data is. */
   title: string;
   /** The fields of the card, in reading order: `full` ones take a whole row of the two-column grid, and `hint` is the
-   * number of lines of the hint under the control (one by default), which is what sets the field's height. */
-  fields: ReadonlyArray<{ full?: boolean; hint?: number }>;
+   * number of lines of the hint under the control (one by default), which is what sets the field's height. Each has an `id`
+   * of its own, which is its key. */
+  fields: ReadonlyArray<{ id: string; full?: boolean; hint?: number }>;
   /** Lines of intro text that open the card (a long one wraps). */
   intro?: number;
   /** Full-width rows after the fields (a list of mappings). */
@@ -59,8 +60,8 @@ export function IdentityEditorSkeleton({ label, held, slow, lead, cards }: Reado
                 <SkeletonLines lines={card.intro} />
               </div>
             ) : null}
-            {card.fields.map((field, index) => (
-              <div key={index} className="settings-skeleton__field" style={field.full ? { gridColumn: "1 / -1" } : undefined}>
+            {card.fields.map((field) => (
+              <div key={field.id} className="settings-skeleton__field" style={field.full ? { gridColumn: "1 / -1" } : undefined}>
                 <Skeleton variant="rect" width="28%" height={17} />
                 <Skeleton variant="rect" height={38} />
                 <div className="identity-skeleton__hint">

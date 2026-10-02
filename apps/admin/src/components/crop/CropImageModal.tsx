@@ -385,11 +385,12 @@ function CropImageModalView({
           <Button
             type="button"
             variant="primary"
-            disabled={!completedCrop || applying}
-            icon={applying ? <Spinner size="sm" label="Working" /> : undefined}
+            disabled={!completedCrop}
+            loading={applying}
+            loadingLabel="Applying…"
             onClick={onApplyClick}
           >
-            {applying ? "Working…" : "Apply changes"}
+            Apply changes
           </Button>
         </div>
       </div>

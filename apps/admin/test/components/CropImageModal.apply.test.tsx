@@ -212,7 +212,10 @@ describe("CropImageModal apply / cancel", () => {
     await waitFor(() => {
       expect(mockGetCropped).toHaveBeenCalledTimes(1);
     });
-    fireEvent.click(screen.getByRole("button", { name: /Working/i }));
+    const busy = screen.getByRole("button", { name: "Applying…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(busy);
     expect(mockGetCropped).toHaveBeenCalledTimes(1);
   });
 });

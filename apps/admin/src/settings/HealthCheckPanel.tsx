@@ -536,18 +536,7 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
   };
 
   if (!report) {
-    if (!panel.gate.showContent) {
-      return (
-        <SettingsPanelSkeleton
-          label="Loading health checks"
-          held={!panel.gate.showIndicator}
-          slow={panel.slow}
-          cards={HEALTH_SKELETON_CARDS}
-          footer={false}
-        />
-      );
-    }
-    if (panel.error) {
+    if (panel.error && panel.gate.showContent) {
       return (
         <PanelLoadError
           cardTitle="Overview"
@@ -558,7 +547,15 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
         />
       );
     }
-    return null;
+    return (
+      <SettingsPanelSkeleton
+        label="Loading health checks"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={HEALTH_SKELETON_CARDS}
+        footer={false}
+      />
+    );
   }
 
   const handleCopy = async () => {
