@@ -4272,6 +4272,11 @@ html:not(.icons-ready) .ti {
   min-width: 140px;
 }
 
+/* The spinner is a status element, not a glyph: with a long file name beside it, it would be squeezed into an oval. */
+.fontfam-row__file .at-spinner {
+  flex: none;
+}
+
 .fontfam-row__file span {
   overflow: hidden;
   text-overflow: ellipsis;

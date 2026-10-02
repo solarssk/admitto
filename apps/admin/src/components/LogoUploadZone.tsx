@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PercentCrop } from "react-image-crop";
-import { Button, Input, Notice, useToast } from "@admitto/ui";
+import { Button, Input, Notice, Spinner, TopProgressBar, useToast } from "@admitto/ui";
 import type { LogoCropMeta } from "../api/types.js";
 import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -121,6 +121,21 @@ function LogoPreview({
       >
         <i className="ti ti-x" aria-hidden="true" />
       </button>
+    </>
+  );
+}
+
+/**
+ * The empty zone. While the file goes up it is just its spinner (and the bar along its top): the invitation to drop a
+ * file would be wrong, and "Uploading…" is the bar's to say for assistive tech.
+ */
+function LogoDropInvitation({ uploading, hint }: { readonly uploading: boolean; readonly hint: string }) {
+  if (uploading) return <Spinner size="md" aria-hidden="true" />;
+  return (
+    <>
+      <i className="ti ti-photo-up" aria-hidden="true" />
+      <span className="logo-upload__zone-title">Drop logo here or click to browse</span>
+      <span className="logo-upload__hint">{hint}</span>
     </>
   );
 }
@@ -515,7 +530,9 @@ export function LogoUploadZone({
         }}
         role={showPreview ? undefined : "button"}
         tabIndex={showPreview || disabled ? undefined : 0}
-        aria-disabled={disabled || undefined}
+        aria-disabled={disabled || uploading || undefined}
+        aria-busy={uploading || undefined}
+        aria-label={uploading ? "Uploading logo" : undefined}
         onKeyDown={(e) => {
           if (!showPreview && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
@@ -523,6 +540,10 @@ export function LogoUploadZone({
           }
         }}
       >
+        {/* Decoration: what a screen reader is told is the status below, outside the zone (inside a role="button" it would be flattened). */}
+        <span className="logo-upload__bar" aria-hidden="true">
+          <TopProgressBar active={uploading} placement="container" label="Uploading logo" />
+        </span>
         {showPreview ? (
           <LogoPreview
             label={label}
@@ -548,13 +569,7 @@ export function LogoUploadZone({
             onRemove={clearLogo}
           />
         ) : (
-          <>
-            <i className="ti ti-photo-up" aria-hidden="true" />
-            <span className="logo-upload__zone-title">
-              {uploading ? "Uploading…" : "Drop logo here or click to browse"}
-            </span>
-            <span className="logo-upload__hint">{hint}</span>
-          </>
+          <LogoDropInvitation uploading={uploading} hint={hint} />
         )}
         <input
           ref={fileRef}
@@ -571,6 +586,7 @@ export function LogoUploadZone({
           tabIndex={-1}
         />
       </div>
+      <output className="sr-only">{uploading ? "Uploading logo" : ""}</output>
       {zoneError ? (
         <Notice variant="error" role="alert">
           {zoneError}
@@ -582,7 +598,8 @@ export function LogoUploadZone({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={uploading || disabled}
+            disabled={disabled}
+            aria-disabled={uploading}
             icon={<i className="ti ti-refresh" aria-hidden="true" />}
             onClick={openFilePicker}
           >
@@ -594,7 +611,8 @@ export function LogoUploadZone({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={uploading || disabled}
+            disabled={disabled}
+            aria-disabled={uploading}
             icon={<i className="ti ti-crop" aria-hidden="true" />}
             onClick={openCropForEdit}
           >

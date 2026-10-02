@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { FontFamilyModal, styleLabel } from "../../src/settings/FontFamilyModal.js";
@@ -752,5 +752,29 @@ describe("FontFamilyModal", () => {
     });
 
     expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(true);
+  });
+
+  it("shows a row's file on its way as a spinner beside the file's name, not as a changed label", async () => {
+    let resolveUpload!: (value: { url: string }) => void;
+    mockUploadFont.mockReturnValueOnce(new Promise((resolve) => (resolveUpload = resolve)));
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+
+    const row = (await waitFor(() => {
+      const found = rows()[0];
+      expect(found?.querySelector(".fontfam-row__file .at-spinner")).toBeTruthy();
+      return found!;
+    })) as HTMLElement;
+    expect(within(row).getByRole("status", { name: "Uploading Acme-Sans-Regular.woff2" })).toBeTruthy();
+    expect(row.querySelector(".fontfam-row__file")?.textContent).toContain("Acme-Sans-Regular.woff2");
+    // The row stays the file input's label while it uploads (the spinner is a labelable element too).
+    expect((row.querySelector(".fontfam-row__file") as HTMLLabelElement).control).toBe(fileInputOf(row));
+    expect(screen.queryByText("Uploading…")).toBeNull();
+
+    await act(async () => resolveUpload({ url: "/uploads/default/theme/acme.woff2" }));
+    await waitFor(() => expect(row.querySelector(".fontfam-row__file .at-spinner")).toBeNull());
+    expect(row.querySelector(".fontfam-row__file--loaded")).toBeTruthy();
   });
 });
