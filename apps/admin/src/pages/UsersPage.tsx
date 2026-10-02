@@ -24,6 +24,13 @@ import { useListLoad } from "../hooks/useListLoad.js";
 import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
 import { UserEditModal } from "./users/UserEditModal.js";
+import {
+  isPastTheEnd,
+  withRoleRemoved,
+  withUserRemoved,
+  withUserReplaced,
+  type StaffUsersAnswer,
+} from "./users/list-changes.js";
 import { RoleAssignmentsTab } from "./users/RoleAssignmentsTab.js";
 import { ActiveSessionsTab } from "./users/ActiveSessionsTab.js";
 import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
@@ -126,15 +133,13 @@ export function UsersPage() {
   // One request group for the list and the KPI numbers. `filtersActive` is what THIS answer was asked with, so the
   // empty states below never describe a search that is still on its way.
   const fetchStaffUsers = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal): Promise<StaffUsersAnswer> => {
       const [data, stats] = await Promise.all([
         fetchAdminUsers({ q: searchQuery || undefined, page, pageSize, role: roleFilter, status: statusFilter }, signal),
         fetchUserStats(signal),
       ]);
       const filtersActive = searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
-      // No rows although there are some, on a page after the first: the page it was on is gone.
-      const pastTheEnd = data.users.length === 0 && data.total > 0 && page > 1;
-      return { users: data.users, total: data.total, stats, filtersActive, pastTheEnd };
+      return { users: data.users, total: data.total, stats, filtersActive, pastTheEnd: isPastTheEnd(data.users.length, data.total, page) };
     },
     [searchQuery, page, pageSize, roleFilter, statusFilter],
   );
@@ -453,7 +458,13 @@ export function UsersPage() {
       {/* Always mounted (not just once "roles" becomes active) so its count is ready for the tab
           label immediately on page load - same convention as ActiveSessionsTab below. */}
       <Card title="Role assignments" hidden={tab !== "roles"}>
-        <RoleAssignmentsTab onAssignmentsChanged={() => void list.reload()} onCountChange={setRolesCount} />
+        <RoleAssignmentsTab
+          onAssignmentsChanged={(revoked) => {
+            list.update((answer) => withRoleRemoved(answer, revoked.user_id, revoked.id));
+            void list.reload();
+          }}
+          onCountChange={setRolesCount}
+        />
       </Card>
 
       {superadmin && (
@@ -489,11 +500,13 @@ export function UsersPage() {
         onClose={() => setEditUser(null)}
         onUpdated={(user, message) => {
           addToast(message ?? `${user.display_name ?? user.email} updated`, "success");
+          list.update((answer) => withUserReplaced(answer, user));
           void list.reload();
         }}
         onDeleted={(user) => {
           setEditUser(null);
           addToast(`${user.display_name ?? user.email} deleted`, "success");
+          list.update((answer) => withUserRemoved(answer, user.id, page));
           void list.reload();
         }}
       />

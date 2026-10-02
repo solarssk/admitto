@@ -15,6 +15,7 @@ import { ListFailure } from "../../components/ListFailure.js";
 import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { SLOW_NOTICE_MS } from "../../utils/loading-timing.js";
+import { isPastTheEnd, withAssignmentRemoved, type RoleAssignmentsAnswer } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
@@ -163,7 +164,7 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
 type RoleAssignmentsTabProps = {
   /** Called after a successful revoke so the parent's Staff users list (and any open Edit
    * modal, which renders from that same list) picks up the change without a full page reload. */
-  onAssignmentsChanged?: () => void;
+  onAssignmentsChanged?: (revoked: RoleAssignmentListItemDto) => void;
   /** Reports the total row count so the parent can show it on the tab label, matching Staff
    * users and Active sessions. */
   onCountChange?: (count: number) => void;
@@ -196,14 +197,17 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
   }, [searchInput, searchQuery]);
 
   // `filtersActive` is what this answer was asked with, so the empty states never describe a search still on its way.
-  const fetchAssignments = useCallback(async (signal: AbortSignal) => {
+  const fetchAssignments = useCallback(async (signal: AbortSignal): Promise<RoleAssignmentsAnswer> => {
     const data = await fetchRoleAssignments(
       { q: searchQuery || undefined, eventId: eventFilter || undefined, page, pageSize },
       signal,
     );
-    // No rows although there are some, on a page after the first: the page it was on is gone.
-    const pastTheEnd = data.assignments.length === 0 && data.total > 0 && page > 1;
-    return { rows: data.assignments, total: data.total, filtersActive: Boolean(searchQuery || eventFilter), pastTheEnd };
+    return {
+      rows: data.assignments,
+      total: data.total,
+      filtersActive: Boolean(searchQuery || eventFilter),
+      pastTheEnd: isPastTheEnd(data.assignments.length, data.total, page),
+    };
   }, [searchQuery, eventFilter, page, pageSize]);
   const list = useListLoad({
     fetcher: fetchAssignments,
@@ -250,8 +254,9 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     const label = confirmTarget.user_display_name ?? confirmTarget.user_email;
     setConfirmTarget(null);
     addToast(`Role revoked for ${label}`, "success");
+    list.update((answer) => withAssignmentRemoved(answer, confirmTarget.id, page));
     void list.reload();
-    onAssignmentsChanged?.();
+    onAssignmentsChanged?.(confirmTarget);
   };
 
   const canRevokeRow = (row: RoleAssignmentListItemDto) => {

@@ -433,20 +433,24 @@ describe("RoleAssignmentsTab on the loading standard", () => {
     expect(confirm.getAttribute("aria-busy")).toBeNull();
   });
 
-  it("keeps the rows and says so when the refresh after a revoke fails", async () => {
+  it("shows the revoke when the refresh after it fails: the assignment is gone, the others stay, and a warning says the list may be older", async () => {
     asSuperadmin();
+    const onCountChange = vi.fn();
     fetchRoleAssignments
-      .mockResolvedValueOnce(answer([assignment("1", "one@example.com")]))
+      .mockResolvedValueOnce(answer([assignment("1", "one@example.com"), assignment("2", "two@example.com")]))
       .mockRejectedValueOnce(new Error("network down"));
     revokeUserRole.mockResolvedValue(undefined);
-    renderWithToast(<RoleAssignmentsTab />);
+    renderWithToast(<RoleAssignmentsTab onCountChange={onCountChange} />);
     await screen.findAllByText("one@example.com");
 
     fireEvent.click(screen.getAllByRole("button", { name: "Revoke Operator for one@example.com" })[0]!);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
 
     expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
-    expect(screen.getAllByText("one@example.com").length).toBeGreaterThan(0);
+    expect(screen.queryByText("one@example.com")).toBeNull();
+    expect(screen.getAllByText("two@example.com").length).toBeGreaterThan(0);
+    // The count on the tab label follows the list on screen.
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
   });
 
   it("keeps the dialog open, with the reason and a usable button, when the revoke itself fails, and does not refresh a list that did not change", async () => {
@@ -488,19 +492,21 @@ describe("RoleAssignmentsTab on the loading standard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findAllByText("last-page@example.com");
-    // The revoke leaves 25 rows: page 2 no longer exists, and asking for it returns nothing. Page 1 is slow.
+    // The revoke leaves 25 rows: page 2 no longer exists, and asking for it returns nothing. Both answers are slow.
+    const reloadOfPageTwo = deferred<ReturnType<typeof answer>>();
     const stepBack = deferred<ReturnType<typeof answer>>();
-    fetchRoleAssignments.mockImplementation((params: { page: number }) =>
-      params.page === 1 ? stepBack.promise : Promise.resolve({ assignments: [], total: 25, page: params.page, pageSize: 25 }),
-    );
+    fetchRoleAssignments.mockImplementation((params: { page: number }) => (params.page === 1 ? stepBack.promise : reloadOfPageTwo.promise));
     fireEvent.click(screen.getAllByRole("button", { name: "Revoke Operator for last-page@example.com" })[0]!);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
 
-    // No rows, but 25 assignments: neither "No role assignments yet" nor "match your filters", the room is kept.
+    // The revoke has taken the only row of page 2 off the list on screen: no rows, but 25 assignments. That is neither
+    // "No role assignments yet" nor "match your filters", the room is kept, before any answer has come in.
     await waitFor(() => expect(screen.queryByLabelText("Loading role assignments")).not.toBeNull());
     expect(screen.queryByText("No role assignments yet")).toBeNull();
     expect(screen.queryByText("No role assignments match your filters")).toBeNull();
 
+    await act(async () => reloadOfPageTwo.resolve({ assignments: [], total: 25, page: 2, pageSize: 25 }));
+    expect(screen.queryByText("No role assignments yet")).toBeNull();
     await act(async () => stepBack.resolve(answer([assignment("1", "first-page@example.com")], 25)));
     expect((await screen.findAllByText("first-page@example.com")).length).toBeGreaterThan(0);
     expect(screen.getByText(/Page 1 of 1/)).toBeTruthy();

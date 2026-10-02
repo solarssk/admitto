@@ -26,6 +26,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchSecurityAuditLog: vi.fn(),
     deleteAdminUser: vi.fn(),
     createAdminUser: vi.fn(),
+    patchAdminUser: vi.fn(),
+    revokeUserRole: vi.fn(),
   };
 });
 
@@ -39,6 +41,8 @@ import {
   fetchSecurityAuditLog,
   fetchSessions,
   fetchUserStats,
+  patchAdminUser,
+  revokeUserRole,
 } from "../../src/api/client.js";
 
 const STATS = { total: 3, active: 3, mfa: 0, sso: 0, active_sessions: 0, active_sessions_users: 0, password_users: 3 };
@@ -225,12 +229,12 @@ describe("UsersPage refetch", () => {
     expect(screen.queryByText("user-1@example.com")).toBeNull();
   });
 
-  it("keeps the list after a delete and says so when the refresh fails, with a Retry that works, instead of replacing it with an error", async () => {
+  it("shows the delete when the refresh fails: the person is gone, the rest of the list stays, and a warning with a Retry that works says it may be older", async () => {
     const refresh = deferred<UsersAnswer>();
     vi.mocked(fetchAdminUsers)
-      .mockResolvedValueOnce(answer([{ ...makeStaffUser("user-1", "Jane Doe"), display_name: null }]))
+      .mockResolvedValueOnce(answer([{ ...makeStaffUser("user-1", "Jane Doe"), display_name: null }, makeStaffUser("user-2", "Joe Roe")], 2))
       .mockReturnValueOnce(refresh.promise)
-      .mockResolvedValueOnce(answer([]));
+      .mockResolvedValueOnce(answer([makeStaffUser("user-2", "Joe Roe")], 1));
     vi.mocked(deleteAdminUser).mockResolvedValue(undefined);
     renderUsers();
     await screen.findAllByText("user-1@example.com");
@@ -245,18 +249,110 @@ describe("UsersPage refetch", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(fetchAdminUsers).toHaveBeenCalledTimes(2));
 
-    // The refresh is on its way: the rows stay, not replaced by a placeholder.
-    expect(screen.getAllByText("user-1@example.com").length).toBeGreaterThan(0);
+    // The refresh is on its way: the deleted person is already gone, the rest stays, and no placeholder took its place.
+    expect(screen.queryByText("user-1@example.com")).toBeNull();
+    expect(screen.getAllByText("user-2@example.com").length).toBeGreaterThan(0);
     expect(placeholder()).toBeNull();
 
     await act(async () => refresh.reject(new Error("network down")));
     expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
-    expect(screen.getAllByText("user-1@example.com").length).toBeGreaterThan(0);
+    expect(screen.queryByText("user-1@example.com")).toBeNull();
+    expect(screen.getAllByText("user-2@example.com").length).toBeGreaterThan(0);
     expect(screen.queryByText(/Could not load users/)).toBeNull();
     expect(screen.getByText(/Check your connection and try again/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.queryByText(/Could not refresh this list/)).toBeNull());
+  });
+
+  it("says nothing false when the delete takes the only person of the last page, before any answer has come in", async () => {
+    const page1 = Array.from({ length: 25 }, (_, i) => makeStaffUser(`user-${i + 1}`, `User ${i + 1}`));
+    const reloadOfPageTwo = deferred<UsersAnswer>();
+    vi.mocked(fetchAdminUsers).mockImplementation(async (params: { page?: number }) => {
+      if (params.page === 1) return answer(page1, 26);
+      return vi.mocked(fetchAdminUsers).mock.calls.length > 2 ? reloadOfPageTwo.promise : answer([makeStaffUser("user-26", "User 26")], 26);
+    });
+    vi.mocked(deleteAdminUser).mockResolvedValue(undefined);
+    renderUsers();
+    await screen.findAllByText("user-1@example.com");
+    fireEvent.click(screen.getAllByRole("button", { name: "Next" })[0]!);
+    await screen.findAllByText("user-26@example.com");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for User 26" })[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.change(within(dialog).getByLabelText('Type the email address to confirm: "user-26@example.com"'), {
+      target: { value: "user-26@example.com" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    // Page 2 has lost its only row, and the answer to the refresh is not in: no false "No users match".
+    await waitFor(() => expect(placeholder()).not.toBeNull());
+    expect(screen.queryByText("No users match your filters")).toBeNull();
+    expect(screen.queryByText("No users yet")).toBeNull();
+    await act(async () => reloadOfPageTwo.resolve({ users: [], total: 25, page: 2, pageSize: 25 }));
+    expect(screen.queryByText("No users match your filters")).toBeNull();
+  });
+
+  it("shows a saved change when the refresh after it fails: the row has the new name, and the open modal follows it", async () => {
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce(answer([makeStaffUser("user-1", "Jane Doe")]))
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(patchAdminUser).mockResolvedValue({ user: makeStaffUser("user-1", "Jane Renamed") });
+    renderUsers();
+    await screen.findAllByText("user-1@example.com");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^Display name/), { target: { value: "Jane Renamed" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+    expect(screen.getAllByText("Jane Renamed").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Jane Doe")).toBeNull();
+  });
+
+  it("takes a revoked role off the person's row too, when the revoke was made on the Role assignments tab and the refresh fails", async () => {
+    const withRole = { ...makeStaffUser("user-1", "Jane Doe"), roles: [{ id: "role-9", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }] };
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce(answer([withRole]))
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchRoleAssignments)
+      .mockResolvedValueOnce({
+        assignments: [
+          {
+            id: "role-9",
+            user_id: "user-1",
+            user_email: "user-1@example.com",
+            user_display_name: "Jane Doe",
+            role: "operator",
+            scope_type: "event",
+            scope_id: "evt-1",
+            is_oidc: false,
+            granted_at: "2026-01-01T00:00:00.000Z",
+            event: { id: "evt-1", title: "Summer Summit", slug: "summer", organization_id: "org-1" },
+            organization: null,
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      })
+      .mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
+    vi.mocked(revokeUserRole).mockResolvedValue(undefined);
+    renderUsers();
+    await screen.findAllByText("user-1@example.com");
+    expect(screen.getAllByText(/Operator/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Role assignments/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Revoke Operator for Jane Doe" }))[0]!);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(revokeUserRole).toHaveBeenCalledWith("user-1", "role-9"));
+
+    fireEvent.click(screen.getByRole("tab", { name: /Staff users/ }));
+    await waitFor(() => expect(screen.getByText(/Could not refresh this list/)).toBeTruthy());
+    expect(within(screen.getAllByRole("table")[0]!).queryByText("Operator")).toBeNull();
   });
 
   it("shows the person that was just invited by refreshing the list, which keeps its rows meanwhile", async () => {

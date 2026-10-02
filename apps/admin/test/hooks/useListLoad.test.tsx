@@ -260,6 +260,42 @@ describe("useListLoad", () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it("shows what an action has confirmed before its refresh, reports it like an answer, and keeps it when the refresh fails", async () => {
+    const onData = vi.fn();
+    const fetcher = vi.fn().mockResolvedValueOnce("rows A").mockRejectedValueOnce(new Error("network down"));
+    const { result } = setup(fetcher, { onData });
+    await settle();
+
+    act(() => result.current.update((current) => `${current} without one`));
+    expect(result.current.data).toBe("rows A without one");
+    expect(onData).toHaveBeenLastCalledWith("rows A without one");
+
+    await act(async () => result.current.reload());
+    expect(result.current.data).toBe("rows A without one");
+    expect(result.current.refreshError).toMatch(/may show older details/);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("lets the answer of the refresh that follows replace what was applied", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce("rows A").mockResolvedValueOnce("rows A, as the server has them");
+    const { result } = setup(fetcher);
+    await settle();
+    act(() => result.current.update(() => "rows A, edited here"));
+    await act(async () => result.current.reload());
+    expect(result.current.data).toBe("rows A, as the server has them");
+  });
+
+  it("applies nothing before the first answer", async () => {
+    const first = deferred<string>();
+    const onData = vi.fn();
+    const { result } = setup(() => first.promise, { onData });
+    const change = vi.fn((current: string) => current);
+    act(() => result.current.update(change));
+    expect(change).not.toHaveBeenCalled();
+    expect(onData).not.toHaveBeenCalled();
+    expect(result.current.data).toBeNull();
+  });
+
   it("shows nothing loading when the viewer stops needing the list while it is on its way", async () => {
     const first = deferred<string>();
     const fetcher: Fetcher = () => first.promise;

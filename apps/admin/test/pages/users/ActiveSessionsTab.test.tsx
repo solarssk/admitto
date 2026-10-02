@@ -797,24 +797,48 @@ describe("ActiveSessionsTab on the loading standard", () => {
     await waitFor(() => expect(document.querySelectorAll(".refetch-card")).toHaveLength(0));
   });
 
-  it("keeps the rows and says so when the refresh after a revoke fails, instead of replacing them with an error", async () => {
+  it("shows the revoke when the refresh after it fails: the session is gone, the others stay, and a warning with a Retry says the list may be older", async () => {
+    const onCountChange = vi.fn();
     vi.mocked(fetchSessions)
-      .mockResolvedValueOnce({ sessions: [makeSession()] })
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", userEmail: "one@example.com" }), makeSession({ id: "s2", userEmail: "two@example.com" })] })
       .mockRejectedValueOnce(new Error("network down"))
-      .mockResolvedValueOnce({ sessions: [makeSession()] });
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s2", userEmail: "two@example.com" })] });
     vi.mocked(revokeSessionById).mockResolvedValue(undefined);
-    renderWithToast(<ActiveSessionsTab />);
+    renderWithToast(<ActiveSessionsTab onCountChange={onCountChange} />);
     await screen.findByRole("table");
 
-    fireEvent.click(screen.getByRole("button", { name: REVOKE_NAME }));
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_NAME })[0]!);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
 
     expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
     expect(screen.getByRole("table")).toBeTruthy();
+    expect(screen.queryByText("one@example.com")).toBeNull();
+    expect(screen.getAllByText("two@example.com").length).toBeGreaterThan(0);
     expect(screen.queryByText("Could not load sessions.")).toBeNull();
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.queryByText(/Could not refresh this list/)).toBeNull());
+  });
+
+  it("shows a saved device label when the refresh after it fails", async () => {
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", deviceLabel: "Old tablet" })] })
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(updateSessionDeviceLabel).mockResolvedValue({ deviceLabel: "Door tablet (as saved)" });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+    expect(screen.getAllByText("Old tablet").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole("button", { name: EDIT_NAME })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "door tablet" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+    // The label the server saved, not the one that was typed.
+    expect(screen.getAllByText("Door tablet (as saved)").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Old tablet")).toBeNull();
   });
 
   it("ends the bulk revoke dialog's busy state with the revoke, not with the refresh behind it", async () => {

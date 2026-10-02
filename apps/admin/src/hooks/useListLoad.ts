@@ -30,6 +30,12 @@ export interface ListLoad<T> {
   refreshError: string | null;
   /** The same query again, after an action. Resolves when the answer, or the failure, is in. */
   reload: () => Promise<void>;
+  /**
+   * Applies what the server has just confirmed to the answer on screen (a saved row, a deleted one), and reports it
+   * like an answer (`onData`). Call it before `reload`, so a refresh that fails does not make a saved change look lost:
+   * the `reload` supersedes any request still on its way. Does nothing before the first answer.
+   */
+  update: (change: (data: T) => T) => void;
 }
 
 const REFRESH_FAILED = "Could not refresh this list, so it may show older details.";
@@ -116,6 +122,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const loadedRef = useRef(false);
+  const dataRef = useRef<T | null>(null);
   const answeredRef = useRef<((signal: AbortSignal) => Promise<T>) | null>(null);
   const requestRef = useRef(0);
   // Aborted when the query changes or the page is left, so a reload started by an action follows the same life.
@@ -125,14 +132,19 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
     onDataRef.current = onData;
   });
 
+  const setAnswer = useCallback((next: T) => {
+    dataRef.current = next;
+    setData(next);
+  }, []);
+
   const run = useCallback(
     (kind: "query" | "reload", signal?: AbortSignal) =>
       runListLoad(
-        { enabled, fetcher, fallback, loadedRef, answeredRef, requestRef, onDataRef, setData, setLoading, setRefreshing, setError, setRefreshError },
+        { enabled, fetcher, fallback, loadedRef, answeredRef, requestRef, onDataRef, setData: setAnswer, setLoading, setRefreshing, setError, setRefreshError },
         kind,
         signal,
       ),
-    [enabled, fetcher, fallback],
+    [enabled, fetcher, fallback, setAnswer],
   );
 
   useEffect(() => {
@@ -150,5 +162,16 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   });
   const reload = useCallback(() => runRef.current("reload", lifeRef.current?.signal), []);
 
-  return { data, loading, refreshing, error, refreshError, reload };
+  const update = useCallback(
+    (change: (current: T) => T) => {
+      const current = dataRef.current;
+      if (current === null) return;
+      const next = change(current);
+      setAnswer(next);
+      onDataRef.current?.(next);
+    },
+    [setAnswer],
+  );
+
+  return { data, loading, refreshing, error, refreshError, reload, update };
 }

@@ -19,6 +19,7 @@ import { useIsDesktop } from "../../hooks/useIsDesktop.js";
 import { useListLoad } from "../../hooks/useListLoad.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
 import { SLOW_NOTICE_MS } from "../../utils/loading-timing.js";
+import { withSessionLabel, withSessionRemoved } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 
 type FilterValue = "all" | "admin" | "operator";
@@ -121,8 +122,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
       // The revoke is done (or failed): the dialog's busy state ends with it, not with the list refresh behind it.
       setRevoking(false);
     }
-    setConfirmTarget(null);
     addToast("Session revoked.", "success");
+    list.update((answer) => withSessionRemoved(answer, confirmTarget.id));
+    setConfirmTarget(null);
     void list.reload();
   };
 
@@ -415,8 +417,10 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         open={!!editTarget}
         session={editTarget}
         onClose={() => setEditTarget(null)}
-        onSaved={() => {
+        onSaved={(deviceLabel) => {
           addToast("Device label updated.", "success");
+          // The modal is still open on this session, so `editTarget` is what the label belongs to.
+          if (editTarget) list.update((answer) => withSessionLabel(answer, editTarget.id, deviceLabel));
           void list.reload();
         }}
       />
