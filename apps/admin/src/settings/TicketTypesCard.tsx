@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, EmptyState, HintLabel, IconButton, Input, Notice, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, IconButton, Input, Notice, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
 import type { TicketTypeColor, ToastVariant } from "@admitto/ui";
 import { ApiError, createTicketType, deleteTicketType, fetchTicketTypes, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -7,7 +7,9 @@ import type { EventSettingsDto, TicketTypeDto, UpdateTicketTypePatch } from "../
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useClickOutside } from "../components/useClickOutside.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
+import { RowsSkeleton } from "../components/RowsSkeleton.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
 import { pluralSuffix } from "../utils/pluralize.js";
 import "./ticket-types-card.css";
@@ -324,13 +326,14 @@ const DRAFT_ROW_KEY = "__new_ticket_type__";
  * Event Settings tab uses. Deleting stays immediate: its own confirm dialog is already the
  * explicit gesture, and it needs the instant "still assigned to attendees" feedback a deferred
  * batch save couldn't attach anywhere once the row was gone from the draft. */
-export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange, onSaved }: TicketTypesCardProps) {
+export function TicketTypesCard(props: TicketTypesCardProps) {
+  return <TicketTypesCardBody key={props.eventId} {...props} />;
+}
+
+function TicketTypesCardBody({ eventId, event, onDirtyChange, onSavingChange, onSaved }: TicketTypesCardProps) {
   const { addToast } = useToast();
   const [saved, setSaved] = useState<TicketTypeDto[]>([]);
   const [draft, setDraft] = useState<DraftTicketType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const showLoading = useDelayedLoading(loading);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DraftTicketType | null>(null);
@@ -341,7 +344,6 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
   // see TicketTypeRow/DraftTicketTypeRow's onLocalDirtyChange.
   const [uncommittedIds, setUncommittedIds] = useState<ReadonlySet<string>>(new Set());
   const disabled = event.status === "archived";
-  const loadAbortRef = useRef<AbortController | null>(null);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
 
   const setRowUncommitted = useCallback((id: string, isDirty: boolean) => {
@@ -361,31 +363,17 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
     if (!draftOpen) setRowUncommitted(DRAFT_ROW_KEY, false);
   }, [draftOpen, setRowUncommitted]);
 
-  const load = useCallback(() => {
-    loadAbortRef.current?.abort();
-    const controller = new AbortController();
-    loadAbortRef.current = controller;
-    setLoading(true);
-    setLoadError(null);
-    fetchTicketTypes(eventId, controller.signal)
-      .then((types) => {
-        if (controller.signal.aborted) return;
-        setSaved(types);
-        setDraft(types);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        setLoadError(operatorApiErrorMessage(err, "Could not load ticket types."));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-  }, [eventId]);
-
-  useEffect(() => {
-    load();
-    return () => loadAbortRef.current?.abort();
-  }, [load]);
+  // The first load of the list: nothing is drawn for 200ms, then rows of placeholders, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer). The card's title, count and Add button are there from the start.
+  const panel = usePanelLoad({
+    fetch: (signal) => fetchTicketTypes(eventId, signal),
+    apply: (types) => {
+      setSaved(types);
+      setDraft(types);
+    },
+    fallback: "Could not load ticket types.",
+  });
+  const listReady = panel.gate.showContent && !panel.error;
 
   const dirty = uncommittedIds.size > 0 || draft.some((item) => isTicketTypeDirty(item, saved));
 
@@ -487,10 +475,12 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
         className="event-settings-card ticket-types-card"
         actions={
           <>
-            <span className="tt-count-badge">
-              {draft.length} type{pluralSuffix(draft.length)}
-            </span>
-            <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={draftOpen}>
+            {listReady && (
+              <span className="tt-count-badge">
+                {draft.length} type{pluralSuffix(draft.length)}
+              </span>
+            )}
+            <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={draftOpen || !listReady}>
               {(guard) => (
                 <Button
                   type="button"
@@ -511,48 +501,42 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
           <p className="field-hint ticket-types-card__intro settings-card-intro">
             Define the names and colours attendees can be assigned.
           </p>
-          {loadError ? (
-            <EmptyState
-              variant="error"
+          {!panel.gate.showContent && (
+            <RowsSkeleton label="Loading ticket types" held={!panel.gate.showIndicator} slow={panel.slow} rows={2} rowHeight={56} />
+          )}
+          {panel.gate.showContent && panel.error && (
+            <RetryEmptyState
               title="Could not load ticket types"
-              description={loadError}
-              action={
-                <Button type="button" variant="secondary" onClick={load}>
-                  Retry
-                </Button>
-              }
+              message={panel.error}
+              retrying={panel.retrying}
+              onRetry={panel.retry}
             />
-          ) : (
-            <>
-              {loading ? (
-                whenShown(showLoading, <p className="field-hint">Loading…</p>)
-              ) : (
-                <div className="tt-list">
-                  {draft.map((type) => (
-                    <TicketTypeRow
-                      key={type.id}
-                      type={type}
-                      disabled={disabled || saving}
-                      onLabelChange={(id, label) => updateDraft(id, { label })}
-                      onColorChange={(id, color) => updateDraft(id, { color })}
-                      onRemove={() => setDeleteTarget(type)}
-                      onLocalDirtyChange={(isDirty) => setRowUncommitted(type.id, isDirty)}
-                    />
-                  ))}
-                  {draftOpen && (
-                    <DraftTicketTypeRow
-                      disabled={disabled || saving}
-                      onCommit={commitDraftRow}
-                      onCancel={() => setDraftOpen(false)}
-                      onLocalDirtyChange={(isDirty) => setRowUncommitted(DRAFT_ROW_KEY, isDirty)}
-                    />
-                  )}
-                  {draft.length === 0 && !draftOpen && (
-                    <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
-                  )}
-                </div>
+          )}
+          {listReady && (
+            <div className="tt-list">
+              {draft.map((type) => (
+                <TicketTypeRow
+                  key={type.id}
+                  type={type}
+                  disabled={disabled || saving}
+                  onLabelChange={(id, label) => updateDraft(id, { label })}
+                  onColorChange={(id, color) => updateDraft(id, { color })}
+                  onRemove={() => setDeleteTarget(type)}
+                  onLocalDirtyChange={(isDirty) => setRowUncommitted(type.id, isDirty)}
+                />
+              ))}
+              {draftOpen && (
+                <DraftTicketTypeRow
+                  disabled={disabled || saving}
+                  onCommit={commitDraftRow}
+                  onCancel={() => setDraftOpen(false)}
+                  onLocalDirtyChange={(isDirty) => setRowUncommitted(DRAFT_ROW_KEY, isDirty)}
+                />
               )}
-            </>
+              {draft.length === 0 && !draftOpen && (
+                <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
+              )}
+            </div>
           )}
         </div>
       </Card>

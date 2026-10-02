@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { ToastProvider } from "@admitto/ui";
+import { ApiError } from "../../src/api/client.js";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocationSettingsPanel } from "../../src/settings/LocationSettingsPanel.js";
-import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
+import { hangUntilAborted, makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../../src/api/types.js";
 
 // jsdom doesn't implement ResizeObserver - the real MapPicker rendered inside this panel uses
@@ -232,6 +235,16 @@ afterEach(() => {
   cleanup();
 });
 
+describePanelLoading({
+  label: "Loading location settings",
+  errorTitle: "Could not load location settings",
+  render: () => renderPanel(),
+  hang: () => {
+    mockFetchLocation.mockImplementation(hangUntilAborted as never);
+    mockFetchTiles.mockImplementation(hangUntilAborted as never);
+  },
+});
+
 describe("LocationSettingsPanel — loading", () => {
   it("shows the saved venue name once loaded", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
@@ -285,6 +298,73 @@ describe("LocationSettingsPanel — loading", () => {
     });
 
     expect(screen.queryByDisplayValue("Springfield Hall")).toBeNull();
+  });
+});
+
+describe("LocationSettingsPanel — Retry and another event", () => {
+  it("keeps the error on screen with a busy Retry until the answer is in, then shows the panel and moves the focus to the tab panel", async () => {
+    mockFetchLocation.mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(
+      <MemoryRouter>
+        <div role="tabpanel" aria-label="Location">
+          <LocationSettingsPanel
+            eventId="evt-1"
+            isArchived={false}
+            eventTimezone="Europe/Warsaw"
+            installedWalletPassCount={0}
+            walletConfiguredForPush={false}
+            walletFieldMapping={null}
+          />
+        </div>
+      </MemoryRouter>,
+    );
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    const answer = createDeferred<EventLocationDto>();
+    mockFetchLocation.mockReturnValueOnce(answer.promise);
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByLabelText("Loading location settings")).toBeNull();
+
+    await act(async () => answer.resolve(SAVED_LOCATION));
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("tabpanel", { name: "Location" })));
+  });
+
+  it("gives the server's reason for a failed load", async () => {
+    mockFetchLocation.mockRejectedValueOnce(new ApiError(429, "bulk_send_rate_limited", "bulk_send_rate_limited"));
+    renderPanel();
+    expect(await screen.findByText("Could not load location settings")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Bulk sends are limited to 3 requests every 10 minutes");
+  });
+
+  it("is a fresh panel for another event: the previous event's venue is gone at once", async () => {
+    mockFetchLocation.mockResolvedValueOnce(SAVED_LOCATION).mockImplementationOnce(() => new Promise(() => {}));
+    const props = {
+      isArchived: false,
+      eventTimezone: "Europe/Warsaw",
+      installedWalletPassCount: 0,
+      walletConfiguredForPush: true,
+      walletFieldMapping: null,
+    };
+    const view = render(
+      <MemoryRouter>
+        <LocationSettingsPanel eventId="evt-1" {...props} />
+      </MemoryRouter>,
+      { wrapper: ToastProvider },
+    );
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+
+    view.rerender(
+      <MemoryRouter>
+        <LocationSettingsPanel eventId="evt-2" {...props} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByDisplayValue("Springfield Hall")).toBeNull();
+    expect(mockFetchLocation).toHaveBeenLastCalledWith("evt-2", expect.anything());
   });
 });
 

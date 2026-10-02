@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Badge, Card, EmptyState, HintLabel, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Card, EmptyState, HintLabel, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   fetchCfAccessSummary,
   fetchIdentityProviders,
@@ -11,11 +11,12 @@ import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
+import { RowsSkeleton } from "../components/RowsSkeleton.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { useListLoad, type ListLoad } from "../hooks/useListLoad.js";
 import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
-import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { orLoginRedirect } from "./loginRedirect.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
@@ -65,18 +66,6 @@ function useCardLoad<T>(list: ListLoad<T>) {
   const gate = useLoadingGate(list.loading && !failure.running);
   const slow = useDelayedLoading(list.loading && !failure.running, SLOW_NOTICE_MS);
   return { gate, slow, failure };
-}
-
-/** A card's placeholder: rows of the height of the real ones, in a status region named after what is loading. */
-function CardSkeleton({ label, held, slow, rows, rowHeight }: Readonly<{ label: string; held: boolean; slow: boolean; rows: number; rowHeight: number }>) {
-  return (
-    <output aria-label={label} className={held ? "identity-providers__skeleton at-loading-hold" : "identity-providers__skeleton"}>
-      {Array.from({ length: rows }, (_, row) => (
-        <Skeleton key={row} height={rowHeight} />
-      ))}
-      {slow ? <span className="at-hint" style={{ textAlign: "center", color: "var(--text-secondary)" }}>{SLOW_NOTICE_TEXT}</span> : null}
-    </output>
-  );
 }
 
 const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
@@ -217,7 +206,7 @@ export function IdentityProvidersPanel() {
         }
       >
         {!providersCard.gate.showContent && (
-          <CardSkeleton label="Loading identity providers" held={!providersCard.gate.showIndicator} slow={providersCard.slow} rows={2} rowHeight={53} />
+          <RowsSkeleton label="Loading identity providers" held={!providersCard.gate.showIndicator} slow={providersCard.slow} rows={2} rowHeight={53} />
         )}
         {providersCard.gate.showContent && providersCard.failure.error && (
           <RetryEmptyState
@@ -258,7 +247,7 @@ export function IdentityProvidersPanel() {
         actions={cfCard.gate.showContent && !cfCard.failure.error && cf ? cfStatusBadge(cf) : undefined}
       >
         {!cfCard.gate.showContent && (
-          <CardSkeleton label="Loading Cloudflare Access" held={!cfCard.gate.showIndicator} slow={cfCard.slow} rows={1} rowHeight={45} />
+          <RowsSkeleton label="Loading Cloudflare Access" held={!cfCard.gate.showIndicator} slow={cfCard.slow} rows={1} rowHeight={45} />
         )}
         {cfCard.gate.showContent && cfCard.failure.error && (
           <RetryEmptyState

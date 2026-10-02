@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
   EMPTY_ADDRESS_COMPONENTS,
@@ -12,7 +12,7 @@ import {
   isWalletFieldMappingRelevant,
   isVenueOrAddressFieldRelevant,
 } from "@admitto/wallet/passcreator-mapper";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
+import { Badge, Button, Card, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
   fetchMapTileConfig,
@@ -27,12 +27,14 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
-import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { AddressComponentsGrid } from "./AddressComponentsGrid.js";
 import { FixMapsLinkModal } from "./FixMapsLinkModal.js";
 import { componentsFromResult, enrichComponentsFromReverse } from "./locationGeocode.js";
 import { MapPicker } from "./MapPicker.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import {
   buildEventLocationPatchBody,
   draftFromLocation,
@@ -93,9 +95,25 @@ const MAPS_UNAVAILABLE_FALLBACK: MapTileConfigDto = {
   contact_configured: true,
 };
 
+/** The cards of the panel's placeholder: the address with its map, the two notes, and the venue's access details. */
+export const LOCATION_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "address", title: "Address", intro: true, fields: 1, rows: 1, rowHeight: 307 },
+  { id: "directions", title: "Directions & accessibility", fields: 2, controlHeight: 100 },
+  { id: "access", title: "Venue access details", intro: 2, fields: 8, columns: 2, controlHeight: 49 },
+];
+
+type LocationSettingsPanelProps = ComponentProps<typeof LocationSettingsPanelBody>;
+
 /** Location tab: venue search, interactive map, structured address grid, and
- * directions/accessibility notes. */
-export function LocationSettingsPanel({
+ * directions/accessibility notes.
+ *
+ * One event, one panel: a different `eventId` is a fresh panel (its own load and draft), never the previous event's
+ * venue with new data under it. */
+export function LocationSettingsPanel(props: LocationSettingsPanelProps) {
+  return <LocationSettingsPanelBody key={props.eventId} {...props} />;
+}
+
+function LocationSettingsPanelBody({
   eventId,
   isArchived,
   eventTimezone,
@@ -142,9 +160,6 @@ export function LocationSettingsPanel({
   const [tileConfig, setTileConfig] = useState<MapTileConfigDto | null>(null);
   const [draft, setDraft] = useState<LocationDraft>(EMPTY_DRAFT);
   const [savedDraft, setSavedDraft] = useState<LocationDraft>(EMPTY_DRAFT);
-  const [loading, setLoading] = useState(true);
-  const showLoading = useDelayedLoading(loading);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [applyingTimezone, setApplyingTimezone] = useState(false);
   const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
@@ -156,7 +171,6 @@ export function LocationSettingsPanel({
   const [fixLinksOpen, setFixLinksOpen] = useState(false);
   const [lookupResetKey, setLookupResetKey] = useState(0);
 
-  const loadAbortRef = useRef<AbortController | null>(null);
   const reverseSeqRef = useRef(0);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
   const pendingGeocodingProviderRef = useRef<string | null>(null);
@@ -170,44 +184,28 @@ export function LocationSettingsPanel({
     setDraftVerified(Boolean(data.geocoding_provider));
   }, []);
 
-  const loadSettings = useCallback(async () => {
-    loadAbortRef.current?.abort();
-    const ac = new AbortController();
-    loadAbortRef.current = ac;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      // Location is required for editing. Map tiles are optional: a tile-config
-      // failure must not hide venue search or Directions/Accessibility (#808).
-      // Fetch both concurrently; only the tile promise falls back when it fails.
+  // The first load: nothing is drawn for 200ms, then the panel's own placeholder, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer). Location is required for editing. Map tiles are optional: a tile-config
+  // failure must not hide venue search or Directions/Accessibility (#808), so only the tile read falls back when it fails.
+  const panel = usePanelLoad({
+    fetch: async (signal) => {
       const [locationResult, tilesResult] = await Promise.allSettled([
-        fetchEventLocation(eventId, ac.signal),
-        fetchMapTileConfig(ac.signal),
+        fetchEventLocation(eventId, signal),
+        fetchMapTileConfig(signal),
       ]);
-      if (ac.signal.aborted) return;
-
-      if (locationResult.status === "rejected") {
-        setLoadError("Could not load location settings.");
-        setApiData(null);
-        setTileConfig(null);
-        return;
-      }
-
-      applyResponse(locationResult.value);
-
-      const tiles =
-        tilesResult.status === "fulfilled" ? tilesResult.value : MAPS_UNAVAILABLE_FALLBACK;
+      if (locationResult.status === "rejected") throw locationResult.reason;
+      return {
+        location: locationResult.value,
+        tiles: tilesResult.status === "fulfilled" ? tilesResult.value : MAPS_UNAVAILABLE_FALLBACK,
+      };
+    },
+    apply: ({ location, tiles }) => {
+      applyResponse(location);
       setTileConfig(tiles);
       setContactConfigured(tiles.contact_configured);
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, applyResponse]);
-
-  useEffect(() => {
-    loadSettings().catch(() => {});
-    return () => loadAbortRef.current?.abort();
-  }, [loadSettings]);
+    },
+    fallback: "Could not load location settings.",
+  });
 
   const commitSave = async (body: ReturnType<typeof buildEventLocationPatchBody>) => {
     setSaving(true);
@@ -453,39 +451,30 @@ export function LocationSettingsPanel({
     }
   }
 
-  if (loading) {
-    return whenShown(
-      showLoading,
-      <Card title="Address">
-        <p>Loading location settings…</p>
-      </Card>,
-    );
-  }
-
-  if (loadError) {
+  if (!panel.gate.showContent) {
     return (
-      <Card title="Address">
-        <EmptyState
-          variant="error"
-          title="Could not load location settings"
-          description={loadError}
-          action={
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                loadSettings().catch(() => {});
-              }}
-            >
-              Retry
-            </Button>
-          }
-        />
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading location settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={LOCATION_SKELETON_CARDS}
+      />
     );
   }
 
-  // Successful load always populates both; failures always set loadError above.
+  if (panel.error) {
+    return (
+      <PanelLoadError
+        cardTitle="Address"
+        title="Could not load location settings"
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
+    );
+  }
+
+  // Successful load always populates both; failures are `panel.error` above.
   /* v8 ignore if */
   if (!apiData || !tileConfig) return null;
 

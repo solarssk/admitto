@@ -94,7 +94,7 @@ describe("IdentityProvidersPanel", () => {
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(container.querySelector(".identity-providers__skeleton")).toBeTruthy();
+    expect(container.querySelector(".rows-skeleton")).toBeTruthy();
   });
 
   it("shows the Cloudflare Access skeleton once the fetch has genuinely taken a moment", () => {

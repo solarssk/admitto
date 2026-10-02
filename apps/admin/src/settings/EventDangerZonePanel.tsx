@@ -126,7 +126,7 @@ export function EventDangerZonePanel({
           <ArchivedGuard
             event={null}
             reasonId="export-pii-reason"
-            disabled={!isSa || exporting}
+            disabled={!isSa}
             tooltip={isSa ? undefined : "Superadmin only"}
           >
             {(guard) => (
@@ -134,9 +134,11 @@ export function EventDangerZonePanel({
                 variant="secondary"
                 icon={<i className="ti ti-file-text" aria-hidden="true" />}
                 {...guard}
+                loading={exporting}
+                loadingLabel="Exporting…"
                 onClick={onExportPii}
               >
-                {exporting ? "Exporting…" : "Export personal data"}
+                Export personal data
               </Button>
             )}
           </ArchivedGuard>

@@ -5,7 +5,16 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { makeOrgAdminAssignment, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import {
+  advanceTimers,
+  deferred,
+  hangUntilAborted,
+  isOff,
+  makeOrgAdminAssignment,
+  makeSuperadminAssignment,
+  mockMatchMedia,
+  renderWithToast,
+} from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
 
 const superadminAssignments: RoleAssignment[] = [
@@ -112,6 +121,7 @@ vi.mock("../../src/components/crop/CropImageModal.js", () => ({
 import {
   archiveEvent,
   deleteEvent,
+  exportEventPii,
   fetchEventImageAssets,
   fetchEventMailSettings,
   fetchEventBounceIngestSettings,
@@ -396,16 +406,16 @@ describe("EventSettingsPage subtitle", () => {
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
-    // useDelayedLoading only shows the placeholder once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
-    // be installed before render so the hook's setTimeout is one of ours.
+    // The placeholder is drawn only once the fetch has stayed pending past its 200ms grace window
+    // (avoids flashing it for a near-instant response) — fake timers must be installed before
+    // render so the loading gate's setTimeout is one of ours.
     vi.useFakeTimers();
     renderSettings();
     act(() => {
       vi.advanceTimersByTime(200);
     });
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toMatch(/Loading event settings/);
+    expect(screen.getByRole("status", { name: "Loading event settings" })).toBeTruthy();
     vi.useRealTimers();
   });
 
@@ -3917,10 +3927,10 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
 
     await router.navigate("/admin/events/evt-2/settings?tab=ticket-types");
 
-    // The card must fall back to its first-load "Loading…" placeholder and drop event A's
-    // stale row immediately on navigation, before event B's fetch has resolved.
+    // The card must fall back to its first-load placeholder and drop event A's stale row
+    // immediately on navigation, before event B's fetch has resolved.
     await waitFor(() => {
-      expect(screen.getByText("Loading…")).toBeTruthy();
+      expect(screen.getByLabelText("Loading ticket types")).toBeTruthy();
     });
     expect(screen.queryByDisplayValue("VIP")).toBeNull();
 
@@ -3928,7 +3938,7 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("Staff")).toBeTruthy();
     });
-    expect(screen.queryByText("Loading…")).toBeNull();
+    expect(screen.queryByLabelText("Loading ticket types")).toBeNull();
   });
 
   it("clears the previous event's stale ticket types when the new event's fetch fails", async () => {
@@ -4155,5 +4165,177 @@ describe("EventSettingsPage — Wallet push history cross-event staleness (CodeR
     expect(vi.mocked(fetchWalletPushHistory).mock.calls.some((call) => call[0] === "evt-2" && call[1] === 2)).toBe(
       false,
     );
+  });
+});
+
+describe("EventSettingsPage first load on the loading standard", () => {
+  const placeholder = () => screen.queryByRole("status", { name: "Loading event settings" });
+
+  it("keeps the header and the tabs from the first frame, holds the room of the open tab invisibly for 200ms, then draws its cards under their real titles", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=general");
+
+    expect(screen.getByText("Event settings")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "General" })).toBeTruthy();
+    expect(placeholder()?.className).toContain("at-loading-hold");
+
+    await advanceTimers(200);
+    expect(placeholder()?.className).not.toContain("at-loading-hold");
+    expect(screen.getByText("Basic information")).toBeTruthy();
+    expect(screen.queryByLabelText("Event title")).toBeNull();
+    expect(placeholder()?.textContent).not.toContain("Taking longer than usual");
+
+    await advanceTimers(7_800);
+    expect(placeholder()?.textContent).toContain("Taking longer than usual");
+  });
+
+  it("draws the placeholder of the tab the address names, and the real tabs let the viewer move while it waits", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=checkin-behaviour");
+    await advanceTimers(200);
+
+    expect(screen.getByText("Check-in behaviour")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Check-in", selected: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Location" }));
+    await advanceTimers(0);
+    expect(screen.getByText("Directions & accessibility")).toBeTruthy();
+  });
+
+  it("never draws the placeholder for an answer that comes within 200ms", async () => {
+    const answer = deferred<typeof activeEvent>();
+    vi.mocked(fetchEventSettings).mockReturnValue(answer.promise as never);
+    vi.useFakeTimers();
+    renderSettings();
+
+    await advanceTimers(100);
+    await act(async () => answer.resolve(activeEvent));
+    expect(placeholder()).toBeNull();
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+  });
+
+  it("ends in an error with a Retry after 30 seconds instead of a placeholder that never stops, and does not also toast", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings();
+
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(placeholder()).toBeNull();
+    expect(screen.getByText("Could not load event settings")).toBeTruthy();
+    expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.getByRole("tab", { name: "General" })).toBeTruthy();
+  });
+
+  it("shows a failed first load as an error with a Retry, not as a blank page behind a toast", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    expect(screen.getByRole("alert").textContent).toContain("Could not load event settings");
+    expect(screen.queryByLabelText("Event title")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("keeps the error on screen with a busy Retry until the answer is in, then shows the page and moves the focus to its tab panel", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    const answer = deferred<typeof activeEvent>();
+    vi.mocked(fetchEventSettings).mockReturnValueOnce(answer.promise as never);
+    fireEvent.click(retry);
+    await advanceTimers(0);
+
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(isOff(retry)).toBe(true);
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(placeholder()).toBeNull();
+    fireEvent.click(retry);
+    expect(vi.mocked(fetchEventSettings)).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer.resolve(activeEvent));
+    await advanceTimers(0);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+    expect(document.activeElement?.getAttribute("role")).toBe("tabpanel");
+  });
+
+  it("still says Event not found for a 404 or a 403 and offers Back, not a Retry", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(404, "not_found", "not_found"));
+    renderSettings();
+
+    expect(await screen.findByText("Event not found")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+  });
+
+  it("keeps the page on screen and only toasts when the reload after an action fails", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(archiveEvent).mockResolvedValue(undefined as never);
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => expect(vi.mocked(fetchEventSettings)).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Could not load event settings")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Danger zone" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("starts a fresh page for another event, with its own placeholder, instead of the previous event's form", async () => {
+    const eventB = { ...activeEvent, id: "evt-3", title: "Gala" };
+    vi.mocked(fetchEventSettings).mockImplementation(((id: string) =>
+      id === "evt-1" ? Promise.resolve(activeEvent) : new Promise(() => {})) as never);
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> }],
+      { initialEntries: ["/admin/events/evt-1/settings"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Summit")).toBeTruthy();
+
+    await act(async () => {
+      await router.navigate("/admin/events/evt-3/settings");
+    });
+    expect(screen.queryByDisplayValue("Summit")).toBeNull();
+    expect(placeholder()).not.toBeNull();
+    expect(eventB.title).toBe("Gala");
+  });
+});
+
+describe("EventSettingsPage Danger zone: Export personal data", () => {
+  it("shows the button busy, as 'Exporting…', while the file is made: it keeps its focus and ignores a second click", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    const file = deferred<Response>();
+    vi.mocked(exportEventPii).mockReturnValue(file.promise);
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+
+    const button = await screen.findByRole("button", { name: "Export personal data" });
+    button.focus();
+    fireEvent.click(button);
+
+    const busy = await screen.findByRole("button", { name: "Exporting…" });
+    expect(busy).toBe(button);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(vi.mocked(exportEventPii)).toHaveBeenCalledTimes(1);
+
+    await act(async () => file.resolve(new Response("a,b", { headers: { "Content-Disposition": 'attachment; filename="x.csv"' } })));
+    const idle = await screen.findByRole("button", { name: "Export personal data" });
+    expect(idle.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(idle);
   });
 });
