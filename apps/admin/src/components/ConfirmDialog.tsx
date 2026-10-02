@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Notice, Spinner, Tooltip } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, Tooltip } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
 
@@ -85,8 +85,8 @@ export function ConfirmDialog({
   const needsTypedConfirmation = confirmationValue !== undefined;
   // An empty confirmationValue can never be "typed" to confirm — fail closed rather than
   // let the confirm button unlock immediately (typedValue also starts as "").
+  // Not `loading`: a busy confirm button stays enabled but `aria-disabled` (`Button loading`), so it keeps focus.
   const confirmDisabled =
-    loading ||
     !armed ||
     disableConfirm ||
     (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
@@ -142,11 +142,11 @@ export function ConfirmDialog({
               <Button
                 type="button"
                 variant={confirmVariant}
+                loading={loading}
                 disabled={confirmDisabled}
-                icon={loading ? <Spinner size="sm" label="Working" /> : undefined}
                 onClick={onConfirm}
               >
-                {loading ? "Working…" : confirmLabel}
+                {confirmLabel}
               </Button>
             </Tooltip>
             {!armed && confirmDelaySeconds !== undefined && (

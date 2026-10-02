@@ -93,8 +93,8 @@ export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readon
           <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={submitting || unchanged} onClick={() => void handleSave()}>
-            {submitting ? "Saving…" : "Save"}
+          <Button type="button" variant="primary" loading={submitting} disabled={unchanged} onClick={() => void handleSave()}>
+            Save
           </Button>
         </div>
       </div>

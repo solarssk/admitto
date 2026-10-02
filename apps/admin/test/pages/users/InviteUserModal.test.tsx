@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InviteUserModal } from "../../../src/pages/users/InviteUserModal.js";
 
@@ -12,11 +12,15 @@ vi.mock("../../../src/api/client.js", () => ({
 }));
 
 import { createAdminUser, fetchAdminEvents, fetchAdminOrganizations, grantUserRole } from "../../../src/api/client.js";
-import { makeOrgAdminAssignment } from "../../test-utils.js";
+import { advanceTimers, deferred, makeOrgAdminAssignment } from "../../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../../src/utils/loading-timing.js";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
+  vi.mocked(fetchAdminEvents).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchAdminOrganizations).mockReset().mockResolvedValue([]);
 });
 
 describe("InviteUserModal", () => {
@@ -46,7 +50,11 @@ describe("InviteUserModal", () => {
         must_change_password: true,
       });
     });
-    expect(screen.getByRole("button", { name: "Sending…" })).toHaveProperty("disabled", true);
+    // Busy, but still a button that keeps keyboard focus: `aria-disabled`, not `disabled`, and the label does not change.
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send.getAttribute("aria-busy")).toBe("true");
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(send).toHaveProperty("disabled", false);
     expect(screen.getByLabelText("Email address *")).toHaveProperty("disabled", true);
   });
 
@@ -109,7 +117,7 @@ describe("InviteUserModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Operator" }));
 
-    expect(screen.getByRole("button", { name: "Event scope, none selected" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Event scope, none selected" })).toBeTruthy();
   });
 
   it("reveals the organization scope picker after picking Administrator as the initial role", async () => {
@@ -271,7 +279,7 @@ describe("InviteUserModal", () => {
     fireEvent.change(screen.getByLabelText("Temporary password *"), { target: { value: "long-enough-password" } });
     fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Operator" }));
-    fireEvent.click(screen.getByRole("button", { name: "Event scope, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Event scope, none selected" }));
     fireEvent.click(await screen.findByRole("button", { name: "Summer Summit" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -300,5 +308,128 @@ describe("InviteUserModal", () => {
         warning: "User created, but role assignment failed: Failed to assign role.",
       });
     });
+  });
+
+  describe("its two lookups", () => {
+    const pickRole = (name: "Operator" | "Administrator") => {
+      fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
+      fireEvent.click(screen.getByRole("button", { name }));
+    };
+
+    it("holds the place of the event picker from the first frame, draws it after 200ms, and swaps it for the picker when the events are in", async () => {
+      const events = deferred<Array<{ id: string; title: string }>>();
+      vi.mocked(fetchAdminEvents).mockReturnValue(events.promise as never);
+      vi.useFakeTimers();
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      pickRole("Operator");
+
+      const place = () => screen.queryByLabelText("Loading events");
+      expect(place()?.className).toContain("at-loading-hold");
+      await advanceTimers(200);
+      expect(place()?.className).not.toContain("at-loading-hold");
+
+      await act(async () => events.resolve([{ id: "evt-1", title: "Summer Summit" }]));
+      await advanceTimers(400);
+      expect(place()).toBeNull();
+      expect(screen.getByRole("button", { name: "Event scope, none selected" })).toBeTruthy();
+    });
+
+    it("says so, with a Retry that reruns only the events, when they could not be loaded, and the organizations are not touched", async () => {
+      vi.mocked(fetchAdminEvents)
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockResolvedValueOnce([{ id: "evt-1", title: "Summer Summit" }] as never);
+      vi.mocked(fetchAdminOrganizations).mockResolvedValue([{ id: "org-1", name: "Acme Events" }]);
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      fireEvent.change(screen.getByLabelText("Email address *"), { target: { value: "new@example.com" } });
+      pickRole("Operator");
+
+      // An alert, not an empty picker: the picker is off, and says why.
+      const hint = await screen.findByRole("alert");
+      expect(within(hint).getByText("Could not load events.")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Event scope, none selected" })).toHaveProperty("disabled", true);
+
+      fireEvent.click(within(hint).getByRole("button", { name: /^Retry/ }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Event scope, none selected" })).toHaveProperty("disabled", false));
+      expect(screen.queryByRole("alert")).toBeNull();
+      // What was typed stays, and only the events were read again.
+      expect((screen.getByLabelText("Email address *") as HTMLInputElement).value).toBe("new@example.com");
+      expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
+      expect(fetchAdminOrganizations).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the organization picker working when only the events failed", async () => {
+      vi.mocked(fetchAdminEvents).mockRejectedValue(new Error("network down"));
+      vi.mocked(fetchAdminOrganizations).mockResolvedValue([{ id: "org-1", name: "Acme Events" }]);
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      pickRole("Administrator");
+      expect(await screen.findByRole("button", { name: "Organization scope, Acme Events" })).toHaveProperty("disabled", false);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("keeps the event picker working when only the organizations failed", async () => {
+      vi.mocked(fetchAdminOrganizations).mockRejectedValue(new Error("network down"));
+      vi.mocked(fetchAdminEvents).mockResolvedValue([{ id: "evt-1", title: "Summer Summit" }] as never);
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      pickRole("Operator");
+      expect(await screen.findByRole("button", { name: "Event scope, none selected" })).toHaveProperty("disabled", false);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("reads the events without the archived ones: an invitation is not scoped to an event that is over", async () => {
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: false })));
+    });
+
+    it("says that the organizations could not be loaded, instead of claiming that there are none", async () => {
+      vi.mocked(fetchAdminOrganizations).mockRejectedValue(new Error("network down"));
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      pickRole("Administrator");
+
+      expect(await screen.findByText("Could not load organizations.")).toBeTruthy();
+      expect(screen.getByText("Could not load organizations")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry loading organizations" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Organization scope, none selected" })).toBeTruthy();
+      expect(screen.queryByText("No organizations available")).toBeNull();
+    });
+
+    it("gives up on the events after 30 seconds, in the time limit's own words", async () => {
+      vi.mocked(fetchAdminEvents).mockImplementation(
+        (options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+          }),
+      );
+      vi.useFakeTimers();
+      render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      pickRole("Operator");
+      await advanceTimers(LOAD_TIMEOUT_MS);
+      await advanceTimers(0);
+      expect(screen.getByRole("alert").textContent).toContain(`Could not load events. ${LOAD_TIMEOUT_MESSAGE}`);
+    });
+
+    it("reads them afresh each time the dialog opens", async () => {
+      const { rerender } = render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
+      rerender(<InviteUserModal open={false} onClose={vi.fn()} onCreated={vi.fn()} />);
+      rerender(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+      await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(2));
+      expect(fetchAdminOrganizations).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("runs the invitation once when Send is pressed again while it works", async () => {
+    vi.mocked(createAdminUser).mockImplementationOnce(() => new Promise(() => {}));
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Email address *"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password *"), { target: { value: "long-enough-password" } });
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    fireEvent.click(send);
+    await waitFor(() => expect(createAdminUser).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(send);
+    expect(createAdminUser).toHaveBeenCalledTimes(1);
+    // The button the keyboard user pressed is still the focused one.
+    expect(document.activeElement).toBe(send);
   });
 });

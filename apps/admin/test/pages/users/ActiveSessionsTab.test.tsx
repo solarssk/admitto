@@ -576,6 +576,31 @@ describe("ActiveSessionsTab rendering", () => {
     });
   });
 
+  it("keeps Save where it is, busy and with its own label, while a device-label save is in flight, and saves once", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" })],
+    });
+    vi.mocked(updateSessionDeviceLabel).mockImplementationOnce(() => new Promise(() => {}));
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: EDIT_NAME }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Device label"), { target: { value: "Desk iPad 2" } });
+    const save = within(dialog).getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    // `aria-disabled`, not `disabled`, so the keyboard keeps its place; the label does not change.
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    expect(save).toHaveProperty("disabled", false);
+    expect(document.activeElement).toBe(save);
+    fireEvent.click(save);
+    expect(updateSessionDeviceLabel).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+  });
+
   it("shows the login time in UTC with the viewer's own local time below it when no signer timezone is stored", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
     try {

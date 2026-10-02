@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventDto, UserListItemDto } from "../../src/api/types.js";
 import { UserEditModal } from "../../src/pages/users/UserEditModal.js";
 import { ApiError } from "../../src/api/client.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
+import { advanceTimers, deferred } from "../test-utils.js";
 
 const useAuthMock = vi.fn(() => ({ user: { id: "usr-current-admin" } }));
 
@@ -118,6 +120,18 @@ function renderModal(userOverride: Partial<UserListItemDto> = {}) {
     />,
   );
   return { onClose, onUpdated, onDeleted, unmount };
+}
+
+/** An operator, switched to Superadmin in the editor, with the "Change role" confirmation open. */
+async function openChangeRoleConfirmation() {
+  const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+  const rendered = renderModal({ roles: [existingRole] });
+  await waitFor(() => expect(document.querySelector(".users-modal__chips")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog", { name: "Change role" });
+  return { ...rendered, dialog, existingRole };
 }
 
 beforeEach(() => {
@@ -382,7 +396,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
 
-    const organizationTrigger = screen.getByRole("button", {
+    // The picker sits behind its lookup's placeholder until the (empty) answer is in.
+    const organizationTrigger = await screen.findByRole("button", {
       name: "Organization scope for admin role, none selected",
     });
     expect(organizationTrigger).toHaveProperty("disabled", true);
@@ -390,7 +405,7 @@ describe("UserEditModal role & access - exclusive roles", () => {
     expect(screen.getByRole("button", { name: "Add" })).toHaveProperty("disabled", true);
   });
 
-  it("falls back to empty organization and event lists when the initial fetch fails", async () => {
+  it("says that the organizations could not be loaded, instead of claiming that there are none, and keeps Add off", async () => {
     mockFetchAdminOrganizations.mockRejectedValueOnce(new Error("network down"));
     mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down"));
     renderModal();
@@ -398,10 +413,11 @@ describe("UserEditModal role & access - exclusive roles", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("No organizations available")).toBeTruthy();
-    });
+    expect(await screen.findByText("Could not load organizations.")).toBeTruthy();
+    expect(screen.queryByText("No organizations available")).toBeNull();
     expect(screen.getByRole("button", { name: "Add" })).toHaveProperty("disabled", true);
+    // Only the lookup that this role needs is spoken for: the events are not part of an Administrator's scopes.
+    expect(screen.queryByText("Could not load events.")).toBeNull();
   });
 
   it("ignores a stale organizations/events fetch that resolves after the modal has already closed", async () => {
@@ -812,17 +828,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
   });
 
   it("maps cannot_change_own_role to a specific message when confirming a role type change", async () => {
-    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
     mockGrantUserRole.mockRejectedValueOnce(new ApiError(400, "cannot_change_own_role", "cannot_change_own_role"));
-    renderModal({ roles: [existingRole] });
-    await waitFor(() => {
-      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
-    const dialog = await screen.findByRole("dialog", { name: "Change role" });
+    const { dialog } = await openChangeRoleConfirmation();
     fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
 
     expect(await screen.findByText("You cannot change your own role. Ask another superadmin.")).toBeTruthy();
@@ -1043,10 +1050,30 @@ describe("UserEditModal sign-in security", () => {
     expect(screen.getByText("81.190.22.4")).toBeTruthy();
   });
 
-  it("shows the empty recent-logins state when the fetch fails, instead of leaving the section stuck loading", async () => {
-    mockFetchSecurityAuditLog.mockRejectedValueOnce(new Error("network down"));
+  it("says that the recent logins could not be loaded, with a Retry, instead of claiming there were none or sticking on a placeholder", async () => {
+    mockFetchSecurityAuditLog.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({
+      entries: [
+        { id: "log-1", created_at: new Date().toISOString(), ip: "192.0.2.5", country: { kind: "unknown" } },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 3,
+    } as never);
     renderModal();
 
+    expect(await screen.findByText("Could not load recent logins.")).toBeTruthy();
+    expect(screen.queryByText("No recent logins")).toBeNull();
+    expect(screen.queryByLabelText("Loading recent logins")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Retry/ }));
+    expect(await screen.findByText("192.0.2.5")).toBeTruthy();
+    expect(screen.queryByText("Could not load recent logins.")).toBeNull();
+    expect(mockFetchSecurityAuditLog).toHaveBeenCalledTimes(2);
+  });
+
+  it("says that there are no recent logins only when the answer says so", async () => {
+    mockFetchSecurityAuditLog.mockResolvedValueOnce({ entries: [], total: 0, page: 1, pageSize: 3 } as never);
+    renderModal();
     expect(await screen.findByText("No recent logins")).toBeTruthy();
   });
 
@@ -1544,7 +1571,7 @@ describe("UserEditModal profile - phone number", () => {
 });
 
 describe("UserEditModal save state", () => {
-  it("keeps profile controls disabled while the update is in progress", async () => {
+  it("keeps Save changes where it is, busy and with its own label, while the update is in progress, and saves once", async () => {
     mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
     renderModal();
     await screen.findByRole("button", { name: "Save changes" });
@@ -1559,8 +1586,188 @@ describe("UserEditModal save state", () => {
         phone_number: null,
       });
     });
-    expect(screen.getByRole("button", { name: "Saving changes…" })).toHaveProperty("disabled", true);
+    const save = screen.getByRole("button", { name: "Save changes" });
+    // `aria-disabled`, never `disabled`: a keyboard user pressed it and keeps their place. The label does not change.
+    expect(save.getAttribute("aria-busy")).toBe("true");
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    expect(save).toHaveProperty("disabled", false);
+    fireEvent.click(save);
+    expect(mockPatchAdminUser).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Close" })).toHaveProperty("disabled", true);
+  });
+
+  it("keeps focus on Save changes while it works", async () => {
+    mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal();
+    const save = await screen.findByRole("button", { name: "Save changes" });
+    save.focus();
+    fireEvent.click(save);
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(document.activeElement).toBe(save);
+  });
+});
+
+describe("UserEditModal busy buttons and failures inside confirmation dialogs", () => {
+  it("shows Reset password as busy, with its own label, while the reset runs", async () => {
+    mockResetUserPassword.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    const reset = screen.getByRole("button", { name: "Reset password" });
+    fireEvent.click(reset);
+
+    await waitFor(() => expect(reset.getAttribute("aria-busy")).toBe("true"));
+    expect(reset.getAttribute("aria-disabled")).toBe("true");
+    expect(reset).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+    fireEvent.click(reset);
+    expect(mockResetUserPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the More actions button as busy while Enable account runs (its menu has already closed), and a failure on the modal", async () => {
+    mockPatchAdminUser.mockImplementationOnce(() => new Promise((_resolve, reject) => setTimeout(() => reject(new Error("boom")), 20)));
+    renderModal({ is_active: false });
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Enable account/ }));
+
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    await waitFor(() => expect(trigger.getAttribute("aria-busy")).toBe("true"));
+    expect(await screen.findByText("Failed to update account status.")).toBeTruthy();
+    expect(trigger.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("says that disabling failed inside the confirmation, which sits above the modal, and not behind it", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new Error("boom"));
+    renderModal({ is_active: true });
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Disable" }));
+
+    expect(await within(dialog).findByText("Failed to update account status.")).toBeTruthy();
+    // One message, in the dialog: the modal underneath does not carry a second copy.
+    expect(screen.getAllByText("Failed to update account status.")).toHaveLength(1);
+    // The button is usable again, and cancelling clears the message for the next time.
+    expect(within(dialog).getByRole("button", { name: "Disable" }).getAttribute("aria-busy")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
+    expect(screen.queryByText("Failed to update account status.")).toBeNull();
+  });
+
+  it("says that revoking the sessions failed inside the confirmation", async () => {
+    mockRevokeUserSessions.mockRejectedValueOnce(new Error("boom"));
+    renderModal({ active_sessions_count: 2 });
+    await screen.findByText("2 sessions");
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    expect(await within(dialog).findByText("Failed to revoke sessions.")).toBeTruthy();
+    expect(screen.getAllByText("Failed to revoke sessions.")).toHaveLength(1);
+  });
+
+  it("says that resetting the two-factor failed inside the confirmation", async () => {
+    mockResetUserMfa.mockRejectedValueOnce(new Error("boom"));
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
+
+    expect(await within(dialog).findByText("Failed to reset two-factor.")).toBeTruthy();
+    expect(screen.getAllByText("Failed to reset two-factor.")).toHaveLength(1);
+  });
+
+  it("says that changing the role failed inside the confirmation", async () => {
+    mockGrantUserRole.mockRejectedValueOnce(new Error("boom"));
+    const { dialog } = await openChangeRoleConfirmation();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+
+    expect(await within(dialog).findByText("Failed to assign role.")).toBeTruthy();
+    expect(screen.getAllByText("Failed to assign role.")).toHaveLength(1);
+  });
+
+  it("says that a passkey step-up failed inside the confirmation it was started from", async () => {
+    mockBeginWebauthnAssertion.mockRejectedValueOnce(new Error("no passkey"));
+    const superadminUser: Partial<UserListItemDto> = {
+      roles: [{ id: "role-1", role: "superadmin", scope_type: "instance", scope_id: null, is_oidc: false }],
+    };
+    renderModal({ ...superadminUser, active_sessions_count: 2 });
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => expect(within(dialog).getAllByRole("alert").length).toBeGreaterThan(0));
+    expect(within(dialog).queryAllByRole("alert").length).toBe(screen.getAllByRole("alert").length);
+  });
+});
+
+describe("UserEditModal partly saved changes", () => {
+  const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+  const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
+
+  async function stageAnotherEventAndSave(renderedUser: Partial<UserListItemDto>) {
+    mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
+    const rendered = renderModal(renderedUser);
+    await waitFor(() => expect(document.querySelector(".users-modal__chips")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Winter Gala" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    return rendered;
+  }
+
+  it("tells the list about the saved profile when the dialog is closed after a role change failed, and not before", async () => {
+    mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, display_name: "Renamed", roles: [existingRole] } });
+    mockGrantUserRole.mockRejectedValueOnce(new Error("boom"));
+    const { onUpdated, onClose } = await stageAnotherEventAndSave({ roles: [existingRole] });
+
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+    // The dialog stays as it is for a retry (what was staged is still staged): the list is told when it closes.
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(screen.getByTitle("Not saved yet - click Save changes to apply.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onUpdated).toHaveBeenCalledOnce();
+    expect(onUpdated).toHaveBeenCalledWith(
+      { ...user, display_name: "Renamed", roles: [existingRole] },
+      "Changes partly saved",
+      { ...user, display_name: "Renamed", roles: [existingRole] },
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("does not report a partial save when the profile itself could not be saved", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new Error("boom"));
+    const { onUpdated } = await stageAnotherEventAndSave({ roles: [existingRole] });
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onUpdated).not.toHaveBeenCalled();
+  });
+
+  it("reports the save once, as a complete one, when a retry goes through", async () => {
+    mockPatchAdminUser
+      .mockResolvedValueOnce({ user: { ...user, roles: [existingRole] } })
+      .mockResolvedValueOnce({ user: { ...user, roles: [existingRole] } });
+    mockGrantUserRole
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ assignment: { id: "role-2", role: "operator", scope_type: "event", scope_id: "evt-2" } });
+    const { onUpdated, onClose } = await stageAnotherEventAndSave({ roles: [existingRole] });
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(onUpdated).toHaveBeenCalledOnce();
+    expect(onUpdated.mock.calls[0]?.[1]).toBe("Changes saved");
   });
 });
 
@@ -1640,3 +1847,287 @@ describe("UserEditModal delete account", () => {
     expect(mockDeleteAdminUser).not.toHaveBeenCalled();
   });
 });
+
+describe("UserEditModal confirmations that are busy", () => {
+  it("ignores Escape on the disable-account confirmation while the request is in flight", async () => {
+    mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal({ is_active: true });
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Disable" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Disable" }).getAttribute("aria-busy")).toBe("true"));
+    // The wait is shown on the dialog's own button, not also on the More actions button behind it.
+    expect(screen.getByRole("button", { name: "More actions" }).getAttribute("aria-busy")).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Disable account" })).toBeTruthy();
+  });
+
+  it("ignores Escape on the change-role confirmation while the request is in flight", async () => {
+    mockGrantUserRole.mockImplementationOnce(() => new Promise(() => {}));
+    const { dialog } = await openChangeRoleConfirmation();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Change role" }).getAttribute("aria-busy")).toBe("true"));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Change role" })).toBeTruthy();
+  });
+});
+
+describe("UserEditModal lookups", () => {
+  it("shows nothing of the last person's recent logins under the failure of this one's, nor of the same person's earlier ones", async () => {
+    const earlier = { id: "log-a", created_at: new Date().toISOString(), ip: "192.0.2.77", country: { kind: "unknown" } };
+    mockFetchSecurityAuditLog
+      .mockResolvedValueOnce({ entries: [earlier], total: 1, page: 1, pageSize: 3 } as never)
+      .mockRejectedValueOnce(new Error("network down"));
+    const props = { onClose: vi.fn(), onUpdated: vi.fn(), onDeleted: vi.fn() };
+    const { rerender } = render(<UserEditModal open user={user} {...props} />);
+    expect(await screen.findByText("192.0.2.77")).toBeTruthy();
+
+    rerender(<UserEditModal open={false} user={user} {...props} />);
+    rerender(<UserEditModal open user={{ ...user, id: "usr-2", email: "other@example.com" }} {...props} />);
+    expect(await screen.findByText("Could not load recent logins.")).toBeTruthy();
+    expect(screen.queryByText("192.0.2.77")).toBeNull();
+  });
+
+  it("offers a Retry for the organizations to a person with no role, whose picker is the organization one", async () => {
+    mockFetchAdminOrganizations.mockRejectedValueOnce(new Error("network down"));
+    renderModal();
+
+    expect(await screen.findByText("Could not load organizations.")).toBeTruthy();
+    expect(screen.getByText("Could not load organizations")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry loading organizations" })).toBeTruthy();
+  });
+
+  it("gives each Retry a name of its own when several lookups failed", async () => {
+    mockFetchAdminEvents.mockRejectedValue(new Error("network down"));
+    mockFetchSecurityAuditLog.mockRejectedValue(new Error("network down"));
+    renderModal({ roles: [operatorRole] });
+
+    expect(await screen.findByRole("button", { name: "Retry loading events" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Retry loading recent logins" })).toBeTruthy();
+  });
+
+  it("keeps the scope chips' remove buttons off until their names are known, because chips of a kind would look alike", async () => {
+    const events = deferred<EventDto[]>();
+    mockFetchAdminEvents.mockReturnValue(events.promise as never);
+    renderModal({ roles: [operatorRole] });
+    await waitFor(() => expect(document.querySelector(".users-modal__chips")).toBeTruthy());
+    const remove = screen.getByRole("button", { name: "Remove Operator for Event" });
+    expect(remove).toHaveProperty("disabled", true);
+    expect(remove.getAttribute("title")).toBe("Available once the names of the scopes have loaded.");
+
+    await act(async () => events.resolve([event]));
+    expect(await screen.findByRole("button", { name: "Remove Operator for Summer Summit" })).toHaveProperty("disabled", false);
+  });
+
+  it("falls back to the id for a scope that the answer does not hold, once the lookup has answered", async () => {
+    mockFetchAdminEvents.mockResolvedValue([]);
+    renderModal({ roles: [operatorRole] });
+    expect(await screen.findByRole("button", { name: "Remove Operator for evt-1" })).toBeTruthy();
+  });
+
+  it("reads the events with the archived ones, as a scope can name an event that was archived since", async () => {
+    renderModal();
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: true })));
+  });
+
+  it("does not show a stale failure of an earlier confirmation in the next one", async () => {
+    const patch = deferred<{ user: UserListItemDto }>();
+    mockPatchAdminUser.mockReturnValueOnce(patch.promise as never);
+    const props = { onClose: vi.fn(), onUpdated: vi.fn(), onDeleted: vi.fn() };
+    const { rerender } = render(<UserEditModal open user={user} {...props} />);
+    await screen.findByRole("button", { name: "Save changes" });
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Disable account" })).getByRole("button", { name: "Disable" }));
+
+    // The person is replaced by a fresher copy while the request is in flight: the confirmation closes, and then it fails.
+    rerender(<UserEditModal open user={{ ...user, active_sessions_count: 1 }} {...props} />);
+    expect(screen.queryByRole("dialog", { name: "Disable account" })).toBeNull();
+    await act(async () => patch.reject(new Error("boom")));
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    expect(await screen.findByRole("dialog", { name: "Reset two-factor" })).toBeTruthy();
+    expect(screen.queryByText("Failed to update account status.")).toBeNull();
+  });
+
+  it("does not announce a failed recent logins list again when the Reset password form is closed", async () => {
+    mockFetchSecurityAuditLog.mockRejectedValue(new Error("network down"));
+    renderModal();
+    const hint = await screen.findByText("Could not load recent logins.");
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    // Hidden while the form is open: not part of what assistive technology reads.
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // The same element as before: it was kept (hidden) while the form was open, not mounted again.
+    expect(screen.getByText("Could not load recent logins.")).toBe(hint);
+  });
+
+  it("tells the list what was saved when the dialog is closed after some of the role changes had gone through", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
+    mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
+    mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, roles: [existingRole] } });
+    mockGrantUserRole.mockRejectedValueOnce(new Error("boom"));
+    const { onUpdated } = renderModal({ roles: [existingRole] });
+    await waitFor(() => expect(document.querySelector(".users-modal__chips")).toBeTruthy());
+    // Stage the removal of the held scope and the add of another: the removal goes through, the add fails.
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Operator for Summer Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Winter Gala" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+    expect(mockRevokeUserRole).toHaveBeenCalledWith("usr-1", "role-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Changes partly saved", { ...user, roles: [] });
+  });
+
+  it("shows a recent login that has no address, without one", async () => {
+    mockFetchSecurityAuditLog.mockResolvedValue({
+      entries: [{ id: "log-1", created_at: new Date().toISOString(), ip: null, country: { kind: "unknown" } }],
+      total: 1,
+      page: 1,
+      pageSize: 3,
+    } as never);
+    renderModal();
+    expect(await screen.findByText("Signed in")).toBeTruthy();
+    expect(document.querySelector(".users-modal__login-ip")).toBeNull();
+  });
+  it("reads nothing while it is closed, even with a person set", async () => {
+    render(<UserEditModal open={false} user={user} onClose={vi.fn()} onUpdated={vi.fn()} onDeleted={vi.fn()} />);
+    await act(async () => {});
+    expect(mockFetchAdminEvents).not.toHaveBeenCalled();
+    expect(mockFetchAdminOrganizations).not.toHaveBeenCalled();
+    expect(mockFetchSecurityAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("shows an Administrator's scope chip as 'Organization' while the organizations are on their way, and by name when they are in", async () => {
+    const orgs = deferred<{ id: string; name: string }[]>();
+    mockFetchAdminOrganizations.mockReturnValue(orgs.promise as never);
+    renderModal({ roles: [{ id: "role-3", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }] });
+    await waitFor(() => expect(document.querySelector(".users-modal__chips")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Remove Administrator for Organization" })).toBeTruthy();
+    expect(screen.queryByText("org-1")).toBeNull();
+
+    await act(async () => orgs.resolve([{ id: "org-1", name: "Operations" }]));
+    expect(await screen.findByRole("button", { name: "Remove Administrator for Operations" })).toBeTruthy();
+  });
+
+  const operatorRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+
+  it("holds the place of the recent logins from the first frame, draws it after 200ms, and swaps it for the rows when they are in", async () => {
+    const logins = deferred<{ entries: never[]; total: number; page: number; pageSize: number }>();
+    mockFetchSecurityAuditLog.mockReturnValue(logins.promise as never);
+    vi.useFakeTimers();
+    try {
+      renderModal();
+      await advanceTimers(0);
+      const place = () => screen.queryByLabelText("Loading recent logins");
+      expect(place()?.className).toContain("at-loading-hold");
+      await advanceTimers(200);
+      expect(place()?.className).not.toContain("at-loading-hold");
+      expect(screen.queryByText("No recent logins")).toBeNull();
+
+      await act(async () => logins.resolve({ entries: [], total: 0, page: 1, pageSize: 3 }));
+      await advanceTimers(400);
+      expect(place()).toBeNull();
+      expect(screen.getByText("No recent logins")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on the recent logins after 30 seconds, in the time limit's own words", async () => {
+    mockFetchSecurityAuditLog.mockImplementation(
+      (_filters: unknown, signal?: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+        }),
+    );
+    vi.useFakeTimers();
+    try {
+      renderModal();
+      await advanceTimers(LOAD_TIMEOUT_MS);
+      await advanceTimers(0);
+      expect(screen.getByText(`Could not load recent logins. ${LOAD_TIMEOUT_MESSAGE}`)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not read the events, the organizations or the logins again when the person it shows is replaced by a fresher copy", async () => {
+    const { rerender } = render(
+      <UserEditModal open user={{ ...user, roles: [operatorRole] }} onClose={vi.fn()} onUpdated={vi.fn()} onDeleted={vi.fn()} />,
+    );
+    await waitFor(() => expect(mockFetchSecurityAuditLog).toHaveBeenCalledTimes(1));
+    rerender(
+      <UserEditModal open user={{ ...user, roles: [operatorRole], active_sessions_count: 3 }} onClose={vi.fn()} onUpdated={vi.fn()} onDeleted={vi.fn()} />,
+    );
+    await screen.findByText("3 sessions");
+    expect(mockFetchAdminEvents).toHaveBeenCalledTimes(1);
+    expect(mockFetchAdminOrganizations).toHaveBeenCalledTimes(1);
+    expect(mockFetchSecurityAuditLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a placeholder, not an id, in an Operator's scope chip while the events are on its way, and the name when they are in", async () => {
+    const events = deferred<EventDto[]>();
+    mockFetchAdminEvents.mockReturnValue(events.promise as never);
+    renderModal({ roles: [operatorRole] });
+    await waitFor(() => expect(document.querySelector(".users-modal__chips")).toBeTruthy());
+    expect(screen.queryByText("evt-1")).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove Operator for Event" })).toBeTruthy();
+
+    await act(async () => events.resolve([event]));
+    expect(await screen.findByRole("button", { name: "Remove Operator for Summer Summit" })).toBeTruthy();
+  });
+
+  it("says that the events could not be loaded, with a Retry, and the chip says what kind of scope it is instead of an id", async () => {
+    mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce([event]);
+    renderModal({ roles: [operatorRole] });
+
+    expect(await screen.findByText("Could not load events.")).toBeTruthy();
+    expect(screen.queryByText("evt-1")).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove Operator for Event" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Retry/ }));
+    expect(await screen.findByRole("button", { name: "Remove Operator for Summer Summit" })).toBeTruthy();
+    expect(screen.queryByText("Could not load events.")).toBeNull();
+    // Only the events were read again.
+    expect(mockFetchAdminEvents).toHaveBeenCalledTimes(2);
+    expect(mockFetchAdminOrganizations).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the event picker off while the events could not be loaded, and says why", async () => {
+    mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down"));
+    renderModal({ roles: [operatorRole] });
+    expect(await screen.findByText("Could not load events.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Event scope for operator role,/ })).toHaveProperty("disabled", true);
+  });
+
+  it("holds the place of the event picker while the events are on its way", async () => {
+    const events = deferred<EventDto[]>();
+    mockFetchAdminEvents.mockReturnValue(events.promise as never);
+    vi.useFakeTimers();
+    try {
+      renderModal({ roles: [operatorRole] });
+      await advanceTimers(0);
+      expect(screen.queryByLabelText("Loading events")?.className).toContain("at-loading-hold");
+      await advanceTimers(200);
+      expect(screen.queryByLabelText("Loading events")?.className).not.toContain("at-loading-hold");
+      await act(async () => events.resolve([event]));
+      await advanceTimers(400);
+      expect(screen.queryByLabelText("Loading events")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+

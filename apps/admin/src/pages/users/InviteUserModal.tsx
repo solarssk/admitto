@@ -1,22 +1,20 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop, Notice, Switch } from "@admitto/ui";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
-import {
-  ApiError,
-  createAdminUser,
-  fetchAdminEvents,
-  fetchAdminOrganizations,
-  grantUserRole,
-} from "../../api/client.js";
+import { ApiError, createAdminUser, grantUserRole } from "../../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import type { EventDto, UserListItemDto } from "../../api/types.js";
+import type { UserListItemDto } from "../../api/types.js";
 import { PhoneCountrySelect } from "../../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleLabel } from "../../auth/role-labels.js";
+import { useEventOptions } from "../../hooks/useEventOptions.js";
+import { useOrganizationOptions } from "../../hooks/useOrganizationOptions.js";
 import { useOverscrollBounceGuard } from "../../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
 import { isValidEmailFormat } from "../../utils/email.js";
+import { LookupSlot } from "./LookupSlot.js";
+import { organizationPlaceholder } from "./lookup-copy.js";
 import "../../attendees/add-attendee-modal.css";
 
 export type InviteUserCreatedResult = {
@@ -79,32 +77,17 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   const [initialRole, setInitialRole] = useState<InitialRole>("");
   const [orgId, setOrgId] = useState("");
   const [eventId, setEventId] = useState("");
-  const [events, setEvents] = useState<EventDto[]>([]);
-  const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Two lookups of their own, each with its own placeholder, error and Retry: the events (for an Operator scope) and
+  // the organizations (for an Admin scope). Neither holds the form back, and one failing does not touch the other.
+  const events = useEventOptions({ includeArchived: false, enabled: open });
+  const organizations = useOrganizationOptions(open);
 
   useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    Promise.all([
-      fetchAdminEvents({ includeArchived: false, signal: controller.signal }),
-      fetchAdminOrganizations(controller.signal),
-    ])
-      .then(([eventList, orgList]) => {
-        if (controller.signal.aborted) return;
-        setEvents(eventList);
-        setOrganizations(orgList);
-        setOrgId((current) => current || orgList[0]?.id || "");
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setEvents([]);
-          setOrganizations([]);
-        }
-      });
-    return () => controller.abort();
-  }, [open]);
+    const first = organizations.organizations[0];
+    if (first) setOrgId((current) => current || first.id);
+  }, [organizations.organizations]);
 
   const resetForm = () => {
     setEmail("");
@@ -264,30 +247,34 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             onChange={(id) => setInitialRole(id as InitialRole)}
           />
           {initialRole === "admin" && (
-            <SearchableSelect
-              id="invite-org"
-              label="Organization scope"
-              placeholder={organizations.length === 0 ? "No organizations available" : "Select organization…"}
-              searchPlaceholder="Search organizations…"
-              emptyLabel="No organizations found"
-              value={orgId}
-              options={organizations.map((org) => ({ id: org.id, label: org.name, icon: "building" }))}
-              disabled={submitting || organizations.length === 0}
-              onChange={setOrgId}
-            />
+            <LookupSlot lookup={organizations} label="organizations">
+              <SearchableSelect
+                id="invite-org"
+                label="Organization scope"
+                placeholder={organizationPlaceholder(organizations.error, organizations.organizations.length)}
+                searchPlaceholder="Search organizations…"
+                emptyLabel="No organizations found"
+                value={orgId}
+                options={organizations.organizations.map((org) => ({ id: org.id, label: org.name, icon: "building" }))}
+                disabled={submitting || organizations.error !== null || organizations.organizations.length === 0}
+                onChange={setOrgId}
+              />
+            </LookupSlot>
           )}
           {initialRole === "operator" && (
-            <SearchableSelect
-              id="invite-event"
-              label="Event scope"
-              placeholder="Select event…"
-              searchPlaceholder="Search events…"
-              emptyLabel="No events found"
-              value={eventId}
-              options={events.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" }))}
-              disabled={submitting}
-              onChange={setEventId}
-            />
+            <LookupSlot lookup={events} label="events">
+              <SearchableSelect
+                id="invite-event"
+                label="Event scope"
+                placeholder={events.error ? "Could not load events" : "Select event…"}
+                searchPlaceholder="Search events…"
+                emptyLabel="No events found"
+                value={eventId}
+                options={events.events.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" }))}
+                disabled={submitting || events.error !== null}
+                onChange={setEventId}
+              />
+            </LookupSlot>
           )}
           <Input
             id="invite-password"
@@ -318,14 +305,11 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             <Button
               type="button"
               variant="primary"
-              disabled={
-                submitting ||
-                !isValidEmailFormat(email.trim()) ||
-                password.length < PASSWORD_MIN_LENGTH
-              }
+              loading={submitting}
+              disabled={!isValidEmailFormat(email.trim()) || password.length < PASSWORD_MIN_LENGTH}
               onClick={() => void handleSubmit()}
             >
-              {submitting ? "Sending…" : "Send"}
+              Send
             </Button>
           </div>
         </div>

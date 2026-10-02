@@ -14,6 +14,11 @@ describe("RetryHint", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it("gives its Retry a name of its own when asked, starting with Retry", () => {
+    render(<RetryHint message="Could not load events." busy={false} onRetry={vi.fn()} retryLabel="Retry loading events" />);
+    expect(screen.getByRole("button", { name: "Retry loading events" })).toBeTruthy();
+  });
+
   it("has no button when it was given nothing to call", () => {
     render(<RetryHint message="Could not load types." busy={false} />);
     expect(screen.queryByRole("button")).toBeNull();

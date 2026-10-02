@@ -172,7 +172,7 @@ describe("ConfirmDialog", () => {
     );
   });
 
-  it("disables both buttons and shows a working label with a spinner while loading", () => {
+  it("keeps the confirm button where it is, busy and aria-disabled, and switches Cancel off, while loading", () => {
     const { container } = render(
       <ConfirmDialog
         open
@@ -184,12 +184,36 @@ describe("ConfirmDialog", () => {
         onCancel={vi.fn()}
       />,
     );
-    expect((screen.getByRole("button", { name: "Working…" }) as HTMLButtonElement).disabled).toBe(true);
+    const confirm = screen.getByRole("button", { name: "Delete event" }) as HTMLButtonElement;
+    // `aria-disabled`, never `disabled`: a button that becomes `disabled` drops keyboard focus.
+    expect(confirm.disabled).toBe(false);
+    expect(confirm.getAttribute("aria-busy")).toBe("true");
+    expect(confirm.getAttribute("aria-disabled")).toBe("true");
     expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
     // Regression: a bulk action can take several seconds on a large event (e.g. revoking
-    // thousands of attendees' check-ins) - a static "Working…" label with no motion can look
-    // frozen for that long, so the confirm button also gets a spinning icon while loading.
-    expect(container.querySelector(".at-spinner")).not.toBeNull();
+    // thousands of attendees' check-ins) - a button with no motion can look frozen for that
+    // long, so the confirm button also shows a spinner while loading.
+    expect(container.querySelector(".at-btn__spinner")).not.toBeNull();
+  });
+
+  it("does not run the confirmation a second time when the busy confirm button is pressed again", () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmDialog open title="Delete" message="..." confirmLabel="Delete" loading onConfirm={onConfirm} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("keeps keyboard focus on the confirm button when it becomes busy", () => {
+    const { rerender } = render(<ConfirmDialog open title="Delete" message="..." confirmLabel="Delete" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const confirm = screen.getByRole("button", { name: "Delete" });
+    confirm.focus();
+    rerender(<ConfirmDialog open title="Delete" message="..." confirmLabel="Delete" loading onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const busy = screen.getByRole("button", { name: "Delete" });
+    // The same element, still focused, and a real button that is only marked off (a `disabled` one would lose focus).
+    expect(busy).toBe(confirm);
+    expect(document.activeElement).toBe(busy);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("shows an error message when provided", () => {
