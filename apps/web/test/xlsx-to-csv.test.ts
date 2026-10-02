@@ -74,6 +74,37 @@ describe("xlsxBufferToCsv zip guards", () => {
     await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
+  it("rejects an archive whose local file header is missing, out of range or points past the data", async () => {
+    const patched = (mutate: (bytes: Uint8Array, cdOffset: number) => void): ArrayBuffer => {
+      const bytes = new Uint8Array(buildForgedZipBomb(1024, 1024).slice(0));
+      const cdOffset = readUint32(bytes, bytes.length - 22 + 16);
+      mutate(bytes, cdOffset);
+      return bytes.buffer;
+    };
+    const readUint32 = (bytes: Uint8Array, offset: number): number =>
+      (bytes[offset]! | (bytes[offset + 1]! << 8) | (bytes[offset + 2]! << 16) | (bytes[offset + 3]! << 24)) >>> 0;
+
+    // Local header signature clobbered.
+    await expect(xlsxBufferToCsv(patched((bytes) => writeUint32LE(bytes, 0, 0)))).rejects.toBeInstanceOf(
+      ImportZipBombError,
+    );
+    // Local header offset beyond the end of the file.
+    await expect(
+      xlsxBufferToCsv(patched((bytes, cd) => writeUint32LE(bytes, cd + 42, 0xfffffff0))),
+    ).rejects.toBeInstanceOf(ImportZipBombError);
+    // Compressed size running past the end of the file.
+    await expect(
+      xlsxBufferToCsv(patched((bytes, cd) => writeUint32LE(bytes, cd + 20, 0x7fffffff))),
+    ).rejects.toBeInstanceOf(ImportZipBombError);
+  });
+
+  it("rejects a corrupt deflate stream instead of handing it on", async () => {
+    const bytes = new Uint8Array(buildForgedZipBomb(1024, 1024).slice(0));
+    // Data starts after the 30-byte local header and the 24-byte entry name.
+    bytes.fill(0xff, 54, 60);
+    await expect(xlsxBufferToCsv(bytes.buffer)).rejects.toBeInstanceOf(ImportZipBombError);
+  });
+
   it("rejects a stored entry larger than the cap and entries with an unsupported method", async () => {
     await expect(xlsxBufferToCsv(buildForgedZipBomb(21 * 1024 * 1024, 10, 0))).rejects.toBeInstanceOf(
       ImportZipBombError,
