@@ -27,7 +27,7 @@ import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard.js";
 
 /** The form while it loads, for its placeholder: the explanation that opens it, and the Configuration card. */
 const CF_SKELETON_CARDS: ReadonlyArray<IdentitySkeletonCard> = [
-  { id: "configuration", title: "Configuration", fields: [{ hint: 4 }, { hint: 4 }, { full: true, hint: 2 }, { full: true, hint: 2 }] },
+  { id: "configuration", title: "Configuration", fields: [{ id: "team-url", hint: 4 }, { id: "audience", hint: 4 }, { id: "identity-provider", full: true, hint: 2 }, { id: "protected-paths", full: true, hint: 2 }] },
 ];
 
 /** The notice that opens the form is about four lines at the modal's width. */
@@ -238,7 +238,6 @@ export function CfAccessEditor() {
   const [errors, setErrors] = useState<CfAccessFieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [loaded, setLoaded] = useState(false);
 
   // The first load: nothing is drawn for 200ms, then the form's own skeleton, an error with a busy Retry after a
   // failure (or 30 seconds without an answer). It reads the summary once, when the modal opens.
@@ -251,13 +250,14 @@ export function CfAccessEditor() {
       setLocks(summary.locks);
       setSourceProviders(summary.sourceProviders);
       setErrors({});
-      setLoaded(true);
     },
     fallback: "Could not load the Cloudflare Access configuration.",
   });
+  // The error waits for the placeholder's minimum time like the form does.
+  const failure = panel.gate.showContent ? panel.error : null;
   let view: "loading" | "error" | "ready" = "ready";
-  if (!panel.gate.showContent) view = "loading";
-  else if (panel.error || !loaded) view = "error";
+  if (failure !== null) view = "error";
+  else if (!panel.gate.showContent) view = "loading";
 
   const dirty = isCfDraftDirty(draft, baseline);
 
@@ -332,7 +332,9 @@ export function CfAccessEditor() {
   }, [draft.teamDomain, addToast]);
 
   let content: ReactNode;
-  if (view === "loading") {
+  if (failure !== null) {
+    content = <IdentityEditorLoadError message={failure} retrying={panel.retrying} onRetry={() => void panel.retry()} />;
+  } else if (view === "loading") {
     content = (
       <IdentityEditorSkeleton
         label="Loading Cloudflare Access"
@@ -340,14 +342,6 @@ export function CfAccessEditor() {
         slow={panel.slow}
         lead={CF_SKELETON_LEAD_HEIGHT}
         cards={CF_SKELETON_CARDS}
-      />
-    );
-  } else if (view === "error") {
-    content = (
-      <IdentityEditorLoadError
-        message={panel.error ?? "Unexpected error."}
-        retrying={panel.retrying}
-        onRetry={() => void panel.retry()}
       />
     );
   } else {

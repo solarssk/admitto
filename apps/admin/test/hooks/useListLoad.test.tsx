@@ -276,6 +276,22 @@ describe("useListLoad", () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it("drops an earlier warning that the rows may be older when a later reload takes the rows away with the error", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce("rows A")
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockRejectedValueOnce(new Error("network down"));
+    const { result } = setup(fetcher);
+    await settle();
+    await act(async () => result.current.reload());
+    expect(result.current.refreshError).toMatch(/may show older details/);
+
+    await act(async () => result.current.reload({ keepRowsOnFailure: false }));
+    expect(result.current.error).toBe("Could not load the list.");
+    expect(result.current.refreshError).toBeNull();
+  });
+
   it("shows what an action has confirmed before its refresh, reports it like an answer, and keeps it when the refresh fails", async () => {
     const onData = vi.fn();
     const fetcher = vi.fn().mockResolvedValueOnce("rows A").mockRejectedValueOnce(new Error("network down"));

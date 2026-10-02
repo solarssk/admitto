@@ -134,6 +134,24 @@ describe("CfAccessEditor loading standard: the first load", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
+  it("keeps the placeholder up for its minimum time when the read fails soon after it has appeared, with no Active or Inactive badge beside the title once it is an error", async () => {
+    const answer = deferred<Summary>();
+    mockFetch.mockReturnValueOnce(answer.promise);
+    renderEditor();
+    await advanceTimers(250);
+    expect(placeholder()?.className).not.toContain("at-loading-hold");
+
+    await act(async () => answer.reject(new Error("network down")));
+    expect(placeholder()).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("Inactive")).toBeNull();
+    expect(screen.queryByText("Active")).toBeNull();
+  });
+
   it("shows the reason of a failed load, and a Retry that keeps the error on screen, busy, until the answer is in", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockRejectedValueOnce(new ApiError(500, "boom", "internal_error"));
