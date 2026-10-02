@@ -10,7 +10,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast, type BadgeVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
@@ -19,11 +19,15 @@ import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTime
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { GeoCell, geoLocationText } from "../components/GeoCell.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
-import { useDelayedLoading, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { useBusyEndCount } from "../hooks/useRetry.js";
+import { useRetryFocusHandover } from "../hooks/useRetryFocusHandover.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import {
   formatUtcPrimaryTime,
   localeDateInputPattern,
@@ -31,6 +35,8 @@ import {
   utcDayStartIso,
   zonedTimeLabel,
 } from "../utils/event-dates.js";
+import { loadWithTimeout, type LoadTimeout } from "../utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { getPollIntervalMs, POLL_DEGRADED_THRESHOLD, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
@@ -510,31 +516,47 @@ function LogDetailsAction({
   );
 }
 
-/** Reserves the skeleton's own height from the very first paint - navigating here from a
- * separate route (e.g. Identity, which unmounts this whole panel) re-triggers a genuine first
- * load, and rendering nothing at all while entries === [] let the card visibly collapse then
- * snap back once data arrived, reading as a flicker even on a fast fetch. A fetch that resolves
- * near-instantly (localhost, a warm cache) still shouldn't flash a visible skeleton on and off -
- * `visibility` (not conditional rendering) keeps the space reserved throughout while only
- * revealing it once loading has genuinely taken a moment. */
-function LogSkeleton({ label, visible }: Readonly<{ label: string; visible: boolean }>) {
+/** The first load of a log list: rows of the height of a table row, with the placeholder's own timing - it is in the
+ * page from the first frame, invisible (`held`) for the first 200ms, so its space is reserved and the card does not
+ * collapse and snap back on a quick answer; after 8 seconds it says it is taking longer than usual. */
+function LogSkeleton({ label, held, slow }: Readonly<{ label: string; held: boolean; slow: boolean }>) {
   return (
-    <div
-      className="audit-log-skeleton"
-      aria-busy={visible || undefined}
-      aria-label={label}
-      style={{ visibility: visible ? "visible" : "hidden" }}
-    >
+    <output aria-label={label} className={held ? "audit-log-skeleton at-loading-hold" : "audit-log-skeleton"}>
       {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="audit-log-skeleton__row" />
+        <Skeleton key={i} variant="rect" height={40} />
       ))}
-    </div>
+      {slow ? <span className="audit-log-skeleton__note">{SLOW_NOTICE_TEXT}</span> : null}
+    </output>
+  );
+}
+
+/** A log list whose load failed: what failed and a Retry that stays on screen, busy, until the answer is in. */
+function LogError({
+  title,
+  message,
+  retrying,
+  onRetry,
+}: Readonly<{ title: string; message: string; retrying: boolean; onRetry: () => Promise<void> }>) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useRetryFocusHandover(retryRef);
+  // A message that a Retry did not clear is mounted afresh, so a live region hears it again (not the button).
+  const ends = useBusyEndCount(retrying);
+  return (
+    <EmptyState
+      variant="error"
+      title={title}
+      description={<span key={ends}>{message}</span>}
+      action={
+        <Button ref={retryRef} type="button" variant="secondary" loading={retrying} onClick={() => void onRetry()}>
+          Retry
+        </Button>
+      }
+    />
   );
 }
 
 interface LogTableProps<T> {
   entries: T[];
-  loading: boolean;
   columns: LogColumn<T>[];
   rowKey: (entry: T) => string;
   metadataOf: (entry: T) => Record<string, unknown> | null;
@@ -548,7 +570,6 @@ interface LogTableProps<T> {
  * exists twice. */
 function LogTable<T>({
   entries,
-  loading,
   columns,
   rowKey,
   metadataOf,
@@ -556,7 +577,7 @@ function LogTable<T>({
   onCopyRow,
 }: Readonly<LogTableProps<T>>) {
   return (
-    <div className={`audit-log-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
+    <div className="audit-log-table-wrap">
       <table className="table audit-log-table">
         <thead>
           <tr>
@@ -593,7 +614,6 @@ function LogTable<T>({
 
 interface LogCardsProps<T> {
   entries: T[];
-  loading: boolean;
   rowKey: (entry: T) => string;
   renderTop: (entry: T) => ReactNode;
   renderMeta: (entry: T) => ReactNode;
@@ -610,7 +630,6 @@ interface LogCardsProps<T> {
  * column list as LogTable would read worse than just naming the two render slots. */
 function LogCards<T>({
   entries,
-  loading,
   rowKey,
   renderTop,
   renderMeta,
@@ -620,7 +639,7 @@ function LogCards<T>({
   onCopyRow,
 }: Readonly<LogCardsProps<T>>) {
   return (
-    <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
+    <div className="audit-log-cards">
       {entries.map((entry) => (
         <div key={rowKey(entry)} className="audit-log-card">
           <div className="audit-log-card__top">{renderTop(entry)}</div>
@@ -640,12 +659,15 @@ function LogCards<T>({
 }
 
 interface LogListContentProps {
-  isInitialLoad: boolean;
-  showLoadingSkeleton: boolean;
-  skeletonLabel: string;
+  /** The placeholder of the first load, or null once the first load is over. */
+  skeleton: ReactNode;
+  /** A page or filter change is loading while the previous rows stay on screen. */
+  refreshing: boolean;
+  refreshLabel: string;
   error: string | null;
   errorTitle: string;
-  onRetry: () => void;
+  retrying: boolean;
+  onRetry: () => Promise<void>;
   entriesCount: number;
   total: number;
   hasActiveFilters: boolean;
@@ -661,11 +683,12 @@ interface LogListContentProps {
  * views; this whole if-chain used to live directly inside AuditLogPanel, then got duplicated
  * once for Security. Only the copy/icon and which table-or-cards to render differ per view. */
 function LogListContent({
-  isInitialLoad,
-  showLoadingSkeleton,
-  skeletonLabel,
+  skeleton,
+  refreshing,
+  refreshLabel,
   error,
   errorTitle,
+  retrying,
   onRetry,
   entriesCount,
   total,
@@ -677,23 +700,8 @@ function LogListContent({
   renderTable,
   renderCards,
 }: Readonly<LogListContentProps>) {
-  if (isInitialLoad) {
-    return <LogSkeleton label={skeletonLabel} visible={showLoadingSkeleton} />;
-  }
-  if (error) {
-    return (
-      <EmptyState
-        variant="error"
-        title={errorTitle}
-        description={error}
-        action={
-          <Button type="button" variant="secondary" onClick={onRetry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
+  if (skeleton) return skeleton;
+  if (error) return <LogError title={errorTitle} message={error} retrying={retrying} onRetry={onRetry} />;
   if (entriesCount === 0 && total > 0) {
     return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
   }
@@ -712,7 +720,11 @@ function LogListContent({
   // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
   // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
   // useIsDesktop() breakpoint.
-  return isDesktop ? renderTable() : renderCards();
+  return (
+    <RefetchRegion refreshing={refreshing} label={refreshLabel}>
+      {isDesktop ? renderTable() : renderCards()}
+    </RefetchRegion>
+  );
 }
 
 /** Audit's column config for LogTable - built per-render (unlike Security's static one) since
@@ -1137,6 +1149,12 @@ async function copyRowToClipboard(
   }
 }
 
+/** What a failed (non-silent) load says: the time limit's own words when it was the wait that ran out, otherwise the
+ * operator-safe message of the failure. */
+function loadFailureMessage(limit: LoadTimeout | null, err: unknown, fallback: string): string {
+  return limit?.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, fallback);
+}
+
 /** A single missed live-refresh tick is normal network noise - the next tick POLL_INTERVAL_MS
  * later retries. A sustained run of them (endpoint down, role revoked) must not leave "Live"
  * looking green over silently stale rows forever. Extracted out of useLogQuery's own load()
@@ -1290,8 +1308,11 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
         setLoading(true);
         setError(null);
       }
+      // A load the operator is waiting for stops being waited for after 30 seconds (an error with Retry); a silent
+      // poll never does, it is replaced by the next tick.
+      const limit = silent ? null : loadWithTimeout(ac.signal);
       try {
-        const data = await fetchPage(page, pageSize, filters, ac.signal);
+        const data = await fetchPage(page, pageSize, filters, limit?.signal ?? ac.signal);
         if (ac.signal.aborted) return;
         const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
         if (page > maxPage) {
@@ -1314,10 +1335,11 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
           recordSilentPollFailure(pollFailureCountRef, setPollDegraded);
           return;
         }
-        setError(operatorApiErrorMessage(err, loadErrorMessage));
+        setError(loadFailureMessage(limit, err, loadErrorMessage));
         setEntries([]);
         setTotal(0);
       } finally {
+        limit?.done();
         finishLoad({
           silent,
           aborted: ac.signal.aborted,
@@ -1371,6 +1393,9 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
     setPage(1);
   }, [initialFilters]);
 
+  // The Retry of a failed load keeps the error and its busy button on screen until the answer is in.
+  const failure = useRetryKeepingError(error, load);
+
   const [exporting, setExporting] = useState(false);
   const { addToast } = useToast();
   const handleExport = useCallback(async () => {
@@ -1396,7 +1421,9 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
     searchInput,
     setSearchInput,
     loading,
-    error,
+    error: failure.error,
+    retrying: failure.retrying,
+    retry: failure.retry,
     hasLoadedOnce,
     live,
     setLive,
@@ -1699,6 +1726,8 @@ export function AuditLogPanel() {
     setSearchInput,
     loading,
     error,
+    retrying,
+    retry,
     hasLoadedOnce,
     live,
     setLive,
@@ -1823,8 +1852,15 @@ export function AuditLogPanel() {
     </Button>
   );
   const exportButton = (
-    <Button type="button" variant="secondary" size="sm" disabled={exporting} onClick={() => void handleExport()}>
-      {exporting ? "Exporting…" : "Export logs"}
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      loading={exporting}
+      loadingLabel="Exporting…"
+      onClick={() => void handleExport()}
+    >
+      Export logs
     </Button>
   );
   const securityClearFiltersButton = (
@@ -1860,10 +1896,11 @@ export function AuditLogPanel() {
       type="button"
       variant="secondary"
       size="sm"
-      disabled={security.exporting}
+      loading={security.exporting}
+      loadingLabel="Exporting…"
       onClick={() => void security.handleExport()}
     >
-      {security.exporting ? "Exporting…" : "Export logs"}
+      Export logs
     </Button>
   );
 
@@ -1877,7 +1914,6 @@ export function AuditLogPanel() {
     [addToast],
   );
 
-  const showLoadingSkeleton = useDelayedLoading(loading);
   // A filter/page change re-fetches with the previous rows still on screen (never cleared at
   // the start of load()) - only the true first load (nothing to show yet) has no rows to keep
   // displaying, so only that case earns the skeleton; every later reload just dims the stale
@@ -1886,6 +1922,8 @@ export function AuditLogPanel() {
   // matches nothing is still a completed load, not a first load, so it must not re-arm the
   // skeleton and flash the "No matches" empty-state text out from under the user.
   const isInitialLoad = loading && !hasLoadedOnce;
+  const initialGate = useLoadingGate(isInitialLoad);
+  const initialSlow = useDelayedLoading(isInitialLoad, SLOW_NOTICE_MS);
 
   const auditFilterFields = (
     <AuditFilterFields filters={filters} setFilters={setFilters} setPage={setPage} events={events} />
@@ -1893,12 +1931,17 @@ export function AuditLogPanel() {
 
   const listContent = (
     <LogListContent
-      isInitialLoad={isInitialLoad}
-      showLoadingSkeleton={showLoadingSkeleton}
-      skeletonLabel="Loading audit log"
+      skeleton={
+        initialGate.showContent ? null : (
+          <LogSkeleton label="Loading audit log" held={!initialGate.showIndicator} slow={initialSlow} />
+        )
+      }
+      refreshing={loading && !isInitialLoad}
+      refreshLabel="Loading audit log"
       error={error}
       errorTitle="Could not load audit log"
-      onRetry={() => void load()}
+      retrying={retrying}
+      onRetry={retry}
       entriesCount={entries.length}
       total={total}
       hasActiveFilters={hasActiveFilters}
@@ -1909,7 +1952,6 @@ export function AuditLogPanel() {
       renderTable={() => (
         <LogTable
           entries={entries}
-          loading={loading}
           columns={auditColumns}
           rowKey={(entry) => entry.id}
           metadataOf={(entry) => entry.metadata}
@@ -1920,7 +1962,6 @@ export function AuditLogPanel() {
       renderCards={() => (
         <LogCards
           entries={entries}
-          loading={loading}
           rowKey={(entry) => entry.id}
           renderTop={renderAuditCardTop}
           renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
@@ -1933,11 +1974,12 @@ export function AuditLogPanel() {
     />
   );
 
-  const showSecurityLoadingSkeleton = useDelayedLoading(security.loading);
   // Mirrors isInitialLoad above - gated on the hook's own hasLoadedOnce, not entries.length,
   // for the same reason (an event-type/search filter with zero matches is still a completed
   // load).
   const isSecurityInitialLoad = security.loading && !security.hasLoadedOnce;
+  const securityInitialGate = useLoadingGate(isSecurityInitialLoad);
+  const securityInitialSlow = useDelayedLoading(isSecurityInitialLoad, SLOW_NOTICE_MS);
 
   const securityFilterFields = (
     <SecurityFilterFields filters={security.filters} setFilters={security.setFilters} setPage={security.setPage} />
@@ -1945,12 +1987,21 @@ export function AuditLogPanel() {
 
   const securityListContent = (
     <LogListContent
-      isInitialLoad={isSecurityInitialLoad}
-      showLoadingSkeleton={showSecurityLoadingSkeleton}
-      skeletonLabel="Loading security audit log"
+      skeleton={
+        securityInitialGate.showContent ? null : (
+          <LogSkeleton
+            label="Loading security audit log"
+            held={!securityInitialGate.showIndicator}
+            slow={securityInitialSlow}
+          />
+        )
+      }
+      refreshing={security.loading && !isSecurityInitialLoad}
+      refreshLabel="Loading security audit log"
       error={security.error}
       errorTitle="Could not load security audit log"
-      onRetry={() => void security.reload()}
+      retrying={security.retrying}
+      onRetry={security.retry}
       entriesCount={security.entries.length}
       total={security.total}
       hasActiveFilters={security.hasActiveFilters}
@@ -1961,7 +2012,6 @@ export function AuditLogPanel() {
       renderTable={() => (
         <LogTable
           entries={security.entries}
-          loading={security.loading}
           columns={SECURITY_COLUMNS}
           rowKey={(entry) => entry.id}
           metadataOf={(entry) => entry.metadata}
@@ -1972,7 +2022,6 @@ export function AuditLogPanel() {
       renderCards={() => (
         <LogCards
           entries={security.entries}
-          loading={security.loading}
           rowKey={(entry) => entry.id}
           renderTop={renderSecurityCardTop}
           renderMeta={renderSecurityCardMeta}

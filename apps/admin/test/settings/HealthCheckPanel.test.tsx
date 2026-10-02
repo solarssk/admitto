@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -9,7 +9,8 @@ import {
   HealthCheckPanel,
   LIVE_CHECKS_HINT,
 } from "../../src/settings/HealthCheckPanel.js";
-import { renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { hangUntilAborted, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../../src/utils/event-dates.js";
 import type { HealthReportDto, HealthRowStatus } from "../../src/api/types.js";
 
@@ -152,6 +153,13 @@ afterEach(() => {
   vi.resetAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describePanelLoading({
+  label: "Loading health checks",
+  errorTitle: "Could not load health checks",
+  render: () => renderWithToast(<HealthCheckPanel />),
+  hang: () => mockFetch.mockImplementationOnce(hangUntilAborted),
 });
 
 describe("formatRunningBuildLabel", () => {
@@ -319,7 +327,7 @@ describe("HealthCheckPanel", () => {
     );
 
     const { unmount } = renderWithToast(<HealthCheckPanel />);
-    expect(screen.getByText("Loading health checks…")).toBeTruthy();
+    expect(screen.getByLabelText("Loading health checks")).toBeTruthy();
     unmount();
 
     await act(async () => {
@@ -335,10 +343,10 @@ describe("HealthCheckPanel", () => {
     });
   });
 
-  it("shows loading copy while the passive fetch is in flight", () => {
+  it("shows the placeholder, named after what loads, while the passive fetch is in flight", () => {
     mockFetch.mockImplementationOnce(() => new Promise(() => {}));
     renderWithToast(<HealthCheckPanel />);
-    expect(screen.getByText("Loading health checks…")).toBeTruthy();
+    expect(screen.getByLabelText("Loading health checks")).toBeTruthy();
   });
 
   it("renders groups and meta after a successful load", async () => {
@@ -410,6 +418,76 @@ describe("HealthCheckPanel", () => {
     mockFetch.mockResolvedValueOnce(sampleReport());
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText("Core infrastructure");
+  });
+
+  it("keeps the error and a busy Retry on screen while it loads again, then shows the report", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<HealthCheckPanel />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    let resolveRetry: (value: HealthReportDto) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveRetry = resolve)));
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load health checks")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading health checks")).toBeNull();
+    await act(async () => resolveRetry(sampleReport()));
+    await screen.findByText("Core infrastructure");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("keeps Run live checks focusable and busy as Running… while it works, and ignores a second click", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    const button = await screen.findByRole("button", { name: /Run live checks/ });
+    let resolveLive: (value: HealthReportDto) => void = () => {};
+    mockLive.mockReturnValueOnce(new Promise((resolve) => (resolveLive = resolve)));
+    fireEvent.click(button);
+    const busy = await screen.findByRole("button", { name: "Running…" });
+    expect(busy).toBe(button);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(false);
+    expect(button.querySelector(".at-spinner, .at-btn__spinner")).toBeTruthy();
+    fireEvent.click(busy);
+    expect(mockLive).toHaveBeenCalledTimes(1);
+    await act(async () => resolveLive(sampleReport({ overall: "ok" })));
+    await waitFor(() => expect(button.getAttribute("aria-busy")).toBeNull());
+  });
+
+  it("shows the More actions item busy as Running… while live checks run", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByRole("button", { name: /More actions/ });
+    let resolveLive: (value: HealthReportDto) => void = () => {};
+    mockLive.mockReturnValueOnce(new Promise((resolve) => (resolveLive = resolve)));
+    fireEvent.click(screen.getByRole("button", { name: /More actions/ }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /Run live checks/ }));
+    await waitFor(() => expect(mockLive).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /More actions/ }));
+    const item = within(screen.getByRole("menu")).getByRole("menuitem", { name: /Running…/ });
+    expect(item.getAttribute("aria-busy")).toBe("true");
+    await act(async () => resolveLive(sampleReport()));
+  });
+
+  it("does not let a first read that answers late replace the results of live checks with an older report", async () => {
+    let resolveFirst: (value: HealthReportDto) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)));
+    let resolveQuiet: (value: HealthReportDto) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveQuiet = resolve)));
+    // render() with a wrapper, not renderWithToast: a rerender of the latter would drop the ToastProvider.
+    const { rerender } = render(<HealthCheckPanel isActive />, {
+      wrapper: ({ children }) => <ToastProvider>{children}</ToastProvider>,
+    });
+    // Leaving the tab and coming back reads the report again, quietly: it answers before the first read does.
+    rerender(<HealthCheckPanel isActive={false} />);
+    rerender(<HealthCheckPanel isActive />);
+    await act(async () => resolveQuiet(sampleReport()));
+    await screen.findByText("Core infrastructure");
+    mockLive.mockResolvedValueOnce(sampleReport({ groups: [{ id: "live", label: "Live results", status: "ok", checks: [] }] }));
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+    await screen.findByText("Live results");
+    await act(async () =>
+      resolveFirst(sampleReport({ groups: [{ id: "old", label: "Old report", status: "ok", checks: [] }] })),
+    );
+    expect(screen.getByText("Live results")).toBeTruthy();
+    expect(screen.queryByText("Old report")).toBeNull();
   });
 
   it("expands and collapses a row to show detail values", async () => {
@@ -625,14 +703,14 @@ describe("HealthCheckPanel", () => {
     );
 
     const { unmount } = renderWithToast(<HealthCheckPanel />);
-    expect(screen.getByText("Loading health checks…")).toBeTruthy();
+    expect(screen.getByLabelText("Loading health checks")).toBeTruthy();
     unmount();
 
     await act(async () => {
       resolveFetch(sampleReport());
     });
     // No throw / no leftover loading UI after abort.
-    expect(screen.queryByText("Loading health checks…")).toBeNull();
+    expect(screen.queryByLabelText("Loading health checks")).toBeNull();
   });
 
   it("gives group titles their own h2 heading", async () => {

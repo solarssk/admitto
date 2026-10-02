@@ -48,8 +48,7 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
 const ALLOWED: Record<Rule, Counts> = {
   "hand-rolled-spinner-css": {
     "apps/admin/src/pages/setup-wizard.css": 2,
-    "apps/admin/src/settings/health-check.css": 1,
-    "apps/admin/src/staff.css": 2,
+    "apps/admin/src/staff.css": 1,
   },
   "bare-loading-text": {
     "apps/admin/src/communication/DeliveryDetailsModal.tsx": 1,
@@ -72,9 +71,7 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/settings/CheckInBehaviourPanel.tsx": 1,
     "apps/admin/src/settings/EventBounceIngestPanel.tsx": 1,
     "apps/admin/src/settings/EventWalletPanel.tsx": 3,
-    "apps/admin/src/settings/HealthCheckPanel.tsx": 1,
     "apps/admin/src/settings/LocationSettingsPanel.tsx": 1,
-    "apps/admin/src/settings/SystemLogsPanel.tsx": 1,
     "apps/admin/src/settings/TicketTypesCard.tsx": 1,
   },
   "busy-label-swap": {
@@ -100,7 +97,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/pages/SetupWizardPage.tsx": 3,
     "apps/admin/src/pages/wizard/WizardStep2Mail.tsx": 1,
     "apps/admin/src/requirements/EventItemDrawer.tsx": 1,
-    "apps/admin/src/settings/AuditLogPanel.tsx": 2,
     "apps/admin/src/settings/BrandingSettingsPanel.tsx": 1,
     "apps/admin/src/settings/EventBounceIngestPanel.tsx": 1,
     "apps/admin/src/settings/EventDangerZonePanel.tsx": 1,

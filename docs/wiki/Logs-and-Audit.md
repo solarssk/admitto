@@ -42,6 +42,7 @@ Viewing does not change product state. Exporting can create an audit entry and p
 - **No rows appear:** clear filters and confirm the date range.
 - **Live updates pause:** choose **Live** again or refresh the view.
 - **The error needs infrastructure detail:** move to the approved technical incident process without copying secrets or attendee data.
+- **The list shows grey rows, or says "Taking longer than usual":** the entries are being read from the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows an error with a **Retry** button; the button stays on screen, busy, until the answer is in. While you change a filter or the page, the rows stay on screen (dimmed, and not clickable) until the new ones arrive, and **Export logs** shows a spinner while the file is made.
 
 ## Related pages
 

@@ -6159,26 +6159,10 @@ output.mail-field-hint {
   gap: var(--space-2);
 }
 
-.audit-log-skeleton__row {
-  height: 2.5rem;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--surface-muted) 25%,
-    var(--surface-elevated) 50%,
-    var(--surface-muted) 75%
-  );
-  background-size: 200% 100%;
-  animation: audit-log-shimmer 1.2s ease-in-out infinite;
-}
-
-@keyframes audit-log-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+.audit-log-skeleton__note {
+  display: block;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 /* Details popover — absolutely positioned so opening it never changes the
@@ -6324,14 +6308,6 @@ output.mail-field-hint {
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
   color: var(--text-muted);
-}
-
-/* Re-fetching with existing rows still on screen (filter/page change) — dim them
-   instead of blanking the table out while the new page loads (matches AttendeesTable). */
-.audit-log-table-wrap--loading {
-  opacity: 0.5;
-  transition: opacity var(--dur-fast);
-  pointer-events: none;
 }
 
 /* Mobile card list (< 768px) — same data as the table, one entry per card instead of a
@@ -6681,6 +6657,35 @@ output.mail-field-hint {
 
 .system-log-panel__console-empty--error {
   color: var(--at-red);
+}
+
+/* The console's placeholder (ConsoleSkeleton): lines shaped like log lines, light on the dark shell. */
+.system-log-panel__console .at-skeleton {
+  --skeleton-base: rgba(255, 255, 255, 0.08);
+  --skeleton-highlight: rgba(255, 255, 255, 0.16);
+}
+
+.system-log-panel__skeleton {
+  display: block;
+}
+
+.system-log-panel__skeleton-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+.system-log-panel__skeleton-line {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+
+.system-log-panel__skeleton-note {
+  display: block;
+  margin-top: var(--space-3);
+  color: var(--at-gray-500);
+  text-align: center;
 }
 
 .system-log-panel__line {
