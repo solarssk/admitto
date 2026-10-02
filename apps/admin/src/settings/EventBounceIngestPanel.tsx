@@ -318,9 +318,18 @@ export const EventBounceIngestPanel = forwardRef<
   // What a refresh needs to know without being remade for it: whether there is data on screen, and whether the form has edits.
   const onScreenRef = useRef(false);
   const dirtyRef = useRef(false);
+  // The read that is on its way, if any. The newest one owns the panel: an answer that is no longer the latest, success or
+  // failure, is dropped (a refresh that starts before the first read has answered, two refreshes that overlap, a save that
+  // has returned the newer snapshot), so an older one can neither put its snapshot over a newer one nor replace a form
+  // that is on screen with its error.
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(
-    async (signal?: AbortSignal, keepError = false) => {
+    async (keepError = false) => {
+      loadAbortRef.current?.abort();
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
+      const signal = controller.signal;
       // A load that finds data on screen is a refresh (after the mail transport was saved): the form stays, and so do edits.
       const refreshing = onScreenRef.current;
       setLoading(true);
@@ -329,7 +338,7 @@ export const EventBounceIngestPanel = forwardRef<
       const limit = loadWithTimeout(signal);
       try {
         const data = await rejectOnAbort(fetchEventBounceIngestSettings(eventId, limit.signal), limit.signal);
-        if (signal?.aborted) return;
+        if (signal.aborted) return;
         setLoadError(null);
         setApiData(data);
         onScreenRef.current = true;
@@ -342,7 +351,7 @@ export const EventBounceIngestPanel = forwardRef<
         setSecrets(emptySecretEdits());
         clearTestResult();
       } catch (err) {
-        if (signal?.aborted) return;
+        if (signal.aborted) return;
         const message = limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, "Could not load bounce detection settings.");
         if (refreshing) {
           // A loaded panel is never replaced by an error: what is on screen stays, and the viewer is told.
@@ -352,7 +361,7 @@ export const EventBounceIngestPanel = forwardRef<
         setLoadError(message);
       } finally {
         limit.done();
-        if (!signal?.aborted) {
+        if (!signal.aborted) {
           setLoading(false);
           endLoad();
         }
@@ -362,9 +371,8 @@ export const EventBounceIngestPanel = forwardRef<
   );
 
   useEffect(() => {
-    const ac = new AbortController();
-    void load(ac.signal, beginLoad());
-    return () => ac.abort();
+    void load(beginLoad());
+    return () => loadAbortRef.current?.abort();
   }, [load, beginLoad, loadToken]);
 
   const dirty = useMemo(() => {
@@ -432,6 +440,8 @@ export const EventBounceIngestPanel = forwardRef<
     setSaving(true);
     try {
       const data = await saveEventBounceIngestSettings(eventId, body);
+      // What the save returned is newer than any read that started before it ended: that one is dropped.
+      loadAbortRef.current?.abort();
       setApiData(data);
       const d = draftFromApi(data);
       setDraft(d);

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EventBounceIngestPanel,
@@ -822,6 +823,130 @@ describe("EventBounceIngestPanel on the loading standard", () => {
     expect(host.value).toBe("imap.other.example.com");
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not refresh the bounce detection settings/);
+  });
+
+  it("drops the first read when a refresh starts before it has answered: the form takes the refresh's snapshot, and the older answer never replaces it", async () => {
+    const first = deferred<EventBounceIngestSettingsResponse>();
+    const second = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { ref } = renderPanel();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+
+    act(() => ref.current?.refresh());
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[0]![1]?.aborted).toBe(true);
+    expect(mockFetch.mock.calls[1]![1]?.aborted).toBe(false);
+
+    await act(async () => second.resolve(bounceResponse({ imap_host: "imap.new.example.com" })));
+    expect(((await screen.findByLabelText("IMAP host")) as HTMLInputElement).value).toBe("imap.new.example.com");
+    await act(async () => first.resolve(bounceResponse({ imap_host: "imap.old.example.com" })));
+    expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.new.example.com");
+  });
+
+  it("keeps waiting for the refresh when the first read it superseded answers before it, instead of showing the older snapshot", async () => {
+    const first = deferred<EventBounceIngestSettingsResponse>();
+    const second = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { ref } = renderPanel();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    act(() => ref.current?.refresh());
+
+    await act(async () => first.resolve(bounceResponse({ imap_host: "imap.old.example.com" })));
+    expect(screen.queryByLabelText("IMAP host")).toBeNull();
+
+    await act(async () => second.resolve(bounceResponse({ imap_host: "imap.new.example.com" })));
+    expect(((await screen.findByLabelText("IMAP host")) as HTMLInputElement).value).toBe("imap.new.example.com");
+  });
+
+  it("does not replace a refreshed form with the error of the first read, which would have timed out after it", async () => {
+    mockFetch.mockImplementationOnce(hangUntilAborted as never).mockResolvedValueOnce(bounceResponse({ imap_host: "imap.new.example.com" }));
+    vi.useFakeTimers();
+    try {
+      const { ref } = renderPanel();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      act(() => ref.current?.refresh());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.new.example.com");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+      expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.new.example.com");
+      expect(screen.queryByText("Could not load bounce detection")).toBeNull();
+      expect(screen.queryByTestId("at-toast")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not replace a refreshed form with the error of a first read that fails after it", async () => {
+    const first = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(first.promise).mockResolvedValueOnce(bounceResponse({ imap_host: "imap.new.example.com" }));
+    const { ref } = renderPanel();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      ref.current?.refresh();
+    });
+    expect(((await screen.findByLabelText("IMAP host")) as HTMLInputElement).value).toBe("imap.new.example.com");
+
+    await act(async () => first.reject(new ApiError(500, "secret_internal")));
+    expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.new.example.com");
+    expect(screen.queryByText("Could not load bounce detection")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("keeps the newest of two refreshes that overlap, whichever answers last", async () => {
+    const { ref } = renderPanel();
+    await screen.findByLabelText("IMAP host");
+    const older = deferred<EventBounceIngestSettingsResponse>();
+    const newer = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    act(() => ref.current?.refresh());
+    act(() => ref.current?.refresh());
+
+    await act(async () => newer.resolve(bounceResponse({ imap_host: "imap.newer.example.com" })));
+    expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.newer.example.com");
+    await act(async () => older.resolve(bounceResponse({ imap_host: "imap.older.example.com" })));
+    expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe("imap.newer.example.com");
+  });
+
+  it("does not let a refresh that started before a save returned replace what the save returned", async () => {
+    const { ref } = renderPanel();
+    const host = (await screen.findByLabelText("IMAP host")) as HTMLInputElement;
+    fireEvent.change(host, { target: { value: "imap.saved.example.com" } });
+    const refresh = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(refresh.promise);
+    act(() => ref.current?.refresh());
+    mockSave.mockResolvedValueOnce(bounceResponse({ imap_host: "imap.saved.example.com" }));
+    await act(async () => {
+      await ref.current?.save();
+    });
+    expect(host.value).toBe("imap.saved.example.com");
+
+    await act(async () => refresh.resolve(bounceResponse({ imap_host: "imap.example.com", smtp_reuse_available: true })));
+    expect(host.value).toBe("imap.saved.example.com");
+    expect(screen.getByRole("switch", { name: "Use SMTP username and password" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("stops a refresh that is on its way when the panel is left, so it can neither toast nor change anything afterwards", async () => {
+    const ref = createRef<EventBounceIngestPanelHandle>();
+    const panel = (show: boolean) => (show ? <EventBounceIngestPanel ref={ref} eventId="evt-1" isArchived={false} /> : null);
+    const { rerender } = render(panel(true), { wrapper: ToastProvider });
+    await screen.findByLabelText("IMAP host");
+    const refresh = deferred<EventBounceIngestSettingsResponse>();
+    mockFetch.mockReturnValueOnce(refresh.promise);
+    act(() => ref.current?.refresh());
+    const signal = mockFetch.mock.calls[1]![1]!;
+    expect(signal.aborted).toBe(false);
+
+    rerender(panel(false));
+    expect(signal.aborted).toBe(true);
+    await act(async () => refresh.reject(new Error("network down")));
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("shows Test connection busy as 'Testing…' while it probes, keeps its focus and ignores a second click", async () => {
