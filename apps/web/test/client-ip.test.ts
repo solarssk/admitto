@@ -83,6 +83,15 @@ describe("rateLimitIpKey", () => {
     expect(rateLimitIpKey("2001:db8:1:3::1")).not.toBe(rateLimitIpKey("2001:db8:1:2::1"));
   });
 
+  it("ignores an IPv6 zone index and keeps an address with an embedded IPv4 tail as-is", () => {
+    expect(rateLimitIpKey("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
+    expect(rateLimitIpKey("64:ff9b::192.0.2.1")).toBe("64:ff9b::192.0.2.1");
+  });
+
+  it("keys a full eight-group address without :: by its first four groups", () => {
+    expect(rateLimitIpKey("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+  });
+
   it("expands :: that sits inside the first four groups", () => {
     expect(rateLimitIpKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
     expect(rateLimitIpKey("::1")).toBe("0:0:0:0::/64");
