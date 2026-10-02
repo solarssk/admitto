@@ -10,7 +10,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAdminEvents, fetchAdminOrganizations } from "../../src/api/client.js";
+import { ApiError, fetchAdminEvents, fetchAdminOrganizations } from "../../src/api/client.js";
 import type { EventDto } from "../../src/api/types.js";
 import { IdentityMappingRepeater } from "../../src/identity/IdentityMappingRepeater.js";
 import type { MappingRow, MappingRowError } from "../../src/identity/identityProviderValidation.js";
@@ -182,6 +182,7 @@ describe("IdentityMappingRepeater scope_id picker", () => {
 
 describe("IdentityMappingRepeater lookups on the loading standard", () => {
   const eventRow = row({ role: "operator", scope_type: "event", scope_id: "evt-1" });
+  const organizationRow = row({ role: "admin", scope_type: "organization", scope_id: "org-1" });
 
   it("holds the room of the picker invisibly for the first 200ms, shows a placeholder after, and the picker once the answer is in", async () => {
     vi.useFakeTimers();
@@ -252,6 +253,27 @@ describe("IdentityMappingRepeater lookups on the loading standard", () => {
     expect(picker.getAttribute("disabled")).not.toBeNull();
     expect(picker.textContent).not.toContain("not found");
     expect(picker.textContent).toContain("Event");
+  });
+
+  it.each([
+    ["events", () => mockFetchEvents.mockRejectedValueOnce(new ApiError(401, "authentication_required")), eventRow],
+    ["organizations", () => mockFetchOrganizations.mockRejectedValueOnce(new ApiError(401, "authentication_required")), organizationRow],
+  ] as const)("hands the browser to the login page, with no Retry, when the %s lookup finds the session ended", async (_name, arrange, scopedRow) => {
+    arrange();
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/p1/edit", assign: assignSpy },
+    });
+    try {
+      render(<IdentityMappingRepeater rows={[scopedRow]} errors={[{}]} onChange={vi.fn()} />);
+      await waitFor(() => expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
   });
 
   it("retries only the failed lookup: the Retry stays on screen, busy, until the answer is in, and the picker comes back", async () => {

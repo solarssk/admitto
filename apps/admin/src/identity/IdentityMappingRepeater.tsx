@@ -49,8 +49,10 @@ export function IdentityMappingRepeater({
   // scope still shows as what kind of scope it is.
   const needsEvents = rows.some((row) => row.scope_type === "event");
   const needsOrganizations = rows.some((row) => row.scope_type === "organization");
-  const eventLookup = useEventOptions({ includeArchived: false, enabled: needsEvents });
-  const organizationLookup = useOrganizationOptions(needsOrganizations);
+  // The lookups are read after the editor's record, so the session can have ended by then: a 401 is the login page, not a
+  // Retry that cannot mend it.
+  const eventLookup = useEventOptions({ includeArchived: false, enabled: needsEvents, redirectOnUnauthorized: true });
+  const organizationLookup = useOrganizationOptions(needsOrganizations, { redirectOnUnauthorized: true });
   const eventOptions: SearchableSelectOption[] = eventLookup.events.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" }));
   const organizationOptions: SearchableSelectOption[] = organizationLookup.organizations.map((o) => ({
     id: o.id,
