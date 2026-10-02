@@ -74,3 +74,16 @@
     animation: at-loader-soft 2s ease-in-out infinite;
   }
 }
+
+@media (forced-colors: active) {
+  /* Windows High Contrast replaces every background colour with the page colour (Canvas), so the bar, a
+     plain coloured background, would be drawn in the colour of the page behind it and disappear, in every
+     phase, and only the dimming would be left. Opting out and drawing the bar in CanvasText, the colour
+     the system guarantees to be readable on Canvas, keeps it visible. It sits straight on the page with no
+     track: a track in a second system colour (Highlight on GrayText was tried) has no guaranteed contrast
+     with the bar, about 1.4:1 in Chrome's emulated palette. */
+  .at-topbar__bar {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
