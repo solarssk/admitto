@@ -8,7 +8,8 @@ import {
   EventMailSettingsCard,
   type EventMailSettingsCardHandle,
 } from "../../src/settings/EventMailSettingsCard.js";
-import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
+import { hangUntilAborted, makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type {
   EventBounceIngestSettingsResponse,
   EventMailSettingsResponse,
@@ -760,7 +761,9 @@ describe("EventMailSettingsCard — test send", () => {
     await waitFor(() =>
       expect(mockTest).toHaveBeenCalledWith("evt-1", "nobody@example.com", { verifyBounce: true }),
     );
-    expect(screen.getByRole("button", { name: /^Waiting for bounce…$/ })).toBeTruthy();
+    const waiting = screen.getByRole("button", { name: /^Waiting…$/ });
+    expect(waiting.getAttribute("aria-busy")).toBe("true");
+    expect(isDisabled(waiting)).toBe(false);
     expect(screen.getByRole("status").textContent).toMatch(/Waiting for bounce… 90s remaining/);
 
     await act(async () => {
@@ -900,15 +903,48 @@ describe("EventMailSettingsCard — archived event", () => {
   });
 });
 
+describePanelLoading({
+  label: "Loading mail settings",
+  errorTitle: "Could not load mail settings",
+  render: () => renderCard(),
+  hang: () => mockFetch.mockImplementationOnce(hangUntilAborted),
+});
+
 describe("EventMailSettingsCard — loading and errors", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
+  it("keeps the error and a busy Retry on screen while it loads again, then shows the form", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network"));
     renderCard();
-    act(() => {
-      vi.advanceTimersByTime(200);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    let resolveRetry: (value: EventMailSettingsResponse) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveRetry = resolve)));
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load mail settings")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading mail settings")).toBeNull();
+    await act(async () => resolveRetry(inheritedResponse()));
+    expect(await screen.findByText(SMTP_SUMMARY_TEXT)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("loads the other event's settings into a fresh card when the event changes", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValueOnce(inheritedResponse());
+    const { rerender } = render(<EventMailSettingsCard eventId="evt-1" isArchived={false} />, {
+      wrapper: ({ children }) => (
+        <ToastProvider>
+          <MemoryRouter>{children}</MemoryRouter>
+        </ToastProvider>
+      ),
     });
-    expect(screen.getByText("Loading mail settings…")).toBeTruthy();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+    expect(screen.getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked")).toBe("true");
+
+    mockFetch.mockResolvedValueOnce(inheritedResponse());
+    rerender(<EventMailSettingsCard eventId="evt-2" isArchived={false} />);
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    expect(mockFetch).toHaveBeenLastCalledWith("evt-2", expect.any(AbortSignal));
+    expect(screen.getByRole("radio", { name: "Organization" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("shows a retry EmptyState on load failure and recovers on retry", async () => {

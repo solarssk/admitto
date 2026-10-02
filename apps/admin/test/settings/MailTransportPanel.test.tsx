@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MailTransportPanel } from "../../src/settings/MailTransportPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type { MailSettingsFieldsDto, MailSettingsResponse } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -164,16 +165,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("MailTransportPanel delayed loading", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderWithToast(<MailTransportPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading mail settings…")).toBeTruthy();
-  });
+describePanelLoading({
+  label: "Loading mail settings",
+  errorTitle: "Could not load mail settings",
+  render: () => renderWithToast(<MailTransportPanel />),
+  hang: () => mockFetch.mockImplementationOnce(hangUntilAborted),
 });
 
 describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
@@ -579,6 +575,63 @@ describe("MailTransportPanel — SMTP Test connection", () => {
     await waitFor(() => {
       expect(screen.getByText("Authentication failed. Check the username and password.")).toBeTruthy();
     });
+  });
+});
+
+describe("MailTransportPanel — busy test buttons", () => {
+  it("keeps Test connection focusable and busy as Testing… while it works, and ignores a second click", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    let resolveProbe: (value: { ok: true; message: string }) => void = () => {};
+    mockProbe.mockReturnValueOnce(new Promise((resolve) => (resolveProbe = resolve)));
+    renderWithToast(<MailTransportPanel />);
+    const button = await screen.findByRole("button", { name: "Test connection" });
+    button.focus();
+    fireEvent.click(button);
+    const busy = await screen.findByRole("button", { name: "Testing…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(isDisabled(busy)).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(mockProbe).toHaveBeenCalledTimes(1);
+    await act(async () => resolveProbe({ ok: true, message: "Connected." }));
+    const idle = await screen.findByRole("button", { name: "Test connection" });
+    expect(idle.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("keeps Send test focusable and busy as Sending… while it works, and ignores a second click", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    let resolveTest: (value: { status: "sent"; provider: "smtp" }) => void = () => {};
+    mockTest.mockReturnValueOnce(new Promise((resolve) => (resolveTest = resolve)));
+    renderWithToast(<MailTransportPanel />);
+    const button = await screen.findByRole("button", { name: "Send test" });
+    await waitFor(() => expect(isDisabled(button)).toBe(false));
+    fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: "you@example.com" } });
+    fireEvent.click(button);
+    const busy = await screen.findByRole("button", { name: "Sending…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(isDisabled(busy)).toBe(false);
+    fireEvent.click(busy);
+    expect(mockTest).toHaveBeenCalledTimes(1);
+    await act(async () => resolveTest({ status: "sent", provider: "smtp" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send test" }).getAttribute("aria-busy")).toBeNull());
+  });
+});
+
+describe("MailTransportPanel — first load failure", () => {
+  it("keeps the error and a busy Retry on screen while it loads again, then shows the form", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<MailTransportPanel />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    let resolveRetry: (value: MailSettingsResponse) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveRetry = resolve)));
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load mail settings")).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
+    await act(async () => resolveRetry(makeResponse(baseFields())));
+    expect(await screen.findByRole("radiogroup", { name: "Transport" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 });
 

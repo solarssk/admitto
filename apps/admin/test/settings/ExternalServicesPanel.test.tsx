@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExternalServicesPanel } from "../../src/settings/ExternalServicesPanel.js";
-import { renderWithToastAndRouter, isOff } from "../test-utils.js";
+import { hangUntilAborted, renderWithToastAndRouter, isOff } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type { ExternalServicesResponse } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -102,15 +103,64 @@ async function renderLoaded() {
   });
 }
 
+describePanelLoading({
+  label: "Loading external services",
+  errorTitle: "Could not load external services",
+  render: () => renderWithToastAndRouter(<ExternalServicesPanel />),
+  hang: () => mockFetch.mockImplementationOnce(hangUntilAborted),
+});
+
 describe("ExternalServicesPanel", () => {
-  it("shows the loading placeholder once the fetch has taken a moment", () => {
-    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
+  it("keeps the error and a busy Retry on screen while it loads again, with no toast", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<ExternalServicesPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    let resolveRetry: (value: ExternalServicesResponse) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveRetry = resolve)));
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load external services")).toBeTruthy();
+    await act(async () => resolveRetry(sampleResponse()));
+    await waitFor(() => expect(document.getElementById("external-weather-provider")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("keeps a Test connection focusable and busy as Testing… while it works, without touching the other one", async () => {
+    await renderLoaded();
+    let resolveWeather: (value: { ok: true }) => void = () => {};
+    mockTestWeather.mockReturnValueOnce(new Promise((resolve) => (resolveWeather = resolve)));
+    const [weatherButton, mapsButton] = screen.getAllByRole("button", { name: "Test connection" });
+    weatherButton!.focus();
+    fireEvent.click(weatherButton!);
+    const busy = await screen.findByRole("button", { name: "Testing…" });
+    expect(busy).toBe(weatherButton);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    expect(mapsButton!.getAttribute("aria-busy")).toBeNull();
+    fireEvent.click(busy);
+    expect(mockTestWeather).toHaveBeenCalledTimes(1);
+    await act(async () => resolveWeather({ ok: true }));
+    await waitFor(() => expect(weatherButton!.getAttribute("aria-busy")).toBeNull());
+    expect(weatherButton!.textContent).toContain("Test connection");
+  });
+
+  it("keeps the maps Test connection busy on its own, without touching the weather one", async () => {
+    await renderLoaded();
+    let resolveMaps: (value: { ok: true }) => void = () => {};
+    mockTestMaps.mockReturnValueOnce(new Promise((resolve) => (resolveMaps = resolve)));
+    const [weatherButton, mapsButton] = screen.getAllByRole("button", { name: "Test connection" });
+    fireEvent.click(mapsButton!);
+    const busy = await screen.findByRole("button", { name: "Testing…" });
+    expect(busy).toBe(mapsButton);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(false);
+    expect(weatherButton!.getAttribute("aria-busy")).toBeNull();
+    fireEvent.click(busy);
+    expect(mockTestMaps).toHaveBeenCalledTimes(1);
+    await act(async () => resolveMaps({ ok: true }));
+    await waitFor(() => expect(mapsButton!.getAttribute("aria-busy")).toBeNull());
   });
 
   it("shows operator-safe message when external services fail to load", async () => {

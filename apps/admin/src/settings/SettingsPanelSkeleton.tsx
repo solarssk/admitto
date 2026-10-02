@@ -6,8 +6,8 @@ export interface SettingsSkeletonCard {
   id: string;
   /** The card's real title: it is known before the data is. */
   title: ReactNode;
-  /** The card opens with a line of intro text. */
-  intro?: boolean;
+  /** The card opens with intro text: `true` is one line, a number is that many (a long intro wraps). */
+  intro?: boolean | number;
   /** How many labelled fields the card holds (a label and a control each). */
   fields?: number;
   /** Fields side by side (2, as `.mail-transport-section` does on a wide screen) or one under the other (1, the default). */
@@ -31,6 +31,18 @@ interface SettingsPanelSkeletonProps {
   footer?: boolean;
 }
 
+/** The intro text of a card: a line of text is about 21px, so lines of 16px with 5px between them keep that pitch. */
+function SkeletonIntro({ lines }: Readonly<{ lines: number }>) {
+  if (lines <= 1) return <Skeleton variant="rect" width="62%" height={16} />;
+  return (
+    <div className="settings-skeleton__intro">
+      {Array.from({ length: lines }, (_, line) => (
+        <Skeleton key={line} variant="rect" width={line === lines - 1 ? "62%" : "100%"} height={16} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * A settings panel while it loads: its cards with their real titles, a label and a control per field, and the footer
  * of buttons, in a status region named after what is loading. Cards stack with the same gap as the real panel, so the
@@ -42,7 +54,7 @@ export function SettingsPanelSkeleton({ label, held, slow, cards, footer = true 
       {cards.map((card) => (
         <Card key={card.id} title={card.title}>
           <div className="settings-card-stack" aria-hidden="true">
-            {card.intro && <Skeleton variant="rect" width="62%" height={16} />}
+            {card.intro && <SkeletonIntro lines={card.intro === true ? 1 : card.intro} />}
             {(card.fields ?? 0) > 0 && (
               <div className={card.columns === 2 ? "settings-skeleton__fields mail-transport-section" : "settings-skeleton__fields"}>
                 {Array.from({ length: card.fields ?? 0 }, (_, fieldIndex) => (

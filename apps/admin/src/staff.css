@@ -5114,6 +5114,12 @@ output.mail-field-hint {
   gap: var(--space-4);
 }
 
+.settings-skeleton__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
 .settings-skeleton__fields {
   display: flex;
   flex-direction: column;
