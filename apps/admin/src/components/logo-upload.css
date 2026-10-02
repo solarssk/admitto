@@ -41,7 +41,11 @@
 }
 
 /* The bar rides the top edge inside the dashed border, so its corners follow the zone's rounded inner corners. */
-.logo-upload__zone > .at-topbar--container {
+.logo-upload__bar {
+  display: contents;
+}
+
+.logo-upload__zone .at-topbar--container {
   border-radius: calc(var(--radius-md) - 2px) calc(var(--radius-md) - 2px) 0 0;
 }
 

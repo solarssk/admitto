@@ -515,7 +515,9 @@ export function LogoUploadZone({
         }}
         role={showPreview ? undefined : "button"}
         tabIndex={showPreview || disabled ? undefined : 0}
-        aria-disabled={disabled || undefined}
+        aria-disabled={disabled || uploading || undefined}
+        aria-busy={uploading || undefined}
+        aria-label={uploading ? "Uploading logo" : undefined}
         onKeyDown={(e) => {
           if (!showPreview && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
@@ -523,7 +525,10 @@ export function LogoUploadZone({
           }
         }}
       >
-        <TopProgressBar active={uploading} placement="container" label="Uploading logo" />
+        {/* Decoration: what a screen reader is told is the status below, outside the zone (inside a role="button" it would be flattened). */}
+        <span className="logo-upload__bar" aria-hidden="true">
+          <TopProgressBar active={uploading} placement="container" label="Uploading logo" />
+        </span>
         {showPreview ? (
           <LogoPreview
             label={label}
@@ -576,6 +581,7 @@ export function LogoUploadZone({
           tabIndex={-1}
         />
       </div>
+      <output className="sr-only">{uploading ? "Uploading logo" : ""}</output>
       {zoneError ? (
         <Notice variant="error" role="alert">
           {zoneError}
@@ -587,7 +593,8 @@ export function LogoUploadZone({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={uploading || disabled}
+            disabled={disabled}
+            aria-disabled={uploading}
             icon={<i className="ti ti-refresh" aria-hidden="true" />}
             onClick={openFilePicker}
           >
@@ -599,7 +606,8 @@ export function LogoUploadZone({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={uploading || disabled}
+            disabled={disabled}
+            aria-disabled={uploading}
             icon={<i className="ti ti-crop" aria-hidden="true" />}
             onClick={openCropForEdit}
           >

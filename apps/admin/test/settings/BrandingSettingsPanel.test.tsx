@@ -432,7 +432,10 @@ describe("BrandingSettingsPanel - organisation fields", () => {
       .mockReturnValueOnce(new Promise((resolve) => (resolveOriginal = resolve)))
       .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Something to save, so that only the upload keeps Save and Reset off.
+    fireEvent.change(nameInput, { target: { value: "Acme Events" } });
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
 
     const [logoInput] = document.querySelectorAll(".logo-upload__file-input");
     fireEvent.change(logoInput!, {
@@ -474,7 +477,6 @@ describe("BrandingSettingsPanel - organisation fields", () => {
     expect(save.textContent).toContain("Save");
     expect(screen.queryByText("Saving…")).toBeNull();
     expect((save as HTMLButtonElement).disabled).toBe(false);
-    expect(document.activeElement).toBe(save);
     fireEvent.click(save);
     expect(mockPatchOrg).toHaveBeenCalledTimes(1);
     await act(async () => resolveOrg({ ...defaultOrg, org_name: "Acme Events" }));

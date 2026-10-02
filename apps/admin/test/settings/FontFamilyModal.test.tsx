@@ -769,6 +769,8 @@ describe("FontFamilyModal", () => {
     })) as HTMLElement;
     expect(within(row).getByRole("status", { name: "Uploading Acme-Sans-Regular.woff2" })).toBeTruthy();
     expect(row.querySelector(".fontfam-row__file")?.textContent).toContain("Acme-Sans-Regular.woff2");
+    // The row stays the file input's label while it uploads (the spinner is a labelable element too).
+    expect((row.querySelector(".fontfam-row__file") as HTMLLabelElement).control).toBe(fileInputOf(row));
     expect(screen.queryByText("Uploading…")).toBeNull();
 
     await act(async () => resolveUpload({ url: "/uploads/default/theme/acme.woff2" }));

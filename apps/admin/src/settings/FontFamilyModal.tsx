@@ -527,12 +527,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                     ]}
                   />
                   <label className={`fontfam-row__file${row.loaded ? " fontfam-row__file--loaded" : ""}`}>
-                    {row.loading ? (
-                      <Spinner size="sm" label={`Uploading ${row.fileName ?? "font file"}`} />
-                    ) : (
-                      <i className={`ti ti-${rowFileIconName(row)}`} aria-hidden="true" />
-                    )}
-                    <span>{row.fileName || "Choose file"}</span>
+                    {/* First, so the label is always the file input's (the Spinner is a labelable element too). */}
                     <input
                       type="file"
                       accept=".woff,.woff2,.ttf,.otf"
@@ -543,6 +538,12 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                         if (f) replaceRowFile(f, row.id);
                       }}
                     />
+                    {row.loading ? (
+                      <Spinner size="sm" label={`Uploading ${row.fileName}`} />
+                    ) : (
+                      <i className={`ti ti-${rowFileIconName(row)}`} aria-hidden="true" />
+                    )}
+                    <span>{row.fileName || "Choose file"}</span>
                   </label>
                   {row.loaded && (
                     <span
