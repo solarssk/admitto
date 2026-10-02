@@ -372,7 +372,7 @@ describe("VenueAutocomplete", () => {
     expect(document.activeElement).toBe(busy);
     const calls = mockSearch.mock.calls.length;
     fireEvent.click(busy);
-    expect(mockSearch.mock.calls.length).toBe(calls);
+    expect(mockSearch.mock.calls).toHaveLength(calls);
 
     slow.resolve({ results: [makeResult()], contact_configured: true });
     await act(async () => {
@@ -392,7 +392,7 @@ describe("VenueAutocomplete", () => {
     const calls = mockSearch.mock.calls.length;
 
     fireEvent.keyDown(field, { key: "Enter" });
-    expect(mockSearch.mock.calls.length).toBe(calls);
+    expect(mockSearch.mock.calls).toHaveLength(calls);
 
     slow.resolve({ results: [], contact_configured: true });
     await act(async () => {

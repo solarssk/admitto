@@ -440,6 +440,19 @@ describe("EventImageAssetLibrary", () => {
     expect(screen.queryByText("nope.png")).toBeNull();
   });
 
+  it("does nothing when something is dropped that holds no file", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [] } });
+
+    expect(mockUploadPreview).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(dropzone.className).not.toContain("image-asset-library__dropzone--dragging");
+  });
+
   it("pluralizes the asset count intro for more than one image", async () => {
     mockFetch.mockResolvedValueOnce([
       asset,

@@ -210,6 +210,14 @@ export function EventImageAssetLibrary(props: EventImageAssetLibraryProps) {
   return <EventImageAssetLibraryBody key={props.eventId} {...props} />;
 }
 
+/** Why Add image is off, when the reason is something the operator can act on (nothing for a name that is not valid: the
+ * field says so itself). */
+function addImageReason(listReady: boolean, file: File | null): string | undefined {
+  if (!listReady) return "The images are still loading.";
+  if (!file) return "Choose an image and give it a name first.";
+  return undefined;
+}
+
 function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAssetLibraryProps) {
   const { addToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -275,11 +283,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
   const canSubmit =
     Boolean(file) && !tokenErrorText && Boolean(previewToken) && !working && !disabled && listReady;
   const addReasonId = "image-asset-library-add-reason";
-  const addReason = !listReady
-    ? "The images are still loading."
-    : !file
-      ? "Choose an image and give it a name first."
-      : undefined;
+  const addReason = addImageReason(listReady, file);
 
   const resetForm = () => {
     setDisplayName("");

@@ -264,7 +264,7 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
 
-  let body: ReactNode = null;
+  let body: ReactNode;
   if (!card.gate.showContent) {
     body = (
       <div className="wallet-push-history-card__body-note">
@@ -280,7 +280,7 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
         onRetry={card.failure.retry}
       />
     );
-  } else if (list.data !== null) {
+  } else {
     body = (
       <RefetchRegion refreshing={list.refreshing} label="Loading wallet push history">
         {rows.length === 0 ? (
