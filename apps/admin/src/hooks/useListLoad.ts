@@ -28,8 +28,13 @@ export interface ListLoad<T> {
   error: string | null;
   /** A `reload` of the same query failed (after an action): the list stays, and may be older than the server's. */
   refreshError: string | null;
-  /** The same query again, after an action. Resolves when the answer, or the failure, is in. */
-  reload: () => Promise<void>;
+  /**
+   * The same query again, after an action. Resolves when the answer, or the failure, is in. When it fails, the rows
+   * stay with a warning (`refreshError`), unless the action has changed them in a way the page cannot tell
+   * (`keepRowsOnFailure: false`): then the rows, which may be wrong, are replaced by the error, with the refresh
+   * blocking them until it ends.
+   */
+  reload: (options?: { keepRowsOnFailure?: boolean }) => Promise<void>;
   /**
    * Applies what the server has just confirmed to the answer on screen (a saved row, a deleted one), and reports it
    * like an answer (`onData`). Call it before `reload`, so a refresh that fails does not make a saved change look lost:
@@ -63,7 +68,7 @@ function failureMessage(limit: LoadTimeout, err: unknown, fallback: string): str
 }
 
 /** One request of the list. Kept out of the hook so its branches are not nested a level deeper in a callback. */
-async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", signal?: AbortSignal): Promise<void> {
+async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", signal?: AbortSignal, keepRows = true): Promise<void> {
   if (!ctx.enabled) {
     // Nothing to load for this viewer. A run that was under way when this became true was abandoned by the effect's
     // cleanup, and does not reset the flags itself.
@@ -90,7 +95,7 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
     // A reload of the list on screen keeps it: the warning says it may be older, with a hint instead of "could not load".
     // Only when what is on screen answers this query: a reload that took over from a changed query still on its way
     // finds the rows of the previous query, and those no longer answer what was asked.
-    const keepsList = kind === "reload" && ctx.loadedRef.current && ctx.answeredRef.current === ctx.fetcher;
+    const keepsList = kind === "reload" && keepRows && ctx.loadedRef.current && ctx.answeredRef.current === ctx.fetcher;
     const message = failureMessage(limit, err, keepsList ? REFRESH_HINT : ctx.fallback);
     if (keepsList) {
       ctx.setRefreshError(`${REFRESH_FAILED} ${message}`);
@@ -138,11 +143,12 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   }, []);
 
   const run = useCallback(
-    (kind: "query" | "reload", signal?: AbortSignal) =>
+    (kind: "query" | "reload", signal?: AbortSignal, keepRows?: boolean) =>
       runListLoad(
         { enabled, fetcher, fallback, loadedRef, answeredRef, requestRef, onDataRef, setData: setAnswer, setLoading, setRefreshing, setError, setRefreshError },
         kind,
         signal,
+        keepRows,
       ),
     [enabled, fetcher, fallback, setAnswer],
   );
@@ -160,7 +166,10 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   useEffect(() => {
     runRef.current = run;
   });
-  const reload = useCallback(() => runRef.current("reload", lifeRef.current?.signal), []);
+  const reload = useCallback(
+    (options?: { keepRowsOnFailure?: boolean }) => runRef.current("reload", lifeRef.current?.signal, options?.keepRowsOnFailure),
+    [],
+  );
 
   const update = useCallback(
     (change: (current: T) => T) => {

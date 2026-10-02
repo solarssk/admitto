@@ -260,6 +260,22 @@ describe("useListLoad", () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it("replaces rows that may be wrong with the error when a reload that was told not to keep them fails, and keeps them blocked until then", async () => {
+    const reloading = deferred<string>();
+    const fetcher = vi.fn().mockResolvedValueOnce("rows A").mockReturnValueOnce(reloading.promise);
+    const { result } = setup(fetcher);
+    await settle();
+
+    act(() => {
+      void result.current.reload({ keepRowsOnFailure: false });
+    });
+    expect(result.current).toMatchObject({ refreshing: true, data: "rows A", error: null });
+    await act(async () => reloading.reject(new Error("network down")));
+    expect(result.current.error).toBe("Could not load the list.");
+    expect(result.current.refreshError).toBeNull();
+    expect(result.current.refreshing).toBe(false);
+  });
+
   it("shows what an action has confirmed before its refresh, reports it like an answer, and keeps it when the refresh fails", async () => {
     const onData = vi.fn();
     const fetcher = vi.fn().mockResolvedValueOnce("rows A").mockRejectedValueOnce(new Error("network down"));

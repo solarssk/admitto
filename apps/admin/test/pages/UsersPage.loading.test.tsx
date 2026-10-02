@@ -224,9 +224,12 @@ describe("UsersPage refetch", () => {
     renderUsers();
     await screen.findAllByText("user-1@example.com");
 
+    expect(screen.getByRole("tab", { name: /Staff users/ }).textContent).toMatch(/1/);
     search("jane");
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByText("user-1@example.com")).toBeNull();
+    // The label does not keep showing the count of the list that gave way to the error.
+    expect(screen.getByRole("tab", { name: /Staff users/ }).textContent).not.toMatch(/\d/);
   });
 
   it("shows the delete when the refresh fails: the person is gone, the rest of the list stays, and a warning with a Retry that works says it may be older", async () => {
@@ -311,6 +314,30 @@ describe("UsersPage refetch", () => {
     expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
     expect(screen.getAllByText("Jane Renamed").length).toBeGreaterThan(0);
     expect(screen.queryByText("Jane Doe")).toBeNull();
+  });
+
+  it("takes the person off a searched list when the saved change means the search no longer finds them, even if the refresh fails", async () => {
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce(answer([makeStaffUser("user-1", "Jane Doe"), makeStaffUser("user-2", "Jane Roe")], 2))
+      .mockResolvedValueOnce(answer([makeStaffUser("user-1", "Jane Doe"), makeStaffUser("user-2", "Jane Roe")], 2))
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(patchAdminUser).mockResolvedValue({ user: makeStaffUser("user-1", "Joe Zed") });
+    renderUsers();
+    await screen.findAllByText("user-1@example.com");
+    search("jane");
+    await waitFor(() => expect(fetchAdminUsers).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card--busy")).toHaveLength(0));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^Display name/), { target: { value: "Joe Zed" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+    // "Joe Zed" is not found by "jane" (and neither is the email): the person has left the list, and the other stays.
+    expect(screen.queryByText("Joe Zed")).toBeNull();
+    expect(screen.queryByText("user-1@example.com")).toBeNull();
+    expect(screen.getAllByText("Jane Roe").length).toBeGreaterThan(0);
   });
 
   it("takes a revoked role off the person's row too, when the revoke was made on the Role assignments tab and the refresh fails", async () => {

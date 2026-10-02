@@ -453,6 +453,19 @@ describe("RoleAssignmentsTab on the loading standard", () => {
     expect(onCountChange).toHaveBeenLastCalledWith(1);
   });
 
+  it("tells the tab label that there is no number to show while the list has given way to an error", async () => {
+    asSuperadmin();
+    const onCountChange = vi.fn();
+    fetchRoleAssignments.mockResolvedValueOnce(answer([assignment("1", "one@example.com")])).mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(<RoleAssignmentsTab onCountChange={onCountChange} />);
+    await screen.findAllByText("one@example.com");
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
+
+    fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), { target: { value: "jane" } });
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(onCountChange).toHaveBeenLastCalledWith(undefined);
+  });
+
   it("keeps the dialog open, with the reason and a usable button, when the revoke itself fails, and does not refresh a list that did not change", async () => {
     asSuperadmin();
     fetchRoleAssignments.mockResolvedValue(answer([assignment("1", "one@example.com")]));

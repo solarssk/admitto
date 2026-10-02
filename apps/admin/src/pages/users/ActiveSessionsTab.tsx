@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, HintLabel, Tooltip, useToast } from "@admitto/ui";
 import { fetchSessions, revokeAllOperatorSessions, revokeSessionById } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
@@ -51,7 +51,7 @@ const fetchAllSessions = (signal: AbortSignal) => fetchSessions(undefined, signa
 interface ActiveSessionsTabProps {
   /** Reports the loaded (unfiltered) session count up to the parent tab bar, mirroring how
    * "Staff users" already shows its own count next to its tab label. */
-  onCountChange?: (count: number) => void;
+  onCountChange?: (count: number | undefined) => void;
 }
 
 /** Users & roles — Active sessions tab: lists active staff sessions, per-session revoke, and bulk operator-session revoke by event. */
@@ -81,6 +81,10 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     onData: (data) => onCountChange?.(data.sessions.length),
   });
   const sessions = list.data?.sessions ?? NO_SESSIONS;
+  // A list that gave way to an error no longer vouches for its number: the tab label shows none until it is back.
+  useEffect(() => {
+    if (list.error) onCountChange?.(undefined);
+  }, [list.error, onCountChange]);
   // The first load: a placeholder after 200ms (held before, so its room is in the page), kept at least 400ms,
   // "Taking longer than usual" after 8 seconds. A refresh after an action never gets here: the rows stay.
   const gate = useLoadingGate(list.loading);
@@ -135,8 +139,10 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     if (!selectedEventId) return;
     setBulkRevoking(true);
     setBulkRevokeError(null);
+    let revoked = false;
     try {
       const { revokedCount } = await revokeAllOperatorSessions(selectedEventId);
+      revoked = revokedCount > 0;
       addToast(
         `Revoked ${revokedCount} operator session${revokedCount === 1 ? "" : "s"}.`,
         "success",
@@ -150,7 +156,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     } finally {
       setBulkRevoking(false);
     }
-    void list.reload();
+    // The API tells how many sessions it revoked, not which: when it revoked any, the rows on screen may include
+    // them, so a refresh that fails replaces the rows with the error instead of leaving them under the success toast.
+    void list.reload({ keepRowsOnFailure: !revoked });
   };
 
   const selectedEvent = eventOptions.events.find((e) => e.id === selectedEventId);
@@ -417,10 +425,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         open={!!editTarget}
         session={editTarget}
         onClose={() => setEditTarget(null)}
-        onSaved={(deviceLabel) => {
+        onSaved={(sessionId, deviceLabel) => {
           addToast("Device label updated.", "success");
-          // The modal is still open on this session, so `editTarget` is what the label belongs to.
-          if (editTarget) list.update((answer) => withSessionLabel(answer, editTarget.id, deviceLabel));
+          list.update((answer) => withSessionLabel(answer, sessionId, deviceLabel));
           void list.reload();
         }}
       />

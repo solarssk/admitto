@@ -37,13 +37,19 @@ import { useOverscrollBounceGuard } from "../../hooks/useOverscrollBounceGuard.j
 import { formatRelativeTime } from "../../utils/event-dates.js";
 import { isValidEmailFormat } from "../../utils/email.js";
 import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
+import { rolesAfterStagedChanges } from "./list-changes.js";
 import "../../attendees/add-attendee-modal.css";
 
 type UserEditModalProps = {
   open: boolean;
   user: UserListItemDto | null;
   onClose: () => void;
-  onUpdated: (user: UserListItemDto, message?: string) => void;
+  /**
+   * `saved` is the person as the server has them after the action, when the action can tell (a saved profile with its
+   * staged role changes, an enabled or disabled account): the list shows it before it is refreshed. The other
+   * actions leave it out, and the list has only its refresh to go by.
+   */
+  onUpdated: (user: UserListItemDto, message?: string, saved?: UserListItemDto) => void;
   onDeleted: (user: UserListItemDto) => void;
 };
 
@@ -757,8 +763,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         phone_number: phoneNumber.trim() || null,
       });
 
+      const revokedIds = new Set<string>();
+      const grantedRoles: RoleAssignmentDto[] = [];
       for (const assignmentId of pendingRemoveIds) {
         await revokeUserRole(user.id, assignmentId);
+        revokedIds.add(assignmentId);
         setPendingRemoveIds((prev) => {
           const next = new Set(prev);
           next.delete(assignmentId);
@@ -766,15 +775,18 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         });
       }
       for (const add of pendingAdds) {
-        await grantUserRole(user.id, {
+        const { assignment } = await grantUserRole(user.id, {
           role: add.role,
           scope_type: add.scopeType,
           scope_id: add.scopeId,
         });
+        grantedRoles.push({ ...assignment, is_oidc: false });
         setPendingAdds((prev) => prev.filter((p) => p.key !== add.key));
       }
 
-      onUpdated(updated, "Changes saved");
+      // The profile as the PATCH answered it, with the role changes that were made after it (when they are all known).
+      const roles = rolesAfterStagedChanges(updated.roles, revokedIds, grantedRoles);
+      onUpdated(updated, "Changes saved", roles ? { ...updated, roles } : undefined);
       onClose();
     } catch (err) {
       if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
@@ -1023,7 +1035,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     try {
       const { user: updated } = await patchAdminUser(user.id, { is_active: nextActive });
       setDisableConfirmOpen(false);
-      onUpdated(updated, nextActive ? "Account enabled" : "Account disabled. Sessions revoked.");
+      onUpdated(updated, nextActive ? "Account enabled" : "Account disabled. Sessions revoked.", updated);
       onClose();
     } catch (err) {
       setError(operatorApiErrorMessage(err, "Failed to update account status."));

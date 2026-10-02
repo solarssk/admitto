@@ -139,7 +139,14 @@ export function UsersPage() {
         fetchUserStats(signal),
       ]);
       const filtersActive = searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
-      return { users: data.users, total: data.total, stats, filtersActive, pastTheEnd: isPastTheEnd(data.users.length, data.total, page) };
+      return {
+        users: data.users,
+        total: data.total,
+        stats,
+        query: { search: searchQuery, role: roleFilter, status: statusFilter },
+        filtersActive,
+        pastTheEnd: isPastTheEnd(data.users.length, data.total, page),
+      };
     },
     [searchQuery, page, pageSize, roleFilter, statusFilter],
   );
@@ -175,7 +182,7 @@ export function UsersPage() {
   const showNoMatch = listReady && users.length === 0 && !showInitialEmpty;
 
   const tabs = [
-    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: list.data ? total : undefined }] : []),
+    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: list.data && !list.error ? total : undefined }] : []),
     { id: "roles" as const, label: "Role assignments", count: rolesCount },
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
@@ -460,7 +467,7 @@ export function UsersPage() {
       <Card title="Role assignments" hidden={tab !== "roles"}>
         <RoleAssignmentsTab
           onAssignmentsChanged={(revoked) => {
-            list.update((answer) => withRoleRemoved(answer, revoked.user_id, revoked.id));
+            list.update((answer) => withRoleRemoved(answer, revoked.user_id, revoked.id, page));
             void list.reload();
           }}
           onCountChange={setRolesCount}
@@ -498,9 +505,11 @@ export function UsersPage() {
         open={!!editUser}
         user={editUser}
         onClose={() => setEditUser(null)}
-        onUpdated={(user, message) => {
+        onUpdated={(user, message, saved) => {
           addToast(message ?? `${user.display_name ?? user.email} updated`, "success");
-          list.update((answer) => withUserReplaced(answer, user));
+          // Only a person the action has just read back from the server goes into the list as it is: for the rest
+          // (a reset, revoked sessions, a new role type) the row is what the refresh brings.
+          if (saved) list.update((answer) => withUserReplaced(answer, saved, page));
           void list.reload();
         }}
         onDeleted={(user) => {

@@ -167,7 +167,7 @@ type RoleAssignmentsTabProps = {
   onAssignmentsChanged?: (revoked: RoleAssignmentListItemDto) => void;
   /** Reports the total row count so the parent can show it on the tab label, matching Staff
    * users and Active sessions. */
-  onCountChange?: (count: number) => void;
+  onCountChange?: (count: number | undefined) => void;
 };
 
 /** Role assignments tab — per-event/org grants with revoke action. */
@@ -215,6 +215,10 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     onData: (data) => onCountChange?.(data.total),
   });
   const rows = list.data?.rows ?? NO_ROWS;
+  // A list that gave way to an error no longer vouches for its number: the tab label shows none until it is back.
+  useEffect(() => {
+    if (list.error) onCountChange?.(undefined);
+  }, [list.error, onCountChange]);
   const total = list.data?.total ?? 0;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

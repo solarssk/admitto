@@ -821,6 +821,49 @@ describe("ActiveSessionsTab on the loading standard", () => {
     await waitFor(() => expect(screen.queryByText(/Could not refresh this list/)).toBeNull());
   });
 
+  it("replaces the rows with the error, instead of leaving possibly revoked sessions under the success toast, when the refresh after a bulk revoke fails", async () => {
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", userEmail: "one@example.com" })] })
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 1 });
+    const onCountChange = vi.fn();
+    renderWithToast(<ActiveSessionsTab onCountChange={onCountChange} />);
+    await screen.findByRole("table");
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+
+    expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
+    // The tab label does not keep vouching for a number that the revoke has made untrue.
+    expect(onCountChange).toHaveBeenLastCalledWith(undefined);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText("one@example.com")).toBeNull();
+    expect(screen.queryByText(/may show older details/)).toBeNull();
+  });
+
+  it("keeps the rows with a warning when a bulk revoke that revoked nothing is followed by a refresh that fails", async () => {
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", userEmail: "one@example.com" })] })
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 0 });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+
+    expect(await screen.findByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+    expect(screen.getAllByText("one@example.com").length).toBeGreaterThan(0);
+  });
+
   it("shows a saved device label when the refresh after it fails", async () => {
     vi.mocked(fetchSessions)
       .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", deviceLabel: "Old tablet" })] })
