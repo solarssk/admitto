@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   Button,
   Card,
-  EmptyState,
   HintLabel,
   IconButton,
   Input,
@@ -25,7 +24,7 @@ import type {
   SaveNotificationSettingsBody,
 } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../components/notificationSeverity.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -39,6 +38,8 @@ import {
   SecretFieldRow,
   SettingsFooter,
 } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import "../requirements/requirements.css";
 import "./notifications-panel.css";
 
@@ -53,6 +54,13 @@ const EMAIL_CARD_INTRO =
 const EMAIL_RECIPIENT_HINT = "Also emailed on every enabled email alert below.";
 const TYPES_CARD_INTRO =
   "Choose which channels each alert type is allowed to use. Turning a type off for a channel only stops active delivery on that channel - the underlying security event is always recorded in the audit log either way. This is an organisation-wide setting, separate from each admin's own personal notification preferences.";
+
+/** The cards of the panel, for its placeholder: the webhook, the extra recipients and the type matrix. */
+const NOTIFICATIONS_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "webhook", title: "Webhook", intro: 3, fields: 2, columns: 2, controlHeight: 62 },
+  { id: "email", title: "Email", intro: 3, fields: 2, columns: 2, controlHeight: 62, rows: 2, rowHeight: 70 },
+  { id: "types", title: "Notification types", intro: 3, rows: 5, rowHeight: 68 },
+];
 
 const WEBHOOK_KIND_OPTIONS = [
   { id: "discord", label: "Discord", icon: "brand-discord" },
@@ -335,9 +343,6 @@ function EditRecipientModal({
 export function NotificationsPanel() {
   const { addToast } = useToast();
   const [data, setData] = useState<NotificationSettingsResponse | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const showLoading = useDelayedLoading(loading);
   const [saving, setSaving] = useState(false);
   // "webhook" for the Webhook card's own button, or a recipient's email address for that row's
   // button - null when idle. Was a bare boolean; that made the webhook button's own "Sending…"
@@ -361,7 +366,7 @@ export function NotificationsPanel() {
   const savedRef = useRef<NotificationsDraft | null>(null);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
   // Test buttons deliberately stay independently clickable while another target's test is in
-  // flight (see isTestDisabledFor) - but testResult/lastEmailTestAddress are still single, shared
+  // flight (each button is busy for its own target only) - but testResult/lastEmailTestAddress are still single, shared
   // state. Without this guard, an OLDER call that resolves after a NEWER one has already started
   // would overwrite the newer call's still-pending placeholder with its own stale result, which a
   // reader could easily misattribute to the button they most recently clicked (e.g. a webhook
@@ -369,51 +374,37 @@ export function NotificationsPanel() {
   // succeeded, reviewer report). A stale response is simply discarded instead.
   const testRequestSeqRef = useRef(0);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const res = await fetchNotificationSettings(signal);
-      if (signal?.aborted) return;
+  const panel = usePanelLoad({
+    fetch: fetchNotificationSettings,
+    apply: (res) => {
       setData(res);
       const d = draftFrom(res);
       setDraft(d);
       savedRef.current = d;
       setTestResult(null);
-    } catch (err) {
-      if (signal?.aborted) return;
-      setLoadError(operatorApiErrorMessage(err, "Could not load notification settings."));
-      setData(null);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+    },
+    fallback: "Could not load notification settings.",
+  });
 
-  useEffect(() => {
-    const ac = new AbortController();
-    void load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
-
-  if (showLoading && !data) {
+  if (!panel.gate.showContent) {
     return (
-      <Card title="Notifications">
-        <p className="settings-card-intro">Loading…</p>
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading notification settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={NOTIFICATIONS_SKELETON_CARDS}
+      />
     );
   }
 
-  if (loadError && !data) {
+  if (panel.error) {
     return (
-      <EmptyState
-        variant="error"
+      <PanelLoadError
+        cardTitle="Notifications"
         title="Could not load notification settings"
-        description={loadError}
-        action={
-          <Button variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        }
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
       />
     );
   }
@@ -422,11 +413,10 @@ export function NotificationsPanel() {
 
   const saved = savedRef.current!;
   const hasUnsavedChanges = isDirty(draft, saved);
-  // Per-button, not "any test anywhere disables every test button" - the Webhook card's own
-  // button and each recipient row's button are unrelated actions and must stay independently
-  // clickable while a different one is in flight (PO report). Unsaved changes still disable all
-  // of them, since every test exercises the already-saved settings, not the draft on screen.
-  const isTestDisabledFor = (target: string) => testingTarget === target || hasUnsavedChanges;
+  // Every test button is off while there are unsaved changes (a test exercises the already-saved
+  // settings, not the draft on screen); otherwise each is busy (`loading`) for its own target only,
+  // so the Webhook card's button and each recipient row's button stay independently usable while a
+  // different one is in flight (PO report).
   // Narrowed local for nested handlers below - TypeScript doesn't keep `draft`'s null-check
   // narrowing inside a nested function body (only within the enclosing scope it was checked in).
   const currentRecipients = draft.extraEmailRecipients;
@@ -584,7 +574,7 @@ export function NotificationsPanel() {
   }
 
   return (
-    <>
+    <div className="settings-sections at-fade-in">
       <Card title={<HintLabel hint={WEBHOOK_CARD_HINT}>Webhook</HintLabel>} className="event-settings-card">
         <div className="settings-card-stack">
           <p className="settings-card-intro">{WEBHOOK_CARD_INTRO}</p>
@@ -624,12 +614,14 @@ export function NotificationsPanel() {
             <Button
               type="button"
               variant="secondary"
-              disabled={isTestDisabledFor("webhook")}
+              disabled={hasUnsavedChanges}
+              loading={testingTarget === "webhook"}
+              loadingLabel="Sending…"
               onClick={() => void handleTest()}
               icon={<i className="ti ti-send" aria-hidden="true" />}
-              aria-label="Send test (webhook)"
+              aria-label={testingTarget === "webhook" ? "Sending test (webhook)" : "Send test (webhook)"}
             >
-              {testingTarget === "webhook" ? "Sending…" : "Send test"}
+              Send test
             </Button>
           </div>
           {webhookTestResult && (
@@ -754,7 +746,9 @@ export function NotificationsPanel() {
                                   label={`Send test to ${recipient.email}`}
                                   size="sm"
                                   icon={<i className="ti ti-send" aria-hidden="true" />}
-                                  disabled={isTestDisabledFor(recipient.email)}
+                                  disabled={hasUnsavedChanges}
+                                  loading={testingTarget === recipient.email}
+                                  loadingLabel={`Sending test to ${recipient.email}`}
                                   onClick={() => void handleTest(recipient.email)}
                                 />
                               </Tooltip>
@@ -900,6 +894,6 @@ export function NotificationsPanel() {
         onReset={handleReset}
         onSave={() => void handleSave()}
       />
-    </>
+    </div>
   );
 }

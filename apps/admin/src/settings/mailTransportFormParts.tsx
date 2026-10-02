@@ -21,7 +21,6 @@ import type {
   MailSettingsFieldsDto,
   MailTransportTestSendResponse,
 } from "../api/types.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import {
   ADVANCED_TUNING_FIELD_KEYS,
@@ -605,7 +604,7 @@ export function SmtpConnectionCard({
   testResult?: { ok: boolean; message: string } | null;
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
-  const probeDisabled = disabled || testing || testBlocked || !onTestConnection;
+  const probeDisabled = disabled || testBlocked || !onTestConnection;
   const probeReasonId = "smtp-connection-probe-reason";
   return (
     <Card
@@ -657,11 +656,13 @@ export function SmtpConnectionCard({
                     type="button"
                     variant="secondary"
                     disabled={probeDisabled}
+                    loading={testing}
+                    loadingLabel="Testing…"
                     aria-describedby={testBlockedReason ? probeReasonId : undefined}
                     onClick={onTestConnection}
                     icon={<i className="ti ti-plug" aria-hidden="true" />}
                   >
-                    {testing ? "Testing…" : "Test connection"}
+                    Test connection
                   </Button>
                 </Tooltip>
                 {testBlockedReason && (
@@ -985,12 +986,6 @@ function bounceProbeNoticeVariant(
   return "error";
 }
 
-function sendTestButtonLabel(waitingForBounce: boolean, testSending: boolean): string {
-  if (waitingForBounce) return "Waiting for bounce…";
-  if (testSending) return "Sending…";
-  return "Send test";
-}
-
 export function TestResultPreview({ testResult }: Readonly<{ testResult: TestResult }>) {
   const transportLabel = testResult.provider
     ? MAIL_PROVIDER_LABELS[testResult.provider]
@@ -1163,7 +1158,6 @@ export function SendTestEmailCard({
   const bounceBlocked = Boolean(bounceVerifyBlockedReason);
   const waitingForBounce = Boolean(testSending && bounceVerify);
   const bounceSecondsLeft = useBounceWaitCountdown(waitingForBounce);
-  const sendingLabel = sendTestButtonLabel(waitingForBounce, testSending);
 
   return (
     <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
@@ -1199,12 +1193,14 @@ export function SendTestEmailCard({
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={testSending || !!testSendReason}
+                  disabled={!!testSendReason}
+                  loading={testSending}
+                  loadingLabel={waitingForBounce ? "Waiting…" : "Sending…"}
                   aria-describedby={testSendReason ? reasonId : undefined}
                   onClick={onTestSend}
                   icon={<i className="ti ti-mail" aria-hidden="true" />}
                 >
-                  {sendingLabel}
+                  Send test
                 </Button>
               </Tooltip>
             </div>
@@ -1496,14 +1492,11 @@ export function useMailSettingsFormState() {
   const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
   const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
   const [savedDraft, setSavedDraft] = useState<MailDraft>(emptyMailDraft());
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<MailFieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const loadAbortRef = useRef<AbortController | null>(null);
   // Bumped by every draft/secret edit so an in-flight test-send response can detect
   // it's now stale (config changed while the request was in the air) and skip
   // resurrecting a result the operator already moved past.
@@ -1532,11 +1525,6 @@ export function useMailSettingsFormState() {
     setSecrets(updater);
   };
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" text on and off faster than it can register as loading — show it only
-  // once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
-
   return {
     draft,
     setDraft,
@@ -1544,11 +1532,6 @@ export function useMailSettingsFormState() {
     setSecrets,
     savedDraft,
     setSavedDraft,
-    loading,
-    setLoading,
-    showLoading,
-    loadError,
-    setLoadError,
     fieldErrors,
     setFieldErrors,
     saving,
@@ -1559,7 +1542,6 @@ export function useMailSettingsFormState() {
     setTestSending,
     testResult,
     setTestResult,
-    loadAbortRef,
     testGenerationRef,
     updateDraft,
     updateSecrets,

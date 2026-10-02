@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { Card, Button, EmptyState, useToast } from "@admitto/ui";
+import { useCallback, useState } from "react";
+import { Skeleton, useToast } from "@admitto/ui";
 import { fetchMailSettings, saveMailSettings, sendMailTransportTest, probeMailSmtpConnection } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
 import { useConnectionTest } from "../hooks/useConnectionTest.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import {
   buildSaveMailSettingsBody,
   emptySecretEdits,
@@ -27,6 +28,32 @@ import {
   validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
+
+/**
+ * The cards of the panel, for its placeholder: the transport tiles, the sender's fields, the transport's own card (SMTP
+ * connection, Microsoft Graph or Power Automate: which one is not known until the answer is in, so its title is a bar) and
+ * the test-send card. A panel with no transport set is shorter than this; the footer is the last thing on the page.
+ */
+const MAIL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "transport", title: "Mail transport", intro: true, rows: 1, rowHeight: 62 },
+  { id: "sender", title: "Sender", intro: true, fields: 5, columns: 2, controlHeight: 62 },
+  {
+    id: "provider",
+    title: (
+      <>
+        <Skeleton variant="rect" width={140} height={20} />
+        <span className="sr-only">Transport settings</span>
+      </>
+    ),
+    intro: true,
+    fields: 6,
+    columns: 2,
+    controlHeight: 58,
+  },
+  { id: "test", title: "Send test email", intro: true, fields: 1, controlHeight: 42 },
+];
 
 /** Superadmin mail transport configuration panel. */
 export function MailTransportPanel() {
@@ -39,11 +66,6 @@ export function MailTransportPanel() {
     setSecrets,
     savedDraft,
     setSavedDraft,
-    loading,
-    setLoading,
-    showLoading,
-    loadError,
-    setLoadError,
     fieldErrors,
     setFieldErrors,
     saving,
@@ -54,7 +76,6 @@ export function MailTransportPanel() {
     setTestSending,
     testResult,
     setTestResult,
-    loadAbortRef,
     testGenerationRef,
     updateDraft,
     updateSecrets,
@@ -80,32 +101,11 @@ export function MailTransportPanel() {
     [clearProbeResult, setDraft, setSavedDraft, setSecrets, setFieldErrors],
   );
 
-  const loadSettings = useCallback(async () => {
-    loadAbortRef.current?.abort();
-    const ac = new AbortController();
-    loadAbortRef.current = ac;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await fetchMailSettings(ac.signal);
-      if (ac.signal.aborted) return;
-      applyResponse(data);
-    } catch {
-      if (ac.signal.aborted) return;
-      // Inline + Retry only (no toast) — this is an initial-load failure with a
-      // persistent retry control, not a transient action outcome. See AGENTS.md's
-      // toast-vs-inline table.
-      setLoadError("Could not load mail settings.");
-      setApiData(null);
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [applyResponse, loadAbortRef, setLoadError, setLoading]);
-
-  useEffect(() => {
-    void loadSettings();
-    return () => loadAbortRef.current?.abort();
-  }, [loadSettings, loadAbortRef]);
+  const panel = usePanelLoad({
+    fetch: fetchMailSettings,
+    apply: applyResponse,
+    fallback: "Could not load mail settings.",
+  });
 
   const fieldLocked: FieldLocked = (key) => {
     if (!apiData) return false;
@@ -191,33 +191,30 @@ export function MailTransportPanel() {
 
   const provider = draft.provider;
 
-  if (loading) {
-    if (!showLoading) return null;
+  if (!panel.gate.showContent) {
     return (
-      <Card title="Mail transport">
-        <p>Loading mail settings…</p>
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading mail settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={MAIL_SKELETON_CARDS}
+      />
     );
   }
 
-  if (loadError) {
+  if (panel.error) {
     return (
-      <Card title="Mail transport">
-        <EmptyState
-          variant="error"
-          title="Could not load mail settings"
-          description={loadError}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void loadSettings()}>
-              Retry
-            </Button>
-          }
-        />
-      </Card>
+      <PanelLoadError
+        cardTitle="Mail transport"
+        title="Could not load mail settings"
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
     );
   }
 
-  // Successful load always populates apiData; failures always set loadError above.
+  // Successful load always populates apiData; a failed one is the error above.
   /* v8 ignore if */
   if (!apiData) return null;
 
@@ -230,7 +227,7 @@ export function MailTransportPanel() {
   };
 
   return (
-    <>
+    <div className="settings-sections at-fade-in">
       <MailTransportCard
         provider={provider}
         providerOptions={providerOptions}
@@ -298,6 +295,6 @@ export function MailTransportPanel() {
         onReset={handleReset}
         onSave={() => void handleSave()}
       />
-    </>
+    </div>
   );
 }

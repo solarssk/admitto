@@ -88,6 +88,22 @@ describe("usePanelLoad", () => {
     expect(fetchPanel).toHaveBeenCalledTimes(2);
   });
 
+  it("treats an answer that cannot be applied as a failed load, also on a Retry: the error stays, never a blank panel", async () => {
+    const apply = vi.fn(() => {
+      throw new TypeError("unexpected shape");
+    });
+    const { result } = renderHook(() => usePanelLoad({ fetch: async () => "settings", apply, fallback: FALLBACK }));
+    await act(async () => {});
+    expect(result.current.error).toBe(FALLBACK);
+
+    await act(async () => {
+      await result.current.retry();
+    });
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBe(FALLBACK);
+    expect(result.current.gate.showContent).toBe(true);
+  });
+
   it("does nothing on a Retry when the panel has loaded: its form is not touched", async () => {
     const fetchPanel = vi.fn(async () => "settings");
     const apply = vi.fn();

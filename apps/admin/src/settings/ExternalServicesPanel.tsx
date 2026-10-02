@@ -1,6 +1,4 @@
 import {
-  useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -11,7 +9,6 @@ import { useNavigate } from "react-router";
 import {
   Button,
   Card,
-  EmptyState,
   HintLabel,
   Input,
   Notice,
@@ -28,8 +25,16 @@ import {
 import type { ExternalServicesResponse, WeatherProviderId } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
+
+/** The cards of the panel, for its placeholder: Weather and Maps, each with an intro and fields. */
+const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "weather", title: "Weather", intro: true, fields: 1, rows: 1, rowHeight: 24 },
+  { id: "maps", title: "Maps", intro: true, fields: 4, controlHeight: 62 },
+];
 
 const WEATHER_CARD_HINT =
   "Day-of forecast on the events list and public ticket when the event has a map pin.";
@@ -276,9 +281,6 @@ export function ExternalServicesPanel() {
   const { addToast } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState<ExternalServicesResponse | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const showLoading = useDelayedLoading(loading);
   const [saving, setSaving] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
@@ -290,12 +292,9 @@ export function ExternalServicesPanel() {
   const [weatherTesting, setWeatherTesting] = useState(false);
   const [mapsTesting, setMapsTesting] = useState(false);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const res = await fetchExternalServices(signal);
-      if (signal?.aborted) return;
+  const panel = usePanelLoad({
+    fetch: fetchExternalServices,
+    apply: (res) => {
       setData(res);
       const w = weatherDraftFrom(res.weather);
       const m = mapsDraftFrom(res.maps);
@@ -304,20 +303,9 @@ export function ExternalServicesPanel() {
       weatherSavedRef.current = w;
       mapsSavedRef.current = m;
       setValidationErrors([]);
-    } catch (err) {
-      if (signal?.aborted) return;
-      setLoadError(operatorApiErrorMessage(err, "Could not load external services."));
-      setData(null);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    void load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+    },
+    fallback: "Could not load external services.",
+  });
 
   const hasUnsavedChanges = useMemo(() => {
     if (!weatherDraft || !mapsDraft || !weatherSavedRef.current || !mapsSavedRef.current) {
@@ -348,25 +336,25 @@ export function ExternalServicesPanel() {
       !data.weather.contact_configured,
   );
 
-  if (showLoading && !data) {
+  if (!panel.gate.showContent) {
     return (
-      <Card title="External services">
-        <p className="settings-card-intro">Loading…</p>
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading external services"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={EXTERNAL_SKELETON_CARDS}
+      />
     );
   }
 
-  if (loadError && !data) {
+  if (panel.error) {
     return (
-      <EmptyState
-        variant="error"
+      <PanelLoadError
+        cardTitle="External services"
         title="Could not load external services"
-        description={loadError}
-        action={
-          <Button variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        }
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
       />
     );
   }
@@ -494,7 +482,7 @@ export function ExternalServicesPanel() {
   }
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections at-fade-in">
       <Card
         title={<HintLabel hint={WEATHER_CARD_HINT}>Weather</HintLabel>}
         actions={
@@ -540,11 +528,13 @@ export function ExternalServicesPanel() {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={weatherTesting || saving}
+                    disabled={saving}
+                    loading={weatherTesting}
+                    loadingLabel="Testing…"
                     onClick={() => void handleTestWeather()}
                     icon={<i className="ti ti-plug" aria-hidden="true" />}
                   >
-                    {weatherTesting ? "Testing…" : "Test connection"}
+                    Test connection
                   </Button>
                 </div>
               </div>
@@ -683,11 +673,13 @@ export function ExternalServicesPanel() {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={mapsTesting || saving}
+                    disabled={saving}
+                    loading={mapsTesting}
+                    loadingLabel="Testing…"
                     onClick={() => void handleTestMaps()}
                     icon={<i className="ti ti-plug" aria-hidden="true" />}
                   >
-                    {mapsTesting ? "Testing…" : "Test connection"}
+                    Test connection
                   </Button>
                 </div>
                 <p className="at-hint">{MAPS_PROVIDER_DESC}</p>

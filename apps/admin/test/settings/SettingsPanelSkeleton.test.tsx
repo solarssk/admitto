@@ -38,6 +38,25 @@ describe("SettingsPanelSkeleton", () => {
     expect(container.querySelector(".settings-skeleton__footer")).not.toBeNull();
   });
 
+  it("draws an intro of one line as one bar and a longer one as that many lines, the last one shorter", () => {
+    const { container } = render(
+      <SettingsPanelSkeleton
+        label="Loading"
+        held={false}
+        slow={false}
+        cards={[{ id: "one", title: "One", intro: true }, { id: "three", title: "Three", intro: 3 }]}
+        footer={false}
+      />,
+    );
+    const cardBodies = container.querySelectorAll(".settings-card-stack");
+    expect(cardBodies[0]!.querySelectorAll(".at-skeleton")).toHaveLength(1);
+    expect(cardBodies[0]!.querySelector(".settings-skeleton__intro")).toBeNull();
+    const lines = cardBodies[1]!.querySelectorAll(".settings-skeleton__intro .at-skeleton");
+    expect(lines).toHaveLength(3);
+    expect((lines[0] as HTMLElement).style.width).toBe("100%");
+    expect((lines[2] as HTMLElement).style.width).toBe("62%");
+  });
+
   it("leaves out the footer for a panel without one", () => {
     const { container } = render(<SettingsPanelSkeleton label="Loading" held={false} slow={false} cards={cards} footer={false} />);
     expect(container.querySelector(".settings-skeleton__footer")).toBeNull();

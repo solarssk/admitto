@@ -1,6 +1,15 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "react-router";
-import { Card, HintLabel, Button, EmptyState, Notice, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
   fetchEventBounceIngestSettings,
@@ -16,7 +25,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented } from "../components/Segmented.js";
 import { useConnectionTest } from "../hooks/useConnectionTest.js";
-import { whenShown } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import {
   buildSaveMailSettingsBody,
   emptyMailDraft,
@@ -41,6 +50,14 @@ import {
   validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
+
+/** The cards of the card's placeholder: the source switch with the organisation's transport, and the test-send card. */
+const EVENT_MAIL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "transport", title: "Mail transport", intro: true, rows: 1, rowHeight: 68 },
+  { id: "test", title: "Send test email", intro: true, fields: 1, controlHeight: 42 },
+];
 
 const EVENT_MAIL_TRANSPORT_HINT =
   "Choose the mailbox that sends this event's email.";
@@ -169,7 +186,7 @@ export type EventMailSettingsCardHandle = {
  * default; a superadmin or org admin can switch an event to send through its own transport
  * instead (see issue #511). Reuses the same tile-grid/secret-field building blocks as the
  * instance-level Mail transport panel. */
-export const EventMailSettingsCard = forwardRef<
+const EventMailSettingsCardBody = forwardRef<
   EventMailSettingsCardHandle,
   Readonly<{
     eventId: string;
@@ -190,7 +207,7 @@ export const EventMailSettingsCard = forwardRef<
     /** Rendered above Send test email (e.g. Bounce detection on the Event Mailing tab). */
     children?: ReactNode;
   }>
->(function EventMailSettingsCard(
+>(function EventMailSettingsCardBody(
   {
     eventId,
     isArchived,
@@ -219,11 +236,6 @@ export const EventMailSettingsCard = forwardRef<
     setSecrets,
     savedDraft,
     setSavedDraft,
-    loading,
-    setLoading,
-    showLoading,
-    loadError,
-    setLoadError,
     fieldErrors,
     setFieldErrors,
     saving,
@@ -234,7 +246,6 @@ export const EventMailSettingsCard = forwardRef<
     setTestSending,
     testResult,
     setTestResult,
-    loadAbortRef,
     testGenerationRef,
     updateDraft,
     updateSecrets,
@@ -276,29 +287,11 @@ export const EventMailSettingsCard = forwardRef<
     [clearProbeResult, setDraft, setSavedDraft, setSecrets, setFieldErrors],
   );
 
-  const loadSettings = useCallback(async () => {
-    loadAbortRef.current?.abort();
-    const ac = new AbortController();
-    loadAbortRef.current = ac;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await fetchEventMailSettings(eventId, ac.signal);
-      if (ac.signal.aborted) return;
-      applyResponse(data);
-    } catch {
-      if (ac.signal.aborted) return;
-      setLoadError("Could not load mail settings.");
-      setApiData(null);
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, applyResponse, loadAbortRef, setLoadError, setLoading]);
-
-  useEffect(() => {
-    loadSettings().catch(() => {});
-    return () => loadAbortRef.current?.abort();
-  }, [loadSettings, loadAbortRef]);
+  const panel = usePanelLoad({
+    fetch: (signal) => fetchEventMailSettings(eventId, signal),
+    apply: applyResponse,
+    fallback: "Could not load mail settings.",
+  });
 
   useEffect(() => {
     const ac = new AbortController();
@@ -457,39 +450,31 @@ export const EventMailSettingsCard = forwardRef<
     await runConnectionTest(() => probeEventMailSmtpConnection(eventId));
   };
 
-  if (loading) {
-    return whenShown(
-      showLoading,
-      <Card title="Mail transport">
-        <p>Loading mail settings…</p>
-      </Card>,
-    );
-  }
-
-  if (loadError) {
+  if (!panel.gate.showContent) {
     return (
-      <Card title="Mail transport">
-        <EmptyState
-          variant="error"
-          title="Could not load mail settings"
-          description={loadError}
-          action={
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                loadSettings().catch(() => {});
-              }}
-            >
-              Retry
-            </Button>
-          }
-        />
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading mail settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={EVENT_MAIL_SKELETON_CARDS}
+        footer={embeddedFooter && !isArchived}
+      />
     );
   }
 
-  // Successful load always populates apiData; failures always set loadError above.
+  if (panel.error) {
+    return (
+      <PanelLoadError
+        cardTitle="Mail transport"
+        title="Could not load mail settings"
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
+    );
+  }
+
+  // Successful load always populates apiData; a failed one is the error above.
   /* v8 ignore if */
   if (!apiData) return null;
 
@@ -510,7 +495,7 @@ export const EventMailSettingsCard = forwardRef<
   const orgSummaryTrustworthy = !apiData.hasEventOverride;
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections at-fade-in">
       <Card
         title={<HintLabel hint={EVENT_MAIL_TRANSPORT_HINT}>Mail transport</HintLabel>}
         actions={
@@ -679,4 +664,12 @@ export const EventMailSettingsCard = forwardRef<
       />
     </div>
   );
+});
+
+/** The card of one event: a different `eventId` is a fresh card (its own load, form, mode and test state), never the previous event's form with new data under it. */
+export const EventMailSettingsCard = forwardRef<
+  EventMailSettingsCardHandle,
+  ComponentPropsWithoutRef<typeof EventMailSettingsCardBody>
+>(function EventMailSettingsCard(props, ref) {
+  return <EventMailSettingsCardBody key={props.eventId} ref={ref} {...props} />;
 });

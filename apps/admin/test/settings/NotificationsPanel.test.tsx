@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationsPanel } from "../../src/settings/NotificationsPanel.js";
-import { renderWithToastAndRouter } from "../test-utils.js";
+import { hangUntilAborted, renderWithToastAndRouter } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type { NotificationEmailRecipientDto, NotificationSettingsResponse } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -90,22 +91,18 @@ afterEach(() => {
 
 async function renderLoaded() {
   renderWithToastAndRouter(<NotificationsPanel />);
-  await waitFor(() => {
-    expect(screen.queryByText("Notification types")).toBeTruthy();
-  });
+  // Not the "Notification types" title: the placeholder shows it too.
+  await screen.findByRole("button", { name: "Send test (webhook)" });
 }
 
-describe("NotificationsPanel", () => {
-  it("shows the loading placeholder once the fetch has taken a moment", () => {
-    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderWithToastAndRouter(<NotificationsPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
-  });
+describePanelLoading({
+  label: "Loading notification settings",
+  errorTitle: "Could not load notification settings",
+  render: () => renderWithToastAndRouter(<NotificationsPanel />),
+  hang: () => mockFetch.mockImplementationOnce(hangUntilAborted),
+});
 
+describe("NotificationsPanel", () => {
   it("shows an operator-safe message when settings fail to load", async () => {
     mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<NotificationsPanel />);
@@ -114,6 +111,21 @@ describe("NotificationsPanel", () => {
     });
     expect(screen.getByText("Could not load notification settings")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("keeps the error and a busy Retry on screen while it loads again, with no toast", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToastAndRouter(<NotificationsPanel />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    let resolveRetry: (value: NotificationSettingsResponse) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveRetry = resolve)));
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load notification settings")).toBeTruthy();
+    await act(async () => resolveRetry(sampleResponse()));
+    await screen.findByRole("button", { name: "Send test (webhook)" });
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("renders every notification type from the response as a matrix row", async () => {
@@ -370,6 +382,10 @@ describe("NotificationsPanel", () => {
     const webhookButton = screen.getByRole("button", { name: "Send test (webhook)" });
     expect(webhookButton.textContent).toContain("Send test");
     expect(webhookButton).not.toHaveProperty("disabled", true);
+    expect(webhookButton.getAttribute("aria-busy")).toBeNull();
+    const rowButton = screen.getByRole("button", { name: "Sending test to colleague@example.com" });
+    expect(rowButton.getAttribute("aria-busy")).toBe("true");
+    expect(rowButton).not.toHaveProperty("disabled", true);
 
     await act(async () => {
       resolveTest({ webhook: { ok: true, skipped: true }, email: { ok: true }, in_app: { ok: true, skipped: true } });
@@ -395,6 +411,11 @@ describe("NotificationsPanel", () => {
     expect(
       screen.getByRole("button", { name: "Send test to colleague@example.com" }),
     ).not.toHaveProperty("disabled", true);
+    const busyWebhook = screen.getByRole("button", { name: "Sending test (webhook)" });
+    expect(busyWebhook.getAttribute("aria-busy")).toBe("true");
+    expect(busyWebhook).not.toHaveProperty("disabled", true);
+    fireEvent.click(busyWebhook);
+    expect(mockTest).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveTest({ webhook: { ok: true }, email: { ok: true, skipped: true }, in_app: { ok: true } });
@@ -591,9 +612,7 @@ describe("NotificationsPanel", () => {
     });
     mockFetch.mockResolvedValueOnce(sampleResponse());
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => {
-      expect(screen.queryByText("Notification types")).toBeTruthy();
-    });
+    await screen.findByRole("button", { name: "Send test (webhook)" });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
