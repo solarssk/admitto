@@ -42,6 +42,8 @@ export type CropImageModalProps = {
   /** Last zoom level to restore with `initialCrop`. */
   initialZoom?: number;
   onCancel: () => void;
+  /** Throw an `Error` to keep the dialog open and show its message above the buttons. The message is
+   * shown as is, so it must already be operator-safe (see `operatorApiErrorMessage`). */
   onApply: (blob: Blob, meta: CropApplyMeta) => void | Promise<void>;
 };
 

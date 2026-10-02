@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { ApiError } from "../../src/api/client.js";
-import { LogoUploadZone } from "../../src/components/LogoUploadZone.js";
+import { LogoUploadZone, type LogoUploadZoneProps } from "../../src/components/LogoUploadZone.js";
 import { renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -260,21 +260,92 @@ describe("LogoUploadZone", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("shows upload error inline when cropped upload fails after Apply", async () => {
-    mockUploadFile
-      .mockResolvedValueOnce({ url: "/uploads/default/orig.png" })
-      .mockRejectedValueOnce(new ApiError(415, "unsupported_file_type"));
-    renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["x"], "logo.png", { type: "image/png" });
-    fireEvent.change(input, { target: { files: [file] } });
-    await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+  describe("when the cropped upload fails after Apply", () => {
+    const failedApply = async (handlers: Partial<LogoUploadZoneProps> = {}) => {
+      mockUploadFile
+        .mockResolvedValueOnce({ url: "/uploads/default/orig.png" })
+        .mockRejectedValueOnce(new ApiError(415, "unsupported_file_type"));
+      renderWithToast(<LogoUploadZone value="" onChange={() => {}} {...handlers} />);
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(input, {
+        target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+      });
+      const dialog = await screen.findByRole("dialog", { name: "Adjust image" });
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+      await within(dialog).findByRole("alert");
+      return dialog;
+    };
+
+    it("says so inside the crop dialog, not on the zone behind its backdrop", async () => {
+      const onChange = vi.fn();
+      const dialog = await failedApply({ onChange });
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Unsupported file type/);
+      // The zone's own Notice sits under the dialog's backdrop: it must stay empty.
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      // The upload is over: the zone is no longer busy, and nothing was applied or discarded.
+      expect(screen.getByText(/drop logo here/i)).toBeTruthy();
+      expect(screen.queryByText("Uploading logo")).toBeNull();
+      expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+      expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
     });
+
+    it("keeps the session so Apply can be retried, and a retry that works closes the dialog", async () => {
+      const onChange = vi.fn();
+      const onSourceChange = vi.fn();
+      await failedApply({ onChange, onSourceChange });
+
+      mockUploadFile.mockResolvedValueOnce({ url: "/uploads/default/cropped.png" });
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(onChange).toHaveBeenCalledWith("/uploads/default/cropped.png");
+      expect(onSourceChange).toHaveBeenCalledWith(
+        expect.objectContaining({ originalUrl: "/uploads/default/orig.png" }),
+      );
+      // Original once, cropped twice: the retry reuses the original that is already on the server.
+      expect(mockUploadFile).toHaveBeenCalledTimes(3);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("leaves nothing on the zone when the operator cancels instead", async () => {
+      await failedApply();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/orig.png");
+    });
+  });
+
+  it("stays silent in the crop dialog when an Apply that was superseded then fails", async () => {
+    let rejectCropped!: (reason: unknown) => void;
+    mockUploadFile.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectCropped = reject;
+      }),
+    );
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/orig.png"
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    const dialog = await screen.findByRole("dialog", { name: "Adjust image" });
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toMatch(/Unsupported file type/);
+      expect(mockUploadFile).toHaveBeenCalledTimes(1);
     });
+    // The preview of the current logo turning out corrupt supersedes the Apply in flight without
+    // closing the dialog.
+    fireEvent.error(screen.getByAltText("Organisation logo preview"));
+    await act(async () => {
+      rejectCropped(new ApiError(415, "unsupported_file_type"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
   it("rejects non-image MIME before opening crop", async () => {

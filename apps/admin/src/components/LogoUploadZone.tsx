@@ -420,8 +420,10 @@ export function LogoUploadZone({
       }
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;
-      setZoneError(operatorApiErrorMessage(err, "Upload failed."));
-      // Keep cropSession so the operator can retry Apply or Cancel (and cleanup can run).
+      // The crop dialog is open on top of the zone, so a zone Notice would sit behind its backdrop.
+      // Throwing lets CropImageModal say it inside the dialog. Keep cropSession so the operator can
+      // retry Apply or Cancel (and cleanup can run).
+      throw new Error(operatorApiErrorMessage(err, "Upload failed."));
     } finally {
       if (seq === uploadSeqRef.current) setUploading(false);
     }
