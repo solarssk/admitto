@@ -45,6 +45,7 @@ Saving changes the source used for later previews, tests, initial sends, and res
 - **A variable is rejected:** use an exact variable offered by the editor.
 - **The QR does not render:** insert `qr_image_url` with the image chip and preview again.
 - **The Wallet badge does not open a pass when tested:** that is expected. Preview and Send test always show a placeholder link, by design, no matter how this event's Wallet is configured. Only a real message sent to an attendee uses the actual link; see [Template Variables](Template-Variables).
+- **Communication shows grey cards, says "Taking longer than usual", or "Could not load template":** the event's templates are being read from the server. The title and the tabs stay on screen and the open tab shows grey cards of its own shape. If the read fails, or when 30 seconds have passed without an answer, it shows an error with a **Retry** button that stays on screen, busy, until the answer is in; an event you have no access to says so, in its own words. **Save** and **Send test** show a spinner on the button while they work.
 - **Test send fails:** check template validation first, then ask a Superadmin to review the effective mail transport.
 
 ## Related pages
