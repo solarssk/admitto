@@ -990,16 +990,48 @@ describe("AuditLogPanel rendering", () => {
 
     renderAuditPanel();
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Page 2 of 2")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Next" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 });
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 });
+  });
+
+  it("keeps the pager mounted and focused while the next page loads, and ignores a second press", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 75, page: 1, pageSize: 25 });
+    let resolveSecondPage: (response: AuditLogResponse) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementationOnce(
+      () => new Promise<AuditLogResponse>((resolve) => {
+        resolveSecondPage = resolve;
+      }),
+    );
+
+    renderAuditPanel();
+    expect(await screen.findByText("Page 1 of 3")).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    next.focus();
+    fireEvent.click(next);
+    await waitFor(() => expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 }));
+    const requests = vi.mocked(fetchAuditLog).mock.calls.length;
+
+    // The footer is not unmounted while the page loads, so it keeps the focus of the button that was pressed.
+    expect(next.isConnected).toBe(true);
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(document.activeElement).toBe(next);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    expect(next.disabled).toBe(false);
+    fireEvent.click(next);
+    expect(vi.mocked(fetchAuditLog).mock.calls).toHaveLength(requests);
+
+    resolveSecondPage({ entries: [makeAuditEntry()], total: 75, page: 2, pageSize: 25 });
+    expect(await screen.findByText("Page 2 of 3")).toBeTruthy();
+    await waitFor(() => expect(next.hasAttribute("aria-disabled")).toBe(false));
+    expect(document.activeElement).toBe(next);
   });
 
   it("scrolls the panel back into view after paginating", async () => {
@@ -2039,7 +2071,7 @@ describe("AuditLogPanel Security view rendering", () => {
     renderSecurityPanel();
 
     expect(await screen.findByText("Showing 1–25 of 60")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByText("Page 1 of 3")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
@@ -2051,6 +2083,43 @@ describe("AuditLogPanel Security view rendering", () => {
     await waitFor(() =>
       expect(vi.mocked(fetchSecurityAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 }),
     );
+  });
+
+  it("keeps the pager mounted and focused while the next page loads, and ignores a second press", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry()],
+      total: 60,
+      page: 1,
+      pageSize: 25,
+    });
+    let resolveSecondPage: (value: SecurityAuditLogResponse) => void = () => {};
+    vi.mocked(fetchSecurityAuditLog).mockImplementationOnce(
+      () => new Promise<SecurityAuditLogResponse>((resolve) => {
+        resolveSecondPage = resolve;
+      }),
+    );
+
+    renderSecurityPanel();
+    expect(await screen.findByText("Page 1 of 3")).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    next.focus();
+    fireEvent.click(next);
+    await waitFor(() =>
+      expect(vi.mocked(fetchSecurityAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 }),
+    );
+    const requests = vi.mocked(fetchSecurityAuditLog).mock.calls.length;
+
+    expect(next.isConnected).toBe(true);
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(document.activeElement).toBe(next);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(next);
+    expect(vi.mocked(fetchSecurityAuditLog).mock.calls).toHaveLength(requests);
+
+    resolveSecondPage({ entries: [makeSecurityEntry()], total: 60, page: 2, pageSize: 25 });
+    expect(await screen.findByText("Page 2 of 3")).toBeTruthy();
+    await waitFor(() => expect(next.hasAttribute("aria-disabled")).toBe(false));
+    expect(document.activeElement).toBe(next);
   });
 
   it("falls back to the raw event type and a neutral badge tone for an unrecognized event type", async () => {

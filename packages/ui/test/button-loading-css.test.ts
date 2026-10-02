@@ -26,6 +26,24 @@ describe("Button loading CSS (jsdom does not load the stylesheet, so the source 
     expect(rule).toMatch(/cursor:\s*progress/);
   });
 
+  it("still dims an aria-disabled button that is not busy, with the not-allowed cursor, exactly like a disabled one (a pager's edge button)", () => {
+    const rule = declarationsOf('.at-btn:disabled, .at-btn[aria-disabled="true"]');
+    expect(rule).toMatch(/opacity:\s*0\.5/);
+    expect(rule).toMatch(/cursor:\s*not-allowed/);
+  });
+
+  it("shows a focused aria-disabled button, which is dimmed, the same ring as any focused button: ring alpha times dimming equals the token's", () => {
+    const colors = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/styles/tokens/colors.css"), "utf8");
+    const tokenAlpha = Number(/--focus-ring:\s*rgba\(var\(--at-blue-rgb\),\s*([\d.]+)\)/.exec(colors)?.[1]);
+    const ringRule = declarationsOf('.at-btn[aria-disabled="true"]:not([aria-busy="true"]):focus-visible');
+    const ringAlpha = Number(/rgba\(var\(--at-blue-rgb\),\s*([\d.]+)\)/.exec(ringRule)?.[1]);
+    const dimming = Number(/opacity:\s*([\d.]+)/.exec(declarationsOf('.at-btn:disabled, .at-btn[aria-disabled="true"]'))?.[1]);
+    expect(tokenAlpha).toBeGreaterThan(0);
+    expect(ringAlpha * dimming).toBeCloseTo(tokenAlpha, 5);
+    // The ring keeps the token's width, and a busy button (not dimmed) is not given the stronger one.
+    expect(ringRule).toContain("var(--ring-width)");
+  });
+
   it("gives no hover or active colour to a button that is aria-disabled (busy), only to one that is neither disabled nor busy", () => {
     const rules = css.split("\n").filter((line) => /^\.at-btn--[a-z]+:(hover|active)/.test(line));
     expect(rules.length).toBeGreaterThan(0);

@@ -713,10 +713,10 @@ describe("ActiveSessionsTab pagination", () => {
     await screen.findByRole("table");
     expect(screen.getByText("Showing 1–1 of 1")).toBeTruthy();
     expect(screen.getByText("Page 1 of 1")).toBeTruthy();
-    const previousButton = screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement;
-    const nextButton = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
-    expect(previousButton.disabled).toBe(true);
-    expect(nextButton.disabled).toBe(true);
+    const previousButton = screen.getByRole("button", { name: "Previous" });
+    const nextButton = screen.getByRole("button", { name: "Next" });
+    expect(previousButton.getAttribute("aria-disabled")).toBe("true");
+    expect(nextButton.getAttribute("aria-disabled")).toBe("true");
   });
 });
 

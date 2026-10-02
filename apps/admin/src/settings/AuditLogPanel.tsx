@@ -1562,7 +1562,10 @@ function LogView({
 
       {listContent}
 
-      {!loading && !error && total > 0 && (
+      {/* Stays mounted while a page loads (the rows stay on screen too, dimmed), so the button that was just pressed
+          keeps keyboard focus; `busy` makes it do nothing until the answer is in. `total` is still the previous
+          answer's during a refetch, and 0 on a first load or after a failure, which is what hides it then. */}
+      {!error && total > 0 && (
         <PaginationFooter
           idPrefix={idPrefix}
           page={page}
@@ -1570,6 +1573,7 @@ function LogView({
           totalPages={totalPages}
           totalRows={total}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
+          busy={loading}
           onPageSizeChange={(size) => {
             setPageSize(size);
             setPage(1);

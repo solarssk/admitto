@@ -18,6 +18,11 @@
 .at-btn:hover { text-decoration: none; }
 .at-btn:focus-visible { outline: none; box-shadow: var(--ring); }
 .at-btn:disabled, .at-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+/* The 0.5 above dims the whole button, focus ring included, so a button that is off but still focusable (a pager's
+   Previous on the first page) would show half a ring. Twice the ring colour's alpha gives it the ring of any other
+   focused button (`--focus-ring` is rgba(var(--at-blue-rgb), 0.25); button-loading-css.test.ts keeps the two in step).
+   A busy button is not dimmed (opacity 1 below), so it keeps the plain ring. */
+.at-btn[aria-disabled="true"]:not([aria-busy="true"]):focus-visible { box-shadow: 0 0 0 var(--ring-width) rgba(var(--at-blue-rgb), 0.5); }
 .at-btn .at-btn__icon { font-size: 1.05em; line-height: 0; }
 
 /* Loading (`<Button loading>`): `aria-disabled` (clicks are ignored, the button keeps its focus) but not

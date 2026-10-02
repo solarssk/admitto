@@ -17,6 +17,123 @@ describe("Button", () => {
     expect(btn.hasAttribute("aria-busy")).toBe(false);
   });
 
+  describe("aria-disabled (off, but still focusable)", () => {
+    it("is aria-disabled and not `disabled`, `aria-busy` or busy-looking, and ignores clicks", () => {
+      const onClick = vi.fn();
+      render(
+        <Button aria-disabled onClick={onClick}>
+          Next
+        </Button>,
+      );
+      const btn = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
+      expect(btn.disabled).toBe(false);
+      expect(btn.hasAttribute("aria-busy")).toBe(false);
+      expect(btn.className).not.toContain("at-btn--loading");
+
+      fireEvent.click(btn);
+
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it("also takes the string form", () => {
+      const onClick = vi.fn();
+      render(
+        <Button aria-disabled="true" onClick={onClick}>
+          Next
+        </Button>,
+      );
+      const btn = screen.getByRole("button", { name: "Next" });
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(btn);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it("swallows the click whole: it does not submit its form or reach a clickable parent", () => {
+      const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+      const onParentClick = vi.fn();
+      render(
+        <form onSubmit={onSubmit}>
+          <div onClick={onParentClick} role="presentation">
+            <Button type="submit" aria-disabled>
+              Save
+            </Button>
+          </div>
+        </form>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onParentClick).not.toHaveBeenCalled();
+    });
+
+    it("keeps keyboard focus when it turns aria-disabled, and gives the click back when it is off again", () => {
+      const onClick = vi.fn();
+      const { rerender } = render(
+        <Button aria-disabled={false} onClick={onClick}>
+          Next
+        </Button>,
+      );
+      const btn = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+      btn.focus();
+      expect(document.activeElement).toBe(btn);
+
+      rerender(
+        <Button aria-disabled onClick={onClick}>
+          Next
+        </Button>,
+      );
+      expect(document.activeElement).toBe(btn);
+      fireEvent.click(btn);
+      expect(onClick).not.toHaveBeenCalled();
+
+      rerender(
+        <Button aria-disabled={false} onClick={onClick}>
+          Next
+        </Button>,
+      );
+      expect(document.activeElement).toBe(btn);
+      expect(btn.hasAttribute("aria-disabled")).toBe(false);
+      fireEvent.click(btn);
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves no attribute and still clicks for `aria-disabled={false}` and for `undefined`", () => {
+      const onClick = vi.fn();
+      const { rerender } = render(
+        <Button aria-disabled={false} onClick={onClick}>
+          Next
+        </Button>,
+      );
+      expect(screen.getByRole("button", { name: "Next" }).hasAttribute("aria-disabled")).toBe(false);
+
+      rerender(
+        <Button aria-disabled={undefined} onClick={onClick}>
+          Next
+        </Button>,
+      );
+      const btn = screen.getByRole("button", { name: "Next" });
+      expect(btn.hasAttribute("aria-disabled")).toBe(false);
+      fireEvent.click(btn);
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let a stray `aria-disabled` replace the attribute of a busy button", () => {
+      const onClick = vi.fn();
+      render(
+        <Button loading aria-disabled={undefined} onClick={onClick}>
+          Save
+        </Button>,
+      );
+      const btn = screen.getByRole("button", { name: "Save" });
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
+      expect(btn.getAttribute("aria-busy")).toBe("true");
+      fireEvent.click(btn);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+  });
+
   describe("loading", () => {
     it("is aria-busy and aria-disabled, and ignores clicks (no double fire)", () => {
       const onClick = vi.fn();
