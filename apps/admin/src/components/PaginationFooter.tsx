@@ -9,6 +9,10 @@ export type PaginationFooterProps = {
   totalPages: number;
   totalRows: number;
   pageSizeOptions: readonly number[];
+  /** A page is being fetched: Previous and Next do nothing for as long as it runs, but keep keyboard focus. A list that is
+   * fetched page by page keeps this footer mounted while it loads (and passes this) instead of hiding it, because a footer
+   * that unmounts takes the focus of the button that was just pressed with it. */
+  busy?: boolean;
   onPageSizeChange: (pageSize: number) => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -42,6 +46,7 @@ export function PaginationFooter({
   totalPages,
   totalRows,
   pageSizeOptions,
+  busy = false,
   onPageSizeChange,
   onPrevious,
   onNext,
@@ -74,13 +79,13 @@ export function PaginationFooter({
         {/* aria-disabled, never disabled: the button that was just pressed becomes the edge one on the same
             commit (Next on the second-to-last page), and a browser drops the focus of a button that turns
             disabled. Button swallows the click of an aria-disabled button, so nothing happens at the edge. */}
-        <Button type="button" variant="secondary" size="sm" aria-disabled={page <= 1} onClick={onPrevious}>
+        <Button type="button" variant="secondary" size="sm" aria-disabled={page <= 1 || busy} onClick={onPrevious}>
           Previous
         </Button>
         <span>
           Page {page} of {totalPages}
         </span>
-        <Button type="button" variant="secondary" size="sm" aria-disabled={page >= totalPages} onClick={onNext}>
+        <Button type="button" variant="secondary" size="sm" aria-disabled={page >= totalPages || busy} onClick={onNext}>
           Next
         </Button>
       </div>

@@ -16,7 +16,13 @@ const pagerProps = {
   onPageSizeChange: vi.fn(),
 } as const;
 
-function pager(props: { page: number; totalPages: number; onPrevious?: () => void; onNext?: () => void }) {
+function pager(props: {
+  page: number;
+  totalPages: number;
+  busy?: boolean;
+  onPrevious?: () => void;
+  onNext?: () => void;
+}) {
   return <PaginationFooter {...pagerProps} onPrevious={vi.fn()} onNext={vi.fn()} {...props} />;
 }
 
@@ -88,6 +94,33 @@ describe("PaginationFooter edge buttons", () => {
     }
     expect(onPrevious).not.toHaveBeenCalled();
     expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it("is inert while a page loads (busy), on a middle page too, and keeps focus while it is", () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    const { rerender } = render(pager({ page: 2, totalPages: 3, onPrevious, onNext }));
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    next.focus();
+
+    rerender(pager({ page: 2, totalPages: 3, busy: true, onPrevious, onNext }));
+
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(document.activeElement).toBe(next);
+    for (const name of ["Previous", "Next"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+    }
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+
+    rerender(pager({ page: 3, totalPages: 3, busy: false, onPrevious, onNext }));
+
+    expect(document.activeElement).toBe(next);
+    expect(screen.getByRole("button", { name: "Previous" }).hasAttribute("aria-disabled")).toBe(false);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("leaves both buttons live on a middle page", () => {
