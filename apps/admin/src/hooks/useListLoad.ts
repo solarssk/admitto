@@ -3,18 +3,33 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { loadWithTimeout, rejectOnAbort, type LoadTimeout } from "../utils/load-timeout.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 
+/**
+ * How a list is read: the signal that ends the request, and, for a tick of `poll`, `{ poll: true }`, for a fetcher that has
+ * something to do only for a read somebody waits for (handing the browser to the login page on a 401, which a missed tick
+ * must not do).
+ */
+export type ListFetcher<T> = (signal: AbortSignal, context?: { poll: boolean }) => Promise<T>;
+
 export interface ListLoadOptions<T> {
   /**
    * Reads the list for the current query. Memoise it (`useCallback`) over everything the query depends on: a new
-   * function is a new query (a search, a filter, another page), and the previous one is abandoned.
+   * function is a new query (a search, a filter, another page), and the previous one is abandoned. A tick of `poll` passes
+   * `{ poll: true }` as the second argument, for a fetcher that has something to do only for a read somebody waits for
+   * (handing the browser to the login page on a 401, which a missed tick must not do).
    */
-  fetcher: (signal: AbortSignal) => Promise<T>;
+  fetcher: ListFetcher<T>;
   /** The text for a failure the server gave no text for. */
   fallback: string;
   /** False when there is nothing to load for this viewer: nothing runs, and nothing is shown loading. */
   enabled?: boolean;
   /** Called with the newest answer, and only with that. */
   onData?: (data: T) => void;
+  /**
+   * Called with the error of a load, a changed query or a `reload` that somebody waits for and that failed, not with the
+   * failure of a tick of `poll` and not with one that was abandoned. For what the page does besides saying it, such as
+   * telling the connection state.
+   */
+  onError?: (error: unknown) => void;
 }
 
 export interface ListLoad<T> {
@@ -43,6 +58,15 @@ export interface ListLoad<T> {
    * the `reload` supersedes any request still on its way. Does nothing before the first answer.
    */
   update: (change: (data: T) => T) => void;
+  /**
+   * One tick of a live list: the same query again, with no sign of it on screen (no `refreshing`, nothing dimmed). It
+   * starts nothing while another request of the list is on its way (a tick never takes over from a search, a page or a
+   * Retry that somebody is waiting for), nor while the previous tick is (a slow answer is applied when it comes, never
+   * dropped for a newer tick, and requests do not pile up), a tick that fails changes nothing (a missed one is not an error
+   * over rows that are on screen, and the next one tries again), and an answer replaces the one on screen, also the error of
+   * a load that failed, so a list that could not be read comes back by itself. Call it from an interval while the list is live.
+   */
+  poll: () => Promise<void>;
 }
 
 const REFRESH_FAILED = "Could not refresh this list, so it may show older details.";
@@ -51,13 +75,18 @@ const REFRESH_HINT = "Check your connection and try again.";
 /** What one run reads and writes. Everything in it is stable for one `fetcher`, so a run needs no closure of its own. */
 interface RunContext<T> {
   enabled: boolean;
-  fetcher: (signal: AbortSignal) => Promise<T>;
+  fetcher: ListFetcher<T>;
   fallback: string;
   loadedRef: { current: boolean };
   /** The fetcher whose answer is the data on screen: the data answers the current query only when it is `fetcher`. */
-  answeredRef: { current: ((signal: AbortSignal) => Promise<T>) | null };
+  answeredRef: { current: ListFetcher<T> | null };
   requestRef: { current: number };
+  /** How many loads, changed queries and reloads (not ticks of `poll`) are on their way: a tick waits for the next one. */
+  pendingRef: { current: number };
+  /** A tick of `poll` is on its way: the next one waits for it. */
+  tickingRef: { current: boolean };
   onDataRef: { current: ((data: T) => void) | undefined };
+  onErrorRef: { current: ((error: unknown) => void) | undefined };
   setData: (data: T) => void;
   setLoading: (value: boolean) => void;
   setRefreshing: (value: boolean) => void;
@@ -84,6 +113,7 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
   const mine = ++ctx.requestRef.current;
   const superseded = () => signal?.aborted || mine !== ctx.requestRef.current;
   const limit = loadWithTimeout(signal);
+  ctx.pendingRef.current += 1;
   try {
     const next = await rejectOnAbort(ctx.fetcher(limit.signal), limit.signal);
     if (superseded()) return;
@@ -96,6 +126,7 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
     ctx.answeredRef.current = ctx.fetcher;
   } catch (err) {
     if (superseded()) return;
+    ctx.onErrorRef.current?.(err);
     // A reload of the list on screen keeps it: the warning says it may be older, with a hint instead of "could not load".
     // Only when what is on screen answers this query: a reload that took over from a changed query still on its way
     // finds the rows of the previous query, and those no longer answer what was asked.
@@ -110,11 +141,40 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
       ctx.setError(message);
     }
   } finally {
+    ctx.pendingRef.current -= 1;
     limit.done();
     if (!superseded()) {
       ctx.setLoading(false);
       ctx.setRefreshing(false);
     }
+  }
+}
+
+/**
+ * One tick of a live list (see `ListLoad.poll`). It must not take over from a request somebody waits for, so it does
+ * nothing while one is on its way, nor while the previous tick is (it would make that one stale and starve the list when
+ * the server answers slower than the interval); a failure is ignored, and the request is abandoned like any other (after 30
+ * seconds, when the query changes, when the page is left).
+ */
+async function runListPoll<T>(ctx: RunContext<T>, signal?: AbortSignal): Promise<void> {
+  if (!ctx.enabled || ctx.pendingRef.current > 0 || ctx.tickingRef.current) return;
+  ctx.tickingRef.current = true;
+  const mine = ++ctx.requestRef.current;
+  const limit = loadWithTimeout(signal);
+  try {
+    const next = await rejectOnAbort(ctx.fetcher(limit.signal, { poll: true }), limit.signal);
+    if (signal?.aborted || mine !== ctx.requestRef.current) return;
+    ctx.setData(next);
+    ctx.setError(null);
+    ctx.setRefreshError(null);
+    ctx.onDataRef.current?.(next);
+    ctx.loadedRef.current = true;
+    ctx.answeredRef.current = ctx.fetcher;
+  } catch {
+    // A tick that fails changes nothing: the rows on screen stay, and the next tick asks again.
+  } finally {
+    ctx.tickingRef.current = false;
+    limit.done();
   }
 }
 
@@ -126,7 +186,7 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
  * older list never replaces a newer one. A failed `reload` keeps the list and says so (`refreshError`); a failed
  * query replaces it with `error`, because what is on screen no longer answers what was asked.
  */
-export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: ListLoadOptions<T>): ListLoad<T> {
+export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onError }: ListLoadOptions<T>): ListLoad<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
@@ -134,13 +194,17 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const loadedRef = useRef(false);
   const dataRef = useRef<T | null>(null);
-  const answeredRef = useRef<((signal: AbortSignal) => Promise<T>) | null>(null);
+  const answeredRef = useRef<ListFetcher<T> | null>(null);
   const requestRef = useRef(0);
+  const pendingRef = useRef(0);
+  const tickingRef = useRef(false);
   // Aborted when the query changes or the page is left, so a reload started by an action follows the same life.
   const lifeRef = useRef<AbortController | null>(null);
   const onDataRef = useRef(onData);
+  const onErrorRef = useRef(onError);
   useEffect(() => {
     onDataRef.current = onData;
+    onErrorRef.current = onError;
   });
 
   const setAnswer = useCallback((next: T) => {
@@ -149,13 +213,26 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   }, []);
 
   const run = useCallback(
-    (kind: "query" | "reload", signal?: AbortSignal, keepRows?: boolean) =>
-      runListLoad(
-        { enabled, fetcher, fallback, loadedRef, answeredRef, requestRef, onDataRef, setData: setAnswer, setLoading, setRefreshing, setError, setRefreshError },
-        kind,
-        signal,
-        keepRows,
-      ),
+    (kind: "query" | "reload" | "poll", signal?: AbortSignal, keepRows?: boolean) => {
+      const ctx: RunContext<T> = {
+        enabled,
+        fetcher,
+        fallback,
+        loadedRef,
+        answeredRef,
+        requestRef,
+        pendingRef,
+        tickingRef,
+        onDataRef,
+        onErrorRef,
+        setData: setAnswer,
+        setLoading,
+        setRefreshing,
+        setError,
+        setRefreshError,
+      };
+      return kind === "poll" ? runListPoll(ctx, signal) : runListLoad(ctx, kind, signal, keepRows);
+    },
     [enabled, fetcher, fallback, setAnswer],
   );
 
@@ -188,5 +265,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
     [setAnswer],
   );
 
-  return { data, loading, refreshing, error, refreshError, enabled, reload, update };
+  const poll = useCallback(() => runRef.current("poll", lifeRef.current?.signal), []);
+
+  return { data, loading, refreshing, error, refreshError, enabled, reload, update, poll };
 }

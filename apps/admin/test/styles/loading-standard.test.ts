@@ -51,7 +51,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/staff.css": 1,
   },
   "bare-loading-text": {
-    "apps/admin/src/communication/DeliveryLogTable.tsx": 1,
     "apps/admin/src/pages/CustomFieldsReportsTab.tsx": 1,
     "apps/admin/src/pages/EventOverviewPage.tsx": 4,
     "apps/admin/src/pages/ImportPage.tsx": 1,
@@ -63,7 +62,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/requirements/EventCustomFieldsCard.tsx": 1,
   },
   "busy-label-swap": {
-    "apps/admin/src/communication/DeliveryLogTable.tsx": 1,
     "apps/admin/src/events/CreateEventModal.tsx": 1,
     "apps/admin/src/pages/DeviceLabelStep.tsx": 1,
     "apps/admin/src/pages/EventOverviewPage.tsx": 3,

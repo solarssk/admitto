@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Button, Card, EmptyState, HintLabel, Input, StatusBadge, useToast } from "@admitto/ui";
 import { dismissBounce, exportDeliveryLog, resendTicket } from "../api/client.js";
@@ -6,21 +6,20 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, EventDeliveriesListParams, MailTemplateListItem } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { deliveryLocalTime, deliveryStatusBadgeKey, formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import { DeliveryDetailsModal } from "./DeliveryDetailsModal.js";
+import { DeliveryLogSkeleton } from "./DeliveryLogSkeleton.js";
 import { DeliveryRowMenu } from "./DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
+import { DELIVERY_PAGE_SIZE_OPTIONS, type DeliveryLog } from "./useDeliveryLog.js";
 import "./communication.css";
 
-export const DELIVERY_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
-export const DELIVERY_PAGE_SIZE_DEFAULT = 25;
-/** Matches SystemLogsPanel's own POLL_INTERVAL_MS by convention (not by import - a shared
- * numeric constant would couple this feature's polling cadence to an unrelated settings page's
- * own tuning). */
-export const DELIVERY_POLL_INTERVAL_MS = 1750;
+const NO_ROWS: DeliveryDto[] = [];
 
 const SENT_QUEUED_TIME_HINT =
   "Top: when this happened, in UTC. Below: the same moment in the local time of whoever's browser triggered the send, when known.";
@@ -145,10 +144,8 @@ function DeliveryToolbar({
 interface DeliveryListContentProps {
   eventId: string;
   deliveries: DeliveryDto[];
-  loading: boolean;
-  showLoadingText: boolean;
-  error: string | null;
-  isUnfilteredEmpty: boolean;
+  /** Whether the answer on screen was asked with a filter or a search: it says which empty state is true. */
+  filtersActive: boolean;
   isDesktop: boolean;
   onViewSentMessage: (row: DeliveryDto) => void;
   onViewDetails: (row: DeliveryDto) => void;
@@ -160,18 +157,15 @@ interface DeliveryListContentProps {
   /** Delivery ids with an in-flight Resend/Dismiss - greys out both actions until the request
    * settles (then either resolvedBounceRowIds takes over, or this clears on failure). */
   pendingBounceRowIds: Set<string>;
-  onRetry: () => void;
 }
 
-/** Loading/error/empty ladder + the responsive desktop-table / mobile-card split - same shape as
- * AttendeesTable's AttendeesListContent and Reports' AdmissionLog. */
+/** Empty states + the responsive desktop-table / mobile-card split - same shape as
+ * AttendeesTable's AttendeesListContent and Reports' AdmissionLog. Its loading and failed states are the tab's own
+ * (`DeliveryLogTab`), since they replace the list. */
 function DeliveryListContent({
   eventId,
   deliveries,
-  loading,
-  showLoadingText,
-  error,
-  isUnfilteredEmpty,
+  filtersActive,
   isDesktop,
   onViewSentMessage,
   onViewDetails,
@@ -179,37 +173,19 @@ function DeliveryListContent({
   onDismiss,
   resolvedBounceRowIds,
   pendingBounceRowIds,
-  onRetry,
 }: Readonly<DeliveryListContentProps>) {
-  if (loading && deliveries.length === 0) {
-    return whenShown(showLoadingText, <div className="communication-empty">Loading deliveries…</div>);
-  }
-  if (error) {
-    return (
-      <EmptyState
-        variant="error"
-        title="Could not load deliveries"
-        description={error}
-        action={
-          <Button type="button" variant="secondary" onClick={onRetry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
   if (deliveries.length === 0) {
-    return isUnfilteredEmpty ? (
-      <EmptyState
-        icon={<i className="ti ti-mail-off" aria-hidden="true" />}
-        title="No messages sent yet"
-        description="Ticket emails and resends will appear here once one is sent."
-      />
-    ) : (
+    return filtersActive ? (
       <EmptyState
         icon={<i className="ti ti-search-off" aria-hidden="true" />}
         title="No matches"
         description="Try a different search, or clear your filters."
+      />
+    ) : (
+      <EmptyState
+        icon={<i className="ti ti-mail-off" aria-hidden="true" />}
+        title="No messages sent yet"
+        description="Ticket emails and resends will appear here once one is sent."
       />
     );
   }
@@ -327,32 +303,9 @@ function DeliveryListContent({
 export interface DeliveryLogTabProps {
   eventId: string;
   eventTimezone: string;
-  deliveries: DeliveryDto[];
-  deliveryTotal: number;
-  deliveriesLoading: boolean;
-  deliveriesError: string | null;
+  /** The query, the list that follows the loading standard and what keeps it live (`useDeliveryLog`). */
+  log: DeliveryLog;
   templates: MailTemplateListItem[];
-  page: number;
-  onPageChange: (page: number) => void;
-  pageSize: number;
-  onPageSizeChange: (size: number) => void;
-  status: NonNullable<EventDeliveriesListParams["status"]>;
-  onStatusChange: (value: NonNullable<EventDeliveriesListParams["status"]>) => void;
-  purpose: NonNullable<EventDeliveriesListParams["purpose"]>;
-  onPurposeChange: (value: NonNullable<EventDeliveriesListParams["purpose"]>) => void;
-  templateId: string;
-  onTemplateIdChange: (value: string) => void;
-  searchInput: string;
-  /** Debounced value of `searchInput` - what the on-screen rows were actually fetched with.
-   * Export uses this (not the live `searchInput`) so a click right after typing can't download a
-   * CSV for a stale query the table itself hasn't caught up to yet. */
-  search: string;
-  onSearchChange: (value: string) => void;
-  live: boolean;
-  onLiveChange: (live: boolean) => void;
-  hasActiveFilters: boolean;
-  onClearFilters: () => void;
-  onRetry: () => void;
   /** Kept by CommunicationPage so a completed bounce action remains disabled after the log tab
    * unmounts while the operator visits another tab. */
   resolvedBounceRowIds: Set<string>;
@@ -373,50 +326,55 @@ const DELIVERY_LOG_HINT =
 /** Delivery log tab: search + filters toolbar, the deliveries table/cards (with its own
  * loading/error/empty states), pagination footer, and the two row-menu-triggered modals. Owns
  * which (if any) delivery's modal is open itself, same as EventCustomFieldsCard owning its own
- * edit-modal state - the page only needs to hand it data plus filter/page change callbacks. */
+ * edit-modal state - the page only needs to hand it the log (query, list, live) plus the bounce bookkeeping.
+ *
+ * The first read is a placeholder of the table's own shape (held for 200ms, "Taking longer than usual" after 8 seconds, 30
+ * seconds at most), a failure is an error with a busy Retry, and a later page, filter or search keeps the rows on screen in a
+ * `RefetchRegion` (the live refresh does not even dim them). */
 export function DeliveryLogTab({
   eventId,
   eventTimezone,
-  deliveries,
-  deliveryTotal,
-  deliveriesLoading,
-  deliveriesError,
+  log,
   templates,
-  page,
-  onPageChange,
-  pageSize,
-  onPageSizeChange,
-  status,
-  onStatusChange,
-  purpose,
-  onPurposeChange,
-  templateId,
-  onTemplateIdChange,
-  searchInput,
-  search,
-  onSearchChange,
-  live,
-  onLiveChange,
-  hasActiveFilters,
-  onClearFilters,
-  onRetry,
   resolvedBounceRowIds,
   onBounceRowResolved,
   pendingBounceRowIds,
   onBounceRowPendingChange,
   onBounceHandled,
 }: Readonly<DeliveryLogTabProps>) {
+  const {
+    list,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    status,
+    setStatus,
+    purpose,
+    setPurpose,
+    templateId,
+    setTemplateId,
+    searchInput,
+    setSearchInput,
+    search,
+    live,
+    setLive,
+    hasActiveFilters,
+    clearFilters,
+  } = log;
   const isDesktop = useIsDesktop();
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const [exporting, setExporting] = useState(false);
   const { addToast } = useToast();
-  const showLoadingText = useDelayedLoading(deliveriesLoading && deliveries.length === 0);
+  const answer = list.data;
+  // An answer with no rows although there are some (its page is gone) is waited out like a first load while the page steps back.
+  const card = useCardLoad(list, { alsoWaiting: Boolean(answer?.pastTheEnd) && !list.error });
+  const total = answer?.total ?? 0;
+  const rows = answer?.items ?? NO_ROWS;
 
-  const totalPages = Math.max(1, Math.ceil(deliveryTotal / pageSize));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
-  const isUnfilteredEmpty =
-    searchInput.trim() === "" && status === "all" && purpose === "all" && templateId === "all";
 
   async function handleExport() {
     setExporting(true);
@@ -461,6 +419,37 @@ export function DeliveryLogTab({
     }
   }
 
+  let body: ReactNode;
+  if (!card.gate.showContent) {
+    body = <DeliveryLogSkeleton held={!card.gate.showIndicator} slow={card.slow} desktop={isDesktop} />;
+  } else if (card.failure.error) {
+    body = (
+      <RetryEmptyState
+        title="Could not load deliveries"
+        message={card.failure.error}
+        retrying={card.failure.retrying}
+        onRetry={card.failure.retry}
+      />
+    );
+  } else {
+    body = (
+      <RefetchRegion refreshing={list.refreshing} label="Refreshing the delivery log">
+        <DeliveryListContent
+          eventId={eventId}
+          deliveries={rows}
+          filtersActive={Boolean(answer?.filtersActive)}
+          isDesktop={isDesktop}
+          onViewSentMessage={setSentMessageRow}
+          onViewDetails={setDetailsRow}
+          onResend={(row) => void handleResend(row)}
+          onDismiss={(row) => void handleDismiss(row)}
+          resolvedBounceRowIds={resolvedBounceRowIds}
+          pendingBounceRowIds={pendingBounceRowIds}
+        />
+      </RefetchRegion>
+    );
+  }
+
   return (
     <Card
       padded={false}
@@ -468,17 +457,17 @@ export function DeliveryLogTab({
       title={<HintLabel hint={DELIVERY_LOG_HINT}>Delivery log</HintLabel>}
       actions={
         <>
-          <Button type="button" variant="secondary" size="sm" disabled={!hasActiveFilters} onClick={onClearFilters}>
+          <Button type="button" variant="secondary" size="sm" aria-disabled={!hasActiveFilters} onClick={clearFilters}>
             Clear filters
           </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={exporting} onClick={() => void handleExport()}>
-            {exporting ? "Exporting…" : "Export log"}
+          <Button type="button" variant="secondary" size="sm" loading={exporting} loadingLabel="Exporting…" onClick={() => void handleExport()}>
+            Export log
           </Button>
           <Button
             type="button"
             variant={live ? "success" : "secondary"}
             size="sm"
-            onClick={() => onLiveChange(!live)}
+            onClick={() => setLive(!live)}
           >
             {live ? "Live" : "Paused"}
           </Button>
@@ -487,58 +476,45 @@ export function DeliveryLogTab({
     >
       <DeliveryToolbar
         searchInput={searchInput}
-        onSearchChange={(value) => {
-          onSearchChange(value);
-          onPageChange(1);
-        }}
+        // The page goes back to the first when the search the server is asked for changes (`useDeliveryLog`), not on every
+        // key: typing a character and deleting it again leaves the operator where they were.
+        onSearchChange={setSearchInput}
         status={status}
         onStatusChange={(value) => {
-          onStatusChange(value);
-          onPageChange(1);
+          setStatus(value);
+          setPage(1);
         }}
         purpose={purpose}
         onPurposeChange={(value) => {
-          onPurposeChange(value);
-          onPageChange(1);
+          setPurpose(value);
+          setPage(1);
         }}
         templateId={templateId}
         onTemplateIdChange={(value) => {
-          onTemplateIdChange(value);
-          onPageChange(1);
+          setTemplateId(value);
+          setPage(1);
         }}
         templates={templates}
       />
-      <DeliveryListContent
-        eventId={eventId}
-        deliveries={deliveries}
-        loading={deliveriesLoading}
-        showLoadingText={showLoadingText}
-        error={deliveriesError}
-        isUnfilteredEmpty={isUnfilteredEmpty}
-        isDesktop={isDesktop}
-        onViewSentMessage={setSentMessageRow}
-        onViewDetails={setDetailsRow}
-        onResend={(row) => void handleResend(row)}
-        onDismiss={(row) => void handleDismiss(row)}
-        resolvedBounceRowIds={resolvedBounceRowIds}
-        pendingBounceRowIds={pendingBounceRowIds}
-        onRetry={onRetry}
-      />
-      {deliveryTotal > 0 && (
+      {body}
+      {/* Outside the ladder above: a page that fails to load replaces the rows with the error, and the pager that was pressed
+          keeps its focus, with Previous as a way back. It is busy (and keeps the focus, aria-disabled) while a page is on its way. */}
+      {total > 0 && (
         <div className="communication-log-footer">
           <PaginationFooter
             idPrefix="communication-log"
+            busy={list.refreshing || list.loading}
             page={safePage}
             pageSize={pageSize}
             totalPages={totalPages}
-            totalRows={deliveryTotal}
+            totalRows={total}
             pageSizeOptions={DELIVERY_PAGE_SIZE_OPTIONS}
             onPageSizeChange={(size) => {
-              onPageSizeChange(size);
-              onPageChange(1);
+              setPageSize(size);
+              setPage(1);
             }}
-            onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
-            onNext={() => onPageChange(safePage + 1)}
+            onPrevious={() => setPage(Math.max(1, safePage - 1))}
+            onNext={() => setPage(safePage + 1)}
           />
         </div>
       )}

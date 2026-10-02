@@ -13,7 +13,7 @@ afterEach(() => {
 const settle = () => act(async () => {});
 
 type Fetcher = (signal: AbortSignal) => Promise<string>;
-function setup(fetcher: Fetcher, extra: { enabled?: boolean; onData?: (data: string) => void } = {}) {
+function setup(fetcher: Fetcher, extra: { enabled?: boolean; onData?: (data: string) => void; onError?: (error: unknown) => void } = {}) {
   return renderHook(
     ({ fetcher: current }: { fetcher: Fetcher }) => useListLoad({ fetcher: current, fallback: "Could not load the list.", ...extra }),
     { initialProps: { fetcher } },
@@ -342,5 +342,289 @@ describe("useListLoad", () => {
     expect(result.current).toMatchObject({ loading: false, refreshing: false, data: null, error: null });
     await act(async () => first.resolve("late"));
     expect(result.current.data).toBeNull();
+  });
+});
+
+describe("useListLoad poll (the live refresh of a list)", () => {
+  it("replaces the answer on screen with the newest one without a sign of it: no loading, no refreshing", async () => {
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A");
+    const { result } = setup(fetcher);
+    await settle();
+
+    const tick = deferred<string>();
+    fetcher.mockReturnValueOnce(tick.promise);
+    act(() => {
+      void result.current.poll();
+    });
+    expect(result.current).toMatchObject({ loading: false, refreshing: false, data: "rows A" });
+
+    await act(async () => tick.resolve("rows B"));
+    expect(result.current).toMatchObject({ loading: false, refreshing: false, data: "rows B", error: null, refreshError: null });
+  });
+
+  it("reports its answer like any other (onData) and takes it for the answer of the current query", async () => {
+    const onData = vi.fn();
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockResolvedValueOnce("rows B");
+    const { result } = setup(fetcher, { onData });
+    await settle();
+
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(onData).toHaveBeenLastCalledWith("rows B");
+
+    // The rows are the current query's, so a reload that fails afterwards keeps them with a warning.
+    fetcher.mockRejectedValueOnce(new ApiError(500, "boom"));
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current).toMatchObject({ data: "rows B", error: null });
+    expect(result.current.refreshError).toBeTruthy();
+  });
+
+  it("does nothing while a request somebody waits for is on its way: it never takes over from a query or a reload", async () => {
+    const first = deferred<string>();
+    const fetcher = vi.fn<Fetcher>().mockReturnValueOnce(first.promise);
+    const { result } = setup(fetcher);
+    await act(async () => {
+      await result.current.poll();
+    });
+    // The first load is still on its way: no second request, and its answer is not dropped.
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => first.resolve("rows A"));
+    expect(result.current).toMatchObject({ loading: false, data: "rows A" });
+
+    const reloading = deferred<string>();
+    fetcher.mockReturnValueOnce(reloading.promise);
+    act(() => {
+      void result.current.reload();
+    });
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await act(async () => reloading.resolve("rows B"));
+    expect(result.current).toMatchObject({ refreshing: false, data: "rows B" });
+  });
+
+  it("does not start a second tick while the previous one is on its way, and applies the slow one's answer when it comes", async () => {
+    const slow = deferred<string>();
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockReturnValueOnce(slow.promise);
+    const { result } = setup(fetcher);
+    await settle();
+
+    act(() => {
+      void result.current.poll();
+    });
+    await act(async () => {
+      await result.current.poll();
+      await result.current.poll();
+    });
+    // The two later ticks wait for the first: no request piles up, and the first is not made stale by them.
+    expect(fetcher).toHaveBeenCalledTimes(2);
+
+    await act(async () => slow.resolve("rows B"));
+    expect(result.current).toMatchObject({ data: "rows B", error: null });
+  });
+
+  it("ticks again once the previous tick has ended, also when it failed", async () => {
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockRejectedValueOnce(new ApiError(500, "boom")).mockResolvedValueOnce("rows B");
+    const { result } = setup(fetcher);
+    await settle();
+
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(result.current.data).toBe("rows A");
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(result.current.data).toBe("rows B");
+  });
+
+  it("tells the fetcher that a request is a tick, and a read somebody waits for is not", async () => {
+    const fetcher = vi.fn<Fetcher>(async () => "rows");
+    const { result } = setup(fetcher);
+    await settle();
+    await act(async () => {
+      await result.current.reload();
+    });
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher.mock.calls.map((call) => (call as unknown[])[1])).toEqual([undefined, undefined, { poll: true }]);
+  });
+
+  it("ticks again once that request has ended, also when it failed (a load that was on its way)", async () => {
+    const fetcher = vi.fn<Fetcher>().mockRejectedValueOnce(new ApiError(500, "boom")).mockResolvedValueOnce("rows A");
+    const { result } = setup(fetcher);
+    await settle();
+    expect(result.current.error).toBeTruthy();
+
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores a failed tick: the rows stay, nothing is announced and nothing is reported", async () => {
+    const onError = vi.fn();
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockRejectedValueOnce(new ApiError(500, "boom"));
+    const { result } = setup(fetcher, { onError });
+    await settle();
+
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(result.current).toMatchObject({ data: "rows A", error: null, refreshError: null, loading: false, refreshing: false });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("brings a list that could not be read back by itself: its answer ends the error of a failed load", async () => {
+    const fetcher = vi.fn<Fetcher>().mockRejectedValueOnce(new ApiError(500, "boom")).mockResolvedValueOnce("rows A");
+    const { result } = setup(fetcher);
+    await settle();
+    expect(result.current.error).toBeTruthy();
+
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(result.current).toMatchObject({ data: "rows A", error: null, loading: false });
+    // The list is on screen again: a failing reload now keeps it.
+    fetcher.mockRejectedValueOnce(new ApiError(500, "boom"));
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.data).toBe("rows A");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("clears the warning that the rows may be older, since its answer is fresh", async () => {
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockRejectedValueOnce(new ApiError(500, "boom")).mockResolvedValueOnce("rows B");
+    const { result } = setup(fetcher);
+    await settle();
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.refreshError).toBeTruthy();
+
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(result.current).toMatchObject({ data: "rows B", refreshError: null });
+  });
+
+  it("drops its answer when the query changed while it was on its way", async () => {
+    const tick = deferred<string>();
+    const queryA = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockReturnValueOnce(tick.promise);
+    const { result, rerender } = setup(queryA);
+    await settle();
+    act(() => {
+      void result.current.poll();
+    });
+
+    const queryB = deferred<string>();
+    rerender({ fetcher: () => queryB.promise });
+    await settle();
+    await act(async () => tick.resolve("stale rows of the old query"));
+    expect(result.current.data).toBe("rows A");
+
+    await act(async () => queryB.resolve("rows B"));
+    expect(result.current).toMatchObject({ data: "rows B", refreshing: false });
+  });
+
+  it("drops its answer when a reload began after it", async () => {
+    const tick = deferred<string>();
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockReturnValueOnce(tick.promise).mockResolvedValueOnce("rows C");
+    const { result } = setup(fetcher);
+    await settle();
+    act(() => {
+      void result.current.poll();
+    });
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.data).toBe("rows C");
+
+    await act(async () => tick.resolve("older rows"));
+    expect(result.current.data).toBe("rows C");
+  });
+
+  it("does nothing when there is nothing to load for this viewer", async () => {
+    const fetcher = vi.fn<Fetcher>(async () => "rows");
+    const { result } = setup(fetcher, { enabled: false });
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("is abandoned like any other request: when the page is left, and after 30 seconds, without an error", async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn<Fetcher>((signal) => {
+      signals.push(signal);
+      if (signals.length === 1) return Promise.resolve("rows A");
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+      });
+    });
+    const { result, unmount } = setup(fetcher);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => {
+      void result.current.poll();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS);
+    });
+    expect(signals[1]?.aborted).toBe(true);
+    expect(result.current).toMatchObject({ data: "rows A", error: null });
+
+    act(() => {
+      void result.current.poll();
+    });
+    expect(signals[2]?.aborted).toBe(false);
+    unmount();
+    expect(signals[2]?.aborted).toBe(true);
+  });
+});
+
+describe("useListLoad onError", () => {
+  it("is called with the error of a first load, a changed query and a reload that failed, but not with one that was abandoned", async () => {
+    const onError = vi.fn();
+    const first = new ApiError(500, "first");
+    const fetcher = vi.fn<Fetcher>().mockRejectedValueOnce(first);
+    const { result, rerender } = setup(fetcher, { onError });
+    await settle();
+    expect(onError).toHaveBeenLastCalledWith(first);
+
+    const second = new ApiError(502, "second");
+    rerender({ fetcher: () => Promise.reject(second) });
+    await settle();
+    expect(onError).toHaveBeenLastCalledWith(second);
+
+    const third = new ApiError(503, "third");
+    const queryC = vi.fn<Fetcher>().mockResolvedValueOnce("rows C").mockRejectedValueOnce(third);
+    rerender({ fetcher: queryC });
+    await settle();
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(onError).toHaveBeenLastCalledWith(third);
+    expect(onError).toHaveBeenCalledTimes(3);
+
+    // A request that a newer one took over from reports nothing.
+    const older = deferred<string>();
+    const newer = deferred<string>();
+    rerender({ fetcher: () => older.promise });
+    await settle();
+    rerender({ fetcher: () => newer.promise });
+    await settle();
+    await act(async () => older.reject(new ApiError(500, "abandoned")));
+    expect(onError).toHaveBeenCalledTimes(3);
   });
 });
