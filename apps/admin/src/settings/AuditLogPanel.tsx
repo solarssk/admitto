@@ -10,7 +10,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
@@ -39,7 +39,13 @@ import { loadWithTimeout, type LoadTimeout } from "../utils/load-timeout.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
-import { getPollIntervalMs, POLL_DEGRADED_THRESHOLD, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
+import {
+  getPollIntervalMs,
+  POLL_DEGRADED_THRESHOLD,
+  PollDegradedNotice,
+  SystemLogsPanel,
+  type SystemLogsPanelHandle,
+} from "./SystemLogsPanel.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -1229,6 +1235,9 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   // filter change that starts (or ends up) at zero rows doesn't re-trigger the skeleton and
   // flash the empty-state text out from under the user. Matches AttendeesPage's hasLoadedOnce.
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  // The last answer was a failure (nothing is on screen from it): a load after it is a first load again and
+  // leaves the list to a placeholder, not to "No entries yet" for a request that has not answered.
+  const [loadFailed, setLoadFailed] = useState(false);
   // Mirrors SystemLogsPanel's own Live toggle - defaults on, since a log view is exactly the
   // kind of thing an operator wants to watch update on its own.
   const [live, setLive] = useState(true);
@@ -1325,6 +1334,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
         // Its fresh rows must replace the error state too, otherwise LogListContent keeps showing
         // the stale Retry empty state even though the data has recovered.
         setError(null);
+        setLoadFailed(false);
         setEntries(data.entries);
         setTotal(data.total);
         pollFailureCountRef.current = 0;
@@ -1336,6 +1346,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
           return;
         }
         setError(loadFailureMessage(limit, err, loadErrorMessage));
+        setLoadFailed(true);
         setEntries([]);
         setTotal(0);
       } finally {
@@ -1424,6 +1435,8 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
     error: failure.error,
     retrying: failure.retrying,
     retry: failure.retry,
+    retryRunning: failure.running,
+    loadFailed,
     hasLoadedOnce,
     live,
     setLive,
@@ -1572,19 +1585,9 @@ function LogView({
       </div>
 
       {pollDegraded && (
-        <Notice
-          variant="warning"
-          role="alert"
-          actionBusy={retryBusy}
-          className="audit-log-poll-warning"
-          action={
-            <Button type="button" variant="secondary" size="sm" loading={retryBusy} onClick={() => void retryNow()}>
-              Retry now
-            </Button>
-          }
-        >
+        <PollDegradedNotice className="audit-log-poll-warning" busy={retryBusy} onRetry={() => void retryNow()}>
           Live updates stopped coming through - the rows below may be out of date.
-        </Notice>
+        </PollDegradedNotice>
       )}
 
       {listContent}
@@ -1728,6 +1731,8 @@ export function AuditLogPanel() {
     error,
     retrying,
     retry,
+    retryRunning,
+    loadFailed,
     hasLoadedOnce,
     live,
     setLive,
@@ -1847,7 +1852,7 @@ export function AuditLogPanel() {
   // on a narrow card the header can only fit the title and the always-present System/Audit
   // toggle before wrapping to a second line, so these two move down into the toolbar instead.
   const clearFiltersButton = (
-    <Button type="button" variant="secondary" size="sm" disabled={!hasActiveFilters} onClick={clearFilters}>
+    <Button type="button" variant="secondary" size="sm" aria-disabled={!hasActiveFilters} onClick={clearFilters}>
       Clear filters
     </Button>
   );
@@ -1868,7 +1873,7 @@ export function AuditLogPanel() {
       type="button"
       variant="secondary"
       size="sm"
-      disabled={!security.hasActiveFilters}
+      aria-disabled={!security.hasActiveFilters}
       onClick={security.clearFilters}
     >
       Clear filters
@@ -1921,7 +1926,7 @@ export function AuditLogPanel() {
   // on hasLoadedOnce rather than entries.length === 0 - a filter/search that legitimately
   // matches nothing is still a completed load, not a first load, so it must not re-arm the
   // skeleton and flash the "No matches" empty-state text out from under the user.
-  const isInitialLoad = loading && !hasLoadedOnce;
+  const isInitialLoad = loading && (!hasLoadedOnce || loadFailed) && !retryRunning;
   const initialGate = useLoadingGate(isInitialLoad);
   const initialSlow = useDelayedLoading(isInitialLoad, SLOW_NOTICE_MS);
 
@@ -1977,7 +1982,8 @@ export function AuditLogPanel() {
   // Mirrors isInitialLoad above - gated on the hook's own hasLoadedOnce, not entries.length,
   // for the same reason (an event-type/search filter with zero matches is still a completed
   // load).
-  const isSecurityInitialLoad = security.loading && !security.hasLoadedOnce;
+  const isSecurityInitialLoad =
+    security.loading && (!security.hasLoadedOnce || security.loadFailed) && !security.retryRunning;
   const securityInitialGate = useLoadingGate(isSecurityInitialLoad);
   const securityInitialSlow = useDelayedLoading(isSecurityInitialLoad, SLOW_NOTICE_MS);
 
@@ -2130,7 +2136,7 @@ export function AuditLogPanel() {
             exportButton={exportButton}
             liveButton={auditLiveButton}
             pollDegraded={live && pollDegraded}
-            onRetryNow={() => load()}
+            onRetryNow={() => (error ? retry() : load())}
             listContent={listContent}
             loading={loading}
             error={error}
@@ -2161,7 +2167,7 @@ export function AuditLogPanel() {
             liveButton={securityLiveButton}
             exportButton={securityExportButton}
             pollDegraded={security.live && security.pollDegraded}
-            onRetryNow={() => security.reload()}
+            onRetryNow={() => (security.error ? security.retry() : security.reload())}
             listContent={securityListContent}
             loading={security.loading}
             error={security.error}

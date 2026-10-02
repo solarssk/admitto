@@ -81,6 +81,36 @@ function formatLogLine(entry: SystemLogEntryDto): string {
   return entry.fields && Object.keys(entry.fields).length > 0 ? `${base}  ${JSON.stringify(entry.fields)}` : base;
 }
 
+/**
+ * The warning above a live view whose polls have stopped coming through, with its **Retry now**. The button is busy
+ * (`busy`) until the reload has answered. When the reload works the warning goes away together with the button that has the
+ * keyboard focus, so the focus moves to the tab panel (`useRetryFocusHandover`) instead of falling to `<body>`.
+ */
+export function PollDegradedNotice({
+  className,
+  busy,
+  onRetry,
+  children,
+}: Readonly<{ className: string; busy: boolean; onRetry: () => void; children: ReactNode }>) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useRetryFocusHandover(retryRef);
+  return (
+    <Notice
+      variant="warning"
+      role="alert"
+      actionBusy={busy}
+      className={className}
+      action={
+        <Button ref={retryRef} type="button" variant="secondary" size="sm" loading={busy} onClick={onRetry}>
+          Retry now
+        </Button>
+      }
+    >
+      {children}
+    </Notice>
+  );
+}
+
 /** The console while its first load is on its way: lines of the shape of a log line (time, level, source, message), in
  * the dark shell, so the console keeps its look and height. A skeleton whose 200ms have not passed is in the page but
  * invisible (`held`). */
@@ -359,9 +389,13 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   // snapshot that resolves during that time hits a console with scrollHeight 0 - consuming the
   // flag there would leave it never actually applied, since switching back to System only
   // flips isVisible, not entries, so this effect wouldn't otherwise rerun (bot review).
+  //
+  // And only once the lines are what the console shows: while a placeholder (kept for at least 400ms once it has been
+  // drawn) or an error still fills it, there is nothing to scroll, and the flag would be spent for nothing.
+  const showingLines = loadGate.showContent && !consoleRetry.error && entries.length > 0;
   useEffect(() => {
     const el = consoleRef.current;
-    if (!el || !isVisible) return;
+    if (!el || !isVisible || !showingLines) return;
     if (forceScrollToBottomRef.current) {
       forceScrollToBottomRef.current = false;
       el.scrollTop = el.scrollHeight;
@@ -369,7 +403,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) el.scrollTop = el.scrollHeight;
-  }, [entries, isVisible]);
+  }, [entries, isVisible, showingLines]);
 
   const lines = useMemo(() => entries.map(formatLogLine), [entries]);
 
@@ -500,28 +534,17 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       </div>
 
       {live && pollDegraded && (
-        <Notice
-          variant="warning"
-          role="alert"
-          actionBusy={retryBusy}
+        <PollDegradedNotice
           className="system-log-panel__poll-warning"
-          action={
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              loading={retryBusy}
-              onClick={() => {
-                setRetryingNow(true);
-                void snapshot.reload().finally(() => setRetryingNow(false));
-              }}
-            >
-              Retry now
-            </Button>
-          }
+          busy={retryBusy}
+          onRetry={() => {
+            setRetryingNow(true);
+            // With the console showing an error, the console's own Retry is the one that keeps it on screen.
+            void (snapshot.error ? consoleRetry.retry() : snapshot.reload()).finally(() => setRetryingNow(false));
+          }}
         >
           Live updates stopped coming through - the lines below may be out of date.
-        </Notice>
+        </PollDegradedNotice>
       )}
 
       {/* Always renders this same dark shell, at the same height, regardless of content -
@@ -546,7 +569,13 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           <Button type="button" variant="secondary" size="sm" disabled={lines.length === 0} onClick={() => void handleCopy()}>
             Copy
           </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={entries.length === 0} onClick={() => setEntries([])}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-disabled={entries.length === 0}
+            onClick={() => setEntries([])}
+          >
             Clear view
           </Button>
         </div>

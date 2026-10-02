@@ -6684,8 +6684,21 @@ output.mail-field-hint {
 .system-log-panel__skeleton-note {
   display: block;
   margin-top: var(--space-3);
-  color: var(--at-gray-500);
+  color: var(--at-gray-400);
   text-align: center;
+}
+
+/* Forced colours: the placeholder's light tints would vanish on a light palette, so the shapes take a system colour. */
+@media (forced-colors: active) {
+  .system-log-panel__console .at-skeleton {
+    background: GrayText;
+  }
+}
+
+/* The console holds no controls (a refetch swallows clicks in it) and scrolls: let the pointer wheel and drag scroll it
+   while a changed filter loads, as the keyboard already can. */
+.refetch-card--busy .system-log-panel__console {
+  pointer-events: auto;
 }
 
 .system-log-panel__line {

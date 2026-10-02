@@ -32,7 +32,7 @@ import {
   fetchSystemLogs,
 } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
-import { resetPollIntervalMsForTests } from "../../src/settings/SystemLogsPanel.js";
+import { resetPollIntervalMsForTests, setPollIntervalMsForTests } from "../../src/settings/SystemLogsPanel.js";
 
 const mockAudit = vi.mocked(fetchAuditLog);
 const mockExport = vi.mocked(exportAuditLog);
@@ -66,6 +66,8 @@ function renderAuditPanel() {
 beforeEach(() => {
   // Desktop layout: the table, and the Export logs button in the card header.
   mockMatchMedia(true);
+  // No live poll tick during a test: a tick would take the answer a test has queued for something else.
+  setPollIntervalMsForTests(600_000);
   // jsdom does not implement scrollIntoView (a page change scrolls the list back into view).
   Element.prototype.scrollIntoView = vi.fn();
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
@@ -119,6 +121,58 @@ describe("AuditLogPanel loading", () => {
     expect(document.activeElement).toBe(retry);
   });
 
+  it("leaves a list that failed to load to a placeholder, not to 'No entries yet', when a filter changes", async () => {
+    mockAudit.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderAuditPanel();
+    await screen.findByText("Could not load audit log");
+    let resolveNext: (value: AuditLogResponse) => void = () => {};
+    mockAudit.mockReturnValueOnce(new Promise((resolve) => (resolveNext = resolve)));
+    fireEvent.change(screen.getByLabelText("Search user or event"), { target: { value: "event" } });
+    await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText("Loading audit log")).toBeTruthy();
+    expect(screen.queryByText("No audit log entries yet")).toBeNull();
+    expect(screen.queryByText("No matches")).toBeNull();
+    await act(async () => resolveNext(page([entry("a1")])));
+    expect(await screen.findByText("Event created")).toBeTruthy();
+  });
+
+  it("keeps the list's error and its busy Retry on screen when Retry now in the warning banner reloads", async () => {
+    setPollIntervalMsForTests(5);
+    // Every request fails until released: the first load, then the live polls that bring up the banner.
+    let failing = true;
+    const pending: Array<(value: AuditLogResponse) => void> = [];
+    mockAudit.mockImplementation(() =>
+      failing ? Promise.reject(new ApiError(500, "secret_internal")) : new Promise((resolve) => pending.push(resolve)),
+    );
+    renderAuditPanel();
+    const retryNow = await screen.findByRole("button", { name: "Retry now" });
+    failing = false;
+    fireEvent.click(retryNow);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load audit log")).toBeTruthy();
+    expect(screen.queryByText("No audit log entries yet")).toBeNull();
+    await act(async () => {
+      for (const resolve of pending.splice(0)) resolve(page([entry("a1")]));
+    });
+    expect(await screen.findByText("Event created")).toBeTruthy();
+  });
+
+  it("moves the focus the list's Retry held to the tab panel when the retry works", async () => {
+    mockAudit.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(
+      <div role="tabpanel" aria-label="Logs">
+        <AuditLogPanel />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    mockAudit.mockResolvedValueOnce(page([entry("a1")]));
+    fireEvent.click(retry);
+    await screen.findByText("Event created");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("tabpanel")));
+  });
+
   it("keeps the rows on screen, blocked and marked busy, while a page change loads", async () => {
     mockAudit.mockResolvedValueOnce(page([entry("a1")], 60));
     renderAuditPanel();
@@ -139,7 +193,7 @@ describe("AuditLogPanel loading", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Security" }));
     let resolveExport: () => void = () => {};
     vi.mocked(exportSecurityAuditLog).mockReturnValueOnce(new Promise<void>((resolve) => (resolveExport = resolve)));
-    fireEvent.click(screen.getAllByRole("button", { name: "Export logs" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
     const busy = await screen.findByRole("button", { name: "Exporting…" });
     expect(busy.getAttribute("aria-busy")).toBe("true");
     expect((busy as HTMLButtonElement).disabled).toBe(false);
@@ -156,8 +210,7 @@ describe("AuditLogPanel loading", () => {
     await screen.findByText("Event created");
     let resolveExport: () => void = () => {};
     mockExport.mockReturnValueOnce(new Promise<void>((resolve) => (resolveExport = resolve)));
-    // The Audit, Security and System views each have their own Export logs; the one in view is the Audit's.
-    fireEvent.click(screen.getAllByRole("button", { name: "Export logs" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
     const busy = await screen.findByRole("button", { name: "Exporting…" });
     expect(busy.getAttribute("aria-busy")).toBe("true");
     expect((busy as HTMLButtonElement).disabled).toBe(false);

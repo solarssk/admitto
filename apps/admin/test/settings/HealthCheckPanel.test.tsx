@@ -406,7 +406,7 @@ describe("HealthCheckPanel", () => {
     expect(screen.queryByText(/v9\.9\.9/)).toBeNull();
   });
 
-  it("shows EmptyState with Retry when the passive load fails", async () => {
+  it("shows an error card with Retry when the passive load fails", async () => {
     mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<HealthCheckPanel />);
     await waitFor(() => {

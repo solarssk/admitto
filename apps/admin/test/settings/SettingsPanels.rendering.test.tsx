@@ -182,15 +182,15 @@ describe("AuditLogPanel rendering", () => {
       }),
     );
 
-    // useDelayedLoading only shows the skeleton once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
-    // be installed before render so the hook's setTimeout is one of ours.
+    // The skeleton is in the page from the first frame, invisible (it holds the list's room) until a request that is
+    // still pending after 200ms earns it - fake timers must be installed before render so the gate's timers are ours.
     vi.useFakeTimers();
     renderAuditPanel();
+    expect(screen.getByLabelText("Loading audit log").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByLabelText("Loading audit log")).toBeTruthy();
+    expect(screen.getByLabelText("Loading audit log").className).not.toContain("at-loading-hold");
     vi.useRealTimers();
 
     resolveAuditLog(emptyAuditLog());
@@ -1458,10 +1458,11 @@ describe("AuditLogPanel Security view rendering", () => {
 
     vi.useFakeTimers();
     renderSecurityPanel();
+    expect(screen.getByLabelText("Loading security audit log").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByLabelText("Loading security audit log")).toBeTruthy();
+    expect(screen.getByLabelText("Loading security audit log").className).not.toContain("at-loading-hold");
     vi.useRealTimers();
 
     resolveSecurityLog(emptySecurityLog());

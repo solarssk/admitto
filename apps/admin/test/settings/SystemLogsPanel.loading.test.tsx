@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SystemLogEntryDto, SystemLogResponse } from "../../src/api/types.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../../src/utils/loading-timing.js";
-import { hangUntilAborted, renderWithToast } from "../test-utils.js";
+import { advanceTimers, hangUntilAborted, renderWithToast } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -11,9 +11,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return { ...actual, fetchSystemLogs: vi.fn() };
 });
 
-import { fetchSystemLogs } from "../../src/api/client.js";
-import { SystemLogsPanel } from "../../src/settings/SystemLogsPanel.js";
-import { ApiError } from "../../src/api/client.js";
+import { ApiError, fetchSystemLogs } from "../../src/api/client.js";
+import {
+  resetPollIntervalMsForTests,
+  setPollIntervalMsForTests,
+  SystemLogsPanel,
+} from "../../src/settings/SystemLogsPanel.js";
 
 const mockFetch = vi.mocked(fetchSystemLogs);
 
@@ -29,6 +32,10 @@ function renderPanel() {
   return renderWithToast(<SystemLogsPanel isDesktop isVisible={false} />);
 }
 
+function renderPanelVisible() {
+  return renderWithToast(<SystemLogsPanel isDesktop isVisible />);
+}
+
 beforeEach(() => {
   // Not visible: the live poll stays off, so only the snapshot requests are made.
   mockFetch.mockReset();
@@ -37,6 +44,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  resetPollIntervalMsForTests();
 });
 
 describePanelLoading({
@@ -61,6 +69,72 @@ describe("SystemLogsPanel loading", () => {
     renderPanel();
     expect(await screen.findByText("http_request")).toBeTruthy();
     expect(screen.queryByLabelText("Loading system logs")).toBeNull();
+  });
+
+  it("jumps to the newest lines when the lines replace a placeholder that was drawn, not while it still fills the console", async () => {
+    // jsdom has no layout: a console taller than its viewport, as a full live tail is.
+    const scrollHeight = Object.getOwnPropertyDescriptor(Element.prototype, "scrollHeight")!;
+    const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!;
+    Object.defineProperty(Element.prototype, "scrollHeight", { configurable: true, get: () => 4000 });
+    Object.defineProperty(Element.prototype, "clientHeight", { configurable: true, get: () => 400 });
+    try {
+      setPollIntervalMsForTests(600_000);
+      vi.useFakeTimers();
+      let resolveFirst: (value: SystemLogResponse) => void = () => {};
+      mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)));
+      renderWithToast(<SystemLogsPanel isDesktop isVisible />);
+      await advanceTimers(300);
+      expect(screen.getByLabelText("Loading system logs").className).not.toContain("at-loading-hold");
+      await act(async () => resolveFirst(answer(entry(1, "newest line"))));
+      // The answer is in, but the drawn placeholder stays for 400ms: the console is not showing lines yet. A real
+      // browser has the scroll position at 0 under a short placeholder.
+      const consoleEl = document.querySelector<HTMLElement>(".system-log-panel__console")!;
+      consoleEl.scrollTop = 0;
+      expect(screen.queryByText("newest line")).toBeNull();
+      await advanceTimers(400);
+      expect(screen.getByText("newest line")).toBeTruthy();
+      expect(consoleEl.scrollTop).toBe(4000);
+    } finally {
+      Object.defineProperty(Element.prototype, "scrollHeight", scrollHeight);
+      Object.defineProperty(Element.prototype, "clientHeight", clientHeight);
+    }
+  });
+
+  it("moves the focus the console's Retry held to the tab panel when the retry works", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(
+      <div role="tabpanel" aria-label="Logs">
+        <SystemLogsPanel isDesktop isVisible={false} />
+      </div>,
+    );
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    mockFetch.mockResolvedValueOnce(answer(entry(1, "http_request")));
+    fireEvent.click(retry);
+    await screen.findByText("http_request");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("tabpanel")));
+  });
+
+  it("keeps the console's error and its busy Retry on screen when Retry now in the warning banner reloads", async () => {
+    setPollIntervalMsForTests(5);
+    // Every request fails until released: the first load, then the polls that bring up the banner.
+    let failing = true;
+    // Once released, every request (the reload, and the polls that keep ticking) waits for the answer.
+    const pending: Array<(value: SystemLogResponse) => void> = [];
+    mockFetch.mockImplementation(() =>
+      failing ? Promise.reject(new ApiError(500, "secret_internal")) : new Promise((resolve) => pending.push(resolve)),
+    );
+    renderPanelVisible();
+    const retryNow = await screen.findByRole("button", { name: "Retry now" });
+    failing = false;
+    fireEvent.click(retryNow);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load system logs.")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading system logs")).toBeNull();
+    await act(async () => {
+      for (const resolve of pending.splice(0)) resolve(answer(entry(1, "recovered")));
+    });
+    expect(await screen.findByText("recovered")).toBeTruthy();
   });
 
   it("keeps the error and a busy Retry on screen while it loads again, then shows the lines", async () => {
