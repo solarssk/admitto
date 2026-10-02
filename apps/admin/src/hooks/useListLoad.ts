@@ -28,6 +28,8 @@ export interface ListLoad<T> {
   error: string | null;
   /** A `reload` of the same query failed (after an action): the list stays, and may be older than the server's. */
   refreshError: string | null;
+  /** Whether the list is read at all (the `enabled` option). One that is not (its tab is closed) has nothing under way, which is not a wait. */
+  enabled: boolean;
   /**
    * The same query again, after an action. Resolves when the answer, or the failure, is in. When it fails, the rows
    * stay with a warning (`refreshError`), unless the action has changed them in a way the page cannot tell
@@ -186,5 +188,5 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
     [setAnswer],
   );
 
-  return { data, loading, refreshing, error, refreshError, reload, update };
+  return { data, loading, refreshing, error, refreshError, enabled, reload, update };
 }

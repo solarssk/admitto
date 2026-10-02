@@ -1339,6 +1339,35 @@ describe("EventSettingsPage tabs", () => {
     expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
   });
 
+  it("counts the history placeholder's 200ms and 8 seconds from the request that returning to the Wallet tab starts, not from the first one that was left", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(0);
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1);
+    await advanceTimers(500);
+    expect(screen.getByRole("status", { name: "Loading wallet push history" })).toBeTruthy();
+
+    // The tab is left before the history has answered, and stays left for longer than the 8 seconds of a wait.
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    await advanceTimers(12_000);
+    // Nothing was answered, so the hidden card does not claim that the history is empty.
+    expect(screen.queryByText("No wallet pushes yet")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await advanceTimers(0);
+
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2);
+    const placeholder = () => screen.getByRole("status", { name: "Loading wallet push history" });
+    expect(placeholder().className).toContain("at-loading-hold");
+    expect(placeholder().textContent).not.toContain("Taking longer than usual");
+    await advanceTimers(200);
+    expect(placeholder().className).not.toContain("at-loading-hold");
+    expect(placeholder().textContent).not.toContain("Taking longer than usual");
+    await advanceTimers(7_800);
+    expect(placeholder().textContent).toContain("Taking longer than usual");
+  });
+
   it("paginates wallet push history via the shared PaginationFooter", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     const row = {

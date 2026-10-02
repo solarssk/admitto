@@ -265,7 +265,7 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
   const safePage = Math.min(page, totalPages);
 
   let body: ReactNode;
-  if (!card.gate.showContent) {
+  if (!card.gate.showContent || card.idle) {
     body = (
       <div className="wallet-push-history-card__body-note">
         <RowsSkeleton label="Loading wallet push history" held={!card.gate.showIndicator} slow={card.slow} rows={3} rowHeight={54} />
