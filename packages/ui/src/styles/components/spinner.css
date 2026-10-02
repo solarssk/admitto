@@ -57,4 +57,10 @@
     border-color: transparent;
     border-top-color: CanvasText;
   }
+
+  /* A Spinner on a button (the icon of a busy Button, a search button, a menu row) sits on ButtonFace, and
+     CanvasText has no guaranteed contrast with that: ButtonText does. */
+  button .at-spinner__ring {
+    border-top-color: ButtonText;
+  }
 }

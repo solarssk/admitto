@@ -74,3 +74,18 @@ describe.each([
     expect(forcedRing()).not.toHaveProperty("animation");
   });
 });
+
+// A `Spinner` is also placed on a button: as the icon of a busy `Button` (ConfirmDialog, the crop dialog), in the
+// search button of check-in and in the rows of a More actions menu. A button's face is ButtonFace, and only
+// ButtonText has a guaranteed contrast with it, so the head there must not stay CanvasText.
+describe("Spinner on a button in forced-colors mode (Windows High Contrast)", () => {
+  const onButton = () => declarations(blockOf(blockOf(spinnerCss, FORCED_COLORS), "button .at-spinner__ring"));
+
+  it("draws the head in ButtonText, the colour the system guarantees on a button's face", () => {
+    expect(onButton()["border-top-color"]).toBe("ButtonText");
+  });
+
+  it("changes only the head colour: opting out and the missing track come from the general rule", () => {
+    expect(Object.keys(onButton())).toEqual(["border-top-color"]);
+  });
+});
