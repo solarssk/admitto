@@ -9,7 +9,7 @@ import {
   HealthCheckPanel,
   LIVE_CHECKS_HINT,
 } from "../../src/settings/HealthCheckPanel.js";
-import { hangUntilAborted, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { advanceTimers, hangUntilAborted, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../../src/utils/event-dates.js";
 import type { HealthReportDto, HealthRowStatus } from "../../src/api/types.js";
@@ -418,6 +418,25 @@ describe("HealthCheckPanel", () => {
     mockFetch.mockResolvedValueOnce(sampleReport());
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText("Core infrastructure");
+  });
+
+  it("keeps the placeholder up for its minimum time when the first read fails soon after it has appeared", async () => {
+    let rejectRead: (error: unknown) => void = () => {};
+    mockFetch.mockReturnValueOnce(new Promise((_resolve, reject) => (rejectRead = reject)));
+    vi.useFakeTimers();
+    try {
+      renderWithToast(<HealthCheckPanel />);
+      await advanceTimers(250);
+      expect(screen.getByLabelText("Loading health checks").className).not.toContain("at-loading-hold");
+      await act(async () => rejectRead(new ApiError(500, "secret_internal")));
+      expect(screen.getByLabelText("Loading health checks")).toBeTruthy();
+      expect(screen.queryByText("Could not load health checks")).toBeNull();
+      await advanceTimers(500);
+      expect(screen.getByText("Could not load health checks")).toBeTruthy();
+      expect(screen.queryByLabelText("Loading health checks")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the error and a busy Retry on screen while it loads again, then shows the report", async () => {
