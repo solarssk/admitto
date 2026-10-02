@@ -1,19 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, EmptyState, HintLabel, IconButton, Skeleton, Tooltip, useToast } from "@admitto/ui";
-import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
-import { fetchAdminEvents, fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
+import { Badge, Button, EmptyState, HintLabel, IconButton, Tooltip, useToast } from "@admitto/ui";
+import { useDelayedLoading, useLoadingGate } from "../../hooks/useDelayedLoading.js";
+import { useBusyEndCount } from "../../hooks/useRetry.js";
+import { useEventOptions } from "../../hooks/useEventOptions.js";
+import { useListLoad } from "../../hooks/useListLoad.js";
+import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import type { EventDto, RoleAssignmentListItemDto } from "../../api/types.js";
+import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { FiltersMenu } from "../../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../../components/PaginationFooter.js";
+import { RefetchRegion } from "../../components/RefetchRegion.js";
+import { ListFailure } from "../../components/ListFailure.js";
+import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
+import { SLOW_NOTICE_MS } from "../../utils/loading-timing.js";
+import { isPastTheEnd, withAssignmentRemoved, type RoleAssignmentsAnswer } from "./list-changes.js";
+import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatUtcDateTime, viewerLocalTime } from "../../utils/event-dates.js";
 
+// The placeholder of the list: four rows and three cards, each as tall as a real one.
 const SKELETON_ROWS = 4;
+const NO_ROWS: RoleAssignmentListItemDto[] = [];
+const ROLE_COLUMNS: ReadonlyArray<SkeletonColumn> = [
+  { id: "scope", label: "Scope" },
+  { id: "user", label: "User" },
+  { id: "role", label: "Role" },
+  { id: "granted", label: "Granted" },
+  { id: "actions", label: <span className="sr-only">Actions</span> },
+];
 // GET /api/admin/role-assignments caps pageSize server-side at 50 (role-assignments-routes.ts) -
 // offering a larger value here would silently request more than the server delivers,
 // understating totalPages and leaving the tail of the list unreachable.
@@ -146,10 +164,10 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
 type RoleAssignmentsTabProps = {
   /** Called after a successful revoke so the parent's Staff users list (and any open Edit
    * modal, which renders from that same list) picks up the change without a full page reload. */
-  onAssignmentsChanged?: () => void;
+  onAssignmentsChanged?: (revoked: RoleAssignmentListItemDto) => void;
   /** Reports the total row count so the parent can show it on the tab label, matching Staff
    * users and Active sessions. */
-  onCountChange?: (count: number) => void;
+  onCountChange?: (count: number | undefined) => void;
 };
 
 /** Role assignments tab — per-event/org grants with revoke action. */
@@ -157,16 +175,12 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
   const { assignments, user: currentUser } = useAuth();
   const { addToast } = useToast();
   const canRevokeAll = isSuperadmin(assignments);
-  const [rows, setRows] = useState<RoleAssignmentListItemDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [searchInput, setSearchInput] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [events, setEvents] = useState<EventDto[]>([]);
+  const eventOptions = useEventOptions();
   const [eventFilter, setEventFilter] = useState("");
   const [confirmTarget, setConfirmTarget] = useState<RoleAssignmentListItemDto | null>(null);
   const [revoking, setRevoking] = useState(false);
@@ -182,43 +196,49 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     return () => window.clearTimeout(timer);
   }, [searchInput, searchQuery]);
 
+  // `filtersActive` is what this answer was asked with, so the empty states never describe a search still on its way.
+  const fetchAssignments = useCallback(async (signal: AbortSignal): Promise<RoleAssignmentsAnswer> => {
+    const data = await fetchRoleAssignments(
+      { q: searchQuery || undefined, eventId: eventFilter || undefined, page, pageSize },
+      signal,
+    );
+    return {
+      rows: data.assignments,
+      total: data.total,
+      filtersActive: Boolean(searchQuery || eventFilter),
+      pastTheEnd: isPastTheEnd(data.assignments.length, data.total, page),
+    };
+  }, [searchQuery, eventFilter, page, pageSize]);
+  const list = useListLoad({
+    fetcher: fetchAssignments,
+    fallback: "Could not load role assignments.",
+    onData: (data) => onCountChange?.(data.total),
+  });
+  const rows = list.data?.rows ?? NO_ROWS;
+  // A list that gave way to an error no longer vouches for its number: the tab label shows none until it is back.
   useEffect(() => {
-    fetchAdminEvents({ includeArchived: true })
-      .then(setEvents)
-      .catch(() => {});
-  }, []);
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchRoleAssignments(
-        { q: searchQuery || undefined, eventId: eventFilter || undefined, page, pageSize },
-        signal,
-      );
-      if (signal?.aborted) return;
-      setRows(data.assignments);
-      setTotal(data.total);
-      onCountChange?.(data.total);
-    } catch (err) {
-      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-      setError(operatorApiErrorMessage(err, "Could not load role assignments."));
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [searchQuery, eventFilter, page, pageSize, onCountChange]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    if (list.error) onCountChange?.(undefined);
+  }, [list.error, onCountChange]);
+  const total = list.data?.total ?? 0;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the skeleton on and off faster than it can register as loading — show it only once
-  // the fetch has genuinely taken a moment.
-  const showLoadingSkeleton = useDelayedLoading(loading);
+  // After a revoke the last page can be gone: step back to the one that is.
+  useEffect(() => {
+    if (list.data && page > totalPages) setPage(totalPages);
+  }, [list.data, page, totalPages]);
+  // The first load: a placeholder after 200ms (held before, so its room is in the page), kept at least 400ms,
+  // "Taking longer than usual" after 8 seconds. A refetch never gets here: the rows stay.
+  // The same wait when the answer says the page it was on is gone: it has no rows, but that is not "No role assignments".
+  // The effect above steps back to the page that exists, and its answer replaces this one.
+  const waiting = list.loading || (Boolean(list.data?.pastTheEnd) && !list.error);
+  const gate = useLoadingGate(waiting);
+  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
+  const listReady = gate.showContent && !list.error && list.data !== null;
+  const showNoMatch = listReady && rows.length === 0 && Boolean(list.data?.filtersActive);
+  const showNone = listReady && rows.length === 0 && !list.data?.filtersActive;
+  // An event filter that could not load its options: said out loud when it happens (the hint itself is inside the
+  // Filters panel, which only exists while it is open), and again when a Retry ends with the same failure.
+  const eventRetriesEnded = useBusyEndCount(eventOptions.retrying);
 
   const handleRevoke = async () => {
     if (!confirmTarget) return;
@@ -226,19 +246,21 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     setRevokeError(null);
     try {
       await revokeUserRole(confirmTarget.user_id, confirmTarget.id);
-      const label = confirmTarget.user_display_name ?? confirmTarget.user_email;
-      setConfirmTarget(null);
-      addToast(`Role revoked for ${label}`, "success");
-      await load();
-      onAssignmentsChanged?.();
     } catch (err) {
-      const message =
-        operatorApiErrorMessage(err, "Failed to revoke role.");
+      const message = operatorApiErrorMessage(err, "Failed to revoke role.");
       setRevokeError(message);
       addToast(message, "error");
+      return;
     } finally {
+      // The revoke is done (or failed): the dialog's busy state ends with it, not with the list refresh behind it.
       setRevoking(false);
     }
+    const label = confirmTarget.user_display_name ?? confirmTarget.user_email;
+    setConfirmTarget(null);
+    addToast(`Role revoked for ${label}`, "success");
+    list.update((answer) => withAssignmentRemoved(answer, confirmTarget.id, page));
+    void list.reload();
+    onAssignmentsChanged?.(confirmTarget);
   };
 
   const canRevokeRow = (row: RoleAssignmentListItemDto) => {
@@ -290,7 +312,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
                 value={eventFilter}
                 options={[
                   { id: "", label: "All events" },
-                  ...events.map((e) => ({
+                  ...eventOptions.events.map((e) => ({
                     id: e.id,
                     label: `${e.title}${e.archived_at ? " (archived)" : ""}`,
                     icon: "calendar-event",
@@ -301,127 +323,114 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
                   setPage(1);
                 }}
               />
+              {eventOptions.error && (
+                <RetryHint message={eventOptions.error} busy={eventOptions.retrying} onRetry={eventOptions.retry} />
+              )}
             </div>
           </FiltersMenu>
         </Tooltip>
+        <div key={eventRetriesEnded} className="sr-only" role="alert">
+          {eventOptions.error}
+        </div>
       </div>
 
-      {loading && showLoadingSkeleton && (
-        <>
-          <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Scope</th>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th>Granted</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-                  <tr key={i}>
-                    <td colSpan={5}>
-                      <Skeleton variant="rect" height={48} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="users-page__cards users-page__cards--mobile" aria-hidden="true">
-            {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton key={i} variant="rect" height={140} className="users-page__card-skeleton" />
-            ))}
-          </div>
-        </>
-      )}
-
-      {!loading && error && (
-        <div className="users-page__status" role="alert">
-          <p>{error}</p>
-          <Button type="button" variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        </div>
-      )}
-
-      {!loading && !error && rows.length === 0 && (searchQuery || eventFilter) && (
-        <EmptyState
-          icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-          title="No role assignments match your filters"
-          description="Try a different name, email, or event."
-          action={
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setSearchInput("");
-                setEventFilter("");
-              }}
-            >
-              Clear filters
-            </Button>
-          }
+      {!gate.showContent && (
+        <UsersListSkeleton
+          label="Loading role assignments"
+          held={!gate.showIndicator}
+          slow={slow}
+          columns={ROLE_COLUMNS}
+          rows={SKELETON_ROWS}
+          rowHeight={40}
+          cards={3}
+          cardHeight={200}
         />
       )}
 
-      {!loading && !error && rows.length === 0 && !searchQuery && !eventFilter && (
-        <EmptyState
-          icon={<i className="ti ti-shield" aria-hidden="true" />}
-          title="No role assignments yet"
-          description="Event and organization role grants will appear here once users are assigned."
-        />
+      {gate.showContent && (
+        <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="users-page__status" />
       )}
 
-      {!loading && !error && rows.length > 0 && (
-        <>
-          <div className="users-page__table-wrap users-page__table-wrap--desktop">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Scope</th>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th><HintLabel hint={GRANTED_HINT}>Granted</HintLabel></th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
+      {listReady && (
+        <RefetchRegion refreshing={list.refreshing} label="Refreshing role assignments">
+          {showNoMatch && (
+            <EmptyState
+              icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+              title="No role assignments match your filters"
+              description="Try a different name, email, or event."
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setSearchInput("");
+                    setEventFilter("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              }
+            />
+          )}
+
+          {showNone && (
+            <EmptyState
+              icon={<i className="ti ti-shield" aria-hidden="true" />}
+              title="No role assignments yet"
+              description="Event and organization role grants will appear here once users are assigned."
+            />
+          )}
+
+          {rows.length > 0 && (
+            <>
+              <div className="users-page__table-wrap users-page__table-wrap--desktop">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Scope</th>
+                      <th>User</th>
+                      <th>Role</th>
+                      <th><HintLabel hint={GRANTED_HINT}>Granted</HintLabel></th>
+                      <th><span className="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <AssignmentTableRow
+                        key={row.id}
+                        row={row}
+                        canRevoke={canRevokeRow(row)}
+                        onRevoke={setConfirmTarget}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="users-page__cards users-page__cards--mobile">
                 {rows.map((row) => (
-                  <AssignmentTableRow
+                  <AssignmentCard
                     key={row.id}
                     row={row}
                     canRevoke={canRevokeRow(row)}
                     onRevoke={setConfirmTarget}
                   />
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
 
-          <div className="users-page__cards users-page__cards--mobile">
-            {rows.map((row) => (
-              <AssignmentCard
-                key={row.id}
-                row={row}
-                canRevoke={canRevokeRow(row)}
-                onRevoke={setConfirmTarget}
+              <PaginationFooter
+                idPrefix="role-assignments"
+                busy={list.refreshing}
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalRows={total}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                {...paginationHandlers(setPage, setPageSize, totalPages)}
               />
-            ))}
-          </div>
-
-          <PaginationFooter
-            idPrefix="role-assignments"
-            page={page}
-            pageSize={pageSize}
-            totalPages={totalPages}
-            totalRows={total}
-            pageSizeOptions={PAGE_SIZE_OPTIONS}
-            {...paginationHandlers(setPage, setPageSize, totalPages)}
-          />
-        </>
+            </>
+          )}
+        </RefetchRegion>
       )}
 
       <ConfirmDialog

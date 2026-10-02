@@ -684,6 +684,7 @@ describe("UserEditModal role & access - exclusive roles", () => {
     mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
     const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
     mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, roles: [existingRole] } });
+    mockGrantUserRole.mockResolvedValueOnce({ assignment: { id: "role-2", role: "operator", scope_type: "event", scope_id: "evt-2" } });
     const { onClose, onUpdated } = renderModal({ roles: [existingRole] });
     await waitFor(() => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
@@ -719,8 +720,36 @@ describe("UserEditModal role & access - exclusive roles", () => {
     });
     // One combined notification and close, not one per action - the whole point of staging.
     expect(onUpdated).toHaveBeenCalledOnce();
-    expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Changes saved");
+    // The third argument is the person as the server has them now: the profile, with the role changes made after it.
+    expect(onUpdated).toHaveBeenCalledWith(
+      { ...user, roles: [existingRole] },
+      "Changes saved",
+      { ...user, roles: [{ id: "role-2", role: "operator", scope_type: "event", scope_id: "evt-2", is_oidc: false }] },
+    );
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the saved person out when the server may have replaced roles meanwhile, so the list has only its refresh to go by", async () => {
+    const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
+    mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    // Another administrator switched the person to admin after this modal was opened: the PATCH answers with that.
+    const switchedRole = { id: "role-7", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false };
+    mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, roles: [switchedRole] } });
+    mockGrantUserRole.mockResolvedValueOnce({ assignment: { id: "role-2", role: "operator", scope_type: "event", scope_id: "evt-2" } });
+    const { onUpdated } = renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Winter Gala" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledOnce());
+    // Granting an operator scope replaced the admin role on the server: the roles after it are not known here.
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [switchedRole] }, "Changes saved", undefined);
   });
 
   it("stages an admin role add with the picked organization scope", async () => {
@@ -1410,7 +1439,7 @@ describe("UserEditModal disable / enable account", () => {
     await waitFor(() => {
       expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", { is_active: false });
     });
-    expect(onUpdated).toHaveBeenCalledWith({ ...user, is_active: false }, "Account disabled. Sessions revoked.");
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, is_active: false }, "Account disabled. Sessions revoked.", { ...user, is_active: false });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -1425,7 +1454,7 @@ describe("UserEditModal disable / enable account", () => {
     await waitFor(() => {
       expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", { is_active: true });
     });
-    expect(onUpdated).toHaveBeenCalledWith({ ...user, is_active: true }, "Account enabled");
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, is_active: true }, "Account enabled", { ...user, is_active: true });
     expect(onClose).toHaveBeenCalled();
     // No confirmation step for re-enabling (only disabling revokes sessions and asks first) -
     // the only "dialog"-role element present is the edit modal itself, never a ConfirmDialog.

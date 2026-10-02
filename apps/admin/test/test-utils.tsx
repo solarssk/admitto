@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
+import { act, fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
 import { vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
-import type { RoleAssignment, TicketTypeDto } from "../src/api/types.js";
+import type { RoleAssignment, TicketTypeDto, UserListItemDto } from "../src/api/types.js";
 
 /** Shared shape for a mocked `useConnectionState()` return value - see `checkin/connectionStateMock.ts`
  * for the vi.mock hoisting caveat this is built around. Re-exported here so it's discoverable
@@ -132,4 +132,41 @@ export function mockMatchMedia(matches: boolean): MockMediaQueryList {
   };
   vi.stubGlobal("matchMedia", () => mq);
   return mq;
+}
+
+/** A promise that the test settles by hand, to hold a request in flight. */
+export function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Advances fake timers inside `act`, so what the timers cause is rendered before the next line. */
+export function advanceTimers(ms: number) {
+  return act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+export function makeStaffUser(id: string, displayName: string): UserListItemDto {
+  return {
+    id,
+    email: `${id}@example.com`,
+    display_name: displayName,
+    phone_country_code: null,
+    phone_number: null,
+    is_active: true,
+    must_change_password: false,
+    created_at: "2026-01-01T00:00:00.000Z",
+    last_login_at: null,
+    active_sessions_count: 0,
+    has_mfa: false,
+    has_sso: false,
+    external_identities: [],
+    roles: [],
+  };
 }

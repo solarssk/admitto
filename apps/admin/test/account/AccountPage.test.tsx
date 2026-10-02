@@ -4594,7 +4594,7 @@ describe("AccountPage on the loading standard", () => {
     it("an older answer that arrives first leaves the cards blocked until the newest one is in", async () => {
       const answers = await overlappingRefreshes();
       mockPatchPassword.mockResolvedValue({ sessions_revoked: 0 });
-      const busy = () => document.querySelectorAll(".at-card.account-refetch--busy");
+      const busy = () => document.querySelectorAll(".at-card.refetch-card--busy");
 
       await act(async () => answers.answerFirst({ ...totpEnrolledAccount, email: "old@example.com" }));
       // The newest refresh is still on its way: Profile, Password and Two-factor stay blocked.
@@ -4630,7 +4630,7 @@ describe("AccountPage on the loading standard", () => {
       expect((screen.getByLabelText("Current password") as HTMLInputElement).value).toBe("typed meanwhile");
 
       await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
-      await waitFor(() => expect(document.querySelectorAll(".at-card.account-refetch--busy")).toHaveLength(0));
+      await waitFor(() => expect(document.querySelectorAll(".at-card.refetch-card--busy")).toHaveLength(0));
       fireEvent.click(screen.getByRole("button", { name: "Change password", hidden: true }));
       await waitFor(() => expect(mockPatchPassword).toHaveBeenCalledTimes(1));
     });
@@ -4682,7 +4682,7 @@ describe("AccountPage on the loading standard", () => {
         const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
         fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
         await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
-        await waitFor(() => expect(document.querySelectorAll(".at-card.account-refetch--busy")).toHaveLength(0));
+        await waitFor(() => expect(document.querySelectorAll(".at-card.refetch-card--busy")).toHaveLength(0));
         return name;
       }
       const save = () => screen.getByRole("button", { name: "Save", hidden: true }) as HTMLButtonElement;
@@ -4738,13 +4738,13 @@ describe("AccountPage on the loading standard", () => {
 
       await saveNewDisplayName();
       await waitFor(() => expect(mockFetchAccount).toHaveBeenCalledTimes(2));
-      const refreshing = () => [...document.querySelectorAll<HTMLElement>(".at-card.account-refetch")];
+      const refreshing = () => [...document.querySelectorAll<HTMLElement>(".at-card.refetch-card")];
       // Profile, Password and Two-factor: the cards that show the account. Not the sessions or notifications cards.
       await waitFor(() => expect(refreshing()).toHaveLength(3));
       expect(refreshing().every((card) => card.getAttribute("aria-busy") === "true")).toBe(true);
       expect(refreshing().some((card) => card.hasAttribute("inert"))).toBe(false);
 
-      await waitFor(() => expect(refreshing().every((card) => card.className.includes("account-refetch--dim"))).toBe(true));
+      await waitFor(() => expect(refreshing().every((card) => card.className.includes("refetch-card--dim"))).toBe(true));
       expect(await screen.findAllByLabelText("Refreshing account")).toHaveLength(3);
 
       await act(async () => refresh.answerRefresh({ ...baseAccount, display_name: "Renamed Admin" }));
@@ -4822,18 +4822,18 @@ describe("AccountPage on the loading standard", () => {
       // At once: inert (no click and no key reaches the stale row's Revoke) and busy; the rows stay.
       await waitFor(() => expect(card().hasAttribute("inert")).toBe(true));
       expect(card().getAttribute("aria-busy")).toBe("true");
-      expect(card().className).toContain("account-refetch");
+      expect(card().className).toContain("refetch-card");
       expect(screen.getByText("Other")).toBeTruthy();
 
       // Once the wait is noticeable (200ms, from useLoadingGate): dimmed, and the bar runs along the card.
-      await waitFor(() => expect(card().className).toContain("account-refetch--dim"));
+      await waitFor(() => expect(card().className).toContain("refetch-card--dim"));
       expect(await screen.findByLabelText("Refreshing sessions")).toBeTruthy();
 
       await act(async () => answerRefresh({ sessions: [currentSession] }));
       await waitFor(() => expect(card().hasAttribute("inert")).toBe(false));
       expect(card().getAttribute("aria-busy")).toBeNull();
       // The box the bar is positioned in stays for as long as the bar does (a little after the answer), then goes.
-      await waitFor(() => expect(card().className).not.toContain("account-refetch"));
+      await waitFor(() => expect(card().className).not.toContain("refetch-card"));
     });
 
     it("sessions: the header action comes back with the list once a Retry has loaded it", async () => {

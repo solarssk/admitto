@@ -11,7 +11,8 @@ export interface DeviceLabelEditModalProps {
   readonly open: boolean;
   readonly session: SessionListDto | null;
   readonly onClose: () => void;
-  readonly onSaved: () => void;
+  /** The label the server saved for the session (`null` when it was cleared), so the list can show it before it is refreshed. */
+  readonly onSaved: (sessionId: string, deviceLabel: string | null) => void;
 }
 
 /** Correct a session's device label - a plain, reversible edit (unlike Revoke), so it gets its
@@ -52,8 +53,8 @@ export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readon
     setSubmitting(true);
     setError(null);
     try {
-      await updateSessionDeviceLabel(session.id, trimmed.length > 0 ? trimmed : null);
-      onSaved();
+      const saved = await updateSessionDeviceLabel(session.id, trimmed.length > 0 ? trimmed : null);
+      onSaved(session.id, saved.deviceLabel);
       onClose();
     } catch (err) {
       setError(operatorApiErrorMessage(err, "Failed to update device label."));

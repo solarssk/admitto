@@ -224,20 +224,27 @@ describe("Admin pages delayed loading", () => {
     vi.mocked(fetchAdminUsers).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
     renderWithToastAndRouter(<UsersPage />);
+    // In the page from the first frame (its room is held), but not painted before 200ms.
+    expect(screen.getByLabelText("Loading users").className).toContain("at-loading-hold");
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(199);
     });
-    expect(document.querySelector(".users-page__table-wrap--desktop")).toBeTruthy();
+    expect(screen.getByLabelText("Loading users").className).toContain("at-loading-hold");
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByLabelText("Loading users").className).not.toContain("at-loading-hold");
   });
 
   it("RoleAssignmentsTab shows the loading skeleton once the fetch has genuinely taken a moment", () => {
     vi.mocked(fetchRoleAssignments).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
     renderWithToast(<RoleAssignmentsTab />);
+    expect(screen.getByLabelText("Loading role assignments").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(document.querySelector(".users-page__table-wrap--desktop")).toBeTruthy();
+    expect(screen.getByLabelText("Loading role assignments").className).not.toContain("at-loading-hold");
   });
 });
 

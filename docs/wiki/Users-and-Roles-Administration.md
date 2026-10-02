@@ -53,6 +53,9 @@ New sessions use the updated assignments. Use **Active sessions** when access mu
 ## Common problems
 
 - **The user cannot sign in:** check account status, sign-in method, and MFA requirements.
+- **The list shows grey boxes, or says "Taking longer than usual":** the page is waiting for the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows "The server did not answer in time" with a **Retry** button. While you search, filter or change page on Staff users or Role assignments, or after you edit, invite, delete or revoke on any of the three tabs, the rows stay on screen, dimmed and not clickable, until the new list arrives.
+- **A warning says "Could not refresh this list, so it may show older details":** what you did was saved and is already shown, but loading the list again afterwards failed, so some other rows may be out of date. Press **Retry** in the warning to load the current list.
+- **A filter or picker says "Could not load events":** the events it offers could not be loaded. Press **Retry** next to it; the rest of the page keeps working.
 - **The user sees the wrong events:** inspect every scope for their role type, not only the newest one.
 - **A role option is unavailable:** an Administrator can only grant or remove the Operator role, and only for events in an organisation they administer. Everything else needs a Superadmin.
 - **No role assigned after sign-in:** the account lands on My account with a notice until a Superadmin grants a usable assignment.

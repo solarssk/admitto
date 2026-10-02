@@ -64,7 +64,7 @@ import { parseUserAgent } from "../utils/parseUserAgent.js";
 import type { AccountTab } from "./accountTabs.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { AccountLoadingSkeleton, NOTIFICATIONS_INTRO, RowsSkeleton } from "./AccountSkeletons.js";
-import { refetchCardProps } from "./refetch.js";
+import { refetchCardProps } from "../utils/refetch-card.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 

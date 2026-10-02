@@ -5,7 +5,6 @@ import {
   Card,
   EmptyState,
   PageHeader,
-  Skeleton,
   Tooltip,
   useToast,
 } from "@admitto/ui";
@@ -13,18 +12,29 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { fetchAdminUsers, fetchUserStats } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto, UserStatsDto } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../components/PaginationFooter.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
+import { ListFailure } from "../components/ListFailure.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useListLoad } from "../hooks/useListLoad.js";
+import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
 import { UserEditModal } from "./users/UserEditModal.js";
+import {
+  isPastTheEnd,
+  withRoleRemoved,
+  withUserRemoved,
+  withUserReplaced,
+  type StaffUsersAnswer,
+} from "./users/list-changes.js";
 import { RoleAssignmentsTab } from "./users/RoleAssignmentsTab.js";
 import { ActiveSessionsTab } from "./users/ActiveSessionsTab.js";
 import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
+import { UsersListSkeleton, UsersStatsSkeleton, type SkeletonColumn } from "./users/UsersListSkeleton.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -32,7 +42,20 @@ const SEARCH_DEBOUNCE_MS = 300;
 // value here would silently request more than the server delivers, understating totalPages and
 // leaving the tail of the list unreachable.
 const PAGE_SIZE_OPTIONS = [25, 50] as const;
+// The placeholder of the staff list: five rows and three cards, each as tall as a real one (measured in Chrome: 61px
+// and 238px).
 const SKELETON_ROWS = 5;
+const NO_USERS: UserListItemDto[] = [];
+const STAFF_COLUMNS: ReadonlyArray<SkeletonColumn> = [
+  { id: "user", label: "User" },
+  { id: "roles", label: "Roles" },
+  { id: "sign-in", label: "Sign-in" },
+  { id: "two-factor", label: "Two-factor" },
+  { id: "last-login", label: "Last login" },
+  { id: "sessions", label: "Sessions" },
+  { id: "status", label: "Status" },
+  { id: "actions", label: <span className="sr-only">Actions</span> },
+];
 
 type UsersTab = "staff" | "roles" | "sessions";
 type RoleFilter = "all" | "superadmin" | "admin" | "operator";
@@ -58,43 +81,6 @@ function mfaCoveragePercent(stats: UserStatsDto | null, passwordUserTotal: numbe
   return Math.round((stats.mfa / passwordUserTotal) * 100);
 }
 
-function StaffUsersSkeleton() {
-  return (
-    <>
-      <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Roles</th>
-              <th>Sign-in</th>
-              <th>Two-factor</th>
-              <th>Last login</th>
-              <th>Sessions</th>
-              <th>Status</th>
-              <th><span className="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-              <tr key={i}>
-                <td colSpan={8}>
-                  <Skeleton variant="rect" height={52} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="users-page__cards users-page__cards--mobile" aria-hidden="true">
-        {Array.from({ length: 3 }, (_, i) => (
-          <Skeleton key={i} variant="rect" height={180} className="users-page__card-skeleton" />
-        ))}
-      </div>
-    </>
-  );
-}
-
 /** IAM page — staff users and role assignments (/admin/users). */
 export function UsersPage() {
   const { assignments } = useAuth();
@@ -102,12 +88,8 @@ export function UsersPage() {
   const superadmin = isSuperadmin(assignments);
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<UsersTab>(() => usersTabFromSearch(searchParams, superadmin));
-  const [users, setUsers] = useState<UserListItemDto[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -117,7 +99,6 @@ export function UsersPage() {
   const [editUser, setEditUser] = useState<UserListItemDto | null>(null);
   const [sessionsCount, setSessionsCount] = useState<number | undefined>(undefined);
   const [rolesCount, setRolesCount] = useState<number | undefined>(undefined);
-  const [stats, setStats] = useState<UserStatsDto | null>(null);
 
   // The URL is the source of truth for the active tab (e.g. the Security tab's
   // "Manage individual sessions" link deep-links here with ?tab=sessions). Realign on
@@ -149,41 +130,30 @@ export function UsersPage() {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    if (!superadmin) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [data, statsData] = await Promise.all([
-        fetchAdminUsers(
-          {
-            q: searchQuery || undefined,
-            page,
-            pageSize,
-            role: roleFilter,
-            status: statusFilter,
-          },
-          signal,
-        ),
+  // One request group for the list and the KPI numbers. `filtersActive` is what THIS answer was asked with, so the
+  // empty states below never describe a search that is still on its way.
+  const fetchStaffUsers = useCallback(
+    async (signal: AbortSignal): Promise<StaffUsersAnswer> => {
+      const [data, stats] = await Promise.all([
+        fetchAdminUsers({ q: searchQuery || undefined, page, pageSize, role: roleFilter, status: statusFilter }, signal),
         fetchUserStats(signal),
       ]);
-      if (signal?.aborted) return;
-      setUsers(data.users);
-      setTotal(data.total);
-      setStats(statsData);
-    } catch (err) {
-      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-      setError(operatorApiErrorMessage(err, "Could not load users."));
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [superadmin, searchQuery, page, pageSize, roleFilter, statusFilter]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+      const filtersActive = searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
+      return {
+        users: data.users,
+        total: data.total,
+        stats,
+        query: { search: searchQuery, role: roleFilter, status: statusFilter },
+        filtersActive,
+        pastTheEnd: isPastTheEnd(data.users.length, data.total, page),
+      };
+    },
+    [searchQuery, page, pageSize, roleFilter, statusFilter],
+  );
+  const list = useListLoad({ fetcher: fetchStaffUsers, fallback: "Could not load users.", enabled: superadmin });
+  const users = list.data?.users ?? NO_USERS;
+  const total = list.data?.total ?? 0;
+  const stats = list.data?.stats ?? null;
 
   // Keep an open Edit user modal in sync with the list: adding a role scope no longer closes
   // the modal (so several scopes can be added in one sitting), so its `user` prop must pick up
@@ -196,16 +166,23 @@ export function UsersPage() {
   }, [users, editUser]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const filtersActive =
-    searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
-  const showInitialEmpty = !loading && !error && total === 0 && !filtersActive;
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the skeleton on and off faster than it can register as loading — show it only once
-  // the fetch has genuinely taken a moment.
-  const showLoadingSkeleton = useDelayedLoading(loading);
+  // After an action the last page can be gone (the last user on it was deleted): step back to the one that is.
+  useEffect(() => {
+    if (list.data && page > totalPages) setPage(totalPages);
+  }, [list.data, page, totalPages]);
+  // The first load: a placeholder after 200ms (held invisible before, so its room is in the page), kept for at
+  // least 400ms, and "Taking longer than usual" after 8 seconds. A refetch never gets here: the list stays.
+  // The same wait when the answer says the page it was on is gone: it has no rows, but that is not "No users match".
+  // The effect above steps back to the page that exists, and its answer replaces this one.
+  const waiting = list.loading || (Boolean(list.data?.pastTheEnd) && !list.error);
+  const gate = useLoadingGate(waiting);
+  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
+  const listReady = gate.showContent && !list.error && list.data !== null;
+  const showInitialEmpty = listReady && total === 0 && !list.data?.filtersActive;
+  const showNoMatch = listReady && users.length === 0 && !showInitialEmpty;
 
   const tabs = [
-    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: total }] : []),
+    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: list.data && !list.error ? total : undefined }] : []),
     { id: "roles" as const, label: "Role assignments", count: rolesCount },
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
@@ -232,6 +209,8 @@ export function UsersPage() {
           )
         }
       />
+
+      {superadmin && !stats && !gate.showContent && <UsersStatsSkeleton held={!gate.showIndicator} />}
 
       {superadmin && stats && (
         <div className="users-page__stats">
@@ -377,91 +356,102 @@ export function UsersPage() {
             </Tooltip>
           </div>
 
-          {loading && showLoadingSkeleton && <StaffUsersSkeleton />}
-
-          {!loading && error && (
-            <div className="users-page__status" role="alert">
-              <p>{error}</p>
-              <Button type="button" variant="secondary" onClick={() => void load()}>
-                Retry
-              </Button>
-            </div>
-          )}
-
-          {!loading && !error && showInitialEmpty && (
-            <EmptyState
-              icon={<i className="ti ti-users-group" aria-hidden="true" />}
-              title="No users yet"
-              description="Invite your first team member to get started."
-              action={
-                <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
-                  Invite user
-                </Button>
-              }
+          {!gate.showContent && (
+            <UsersListSkeleton
+              label="Loading users"
+              held={!gate.showIndicator}
+              slow={slow}
+              columns={STAFF_COLUMNS}
+              rows={SKELETON_ROWS}
+              rowHeight={40}
+              cards={3}
+              cardHeight={238}
             />
           )}
 
-          {!loading && !error && !showInitialEmpty && users.length === 0 && (
-            <EmptyState
-              icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-              title="No users match your filters"
-              description="Try a different search term or clear the role and status filters."
-              action={
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setSearchInput("");
-                    setRoleFilter("all");
-                    setStatusFilter("all");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              }
-            />
+          {gate.showContent && (
+            <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="users-page__status" />
           )}
 
-          {!loading && !error && users.length > 0 && (
-            <>
-              <div className="users-page__table-wrap users-page__table-wrap--desktop">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Roles</th>
-                      <th>Sign-in</th>
-                      <th>Two-factor</th>
-                      <th>Last login</th>
-                      <th>Sessions</th>
-                      <th>Status</th>
-                      <th><span className="sr-only">Actions</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
+          {listReady && (
+            <RefetchRegion refreshing={list.refreshing} label="Refreshing users">
+              {showInitialEmpty && (
+                <EmptyState
+                  icon={<i className="ti ti-users-group" aria-hidden="true" />}
+                  title="No users yet"
+                  description="Invite your first team member to get started."
+                  action={
+                    <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
+                      Invite user
+                    </Button>
+                  }
+                />
+              )}
+
+              {showNoMatch && (
+                <EmptyState
+                  icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+                  title="No users match your filters"
+                  description="Try a different search term or clear the role and status filters."
+                  action={
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setSearchInput("");
+                        setRoleFilter("all");
+                        setStatusFilter("all");
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  }
+                />
+              )}
+
+              {users.length > 0 && (
+                <>
+                  <div className="users-page__table-wrap users-page__table-wrap--desktop">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>User</th>
+                          <th>Roles</th>
+                          <th>Sign-in</th>
+                          <th>Two-factor</th>
+                          <th>Last login</th>
+                          <th>Sessions</th>
+                          <th>Status</th>
+                          <th><span className="sr-only">Actions</span></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {users.map((user) => (
+                          <StaffUserTableRow key={user.id} user={user} onEdit={setEditUser} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="users-page__cards users-page__cards--mobile">
                     {users.map((user) => (
-                      <StaffUserTableRow key={user.id} user={user} onEdit={setEditUser} />
+                      <StaffUserCard key={user.id} user={user} onEdit={setEditUser} />
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
 
-              <div className="users-page__cards users-page__cards--mobile">
-                {users.map((user) => (
-                  <StaffUserCard key={user.id} user={user} onEdit={setEditUser} />
-                ))}
-              </div>
-
-              <PaginationFooter
-                idPrefix="staff-users"
-                page={page}
-                pageSize={pageSize}
-                totalPages={totalPages}
-                totalRows={total}
-                pageSizeOptions={PAGE_SIZE_OPTIONS}
-                {...paginationHandlers(setPage, setPageSize, totalPages)}
-              />
-            </>
+                  <PaginationFooter
+                    idPrefix="staff-users"
+                    busy={list.refreshing}
+                    page={page}
+                    pageSize={pageSize}
+                    totalPages={totalPages}
+                    totalRows={total}
+                    pageSizeOptions={PAGE_SIZE_OPTIONS}
+                    {...paginationHandlers(setPage, setPageSize, totalPages)}
+                  />
+                </>
+              )}
+            </RefetchRegion>
           )}
         </Card>
       )}
@@ -476,7 +466,13 @@ export function UsersPage() {
       {/* Always mounted (not just once "roles" becomes active) so its count is ready for the tab
           label immediately on page load - same convention as ActiveSessionsTab below. */}
       <Card title="Role assignments" hidden={tab !== "roles"}>
-        <RoleAssignmentsTab onAssignmentsChanged={() => void load()} onCountChange={setRolesCount} />
+        <RoleAssignmentsTab
+          onAssignmentsChanged={(revoked) => {
+            list.update((answer) => withRoleRemoved(answer, revoked.user_id, revoked.id, page));
+            void list.reload();
+          }}
+          onCountChange={setRolesCount}
+        />
       </Card>
 
       {superadmin && (
@@ -497,7 +493,9 @@ export function UsersPage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onCreated={({ user, warning }) => {
-          void load();
+          // Where the new person belongs in the list (the server's order, filters, pages) is not known here: when the
+          // refresh fails, the list gives way to the error instead of staying without them under the success toast.
+          void list.reload({ keepRowsOnFailure: false });
           if (warning) {
             addToast(warning, "error");
           } else {
@@ -510,14 +508,18 @@ export function UsersPage() {
         open={!!editUser}
         user={editUser}
         onClose={() => setEditUser(null)}
-        onUpdated={(user, message) => {
+        onUpdated={(user, message, saved) => {
           addToast(message ?? `${user.display_name ?? user.email} updated`, "success");
-          void load();
+          // Only a person the action has just read back from the server goes into the list as it is: for the rest
+          // (a reset, revoked sessions, a new role type) the row is what the refresh brings.
+          if (saved) list.update((answer) => withUserReplaced(answer, saved, page));
+          void list.reload();
         }}
         onDeleted={(user) => {
           setEditUser(null);
           addToast(`${user.display_name ?? user.email} deleted`, "success");
-          void load();
+          list.update((answer) => withUserRemoved(answer, user.id, page));
+          void list.reload();
         }}
       />
     </div>
