@@ -74,3 +74,20 @@
     animation: at-loader-soft 2s ease-in-out infinite;
   }
 }
+
+@media (forced-colors: active) {
+  /* Windows High Contrast replaces every background colour with the page colour (Canvas), so the bar, a
+     plain coloured background, would be drawn in the colour of the page behind it and disappear, in every
+     phase, and only the dimming would be left. Opting out and picking system colours keeps it: Highlight
+     for the bar on a GrayText track, which also shows where the bar runs to while it finishes and how
+     long it is when reduced motion holds it still. */
+  .at-topbar {
+    forced-color-adjust: none;
+    background: GrayText;
+  }
+
+  .at-topbar__bar {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+}
