@@ -462,11 +462,10 @@ describe("CommunicationPage placeholder chip list", () => {
     // Both events have no explicit "ticket" template row (fetchEventTemplates: []), so both land
     // on activeKey "virtual-ticket" in the same (default) format - the case a bot review twice
     // flagged as unsafe for the CodeMirror key being only activeKey+format (no event id). It isn't:
-    // CommunicationPage's own `if (loading) return ...` unconditionally unmounts this whole subtree
-    // on every eventId change while its own template fetch is in flight (confirmed via the DOM node
-    // itself: the pre-switch EditorView's .dom is disconnected once the new one lands), which
-    // already forces a fresh CodeMirror mount with a blank undo history - this test is the proof,
-    // and passes whether or not event.id is also in the key.
+    // CommunicationPage is keyed by its event, so every eventId change replaces this whole subtree
+    // (confirmed via the DOM node itself: the pre-switch EditorView's .dom is disconnected once the
+    // new one lands), which already forces a fresh CodeMirror mount with a blank undo history - this
+    // test is the proof, and passes whether or not event.id is also in the key.
     fetchEventTemplate.mockImplementation(async (eventId: string) => ({
       ...legacyTemplate,
       body_template: eventId === "evt-a" ? "<p>Event A body</p>" : "<p>Event B body</p>",

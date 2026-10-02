@@ -43,6 +43,52 @@ function SkeletonIntro({ lines }: Readonly<{ lines: number }>) {
   );
 }
 
+/** One of a panel's cards as grey shapes. Decoration (the region around it is named by its label): hidden from assistive tech,
+ * so that the region does not read the titles out again when the 8 second note joins it, or when another tab's cards take
+ * their place. */
+export function SettingsSkeletonCardView({ card }: Readonly<{ card: SettingsSkeletonCard }>) {
+  return (
+    <Card title={card.title} aria-hidden="true">
+      <div className="settings-card-stack" aria-hidden="true">
+        {card.intro && <SkeletonIntro lines={card.intro === true ? 1 : card.intro} />}
+        {(card.fields ?? 0) > 0 && (
+          <div className={card.columns === 2 ? "settings-skeleton__fields mail-transport-section" : "settings-skeleton__fields"}>
+            {Array.from({ length: card.fields ?? 0 }, (_, fieldIndex) => (
+              <div key={fieldIndex} className="settings-skeleton__field">
+                <Skeleton variant="rect" width="28%" height={17} />
+                <Skeleton variant="rect" height={card.controlHeight ?? 38} />
+              </div>
+            ))}
+          </div>
+        )}
+        {Array.from({ length: card.rows ?? 0 }, (_, rowIndex) => (
+          <Skeleton key={rowIndex} variant="rect" height={card.rowHeight ?? 60} />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/** The status region that a panel's placeholder is in, named after what is loading, with the 8 second note at its end. A
+ * layout that is not a plain stack of cards (cards side by side) puts its own children in it. */
+export function SettingsSkeletonRegion({
+  label,
+  held,
+  slow,
+  children,
+}: Readonly<{ label: string; held: boolean; slow: boolean; children: ReactNode }>) {
+  return (
+    <output aria-label={label} className={held ? "settings-skeleton at-loading-hold" : "settings-skeleton"}>
+      {children}
+      {slow ? (
+        <span className="at-hint" style={{ display: "block", textAlign: "center", color: "var(--text-secondary)" }}>
+          {SLOW_NOTICE_TEXT}
+        </span>
+      ) : null}
+    </output>
+  );
+}
+
 /**
  * A settings panel while it loads: its cards with their real titles, a label and a control per field, and the footer
  * of buttons, in a status region named after what is loading. Cards stack with the same gap as the real panel, so the
@@ -50,28 +96,9 @@ function SkeletonIntro({ lines }: Readonly<{ lines: number }>) {
  */
 export function SettingsPanelSkeleton({ label, held, slow, cards, footer = true }: Readonly<SettingsPanelSkeletonProps>) {
   return (
-    <output aria-label={label} className={held ? "settings-skeleton at-loading-hold" : "settings-skeleton"}>
+    <SettingsSkeletonRegion label={label} held={held} slow={slow}>
       {cards.map((card) => (
-        // The cards are decoration (the region is named by its label): hidden from assistive tech, so that the region does
-        // not read their titles out again when the 8 second note joins it, or when another tab's cards take their place.
-        <Card key={card.id} title={card.title} aria-hidden="true">
-          <div className="settings-card-stack" aria-hidden="true">
-            {card.intro && <SkeletonIntro lines={card.intro === true ? 1 : card.intro} />}
-            {(card.fields ?? 0) > 0 && (
-              <div className={card.columns === 2 ? "settings-skeleton__fields mail-transport-section" : "settings-skeleton__fields"}>
-                {Array.from({ length: card.fields ?? 0 }, (_, fieldIndex) => (
-                  <div key={fieldIndex} className="settings-skeleton__field">
-                    <Skeleton variant="rect" width="28%" height={17} />
-                    <Skeleton variant="rect" height={card.controlHeight ?? 38} />
-                  </div>
-                ))}
-              </div>
-            )}
-            {Array.from({ length: card.rows ?? 0 }, (_, rowIndex) => (
-              <Skeleton key={rowIndex} variant="rect" height={card.rowHeight ?? 60} />
-            ))}
-          </div>
-        </Card>
+        <SettingsSkeletonCardView key={card.id} card={card} />
       ))}
       {footer && (
         <div className="settings-footer settings-skeleton__footer" aria-hidden="true">
@@ -81,11 +108,6 @@ export function SettingsPanelSkeleton({ label, held, slow, cards, footer = true 
           </div>
         </div>
       )}
-      {slow ? (
-        <span className="at-hint" style={{ display: "block", textAlign: "center", color: "var(--text-secondary)" }}>
-          {SLOW_NOTICE_TEXT}
-        </span>
-      ) : null}
-    </output>
+    </SettingsSkeletonRegion>
   );
 }

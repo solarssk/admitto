@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
 import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview.js";
-import { clickKeepEditing, getTooltipText, renderWithToast } from "../test-utils.js";
+import { advanceTimers, clickKeepEditing, deferred, getTooltipText, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { TemplateEditorFallback } from "../../src/communication/CommunicationSkeleton.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
 import { bodyValue, getBodyView, setBodyValue } from "./codeMirrorTestUtils.js";
@@ -128,6 +129,16 @@ function renderPage() {
   );
 }
 
+function renderPageOnTab(tab: string) {
+  return renderWithToast(
+    <MemoryRouter initialEntries={[`/admin/events/evt-comm/communication?tab=${tab}`]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 function renderSendPage() {
   return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
@@ -172,6 +183,37 @@ function renderSendPageWithEventSwitch() {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** The Templates tab of one event, with a link to another page of the same event (leaving the page, not the event). */
+function renderPageWithLeaveLink() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication?tab=templates"]}>
+      <Link to="/admin/events/evt-a/elsewhere">Leave page</Link>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+        <Route path="/admin/events/:eventId/elsewhere" element={<p>Elsewhere</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+/** Two events whose templates differ: A has the Ticket and a Reminder, B only a "Ticket B". */
+function mockTwoEvents() {
+  fetchEventTemplates.mockImplementation(async (id: string) =>
+    id === "evt-a" ? [ticketRow, reminderRow] : [{ ...ticketRow, id: "tpl-ticket-b", label: "Ticket B" }],
+  );
+  fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+    if (id === "tpl-ticket-b") return { ...ticketRow, id: "tpl-ticket-b", label: "Ticket B", body_template: "<mjml></mjml>" };
+    if (id === "tpl-rem") return { ...reminderRow, body_template: "<p>Reminder</p>" };
+    return { ...ticketRow, body_template: "<p>Ticket</p>" };
+  });
+}
+
+/** Follows the "Switch event" link and waits until the second event's own page is there. */
+async function switchToEventB() {
+  fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Template, Ticket B" })).toBeTruthy());
 }
 
 /** Opens the Templates tab's picker dropdown and selects the option matching `label`. */
@@ -280,14 +322,17 @@ afterEach(() => {
 });
 
 describe("CommunicationPage delayed loading", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+  it("keeps the title and the tabs on screen and draws the open tab's cards once the fetch has genuinely taken a moment", () => {
     fetchEventTemplates.mockImplementation(() => new Promise(() => {}));
     vi.useFakeTimers();
     renderPage();
+    expect(screen.getByLabelText("Loading communication").className).toContain("at-loading-hold");
+    expect(screen.getByRole("tab", { name: "Email" })).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByText("Loading communication…")).toBeTruthy();
+    expect(screen.getByLabelText("Loading communication").className).not.toContain("at-loading-hold");
+    expect(screen.getByText("Ticket template")).toBeTruthy();
   });
 });
 
@@ -461,7 +506,7 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
     });
-    expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-ticket");
+    expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-ticket", expect.any(AbortSignal));
   });
 
   it("switches templates from the Send tab's own picker", async () => {
@@ -1396,7 +1441,7 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByLabelText("Subject")).toHaveProperty("value", "");
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
       expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
+      expect(isOff(screen.getByRole("button", { name: "Saved" }))).toBe(true);
       expect(reportApiError).toHaveBeenCalledWith(500);
     });
 
@@ -1545,35 +1590,137 @@ describe("CommunicationPage templates", () => {
     });
   });
 
-  it("clears delete busy state when navigating away during in-flight delete", async () => {
-    fetchEventTemplates.mockImplementation(async (id: string) => {
-      if (id === "evt-a") return [ticketRow, reminderRow];
-      return [ticketRow];
-    });
-    deleteEventTemplate.mockImplementation(() => new Promise<void>(() => {}));
-
+  it("says nothing about a delete that fails after the event was switched", async () => {
+    mockTwoEvents();
+    const deletion = deferred<void>();
+    deleteEventTemplate.mockReturnValueOnce(deletion.promise);
     renderPageWithEventSwitch();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await screen.findByDisplayValue("Ticket");
     await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
+    await screen.findByDisplayValue("Reminder subject");
     await deleteActiveTemplateViaModal();
+    await waitFor(() => expect(deleteEventTemplate).toHaveBeenCalledWith("evt-a", "tpl-rem"));
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", true);
+    await switchToEventB();
+    await act(async () => deletion.reject(new Error("network down")));
+
+    expect(screen.queryByText("Delete failed.")).toBeNull();
+    expect(screen.getByRole("button", { name: "New template" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("still says a delete failed when the operator has only left the page for another page of the same event", async () => {
+    mockTwoEvents();
+    const deletion = deferred<void>();
+    deleteEventTemplate.mockReturnValueOnce(deletion.promise);
+    renderPageWithLeaveLink();
+    await screen.findByDisplayValue("Ticket");
+    await selectTemplate("Reminder");
+    await screen.findByDisplayValue("Reminder subject");
+    await deleteActiveTemplateViaModal();
+    await waitFor(() => expect(deleteEventTemplate).toHaveBeenCalledWith("evt-a", "tpl-rem"));
+
+    fireEvent.click(screen.getByRole("link", { name: "Leave page" }));
+    expect(await screen.findByText("Elsewhere")).toBeTruthy();
+    await act(async () => deletion.reject(new Error("network down")));
+
+    expect(await screen.findByText("Delete failed.")).toBeTruthy();
+  });
+
+  it.each([
+    ["succeeds", "Template saved."],
+    ["fails", "Save failed."],
+  ] as const)("says nothing about a Save that %s after the event was switched", async (outcome, message) => {
+    mockTwoEvents();
+    const saved = deferred<unknown>();
+    saveEventTemplateById.mockReturnValueOnce(saved.promise);
+    renderPageWithEventSwitch();
+    await screen.findByLabelText("Subject");
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => expect(saveEventTemplateById).toHaveBeenCalledWith("evt-a", "tpl-ticket", expect.anything()));
+
+    await switchToEventB();
+    await act(async () => {
+      if (outcome === "succeeds") saved.resolve({ ...ticketRow, subject_template: "Edited ticket subject", body_template: "<p>Hi</p>" });
+      else saved.reject(new Error("network down"));
     });
 
-    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+    expect(screen.queryByText(message)).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", false);
-      expect(screen.queryByText("Delete template?")).toBeNull();
+  it.each([
+    ["succeeds", "Template saved."],
+    ["fails", "Save failed."],
+  ] as const)("still says a Save %s when the operator has only left the page for another page of the same event", async (outcome, message) => {
+    mockTwoEvents();
+    const saved = deferred<unknown>();
+    saveEventTemplateById.mockReturnValueOnce(saved.promise);
+    renderPageWithLeaveLink();
+    await screen.findByLabelText("Subject");
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => expect(saveEventTemplateById).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("link", { name: "Leave page" }));
+    expect(await screen.findByText("Elsewhere")).toBeTruthy();
+    await act(async () => {
+      if (outcome === "succeeds") saved.resolve({ ...ticketRow, subject_template: "Edited ticket subject", body_template: "<p>Hi</p>" });
+      else saved.reject(new Error("network down"));
     });
+
+    expect(await screen.findByText(message)).toBeTruthy();
+  });
+
+  it("says nothing about a template that could not be opened after the event was switched", async () => {
+    mockTwoEvents();
+    const opening = deferred<unknown>();
+    renderPageWithEventSwitch();
+    await screen.findByDisplayValue("Ticket");
+    fetchEventTemplateById.mockReturnValueOnce(opening.promise as never);
+    await selectTemplate("Reminder");
+
+    await switchToEventB();
+    await act(async () => opening.reject(new Error("network down")));
+
+    expect(screen.queryByText("Could not load template.")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("says nothing about a template that could not be created after the event was switched", async () => {
+    mockTwoEvents();
+    const creation = deferred<unknown>();
+    createEventTemplate.mockReturnValueOnce(creation.promise);
+    renderPageWithEventSwitch();
+    await screen.findByDisplayValue("Ticket");
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
+    const dialog = await screen.findByRole("dialog", { name: "New template" });
+    fireEvent.change(within(dialog).getByLabelText("Template label"), { target: { value: "Announcement" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(createEventTemplate).toHaveBeenCalledTimes(1));
+
+    await switchToEventB();
+    await act(async () => creation.reject(new Error("network down")));
+
+    expect(screen.queryByText("Create failed.")).toBeNull();
+    expect(screen.getByRole("button", { name: "New template" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("says nothing about a preview that fails after the event was switched", async () => {
+    mockTwoEvents();
+    const preview = deferred<unknown>();
+    previewEventTemplateById.mockImplementation((eventId: string) =>
+      eventId === "evt-a" ? preview.promise : Promise.resolve({ subject: "", html: "<p></p>" }),
+    );
+    renderPageWithEventSwitch();
+    await waitFor(() => expect(previewEventTemplateById).toHaveBeenCalledWith("evt-a", "tpl-ticket", expect.anything()), {
+      timeout: 3_000,
+    });
+
+    await switchToEventB();
+    await act(async () => preview.reject(new Error("network down")));
+
+    expect(screen.queryByText("Preview failed.")).toBeNull();
   });
 
   it("ignores a stale metadata save after switching events mid-flight", async () => {
@@ -1713,8 +1860,8 @@ describe("CommunicationPage templates", () => {
       expect(within(editDialog).getByRole("button", { name: "Saving…" })).toBeTruthy();
     });
 
-    const saveBtn = screen.getByRole("button", { name: "Save *" }) as HTMLButtonElement;
-    expect(saveBtn.disabled).toBe(true);
+    const saveBtn = screen.getByRole("button", { name: "Save *" });
+    expect(isOff(saveBtn)).toBe(true);
   });
 
   it("discards unsaved changes and lets the blocked navigation proceed", async () => {
@@ -2266,5 +2413,273 @@ describe("CommunicationPage Send tab preview reload", () => {
 
     resolveAnnouncementPreview?.({ subject: "Announcement preview subject", html: "<p>Ann body</p>" });
     expect(await screen.findByText("Announcement preview subject")).toBeTruthy();
+  });
+});
+
+describe("CommunicationPage first load on the loading standard", () => {
+  const placeholder = () => screen.queryByRole("status", { name: "Loading communication" });
+
+  it("draws the open tab's cards after 200ms, says it is taking longer after 8 seconds and ends in an error with a Retry after 30", async () => {
+    fetchEventTemplates.mockImplementation(hangUntilAborted);
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      expect(placeholder()?.className).toContain("at-loading-hold");
+      await advanceTimers(200);
+      expect(placeholder()?.className).not.toContain("at-loading-hold");
+      expect(placeholder()?.textContent).not.toContain("Taking longer than usual");
+      await advanceTimers(7_800);
+      expect(placeholder()?.textContent).toContain("Taking longer than usual");
+
+      await advanceTimers(22_000);
+      await advanceTimers(0);
+      expect(placeholder()).toBeNull();
+      expect(screen.getByText("Could not load template")).toBeTruthy();
+      expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Templates", selected: true })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the error on screen with a busy Retry until the answer is in, then moves the focus to the open tab", async () => {
+    fetchEventTemplates.mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    const answer = deferred<unknown>();
+    fetchEventTemplates.mockReturnValueOnce(answer.promise);
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(placeholder()).toBeNull();
+    fireEvent.click(retry);
+    expect(fetchEventTemplates).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer.resolve([ticketRow]));
+    expect(await screen.findByLabelText("Subject")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("tab", { name: /^Templates/, selected: true })));
+  });
+
+  it("leaves the focus alone when it is on a tab, not on the Retry that worked", async () => {
+    fetchEventTemplates.mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+    await screen.findByRole("button", { name: "Retry" });
+    const walletsTab = screen.getByRole("tab", { name: "Wallets" });
+    walletsTab.focus();
+    fetchEventTemplates.mockResolvedValueOnce([ticketRow]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByLabelText("Subject")).toBeTruthy();
+    await act(async () => {});
+    expect(document.activeElement).toBe(walletsTab);
+  });
+
+  it("does not pull the focus to the page when it was on nothing (a click that did not focus the Retry) while the Retry worked", async () => {
+    fetchEventTemplates.mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+    await screen.findByRole("button", { name: "Retry" });
+    (document.activeElement as HTMLElement | null)?.blur();
+    fetchEventTemplates.mockResolvedValueOnce([ticketRow]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByLabelText("Subject")).toBeTruthy();
+    await act(async () => {});
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("still says the viewer has no access for a 403, with the server's wording hidden", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockRejectedValueOnce(new ApiError(403, "forbidden_internal", "forbidden_internal"));
+    renderPage();
+
+    expect(await screen.findByText("You do not have access to this event")).toBeTruthy();
+    expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
+    expect(screen.queryByText(/forbidden_internal/)).toBeNull();
+    expect(reportApiError).toHaveBeenCalledWith(403);
+  });
+
+  it("keeps the no-access wording while a Retry runs, and changes it only when the answer is in", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockRejectedValueOnce(new ApiError(403, "forbidden_internal", "forbidden_internal"));
+    renderPage();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByText("You do not have access to this event")).toBeTruthy();
+    const answer = deferred<unknown>();
+    fetchEventTemplates.mockReturnValueOnce(answer.promise);
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("You do not have access to this event")).toBeTruthy();
+    expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
+    expect(screen.queryByText("Could not load template")).toBeNull();
+
+    await act(async () => answer.reject(new ApiError(500, "secret_internal")));
+    expect(await screen.findByText("Could not load template")).toBeTruthy();
+    expect(screen.queryByText("You do not have access to this event")).toBeNull();
+  });
+
+  it.each([
+    ["is on its way", () => fetchEventTemplates.mockImplementation(hangUntilAborted)],
+    ["has failed", () => fetchEventTemplates.mockRejectedValue(new Error("network down"))],
+  ] as const)("does not preview the blank draft of a page whose read %s", async (state, arrange) => {
+    arrange();
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      // Let a failed read settle, then give the debounce of the preview more than its 500ms.
+      await advanceTimers(0);
+      await advanceTimers(1_500);
+      if (state === "has failed") expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+      expect(previewEventTemplate).not.toHaveBeenCalled();
+      expect(previewEventTemplateById).not.toHaveBeenCalled();
+      expect(screen.queryByText("Preview failed.")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["send", ["Email message", "Send to"]],
+    ["wallets", ["Message", "Preview", "Send to"]],
+    ["templates", ["", "Ticket template", "Send test"]],
+    ["log", ["Delivery log"]],
+  ] as const)("draws the cards of the %s tab, as the real tab lays them out, while the page's first read is on its way", async (tab, titles) => {
+    fetchEventTemplates.mockImplementation(hangUntilAborted);
+    vi.useFakeTimers();
+    try {
+      renderPageOnTab(tab);
+      await advanceTimers(200);
+      const cards = [...placeholder()!.querySelectorAll(".at-card")];
+      expect(cards.map((card) => card.querySelector(".at-card__title")?.textContent ?? "")).toEqual([...titles]);
+      expect(screen.getByRole("tab", { name: /^Email/, selected: tab === "send" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("draws the message and its preview of the Wallets tab side by side, with the notice's room between them and the Send to card", async () => {
+    fetchEventTemplates.mockImplementation(hangUntilAborted);
+    vi.useFakeTimers();
+    try {
+      renderPageOnTab("wallets");
+      await advanceTimers(200);
+      const region = placeholder()!;
+      const split = region.querySelector(".communication-templates-split");
+      expect([...(split?.querySelectorAll(".at-card__title") ?? [])].map((title) => title.textContent)).toEqual(["Message", "Preview"]);
+      const children = [...region.children].map((child) => (child.matches(".at-card") ? "card" : child.className || child.tagName));
+      expect(children).toEqual(["communication-templates-split", "DIV", "card"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is a fresh page for another event: the first event's editor is gone and the placeholder is drawn", async () => {
+    fetchEventTemplates.mockImplementation(((id: string) => (id === "evt-a" ? Promise.resolve([ticketRow]) : new Promise(() => {}))) as never);
+    renderPageWithEventSwitch();
+    await screen.findByLabelText("Subject");
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+    await waitFor(() => expect(screen.queryByLabelText("Subject")).toBeNull());
+    expect(placeholder()).not.toBeNull();
+  });
+
+  it("titles the editor's fallback like the editor does: 'Ticket template' for the ticket, 'Template' for another one", () => {
+    const { unmount } = renderWithToast(<TemplateEditorFallback />);
+    expect(screen.getByText("Ticket template")).toBeTruthy();
+    unmount();
+    renderWithToast(<TemplateEditorFallback ticket={false} />);
+    expect(screen.getByText("Template")).toBeTruthy();
+    expect(screen.queryByText("Ticket template")).toBeNull();
+  });
+
+  it("shows the template editor's fallback as grey shapes of the card, held for 200ms, with the slow note after 8 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      renderWithToast(<TemplateEditorFallback />);
+      const region = () => screen.getByRole("status", { name: "Loading editor" });
+      expect(region().className).toContain("at-loading-hold");
+      expect(screen.getByText("Ticket template")).toBeTruthy();
+      await advanceTimers(200);
+      expect(region().className).not.toContain("at-loading-hold");
+      await advanceTimers(7_800);
+      expect(region().textContent).toContain("Taking longer than usual");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("CommunicationPage Save and Send test on the loading standard", () => {
+  it("shows Save busy while the template saves, with its label kept and its focus, then 'Saved' stays focusable", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await screen.findByLabelText("Subject");
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    const saved = deferred<unknown>();
+    saveEventTemplateById.mockReturnValueOnce(saved.promise);
+    const save = screen.getByRole("button", { name: "Save *" });
+    save.focus();
+
+    fireEvent.click(save);
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(save);
+    expect(screen.queryByText("Saving…")).toBeNull();
+    fireEvent.click(save);
+    expect(saveEventTemplateById).toHaveBeenCalledTimes(1);
+
+    await act(async () => saved.resolve({ ...ticketRow, subject_template: "Updated ticket subject", body_template: "<p>Hi</p>" }));
+    const after = await screen.findByRole("button", { name: "Saved" });
+    expect(after).toBe(save);
+    expect(isOff(after)).toBe(true);
+    expect(after.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(after);
+  });
+
+  it("shows Send test busy as 'Sending…' while it sends, keeps its focus and ignores a second click", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    const sent = deferred<unknown>();
+    testSendEventTemplate.mockReturnValueOnce(sent.promise);
+    renderPage();
+    fireEvent.change(await screen.findByLabelText("Recipient"), { target: { value: "ops@example.com" } });
+    const send = screen.getByRole("button", { name: "Send test" });
+    send.focus();
+
+    fireEvent.click(send);
+    const busy = await screen.findByRole("button", { name: "Sending…" });
+    expect(busy).toBe(send);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(testSendEventTemplate).toHaveBeenCalledTimes(1);
+
+    await act(async () => sent.resolve({ status: "sent" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+  });
+
+  it("keeps Send test off, but focusable, while the recipient is not a valid address, and says why", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await screen.findByLabelText("Recipient");
+    const send = screen.getByRole("button", { name: "Send test" });
+    expect(isOff(send)).toBe(true);
+    expect(send.hasAttribute("disabled")).toBe(false);
+    const description = (send.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent)
+      .join(" ");
+    expect(description).toBe("Enter a valid email address.");
+    fireEvent.click(send);
+    expect(testSendEventTemplate).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: "ops@example.com" } });
+    expect(isOff(send)).toBe(false);
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText("Enter a valid email address.")).toBeNull();
   });
 });

@@ -18,13 +18,10 @@ import {
   Badge,
   Button,
   Card,
-  EmptyState,
   HintLabel,
   Input,
   Notice,
-  PageHeader,
   Spinner,
-  Tabs,
   Tooltip,
   useToast,
   type ToastVariant,
@@ -59,7 +56,13 @@ import type {
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { browserClockTime, formatEventDate } from "../utils/event-dates.js";
-import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
+import { redirectToLogin } from "../identity/loginRedirect.js";
+import { COMMUNICATION_TAB_IDS, CommunicationHeader } from "../communication/CommunicationHeader.js";
+import { CommunicationSkeleton, TemplateEditorFallback } from "../communication/CommunicationSkeleton.js";
+import { PanelLoadError } from "../settings/PanelLoadError.js";
+import { PageRetryPanel } from "../components/PageRetryPanel.js";
+import { useFocusAfterPageRetry } from "../hooks/useFocusAfterPageRetry.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
@@ -397,33 +400,28 @@ function isDeleteStale(
   return seq !== currentSeq || scopeEventId !== currentEventId;
 }
 
-/** Maps a failed initial-template-load error to UI state: reported status code, redirect on 401,
- * or an operator-facing message. Extracted from the mount effect so that function's own cognitive
- * complexity stays low. */
-function handleInitialTemplateLoadError(
+/** What a failed first read of the page does besides being an error to show: the status is reported to the connection
+ * state, a 401 hands the browser to the login page (and never answers, so no error flashes up first), and whether the
+ * failure was a 403 is remembered, so that the error says the viewer has no access (the Retry stays, since access can be
+ * granted meanwhile). It is set when the answer is in, never when a Retry starts, so the wording of the error on screen does
+ * not change while the Retry runs. The failure is rethrown for `usePanelLoad`, which turns it into the message. Extracted
+ * from the load so its own cognitive complexity stays low. */
+function failInitialTemplateLoad(
   err: unknown,
-  isCancelled: () => boolean,
   reportApiError: (status: number) => void,
-  setError: (message: string) => void,
   setAccessDenied: (denied: boolean) => void,
-): void {
-  if (isCancelled()) return;
-  if (!(err instanceof ApiError)) {
-    setError("Could not load template.");
-    return;
+): Promise<never> {
+  const status = err instanceof ApiError ? err.status : null;
+  if (status !== null) {
+    reportApiError(status);
+    if (status === 401) {
+      redirectToLogin();
+      return new Promise<never>(() => {});
+    }
   }
-  reportApiError(err.status);
-  if (err.status === 401) {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
-    return;
-  }
-  if (err.status === 403) {
-    setAccessDenied(true);
-    setError("You do not have access to this event.");
-    return;
-  }
-  setError("Could not load template.");
+  setAccessDenied(status === 403);
+  // The server's own wording is not shown for this read: it is a fixed message, as it has always been.
+  throw new Error("Could not load template.");
 }
 
 /** Maps a failed deliveries load to UI state, or suppresses it for a silent poll tick (mirrors
@@ -1075,6 +1073,8 @@ function TemplatesPreviewPanel({
   );
 }
 
+const INVALID_RECIPIENT_REASON_ID = "send-test-invalid-recipient-reason";
+
 /** Test-send card: recipient email input, send button, and the last test-send result. */
 function SendTestCard({
   event,
@@ -1093,6 +1093,7 @@ function SendTestCard({
   onTestSend: () => Promise<void>;
   testStatus: TestSendStatus | null;
 }>) {
+  const recipientValid = isValidEmail(testEmail.trim());
   return (
     <Card
       title={
@@ -1118,19 +1119,29 @@ function SendTestCard({
               {...NO_AUTOFILL_PROPS}
             />
             <div className="mail-test-send__send-control">
-              <ArchivedGuard
-                event={event}
-                reasonId="send-test-reason"
-                disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
-              >
+              {!recipientValid && (
+                <span id={INVALID_RECIPIENT_REASON_ID} className="sr-only">
+                  Enter a valid email address.
+                </span>
+              )}
+              <ArchivedGuard event={event} reasonId="send-test-reason" disabled={editorSnapshotMissing}>
                 {(guard) => (
                   <Button
                     variant="secondary"
                     icon={<i className="ti ti-send" aria-hidden="true" />}
                     onClick={() => void onTestSend()}
                     {...guard}
+                    // It stays focusable (aria-disabled, not disabled) while the address is not valid, so it says why.
+                    aria-describedby={
+                      [guard["aria-describedby"], recipientValid ? undefined : INVALID_RECIPIENT_REASON_ID]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
+                    loading={testSending}
+                    loadingLabel="Sending…"
+                    aria-disabled={!recipientValid}
                   >
-                    {testSending ? "Sending…" : "Send test"}
+                    Send test
                   </Button>
                 )}
               </ArchivedGuard>
@@ -1180,11 +1191,30 @@ function TestSendResultPreview({ status }: Readonly<{ status: TestSendStatus }>)
   );
 }
 
-const TAB_IDS = ["send", "wallets", "templates", "log"] as const;
+/** What the focus of a Retry that worked goes to once the page is there: the tab that is open. */
+const COMMUNICATION_RETRY_FOCUS_TARGETS = ['[role="tab"][aria-selected="true"]'] as const;
 
-/** Admin screen for event mail template editing, preview, test-send, and delivery log. */
+/** Admin screen for event mail template editing, preview, test-send, and delivery log.
+ *
+ * One event, one page: a different `:eventId` is a fresh page (its own load, editor and send forms), never the previous
+ * event's templates with new data under them. */
 export function CommunicationPage() {
   const { eventId } = useParams();
+  // The event the route is on right now. A page that is going away reads it in its cleanup, which runs after this layout
+  // effect: another id means the event was switched (what is still on its way is stale), the same id means the operator
+  // simply left the page (what is on its way still says how it ended, as a toast always did).
+  const routeEventIdRef = useRef(eventId);
+  useLayoutEffect(() => {
+    routeEventIdRef.current = eventId;
+  }, [eventId]);
+  if (!eventId) return <p>Missing event.</p>;
+  return <CommunicationPageBody key={eventId} eventId={eventId} routeEventIdRef={routeEventIdRef} />;
+}
+
+function CommunicationPageBody({
+  eventId,
+  routeEventIdRef,
+}: Readonly<{ eventId: string; routeEventIdRef: RefObject<string | undefined> }>) {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
@@ -1194,7 +1224,7 @@ export function CommunicationPage() {
   // of always resetting to Send.
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab = TAB_IDS.find((id) => id === tabParam) ?? "send";
+  const tab = COMMUNICATION_TAB_IDS.find((id) => id === tabParam) ?? "send";
   const setTab = useCallback(
     (next: string) => {
       setSearchParams(
@@ -1209,9 +1239,6 @@ export function CommunicationPage() {
     },
     [setSearchParams],
   );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
   const [accessDenied, setAccessDenied] = useState(false);
 
   const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
@@ -1274,6 +1301,7 @@ export function CommunicationPage() {
   const createTemplateSeqRef = useRef(0);
   const deleteTemplateSeqRef = useRef(0);
   const metadataSaveSeqRef = useRef(0);
+  const saveSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
   const currentEventIdRef = useRef(eventId);
   /** Aborts an in-flight bounce-overview fetch when a newer one starts (mount, event switch, or
@@ -1370,10 +1398,10 @@ export function CommunicationPage() {
   const loadTemplateSelection = useCallback(
     async (key: string): Promise<TemplateSelectionLoad> => {
       if (key === "virtual-ticket") {
-        legacyTemplateRef.current = await fetchEventTemplate(eventId!);
+        legacyTemplateRef.current = await fetchEventTemplate(eventId);
         return { kind: "legacy", data: legacyTemplateRef.current };
       }
-      const detail = await fetchEventTemplateById(eventId!, key);
+      const detail = await fetchEventTemplateById(eventId, key);
       return { kind: "detail", data: detail };
     },
     [eventId],
@@ -1633,57 +1661,59 @@ export function CommunicationPage() {
     return () => window.clearTimeout(t);
   }, [deliverySearchInput]);
 
-  useEffect(() => {
-    currentEventIdRef.current = eventId;
-    deleteTemplateSeqRef.current += 1;
-    previewSeqRef.current += 1;
-    metadataSaveSeqRef.current += 1;
-    setTemplateActionBusy(false);
-    setEditModalOpen(false);
-  }, [eventId]);
+  useEffect(
+    () => () => {
+      // The page is keyed by its event, so an instance never sees its id change: it is replaced. When the event was switched,
+      // what is still on its way (a save, a delete, a preview, a template that was being opened) is stale from here on, and
+      // says nothing (no toast) about an event that is no longer on screen. When the operator just left the page, it is not:
+      // a delete that fails after they have gone still says so.
+      if (routeEventIdRef.current === eventId) return;
+      saveSeqRef.current += 1;
+      deleteTemplateSeqRef.current += 1;
+      previewSeqRef.current += 1;
+      metadataSaveSeqRef.current += 1;
+      templateSelectionSeqRef.current += 1;
+      createTemplateSeqRef.current += 1;
+    },
+    [eventId, routeEventIdRef],
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!eventId) return;
-      setLoading(true);
-      setError(null);
-      setAccessDenied(false);
+  // The first read of the page (the templates, the event's ticket template and the template that opens in the editor):
+  // nothing is drawn for 200ms, then the header and tabs with the open tab's own placeholder, an error with a busy Retry
+  // after a failure (or 30 seconds without an answer).
+  const pageRef = useRef<HTMLDivElement>(null);
+  const errorHadFocusRef = useRef(false);
+  const firstLoad = usePanelLoad({
+    fetch: async (signal) => {
       try {
-        const [items, data] = await Promise.all([
-          fetchEventTemplates(eventId),
-          fetchEventTemplate(eventId),
-        ]);
-        if (cancelled) return;
-        legacyTemplateRef.current = data;
-        setTemplates(items);
-        setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
-        setRequiredPlaceholders(data.required_url_placeholders);
-        setImagePlaceholders(data.image_placeholders ?? []);
-        setBrandingLogoUrl(data.logo_url);
+        const [items, data] = await Promise.all([fetchEventTemplates(eventId, signal), fetchEventTemplate(eventId, signal)]);
         const ticket = items.find((t) => t.name === "ticket");
-        if (ticket) {
-          setActiveKey(ticket.id);
-          const detail = await fetchEventTemplateById(eventId, ticket.id);
-          if (cancelled) return;
-          applyDetailTemplate(detail);
-        } else {
-          setActiveKey("virtual-ticket");
-          applyLegacyTemplate(data);
-        }
-        setValidationErrors([]);
-        setPreviewSubject(null);
-        setPreviewHtml(null);
+        const detail = ticket ? await fetchEventTemplateById(eventId, ticket.id, signal) : null;
+        return { items, data, ticket, detail };
       } catch (err) {
-        handleInitialTemplateLoadError(err, () => cancelled, reportApiError, setError, setAccessDenied);
-      } finally {
-        if (!cancelled) setLoading(false);
+        return await failInitialTemplateLoad(err, reportApiError, setAccessDenied);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId, reportApiError, applyDetailTemplate, applyLegacyTemplate, reloadToken]);
+    },
+    apply: ({ items, data, ticket, detail }) => {
+      legacyTemplateRef.current = data;
+      setTemplates(items);
+      setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
+      setRequiredPlaceholders(data.required_url_placeholders);
+      setImagePlaceholders(data.image_placeholders ?? []);
+      setBrandingLogoUrl(data.logo_url);
+      if (ticket && detail) {
+        setActiveKey(ticket.id);
+        applyDetailTemplate(detail);
+      } else {
+        setActiveKey("virtual-ticket");
+        applyLegacyTemplate(data);
+      }
+      setValidationErrors([]);
+      setPreviewSubject(null);
+      setPreviewHtml(null);
+    },
+    fallback: "Could not load template.",
+  });
 
   useLayoutEffect(() => {
     setEmailBounced(0);
@@ -1920,8 +1950,11 @@ export function CommunicationPage() {
   // render request after a pause rather than one per keystroke. Only while that tab is actually
   // open - the Send tab already gets its own immediate (non-debounced) preview-on-template-switch
   // effect inside SendTab itself, since there's no draft being typed there to debounce against.
+  // Not before the page has read its templates: the tabs are on screen while it waits or after it failed, and a preview of
+  // the blank draft would fail over the placeholder or the error.
+  const pageReady = firstLoad.gate.showContent && firstLoad.error === null;
   useEffect(() => {
-    if (tab !== "templates" || editorSnapshotMissing) return;
+    if (tab !== "templates" || editorSnapshotMissing || !pageReady) return;
     const t = window.setTimeout(() => {
       void handlePreview();
     }, 500);
@@ -1930,10 +1963,22 @@ export function CommunicationPage() {
     // every render (same reasoning as SendTab's own preview-on-switch effect) - only these
     // primitives should actually restart the debounce timer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, subject, body, format, activeKey, editorSnapshotMissing]);
+  }, [tab, subject, body, format, activeKey, editorSnapshotMissing, pageReady]);
+
+  const toastSaveFailure = (err: unknown) => {
+    const fallback = "Save failed.";
+    if (err instanceof ApiError) {
+      reportApiError(err.status);
+      addToast(operatorApiErrorMessage(err, fallback), "error");
+    } else {
+      addToast(fallback, "error");
+    }
+  };
 
   const performSave = async () => {
     if (!eventId || templateActionBusy) return;
+    // A save that ends after the event was switched says nothing: it is not about the event on screen.
+    const seq = ++saveSeqRef.current;
     setValidationErrors([]);
     setSaving(true);
     try {
@@ -1957,18 +2002,14 @@ export function CommunicationPage() {
           sortTemplates(prev.map((t) => (t.id === activeKey ? templateListItemFromDetail(saved) : t))),
         );
       }
+      if (seq !== saveSeqRef.current) return;
       addToast("Template saved.", "success");
     } catch (err) {
+      if (seq !== saveSeqRef.current) return;
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
       } else {
-        const fallback = "Save failed.";
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          addToast(operatorApiErrorMessage(err, fallback), "error");
-        } else {
-          addToast(fallback, "error");
-        }
+        toastSaveFailure(err);
       }
     } finally {
       setSaving(false);
@@ -2003,8 +2044,8 @@ export function CommunicationPage() {
     try {
       const result =
         activeKey === "virtual-ticket"
-          ? await testSendEventTemplate(eventId!, { to: submittedEmail })
-          : await testSendEventTemplateById(eventId!, activeKey, { to: submittedEmail });
+          ? await testSendEventTemplate(eventId, { to: submittedEmail })
+          : await testSendEventTemplateById(eventId, activeKey, { to: submittedEmail });
       if (result.status === "sent") {
         setTestStatus({
           kind: "ok",
@@ -2032,30 +2073,32 @@ export function CommunicationPage() {
     }
   };
 
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // these "Loading…" placeholders on and off faster than they can register as loading —
-  // show them only once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
+  useFocusAfterPageRetry(Boolean(firstLoad.error), true, pageRef, errorHadFocusRef, COMMUNICATION_RETRY_FOCUS_TARGETS);
 
-  if (!eventId) return <p>Missing event.</p>;
-  if (loading) return whenShown(showLoading, <p>Loading communication…</p>);
-  if (error) {
+  if (!firstLoad.gate.showContent) {
     return (
-      <EmptyState
-        variant="error"
-        title={accessDenied ? "You do not have access to this event" : "Could not load template"}
-        description={error}
-        action={
-          <Button type="button" variant="secondary" onClick={() => setReloadToken((t) => t + 1)}>
-            Retry
-          </Button>
-        }
-      />
+      <div ref={pageRef} className="screen">
+        <CommunicationHeader tab={tab} onTabChange={setTab} />
+        <CommunicationSkeleton tab={tab} held={!firstLoad.gate.showIndicator} slow={firstLoad.slow} />
+      </div>
     );
   }
-
-  const unsavedTemplateLabel = isDirty ? "Save *" : "Saved";
-  const saveButtonLabel = saving ? "Saving…" : unsavedTemplateLabel;
+  if (firstLoad.error) {
+    return (
+      <div ref={pageRef} className="screen">
+        <CommunicationHeader tab={tab} onTabChange={setTab} />
+        <PageRetryPanel label="Communication" errorHadFocusRef={errorHadFocusRef}>
+          <PanelLoadError
+            cardTitle="Communication"
+            title={accessDenied ? "You do not have access to this event" : "Could not load template"}
+            message={accessDenied ? "You do not have access to this event." : firstLoad.error}
+            retrying={firstLoad.retrying}
+            onRetry={firstLoad.retry}
+          />
+        </PageRetryPanel>
+      </div>
+    );
+  }
 
   const hasActiveDeliveryFilters =
     deliveryStatus !== "all" ||
@@ -2081,40 +2124,14 @@ export function CommunicationPage() {
   const activeTemplateMeta = templates.find((t) => t.id === activeKey) ?? null;
 
   return (
-    <div className="screen">
-      <PageHeader
-        className="communication-pageheader"
-        title="Communication"
-        subtitle="Ticket email templates and delivery log"
-        actions={
-          <a
-            href="https://github.com/solarssk/admitto/wiki/Email-Templates"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="at-btn at-btn--secondary"
-          >
-            <span className="at-btn__icon" aria-hidden="true">
-              <i className="ti ti-book" aria-hidden="true" />
-            </span>
-            <span>Documentation</span>
-          </a>
-        }
-      />
-
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { id: "send", label: "Email" },
-          { id: "wallets", label: "Wallets" },
-          {
-            id: "templates",
-            label: isDirty ? "Templates *" : "Templates",
-            // Always ≥ 1: an empty list still counts the virtual inherited ticket row.
-            count: templateTabCount,
-          },
-          { id: "log", label: "Delivery log", count: deliveryTotal || undefined },
-        ]}
+    <div ref={pageRef} className="screen">
+      <CommunicationHeader
+        tab={tab}
+        onTabChange={setTab}
+        templatesLabel={isDirty ? "Templates *" : "Templates"}
+        // Always ≥ 1: an empty list still counts the virtual inherited ticket row.
+        templatesCount={templateTabCount}
+        deliveryTotal={deliveryTotal}
       />
 
       <EmailBounceBanner
@@ -2173,7 +2190,7 @@ export function CommunicationPage() {
           />
 
           <div className="communication-templates-split">
-            <Suspense fallback={<Spinner label="Loading editor" />}>
+            <Suspense fallback={<TemplateEditorFallback ticket={activeTemplateName === "ticket"} />}>
               <TemplateEditorCard
                 event={event}
                 activeKey={activeKey}
@@ -2200,7 +2217,6 @@ export function CommunicationPage() {
                 saving={saving}
                 templateActionBusy={templateActionBusy}
                 isDirty={isDirty}
-                saveButtonLabel={saveButtonLabel}
                 onSave={handleSave}
               />
             </Suspense>
