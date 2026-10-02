@@ -8,6 +8,103 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const pagerProps = {
+  idPrefix: "test",
+  pageSize: 25,
+  totalRows: 60,
+  pageSizeOptions: [25, 50, 100],
+  onPageSizeChange: vi.fn(),
+} as const;
+
+function pager(props: { page: number; totalPages: number; onPrevious?: () => void; onNext?: () => void }) {
+  return <PaginationFooter {...pagerProps} onPrevious={vi.fn()} onNext={vi.fn()} {...props} />;
+}
+
+describe("PaginationFooter edge buttons", () => {
+  // `disabled` would make a browser drop the focus of the button that was just pressed (Next on the
+  // second-to-last page becomes the last-page button on the same commit), so the edge buttons are
+  // `aria-disabled` and Button swallows their click. jsdom keeps focus on a disabled button, so what
+  // proves the fix here is the missing `disabled` attribute; the focus loss itself was measured in Chrome.
+  it("keeps focus on Next when it becomes the last-page button, and does nothing when it is clicked", () => {
+    const onNext = vi.fn();
+    const { rerender } = render(pager({ page: 2, totalPages: 3, onNext }));
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    next.focus();
+    expect(document.activeElement).toBe(next);
+    expect(next.hasAttribute("aria-disabled")).toBe(false);
+
+    rerender(pager({ page: 3, totalPages: 3, onNext }));
+
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(document.activeElement).toBe(next);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    expect(next.disabled).toBe(false);
+    fireEvent.click(next);
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus on Previous when it becomes the first-page button, and does nothing when it is clicked", () => {
+    const onPrevious = vi.fn();
+    const { rerender } = render(pager({ page: 2, totalPages: 3, onPrevious }));
+    const previous = screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement;
+    previous.focus();
+    expect(document.activeElement).toBe(previous);
+    expect(previous.hasAttribute("aria-disabled")).toBe(false);
+
+    rerender(pager({ page: 1, totalPages: 3, onPrevious }));
+
+    expect(screen.getByRole("button", { name: "Previous" })).toBe(previous);
+    expect(document.activeElement).toBe(previous);
+    expect(previous.getAttribute("aria-disabled")).toBe("true");
+    expect(previous.disabled).toBe(false);
+    fireEvent.click(previous);
+    expect(onPrevious).not.toHaveBeenCalled();
+  });
+
+  it("gives the click back once the button is off the edge again", () => {
+    const onNext = vi.fn();
+    const { rerender } = render(pager({ page: 3, totalPages: 3, onNext }));
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    next.focus();
+
+    rerender(pager({ page: 2, totalPages: 3, onNext }));
+
+    expect(document.activeElement).toBe(next);
+    expect(next.hasAttribute("aria-disabled")).toBe(false);
+    fireEvent.click(next);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps both buttons inert, and not `disabled`, when everything fits on one page", () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    render(pager({ page: 1, totalPages: 1, onPrevious, onNext }));
+
+    for (const name of ["Previous", "Next"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+    }
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it("leaves both buttons live on a middle page", () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    render(pager({ page: 2, totalPages: 3, onPrevious, onNext }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(onPrevious).toHaveBeenCalledTimes(1);
+    expect(onNext).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Previous" }).hasAttribute("aria-disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Next" }).hasAttribute("aria-disabled")).toBe(false);
+  });
+});
+
 describe("paginationHandlers", () => {
   it("resets to page 1 when the page size changes", () => {
     const setPage = vi.fn();

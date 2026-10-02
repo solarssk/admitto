@@ -71,13 +71,16 @@ export function PaginationFooter({
         </div>
       </div>
       <div className="audit-log-footer__pager">
-        <Button type="button" variant="secondary" size="sm" disabled={page <= 1} onClick={onPrevious}>
+        {/* aria-disabled, never disabled: the button that was just pressed becomes the edge one on the same
+            commit (Next on the second-to-last page), and a browser drops the focus of a button that turns
+            disabled. Button swallows the click of an aria-disabled button, so nothing happens at the edge. */}
+        <Button type="button" variant="secondary" size="sm" aria-disabled={page <= 1} onClick={onPrevious}>
           Previous
         </Button>
         <span>
           Page {page} of {totalPages}
         </span>
-        <Button type="button" variant="secondary" size="sm" disabled={page >= totalPages} onClick={onNext}>
+        <Button type="button" variant="secondary" size="sm" aria-disabled={page >= totalPages} onClick={onNext}>
           Next
         </Button>
       </div>

@@ -26,6 +26,12 @@ describe("Button loading CSS (jsdom does not load the stylesheet, so the source 
     expect(rule).toMatch(/cursor:\s*progress/);
   });
 
+  it("still dims an aria-disabled button that is not busy, with the not-allowed cursor, exactly like a disabled one (a pager's edge button)", () => {
+    const rule = declarationsOf('.at-btn:disabled, .at-btn[aria-disabled="true"]');
+    expect(rule).toMatch(/opacity:\s*0\.5/);
+    expect(rule).toMatch(/cursor:\s*not-allowed/);
+  });
+
   it("gives no hover or active colour to a button that is aria-disabled (busy), only to one that is neither disabled nor busy", () => {
     const rules = css.split("\n").filter((line) => /^\.at-btn--[a-z]+:(hover|active)/.test(line));
     expect(rules.length).toBeGreaterThan(0);

@@ -990,11 +990,11 @@ describe("AuditLogPanel rendering", () => {
 
     renderAuditPanel();
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Page 2 of 2")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Next" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 });
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
@@ -2039,7 +2039,7 @@ describe("AuditLogPanel Security view rendering", () => {
     renderSecurityPanel();
 
     expect(await screen.findByText("Showing 1–25 of 60")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByText("Page 1 of 3")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
