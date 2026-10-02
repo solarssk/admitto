@@ -420,6 +420,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
 
               <PaginationFooter
                 idPrefix="role-assignments"
+                busy={list.refreshing}
                 page={page}
                 pageSize={pageSize}
                 totalPages={totalPages}

@@ -342,6 +342,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
 
                 <PaginationFooter
                   idPrefix="sessions"
+                  busy={list.refreshing}
                   page={effectivePage}
                   pageSize={pageSize}
                   totalPages={totalPages}

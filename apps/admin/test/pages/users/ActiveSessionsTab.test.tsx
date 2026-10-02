@@ -864,6 +864,23 @@ describe("ActiveSessionsTab on the loading standard", () => {
     expect(screen.getAllByText("one@example.com").length).toBeGreaterThan(0);
   });
 
+  it("marks the pager as busy while the refresh after a revoke is on its way", async () => {
+    const refresh = deferred<{ sessions: SessionListDto[] }>();
+    const many = Array.from({ length: 30 }, (_, i) => makeSession({ id: `s${i}`, userEmail: `user${i}@example.com` }));
+    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: many }).mockReturnValueOnce(refresh.promise);
+    vi.mocked(revokeSessionById).mockResolvedValue(undefined);
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+    const next = screen.getByRole("button", { name: "Next" });
+    expect(next.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_NAME })[0]!);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(fetchSessions).toHaveBeenCalledTimes(2));
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => refresh.resolve({ sessions: many.slice(1) }));
+  });
+
   it("shows a saved device label when the refresh after it fails", async () => {
     vi.mocked(fetchSessions)
       .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", deviceLabel: "Old tablet" })] })

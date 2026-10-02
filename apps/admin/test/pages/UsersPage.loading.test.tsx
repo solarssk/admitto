@@ -268,6 +268,41 @@ describe("UsersPage refetch", () => {
     await waitFor(() => expect(screen.queryByText(/Could not refresh this list/)).toBeNull());
   });
 
+  it("gives way to the error when the refresh after an invite fails, instead of staying without the new person under the success toast", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValueOnce(answer([])).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(createAdminUser).mockResolvedValue({ user: makeStaffUser("new-user", "New User") } as Awaited<ReturnType<typeof createAdminUser>>);
+    renderUsers();
+    fireEvent.click(await screen.findByRole("button", { name: "Invite user" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email address *"), { target: { value: "new-user@example.com" } });
+    fireEvent.change(within(dialog).getByLabelText("Temporary password *"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("No users yet")).toBeNull();
+    expect(screen.queryByText(/may show older details/)).toBeNull();
+  });
+
+  it("marks the pager as busy while a page is on its way: Next stays where it is for the keyboard, and does nothing", async () => {
+    const page1 = Array.from({ length: 25 }, (_, i) => makeStaffUser(`user-${i + 1}`, `User ${i + 1}`));
+    const second = deferred<UsersAnswer>();
+    vi.mocked(fetchAdminUsers).mockResolvedValueOnce(answer(page1, 60)).mockReturnValueOnce(second.promise);
+    renderUsers();
+    await screen.findAllByText("user-1@example.com");
+    const next = screen.getAllByRole("button", { name: "Next" })[0]!;
+    expect(next.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(next);
+    await waitFor(() => expect(fetchAdminUsers).toHaveBeenCalledTimes(2));
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(next);
+    expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+
+    await act(async () => second.resolve({ users: page1, total: 60, page: 2, pageSize: 25 }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Next" })[0]!.getAttribute("aria-disabled")).not.toBe("true"));
+  });
+
   it("says nothing false when the delete takes the only person of the last page, before any answer has come in", async () => {
     const page1 = Array.from({ length: 25 }, (_, i) => makeStaffUser(`user-${i + 1}`, `User ${i + 1}`));
     const reloadOfPageTwo = deferred<UsersAnswer>();

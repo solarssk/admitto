@@ -563,6 +563,20 @@ describe("RoleAssignmentsTab on the loading standard", () => {
     await waitFor(() => expect(document.querySelectorAll(".refetch-card")).toHaveLength(0));
   });
 
+  it("marks the pager as busy while a page is on its way", async () => {
+    const second = deferred<ReturnType<typeof answer>>();
+    fetchRoleAssignments.mockResolvedValueOnce(answer([assignment("1", "one@example.com")], 60)).mockReturnValueOnce(second.promise);
+    renderWithToast(<RoleAssignmentsTab />);
+    await screen.findAllByText("one@example.com");
+    const next = screen.getByRole("button", { name: "Next" });
+    expect(next.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(next);
+    await waitFor(() => expect(fetchRoleAssignments).toHaveBeenCalledTimes(2));
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => second.resolve(answer([assignment("2", "two@example.com")], 60)));
+  });
+
   it("describes the answer on screen in its empty state, not the search that is still on its way", async () => {
     const second = deferred<ReturnType<typeof answer>>();
     fetchRoleAssignments.mockResolvedValueOnce(answer([])).mockReturnValueOnce(second.promise);

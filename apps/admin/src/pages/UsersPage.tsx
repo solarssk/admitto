@@ -441,6 +441,7 @@ export function UsersPage() {
 
                   <PaginationFooter
                     idPrefix="staff-users"
+                    busy={list.refreshing}
                     page={page}
                     pageSize={pageSize}
                     totalPages={totalPages}
@@ -492,7 +493,9 @@ export function UsersPage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onCreated={({ user, warning }) => {
-          void list.reload();
+          // Where the new person belongs in the list (the server's order, filters, pages) is not known here: when the
+          // refresh fails, the list gives way to the error instead of staying without them under the success toast.
+          void list.reload({ keepRowsOnFailure: false });
           if (warning) {
             addToast(warning, "error");
           } else {

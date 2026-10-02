@@ -775,7 +775,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         });
       }
       for (const add of pendingAdds) {
-        const { assignment } = await grantUserRole(user.id, {
+        // The grants run one after the other on purpose: each is dropped from the staged list only once it has
+        // succeeded, and the first failure stops the rest.
+        const { assignment } = await grantUserRole(user.id, { // NOSONAR - sequential by design (S9382)
           role: add.role,
           scope_type: add.scopeType,
           scope_id: add.scopeId,
