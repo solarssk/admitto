@@ -411,7 +411,7 @@ describe("NotificationsPanel", () => {
     expect(
       screen.getByRole("button", { name: "Send test to colleague@example.com" }),
     ).not.toHaveProperty("disabled", true);
-    const busyWebhook = screen.getByRole("button", { name: "Send test (webhook)" });
+    const busyWebhook = screen.getByRole("button", { name: "Sending test (webhook)" });
     expect(busyWebhook.getAttribute("aria-busy")).toBe("true");
     expect(busyWebhook).not.toHaveProperty("disabled", true);
     fireEvent.click(busyWebhook);
@@ -612,9 +612,7 @@ describe("NotificationsPanel", () => {
     });
     mockFetch.mockResolvedValueOnce(sampleResponse());
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => {
-      expect(screen.queryByText("Notification types")).toBeTruthy();
-    });
+    await screen.findByRole("button", { name: "Send test (webhook)" });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 

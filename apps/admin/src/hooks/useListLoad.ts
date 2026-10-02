@@ -85,11 +85,13 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
   try {
     const next = await rejectOnAbort(ctx.fetcher(limit.signal), limit.signal);
     if (superseded()) return;
-    ctx.loadedRef.current = true;
-    ctx.answeredRef.current = ctx.fetcher;
     ctx.setData(next);
     ctx.setRefreshError(null);
     ctx.onDataRef.current?.(next);
+    // The answer counts as taken once its consumer has taken it: if `onData` throws, this is a failed load (below), and a
+    // Retry of it is not a refresh of a list that is on screen.
+    ctx.loadedRef.current = true;
+    ctx.answeredRef.current = ctx.fetcher;
   } catch (err) {
     if (superseded()) return;
     // A reload of the list on screen keeps it: the warning says it may be older, with a hint instead of "could not load".

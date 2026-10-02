@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MailTransportPanel } from "../../src/settings/MailTransportPanel.js";
-import { hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { hangUntilAborted, renderWithToast } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 import type { MailSettingsFieldsDto, MailSettingsResponse } from "../../src/api/types.js";
 
@@ -170,6 +170,18 @@ describePanelLoading({
   errorTitle: "Could not load mail settings",
   render: () => renderWithToast(<MailTransportPanel />),
   hang: () => mockFetch.mockImplementationOnce(hangUntilAborted),
+});
+
+describe("MailTransportPanel — placeholder", () => {
+  it("names the transport's own card, whose real title is not known until the answer is in, for assistive tech", () => {
+    mockFetch.mockImplementationOnce(hangUntilAborted);
+    renderWithToast(<MailTransportPanel />);
+    const region = screen.getByLabelText("Loading mail settings");
+    expect(region.textContent).toContain("Mail transport");
+    expect(region.textContent).toContain("Sender");
+    expect(region.textContent).toContain("Transport settings");
+    expect(region.textContent).toContain("Send test email");
+  });
 });
 
 describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {

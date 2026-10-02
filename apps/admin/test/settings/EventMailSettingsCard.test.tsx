@@ -668,16 +668,7 @@ describe("EventMailSettingsCard — test send", () => {
   it("turns off Also verify bounce when bounce detection becomes unavailable", async () => {
     mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
-    const { rerender } = render(
-      <EventMailSettingsCard eventId="evt-1" isArchived={false} />,
-      {
-        wrapper: ({ children }) => (
-          <ToastProvider>
-            <MemoryRouter>{children}</MemoryRouter>
-          </ToastProvider>
-        ),
-      },
-    );
+    const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
     const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
@@ -685,22 +676,27 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.click(bounceSwitch);
     await waitFor(() => expect((bounceSwitch as HTMLInputElement).checked).toBe(true));
 
-    mockFetchBounce.mockResolvedValue(configuredBounceResponse({
-      eventId: "evt-2",
-      configured: false,
-      enabled: false,
-      imap_host: null,
-      imap_port: null,
-      imap_username: null,
-      imap_password: { set: false, masked: null },
-      smtp_reuse_available: false,
-    }));
-    rerender(<EventMailSettingsCard eventId="evt-2" isArchived={false} />);
-    await screen.findByText(SMTP_SUMMARY_TEXT);
+    mockFetchBounce.mockResolvedValue(
+      configuredBounceResponse({
+        configured: false,
+        enabled: false,
+        imap_host: null,
+        imap_port: null,
+        imap_username: null,
+        imap_password: { set: false, masked: null },
+        smtp_reuse_available: false,
+      }),
+    );
+    act(() => ref.current?.refreshBounceReady());
 
-    const nextSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
-    await waitFor(() => expect((nextSwitch as HTMLInputElement).checked).toBe(false));
-    expect(isDisabled(nextSwitch)).toBe(true);
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(true));
+    expect((bounceSwitch as HTMLInputElement).checked).toBe(false);
+
+    // The choice itself was dropped, not only hidden: it does not come back when detection does.
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    act(() => ref.current?.refreshBounceReady());
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    expect((bounceSwitch as HTMLInputElement).checked).toBe(false);
   });
 
   it("refreshBounceReady re-enables Also verify bounce after settings become ready", async () => {

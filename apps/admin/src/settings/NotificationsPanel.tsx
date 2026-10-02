@@ -413,12 +413,10 @@ export function NotificationsPanel() {
 
   const saved = savedRef.current!;
   const hasUnsavedChanges = isDirty(draft, saved);
-  // Per-button, not "any test anywhere disables every test button" - the Webhook card's own
-  // button and each recipient row's button are unrelated actions and must stay independently
-  // clickable while a different one is in flight (PO report), and each is busy (`loading`) for its
-  // own target only. Unsaved changes still disable all of them, since every test exercises the
-  // already-saved settings, not the draft on screen.
-
+  // Every test button is off while there are unsaved changes (a test exercises the already-saved
+  // settings, not the draft on screen); otherwise each is busy (`loading`) for its own target only,
+  // so the Webhook card's button and each recipient row's button stay independently usable while a
+  // different one is in flight (PO report).
   // Narrowed local for nested handlers below - TypeScript doesn't keep `draft`'s null-check
   // narrowing inside a nested function body (only within the enclosing scope it was checked in).
   const currentRecipients = draft.extraEmailRecipients;
@@ -621,7 +619,7 @@ export function NotificationsPanel() {
               loadingLabel="Sending…"
               onClick={() => void handleTest()}
               icon={<i className="ti ti-send" aria-hidden="true" />}
-              aria-label="Send test (webhook)"
+              aria-label={testingTarget === "webhook" ? "Sending test (webhook)" : "Send test (webhook)"}
             >
               Send test
             </Button>

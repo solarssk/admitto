@@ -221,7 +221,7 @@ export function GeneralSettingsPanel() {
     );
   }
 
-  // Successful load always populates settings; failures always set loadError above.
+  // Successful load always populates settings; a failed one is the error above.
   /* v8 ignore if */
   if (!settings) return null;
 

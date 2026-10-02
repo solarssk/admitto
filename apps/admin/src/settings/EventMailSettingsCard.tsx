@@ -474,7 +474,7 @@ const EventMailSettingsCardBody = forwardRef<
     );
   }
 
-  // Successful load always populates apiData; failures always set loadError above.
+  // Successful load always populates apiData; a failed one is the error above.
   /* v8 ignore if */
   if (!apiData) return null;
 

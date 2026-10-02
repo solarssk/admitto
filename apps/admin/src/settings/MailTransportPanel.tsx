@@ -41,7 +41,12 @@ const MAIL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "sender", title: "Sender", intro: true, fields: 5, columns: 2, controlHeight: 62 },
   {
     id: "provider",
-    title: <Skeleton variant="rect" width={140} height={20} />,
+    title: (
+      <>
+        <Skeleton variant="rect" width={140} height={20} />
+        <span className="sr-only">Transport settings</span>
+      </>
+    ),
     intro: true,
     fields: 6,
     columns: 2,
@@ -209,7 +214,7 @@ export function MailTransportPanel() {
     );
   }
 
-  // Successful load always populates apiData; failures always set loadError above.
+  // Successful load always populates apiData; a failed one is the error above.
   /* v8 ignore if */
   if (!apiData) return null;
 
