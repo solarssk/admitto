@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { isIP } from "node:net";
+import { isIP, isIPv6 } from "node:net";
 import { shouldTrustForwardedHeaders } from "./trust-proxy.js";
 
 /**
@@ -38,4 +38,29 @@ export function resolveClientIp(c: Context): string {
   }
 
   return socketRemoteAddress(c);
+}
+
+/**
+ * Rate-limit bucket identity for a client IP. A single IPv6 host usually controls a whole /64,
+ * so keying on the full address lets it rotate through buckets at will; IPv6 addresses are
+ * collapsed to their /64 prefix. IPv4 (and IPv4-mapped IPv6) addresses are keyed as-is.
+ * Audit and log fields keep using the full address from {@link resolveClientIp}.
+ */
+export function rateLimitIpKey(ip: string): string {
+  if (!isIPv6(ip)) return ip;
+  const mappedV4 = ip.toLowerCase().startsWith("::ffff:") ? ip.slice("::ffff:".length) : "";
+  if (isIP(mappedV4) === 4) return mappedV4;
+  const bare = ip.split("%")[0]!.toLowerCase();
+  if (bare.includes(".")) return bare;
+  const [left = "", right] = bare.split("::");
+  const head = left ? left.split(":") : [];
+  const tail = right ? right.split(":") : [];
+  const groups =
+    right === undefined
+      ? head
+      : [...head, ...Array.from({ length: 8 - head.length - tail.length }, () => "0"), ...tail];
+  return `${groups
+    .slice(0, 4)
+    .map((g) => Number.parseInt(g, 16).toString(16))
+    .join(":")}::/64`;
 }

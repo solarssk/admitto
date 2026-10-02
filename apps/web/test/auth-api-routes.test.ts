@@ -245,15 +245,25 @@ describe("auth API routes (routes.ts)", () => {
       expect(res.status).toBe(401);
     });
 
-    it("returns 429 when failed login hits email rate limit", async () => {
-      mockLogin.mockResolvedValue({ ok: false } as never);
+    it("returns 429 without verifying the password once the email budget is spent, even for a correct password", async () => {
+      mockLogin.mockClear();
+      mockLogin.mockResolvedValue({
+        ok: true,
+        next: LOGIN_NEXT.COMPLETE,
+        rawToken: "tok",
+        sessionId: "s1",
+        userId: "u1",
+        cookieMaxAgeSeconds: 259200,
+      } as never);
       mockEmailLimit.mockResolvedValue(false);
       const res = await app().request("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "ops@example.com", password: "bad" }),
+        body: JSON.stringify({ email: "ops@example.com", password: "good" }),
       });
       expect(res.status).toBe(429);
+      expect(mockLogin).not.toHaveBeenCalled();
+      expect(res.headers.getSetCookie().some((c) => c.startsWith("admitto_session="))).toBe(false);
     });
 
     it("returns 401 on failed login under rate limit", async () => {
