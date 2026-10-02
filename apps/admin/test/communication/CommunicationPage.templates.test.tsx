@@ -185,11 +185,36 @@ function renderSendPageWithEventSwitch() {
   );
 }
 
-/** The Templates tab of one event, with a link to another page of the same event (leaving the page, not the event). */
-function renderPageWithLeaveLink() {
+/**
+ * The Templates tab of one event, with a link to another page (by default one of the same event: leaving the page, not the
+ * event). The browser router has moved the address bar by the time React commits the new page; MemoryRouter does not touch
+ * it, so the link does.
+ */
+function renderPageWithLeaveLink(destination = "/admin/events/evt-a/elsewhere") {
   return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-a/communication?tab=templates"]}>
-      <Link to="/admin/events/evt-a/elsewhere">Leave page</Link>
+      <Link to={destination} onClick={() => window.history.pushState(null, "", destination)}>
+        Leave page
+      </Link>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+        <Route path="*" element={<p>Elsewhere</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+/**
+ * The Templates tab of one event, with a link straight to a page of ANOTHER event that is not this page's route (event B's
+ * Overview), so the page unmounts without ever re-rendering with B's id. The browser router has moved the address bar by the
+ * time React commits the new page; MemoryRouter does not touch it, so the link does.
+ */
+function renderPageWithLinkToAnotherEventsPage() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication?tab=templates"]}>
+      <Link to="/admin/events/evt-b/elsewhere" onClick={() => window.history.pushState(null, "", "/admin/events/evt-b/elsewhere")}>
+        Go to event B
+      </Link>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
         <Route path="/admin/events/:eventId/elsewhere" element={<p>Elsewhere</p>} />
@@ -305,6 +330,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  window.history.pushState(null, "", "/");
   vi.clearAllMocks();
   fetchEventTemplates.mockReset();
   fetchEventTemplate.mockReset();
@@ -1670,6 +1696,65 @@ describe("CommunicationPage templates", () => {
     });
 
     expect(await screen.findByText(message)).toBeTruthy();
+  });
+
+  it("still says a Save failed when the operator has left for a page that belongs to no event", async () => {
+    mockTwoEvents();
+    const saved = deferred<unknown>();
+    saveEventTemplateById.mockReturnValueOnce(saved.promise);
+    renderPageWithLeaveLink("/admin/users");
+    await screen.findByLabelText("Subject");
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => expect(saveEventTemplateById).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("link", { name: "Leave page" }));
+    expect(await screen.findByText("Elsewhere")).toBeTruthy();
+    await act(async () => saved.reject(new Error("network down")));
+
+    expect(await screen.findByText("Save failed.")).toBeTruthy();
+  });
+
+  it.each([
+    ["succeeds", "Template saved."],
+    ["fails", "Save failed."],
+  ] as const)("says nothing about a Save that %s after the operator went straight to a page of another event", async (outcome, message) => {
+    mockTwoEvents();
+    const saved = deferred<unknown>();
+    saveEventTemplateById.mockReturnValueOnce(saved.promise);
+    renderPageWithLinkToAnotherEventsPage();
+    await screen.findByLabelText("Subject");
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => expect(saveEventTemplateById).toHaveBeenCalledWith("evt-a", "tpl-ticket", expect.anything()));
+
+    fireEvent.click(screen.getByRole("link", { name: "Go to event B" }));
+    expect(await screen.findByText("Elsewhere")).toBeTruthy();
+    await act(async () => {
+      if (outcome === "succeeds") saved.resolve({ ...ticketRow, subject_template: "Edited ticket subject", body_template: "<p>Hi</p>" });
+      else saved.reject(new Error("network down"));
+    });
+
+    expect(screen.queryByText(message)).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("says nothing about a delete that fails after the operator went straight to a page of another event", async () => {
+    mockTwoEvents();
+    const deletion = deferred<void>();
+    deleteEventTemplate.mockReturnValueOnce(deletion.promise);
+    renderPageWithLinkToAnotherEventsPage();
+    await screen.findByDisplayValue("Ticket");
+    await selectTemplate("Reminder");
+    await screen.findByDisplayValue("Reminder subject");
+    await deleteActiveTemplateViaModal();
+    await waitFor(() => expect(deleteEventTemplate).toHaveBeenCalledWith("evt-a", "tpl-rem"));
+
+    fireEvent.click(screen.getByRole("link", { name: "Go to event B" }));
+    expect(await screen.findByText("Elsewhere")).toBeTruthy();
+    await act(async () => deletion.reject(new Error("network down")));
+
+    expect(screen.queryByText("Delete failed.")).toBeNull();
   });
 
   it("says nothing about a template that could not be opened after the event was switched", async () => {
