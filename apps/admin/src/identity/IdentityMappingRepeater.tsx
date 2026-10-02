@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
 import { Button, Input } from "@admitto/ui";
-import { fetchAdminEvents, fetchAdminOrganizations } from "../api/client.js";
+import { RetryHint } from "../components/RetryHint.js";
 import { SearchableSelect, type SearchableSelectOption } from "../components/SearchableSelect.js";
+import { useEventOptions } from "../hooks/useEventOptions.js";
+import { lookupReady, type OptionsLoad } from "../hooks/useOptionsLoad.js";
+import { useOrganizationOptions } from "../hooks/useOrganizationOptions.js";
+import { LookupSlot } from "../pages/users/LookupSlot.js";
 import {
   MAPPING_ROLES,
   withScopeForRole,
@@ -15,6 +18,21 @@ interface IdentityMappingRepeaterProps {
   onChange: (rows: MappingRow[]) => void;
 }
 
+type ScopeLookup = Pick<OptionsLoad<unknown>, "loading" | "error" | "retry" | "retrying">;
+
+/** The option that keeps a stored scope id visible when the list does not hold it: its name is not known while the
+ * lookup is on its way or failed (so it says what kind of scope it is, never "not found"), and only an answer that does
+ * not hold the id calls it not found (a since-deleted event). */
+function unknownScopeOption(
+  scopeId: string,
+  options: SearchableSelectOption[],
+  lookup: ScopeLookup,
+  fieldLabel: string,
+): SearchableSelectOption[] {
+  if (!scopeId || options.some((o) => o.id === scopeId)) return [];
+  return [{ id: scopeId, label: lookupReady(lookup) ? `${scopeId} (not found)` : fieldLabel }];
+}
+
 /** Group → role mapping repeater (#266 slice 3b). Replace-all semantics: the
  *  editor always sends the full list on save (the slice-1 PUT contract requires
  *  `mappings` on every request). Empty list = no SSO group grants. */
@@ -23,28 +41,22 @@ export function IdentityMappingRepeater({
   errors,
   onChange,
 }: Readonly<IdentityMappingRepeaterProps>) {
-  const [events, setEvents] = useState<SearchableSelectOption[]>([]);
-  const [organizations, setOrganizations] = useState<SearchableSelectOption[]>([]);
-  const [scopeOptionsLoading, setScopeOptionsLoading] = useState(true);
-
   // Populates the Event/Organization pickers below with real, existing rows - scope_id used to
   // be a free-text field with no existence check (validateMappingRow only checks length), so a
-  // typo silently saved a mapping that could never match any real user's grant. Failure here
-  // degrades to an empty picker (still usable via the current-value fallback option below), not
-  // a blocked modal - this list is a convenience, not a save-blocking dependency.
-  useEffect(() => {
-    const controller = new AbortController();
-    Promise.all([fetchAdminEvents({ signal: controller.signal }), fetchAdminOrganizations(controller.signal)])
-      .then(([eventList, organizationList]) => {
-        setEvents(eventList.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" })));
-        setOrganizations(organizationList.map((o) => ({ id: o.id, label: o.name, icon: "building" })));
-      })
-      .catch(() => {
-        /* picker still works via the current-value fallback option; Save is unaffected */
-      })
-      .finally(() => setScopeOptionsLoading(false));
-    return () => controller.abort();
-  }, []);
+  // typo silently saved a mapping that could never match any real user's grant. A lookup is read
+  // only while a row needs it. A failure is said once under the rows, with a Retry that reruns that lookup
+  // only (the rows being edited are not touched), and turns the picker off; Save is unaffected, and a stored
+  // scope still shows as what kind of scope it is.
+  const needsEvents = rows.some((row) => row.scope_type === "event");
+  const needsOrganizations = rows.some((row) => row.scope_type === "organization");
+  const eventLookup = useEventOptions({ includeArchived: false, enabled: needsEvents });
+  const organizationLookup = useOrganizationOptions(needsOrganizations);
+  const eventOptions: SearchableSelectOption[] = eventLookup.events.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" }));
+  const organizationOptions: SearchableSelectOption[] = organizationLookup.organizations.map((o) => ({
+    id: o.id,
+    label: o.name,
+    icon: "building",
+  }));
 
   const updateRow = (index: number, patch: Partial<MappingRow>) => {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -138,47 +150,15 @@ export function IdentityMappingRepeater({
                 <span id={scopeErrorId} className="at-hint at-hint--error">{rowError.scope_type}</span>
               )}
             </div>
-            {needsScopeId && (() => {
-              const isOrg = row.scope_type === "organization";
-              const fieldLabel = isOrg ? "Organization" : "Event";
-              const scopeIdOptions = isOrg ? organizations : events;
-              const currentKnown = !row.scope_id || scopeIdOptions.some((o) => o.id === row.scope_id);
-              const scopeIdErrorId = rowError.scope_id
-                ? `identity-mapping-scope-id-${row.id}-error`
-                : undefined;
-              return (
-                <div>
-                  <div className="at-field">
-                    <label className="at-label" htmlFor={`identity-mapping-scope-id-${row.id}`}>
-                      {fieldLabel}
-                    </label>
-                    <SearchableSelect
-                      id={`identity-mapping-scope-id-${row.id}`}
-                      label={fieldLabel}
-                      placeholder={`Select ${fieldLabel.toLowerCase()}…`}
-                      searchPlaceholder={`Search ${fieldLabel.toLowerCase()}s…`}
-                      emptyLabel={
-                        scopeOptionsLoading ? "Loading…" : `No ${fieldLabel.toLowerCase()}s found`
-                      }
-                      showLabel={false}
-                      value={row.scope_id}
-                      invalid={Boolean(rowError.scope_id)}
-                      describedBy={scopeIdErrorId}
-                      options={[
-                        ...(currentKnown ? [] : [{ id: row.scope_id, label: `${row.scope_id} (not found)` }]),
-                        ...scopeIdOptions,
-                      ]}
-                      onChange={(id) => updateRow(index, { scope_id: id })}
-                    />
-                  </div>
-                  {rowError.scope_id && (
-                    <span id={scopeIdErrorId} className="at-hint at-hint--error">
-                      {rowError.scope_id}
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
+            {needsScopeId && (
+              <ScopeIdField
+                row={row}
+                error={rowError.scope_id}
+                lookup={row.scope_type === "organization" ? organizationLookup : eventLookup}
+                options={row.scope_type === "organization" ? organizationOptions : eventOptions}
+                onPick={(id) => updateRow(index, { scope_id: id })}
+              />
+            )}
             <div className="identity-mappings__remove">
               <Button
                 type="button"
@@ -192,6 +172,68 @@ export function IdentityMappingRepeater({
           </div>
         );
       })}
+
+      {needsEvents && eventLookup.error && (
+        <RetryHint message={eventLookup.error} busy={eventLookup.retrying} onRetry={eventLookup.retry} retryLabel="Retry loading events" />
+      )}
+      {needsOrganizations && organizationLookup.error && (
+        <RetryHint
+          message={organizationLookup.error}
+          busy={organizationLookup.retrying}
+          onRetry={organizationLookup.retry}
+          retryLabel="Retry loading organizations"
+        />
+      )}
     </div>
+  );
+}
+
+/** The Event or Organization picker of a row whose role needs a scope id: a placeholder with the field's room while its
+ * lookup's first request is on its way, the picker after, and off when the lookup failed (the Retry is under the rows). */
+function ScopeIdField({
+  row,
+  error,
+  lookup,
+  options,
+  onPick,
+}: Readonly<{
+  row: MappingRow;
+  error: string | undefined;
+  lookup: ScopeLookup;
+  options: SearchableSelectOption[];
+  onPick: (id: string) => void;
+}>) {
+  const isOrg = row.scope_type === "organization";
+  const fieldLabel = isOrg ? "Organization" : "Event";
+  const errorId = error ? `identity-mapping-scope-id-${row.id}-error` : undefined;
+  return (
+    <LookupSlot lookup={lookup} label={isOrg ? "organizations" : "events"} showHint={false}>
+      <div>
+        <div className="at-field">
+          <label className="at-label" htmlFor={`identity-mapping-scope-id-${row.id}`}>
+            {fieldLabel}
+          </label>
+          <SearchableSelect
+            id={`identity-mapping-scope-id-${row.id}`}
+            label={fieldLabel}
+            placeholder={lookup.error ? `Could not load ${fieldLabel.toLowerCase()}s` : `Select ${fieldLabel.toLowerCase()}…`}
+            searchPlaceholder={`Search ${fieldLabel.toLowerCase()}s…`}
+            emptyLabel={`No ${fieldLabel.toLowerCase()}s found`}
+            showLabel={false}
+            value={row.scope_id}
+            invalid={Boolean(error)}
+            describedBy={errorId}
+            disabled={lookup.error !== null}
+            options={[...unknownScopeOption(row.scope_id, options, lookup, fieldLabel), ...options]}
+            onChange={onPick}
+          />
+        </div>
+        {error && (
+          <span id={errorId} className="at-hint at-hint--error">
+            {error}
+          </span>
+        )}
+      </div>
+    </LookupSlot>
   );
 }

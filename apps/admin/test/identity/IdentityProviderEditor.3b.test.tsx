@@ -143,7 +143,7 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     expect(groupInputs).toHaveLength(2);
     fireEvent.change(groupInputs[1], { target: { value: "ops" } });
     // A new row defaults to operator, which is always event-scoped and needs an Event.
-    fireEvent.click(screen.getByLabelText("Event"));
+    fireEvent.click(await screen.findByLabelText("Event"));
     fireEvent.click(await screen.findByRole("button", { name: "Autumn Kickoff" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -614,8 +614,8 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "operator" }));
     // Switching role clears scope_id (organization "org-1" isn't a valid event id).
-    expect(screen.getByRole("button", { name: "Event, none selected" })).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("Event"));
+    expect(await screen.findByRole("button", { name: "Event, none selected" })).toBeTruthy();
+    fireEvent.click(await screen.findByLabelText("Event"));
     fireEvent.click(await screen.findByRole("button", { name: "Spring Summit" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
@@ -632,7 +632,7 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
     // The row is already admin/organization (from validDetail); just retarget its Organization picker.
-    fireEvent.click(screen.getByLabelText("Organization"));
+    fireEvent.click(await screen.findByLabelText("Organization"));
     fireEvent.click(await screen.findByRole("button", { name: "Acme Events" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
@@ -650,8 +650,8 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "operator" }));
-    expect(screen.getByLabelText("Event")).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("Event"));
+    expect(await screen.findByLabelText("Event")).toBeTruthy();
+    fireEvent.click(await screen.findByLabelText("Event"));
     fireEvent.click(await screen.findByRole("button", { name: "Spring Summit" }));
 
     // Switching to superadmin (instance-scoped) drops the scope_id field entirely, and clears
@@ -687,7 +687,7 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
     // as-is - a legacy or otherwise mismatched stored value self-heals to "organization" (what
     // "admin" requires) on load, same as it would for any other role/scope mismatch.
     expect(screen.getByRole("button", { name: /^Scope, organization/ })).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("Organization"));
+    fireEvent.click(await screen.findByLabelText("Organization"));
     fireEvent.click(await screen.findByRole("button", { name: "Northwind Org" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -752,7 +752,7 @@ describe("IdentityProviderEditor — create with a mapping", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
     fireEvent.change(screen.getAllByLabelText("Group")[0], { target: { value: "admins" } });
     // A new row defaults to operator, which is always event-scoped and needs an Event.
-    fireEvent.click(screen.getByLabelText("Event"));
+    fireEvent.click(await screen.findByLabelText("Event"));
     fireEvent.click(await screen.findByRole("button", { name: "Autumn Kickoff" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));

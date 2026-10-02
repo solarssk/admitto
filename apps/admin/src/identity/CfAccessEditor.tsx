@@ -1,22 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction,
-} from "react";
+import { useCallback, useId, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
-import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import {
   buildCfUpdateBody,
   cfDraftFromSummary,
@@ -27,18 +18,23 @@ import {
   type CfAccessFieldErrors,
 } from "./cfAccessValidation.js";
 import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
+import { IdentityEditorLoadError } from "./IdentityEditorLoadError.js";
+import { IdentityEditorSkeleton, type IdentitySkeletonCard } from "./IdentityEditorSkeleton.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
+import { orLoginRedirect, redirectToLogin } from "./loginRedirect.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard.js";
 
-type LoadState = "loading" | "ready" | "error";
+/** The form while it loads, for its placeholder: the explanation that opens it, and the Configuration card. */
+const CF_SKELETON_CARDS: ReadonlyArray<IdentitySkeletonCard> = [
+  { id: "configuration", title: "Configuration", fields: [{ hint: 4 }, { hint: 4 }, { full: true, hint: 2 }, { full: true, hint: 2 }] },
+];
 
-/** Session expired mid-fetch: hand off to login with a return path (matches the
- * pattern used across the admin SPA, e.g. IdentityProviderEditor/ReportsPage). */
-function redirectToLogin(): void {
-  const next = encodeURIComponent(window.location.pathname);
-  window.location.assign(`/login?next=${next}`);
-}
+/** The notice that opens the form is about four lines at the modal's width. */
+const CF_SKELETON_LEAD_HEIGHT = 77;
+
+/** The summary the form is filled from. Created once: a new function is a new request. */
+const fetchCfSummary = orLoginRedirect((signal: AbortSignal) => fetchCfAccessSummary(signal));
 
 const CF_ACCESS_FALLTHROUGH_INFO = (
   <Notice variant="info">
@@ -205,17 +201,11 @@ function CfAccessEditorForm({
         <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={onTest}
-          disabled={testing || saving}
-          aria-busy={testing}
-        >
-          {testing ? "Testing…" : "Test connection"}
+        <Button type="button" variant="secondary" onClick={onTest} loading={testing} loadingLabel="Testing…" disabled={saving}>
+          Test connection
         </Button>
-        <Button type="submit" variant="primary" disabled={saving || !dirty}>
-          {saving ? "Saving…" : "Save"}
+        <Button type="submit" variant="primary" loading={saving} aria-disabled={!dirty}>
+          Save
         </Button>
       </div>
     </form>
@@ -229,7 +219,7 @@ function CfAccessEditorForm({
  * per-field env locks, lets the operator edit team domain / AUD / protected
  * prefixes, test the team URL's JWKS endpoint, and save (PATCH semantics:
  * omitted fields keep their stored value; env-locked fields stay
- * locked). Mirrors the IdentityProviderEditor dirty-guard + loadTick patterns so a
+ * locked). Mirrors the IdentityProviderEditor dirty-guard pattern so a
  * superadmin can't silently drop unsaved edits via an in-app navigation.
  */
 export function CfAccessEditor() {
@@ -245,58 +235,40 @@ export function CfAccessEditor() {
     sourceProviderId: false,
   });
   const [sourceProviders, setSourceProviders] = useState<CfAccessSummaryDto["sourceProviders"]>([]);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errors, setErrors] = useState<CfAccessFieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  // Retry tick drives the load effect (mount + Retry button), mirroring the
-  // loadTick pattern in IdentityProviderEditor. Each run owns its AbortController
-  // and aborts on cleanup so a StrictMode remount and a Retry both re-fetch cleanly.
-  const [loadTick, setLoadTick] = useState(0);
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(async (signal: AbortSignal) => {
-    setLoadState((prev) => (prev === "ready" ? prev : "loading"));
-    setErrors({});
-    try {
-      const summary = await fetchCfAccessSummary(signal);
+  // The first load: nothing is drawn for 200ms, then the form's own skeleton, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer). It reads the summary once, when the modal opens.
+  const panel = usePanelLoad({
+    fetch: fetchCfSummary,
+    apply: (summary) => {
       const next = cfDraftFromSummary(summary);
       setDraft(next);
       setBaseline(next);
       setLocks(summary.locks);
       setSourceProviders(summary.sourceProviders);
-      setLoadState("ready");
-    } catch (err) {
-      if (signal.aborted) return;
-      if (err instanceof ApiError && err.status === 401) {
-        redirectToLogin();
-        return;
-      }
-      setLoadState("error");
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load, loadTick]);
-
-  const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
+      setErrors({});
+      setLoaded(true);
+    },
+    fallback: "Could not load the Cloudflare Access configuration.",
+  });
+  let view: "loading" | "error" | "ready" = "ready";
+  if (!panel.gate.showContent) view = "loading";
+  else if (panel.error || !loaded) view = "error";
 
   const dirty = isCfDraftDirty(draft, baseline);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  // Always starts in loadState "loading" - the real form fields don't exist in the DOM
-  // until the fetch resolves, so initial focus must be re-attempted once loadState changes.
+  // Always starts on the placeholder - the real form fields don't exist in the DOM
+  // until the fetch resolves, so initial focus must be re-attempted once the view changes.
   const { skipBlockRef, blocker, discardConfirmOpen, setDiscardConfirmOpen, handleCancel } =
-    useUnsavedChangesGuard(panelRef, dirty, saving || testing, navigate, loadState);
+    useUnsavedChangesGuard(panelRef, dirty, saving || testing, navigate, view);
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
-  // A fetch that resolves near-instantly (localhost, a warm cache) would
-  // otherwise flash the spinner on and off faster than it can register as
-  // "loading" — show it only once the fetch has genuinely taken a moment.
-  const showLoadingSpinner = useDelayedLoading(loadState === "loading");
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -360,20 +332,23 @@ export function CfAccessEditor() {
   }, [draft.teamDomain, addToast]);
 
   let content: ReactNode;
-  if (loadState === "loading") {
-    content = showLoadingSpinner ? (
-      <output className="identity-editor__loading">
-        <Spinner label="Loading Cloudflare Access" />
-      </output>
-    ) : null;
-  } else if (loadState === "error") {
+  if (view === "loading") {
     content = (
-      <div className="identity-editor__error" role="alert">
-        <p>Could not load the Cloudflare Access configuration.</p>
-        <Button variant="secondary" onClick={retryLoad}>
-          Retry
-        </Button>
-      </div>
+      <IdentityEditorSkeleton
+        label="Loading Cloudflare Access"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        lead={CF_SKELETON_LEAD_HEIGHT}
+        cards={CF_SKELETON_CARDS}
+      />
+    );
+  } else if (view === "error") {
+    content = (
+      <IdentityEditorLoadError
+        message={panel.error ?? "Unexpected error."}
+        retrying={panel.retrying}
+        onRetry={() => void panel.retry()}
+      />
     );
   } else {
     content = (
@@ -405,7 +380,7 @@ export function CfAccessEditor() {
               title="Cloudflare Access"
               icon={<i className="ti ti-brand-cloudflare" />}
               badge={
-                loadState === "ready" && (
+                view === "ready" && (
                   <>
                     {draft.enabled ? (
                       <Badge variant="ok">Active</Badge>
@@ -416,15 +391,7 @@ export function CfAccessEditor() {
                   </>
                 )
               }
-              subtitle={
-                loadState === "ready" && (
-                  <>
-                    Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
-                    your team URL, application audience tag, direct identity provider, and protected
-                    prefixes.
-                  </>
-                )
-              }
+              subtitle="Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your team URL, application audience tag, direct identity provider, and protected prefixes."
               onClose={handleCancel}
               closeDisabled={saving || testing}
             />

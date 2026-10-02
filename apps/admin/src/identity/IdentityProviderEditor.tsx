@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router";
-import { Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Input, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
   discoverIdentityProvider,
   discoverIdentityProviderPreview,
-  fetchIdentityProvider,
   testIdentityProviderDraft,
   updateIdentityProvider,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
+import { IdentityEditorLoadError } from "./IdentityEditorLoadError.js";
+import { IdentityEditorSkeleton, type IdentitySkeletonCard } from "./IdentityEditorSkeleton.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
@@ -32,7 +34,9 @@ import {
   type MappingRowError,
   type ProviderDraft,
 } from "./identityProviderValidation.js";
+import { redirectToLogin } from "./loginRedirect.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+import { useProviderLoad, type ProviderLoadState } from "./useProviderLoad.js";
 import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard.js";
 
 interface IdentityProviderEditorProps {
@@ -41,8 +45,6 @@ interface IdentityProviderEditorProps {
    * `:providerId` route param so the routed element can stay prop-less. */
   providerId?: string;
 }
-
-type LoadState = "loading" | "ready" | "error" | "not_found";
 
 /** Map a loaded provider's mappings into editable repeater rows (with stable ids), exactly as
  * stored - no self-heal. Used only to seed `baselineMappings` (see mappingsFromDetail below for
@@ -161,13 +163,6 @@ function buildSaveBody(
   return body;
 }
 
-/** Session expired mid-fetch: hand off to login with a return path (matches the
- * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
-function redirectToLogin(): void {
-  const next = encodeURIComponent(window.location.pathname);
-  window.location.assign(`/login?next=${next}`);
-}
-
 function oidcTestBodyFromDraft(draft: ProviderDraft): ProviderTestDraftBody {
   const body: ProviderTestDraftBody = { issuer: draft.issuer.trim() };
   const authorization = draft.authorization_endpoint.trim();
@@ -207,10 +202,6 @@ function resolveProviderId(
   return explicitId ?? (mode === "edit" ? routeParamId : undefined);
 }
 
-function initialLoadState(mode: EditorMode): LoadState {
-  return mode === "edit" ? "loading" : "ready";
-}
-
 function computeDirty(
   draft: ProviderDraft,
   baseline: ProviderDraft,
@@ -230,6 +221,16 @@ function editorSubtitle(mode: EditorMode): string {
     : "Update this identity provider.";
 }
 
+/** The cards of the edit form, for its placeholder: Basics (four fields and the Redirect URI), Endpoints, Claims, the
+ * mapping list and the login button label. */
+const PROVIDER_SKELETON_CARDS: ReadonlyArray<IdentitySkeletonCard> = [
+  { id: "basics", title: "Basics", fields: [{ hint: 2 }, { hint: 2 }, {}, {}, { full: true }] },
+  { id: "endpoints", title: "Endpoints", fields: [{ hint: 2 }, { hint: 2 }, {}, {}] },
+  { id: "claims", title: "Claims", fields: [{ hint: 2 }, { hint: 2 }, {}, {}, {}, {}] },
+  { id: "mappings", title: "Group → role mapping", fields: [], intro: 2, rows: 1 },
+  { id: "login-button", title: "Login button", fields: [{ full: true }] },
+];
+
 function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {
   if (mode !== "edit") return "Client secret";
   return hasSecret ? "New client secret" : "Client secret";
@@ -241,47 +242,19 @@ function clientSecretFieldHint(mode: EditorMode, hasSecret: boolean): string {
     : "From the same application registration as the Client ID above.";
 }
 
-function discoverButtonLabel(discovering: boolean): string {
-  return discovering ? "Discovering…" : "Discover";
-}
-
-function testButtonLabel(testing: boolean): string {
-  return testing ? "Testing…" : "Test connection";
-}
-
-function submitButtonLabel(saving: boolean, mode: EditorMode): string {
-  if (saving) return "Saving…";
-  return mode === "create" ? "Create provider" : "Save";
-}
-
 /** True while any async editor action (discover/test/save) is in flight. */
 function isActionBusy(saving: boolean, testing: boolean, discovering: boolean): boolean {
   return saving || testing || discovering;
 }
 
-/** True once the form is usable: create mode is always ready; edit mode needs
- * the provider to have finished loading. */
-function isFormLocked(mode: EditorMode, loadState: LoadState): boolean {
-  return mode === "edit" && loadState !== "ready";
-}
-
-/** Shared disabled-state for the Test/Save actions (busy, or edit mode still loading). */
-function actionsDisabled(
-  saving: boolean,
-  testing: boolean,
-  discovering: boolean,
-  mode: EditorMode,
-  loadState: LoadState,
-): boolean {
-  return isActionBusy(saving, testing, discovering) || isFormLocked(mode, loadState);
-}
-
 type EditorView = "loading" | "error" | "not_found" | "form";
 
-/** Which top-level content the page shows for the current mode/load state. */
-function resolveEditorView(mode: EditorMode, loadState: LoadState): EditorView {
-  if (mode === "create" || loadState === "ready") return "form";
-  return loadState;
+/** Which top-level content the page shows for the current mode/load state. The placeholder stays until the loading
+ * gate lets the content in (`showContent`), so a load that answers just after the indicator appeared does not flash it. */
+function resolveEditorView(mode: EditorMode, loadState: ProviderLoadState, showContent: boolean): EditorView {
+  if (mode === "create") return "form";
+  if (!showContent) return "loading";
+  return loadState === "ready" ? "form" : loadState;
 }
 
 interface OidcRedirectUriCalloutProps {
@@ -353,18 +326,11 @@ export function IdentityProviderEditor({
   const [mappings, setMappings] = useState<MappingRow[]>([]);
   const [baselineMappings, setBaselineMappings] = useState<MappingRow[]>([]);
   const [mappingErrors, setMappingErrors] = useState<MappingRowError[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>(initialLoadState(mode));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [hasSecret, setHasSecret] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [testing, setTesting] = useState(false);
-  // Retry tick drives the load effect (mount + Retry button), mirroring the
-  // providersRetry/cfRetry pattern in IdentityProvidersPanel (#296). Each effect
-  // run owns its AbortController and aborts on cleanup, so a StrictMode remount
-  // and a Retry both re-fetch cleanly — no one-shot ref (which stranded #296 in
-  // dev) and no ad-hoc AbortController on the Retry button (which leaked).
-  const [loadTick, setLoadTick] = useState(0);
   // Server-built callback URL (same resolveInstanceBaseUrl path as OIDC start/callback).
   const [redirectUri, setRedirectUri] = useState<string | null>(null);
 
@@ -402,55 +368,28 @@ export function IdentityProviderEditor({
     setTesting(false);
   }, [resolvedProviderId]);
 
-  const load = useCallback(
-    async (signal: AbortSignal) => {
-      if (mode !== "edit" || !resolvedProviderId) return;
-      setLoadState("loading");
-      // Clear any stale field errors from a previous provider / failed submit so
-      // they don't attach to identically-named fields on the newly loaded one.
-      setErrors({});
-      try {
-        const detail = await fetchIdentityProvider(resolvedProviderId, signal);
-        const nextDraft = draftFromDetail(detail);
-        setDraft(nextDraft);
-        setBaseline(nextDraft);
-        setMappings(mappingsFromDetail(detail));
-        setBaselineMappings(rawMappingsFromDetail(detail));
-        setMappingErrors([]);
-        setHasSecret(detail.has_client_secret);
-        setRedirectUri(detail.redirect_uri);
-        setLoadState("ready");
-      } catch (err) {
-        if (signal.aborted) return;
-        if (err instanceof ApiError && err.status === 404) {
-          setLoadState("not_found");
-          return;
-        }
-        if (err instanceof ApiError && err.status === 401) {
-          redirectToLogin();
-          return;
-        }
-        setLoadState("error");
-      }
+  const { loadState, loadError, retrying, retry } = useProviderLoad({
+    mode,
+    providerId: resolvedProviderId,
+    apply: (detail) => {
+      const nextDraft = draftFromDetail(detail);
+      setDraft(nextDraft);
+      setBaseline(nextDraft);
+      setMappings(mappingsFromDetail(detail));
+      setBaselineMappings(rawMappingsFromDetail(detail));
+      setMappingErrors([]);
+      setHasSecret(detail.has_client_secret);
+      setRedirectUri(detail.redirect_uri);
     },
-    [mode, resolvedProviderId],
-  );
-
-  // Re-fetch whenever the resolved provider id changes (deep link, or in-app nav
-  // from one provider's edit URL to another) or when loadTick advances (Retry).
-  // No one-shot ref: a ref would keep the previous provider's data on the screen
-  // and let Save PUT it onto the new id, and would strand the editor on a loading
-  // skeleton under React StrictMode (the #296 regression). The cleanup aborts the
-  // in-flight fetch on param change / Retry / remount so only the latest request
-  // can settle state.
-  useEffect(() => {
-    if (mode !== "edit") return;
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [mode, load, loadTick]);
-
-  const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
+    // Clear any stale field errors from a previous provider / failed submit so they don't attach to
+    // identically-named fields on the newly loaded one.
+    onStart: () => setErrors({}),
+  });
+  // A fetch that resolves near-instantly (localhost, a warm cache) shows no placeholder at all; one that does show
+  // it keeps it for at least 400ms, and after 8 seconds it says it is taking longer than usual.
+  const loadGate = useLoadingGate(mode === "edit" && loadState === "loading");
+  const loadSlow = useDelayedLoading(mode === "edit" && loadState === "loading", SLOW_NOTICE_MS);
+  const view = resolveEditorView(mode, loadState, loadGate.showContent);
 
   const dirty = computeDirty(draft, baseline, mappings, baselineMappings);
 
@@ -466,9 +405,9 @@ export function IdentityProviderEditor({
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  // Edit mode starts in loadState "loading" - its real form fields don't exist in the DOM
-  // until the fetch resolves, so initial focus must be re-attempted once loadState changes
-  // (create mode is already "ready" at mount, so this is a no-op there).
+  // Edit mode starts on the placeholder - its real form fields don't exist in the DOM
+  // until the fetch resolves, so initial focus must be re-attempted once the view changes
+  // (create mode is already the form at mount, so this is a no-op there).
   // A pending save has no abort/cancellation path (create/updateIdentityProvider are plain
   // awaited fetches) - dismissing the modal mid-save would only hide it, not stop it, silently
   // creating/updating the provider after the operator thought they'd discarded. isBusy blocks
@@ -481,7 +420,7 @@ export function IdentityProviderEditor({
       dirty,
       isActionBusy(saving, testing, discovering),
       navigate,
-      loadState,
+      view,
     );
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
@@ -680,20 +619,7 @@ export function IdentityProviderEditor({
 
   const title = editorTitle(mode);
 
-  const loadingContent = (
-    <output className="identity-editor__loading">
-      <Spinner label="Loading provider" />
-    </output>
-  );
-
-  const errorContent = (
-    <div className="identity-editor__error" role="alert">
-      <p>Could not load this provider.</p>
-      <Button variant="secondary" onClick={retryLoad}>
-        Retry
-      </Button>
-    </div>
-  );
+  const errorContent = <IdentityEditorLoadError message={loadError} retrying={retrying} onRetry={retry} />;
 
   const notFoundContent = (
     <div className="identity-editor__error" role="alert">
@@ -804,9 +730,10 @@ export function IdentityProviderEditor({
               variant="secondary"
               size="sm"
               onClick={() => void handleDiscover()}
-              disabled={isActionBusy(saving, testing, discovering)}
+              loading={discovering}
+              disabled={saving || testing}
             >
-              {discoverButtonLabel(discovering)}
+              Discover
             </Button>
           </div>
         }
@@ -949,26 +876,26 @@ export function IdentityProviderEditor({
           type="button"
           variant="secondary"
           onClick={() => void handleTest()}
-          disabled={actionsDisabled(saving, testing, discovering, mode, loadState)}
+          loading={testing}
+          loadingLabel="Testing…"
+          disabled={saving || discovering}
         >
-          {testButtonLabel(testing)}
+          Test connection
         </Button>
         <Button
           type="submit"
           variant="primary"
-          disabled={actionsDisabled(saving, testing, discovering, mode, loadState) || !dirty}
+          loading={saving}
+          loadingLabel={mode === "create" ? "Creating…" : undefined}
+          disabled={testing || discovering}
+          aria-disabled={!dirty}
         >
-          {submitButtonLabel(saving, mode)}
+          {mode === "create" ? "Create provider" : "Save"}
         </Button>
       </div>
     </form>
   );
 
-  const view = resolveEditorView(mode, loadState);
-  // A fetch that resolves near-instantly (localhost, a warm cache) would
-  // otherwise flash the spinner on and off faster than it can register as
-  // "loading" — show it only once the fetch has genuinely taken a moment.
-  const showLoadingSpinner = useDelayedLoading(view === "loading");
   return createPortal(
     <>
       <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
@@ -979,11 +906,18 @@ export function IdentityProviderEditor({
               titleId={titleId}
               title={title}
               icon={<i className="ti ti-shield-lock" />}
-              subtitle={view === "form" ? editorSubtitle(mode) : undefined}
+              subtitle={editorSubtitle(mode)}
               onClose={handleCancel}
               closeDisabled={isActionBusy(saving, testing, discovering)}
             />
-            {view === "loading" && showLoadingSpinner && loadingContent}
+            {view === "loading" && (
+              <IdentityEditorSkeleton
+                label="Loading provider"
+                held={!loadGate.showIndicator}
+                slow={loadSlow}
+                cards={PROVIDER_SKELETON_CARDS}
+              />
+            )}
             {view === "error" && errorContent}
             {view === "not_found" && notFoundContent}
             {view === "form" && formContent}
