@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PercentCrop } from "react-image-crop";
-import { Button, Input, Notice, useToast } from "@admitto/ui";
+import { Button, Input, Notice, Spinner, TopProgressBar, useToast } from "@admitto/ui";
 import type { LogoCropMeta } from "../api/types.js";
 import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -523,6 +523,7 @@ export function LogoUploadZone({
           }
         }}
       >
+        <TopProgressBar active={uploading} placement="container" label="Uploading logo" />
         {showPreview ? (
           <LogoPreview
             label={label}
@@ -548,13 +549,17 @@ export function LogoUploadZone({
             onRemove={clearLogo}
           />
         ) : (
-          <>
-            <i className="ti ti-photo-up" aria-hidden="true" />
-            <span className="logo-upload__zone-title">
-              {uploading ? "Uploading…" : "Drop logo here or click to browse"}
-            </span>
-            <span className="logo-upload__hint">{hint}</span>
-          </>
+          // While the file goes up the zone is just its spinner (and the bar along its top): the invitation to drop a
+          // file would be wrong, and "Uploading…" is the bar's to say for assistive tech.
+          uploading ? (
+            <Spinner size="md" aria-hidden="true" />
+          ) : (
+            <>
+              <i className="ti ti-photo-up" aria-hidden="true" />
+              <span className="logo-upload__zone-title">Drop logo here or click to browse</span>
+              <span className="logo-upload__hint">{hint}</span>
+            </>
+          )
         )}
         <input
           ref={fileRef}

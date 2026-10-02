@@ -5,6 +5,7 @@ import {
   Input,
   isReservedBrandingFontFamilyName,
   ModalBackdrop,
+  Spinner,
   useToast,
 } from "@admitto/ui";
 import { deleteUploadedFile, uploadThemeFont } from "../api/client.js";
@@ -56,9 +57,8 @@ interface FontRow {
   loaded: boolean;
 }
 
-/** Tabler icon suffix for a row's own file-picker button, reflecting its upload state. */
-function rowFileIconName(row: Pick<FontRow, "loading" | "loaded">): string {
-  if (row.loading) return "loader-2";
+/** Tabler icon suffix for a row's own file-picker button, reflecting whether its file has uploaded (a file on its way shows a Spinner instead). */
+function rowFileIconName(row: Pick<FontRow, "loaded">): string {
   return row.loaded ? "circle-check-filled" : "upload";
 }
 
@@ -527,11 +527,12 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                     ]}
                   />
                   <label className={`fontfam-row__file${row.loaded ? " fontfam-row__file--loaded" : ""}`}>
-                    <i
-                      className={`ti ti-${rowFileIconName(row)}`}
-                      aria-hidden="true"
-                    />
-                    <span>{row.loading ? "Uploading…" : row.fileName || "Choose file"}</span>
+                    {row.loading ? (
+                      <Spinner size="sm" label={`Uploading ${row.fileName ?? "font file"}`} />
+                    ) : (
+                      <i className={`ti ti-${rowFileIconName(row)}`} aria-hidden="true" />
+                    )}
+                    <span>{row.fileName || "Choose file"}</span>
                     <input
                       type="file"
                       accept=".woff,.woff2,.ttf,.otf"

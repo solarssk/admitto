@@ -446,6 +446,26 @@ describe("LogoUploadZone", () => {
     expect(screen.getByRole("button", { name: "Edit image" })).toHaveProperty("disabled", true);
   });
 
+  it("shows the file going up as a spinner and a bar along the zone, not as the invitation to drop one", async () => {
+    let resolveUpload!: (v: { url: string }) => void;
+    mockUploadFile.mockReturnValueOnce(new Promise<{ url: string }>((r) => (resolveUpload = r)));
+    const onUploadingChange = vi.fn();
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} onUploadingChange={onUploadingChange} />);
+    expect(screen.queryByRole("status", { name: "Uploading logo" })).toBeNull();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["a"], "a.png", { type: "image/png" })] } });
+    await waitFor(() => expect(screen.getByRole("status", { name: "Uploading logo" })).toBeTruthy());
+    expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeTruthy();
+    expect(screen.queryByText(/drop logo here/i)).toBeNull();
+    expect(screen.queryByText("Uploading…")).toBeNull();
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true);
+
+    resolveUpload({ url: "/uploads/default/a-original.png" });
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy());
+    expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeNull();
+    expect(onUploadingChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("stale original upload is ignored when a newer pick supersedes it", async () => {
     let resolveFirst!: (v: { url: string }) => void;
     const first = new Promise<{ url: string }>((r) => {
