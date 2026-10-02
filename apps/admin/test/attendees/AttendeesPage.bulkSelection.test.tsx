@@ -728,7 +728,7 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
 
     const dialog = openAndArmDeleteDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Working…" })).toBeTruthy());
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Delete" }).getAttribute("aria-busy")).toBe("true"));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -743,9 +743,9 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     // The dialog itself stays open (closing it is a skipped success side effect, same as the
     // toast covered above) but its busy state is this component's own local state, not tied to
     // which event initiated the request — it must still clear, or the confirm button is stuck
-    // reading "Working…" forever once the operator has navigated away.
+    // busy forever once the operator has navigated away.
     await waitFor(() => {
-      expect(within(dialog).getByRole("button", { name: "Delete" })).toBeTruthy();
+      expect(within(dialog).getByRole("button", { name: "Delete" }).getAttribute("aria-busy")).toBeNull();
     });
   });
 });

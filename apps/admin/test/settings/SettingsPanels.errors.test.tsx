@@ -344,7 +344,7 @@ describe("EventArchivingPanel operator errors", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
 
-    await within(dialog).findByRole("button", { name: "Working…" });
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Archive" }).getAttribute("aria-busy")).toBe("true"));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("dialog")).toBeTruthy();
   });

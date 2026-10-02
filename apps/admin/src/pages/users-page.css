@@ -608,6 +608,30 @@
   gap: var(--space-1);
 }
 
+/* The place of the Recent logins rows while they load (RecentLogins): three rows of the real rows' height (56px, no gap
+ * between them, measured in Chrome), each with a bar inside. */
+.users-modal__logins-skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.users-modal__login-skeleton-row {
+  display: flex;
+  align-items: center;
+  height: 56px;
+}
+
+.users-modal__login-skeleton-row > * {
+  flex: 1;
+}
+
+/* The place of a field whose lookup is on its way (LookupSlot): its label and its control, at their own heights. */
+.users-modal__lookup-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 /* Match .at-label (Input's own label, used by Display name/Email above this field) exactly -
  * this is a bespoke label because Phone number's row has two inputs, not because it should
  * look different. It was missing color, defaulting to the ambient (darker) text color instead
@@ -852,7 +876,8 @@
   gap: var(--space-2);
 }
 
-.users-modal__role-assign .at-field {
+.users-modal__role-assign .at-field,
+.users-modal__role-assign .users-modal__lookup-skeleton {
   flex: 1;
   min-width: 0;
 }
