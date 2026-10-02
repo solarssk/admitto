@@ -1617,11 +1617,12 @@ function AttendeeNotesTab({
       )}
       {notesTotal > notesPageSize && (
         <nav className="at-notes-pagination" aria-label="Notes pagination">
-          <Button type="button" variant="ghost" size="sm" disabled={notesPage <= 1} onClick={() => onPageChange(notesPage - 1)}>
+          {/* aria-disabled, never disabled (see PaginationFooter): the button just pressed becomes the edge one. */}
+          <Button type="button" variant="ghost" size="sm" aria-disabled={notesPage <= 1} onClick={() => onPageChange(notesPage - 1)}>
             Previous
           </Button>
           <span>Page {notesPage} of {pageCount}</span>
-          <Button type="button" variant="ghost" size="sm" disabled={notesPage >= pageCount} onClick={() => onPageChange(notesPage + 1)}>
+          <Button type="button" variant="ghost" size="sm" aria-disabled={notesPage >= pageCount} onClick={() => onPageChange(notesPage + 1)}>
             Next
           </Button>
         </nav>
