@@ -105,7 +105,8 @@ describe("loader layout CSS", () => {
 
 // Windows High Contrast turns every border colour of the ring into one colour (measured in Chrome with forced
 // colours on: all four sides computed to rgb(0, 0, 0)), which makes the turning head and the faint track one
-// uniform circle.
+// uniform circle. Only the head is drawn, in CanvasText, the colour the system guarantees to be readable on the
+// page (spinner-css.test.ts has the measurements behind it and why it is never `currentColor`).
 describe("loader ring in forced-colors mode (Windows High Contrast)", () => {
   const forcedAt = loaderCss.indexOf("@media (forced-colors: active)");
   const forcedRing = () => {
@@ -117,11 +118,10 @@ describe("loader ring in forced-colors mode (Windows High Contrast)", () => {
     expect(forcedRing()["forced-color-adjust"]).toBe("none");
   });
 
-  it("draws the head and the track in two different system colours, so the turning head can be seen", () => {
+  it("draws only the head, in CanvasText, so the turning arc can be seen", () => {
     const ring = forcedRing();
-    expect(ring["border-color"]).toBe("GrayText");
-    expect(ring["border-top-color"]).toBe("Highlight");
-    expect(ring["border-top-color"]).not.toBe(ring["border-color"]);
+    expect(ring["border-top-color"]).toBe("CanvasText");
+    expect(ring["border-color"]).toBe("transparent");
   });
 
   it("comes after the ring's own rule, so it wins on equal specificity", () => {

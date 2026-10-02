@@ -53,10 +53,11 @@
 .at-btn--loading-solo > span:not(.at-btn__spinner) { opacity: 0; }
 .at-btn__spinner--overlay { position: absolute; inset: 0; margin: auto; }
 @media (prefers-reduced-motion: reduce) { .at-btn__spinner, .at-iconbtn__spinner { animation-duration: 2.5s; } }
-/* Same rule as `.at-spinner__ring` (see spinner.css): forced colours would draw head and track alike. */
+/* Same rule as `.at-spinner__ring` (see spinner.css): forced colours would draw head and track alike, so only
+   the head is drawn. A button's face is ButtonFace, so the head is in ButtonText, the pair the system guarantees. */
 @media (forced-colors: active) {
   .at-btn__spinner,
-  .at-iconbtn__spinner { forced-color-adjust: none; border-color: GrayText; border-top-color: Highlight; }
+  .at-iconbtn__spinner { forced-color-adjust: none; border-color: transparent; border-top-color: ButtonText; }
 }
 
 .at-btn--sm { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
