@@ -188,6 +188,37 @@ describe("AuditLogPanel loading", () => {
     expect(document.querySelector(".refetch-card--busy")).toBeNull();
   });
 
+  it("keeps an empty answer on screen, blocked and marked busy, while a filter change loads, and describes the new answer when it is in", async () => {
+    renderAuditPanel();
+    expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
+    let resolveNext: (value: AuditLogResponse) => void = () => {};
+    mockAudit.mockReturnValueOnce(new Promise((resolve) => (resolveNext = resolve)));
+    fireEvent.change(screen.getByLabelText("Search user or event"), { target: { value: "event" } });
+    await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.querySelector(".refetch-card--busy")?.getAttribute("aria-busy")).toBe("true"));
+    expect(document.querySelector(".refetch-card--busy")?.textContent).toContain("No audit log entries yet");
+    expect(screen.queryByText("No matches")).toBeNull();
+    expect(screen.queryByLabelText("Loading audit log")).toBeNull();
+    await act(async () => resolveNext(page([])));
+    expect(await screen.findByText("No matches")).toBeTruthy();
+    expect(document.querySelector(".refetch-card--busy")).toBeNull();
+  });
+
+  it("keeps the Security view's empty answer on screen, blocked and marked busy, while a filter change loads", async () => {
+    renderAuditPanel();
+    fireEvent.click(screen.getByRole("radio", { name: "Security" }));
+    expect(await screen.findByText("No security events yet")).toBeTruthy();
+    let resolveNext: (value: SecurityAuditLogResponse) => void = () => {};
+    vi.mocked(fetchSecurityAuditLog).mockReturnValueOnce(new Promise((resolve) => (resolveNext = resolve)));
+    fireEvent.change(screen.getByLabelText("Search user"), { target: { value: "login" } });
+    await waitFor(() => expect(vi.mocked(fetchSecurityAuditLog)).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.querySelector(".refetch-card--busy")?.getAttribute("aria-busy")).toBe("true"));
+    expect(document.querySelector(".refetch-card--busy")?.textContent).toContain("No security events yet");
+    expect(screen.queryByText("No matches")).toBeNull();
+    await act(async () => resolveNext({ entries: [], total: 0, page: 1, pageSize: 25 } as SecurityAuditLogResponse));
+    expect(await screen.findByText("No matches")).toBeTruthy();
+  });
+
   it("keeps the Security view's Export logs focusable and busy as Exporting… too, on its own flag", async () => {
     renderAuditPanel();
     fireEvent.click(screen.getByRole("radio", { name: "Security" }));

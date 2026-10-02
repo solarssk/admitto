@@ -194,7 +194,7 @@ describe("CropImageModal zoom", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
       expect(mockGetCropped).toHaveBeenCalled();
-      expect(screen.getByText("Working…")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Applying…" })).toBeTruthy();
     });
     const widthBefore = Number.parseFloat(img.style.width);
     const stage = document.querySelector(".crop-image-modal__stage")!;

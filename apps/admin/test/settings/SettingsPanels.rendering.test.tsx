@@ -251,10 +251,10 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     pickSearchableOption("Action", "Event created");
 
-    // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
-    // unfiltered empty state right away, even though the new request is still in flight - the
-    // skeleton must never appear while it settles.
-    expect(screen.getByText("No matches")).toBeTruthy();
+    // The answer on screen was asked without filters, so the unfiltered empty state stays (blocked and dimmed, see the
+    // loading tests) until the answer to the new query is in - and the skeleton must never appear while it settles.
+    expect(screen.getByText("No audit log entries yet")).toBeTruthy();
+    expect(screen.queryByText("No matches")).toBeNull();
     expect(screen.queryByLabelText("Loading audit log")).toBeNull();
 
     resolveFiltered(emptyAuditLog());
@@ -2050,10 +2050,10 @@ describe("AuditLogPanel Security view rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     pickSearchableOption("Event", "Access denied");
 
-    // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
-    // unfiltered empty state right away, even though the new request is still in flight - the
-    // skeleton must never appear while it settles.
-    expect(screen.getByText("No matches")).toBeTruthy();
+    // The answer on screen was asked without filters, so the unfiltered empty state stays until the answer to the new
+    // query is in - and the skeleton must never appear while it settles.
+    expect(screen.getByText("No security events yet")).toBeTruthy();
+    expect(screen.queryByText("No matches")).toBeNull();
     expect(screen.queryByLabelText("Loading security audit log")).toBeNull();
 
     resolveFiltered(emptySecurityLog());

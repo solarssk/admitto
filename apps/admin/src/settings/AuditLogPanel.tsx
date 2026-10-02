@@ -676,6 +676,7 @@ interface LogListContentProps {
   onRetry: () => Promise<void>;
   entriesCount: number;
   total: number;
+  /** Whether the answer on screen was asked with filters (not whether the form has some now). */
   hasActiveFilters: boolean;
   emptyIcon: ReactNode;
   emptyTitle: string;
@@ -685,9 +686,41 @@ interface LogListContentProps {
   renderCards: () => ReactNode;
 }
 
+/** The empty state that describes the answer on screen (never the query still on its way), or null when the answer has
+ * entries. */
+function emptyLogState({
+  entriesCount,
+  total,
+  hasActiveFilters,
+  emptyIcon,
+  emptyTitle,
+  emptyDescription,
+}: Readonly<
+  Pick<
+    LogListContentProps,
+    "entriesCount" | "total" | "hasActiveFilters" | "emptyIcon" | "emptyTitle" | "emptyDescription"
+  >
+>): ReactNode {
+  if (entriesCount > 0) return null;
+  if (total > 0) return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
+  if (hasActiveFilters) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+        title="No matches"
+        description="Try different filters, or clear them to see everything."
+      />
+    );
+  }
+  return <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} />;
+}
+
 /** Picks the loading skeleton / error / empty-state / table-or-cards branch - shared by both
  * views; this whole if-chain used to live directly inside AuditLogPanel, then got duplicated
- * once for Security. Only the copy/icon and which table-or-cards to render differ per view. */
+ * once for Security. Only the copy/icon and which table-or-cards to render differ per view.
+ * The empty states sit inside the `RefetchRegion` too, so a filter or page change that starts from an empty answer is
+ * blocked, dimmed and announced like one that starts from rows, and they say what the answer on screen was asked with
+ * (`hasActiveFilters` is the answer's, not the form's). */
 function LogListContent({
   skeleton,
   refreshing,
@@ -708,27 +741,13 @@ function LogListContent({
 }: Readonly<LogListContentProps>) {
   if (skeleton) return skeleton;
   if (error) return <LogError title={errorTitle} message={error} retrying={retrying} onRetry={onRetry} />;
-  if (entriesCount === 0 && total > 0) {
-    return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
-  }
-  if (entriesCount === 0 && hasActiveFilters) {
-    return (
-      <EmptyState
-        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-        title="No matches"
-        description="Try different filters, or clear them to see everything."
-      />
-    );
-  }
-  if (entriesCount === 0) {
-    return <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} />;
-  }
+  const empty = emptyLogState({ entriesCount, total, hasActiveFilters, emptyIcon, emptyTitle, emptyDescription });
   // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
   // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
   // useIsDesktop() breakpoint.
   return (
     <RefetchRegion refreshing={refreshing} label={refreshLabel}>
-      {isDesktop ? renderTable() : renderCards()}
+      {empty ?? (isDesktop ? renderTable() : renderCards())}
     </RefetchRegion>
   );
 }
@@ -1238,6 +1257,9 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   // The last answer was a failure (nothing is on screen from it): a load after it is a first load again and
   // leaves the list to a placeholder, not to "No entries yet" for a request that has not answered.
   const [loadFailed, setLoadFailed] = useState(false);
+  // Whether the answer on screen was asked with filters: the empty states describe it, while the query that is on its way
+  // (and the form's own state) already has other filters.
+  const [answeredWithFilters, setAnsweredWithFilters] = useState(false);
   // Mirrors SystemLogsPanel's own Live toggle - defaults on, since a log view is exactly the
   // kind of thing an operator wants to watch update on its own.
   const [live, setLive] = useState(true);
@@ -1335,6 +1357,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
         // the stale Retry empty state even though the data has recovered.
         setError(null);
         setLoadFailed(false);
+        setAnsweredWithFilters(computeHasActiveFilters(filters));
         setEntries(data.entries);
         setTotal(data.total);
         pollFailureCountRef.current = 0;
@@ -1446,6 +1469,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
     goToPage,
     totalPages,
     hasActiveFilters: computeHasActiveFilters(filters),
+    answeredWithFilters,
     clearFilters,
     exporting,
     handleExport,
@@ -1704,6 +1728,11 @@ function LogsPanelViews({ view, systemLogsPanel, auditView, securityView }: Read
   );
 }
 
+/** The first load, or the one after a failed one: a placeholder instead of the rows (a Retry keeps its error on screen). */
+function isFirstLogLoad(query: Readonly<{ loading: boolean; hasLoadedOnce: boolean; loadFailed: boolean; retryRunning: boolean }>) {
+  return query.loading && (!query.hasLoadedOnce || query.loadFailed) && !query.retryRunning;
+}
+
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
   const [view, setView] = useState<LogsView>("system");
@@ -1742,6 +1771,7 @@ export function AuditLogPanel() {
     goToPage,
     totalPages,
     hasActiveFilters,
+    answeredWithFilters,
     clearFilters,
     exporting,
     handleExport,
@@ -1926,7 +1956,7 @@ export function AuditLogPanel() {
   // on hasLoadedOnce rather than entries.length === 0 - a filter/search that legitimately
   // matches nothing is still a completed load, not a first load, so it must not re-arm the
   // skeleton and flash the "No matches" empty-state text out from under the user.
-  const isInitialLoad = loading && (!hasLoadedOnce || loadFailed) && !retryRunning;
+  const isInitialLoad = isFirstLogLoad({ loading, hasLoadedOnce, loadFailed, retryRunning });
   const initialGate = useLoadingGate(isInitialLoad);
   const initialSlow = useDelayedLoading(isInitialLoad, SLOW_NOTICE_MS);
 
@@ -1949,7 +1979,7 @@ export function AuditLogPanel() {
       onRetry={retry}
       entriesCount={entries.length}
       total={total}
-      hasActiveFilters={hasActiveFilters}
+      hasActiveFilters={answeredWithFilters}
       emptyIcon={<i className="ti ti-history" aria-hidden="true" />}
       emptyTitle="No audit log entries yet"
       emptyDescription="Actions taken across Settings will appear here."
@@ -1982,8 +2012,7 @@ export function AuditLogPanel() {
   // Mirrors isInitialLoad above - gated on the hook's own hasLoadedOnce, not entries.length,
   // for the same reason (an event-type/search filter with zero matches is still a completed
   // load).
-  const isSecurityInitialLoad =
-    security.loading && (!security.hasLoadedOnce || security.loadFailed) && !security.retryRunning;
+  const isSecurityInitialLoad = isFirstLogLoad(security);
   const securityInitialGate = useLoadingGate(isSecurityInitialLoad);
   const securityInitialSlow = useDelayedLoading(isSecurityInitialLoad, SLOW_NOTICE_MS);
 
@@ -2010,7 +2039,7 @@ export function AuditLogPanel() {
       onRetry={security.retry}
       entriesCount={security.entries.length}
       total={security.total}
-      hasActiveFilters={security.hasActiveFilters}
+      hasActiveFilters={security.answeredWithFilters}
       emptyIcon={<i className="ti ti-shield-lock" aria-hidden="true" />}
       emptyTitle="No security events yet"
       emptyDescription="Logins, 2FA checks, logout, OIDC, and access-denied events will appear here."

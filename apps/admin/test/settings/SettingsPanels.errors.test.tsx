@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
@@ -83,24 +83,6 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
-});
-
-describe("Settings panels delayed loading", () => {
-  it("BrandingSettingsPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({
-      org_name: "Acme",
-      logo_url: null,
-      logo_original_url: null,
-      logo_crop: null,
-    });
-    vi.mocked(fetchStaffTheme).mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderWithToast(<BrandingSettingsPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading branding settings…")).toBeTruthy();
-  });
 });
 
 describePanelLoading({

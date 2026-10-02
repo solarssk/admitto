@@ -4,7 +4,6 @@ import {
   Button,
   Card,
   DEFAULT_BRANDING_FONT_FAMILY_NAME,
-  EmptyState,
   HintLabel,
   IconButton,
   Input,
@@ -19,7 +18,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { safeBrandingLogoHref } from "../utils/safeBrandingLogoHref.js";
 import {
   brandingDraftForSave,
@@ -29,6 +28,8 @@ import {
   type BrandingFieldErrors,
 } from "./brandingValidation.js";
 import { FontFamilyModal, styleLabel } from "./FontFamilyModal.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 
 const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = {
   org_name: "",
@@ -37,6 +38,12 @@ const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = {
   logo_crop: null,
 };
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
+
+/** The cards of the panel, for its placeholder: the organisation's name and logo, and the theme with its fonts, surfaces and preview. */
+const BRANDING_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "organisation", title: "Organisation branding", intro: true, fields: 1, controlHeight: 62, rows: 2, rowHeight: 102 },
+  { id: "theme", title: "Theme", intro: true, rows: 3, rowHeight: 238 },
+];
 
 /** Collect `/uploads/…` font file URLs from a theme draft. */
 function themeFontUploadUrls(theme: BrandingThemeDto): Set<string> {
@@ -484,10 +491,7 @@ export function BrandingSettingsPanel() {
     };
   }, []);
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedOk, setLoadedOk] = useState(false);
-  const loadAbortRef = useRef<AbortController | null>(null);
 
   const [orgNameError, setOrgNameError] = useState<string | null>(null);
   const [themeFieldErrors, setThemeFieldErrors] = useState<BrandingFieldErrors>({});
@@ -516,21 +520,12 @@ export function BrandingSettingsPanel() {
     setTicketColorUi(deriveColorUiState(theme.ticket_primary));
   }, []);
 
-  const load = useCallback(async () => {
-    loadAbortRef.current?.abort();
-    const ac = new AbortController();
-    loadAbortRef.current = ac;
-    const { signal } = ac;
-
-    setLoading(true);
-    setLoadError(null);
-    setLoadedOk(false);
-    try {
-      const [org, { theme }] = await Promise.all([
-        fetchOrgBranding(signal),
-        fetchStaffTheme(signal),
-      ]);
-      if (signal.aborted) return;
+  const panel = usePanelLoad({
+    fetch: async (signal) => {
+      const [org, { theme }] = await Promise.all([fetchOrgBranding(signal), fetchStaffTheme(signal)]);
+      return { org, theme };
+    },
+    apply: ({ org, theme }) => {
       const normalizedOrg: SetupOrgBrandingDto = {
         org_name: org.org_name ?? "",
         logo_url: org.logo_url ?? null,
@@ -546,18 +541,9 @@ export function BrandingSettingsPanel() {
       setOrgNameError(null);
       setThemeFieldErrors({});
       setLoadedOk(true);
-    } catch {
-      if (signal.aborted) return;
-      setLoadError("Could not load branding settings. Use Retry to reload.");
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [syncColorUiState]);
-
-  useEffect(() => {
-    void load();
-    return () => loadAbortRef.current?.abort();
-  }, [load]);
+    },
+    fallback: "Could not load branding settings.",
+  });
 
   // Live preview across the whole staff app while this panel is open, matching the previous
   // BrandingPanel's own behaviour - reverts to the saved theme on unmount.
@@ -815,7 +801,6 @@ export function BrandingSettingsPanel() {
     JSON.stringify(orgDraft) !== JSON.stringify(orgSavedRef.current) ||
     JSON.stringify(themeDraft) !== JSON.stringify(themeSavedRef.current);
 
-  const showLoading = useDelayedLoading(loading);
   // Live preview always reflects the Admin panel colour - same semantics "Primary colour" used to
   // have before it moved into the Theme-by-surface row.
   const paletteHex = primaryForColorInput(THEME_COLORS.find((c) => c.key === adminColorUi.colorKey)?.hex);
@@ -860,39 +845,40 @@ export function BrandingSettingsPanel() {
     ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
   ];
 
-  if (loading) {
-    return showLoading ? (
-      <Card title="Organisation branding">
-        <p>Loading branding settings…</p>
-      </Card>
-    ) : null;
-  }
-
-  if (loadError) {
+  if (!panel.gate.showContent) {
     return (
-      <Card title="Organisation branding">
-        <EmptyState
-          variant="error"
-          title="Could not load branding settings"
-          description={loadError}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void load()}>
-              Retry
-            </Button>
-          }
-        />
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading branding settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={BRANDING_SKELETON_CARDS}
+      />
     );
   }
 
-  // Successful load always populates loadedOk; failures always set loadError above.
+  if (panel.error) {
+    return (
+      <PanelLoadError
+        cardTitle="Organisation branding"
+        title="Could not load branding settings"
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
+    );
+  }
+
+  // Successful load always populates loadedOk; a failed one is the error above.
   /* v8 ignore if */
   if (!loadedOk) return null;
 
   const formDisabled = saving;
+  // Off, with `aria-disabled` and never `disabled`: the button that has just done its job turns off on the same commit
+  // and would take the keyboard focus with it.
+  const footerOff = formDisabled || logoUploading || !hasUnsavedChanges;
 
   return (
-    <>
+    <div className="settings-sections at-fade-in">
       <Card title={<HintLabel hint={ORG_BRANDING_HINT}>Organisation branding</HintLabel>}>
         <div className="settings-card-stack branding-form">
           <p className="settings-card-intro">{ORG_BRANDING_INTRO}</p>
@@ -1176,22 +1162,14 @@ export function BrandingSettingsPanel() {
           )}
         </div>
         <div className="settings-footer__buttons">
-          <Button
-            variant="secondary"
-            disabled={!loadedOk || formDisabled || logoUploading || !hasUnsavedChanges}
-            onClick={handleReset}
-          >
+          <Button variant="secondary" aria-disabled={footerOff} onClick={handleReset}>
             Reset to saved
           </Button>
-          <Button
-            variant="primary"
-            disabled={!loadedOk || formDisabled || logoUploading || !hasUnsavedChanges}
-            onClick={() => void handleSave()}
-          >
-            {saving ? "Saving…" : "Save"}
+          <Button variant="primary" loading={saving} aria-disabled={footerOff} onClick={() => void handleSave()}>
+            Save
           </Button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
