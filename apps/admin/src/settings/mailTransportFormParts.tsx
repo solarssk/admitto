@@ -1332,7 +1332,6 @@ export function SettingsFooter({
   validationErrorsRef,
   hasUnsavedChanges,
   saving,
-  busyLabel = "Saving…",
   onReset,
   onSave,
 }: Readonly<{
@@ -1342,13 +1341,11 @@ export function SettingsFooter({
   validationErrors?: string[];
   validationErrorsRef?: RefObject<HTMLUListElement | null>;
   hasUnsavedChanges: boolean;
+  /** The Save button is busy (a spinner, its label unchanged) while this is true, and Reset is off. */
   saving: boolean;
-  /** Label while `saving` is true (e.g. "Uploading…" for a logo transfer). */
-  busyLabel?: string;
   onReset: () => void;
   onSave: () => void;
 }>) {
-  const saveLabel = saving ? busyLabel : "Save";
   // A failed save's validationErrors can outlive hasUnsavedChanges - e.g. the operator manually
   // retypes a field back to its saved value after a rejected save, which zeroes the diff without
   // touching the error state a caller only clears in its own onReset. Keep Reset enabled in that
@@ -1366,11 +1363,13 @@ export function SettingsFooter({
         )}
       </div>
       <div className="settings-footer__buttons">
-        <Button type="button" variant="secondary" disabled={resetDisabled} onClick={onReset}>
+        {/* aria-disabled, not disabled: a button that has just done its job (a Save that took the draft to the saved
+            values, a Reset that took the draft back) goes off on the same commit, and a disabled button drops the focus. */}
+        <Button type="button" variant="secondary" aria-disabled={resetDisabled} onClick={onReset}>
           Reset
         </Button>
-        <Button type="button" variant="primary" disabled={saving || !hasUnsavedChanges} onClick={onSave}>
-          {saveLabel}
+        <Button type="button" variant="primary" loading={saving} aria-disabled={!hasUnsavedChanges} onClick={onSave}>
+          Save
         </Button>
       </div>
     </div>
@@ -1379,7 +1378,7 @@ export function SettingsFooter({
 
 /** SettingsFooter wrapper for panels whose saving state also depends on a logo upload
  * (EventGeneralInfoPanel, EventImagesPanel) — both rendered the identical `!isArchived &&
- * <SettingsFooter ... saving={saving || logoUploading} busyLabel={...} />` block. */
+ * <SettingsFooter ... saving={saving || logoUploading} />` block. */
 export function LogoAwareSettingsFooter({
   isArchived,
   dirty,
@@ -1403,7 +1402,6 @@ export function LogoAwareSettingsFooter({
       validationErrorsRef={validationErrorsRef}
       hasUnsavedChanges={dirty}
       saving={saving || logoUploading}
-      busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
       onReset={onReset}
       onSave={onSave}
     />

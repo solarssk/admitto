@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GeneralSettingsPanel } from "../../src/settings/GeneralSettingsPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -79,17 +80,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("GeneralSettingsPanel", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderWithToast(<GeneralSettingsPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
-  });
+describePanelLoading({
+  label: "Loading organisation settings",
+  errorTitle: "Could not load organisation settings",
+  render: () => renderWithToast(<GeneralSettingsPanel />),
+  hang: () => {
+    mockFetch.mockImplementation(hangUntilAborted);
+    mockFetchContact.mockImplementation(hangUntilAborted);
+  },
+});
 
+describe("GeneralSettingsPanel", () => {
   it("shows operator-safe message when settings fail to load", async () => {
     mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<GeneralSettingsPanel />);
@@ -383,3 +384,85 @@ describe("GeneralSettingsPanel", () => {
     expect(mockPatchContact).not.toHaveBeenCalled();
   });
 });
+
+describe("GeneralSettingsPanel busy buttons", () => {
+  it("keeps Save where it is, busy and with its own label, while the settings are saved, and saves once", async () => {
+    mockPatch.mockImplementation(() => new Promise(() => {}));
+    await renderWithSettings();
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: "https://tickets.example.com" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(save);
+    fireEvent.click(save);
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+    expect(isOff(screen.getByRole("button", { name: "Reset" }))).toBe(true);
+  });
+
+  it("shows Clear as busy, with its own label, while the Instance URL is cleared", async () => {
+    mockPatch.mockImplementation(() => new Promise(() => {}));
+    await renderWithSettings({ ...emptySettings, instance_url: { value: "https://tickets.example.com", source: "db" as never } });
+    const clear = screen.getByRole("button", { name: "Clear" });
+    fireEvent.click(clear);
+
+    await waitFor(() => expect(clear.getAttribute("aria-busy")).toBe("true"));
+    expect((clear as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(clear);
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GeneralSettingsPanel focus", () => {
+  it("keeps focus on Save after a successful save, when there is nothing left to save and it goes off", async () => {
+    await renderWithSettings();
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: "https://tickets.example.com" } });
+    mockPatch.mockResolvedValue({ ...emptySettings, instance_url: { value: "https://tickets.example.com", source: "db" as never } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(isOff(save)).toBe(true));
+    expect(save.getAttribute("aria-busy")).toBeNull();
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(save);
+  });
+
+  it("keeps focus on Reset after it took the draft back, when there is nothing left to reset", async () => {
+    await renderWithSettings();
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: "https://tickets.example.com" } });
+    const reset = screen.getByRole("button", { name: "Reset" });
+    expect(isOff(reset)).toBe(false);
+    reset.focus();
+    fireEvent.click(reset);
+
+    expect(isOff(reset)).toBe(true);
+    expect((reset as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(reset);
+    // A click on it now does nothing.
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: "" } });
+    fireEvent.click(reset);
+    expect((screen.getByLabelText("URL") as HTMLInputElement).value).toBe("");
+  });
+
+  it("keeps the error and a busy Retry on screen while a Retry loads the panel again", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<GeneralSettingsPanel />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    let finish!: (settings: SystemSettingsDto) => void;
+    mockFetch.mockReturnValueOnce(new Promise<SystemSettingsDto>((resolve) => (finish = resolve)));
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(screen.queryByLabelText("Loading organisation settings")).toBeNull();
+    expect(screen.getByText("Could not load organisation settings")).toBeTruthy();
+    expect(document.activeElement).toBe(retry);
+    await act(async () => finish(emptySettings));
+    expect(await screen.findByLabelText("URL")).toBeTruthy();
+  });
+});
+

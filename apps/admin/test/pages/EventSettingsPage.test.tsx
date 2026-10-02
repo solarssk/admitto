@@ -967,19 +967,18 @@ describe("EventSettingsPage tabs", () => {
     });
 
     // Pre-crop original upload is in flight before the modal opens.
+    // Save is busy, not savable, and keeps its label (the upload shows its own state).
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Uploading…" }).hasAttribute("disabled")).toBe(
-        true,
-      );
+      expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBe("true");
     });
+    expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-disabled")).toBe("true");
 
     resolveOriginal({ url: "/uploads/default/logo-original.png" });
     fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(
-        false,
-      );
+      expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBeNull();
     });
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("saves the logo field after uploading, sending the patch payload", async () => {

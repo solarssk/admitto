@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadWithTimeout } from "../../src/utils/load-timeout.js";
+import { loadWithTimeout, rejectOnAbort } from "../../src/utils/load-timeout.js";
 import { LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 
 beforeEach(() => {
@@ -51,3 +51,31 @@ describe("loadWithTimeout", () => {
     expect(load.timedOut()).toBe(true);
   });
 });
+
+describe("rejectOnAbort", () => {
+  it("is the promise's own answer when it comes first, and lets go of the signal", async () => {
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    await expect(rejectOnAbort(Promise.resolve("answer"), controller.signal)).resolves.toBe("answer");
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  it("is the promise's own failure when it comes first", async () => {
+    const controller = new AbortController();
+    await expect(rejectOnAbort(Promise.reject(new Error("boom")), controller.signal)).rejects.toThrow("boom");
+  });
+
+  it("is an abort the moment the signal aborts, for a promise that never answers", async () => {
+    const controller = new AbortController();
+    const waiting = rejectOnAbort(new Promise<string>(() => {}), controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("is an abort at once for a signal that has already aborted, and ignores a late answer", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(rejectOnAbort(Promise.resolve("late"), controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+

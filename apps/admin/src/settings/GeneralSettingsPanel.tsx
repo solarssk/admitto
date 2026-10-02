@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
+import { useRef, useState } from "react";
+import { Button, Card, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
 import {
   fetchSecuritySettings,
   fetchSupportContact,
   patchSecuritySettings,
   patchSupportContact,
 } from "../api/client.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   PatchSystemSettingsBody,
@@ -15,6 +15,8 @@ import type {
   SystemSettingsDto,
 } from "../api/types.js";
 import { NO_AUTOFILL_PROPS, EnvBadge, SettingsFooter } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton } from "./SettingsPanelSkeleton.js";
 
 const EMPTY_SUPPORT_CONTACT: SetupSupportContactDto = {
   support_contact_name: null,
@@ -29,6 +31,12 @@ const SUPPORT_CONTACT_HINT =
   "Also identifies this instance to the geocoding provider used on the Location tab.";
 const SUPPORT_CONTACT_INTRO =
   "Name and email for the organisation that runs this Admitto instance.";
+
+/** The cards of the panel, for its placeholder: Instance URL has one field, Support contact two. */
+const GENERAL_SKELETON_CARDS = [
+  { id: "instance-url", title: "Instance URL", intro: true, fields: 1, controlHeight: 42 },
+  { id: "support-contact", title: "Support contact", intro: true, fields: 2, columns: 2 as const, controlHeight: 64 },
+];
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
@@ -89,38 +97,26 @@ export function GeneralSettingsPanel() {
     useState<SetupSupportContactDto>(EMPTY_SUPPORT_CONTACT);
   const supportContactSavedRef = useRef<SetupSupportContactDto>(EMPTY_SUPPORT_CONTACT);
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const validationErrorsRef = useRef<HTMLUListElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const [security, supportContact] = await Promise.all([
-        fetchSecuritySettings(),
-        fetchSupportContact(),
-      ]);
+  const panel = usePanelLoad({
+    fetch: async (signal) => {
+      const [security, supportContact] = await Promise.all([fetchSecuritySettings(signal), fetchSupportContact(signal)]);
+      return { security, supportContact };
+    },
+    apply: ({ security, supportContact }) => {
       setSettings(security);
       setInstanceUrlDraft(security.instance_url.value ?? "");
       instanceUrlSavedRef.current = security.instance_url.value ?? "";
       setSupportContactDraft(supportContact);
       supportContactSavedRef.current = supportContact;
       setEmailError(null);
-    } catch (err) {
-      const message = operatorApiErrorMessage(err, "Could not load organisation settings.");
-      setLoadError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+    },
+    fallback: "Could not load organisation settings.",
+  });
 
   const hasConfiguredUrl = Boolean(settings?.instance_url.value?.trim());
   const urlLocked = settings ? fieldLocked(settings.instance_url.source) : false;
@@ -202,31 +198,26 @@ export function GeneralSettingsPanel() {
     }
   };
 
-  const showLoading = useDelayedLoading(loading);
-
-  if (loading) {
-    if (!showLoading) return null;
+  if (!panel.gate.showContent) {
     return (
-      <Card title="Instance URL">
-        <p className="sessions-status">Loading…</p>
-      </Card>
+      <SettingsPanelSkeleton
+        label="Loading organisation settings"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={GENERAL_SKELETON_CARDS}
+      />
     );
   }
 
-  if (loadError) {
+  if (panel.error) {
     return (
-      <Card title="Instance URL">
-        <EmptyState
-          variant="error"
-          title="Could not load organisation settings"
-          description={loadError}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void load()}>
-              Retry
-            </Button>
-          }
-        />
-      </Card>
+      <PanelLoadError
+        cardTitle="Instance URL"
+        title="Could not load organisation settings"
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
     );
   }
 
@@ -235,7 +226,7 @@ export function GeneralSettingsPanel() {
   if (!settings) return null;
 
   return (
-    <>
+    <div className="settings-sections at-fade-in">
       <Card
         title={<HintLabel hint={INSTANCE_URL_HINT}>Instance URL</HintLabel>}
         actions={
@@ -246,10 +237,11 @@ export function GeneralSettingsPanel() {
               type="button"
               variant="ghost"
               size="sm"
-              disabled={saving || clearing}
+              loading={clearing}
+              disabled={saving}
               onClick={() => void handleClearInstanceUrl()}
             >
-              {clearing ? "Clearing…" : "Clear"}
+              Clear
             </Button>
           )
         }
@@ -318,6 +310,6 @@ export function GeneralSettingsPanel() {
         onReset={handleReset}
         onSave={() => void handleSave()}
       />
-    </>
+    </div>
   );
 }

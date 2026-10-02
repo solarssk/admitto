@@ -71,6 +71,8 @@ The change can affect future sessions, messages, branding, archiving, or logs de
 
 - **A field is locked:** it is controlled outside the UI; follow the approved deployment process.
 - **A save succeeds but behaviour is unchanged:** verify the correct scope and whether an event override exists.
+- **A tab shows grey boxes, or says "Taking longer than usual":** the settings are being read from the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows "Could not load ..." with the reason and a **Retry** button; nothing you could have changed is lost, because nothing has been shown yet. This applies to General, Security and Archiving; the other tabs follow.
+- **In Archiving, a warning says "Could not refresh this list, so it may show older details":** the event was archived or restored, and it is already shown in its new place, but loading the list again afterwards failed. Press **Retry** in the warning.
 - **A security change blocks a test user:** restore access with another authorised Superadmin, not a shared account.
 
 ## Related pages
