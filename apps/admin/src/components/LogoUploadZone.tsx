@@ -125,6 +125,21 @@ function LogoPreview({
   );
 }
 
+/**
+ * The empty zone. While the file goes up it is just its spinner (and the bar along its top): the invitation to drop a
+ * file would be wrong, and "Uploading…" is the bar's to say for assistive tech.
+ */
+function LogoDropInvitation({ uploading, hint }: { readonly uploading: boolean; readonly hint: string }) {
+  if (uploading) return <Spinner size="md" aria-hidden="true" />;
+  return (
+    <>
+      <i className="ti ti-photo-up" aria-hidden="true" />
+      <span className="logo-upload__zone-title">Drop logo here or click to browse</span>
+      <span className="logo-upload__hint">{hint}</span>
+    </>
+  );
+}
+
 interface LogoZoneClassNameFlags {
   readonly uploading: boolean;
   readonly dragging: boolean;
@@ -554,17 +569,7 @@ export function LogoUploadZone({
             onRemove={clearLogo}
           />
         ) : (
-          // While the file goes up the zone is just its spinner (and the bar along its top): the invitation to drop a
-          // file would be wrong, and "Uploading…" is the bar's to say for assistive tech.
-          uploading ? (
-            <Spinner size="md" aria-hidden="true" />
-          ) : (
-            <>
-              <i className="ti ti-photo-up" aria-hidden="true" />
-              <span className="logo-upload__zone-title">Drop logo here or click to browse</span>
-              <span className="logo-upload__hint">{hint}</span>
-            </>
-          )
+          <LogoDropInvitation uploading={uploading} hint={hint} />
         )}
         <input
           ref={fileRef}
