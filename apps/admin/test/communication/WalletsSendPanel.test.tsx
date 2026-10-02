@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletsSendPanel } from "../../src/communication/WalletsSendPanel.js";
+import { isOff, makeTicketType } from "../test-utils.js";
 
 const sendWalletMessage = vi.fn();
 const fetchWalletMessageJob = vi.fn();
@@ -543,7 +544,49 @@ describe("WalletsSendPanel", () => {
     });
 
     expect(fetchWalletMessageJob).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    // The switch ended the send as far as the panel is concerned: Send is not busy any more, and works.
+    const sendAfter = screen.getByRole("button", { name: "Send" });
+    expect(sendAfter.getAttribute("aria-busy")).toBeNull();
+    expect(isOff(sendAfter)).toBe(false);
+  });
+
+  it("forgets that a count was under way when the event changes: Count recipients is not busy and works", async () => {
+    let resolveCount: ((value: unknown) => void) | undefined;
+    sendWalletMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCount = resolve;
+        }),
+    );
+    const { rerender } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Checking…" }).getAttribute("aria-busy")).toBe("true"));
+
+    rerender(<WalletsSendPanel event={activeEvent} eventId="evt-2" text="Hi" />);
+    await act(async () => {
+      resolveCount?.({ recipientCount: 4 });
+      await Promise.resolve();
+    });
+
+    const count = screen.getByRole("button", { name: "Count recipients" });
+    expect(count.getAttribute("aria-busy")).toBeNull();
+    expect(isOff(count)).toBe(false);
+    expect(screen.queryByText(/recipients matched/)).toBeNull();
+  });
+
+  it("clears the ticket type that was chosen when the event changes, so a key of the old event cannot be counted for the new one", async () => {
+    fetchTicketTypes.mockResolvedValue([makeTicketType("vip", "VIP")]);
+    const { rerender } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ticket type,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "VIP" }));
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(false);
+
+    rerender(<WalletsSendPanel event={activeEvent} eventId="evt-2" text="Hi" />);
+    // The filter strategy resets to all recipients with the event; choosing By ticket type again finds nothing chosen.
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+    await screen.findByRole("button", { name: "Ticket type, none selected" });
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("ignores a late send failure after the event changes mid-send", async () => {

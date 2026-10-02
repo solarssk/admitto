@@ -23,6 +23,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 
 import {
   fetchBulkSendStatus,
+  fetchEventAttendees,
   fetchTicketTypes,
   fetchWalletMessageJob,
   sendEventBulk,
@@ -50,8 +51,8 @@ const PANELS = [
     send: sendWalletMessage as ReturnType<typeof vi.fn>,
     started: { jobId: "job-1", recipientCount: 3 },
     watch: () => vi.mocked(fetchWalletMessageJob).mockImplementation(hangUntilAborted as never),
-    // Nothing in the panel can take focus while a message is on its way, so it takes the panel itself.
-    nextControl: () => document.querySelector(".settings-card-stack") as HTMLElement,
+    // Nothing in the panel can take focus while a message is on its way but the status that says so.
+    nextControl: () => document.querySelector("output.at-notice") as HTMLElement,
   },
 ] as const;
 
@@ -163,24 +164,6 @@ describe.each(PANELS)("$name on the loading standard", (panel) => {
     expect((screen.getByRole("button", { name: /^Ticket type,/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("keeps the focus in the panel when the Retry of the ticket type hint works and the hint goes away", async () => {
-    mockTicketTypes.mockRejectedValueOnce(new Error("network down"));
-    render(panel.element());
-    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
-    await advanceTimers(0);
-    const retry = screen.getByRole("button", { name: "Retry loading ticket types" });
-    retry.focus();
-
-    mockTicketTypes.mockResolvedValueOnce([makeTicketType("vip", "VIP")]);
-    fireEvent.click(retry);
-    // Busy for at least 400ms from the click.
-    await advanceTimers(500);
-
-    expect(screen.queryByRole("button", { name: "Retry loading ticket types" })).toBeNull();
-    expect(document.activeElement).not.toBe(document.body);
-    expect(document.querySelector(".settings-card-stack")?.contains(document.activeElement)).toBe(true);
-  });
-
   it("reads the ticket types with a signal, so a lookup that never answers ends in a failure with a Retry after 30 seconds", async () => {
     mockTicketTypes.mockImplementation(hangUntilAborted as never);
     render(panel.element());
@@ -196,38 +179,147 @@ describe.each(PANELS)("$name on the loading standard", (panel) => {
   });
 });
 
-describe("CommunicationSendPanel focus when a send that is draining ends", () => {
-  it("hands the focus of the Stop button to Send another when the batch finishes", async () => {
-    vi.mocked(sendEventBulk).mockResolvedValueOnce({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
-    vi.mocked(fetchBulkSendStatus).mockResolvedValue({ batchId: "batch-1", queued: 0, sent: 1, failed: 0, cancelled: 0 } as never);
+describe("the hand-over of the keyboard focus through the steps of a send", () => {
+  it("moves the focus from Send to Stop, from Stop to Send another when the batch ends, and from Send another back to the recipients (email)", async () => {
+    sendEventBulk.mockResolvedValueOnce({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
+    vi.mocked(fetchBulkSendStatus)
+      .mockResolvedValueOnce({ batchId: "batch-1", queued: 1, sent: 0, failed: 0, cancelled: 0 } as never)
+      .mockResolvedValue({ batchId: "batch-1", queued: 0, sent: 1, failed: 0, cancelled: 0 } as never);
     render(<CommunicationSendPanel event={event} eventId="evt-1" templateId="tpl-1" snapshotMissing={false} isDirty={false} />);
     const send = screen.getByRole("button", { name: "Send" });
     send.focus();
     fireEvent.click(send);
     await advanceTimers(0);
 
-    // The first status read already says it is done, so the Stop button that took the focus was only there for a moment.
+    // The batch is draining: the Stop button holds the focus that Send had.
+    const stop = screen.getByRole("button", { name: "Stop" });
+    expect(document.activeElement).toBe(stop);
+
+    // It ends on its own while the operator waits on Stop: the focus goes on to Send another, not to the page.
+    await advanceTimers(2_000);
     const another = screen.getByRole("button", { name: "Send another" });
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
-    expect(document.activeElement).toBe(another);
-  });
-
-  it("returns the focus to the form's first control after Send another", async () => {
-    vi.mocked(sendEventBulk).mockResolvedValueOnce({ batchId: null, queued: 0, skipped: 0, failed: 0 });
-    render(<CommunicationSendPanel event={event} eventId="evt-1" templateId="tpl-1" snapshotMissing={false} isDirty={false} />);
-    const send = screen.getByRole("button", { name: "Send" });
-    send.focus();
-    fireEvent.click(send);
-    await advanceTimers(0);
-    const another = screen.getByRole("button", { name: "Send another" });
     expect(document.activeElement).toBe(another);
 
     fireEvent.click(another);
     await advanceTimers(0);
-
-    // The button that held the focus is gone with the result, and the focus is on the form that took its place.
     expect(screen.queryByRole("button", { name: "Send another" })).toBeNull();
-    expect(document.activeElement).not.toBe(document.body);
-    expect(document.querySelector(".settings-card-stack")?.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "All attendees" }));
+  });
+
+  it("moves the focus from Send to the status that says it is under way, then to Send another, then back to the recipients (wallets)", async () => {
+    vi.mocked(sendWalletMessage).mockResolvedValueOnce({ jobId: "job-1", recipientCount: 1 });
+    vi.mocked(fetchWalletMessageJob)
+      .mockResolvedValueOnce({ jobId: "job-1", status: "running" } as never)
+      .mockResolvedValue({ jobId: "job-1", status: "succeeded", error: null, sent: 1, skipped: 0, errored: 0 } as never);
+    render(<WalletsSendPanel event={event} eventId="evt-1" text="Hi" />);
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    fireEvent.click(send);
+    await advanceTimers(0);
+
+    const status = document.querySelector("output.at-notice") as HTMLElement;
+    expect(status.textContent).toContain("Sending to 1");
+    expect(document.activeElement).toBe(status);
+
+    await advanceTimers(2_000);
+    const another = screen.getByRole("button", { name: "Send another" });
+    // The operator was on the status, which stays; nothing took the focus away from it, so it stays where it was.
+    expect(document.activeElement).toBe(document.querySelector("output.at-notice"));
+
+    another.focus();
+    fireEvent.click(another);
+    await advanceTimers(0);
+    expect(screen.queryByRole("button", { name: "Send another" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "All attendees with a wallet" }));
+  });
+
+  it("does not take the focus when the operator has put it on the page after a hand-over (wallets)", async () => {
+    vi.mocked(sendWalletMessage).mockResolvedValueOnce({ jobId: "job-1", recipientCount: 1 });
+    vi.mocked(fetchWalletMessageJob)
+      .mockResolvedValueOnce({ jobId: "job-1", status: "running" } as never)
+      .mockResolvedValue({ jobId: "job-1", status: "succeeded", error: null, sent: 1, skipped: 0, errored: 0 } as never);
+    render(<WalletsSendPanel event={event} eventId="evt-1" text="Hi" />);
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    fireEvent.click(send);
+    await advanceTimers(0);
+    expect(document.activeElement).toBe(document.querySelector("output.at-notice"));
+
+    // The operator clicks on text of the page: nothing holds the focus now, and the result must not take it either, since
+    // what they were on (the status) was not the control the hand-over was for.
+    (document.activeElement as HTMLElement).blur();
+    await advanceTimers(2_000);
+    expect(screen.getByRole("button", { name: "Send another" })).toBeTruthy();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("hands the focus on only for a step that a control holding it started: an earlier step's arming is spent", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 0, failed: 0 });
+    render(<CommunicationSendPanel event={event} eventId="evt-1" templateId="tpl-1" snapshotMissing={false} isDirty={false} />);
+    const first = screen.getByRole("button", { name: "Send" });
+    first.focus();
+    fireEvent.click(first);
+    await advanceTimers(0);
+    const another = screen.getByRole("button", { name: "Send another" });
+    expect(document.activeElement).toBe(another);
+    fireEvent.click(another);
+    await advanceTimers(0);
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "All attendees" }));
+
+    // A send that starts without any of the flow's controls holding the focus (it is on the page, as after a click on a
+    // part of the page that cannot take it): the first cycle's arming is spent, so the result does not take the focus.
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await advanceTimers(0);
+    expect(screen.getByRole("button", { name: "Send another" })).toBeTruthy();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves the focus where the operator moved it meanwhile", async () => {
+    const answer = deferred<unknown>();
+    sendEventBulk.mockReturnValueOnce(answer.promise);
+    vi.mocked(fetchBulkSendStatus).mockImplementation(hangUntilAborted as never);
+    render(<CommunicationSendPanel event={event} eventId="evt-1" templateId="tpl-1" snapshotMissing={false} isDirty={false} />);
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    fireEvent.click(send);
+    await advanceTimers(0);
+
+    // The send is on its way and the operator has moved on to another control: the progress must not take it back.
+    const radio = screen.getByRole("radio", { name: "By attendance status" });
+    radio.focus();
+    await act(async () => answer.resolve({ batchId: "batch-1", queued: 3, skipped: 0, failed: 0 }));
+    expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+    expect(document.activeElement).toBe(radio);
+  });
+
+  it("does not move the focus for what is not a step: removing a chip, or a list closing, never throws it to the first recipient card", async () => {
+    vi.mocked(fetchEventAttendees).mockResolvedValue({
+      items: [
+        { id: "att-1", name: "Alice Example", email: "alice@example.com" },
+        { id: "att-2", name: "Bob Example", email: "bob@example.com" },
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 10,
+    } as never);
+    render(<CommunicationSendPanel event={event} eventId="evt-1" templateId="tpl-1" snapshotMissing={false} isDirty={false} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Specific attendees" }));
+    for (const name of ["Alice Example", "Bob Example"]) {
+      fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: name.split(" ")[0] } });
+      await advanceTimers(500);
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(name) }));
+    }
+    const remove = screen.getByRole("button", { name: "Remove Alice Example" });
+    remove.focus();
+
+    fireEvent.click(remove);
+    await advanceTimers(0);
+
+    expect(screen.queryByRole("button", { name: "Remove Alice Example" })).toBeNull();
+    // What a browser does with a removed control: the focus is on the page. It is not taken to the top of the panel.
+    expect(document.activeElement).not.toBe(screen.getByRole("radio", { name: "All attendees" }));
+    expect(document.activeElement).toBe(document.body);
   });
 });

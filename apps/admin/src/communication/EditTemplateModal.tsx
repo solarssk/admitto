@@ -50,6 +50,9 @@ export function EditTemplateModal({
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  // The page's one busy flag covers both actions; this says which of them the operator started, so the other button does
+  // not look busy too.
+  const [pending, setPending] = useState<"save" | "delete" | null>(null);
 
   useModalFocusTrap(panelRef, open && !deleteConfirmOpen, onClose);
 
@@ -85,6 +88,7 @@ export function EditTemplateModal({
       return;
     }
     submittingRef.current = true;
+    setPending("save");
     onSave(template.id, { label: trimmed, icon, description: description.trim() || null });
   };
 
@@ -142,6 +146,7 @@ export function EditTemplateModal({
                 type="button"
                 variant="danger"
                 icon={<i className="ti ti-trash" aria-hidden="true" />}
+                loading={busy && pending === "delete"}
                 disabled={busy || !canDelete}
                 onClick={() => setDeleteConfirmOpen(true)}
               >
@@ -152,7 +157,7 @@ export function EditTemplateModal({
               <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="button" variant="primary" loading={busy} disabled={!dirty} onClick={submit}>
+              <Button type="button" variant="primary" loading={busy && pending === "save"} disabled={busy || !dirty} onClick={submit}>
                 Save
               </Button>
             </div>
@@ -172,6 +177,7 @@ export function EditTemplateModal({
         }}
         onConfirm={() => {
           setDeleteConfirmOpen(false);
+          setPending("delete");
           onDelete(template.id);
         }}
       />

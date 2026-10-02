@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeliveryDetailDto, DeliveryDto, RenderedDeliveryDto } from "../../src/api/types.js";
 import { DeliveryDetailsModal } from "../../src/communication/DeliveryDetailsModal.js";
+import { OVERVIEW_PAIRS, RAW_FIELD_PAIRS } from "../../src/communication/DeliveryModalSkeleton.js";
 import { SentMessagePreviewModal } from "../../src/communication/SentMessagePreviewModal.js";
 import { advanceTimers, deferred, hangUntilAborted, isOff } from "../test-utils.js";
 
@@ -99,6 +100,8 @@ describe.each(CASES)("$name on the loading standard", (kase) => {
     // The shapes (and the titles drawn over them) are decoration for assistive tech: the region is named by its label.
     expect(within(placeholder(kase.region) as HTMLElement).queryAllByRole("heading")).toEqual([]);
     expect(screen.queryByText(/Taking longer than usual/)).toBeNull();
+    // Nothing of what only a loaded modal says (the preview's "no longer available" line) while it waits.
+    expect(screen.queryByText(/no longer available/)).toBeNull();
   });
 
   it("never draws the placeholder for an answer that comes within 200ms", async () => {
@@ -184,6 +187,27 @@ describe.each(CASES)("$name on the loading standard", (kase) => {
     expect(document.querySelector(".delivery-modal__panel")?.contains(document.activeElement)).toBe(true);
   });
 
+  it("keeps the placeholder up for its minimum time when the read fails soon after it has appeared, and says nothing else meanwhile", async () => {
+    const answer = deferred<unknown>();
+    kase.fetch.mockReturnValueOnce(answer.promise);
+    render(kase.open());
+    await advanceTimers(250);
+    expect(placeholder(kase.region)?.className).not.toContain("at-loading-hold");
+
+    await act(async () => answer.reject(new Error("network down")));
+    expect(placeholder(kase.region)).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/no longer available/)).toBeNull();
+
+    // It was drawn at 200ms, so it stays until 600ms.
+    await advanceTimers(349);
+    expect(placeholder(kase.region)).not.toBeNull();
+    await advanceTimers(1);
+    expect(placeholder(kase.region)).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain(kase.failure);
+    expect(screen.queryByText(/no longer available/)).toBeNull();
+  });
+
   it("announces a failure again when the retry fails with the same message", async () => {
     kase.fetch.mockRejectedValue(new Error("network down"));
     render(kase.open());
@@ -229,10 +253,23 @@ describe("the placeholders have the shape of what they stand in for (measured ag
     await advanceTimers(200);
 
     const sections = [...document.querySelectorAll(".delivery-modal-kv--skeleton")];
-    expect(sections.map((grid) => grid.querySelectorAll(".delivery-modal-skeleton-pair").length)).toEqual([12, 6]);
+    expect(sections.map((grid) => grid.querySelectorAll(".delivery-modal-skeleton-pair").length)).toEqual([OVERVIEW_PAIRS, RAW_FIELD_PAIRS]);
     expect(screen.getByText("Overview")).toBeTruthy();
     expect(screen.getByText("Raw fields")).toBeTruthy();
     expect(document.querySelectorAll(".delivery-modal-skeleton-notice")).toHaveLength(1);
+  });
+
+  it("holds the real details modal to the same pairs the placeholder draws, so a field added to it shows up here", async () => {
+    mockDetail.mockResolvedValue(detail);
+    render(
+      <MemoryRouter>
+        <DeliveryDetailsModal eventId="evt-1" eventTimezone="Europe/Warsaw" row={row} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
+      </MemoryRouter>,
+    );
+    await advanceTimers(0);
+
+    const sections = [...document.querySelectorAll(".delivery-modal-kv:not(.delivery-modal-kv--skeleton)")];
+    expect(sections.map((grid) => grid.children.length)).toEqual([OVERVIEW_PAIRS, RAW_FIELD_PAIRS]);
   });
 
   it("draws the subject lines and the frame of the message for the sent message", async () => {

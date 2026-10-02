@@ -80,7 +80,7 @@ export function CreateTemplateDialog({
               submit();
             }
           }}
-          disabled={busy}
+          readOnly={busy}
           autoFocus
         />
         {error && (

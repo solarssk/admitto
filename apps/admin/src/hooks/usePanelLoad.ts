@@ -18,9 +18,9 @@ export interface PanelLoad {
 }
 
 /**
- * What a panel (or a modal that reads a record when it opens) shows now: the placeholder, the error, or the form. The error
- * waits for the placeholder's minimum time like the form does, so a load that failed before the 200ms are up shows neither
- * for a moment and then the other.
+ * What a panel (or a modal that reads a record when it opens) shows now: the placeholder, the error, or the form. A load
+ * that fails before the placeholder was drawn (within 200ms) shows the error at once; one that fails after it was drawn
+ * keeps the placeholder for its 400ms minimum first, like the form does, so it never flashes for a moment and goes.
  */
 export function panelView(panel: Pick<PanelLoad, "gate" | "error">): "loading" | "error" | "ready" {
   if (!panel.gate.showContent) return "loading";

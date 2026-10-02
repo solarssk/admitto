@@ -8,7 +8,7 @@ import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useFocusRecovery } from "../components/useFocusRecovery.js";
+import { useFocusHandover } from "../hooks/useFocusHandover.js";
 import { useTicketTypeOptions } from "../hooks/useTicketTypeOptions.js";
 import { LookupSlot } from "../pages/users/LookupSlot.js";
 import { AttendeePicker } from "./AttendeePicker.js";
@@ -256,10 +256,15 @@ export function CommunicationSendPanel({
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
-  // The control that holds the keyboard focus often goes away with what it did: Send, when the progress replaces the
-  // form, Stop and Send another, when the result replaces them, the Retry of the ticket type hint once it worked. Focus
-  // moves on to the first control that is left in the panel (Stop, say) and not to the page behind it.
-  useFocusRecovery(panelRef, !snapshotMissing);
+  // Send, Stop and Send another each go away with the step they started (the progress replaces the form, the result replaces
+  // Stop, the form replaces Send another): the keyboard focus moves on to the next step's first control, not to the page.
+  const stopRef = useRef<HTMLButtonElement>(null);
+  const sendAnotherRef = useRef<HTMLButtonElement>(null);
+  const holdsFlowFocus = useFocusHandover(phase, () => {
+    if (phase === "polling") return stopRef.current;
+    if (phase === "done") return sendAnotherRef.current;
+    return panelRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
+  });
 
   const resetForm = useCallback(() => {
     runIdRef.current += 1;
@@ -614,6 +619,7 @@ export function CommunicationSendPanel({
                     variant="primary"
                     icon={<i className="ti ti-send" aria-hidden="true" />}
                     loading={sending}
+                    onFocus={holdsFlowFocus}
                     onClick={() => void runSend()}
                     {...guard}
                   >
@@ -635,9 +641,11 @@ export function CommunicationSendPanel({
             {phase === "polling" && (
               <div className="communication-send-panel__actions">
                 <Button
+                  ref={stopRef}
                   type="button"
                   variant="secondary"
                   icon={<i className="ti ti-player-stop" aria-hidden="true" />}
+                  onFocus={holdsFlowFocus}
                   onClick={() => setStopConfirmOpen(true)}
                 >
                   Stop
@@ -657,10 +665,12 @@ export function CommunicationSendPanel({
             {phase === "done" && (
               <div className="communication-send-panel__actions">
                 <Button
+                  ref={sendAnotherRef}
                   type="button"
                   variant="secondary"
                   icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
                   disabled={busy}
+                  onFocus={holdsFlowFocus}
                   onClick={resetForm}
                 >
                   Send another

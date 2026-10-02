@@ -23,6 +23,10 @@ function DeliveryModalSkeletonRegion({
   );
 }
 
+/** How many label and value pairs the real details modal has in each of its sections (a test holds the modal to these). */
+export const OVERVIEW_PAIRS = 12;
+export const RAW_FIELD_PAIRS = 6;
+
 /** One section of the details modal: its real title, and a grid of label and value pairs as tall as the real ones. */
 function KeyValueSection({ title, pairs, notice = false }: Readonly<{ title: string; pairs: number; notice?: boolean }>) {
   return (
@@ -49,8 +53,8 @@ function KeyValueSection({ title, pairs, notice = false }: Readonly<{ title: str
 export function DeliveryDetailsSkeleton({ held, slow }: Readonly<{ held: boolean; slow: boolean }>) {
   return (
     <DeliveryModalSkeletonRegion label="Loading delivery details" held={held} slow={slow}>
-      <KeyValueSection title="Overview" pairs={12} notice />
-      <KeyValueSection title="Raw fields" pairs={6} />
+      <KeyValueSection title="Overview" pairs={OVERVIEW_PAIRS} notice />
+      <KeyValueSection title="Raw fields" pairs={RAW_FIELD_PAIRS} />
     </DeliveryModalSkeletonRegion>
   );
 }

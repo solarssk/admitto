@@ -874,6 +874,28 @@ describe("CommunicationPage templates", () => {
     expect(document.activeElement).toBe(createBtn);
   });
 
+  it("keeps the keyboard focus in the label field when Enter creates the template, which only stops accepting text meanwhile", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    createEventTemplate.mockImplementation(() => new Promise(() => {}));
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
+    const dialog = screen.getByRole("dialog", { name: "New template" });
+    const input = within(dialog).getByLabelText("Template label") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "Announcement" } });
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(createEventTemplate).toHaveBeenCalledTimes(1));
+    expect(input.readOnly).toBe(true);
+    expect(input.disabled).toBe(false);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("shows discard confirm when switching templates with dirty form", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 

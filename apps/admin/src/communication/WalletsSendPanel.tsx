@@ -6,7 +6,7 @@ import type { WalletMessageAttendeeDto, WalletMessageFilter } from "../api/types
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useFocusRecovery } from "../components/useFocusRecovery.js";
+import { useFocusHandover } from "../hooks/useFocusHandover.js";
 import { useTicketTypeOptions } from "../hooks/useTicketTypeOptions.js";
 import { LookupSlot } from "../pages/users/LookupSlot.js";
 import { AttendeePicker } from "./AttendeePicker.js";
@@ -81,10 +81,12 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
   const [jobStatus, setJobStatus] = useState<{ sent: number; skipped: number; errored: number } | null>(null);
   // Read once: the ticket types the "By ticket type" filter offers.
   const ticketTypes = useTicketTypeOptions(eventId);
-  // The control that holds the keyboard focus often goes away with what it did: Send, when the progress replaces the
-  // form, Send another, when the form replaces it, the Retry of the ticket type hint once it worked. Focus moves on to
-  // the first control that is left in the panel (the panel itself while a message is on its way) and not to the page.
-  useFocusRecovery(panelRef, true);
+  // Send and Send another each go away with the step they started (the progress replaces the form, the form replaces Send
+  // another): the keyboard focus moves on to the next step's first control, not to the page. While a message is on its way
+  // nothing in the panel can take it but the status that says so, which stays when the result comes in.
+  const holdsFlowFocus = useFocusHandover(phase, () =>
+    panelRef.current?.querySelector<HTMLElement>(phase === "polling" ? "output.at-notice" : '[role="radio"][aria-checked="true"]'),
+  );
 
   const resetOutcome = useCallback(() => {
     runIdRef.current += 1;
@@ -325,6 +327,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
                     variant="primary"
                     icon={<i className="ti ti-send" aria-hidden="true" />}
                     loading={sending}
+                    onFocus={holdsFlowFocus}
                     onClick={() => void runSend()}
                     {...guard}
                   >
@@ -338,7 +341,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
         {(phase === "polling" || phase === "done") && (
           <>
             {resultMessage && (
-              <Notice variant={resultVariant(phase, jobStatus)} as="output">
+              <Notice variant={resultVariant(phase, jobStatus)} as="output" tabIndex={-1}>
                 {resultMessage}
               </Notice>
             )}
@@ -356,6 +359,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
                   variant="secondary"
                   icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
                   disabled={busy}
+                  onFocus={holdsFlowFocus}
                   onClick={resetOutcome}
                 >
                   Send another

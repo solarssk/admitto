@@ -26,8 +26,9 @@ Filters show recorded facts; they do not guarantee that a person read the email.
 
 Use a row's **…** menu in the delivery log to look deeper at a single delivery without leaving the page:
 
-- **View sent message** shows the actual subject and body generated for that attendee, including the real ticket link and QR code the recipient received. Both dialogs open at once with the recipient's name; the details follow in a moment, and if they cannot be read the dialog says so with a **Retry**.
+- **View sent message** shows the actual subject and body generated for that attendee, including the real ticket link and QR code the recipient received.
 - **View delivery details** shows the mail provider, message id, and attempt count. A Failed, Bounced, or Rejected delivery gets a red notice with the SMTP or transport error code and a plain-English explanation; an Accepted, Sent, or Delivered one gets a matching green confirmation instead. Sibling sends and resends for the same attendee stay on Delivery history (attendee page) and the Communication delivery log, not inside this popup.
+- Both dialogs open at once with the recipient's name, and the details or the message follow in a moment; if they cannot be read, the dialog says so with a **Retry**.
 - **Resend** and **Dismiss bounce** appear only on a Bounced row, and both grey out on that row once used, until you reload the page. The row itself stays Bounced as a historical record, so check the attendee's newer deliveries before using **Resend** again.
 - **Resend** sends that same template again after you have corrected the cause.
 - **Dismiss bounce** clears the row from the Communication header's bounce count without sending anything, for cases already resolved another way (for example the attendee confirmed the original message).
