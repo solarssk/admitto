@@ -663,7 +663,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(within(editDialog).getByRole("button", { name: "Saving…" })).toBeTruthy();
+      expect(within(editDialog).getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBe("true");
     });
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -862,10 +862,16 @@ describe("CommunicationPage templates", () => {
     fireEvent.change(input, { target: { value: "Announcement" } });
 
     const createBtn = within(dialog).getByRole("button", { name: "Create" });
+    createBtn.focus();
     fireEvent.click(createBtn);
     fireEvent.click(createBtn);
 
     expect(createEventTemplate).toHaveBeenCalledTimes(1);
+    // The busy Create keeps its label and its focus (it is aria-disabled, not disabled) and says it works.
+    await waitFor(() => expect(createBtn.getAttribute("aria-busy")).toBe("true"));
+    expect(within(dialog).getByRole("button", { name: "Create" })).toBe(createBtn);
+    expect(createBtn.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(createBtn);
   });
 
   it("shows discard confirm when switching templates with dirty form", async () => {
@@ -1857,7 +1863,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(within(editDialog).getByRole("button", { name: "Saving…" })).toBeTruthy();
+      expect(within(editDialog).getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBe("true");
     });
 
     const saveBtn = screen.getByRole("button", { name: "Save *" });

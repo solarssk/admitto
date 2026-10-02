@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Button, HintLabel, IconButton, ModalBackdrop, Notice, Skeleton, StatusBadge } from "@admitto/ui";
+import { Button, HintLabel, IconButton, ModalBackdrop, Notice, StatusBadge } from "@admitto/ui";
 import { fetchEventDelivery } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
 import { describeSmtpBounceCode } from "../utils/smtpBounceCodes.js";
 import { deliveryStatusBadgeKey, formatDeliveryHistoryTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
+import { DeliveryDetailsSkeleton } from "./DeliveryModalSkeleton.js";
 import "./delivery-modals.css";
 
 const SENT_AT_HINT =
@@ -162,8 +163,15 @@ function buildExportText(detail: DeliveryDetailDto, eventTimezone: string): stri
 
 /** Full delivery diagnostics: recipient/template/provider/attempts and the row's raw fields.
  * Sibling resends stay on Delivery history (attendee page / Communication log), not here -
- * listing every attempt in this modal made the popup grow without bound. */
-export function DeliveryDetailsModal({
+ * listing every attempt in this modal made the popup grow without bound.
+ *
+ * It reads the delivery it was opened for once: another delivery is a fresh modal (`key`), so its load never has to
+ * follow a changing prop. */
+export function DeliveryDetailsModal(props: Readonly<DeliveryDetailsModalProps>) {
+  return <DeliveryDetailsModalBody key={`${props.eventId}/${props.row.id}`} {...props} />;
+}
+
+function DeliveryDetailsModalBody({
   eventId,
   eventTimezone,
   row,
@@ -172,30 +180,18 @@ export function DeliveryDetailsModal({
   showOpenAttendee = true,
 }: Readonly<DeliveryDetailsModalProps>) {
   const [detail, setDetail] = useState<DeliveryDetailDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // The overview/raw-fields sections don't exist in the DOM until the fetch resolves - retry
-  // initial focus once `loading` flips to false.
-  useModalFocusTrap(panelRef, true, onClose, loading);
+  // The first load: nothing is drawn for 200ms, then the sections' own shapes, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer).
+  const panel = usePanelLoad({
+    fetch: (signal) => fetchEventDelivery(eventId, row.id, signal),
+    apply: setDetail,
+    fallback: "Could not load delivery details.",
+  });
+  const view = panelView(panel);
+  useModalFocusTrap(panelRef, true, onClose);
   useOverscrollBounceGuard(scrollRef);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetchEventDelivery(eventId, row.id, controller.signal)
-      .then((data) => setDetail(data))
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Could not load delivery details."));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [eventId, row.id]);
 
   const errorNotice =
     detail && isFailureStatus(detail.status) ? deliveryErrorNoticeContent(detail) : null;
@@ -219,23 +215,22 @@ export function DeliveryDetailsModal({
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
           </div>
           <div className="delivery-modal__body">
-            {loading && (
-              // Roughly mirrors the loaded Overview/Raw fields sections below, so the
-              // swap from loading to loaded doesn't visibly jump in height.
-              <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
-                <span className="sr-only">Loading delivery details…</span>
-                <div className="delivery-modal-skeleton-section">
-                  <Skeleton variant="text" width="30%" />
-                  <Skeleton variant="rect" height={220} />
-                </div>
-                <div className="delivery-modal-skeleton-section">
-                  <Skeleton variant="text" width="30%" />
-                  <Skeleton variant="rect" height={140} />
-                </div>
-              </div>
+            {view === "loading" && <DeliveryDetailsSkeleton held={!panel.gate.showIndicator} slow={panel.slow} />}
+            {view === "error" && (
+              <Notice
+                variant="error"
+                role="alert"
+                actionBusy={panel.retrying}
+                action={
+                  <Button type="button" variant="secondary" size="sm" loading={panel.retrying} onClick={() => void panel.retry()}>
+                    Retry
+                  </Button>
+                }
+              >
+                {panel.error}
+              </Notice>
             )}
-            {!loading && error && <Notice variant="error" role="alert">{error}</Notice>}
-            {!loading && !error && detail && (
+            {view === "ready" && detail && (
               <>
                 <div>
                   <h3 className="delivery-modal__section-title">Overview</h3>
@@ -344,7 +339,7 @@ export function DeliveryDetailsModal({
             )}
           </div>
           <div className="delivery-modal__footer">
-            {detail && (
+            {view === "ready" && detail && (
               <Button
                 type="button"
                 variant="secondary"

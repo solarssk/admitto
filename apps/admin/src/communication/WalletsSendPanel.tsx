@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@admitto/ui";
-import { fetchWalletMessageAttendees, fetchWalletMessageJob, fetchTicketTypes, sendWalletMessage } from "../api/client.js";
+import { fetchWalletMessageAttendees, fetchWalletMessageJob, sendWalletMessage } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { TicketTypeDto, WalletMessageAttendeeDto, WalletMessageFilter } from "../api/types.js";
+import type { WalletMessageAttendeeDto, WalletMessageFilter } from "../api/types.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
-import { RetryHint } from "../components/RetryHint.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useRetry } from "../hooks/useRetry.js";
+import { useFocusRecovery } from "../components/useFocusRecovery.js";
+import { useTicketTypeOptions } from "../hooks/useTicketTypeOptions.js";
+import { LookupSlot } from "../pages/users/LookupSlot.js";
 import { AttendeePicker } from "./AttendeePicker.js";
 import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
 import "./communication.css";
@@ -63,68 +64,49 @@ function resultVariant(
  * that apply to wallet holders and polling a wallet_message AdminJob instead of a mail batch. */
 export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendPanelProps>) {
   const runIdRef = useRef(0);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const [filterType, setFilterType] = useState<WalletMessageFilter["type"]>("all");
   const [ticketType, setTicketType] = useState("");
-  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
-  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [selectedAttendees, setSelectedAttendees] = useState<WalletMessageAttendeeDto[]>([]);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<SendPhase>("form");
-  const [busy, setBusy] = useState(false);
+  // One flag per action: Count recipients and Send can each be busy without the other looking busy.
+  const [counting, setCounting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const busy = counting || sending;
   const [error, setError] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<{ sent: number; skipped: number; errored: number } | null>(null);
-  const ticketTypesRetry = useRetry();
-  const { token: ticketTypesToken, begin: beginTicketTypes, end: endTicketTypes } = ticketTypesRetry;
+  // Read once: the ticket types the "By ticket type" filter offers.
+  const ticketTypes = useTicketTypeOptions(eventId);
+  // The control that holds the keyboard focus often goes away with what it did: Send, when the progress replaces the
+  // form, Send another, when the form replaces it, the Retry of the ticket type hint once it worked. Focus moves on to
+  // the first control that is left in the panel (the panel itself while a message is on its way) and not to the page.
+  useFocusRecovery(panelRef, true);
 
   const resetOutcome = useCallback(() => {
     runIdRef.current += 1;
     setRecipientCount(null);
     setPhase("form");
-    setBusy(false);
+    setCounting(false);
+    setSending(false);
     setError(null);
     setResultMessage(null);
     setJobId(null);
     setJobStatus(null);
   }, []);
 
-  // Event switch: stale filter value/options and any prior event's outcome must not carry over.
+  // Event switch: stale filter value and any prior event's outcome must not carry over (the options are read again for
+  // the new event by `useTicketTypeOptions`).
   useEffect(() => {
     runIdRef.current += 1;
     setFilterType("all");
     setTicketType("");
-    setTicketTypes([]);
-    setTicketTypesError(null);
     setSelectedAttendees([]);
     resetOutcome();
   }, [eventId, resetOutcome]);
-
-  useEffect(() => {
-    setTicketType("");
-    setTicketTypes([]);
-    let cancelled = false;
-    // A retry keeps its error, and the busy Retry next to it, on screen until the answer is in.
-    if (!beginTicketTypes()) setTicketTypesError(null);
-    fetchTicketTypes(eventId)
-      .then((types) => {
-        if (cancelled) return;
-        setTicketTypes(types);
-        setTicketTypesError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setTicketTypes([]);
-        setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
-      })
-      .finally(() => {
-        if (!cancelled) endTicketTypes();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId, ticketTypesToken, beginTicketTypes, endTicketTypes]);
 
   useEffect(() => {
     if (phase !== "polling" || !jobId) return;
@@ -190,7 +172,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
 
   const runDryRun = async () => {
     const runId = runIdRef.current;
-    setBusy(true);
+    setCounting(true);
     setError(null);
     setRecipientCount(null);
     try {
@@ -208,13 +190,13 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
       if (runId !== runIdRef.current) return;
       setError(operatorApiErrorMessage(err, "Count failed."));
     } finally {
-      if (runId === runIdRef.current) setBusy(false);
+      if (runId === runIdRef.current) setCounting(false);
     }
   };
 
   const runSend = async () => {
     const runId = runIdRef.current;
-    setBusy(true);
+    setSending(true);
     setError(null);
     setResultMessage(null);
     try {
@@ -238,13 +220,13 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
       if (runId !== runIdRef.current) return;
       setError(operatorApiErrorMessage(err, "Send failed."));
     } finally {
-      if (runId === runIdRef.current) setBusy(false);
+      if (runId === runIdRef.current) setSending(false);
     }
   };
 
   return (
     <Card title="Send to">
-      <div className="settings-card-stack">
+      <div className="settings-card-stack" ref={panelRef}>
         <p className="settings-card-intro">
           Choose which attendees get this message, check how many that is, then send.
         </p>
@@ -262,29 +244,28 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
         {filterType === "ticket_type" && (
           <>
             <div className="communication-half-field">
-              <SearchableSelect
-                id="wallets-send-ticket-type"
-                label="Ticket type"
-                placeholder="Choose…"
-                searchPlaceholder="Search ticket types…"
-                emptyLabel="No ticket types found"
-                value={ticketType}
-                disabled={pickerLocked}
-                options={ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
-                onChange={(id) => {
-                  setTicketType(id);
-                  setRecipientCount(null);
-                  setError(null);
-                }}
-              />
+              <LookupSlot lookup={ticketTypes} label="ticket types">
+                <SearchableSelect
+                  id="wallets-send-ticket-type"
+                  label="Ticket type"
+                  placeholder="Choose…"
+                  searchPlaceholder="Search ticket types…"
+                  emptyLabel="No ticket types found"
+                  value={ticketType}
+                  disabled={pickerLocked || ticketTypes.error !== null}
+                  options={ticketTypes.ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
+                  onChange={(id) => {
+                    setTicketType(id);
+                    setRecipientCount(null);
+                    setError(null);
+                  }}
+                />
+              </LookupSlot>
             </div>
             <p className="mail-field-hint">
               Attendees holding this ticket type, and who have an active wallet pass, will receive the message.
             </p>
           </>
-        )}
-        {filterType === "ticket_type" && ticketTypesError && (
-          <RetryHint message={ticketTypesError} busy={ticketTypesRetry.busy} onRetry={ticketTypesRetry.retry} />
         )}
         {filterType === "attendee_ids" && (
           <AttendeePicker<WalletMessageAttendeeDto>
@@ -317,17 +298,19 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
               <ArchivedGuard
                 event={event}
                 reasonId="count-wallet-message-reason"
-                disabled={busy || !filterReady}
+                disabled={sending || !filterReady}
               >
                 {(guard) => (
                   <Button
                     type="button"
                     variant="secondary"
                     icon={<i className="ti ti-calculator" aria-hidden="true" />}
+                    loading={counting}
+                    loadingLabel="Checking…"
                     onClick={() => void runDryRun()}
                     {...guard}
                   >
-                    {busy ? "Checking…" : "Count recipients"}
+                    Count recipients
                   </Button>
                 )}
               </ArchivedGuard>
@@ -341,10 +324,11 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
                     type="button"
                     variant="primary"
                     icon={<i className="ti ti-send" aria-hidden="true" />}
+                    loading={sending}
                     onClick={() => void runSend()}
                     {...guard}
                   >
-                    {busy ? "Sending…" : "Send"}
+                    Send
                   </Button>
                 )}
               </ArchivedGuard>

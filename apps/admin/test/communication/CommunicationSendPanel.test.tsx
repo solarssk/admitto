@@ -109,7 +109,7 @@ describe("CommunicationSendPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Send" }).getAttribute("aria-busy")).toBe("true");
     });
 
     // Switching to a different template mid-send is the inline-panel equivalent of closing
@@ -582,7 +582,7 @@ describe("CommunicationSendPanel", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "VIP (Event A)" })).toBeTruthy();
     });
@@ -590,11 +590,13 @@ describe("CommunicationSendPanel", () => {
     rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-b" templateId="tpl-1" />);
 
     await waitFor(() => {
-      expect(fetchTicketTypes).toHaveBeenCalledWith("evt-b");
+      expect(fetchTicketTypes).toHaveBeenCalledWith("evt-b", expect.any(AbortSignal));
     });
 
-    // Event A's ticket type must not be selectable while Event B's fetch is still in flight.
+    // Event A's ticket type must not be selectable while Event B's fetch is still in flight: the field is its
+    // placeholder until the new answer is in.
     expect(screen.queryByRole("button", { name: "VIP (Event A)" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Ticket type,/ })).toBeNull();
 
     await act(async () => {
       resolveEventB?.([
@@ -611,6 +613,7 @@ describe("CommunicationSendPanel", () => {
       await Promise.resolve();
     });
 
+    fireEvent.click(await screen.findByRole("button", { name: /^Ticket type,/ }));
     expect(screen.getByRole("button", { name: "General (Event B)" })).toBeTruthy();
   });
 
@@ -644,7 +647,7 @@ describe("CommunicationSendPanel", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "VIP (Event A)" })).toBeTruthy();
     });
@@ -659,7 +662,7 @@ describe("CommunicationSendPanel", () => {
 
     rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-b" templateId="tpl-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "General (Event B)" })).toBeTruthy();
     });
@@ -723,12 +726,14 @@ describe("CommunicationSendPanel", () => {
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
     expect(await screen.findByText("Could not load ticket types.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    // A failed lookup is not an empty list: the field is there but off, and the hint has its Retry.
+    expect((screen.getByRole("button", { name: /^Ticket type,/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading ticket types" }));
 
     await waitFor(() => {
       expect(fetchTicketTypes).toHaveBeenCalledTimes(2);
     });
-    expect(screen.queryByText("Could not load ticket types.")).toBeNull();
+    await waitFor(() => expect(screen.queryByText("Could not load ticket types.")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     expect(await screen.findByRole("button", { name: "VIP" })).toBeTruthy();
   });
@@ -738,7 +743,7 @@ describe("CommunicationSendPanel", () => {
     render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
     const message = await screen.findByText("Could not load ticket types.");
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading ticket types" });
     // A failure that shows with its Retry is not busy: only a click makes it so.
     expect(retry.getAttribute("aria-busy")).toBeNull();
 
@@ -754,7 +759,7 @@ describe("CommunicationSendPanel", () => {
     // Still there, the same button, busy, with focus: nothing was unmounted around it.
     expect(retry.getAttribute("aria-busy")).toBe("true");
     expect(screen.getByText("Could not load ticket types.")).toBe(message);
-    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(screen.getByRole("button", { name: "Retry loading ticket types" })).toBe(retry);
     expect(document.activeElement).toBe(retry);
 
     await act(async () => failRetry(new Error("still down")));
@@ -762,7 +767,7 @@ describe("CommunicationSendPanel", () => {
 
     // Same text again: a new message node is what a live region announces. The button is the same node.
     expect(screen.getByText("Could not load ticket types.")).not.toBe(message);
-    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(screen.getByRole("button", { name: "Retry loading ticket types" })).toBe(retry);
     expect(document.activeElement).toBe(retry);
   });
 
@@ -970,7 +975,7 @@ describe("CommunicationSendPanel", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Send" }).getAttribute("aria-busy")).toBe("true");
     });
     rerender(
       <CommunicationSendPanel

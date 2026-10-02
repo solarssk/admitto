@@ -92,8 +92,8 @@ export function CreateTemplateDialog({
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy} onClick={submit}>
-            {busy ? "Creating…" : "Create"}
+          <Button type="button" variant="primary" loading={busy} onClick={submit}>
+            Create
           </Button>
         </div>
       </div>

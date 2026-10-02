@@ -152,8 +152,8 @@ export function EditTemplateModal({
               <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="button" variant="primary" disabled={busy || !dirty} onClick={submit}>
-                {busy ? "Saving…" : "Save"}
+              <Button type="button" variant="primary" loading={busy} disabled={!dirty} onClick={submit}>
+                Save
               </Button>
             </div>
           </div>

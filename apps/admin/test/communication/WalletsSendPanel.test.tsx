@@ -319,12 +319,12 @@ describe("WalletsSendPanel", () => {
     await screen.findByRole("alert");
     expect(fetchTicketTypes).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading ticket types" }));
 
     await waitFor(() => expect(fetchTicketTypes).toHaveBeenCalledTimes(2));
     // The retry found the catalog, so the failure and its Retry are gone.
     await waitFor(() => expect(screen.queryByText("Could not load ticket types.")).toBeNull());
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry loading ticket types" })).toBeNull();
   });
 
   it("keeps the ticket-type hint and a busy Retry on screen, focus included, while a retry runs, and announces again when it fails again", async () => {
@@ -333,7 +333,7 @@ describe("WalletsSendPanel", () => {
     render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
     const message = await screen.findByText("Could not load ticket types.");
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading ticket types" });
     // A failure that shows with its Retry is not busy: only a click makes it so.
     expect(retry.getAttribute("aria-busy")).toBeNull();
 
@@ -349,7 +349,7 @@ describe("WalletsSendPanel", () => {
     // Still there, the same button, busy, with focus: nothing was unmounted around it.
     expect(retry.getAttribute("aria-busy")).toBe("true");
     expect(screen.getByText("Could not load ticket types.")).toBe(message);
-    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(screen.getByRole("button", { name: "Retry loading ticket types" })).toBe(retry);
     expect(document.activeElement).toBe(retry);
 
     await act(async () => failRetry(new Error("still down")));
@@ -357,7 +357,7 @@ describe("WalletsSendPanel", () => {
 
     // Same text again: a new message node is what a live region announces. The button is the same node.
     expect(screen.getByText("Could not load ticket types.")).not.toBe(message);
-    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(screen.getByRole("button", { name: "Retry loading ticket types" })).toBe(retry);
     expect(document.activeElement).toBe(retry);
   });
 

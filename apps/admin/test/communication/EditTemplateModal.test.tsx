@@ -114,7 +114,10 @@ describe("EditTemplateModal", () => {
         onDelete={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Saving…" }));
+    // The busy Save keeps its label (it says it works with aria-busy) and stays focusable, so a click on it is swallowed.
+    const busySave = screen.getByRole("button", { name: "Save" });
+    expect(busySave.getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(busySave);
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
