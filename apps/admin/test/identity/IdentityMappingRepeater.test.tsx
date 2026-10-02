@@ -145,6 +145,22 @@ describe("IdentityMappingRepeater scope_id picker", () => {
     expect(await screen.findByRole("button", { name: "Event, Spring Summit" })).toBeTruthy();
   });
 
+  it("shows the error of a Save pressed before the lookup has answered, instead of hiding it under the placeholder", async () => {
+    const events = deferred<EventDto[]>();
+    mockFetchEvents.mockReturnValue(events.promise);
+    render(
+      <IdentityMappingRepeater
+        rows={[row({ role: "operator", scope_type: "event", scope_id: "" })]}
+        errors={[{ scope_id: "Scope ID is required for this scope." }]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "Loading events" })).toBeTruthy();
+    expect(screen.getByText("Scope ID is required for this scope.")).toBeTruthy();
+    await act(async () => events.resolve([FIXTURE_EVENT]));
+  });
+
   it("points the scope_id picker's aria-describedby at its error text", async () => {
     const errors: MappingRowError[] = [{ scope_id: "Scope ID is required for this scope." }];
     render(

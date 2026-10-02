@@ -241,7 +241,7 @@ describe("CfAccessEditor loading standard: Test and Save", () => {
     expect(screen.getByText("providers-list")).toBeTruthy();
   });
 
-  it("shows Test busy as 'Testing…' while it probes, keeps its focus, and leaves Save and Cancel to the guard", async () => {
+  it("shows Test busy as 'Testing…' while it probes, keeps its focus, ignores a second click, and leaves Save usable", async () => {
     await loadForm();
     dirtyTeamUrl();
     const test = screen.getByRole("button", { name: "Test connection" });
@@ -257,6 +257,7 @@ describe("CfAccessEditor loading standard: Test and Save", () => {
     expect(busy.getAttribute("aria-busy")).toBe("true");
     expect(busy.hasAttribute("disabled")).toBe(false);
     expect(document.activeElement).toBe(busy);
+    expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-disabled")).toBeNull();
 
     fireEvent.click(busy);
     expect(mockTest).toHaveBeenCalledTimes(1);

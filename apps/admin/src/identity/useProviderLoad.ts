@@ -35,7 +35,13 @@ export function useProviderLoad({
   apply: (detail: ProviderDetailDto) => void;
   onStart: () => void;
 }) {
-  const [loadState, setLoadState] = useState<ProviderLoadState>(mode === "edit" ? "loading" : "ready");
+  // The state belongs to the provider it was reached for: a changed id is `loading` from the very render that has it,
+  // so the form of the previous provider is covered at once, not one commit later when the effect has started the load.
+  const [result, setResult] = useState<{ id: string | undefined; state: ProviderLoadState }>({
+    id: providerId,
+    state: mode === "edit" ? "loading" : "ready",
+  });
+  const loadState: ProviderLoadState = mode === "edit" && result.id !== providerId ? "loading" : result.state;
   const [loadError, setLoadError] = useState(LOAD_FALLBACK);
   const { token, retry, begin, end, busy: retrying } = useRetry();
   const applyRef = useRef(apply);
@@ -49,14 +55,14 @@ export function useProviderLoad({
     async (signal: AbortSignal) => {
       if (mode !== "edit" || !providerId) return;
       // A Retry keeps the error on screen until the answer is in; any other run starts over with the placeholder.
-      if (!begin()) setLoadState("loading");
+      if (!begin()) setResult({ id: providerId, state: "loading" });
       onStartRef.current();
       const limit = loadWithTimeout(signal);
       try {
         // `rejectOnAbort` settles this as an abort the moment the run is abandoned, so a superseded answer never lands.
         const detail = await rejectOnAbort(fetchIdentityProvider(providerId, limit.signal), limit.signal);
         applyRef.current(detail);
-        setLoadState("ready");
+        setResult({ id: providerId, state: "ready" });
         end();
       } catch (err) {
         if (signal.aborted) return;
@@ -65,10 +71,10 @@ export function useProviderLoad({
           return;
         }
         if (err instanceof ApiError && err.status === 404) {
-          setLoadState("not_found");
+          setResult({ id: providerId, state: "not_found" });
         } else {
           setLoadError(limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, LOAD_FALLBACK));
-          setLoadState("error");
+          setResult({ id: providerId, state: "error" });
         }
         end();
       } finally {

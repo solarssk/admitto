@@ -163,13 +163,22 @@ describe("IdentityProviderEditor loading standard: the load of the provider", ()
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
-  it("gives the server's reason for a failed load", async () => {
-    mockFetch.mockRejectedValueOnce(new ApiError(500, "boom", "internal_error"));
+  it("gives the server's reason for a failed load, not a generic line", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "discovery_failed", "discovery_failed"));
     renderEditorAt(EDIT);
     await advanceTimers(0);
 
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Could not fetch OIDC discovery from the issuer URL");
+    expect(screen.queryByText("Could not load this provider.")).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("says 'Could not load this provider.' when the server gives no reason", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    renderEditorAt(EDIT);
+    await advanceTimers(0);
+
+    expect(screen.getByRole("alert").textContent).toContain("Could not load this provider.");
   });
 
   it("keeps the error on screen, with a busy Retry, until the retry's answer is in, then shows the form", async () => {

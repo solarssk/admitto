@@ -192,8 +192,9 @@ export function IdentityProvidersPanel() {
       } catch (err) {
         // Reconcile with the server: a 409 toggle_race (or any failure) means the
         // optimistic flip may not match the persisted state, so refetch the list
-        // instead of reverting to a stale closure value.
-        void reloadProviders();
+        // instead of reverting to a stale closure value. The page cannot tell what the server holds, so a refetch
+        // that fails too replaces the rows (which may show a flip the server never accepted) with the error.
+        void reloadProviders({ keepRowsOnFailure: false });
         const message = operatorApiErrorMessage(err, "Failed to toggle provider");
         addToast(message, "error");
       } finally {
@@ -204,7 +205,9 @@ export function IdentityProvidersPanel() {
   );
 
   return (
-    <div className="settings-sections">
+    // A labelled tab panel like the in-page Settings tabs, so the focus of a Retry that works goes to it (a browser
+    // would drop it on <body>) and a screen reader hears where it is.
+    <div className="settings-sections" role="tabpanel" aria-label="Identity">
       <Card
         title={<HintLabel hint={IDENTITY_PROVIDERS_HINT}>Identity providers</HintLabel>}
         actions={
@@ -219,6 +222,7 @@ export function IdentityProvidersPanel() {
         {providersCard.gate.showContent && providersCard.failure.error && (
           <RetryEmptyState
             title="Could not load providers"
+            retryLabel="Retry loading providers"
             message={providersCard.failure.error}
             retrying={providersCard.failure.retrying}
             onRetry={providersCard.failure.retry}
@@ -259,6 +263,7 @@ export function IdentityProvidersPanel() {
         {cfCard.gate.showContent && cfCard.failure.error && (
           <RetryEmptyState
             title="Could not load Cloudflare Access"
+            retryLabel="Retry loading Cloudflare Access"
             message={cfCard.failure.error}
             retrying={cfCard.failure.retrying}
             onRetry={cfCard.failure.retry}

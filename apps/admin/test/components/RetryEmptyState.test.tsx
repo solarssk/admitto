@@ -19,6 +19,17 @@ describe("RetryEmptyState", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it("gives its Retry a name of its own when asked, so two of them on a screen can be told apart", () => {
+    render(
+      <>
+        <RetryEmptyState title="Could not load providers" message="Down." retrying={false} onRetry={() => Promise.resolve()} retryLabel="Retry loading providers" />
+        <RetryEmptyState title="Could not load Cloudflare Access" message="Down." retrying={false} onRetry={() => Promise.resolve()} retryLabel="Retry loading Cloudflare Access" />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Retry loading providers" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry loading Cloudflare Access" })).toBeTruthy();
+  });
+
   it("keeps the Retry focusable and ignores a click while it is busy", () => {
     const onRetry = vi.fn(() => Promise.resolve());
     render(<RetryEmptyState title="Could not load" message="Network down." retrying onRetry={onRetry} />);

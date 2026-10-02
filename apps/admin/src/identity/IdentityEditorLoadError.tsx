@@ -5,7 +5,8 @@ import { useBusyEndCount } from "../hooks/useRetry.js";
  * An Identity editor whose record could not be loaded: what failed and why (an alert) and a Retry that stays on screen,
  * busy (`retrying`), until the answer is in, so the keyboard keeps its place. A message that a retry did not clear is
  * mounted afresh, never the button, so a live region says it again. When a retry works, this block goes and the form
- * takes its place: the modal's own focus handling then puts the focus into the form, as it does after a first load.
+ * takes its place: the modal's own focus handling then keeps the focus in the dialog (on its first control), as it does after a
+ * first load.
  */
 export function IdentityEditorLoadError({
   message,

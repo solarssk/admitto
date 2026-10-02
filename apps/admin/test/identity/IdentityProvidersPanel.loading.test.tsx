@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, createMemoryRouter } from "react-router";
+import { RouterProvider } from "react-router/dom";
 import { IdentityProvidersPanel } from "../../src/identity/IdentityProvidersPanel.js";
+import { IDENTITY_PROVIDERS_ROUTE } from "../../src/identity/routes.js";
 import { advanceTimers, deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -40,6 +42,17 @@ function renderPanel() {
       <IdentityProvidersPanel />
     </MemoryRouter>,
   );
+}
+
+function renderPanelAt(path: string) {
+  const router = createMemoryRouter(
+    [
+      { path: IDENTITY_PROVIDERS_ROUTE, element: <IdentityProvidersPanel /> },
+      { path: `${IDENTITY_PROVIDERS_ROUTE}/new`, element: <IdentityProvidersPanel /> },
+    ],
+    { initialEntries: [path] },
+  );
+  return { ...renderWithToast(<RouterProvider router={router} />), router };
 }
 
 const providersSkeleton = () => screen.queryByRole("status", { name: "Loading identity providers" });
@@ -111,6 +124,7 @@ describe("IdentityProvidersPanel loading standard: the first load of each card",
     expect(providersSkeleton()).toBeNull();
     expect(screen.getByText("Could not load providers")).toBeTruthy();
     expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry loading providers" })).toBeTruthy();
     expect(screen.getByText(/Team domain: team.example.com/)).toBeTruthy();
   });
 });
@@ -122,14 +136,14 @@ describe("IdentityProvidersPanel loading standard: Retry", () => {
     renderPanel();
     await advanceTimers(0);
 
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading providers" });
     const answer = deferred<{ providers: IdentityProviderListItem[] }>();
     mockProviders.mockReturnValueOnce(answer.promise);
     retry.focus();
     fireEvent.click(retry);
     await advanceTimers(0);
 
-    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(screen.getByRole("button", { name: "Retry loading providers" })).toBe(retry);
     expect(retry.getAttribute("aria-busy")).toBe("true");
     expect(isOff(retry)).toBe(true);
     expect(retry.hasAttribute("disabled")).toBe(false);
@@ -140,8 +154,11 @@ describe("IdentityProvidersPanel loading standard: Retry", () => {
     expect(mockProviders).toHaveBeenCalledTimes(2);
 
     await act(async () => answer.resolve({ providers: [google] }));
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry loading providers" })).toBeNull();
     expect(screen.getByText("Google")).toBeTruthy();
+    // The panel is a labelled tab panel, so the focus that was on the Retry goes there instead of falling to <body>.
+    await advanceTimers(0);
+    expect(document.activeElement).toBe(screen.getByRole("tabpanel", { name: "Identity" }));
   });
 
   it("says a repeated failure again, in a message that is mounted afresh while the button stays", async () => {
@@ -150,14 +167,14 @@ describe("IdentityProvidersPanel loading standard: Retry", () => {
     renderPanel();
     await advanceTimers(0);
 
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading providers" });
     const message = screen.getByText("Could not load identity providers.");
     fireEvent.click(retry);
     await advanceTimers(100);
     expect(retry.getAttribute("aria-busy")).toBe("true");
     await advanceTimers(500);
 
-    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(screen.getByRole("button", { name: "Retry loading providers" })).toBe(retry);
     expect(retry.getAttribute("aria-busy")).toBeNull();
     expect(screen.getByText("Could not load identity providers.")).not.toBe(message);
   });
@@ -170,7 +187,7 @@ describe("IdentityProvidersPanel loading standard: Retry", () => {
 
     expect(screen.getByText("Could not load Cloudflare Access")).toBeTruthy();
     mockCf.mockResolvedValueOnce(cf());
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading Cloudflare Access" }));
     await advanceTimers(0);
 
     expect(mockProviders).toHaveBeenCalledTimes(1);
@@ -179,7 +196,7 @@ describe("IdentityProvidersPanel loading standard: Retry", () => {
 });
 
 describe("IdentityProvidersPanel loading standard: a list that is on screen", () => {
-  it("keeps the rows and says they may be older when a refresh after a failed toggle fails too", async () => {
+  it("replaces the rows with the error when a toggle fails and the refresh that reconciles it fails too, since the flip may never have been accepted", async () => {
     mockProviders.mockResolvedValueOnce({ providers: [google] });
     mockCf.mockResolvedValue(cf());
     mockToggle.mockRejectedValueOnce(new Error("boom"));
@@ -190,8 +207,48 @@ describe("IdentityProvidersPanel loading standard: a list that is on screen", ()
     fireEvent.click(screen.getByRole("switch", { name: "Google enabled" }));
     await advanceTimers(0);
 
+    expect(screen.queryByRole("switch", { name: "Google enabled" })).toBeNull();
+    expect(screen.getByText("Could not load providers")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry loading providers" })).toBeTruthy();
+  });
+
+  it("keeps the rows and says they may be older when the refresh after an editor closed fails", async () => {
+    mockProviders.mockResolvedValueOnce({ providers: [google] });
+    mockCf.mockResolvedValue(cf());
+    const { router } = renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/new`);
+    await advanceTimers(0);
+    expect(screen.getByText("Google")).toBeTruthy();
+
+    mockProviders.mockRejectedValueOnce(new Error("network down"));
+    await act(async () => {
+      await router.navigate(IDENTITY_PROVIDERS_ROUTE);
+    });
+    await advanceTimers(0);
+
     expect(screen.getByText("Google")).toBeTruthy();
     expect(screen.getByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+  });
+
+  it("keeps the Cloudflare Access card and warns the same way when its refresh fails, and its Retry refreshes it", async () => {
+    mockProviders.mockResolvedValue({ providers: [google] });
+    mockCf.mockResolvedValueOnce(cf());
+    const { router } = renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/new`);
+    await advanceTimers(0);
+
+    mockCf.mockRejectedValueOnce(new Error("network down"));
+    await act(async () => {
+      await router.navigate(IDENTITY_PROVIDERS_ROUTE);
+    });
+    await advanceTimers(0);
+    expect(screen.getByText(/Team domain: team.example.com/)).toBeTruthy();
+    const warning = screen.getByText(/Could not refresh this list, so it may show older details/).closest("[role='alert']") as HTMLElement;
+    expect(warning).not.toBeNull();
+
+    mockCf.mockResolvedValueOnce({ ...cf(), teamDomain: "newer.example.com" });
+    fireEvent.click(within(warning).getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    expect(screen.getByText(/Team domain: newer.example.com/)).toBeTruthy();
+    expect(screen.queryByText(/Could not refresh this list/)).toBeNull();
   });
 
   it("keeps a toggled switch focusable and off while its request is on its way", async () => {

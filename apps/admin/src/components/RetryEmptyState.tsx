@@ -14,7 +14,15 @@ export function RetryEmptyState({
   message,
   retrying,
   onRetry,
-}: Readonly<{ title: string; message: string; retrying: boolean; onRetry: () => Promise<void> }>) {
+  retryLabel,
+}: Readonly<{
+  title: string;
+  message: string;
+  retrying: boolean;
+  onRetry: () => Promise<void>;
+  /** The Retry's accessible name when several can be on screen at once ("Retry loading providers"); it starts with "Retry". */
+  retryLabel?: string;
+}>) {
   const retryRef = useRef<HTMLButtonElement>(null);
   useRetryFocusHandover(retryRef);
   const ends = useBusyEndCount(retrying);
@@ -24,7 +32,14 @@ export function RetryEmptyState({
       title={title}
       description={<span key={ends}>{message}</span>}
       action={
-        <Button ref={retryRef} type="button" variant="secondary" loading={retrying} onClick={() => void onRetry()}>
+        <Button
+          ref={retryRef}
+          type="button"
+          variant="secondary"
+          aria-label={retryLabel}
+          loading={retrying}
+          onClick={() => void onRetry()}
+        >
           Retry
         </Button>
       }

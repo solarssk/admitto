@@ -173,7 +173,7 @@ describe("IdentityProvidersPanel", () => {
         "Could not fetch OIDC discovery from the issuer URL. Check the URL is reachable and exposes .well-known/openid-configuration.",
       ),
     ).toBeTruthy();
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading providers" });
     mockProviders.mockResolvedValueOnce({ providers: [] });
     fireEvent.click(retry);
     await waitFor(() => {
@@ -358,7 +358,7 @@ describe("IdentityProvidersPanel", () => {
       protectedPrefixes: [],
       locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading Cloudflare Access" }));
     await waitFor(() => {
       expect(screen.getByText("No team domain configured.")).toBeTruthy();
     });

@@ -206,9 +206,10 @@ function ScopeIdField({
   const isOrg = row.scope_type === "organization";
   const fieldLabel = isOrg ? "Organization" : "Event";
   const errorId = error ? `identity-mapping-scope-id-${row.id}-error` : undefined;
+  // The error of a Save pressed before the lookup has answered is outside the slot, so it is not hidden by the placeholder.
   return (
-    <LookupSlot lookup={lookup} label={isOrg ? "organizations" : "events"} showHint={false}>
-      <div>
+    <div>
+      <LookupSlot lookup={lookup} label={isOrg ? "organizations" : "events"} showHint={false}>
         <div className="at-field">
           <label className="at-label" htmlFor={`identity-mapping-scope-id-${row.id}`}>
             {fieldLabel}
@@ -228,12 +229,12 @@ function ScopeIdField({
             onChange={onPick}
           />
         </div>
-        {error && (
-          <span id={errorId} className="at-hint at-hint--error">
-            {error}
-          </span>
-        )}
-      </div>
-    </LookupSlot>
+      </LookupSlot>
+      {error && (
+        <span id={errorId} className="at-hint at-hint--error">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
