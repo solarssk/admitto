@@ -41,6 +41,8 @@ interface RunContext<T> {
   fetcher: (signal: AbortSignal) => Promise<T>;
   fallback: string;
   loadedRef: { current: boolean };
+  /** The fetcher whose answer is the data on screen: the data answers the current query only when it is `fetcher`. */
+  answeredRef: { current: ((signal: AbortSignal) => Promise<T>) | null };
   requestRef: { current: number };
   onDataRef: { current: ((data: T) => void) | undefined };
   setData: (data: T) => void;
@@ -73,13 +75,16 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
     const next = await ctx.fetcher(limit.signal);
     if (superseded()) return;
     ctx.loadedRef.current = true;
+    ctx.answeredRef.current = ctx.fetcher;
     ctx.setData(next);
     ctx.setRefreshError(null);
     ctx.onDataRef.current?.(next);
   } catch (err) {
     if (superseded()) return;
     // A reload of the list on screen keeps it: the warning says it may be older, with a hint instead of "could not load".
-    const keepsList = kind === "reload" && ctx.loadedRef.current;
+    // Only when what is on screen answers this query: a reload that took over from a changed query still on its way
+    // finds the rows of the previous query, and those no longer answer what was asked.
+    const keepsList = kind === "reload" && ctx.loadedRef.current && ctx.answeredRef.current === ctx.fetcher;
     const message = failureMessage(limit, err, keepsList ? REFRESH_HINT : ctx.fallback);
     if (keepsList) {
       ctx.setRefreshError(`${REFRESH_FAILED} ${message}`);
@@ -111,6 +116,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const loadedRef = useRef(false);
+  const answeredRef = useRef<((signal: AbortSignal) => Promise<T>) | null>(null);
   const requestRef = useRef(0);
   // Aborted when the query changes or the page is left, so a reload started by an action follows the same life.
   const lifeRef = useRef<AbortController | null>(null);
@@ -122,7 +128,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData }: Li
   const run = useCallback(
     (kind: "query" | "reload", signal?: AbortSignal) =>
       runListLoad(
-        { enabled, fetcher, fallback, loadedRef, requestRef, onDataRef, setData, setLoading, setRefreshing, setError, setRefreshError },
+        { enabled, fetcher, fallback, loadedRef, answeredRef, requestRef, onDataRef, setData, setLoading, setRefreshing, setError, setRefreshError },
         kind,
         signal,
       ),

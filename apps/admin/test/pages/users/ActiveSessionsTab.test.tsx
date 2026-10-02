@@ -843,6 +843,56 @@ describe("ActiveSessionsTab on the loading standard", () => {
     await act(async () => refresh.resolve({ sessions: [] }));
   });
 
+  it("blocks, dims and marks as refreshing an empty list too while the refresh after a bulk revoke is on its way", async () => {
+    const refresh = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [] }).mockReturnValueOnce(refresh.promise);
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 0 });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByText("No active sessions");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(fetchSessions).toHaveBeenCalledTimes(2));
+
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card--busy")).toHaveLength(1));
+    await waitFor(() => expect(document.querySelector(".refetch-card--dim")).not.toBeNull());
+    expect(await screen.findByLabelText("Refreshing sessions")).toBeTruthy();
+
+    await act(async () => refresh.resolve({ sessions: [makeSession({ id: "s1" })] }));
+    expect(await screen.findByRole("table")).toBeTruthy();
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card")).toHaveLength(0));
+  });
+
+  it("swallows Clear filters in the no-match state while a refresh is on its way", async () => {
+    const refresh = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1" })] })
+      .mockReturnValueOnce(refresh.promise);
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 0 });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    fireEvent.change(screen.getByLabelText("Search sessions by user name or email"), { target: { value: "nobody" } });
+    expect(await screen.findByText("No sessions match this filter")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card--busy")).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect((screen.getByLabelText("Search sessions by user name or email") as HTMLInputElement).value).toBe("nobody");
+
+    await act(async () => refresh.resolve({ sessions: [makeSession({ id: "s1" })] }));
+    await waitFor(() => expect(document.querySelectorAll(".refetch-card")).toHaveLength(0));
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect((screen.getByLabelText("Search sessions by user name or email") as HTMLInputElement).value).toBe("");
+  });
+
   it("says when the events for the bulk revoke could not load, with a Retry that reruns only that request", async () => {
     vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
     vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce([sampleEvent]);
@@ -853,7 +903,7 @@ describe("ActiveSessionsTab on the loading standard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.queryByText("Could not load events.")).toBeNull());
     expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(fetchSessions).mock.calls.length).toBe(sessionCalls);
+    expect(vi.mocked(fetchSessions).mock.calls).toHaveLength(sessionCalls);
   });
 });
 

@@ -257,94 +257,98 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="sessions-status" />
         )}
 
-        {listReady && total === 0 && sessions.length === 0 && (
-          <EmptyState
-            icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
-            title="No active sessions"
-            description="Staff sessions will appear here once someone signs in."
-          />
-        )}
-
-        {listReady && total === 0 && sessions.length > 0 && (
-          <EmptyState
-            icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-            title="No sessions match this filter"
-            description="Try a different name or email, or select All to see every active staff session."
-            // total === 0 && sessions.length > 0 (the guard on this whole EmptyState above) can
-            // only happen when the client-side filter excluded something - i.e. searchInput or
-            // filter !== "all" is already true here, so the bare EmptyState fallback below can
-            // never actually render; kept only so this stays valid without an action at all.
-            action={
-              /* v8 ignore next */
-              searchInput || filter !== "all" || signInFilter !== "all" ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setSearchInput("");
-                    setFilter("all");
-                    setSignInFilter("all");
-                    setPage(1);
-                  }}
-                >
-                  Clear filters
-                </Button>
-              ) : undefined
-            }
-          />
-        )}
-
-        {listReady && total > 0 && (
+        {listReady && (
           <RefetchRegion refreshing={list.refreshing} label="Refreshing sessions">
-            {isDesktop ? (
-              <div className="users-page__table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Role</th>
-                      <th className="sessions-col-tablet-hide">Device</th>
-                      <th className="sessions-col-tablet-hide">IP address</th>
-                      <th>
-                        <HintLabel hint={LOGGED_IN_HINT}>Logged in</HintLabel>
-                      </th>
-                      <th>Last active</th>
-                      <th className="sessions-col-tablet-hide">Sign-in</th>
-                      <th className="sessions-action-col"><span className="sr-only">Action</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageSlice.map((s) => (
-                      <SessionTableRow key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="users-page__cards users-page__cards--mobile">
-                {pageSlice.map((s) => (
-                  <SessionCard key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
-                ))}
-              </div>
+            {total === 0 && sessions.length === 0 && (
+              <EmptyState
+                icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
+                title="No active sessions"
+                description="Staff sessions will appear here once someone signs in."
+              />
             )}
 
-            <PaginationFooter
-              idPrefix="sessions"
-              page={effectivePage}
-              pageSize={pageSize}
-              totalPages={totalPages}
-              totalRows={total}
-              pageSizeOptions={PAGE_SIZE_OPTIONS}
-              onPageSizeChange={(size) => {
-                setPageSize(size);
-                setPage(1);
-              }}
-              // Step from effectivePage, not raw `page`: after a revoke/reload shrinks
-              // totalPages and clamps the view, paginationHandlers' Previous would burn down a
-              // stale page counter before moving (codex review; same fix as ReportsPage.tsx).
-              onPrevious={() => setPage(Math.max(1, effectivePage - 1))}
-              onNext={() => setPage(Math.min(totalPages, effectivePage + 1))}
-            />
+            {total === 0 && sessions.length > 0 && (
+              <EmptyState
+                icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+                title="No sessions match this filter"
+                description="Try a different name or email, or select All to see every active staff session."
+                // total === 0 && sessions.length > 0 (the guard on this whole EmptyState above) can
+                // only happen when the client-side filter excluded something - i.e. searchInput or
+                // filter !== "all" is already true here, so the bare EmptyState fallback below can
+                // never actually render; kept only so this stays valid without an action at all.
+                action={
+                  /* v8 ignore next */
+                  searchInput || filter !== "all" || signInFilter !== "all" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setSearchInput("");
+                        setFilter("all");
+                        setSignInFilter("all");
+                        setPage(1);
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            )}
+
+            {total > 0 && (
+              <>
+                {isDesktop ? (
+                  <div className="users-page__table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>User</th>
+                          <th>Role</th>
+                          <th className="sessions-col-tablet-hide">Device</th>
+                          <th className="sessions-col-tablet-hide">IP address</th>
+                          <th>
+                            <HintLabel hint={LOGGED_IN_HINT}>Logged in</HintLabel>
+                          </th>
+                          <th>Last active</th>
+                          <th className="sessions-col-tablet-hide">Sign-in</th>
+                          <th className="sessions-action-col"><span className="sr-only">Action</span></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pageSlice.map((s) => (
+                          <SessionTableRow key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="users-page__cards users-page__cards--mobile">
+                    {pageSlice.map((s) => (
+                      <SessionCard key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
+                    ))}
+                  </div>
+                )}
+
+                <PaginationFooter
+                  idPrefix="sessions"
+                  page={effectivePage}
+                  pageSize={pageSize}
+                  totalPages={totalPages}
+                  totalRows={total}
+                  pageSizeOptions={PAGE_SIZE_OPTIONS}
+                  onPageSizeChange={(size) => {
+                    setPageSize(size);
+                    setPage(1);
+                  }}
+                  // Step from effectivePage, not raw `page`: after a revoke/reload shrinks
+                  // totalPages and clamps the view, paginationHandlers' Previous would burn down a
+                  // stale page counter before moving (codex review; same fix as ReportsPage.tsx).
+                  onPrevious={() => setPage(Math.max(1, effectivePage - 1))}
+                  onNext={() => setPage(Math.min(totalPages, effectivePage + 1))}
+                />
+              </>
+            )}
           </RefetchRegion>
         )}
       </Card>

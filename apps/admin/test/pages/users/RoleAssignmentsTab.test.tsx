@@ -595,7 +595,7 @@ describe("RoleAssignmentsTab on the loading standard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
     expect(await screen.findByRole("button", { name: "Kickoff" })).toBeTruthy();
-    expect(fetchRoleAssignments.mock.calls.length).toBe(calls);
+    expect(fetchRoleAssignments.mock.calls).toHaveLength(calls);
     expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
   });
 });

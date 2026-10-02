@@ -237,6 +237,29 @@ describe("useListLoad", () => {
     expect(result.current.data).toBe("rows B");
   });
 
+  it("replaces the rows of the previous query with the error when a reload that took over from a changed query fails", async () => {
+    const queryA = vi.fn(async () => "rows A");
+    const slowB = deferred<string>();
+    const queryB = vi.fn(() => slowB.promise);
+    const { result, rerender } = setup(queryA);
+    await settle();
+    expect(result.current.data).toBe("rows A");
+
+    // Query B is on its way when an action asks for a reload: it supersedes B's request, and then it fails.
+    rerender({ fetcher: queryB });
+    await settle();
+    expect(result.current.refreshing).toBe(true);
+    const failing = deferred<string>();
+    queryB.mockReturnValueOnce(failing.promise);
+    act(() => {
+      void result.current.reload();
+    });
+    await act(async () => failing.reject(new Error("network down")));
+    expect(result.current.error).toBe("Could not load the list.");
+    expect(result.current.refreshError).toBeNull();
+    expect(result.current.refreshing).toBe(false);
+  });
+
   it("shows nothing loading when the viewer stops needing the list while it is on its way", async () => {
     const first = deferred<string>();
     const fetcher: Fetcher = () => first.promise;
