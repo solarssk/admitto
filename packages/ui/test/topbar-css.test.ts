@@ -46,25 +46,32 @@ function declarations(body: string): Record<string, string> {
 describe("top progress bar in forced-colors mode (Windows High Contrast)", () => {
   const forced = () => blockOf(topbarCss, FORCED_COLORS);
   const forcedBar = () => declarations(blockOf(forced(), ".at-topbar__bar"));
-  const forcedTrack = () => declarations(blockOf(forced(), ".at-topbar {"));
 
   it("opts the bar out of the forced background, so its own colour is used", () => {
     expect(forcedBar()["forced-color-adjust"]).toBe("none");
   });
 
-  it("opts the track out as well, since it is a background too", () => {
-    expect(forcedTrack()["forced-color-adjust"]).toBe("none");
+  it("draws the bar in CanvasText, the colour the system guarantees to be readable on the page (Canvas)", () => {
+    // Highlight on a GrayText track was tried and measured on the rendered pixels in Chrome's two forced
+    // palettes: 1.36:1 in the light one and 1.01:1 in the dark one (cyan on green of the same brightness).
+    // Highlight and GrayText have no guaranteed contrast with each other, CanvasText on Canvas has.
+    expect(forcedBar().background).toBe("CanvasText");
   });
 
-  it("draws the bar in Highlight on a GrayText track, two different system colours, so the bar can be seen", () => {
-    expect(forcedBar().background).toBe("Highlight");
-    expect(forcedTrack().background).toBe("GrayText");
+  it("puts the bar straight on the page: no track, nothing else in the block, no background on the container", () => {
+    const selectors = forced()
+      .replaceAll(/\/\*[\s\S]*?\*\//g, "")
+      .match(/[^{}]+(?=\{)/g)
+      ?.map((selector) => selector.trim());
+    expect(selectors).toEqual([".at-topbar__bar"]);
+    const container = declarations(blockOf(topbarCss, ".at-topbar {"));
+    expect(container).not.toHaveProperty("background");
+    expect(container).not.toHaveProperty("background-color");
   });
 
-  it.each([".at-topbar", ".at-topbar__bar"])("comes after the own rule of %s, so it wins on equal specificity", (selector) => {
-    // The first rule of the file has no line break before it.
-    const ownRule = topbarCss.search(new RegExp(`(^|\\n)${selector.replaceAll(".", "\\.")} \\{`));
-    expect(ownRule, `the own rule of ${selector} exists`).toBeGreaterThan(-1);
+  it("comes after the bar's own rule, so it wins on equal specificity", () => {
+    const ownRule = topbarCss.indexOf("\n.at-topbar__bar {");
+    expect(ownRule, "the bar's own rule exists").toBeGreaterThan(-1);
     expect(topbarCss.indexOf(FORCED_COLORS)).toBeGreaterThan(ownRule);
   });
 
@@ -77,8 +84,6 @@ describe("top progress bar in forced-colors mode (Windows High Contrast)", () =>
   });
 
   it("changes colours only: the slide, the fill and the pulse are left alone", () => {
-    for (const rule of [forcedBar(), forcedTrack()]) {
-      expect(Object.keys(rule).sort((a, b) => a.localeCompare(b))).toEqual(["background", "forced-color-adjust"]);
-    }
+    expect(Object.keys(forcedBar()).sort((a, b) => a.localeCompare(b))).toEqual(["background", "forced-color-adjust"]);
   });
 });
