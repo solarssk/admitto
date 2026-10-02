@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Spinner, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, IconButton, Spinner, Tooltip, useToast } from "@admitto/ui";
 import {
   clearAllAccountNotifications,
   fetchAccountNotifications,
@@ -9,6 +9,7 @@ import {
 } from "../api/client.js";
 import type { NotificationDto } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { useBusyEndCount, useRetry } from "../hooks/useRetry.js";
 import { formatRelativeTime } from "../utils/event-dates.js";
 import { NOTIFICATION_SEVERITY_ICON } from "./notificationSeverity.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
@@ -63,6 +64,9 @@ export function NotificationBell() {
   const [listLoaded, setListLoaded] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const listRetry = useRetry();
+  const { token: listToken, begin: beginList, end: endList } = listRetry;
+  const listErrorAttempts = useBusyEndCount(listRetry.busy);
   const [markingAll, setMarkingAll] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
@@ -155,9 +159,10 @@ export function NotificationBell() {
     };
   }, []);
 
-  const loadList = useCallback(async (signal?: AbortSignal) => {
+  const loadList = useCallback(async (signal?: AbortSignal, keepError = false) => {
     setListLoading(true);
-    setListError(null);
+    // A Retry keeps its error, and the busy Retry button next to it, on screen until the answer is in.
+    if (!keepError) setListError(null);
     await queueCountOperation(async () => {
       if (!isMountedRef.current || signal?.aborted) return;
       const gen = ++countGenerationRef.current;
@@ -167,6 +172,7 @@ export function NotificationBell() {
         setNotifications(data.notifications);
         setConfirmedUnreadCount(data.unread_count, gen);
         setListLoaded(true);
+        setListError(null);
       } catch (err) {
         if (signal?.aborted || !isMountedRef.current) return;
         setListError(operatorApiErrorMessage(err, "Could not load notifications."));
@@ -174,14 +180,15 @@ export function NotificationBell() {
         if (!signal?.aborted && isMountedRef.current) setListLoading(false);
       }
     });
-  }, []);
+    if (!signal?.aborted && isMountedRef.current) endList();
+  }, [endList]);
 
   useEffect(() => {
     if (!open) return;
     const ac = new AbortController();
-    void loadList(ac.signal);
+    void loadList(ac.signal, beginList());
     return () => ac.abort();
-  }, [open, loadList]);
+  }, [open, loadList, beginList, listToken]);
 
   function closeDetail() {
     detailIdRef.current = null;
@@ -319,43 +326,42 @@ export function NotificationBell() {
             <div className="notif-bell__head-actions">
               {unreadCount > 0 && (
                 <Tooltip content="Mark all as read">
-                  <button
-                    type="button"
+                  <IconButton
+                    icon={<i className="ti ti-checks" aria-hidden="true" />}
+                    label="Mark all as read"
+                    loadingLabel="Marking…"
+                    size="sm"
                     className="notif-bell__icon-action"
-                    aria-label={markingAll ? "Marking…" : "Mark all as read"}
-                    disabled={markingAll}
+                    loading={markingAll}
                     onClick={() => void handleMarkAllRead()}
-                  >
-                    {markingAll ? <Spinner size="sm" label="Marking" /> : <i className="ti ti-checks" aria-hidden="true" />}
-                  </button>
+                  />
                 </Tooltip>
               )}
               {notifications.length > 0 && (
                 <Tooltip content="Clear all">
-                  <button
-                    type="button"
+                  <IconButton
+                    icon={<i className="ti ti-trash" aria-hidden="true" />}
+                    label="Clear all"
+                    size="sm"
                     className="notif-bell__icon-action"
-                    aria-label="Clear all"
-                    disabled={clearing}
+                    loading={clearing}
                     onClick={() => setClearConfirmOpen(true)}
-                  >
-                    <i className="ti ti-trash" aria-hidden="true" />
-                  </button>
+                  />
                 </Tooltip>
               )}
             </div>
           </div>
-          {listLoading && !listLoaded && (
+          {listLoading && !listLoaded && !listError && (
             <div className="notif-bell__status">
               <Spinner label="Loading notifications" />
             </div>
           )}
-          {!listLoading && listError && (
+          {listError && (
             <div className="notif-bell__status" role="alert">
-              <p>{listError}</p>
-              <button type="button" className="notif-bell__retry" onClick={() => void loadList()}>
+              <p key={listErrorAttempts}>{listError}</p>
+              <Button type="button" variant="secondary" size="sm" loading={listRetry.busy} onClick={listRetry.retry}>
                 Retry
-              </button>
+              </Button>
             </div>
           )}
           {!listError && listLoaded && notifications.length === 0 && (

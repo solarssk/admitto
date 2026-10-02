@@ -592,10 +592,11 @@ describe("CameraOverlay item issuing (#434)", () => {
     expect(screen.queryByText(/Already returned/)).toBeNull();
   });
 
-  it("disables the summary Undo while a check-in confirm is still pending (B5, desktop parity)", () => {
+  it("ignores the summary Undo while a check-in confirm is still pending (B5, desktop parity)", () => {
     // Reach the summary via an already-issued item's Next button (the Mark
     // button would be disabled by `pending` and unclickable), then assert the
-    // summary Undo now also respects `pending`.
+    // summary Undo now also respects `pending`: busy (aria-disabled), not switched off.
+    const onUndo = vi.fn();
     render(
       <CameraOverlay
         {...baseProps}
@@ -603,13 +604,89 @@ describe("CameraOverlay item issuing (#434)", () => {
         scanResult={validResult}
         card={attendeeCard({ items: [item({ actions: [], state: "issued" })] })}
         onItemAction={vi.fn().mockResolvedValue(true)}
-        onUndo={vi.fn()}
+        onUndo={onUndo}
         showUndo
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     const undo = screen.getByRole("button", { name: "Undo last check-in" }) as HTMLButtonElement;
-    expect(undo.disabled).toBe(true);
+    expect(undo.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(undo);
+    expect(onUndo).not.toHaveBeenCalled();
+  });
+
+  describe("Undo last check-in while busy", () => {
+    function renderSummary(props: { pending?: boolean; onUndo: () => unknown }) {
+      // An already-issued item reaches the summary through Next, which `pending` does not block.
+      render(
+        <CameraOverlay
+          {...baseProps}
+          scanResult={validResult}
+          card={attendeeCard({ items: [item({ actions: [], state: "issued" })] })}
+          onItemAction={vi.fn().mockResolvedValue(true)}
+          onUndo={props.onUndo as () => Promise<void>}
+          showUndo
+          pending={props.pending ?? false}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      return screen.getByRole("button", { name: "Undo last check-in" }) as HTMLButtonElement;
+    }
+
+    it("keeps its focus, says it is busy and ignores a second press while its own undo is running", async () => {
+      let finishUndo!: () => void;
+      const onUndo = vi.fn(() => new Promise<void>((resolve) => { finishUndo = resolve; }));
+      const undo = renderSummary({ onUndo });
+      undo.focus();
+
+      fireEvent.click(undo);
+
+      // Not `disabled`: a browser would have moved focus to <body> the moment it turned busy.
+      expect(undo.disabled).toBe(false);
+      expect(undo.getAttribute("aria-disabled")).toBe("true");
+      expect(undo.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(undo);
+      fireEvent.click(undo);
+      expect(onUndo).toHaveBeenCalledTimes(1);
+
+      await act(async () => finishUndo());
+      expect(undo.hasAttribute("aria-busy")).toBe(false);
+      expect(undo.hasAttribute("aria-disabled")).toBe(false);
+      expect(document.activeElement).toBe(undo);
+    });
+
+    it("also ignores a press while another check-in action is pending, without taking the focus away", () => {
+      const onUndo = vi.fn();
+      const undo = renderSummary({ onUndo, pending: true });
+      undo.focus();
+
+      fireEvent.click(undo);
+
+      expect(onUndo).not.toHaveBeenCalled();
+      expect(undo.disabled).toBe(false);
+      expect(undo.getAttribute("aria-disabled")).toBe("true");
+      expect(undo.hasAttribute("aria-busy")).toBe(false);
+      expect(document.activeElement).toBe(undo);
+    });
+
+    it("is really disabled, not just busy, when the operator may not act", () => {
+      const onUndo = vi.fn();
+      render(
+        <CameraOverlay
+          {...baseProps}
+          canAct={false}
+          scanResult={validResult}
+          card={attendeeCard({ items: [item({ actions: [], state: "issued" })] })}
+          onItemAction={vi.fn().mockResolvedValue(true)}
+          onUndo={onUndo}
+          showUndo
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      const undo = screen.getByRole("button", { name: "Undo last check-in" }) as HTMLButtonElement;
+      expect(undo.disabled).toBe(true);
+      expect(undo.hasAttribute("aria-disabled")).toBe(false);
+    });
   });
 });

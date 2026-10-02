@@ -33,6 +33,7 @@ import type {
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { useRetry } from "../hooks/useRetry.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
@@ -278,6 +279,8 @@ export const EventBounceIngestPanel = forwardRef<
   const [loading, setLoading] = useState(true);
   const showLoading = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const loadRetry = useRetry();
+  const { token: loadToken, begin: beginLoad, end: endLoad } = loadRetry;
   const [apiData, setApiData] = useState<EventBounceIngestSettingsResponse | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [baseline, setBaseline] = useState<Draft>(emptyDraft());
@@ -298,12 +301,14 @@ export const EventBounceIngestPanel = forwardRef<
   } = useConnectionTest("Could not test the IMAP connection.");
 
   const load = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, keepError = false) => {
       setLoading(true);
-      setLoadError(null);
+      // A Retry keeps its error, and the busy Retry button next to it, on screen until the answer is in.
+      if (!keepError) setLoadError(null);
       try {
         const data = await fetchEventBounceIngestSettings(eventId, signal);
         if (signal?.aborted) return;
+        setLoadError(null);
         setApiData(data);
         const d = draftFromApi(data);
         setDraft(d);
@@ -315,17 +320,20 @@ export const EventBounceIngestPanel = forwardRef<
         if (signal?.aborted) return;
         setLoadError(operatorApiErrorMessage(err, "Could not load bounce detection settings."));
       } finally {
-        if (!signal?.aborted) setLoading(false);
+        if (!signal?.aborted) {
+          setLoading(false);
+          endLoad();
+        }
       }
     },
-    [clearTestResult, eventId],
+    [clearTestResult, eventId, endLoad],
   );
 
   useEffect(() => {
     const ac = new AbortController();
-    void load(ac.signal);
+    void load(ac.signal, beginLoad());
     return () => ac.abort();
-  }, [load]);
+  }, [load, beginLoad, loadToken]);
 
   const dirty = useMemo(() => {
     if (
@@ -450,7 +458,8 @@ export const EventBounceIngestPanel = forwardRef<
     }
   };
 
-  if (loading) {
+  // While a Retry runs the error stays (with its busy button) instead of giving way to the loading card.
+  if (loading && !loadError) {
     return whenShown(
       showLoading,
       <Card title={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}>
@@ -462,11 +471,17 @@ export const EventBounceIngestPanel = forwardRef<
   if (loadError) {
     return (
       <Card title={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}>
-        <Notice variant="error" role="alert">
-          {loadError}{" "}
-          <button type="button" className="linkish" onClick={() => void load()}>
-            Retry
-          </button>
+        <Notice
+          variant="error"
+          role="alert"
+          actionBusy={loadRetry.busy}
+          action={
+            <Button type="button" variant="secondary" size="sm" loading={loadRetry.busy} onClick={loadRetry.retry}>
+              Retry
+            </Button>
+          }
+        >
+          {loadError}
         </Notice>
       </Card>
     );

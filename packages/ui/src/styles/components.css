@@ -24,7 +24,8 @@
    dimmed to the "unavailable" look, since it is busy, not off. Width never changes: the spinner takes
    the icon's slot, or sits in the second stacked label, or overlays the hidden label. */
 .at-btn[aria-busy="true"][aria-disabled="true"] { opacity: 1; cursor: progress; }
-.at-btn__spinner {
+.at-btn__spinner,
+.at-iconbtn__spinner {
   display: inline-block; flex: none; width: 1rem; height: 1rem; border-radius: 50%;
   border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
   border-top-color: currentColor;
@@ -46,10 +47,11 @@
    overlay spinner is aria-hidden, so the busy button would have no accessible name. */
 .at-btn--loading-solo > span:not(.at-btn__spinner) { opacity: 0; }
 .at-btn__spinner--overlay { position: absolute; inset: 0; margin: auto; }
-@media (prefers-reduced-motion: reduce) { .at-btn__spinner { animation-duration: 2.5s; } }
+@media (prefers-reduced-motion: reduce) { .at-btn__spinner, .at-iconbtn__spinner { animation-duration: 2.5s; } }
 /* Same rule as `.at-spinner__ring` (see spinner.css): forced colours would draw head and track alike. */
 @media (forced-colors: active) {
-  .at-btn__spinner { forced-color-adjust: none; border-color: GrayText; border-top-color: Highlight; }
+  .at-btn__spinner,
+  .at-iconbtn__spinner { forced-color-adjust: none; border-color: GrayText; border-top-color: Highlight; }
 }
 
 .at-btn--sm { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
@@ -128,9 +130,12 @@
   background: transparent; color: var(--text-muted); font-size: 1.1rem;
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.at-iconbtn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.at-iconbtn:hover:not(:disabled, [aria-disabled="true"]) { background: var(--surface-hover); color: var(--text-primary); }
 .at-iconbtn:focus-visible { outline: none; box-shadow: var(--ring); }
 .at-iconbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Loading (`<IconButton loading>`): `aria-disabled` (clicks are ignored, the button keeps its focus) but not dimmed
+   to the "unavailable" look, since it is busy, not off. The spinner takes the icon's place; the button has a fixed size. */
+.at-iconbtn[aria-busy="true"][aria-disabled="true"] { opacity: 1; cursor: progress; }
 .at-iconbtn--sm { width: var(--control-h-sm); height: var(--control-h-sm); font-size: 1rem; }
 
 /* ---------------- Input / Select / Textarea ---------------- */

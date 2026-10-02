@@ -700,3 +700,58 @@ describe("EventBounceIngestPanel", () => {
     expect(screen.queryByText("Recent checks")).toBeNull();
   });
 });
+
+describe("EventBounceIngestPanel load Retry", () => {
+  const FAILED = /Could not load bounce detection settings/;
+
+  it("keeps the error and a busy Retry on screen, with the focus on it, until the retry has answered", async () => {
+    let answer: (value: EventBounceIngestSettingsResponse) => void = () => {};
+    mockFetch.mockRejectedValueOnce(new Error("network"));
+    mockFetch.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    renderPanel();
+    await screen.findByText(FAILED);
+    const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+    retry.focus();
+
+    fireEvent.click(retry);
+    await act(async () => {});
+
+    // The same button, still there and focused: not switched off, and the error is not replaced by "Loading…".
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.disabled).toBe(false);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText(FAILED)).toBeTruthy();
+    fireEvent.click(retry);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer(bounceResponse()));
+    expect(await screen.findByLabelText("IMAP host")).toBeTruthy();
+    expect(screen.queryByText(FAILED)).toBeNull();
+  });
+
+  it("says the failure again, in the same alert and without replacing the button, when the retry fails too", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network"));
+    mockFetch.mockRejectedValueOnce(new Error("still down"));
+    renderPanel();
+    await screen.findByText(FAILED);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const alert = screen.getByRole("alert");
+    const before = screen.getByText(FAILED);
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 2000 });
+
+    expect(screen.getByText(FAILED)).not.toBe(before);
+    expect(screen.getByRole("alert")).toBe(alert);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+  });
+
+  it("does not show the Retry as busy for the first load that produced the error", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network"));
+    renderPanel();
+    await screen.findByText(FAILED);
+    expect(screen.getByRole("button", { name: "Retry" }).hasAttribute("aria-busy")).toBe(false);
+  });
+});

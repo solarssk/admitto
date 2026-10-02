@@ -39,6 +39,8 @@ function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, pend
   // Double-submit guard for the single Undo button — shared hook (ref + state)
   // so a same-tick double-tap can't fire two undo requests.
   const undoGuard = useInFlightIds();
+  const undoing = undoGuard.ids.has("undo");
+  const undoBusy = pending || undoing;
   const resolvedItems = stepKeys
     .map((key) => items.find((i) => i.key === key))
     .filter((i): i is AttendeeCardItemDto => !!i);
@@ -81,8 +83,14 @@ function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, pend
           <button
             type="button"
             className="link-btn"
-            disabled={!canAct || pending || undoGuard.ids.has("undo")}
+            // `disabled` only for a reason that does not pass: no permission. While an action runs (this one, or
+            // any check-in action) it is `aria-disabled` and ignores clicks, like `<Button loading>`, because a
+            // browser drops the focus of a button that becomes `disabled`.
+            disabled={!canAct}
+            aria-disabled={undoBusy || undefined}
+            aria-busy={undoing || undefined}
             onClick={() => {
+              if (undoBusy) return;
               if (!undoGuard.start("undo")) return;
               void Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
             }}

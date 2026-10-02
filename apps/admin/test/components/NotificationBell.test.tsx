@@ -1092,3 +1092,148 @@ describe("Notification detail dialog", () => {
     ).toBe("dialog");
   });
 });
+
+describe("NotificationBell header actions while busy", () => {
+  async function openWithUnread() {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({ notifications: [makeNotification()], unread_count: 1 });
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+  }
+
+  it("keeps keyboard focus on Mark all as read while it runs, shows it is busy and runs the request once", async () => {
+    let failMarkAll: (reason: Error) => void = () => {};
+    markAllAccountNotificationsRead.mockImplementation(() => new Promise((_, reject) => { failMarkAll = reject; }));
+    await openWithUnread();
+    const markAll = screen.getByRole("button", { name: "Mark all as read" }) as HTMLButtonElement;
+    markAll.focus();
+
+    fireEvent.click(markAll);
+    await act(async () => {});
+
+    // Not `disabled`: a browser would have moved focus to <body> the moment it turned busy.
+    expect(markAll.disabled).toBe(false);
+    expect(markAll.getAttribute("aria-busy")).toBe("true");
+    expect(markAll.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(markAll);
+    // Its name says what is going on, and the spinner takes the icon's place.
+    expect(screen.getByRole("button", { name: "Marking…" })).toBe(markAll);
+    expect(markAll.querySelector(".at-iconbtn__spinner")).not.toBeNull();
+    expect(markAll.querySelector(".ti-checks")).toBeNull();
+    fireEvent.click(markAll);
+    fireEvent.click(markAll);
+    expect(markAllAccountNotificationsRead).toHaveBeenCalledTimes(1);
+
+    // The request fails: the same button is idle again, still focused, and the operator is told.
+    await act(async () => failMarkAll(new Error("network down")));
+    expect(await screen.findByText("Failed to mark all as read.")).toBeTruthy();
+    expect(markAll.hasAttribute("aria-busy")).toBe(false);
+    expect(markAll.hasAttribute("aria-disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Mark all as read" })).toBe(markAll);
+    expect(markAll.querySelector(".ti-checks")).not.toBeNull();
+    expect(document.activeElement).toBe(markAll);
+  });
+
+  it("puts focus on the next control in the panel when Mark all as read has worked and its button goes away", async () => {
+    let finishMarkAll: (value: { updated_count: number; unread_count: number }) => void = () => {};
+    markAllAccountNotificationsRead.mockImplementation(() => new Promise((resolve) => { finishMarkAll = resolve; }));
+    await openWithUnread();
+    const markAll = screen.getByRole("button", { name: "Mark all as read" });
+    markAll.focus();
+
+    fireEvent.click(markAll);
+    await act(async () => {});
+    await act(async () => finishMarkAll({ updated_count: 1, unread_count: 0 }));
+
+    // Everything is read, so the button is gone (not disabled): focus must not be left on <body>.
+    expect(screen.queryByRole("button", { name: "Mark all as read" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Clear all" }));
+  });
+
+  it("shows the Clear all trigger as busy, not switched off, while the delete runs behind its confirmation", async () => {
+    let resolveClear: (value: { cleared_count: number; unread_count: number }) => void = () => {};
+    clearAllAccountNotifications.mockImplementation(() => new Promise((resolve) => { resolveClear = resolve; }));
+    await openWithUnread();
+    const clearAll = screen.getByRole("button", { name: "Clear all" }) as HTMLButtonElement;
+    expect(clearAll.hasAttribute("aria-busy")).toBe(false);
+
+    fireEvent.click(clearAll);
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+    await act(async () => {});
+
+    expect(clearAll.disabled).toBe(false);
+    expect(clearAll.getAttribute("aria-busy")).toBe("true");
+    expect(clearAll.getAttribute("aria-disabled")).toBe("true");
+    expect(clearAll.querySelector(".at-iconbtn__spinner")).not.toBeNull();
+    // A press on the busy trigger neither opens another confirmation nor starts another delete.
+    fireEvent.click(clearAll);
+    expect(clearAllAccountNotifications).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveClear({ cleared_count: 1, unread_count: 0 });
+      await Promise.resolve();
+    });
+  });
+});
+
+describe("NotificationBell list Retry", () => {
+  async function openWithFailedList() {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 0 });
+    fetchAccountNotifications.mockRejectedValueOnce(new Error("boom"));
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("Could not load notifications.");
+  }
+
+  it("keeps the error and a busy Retry on screen, with the focus on it, until the retry has answered", async () => {
+    let answer: (value: { notifications: NotificationDto[]; unread_count: number }) => void = () => {};
+    await openWithFailedList();
+    fetchAccountNotifications.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+    retry.focus();
+
+    fireEvent.click(retry);
+    await act(async () => {});
+
+    // The same button, still there and focused: not switched off, not replaced by a spinner.
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.disabled).toBe(false);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load notifications.")).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Loading notifications" })).toBeNull();
+    fireEvent.click(retry);
+    expect(fetchAccountNotifications).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer({ notifications: [makeNotification()], unread_count: 1 }));
+    expect(await screen.findByText("5 consecutive failed sign-in attempts")).toBeTruthy();
+    expect(screen.queryByText("Could not load notifications.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("says the failure again, in the same alert and without replacing the button, when the retry fails too", async () => {
+    await openWithFailedList();
+    fetchAccountNotifications.mockRejectedValueOnce(new Error("still down"));
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const alert = screen.getByText("Could not load notifications.").closest("[role='alert']");
+    const before = screen.getByText("Could not load notifications.");
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(fetchAccountNotifications).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 2000 });
+
+    // Same text as before, so a live region would stay silent unless the message is a new node.
+    expect(screen.getByText("Could not load notifications.")).not.toBe(before);
+    expect(screen.getByText("Could not load notifications.").closest("[role='alert']")).toBe(alert);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+  });
+
+  it("shows no Retry that is busy for the first load that produced the error", async () => {
+    await openWithFailedList();
+    expect(screen.getByRole("button", { name: "Retry" }).hasAttribute("aria-busy")).toBe(false);
+  });
+});

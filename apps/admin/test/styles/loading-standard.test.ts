@@ -11,6 +11,40 @@ import { RULES, RULE_HINTS, scanLoadingViolations, type Counts, type Rule } from
  * migration PR leaves each table empty, and the tables can then be replaced by a plain
  * `expect(found).toEqual({})`.
  */
+/**
+ * Raw `<button>`s that name a busy flag in `disabled` without being the busy control. Each was read and checked:
+ * the control the user pressed is a different one (or the menu it sits in has already closed), so it keeps its
+ * focus and `disabled` is right for this one. This is not debt that shrinks; a new entry needs a reason a
+ * reviewer can check. A button that starts the busy action itself uses `<Button loading>`, `<IconButton loading>`
+ * or `<MoreActionsMenuItem loading>` instead.
+ */
+const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason: string }> = {
+  "apps/admin/src/pages/AttendeeDetailPage.tsx": {
+    count: 3,
+    reason: "Wallet rows of a menu that closes on click; disabled while any wallet action runs (one shared flag).",
+  },
+  "apps/admin/src/pages/CheckInPage.tsx": {
+    count: 2,
+    reason: "The scan bar's Search button and the suggestion hits; the page puts focus back on the scan field when a check ends.",
+  },
+  "apps/admin/src/pages/ImportPage.tsx": {
+    count: 1,
+    reason: "The remove-file chip; the busy control is Validate or Commit, not the chip.",
+  },
+  "apps/admin/src/pages/ReportsPage.tsx": {
+    count: 1,
+    reason: "An export row of a menu that closes on click, so the pressed row is gone while it is busy.",
+  },
+  "apps/admin/src/pages/users/UserEditModal.tsx": {
+    count: 2,
+    reason: "The remove chips; the busy control is Save, not the chips.",
+  },
+  "apps/admin/src/settings/LocationSettingsPanel.tsx": {
+    count: 1,
+    reason: "Opens the Fix link dialog and is disabled while the form saves; the busy control is Save.",
+  },
+};
+
 const ALLOWED: Record<Rule, Counts> = {
   "hand-rolled-spinner-css": {
     "apps/admin/src/pages/setup-wizard.css": 2,
@@ -92,21 +126,11 @@ const ALLOWED: Record<Rule, Counts> = {
   "error-state-not-an-alert": {},
   "retry-outside-an-alert": {},
   // A Retry drawn as a raw <button>, each to move to <Button loading> with the screen that owns it.
-  "retry-in-a-raw-button": {
-    "apps/admin/src/components/NotificationBell.tsx": 1,
-    "apps/admin/src/settings/EventBounceIngestPanel.tsx": 1,
-  },
+  "retry-in-a-raw-button": {},
   // Hand-made busy states on a raw <button>, each to move to <Button loading> with the screen that owns it.
-  "raw-button-busy-disabled": {
-    "apps/admin/src/checkin/CameraOverlayItemIssuing.tsx": 1,
-    "apps/admin/src/components/NotificationBell.tsx": 2,
-    "apps/admin/src/pages/AttendeeDetailPage.tsx": 3,
-    "apps/admin/src/pages/CheckInPage.tsx": 2,
-    "apps/admin/src/pages/ImportPage.tsx": 1,
-    "apps/admin/src/pages/ReportsPage.tsx": 1,
-    "apps/admin/src/pages/users/UserEditModal.tsx": 2,
-    "apps/admin/src/settings/LocationSettingsPanel.tsx": 1,
-  },
+  "raw-button-busy-disabled": Object.fromEntries(
+    Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS).map(([file, { count }]) => [file, count]),
+  ),
 };
 
 describe("loading standard drift (apps/admin/src)", () => {
@@ -127,3 +151,11 @@ describe("loading standard drift (apps/admin/src)", () => {
     expect(shrank, `Nice: "${rule}" debt went down. Lower or remove these entries in ALLOWED.`).toEqual([]);
   });
 });
+
+describe("raw buttons disabled while another action runs", () => {
+  it.each(Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS))("%s names a reason a reviewer can check", (_file, { count, reason }) => {
+    expect(count).toBeGreaterThan(0);
+    expect(reason.length).toBeGreaterThanOrEqual(30);
+  });
+});
+
