@@ -328,6 +328,29 @@ describe("LocationSettingsPanel — map tiles are optional", () => {
   });
 });
 
+describe("LocationSettingsPanel — a failed location does not wait for the optional tile config", () => {
+  it("shows the error with its Retry as soon as the location fails, while the tile config has not answered", async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetchLocation.mockRejectedValueOnce(new Error("network down"));
+      mockFetchTiles.mockImplementation(hangUntilAborted as never);
+      renderPanel();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // Well within the 10 seconds that the tile read is given: nothing waits for it.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(screen.getByText("Could not load location settings")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("LocationSettingsPanel — Retry and another event", () => {
   it("keeps the error on screen with a busy Retry until the answer is in, then shows the panel and moves the focus to the tab panel", async () => {
     mockFetchLocation.mockRejectedValueOnce(new Error("network down"));

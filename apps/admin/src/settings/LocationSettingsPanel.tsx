@@ -203,15 +203,11 @@ function LocationSettingsPanelBody({
   // failure must not hide venue search or Directions/Accessibility (#808), so only the tile read falls back when it fails.
   const panel = usePanelLoad({
     fetch: async (signal) => {
-      const [locationResult, tilesResult] = await Promise.allSettled([
-        fetchEventLocation(eventId, signal),
-        fetchMapTileConfigWithLimit(signal),
-      ]);
-      if (locationResult.status === "rejected") throw locationResult.reason;
-      return {
-        location: locationResult.value,
-        tiles: tilesResult.status === "fulfilled" ? tilesResult.value : MAPS_UNAVAILABLE_FALLBACK,
-      };
+      // Only the tile read has a fallback, so it never fails the load; a location that fails ends the load at once,
+      // instead of waiting for the tile read's own limit.
+      const tiles = fetchMapTileConfigWithLimit(signal).catch(() => MAPS_UNAVAILABLE_FALLBACK);
+      const [location, tileConfig] = await Promise.all([fetchEventLocation(eventId, signal), tiles]);
+      return { location, tiles: tileConfig };
     },
     apply: ({ location, tiles }) => {
       applyResponse(location);

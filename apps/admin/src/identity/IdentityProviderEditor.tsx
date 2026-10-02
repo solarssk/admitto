@@ -224,11 +224,11 @@ function editorSubtitle(mode: EditorMode): string {
 /** The cards of the edit form, for its placeholder: Basics (four fields and the Redirect URI), Endpoints, Claims, the
  * mapping list and the login button label. */
 const PROVIDER_SKELETON_CARDS: ReadonlyArray<IdentitySkeletonCard> = [
-  { id: "basics", title: "Basics", fields: [{ hint: 2 }, { hint: 2 }, {}, {}, { full: true }] },
-  { id: "endpoints", title: "Endpoints", fields: [{ hint: 2 }, { hint: 2 }, {}, {}] },
-  { id: "claims", title: "Claims", fields: [{ hint: 2 }, { hint: 2 }, {}, {}, {}, {}] },
+  { id: "basics", title: "Basics", fields: [{ id: "display-name", hint: 2 }, { id: "issuer", hint: 2 }, { id: "client-id" }, { id: "client-secret" }, { id: "redirect-uri", full: true }] },
+  { id: "endpoints", title: "Endpoints", fields: [{ id: "authorization", hint: 2 }, { id: "token", hint: 2 }, { id: "jwks" }, { id: "userinfo" }] },
+  { id: "claims", title: "Claims", fields: [{ id: "email", hint: 2 }, { id: "name", hint: 2 }, { id: "given-name" }, { id: "family-name" }, { id: "phone" }, { id: "groups" }] },
   { id: "mappings", title: "Group → role mapping", fields: [], intro: 2, rows: 1 },
-  { id: "login-button", title: "Login button", fields: [{ full: true }] },
+  { id: "login-button", title: "Login button", fields: [{ id: "login-label", full: true }] },
 ];
 
 function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {

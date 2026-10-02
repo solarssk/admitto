@@ -231,6 +231,28 @@ describe("IdentityProvidersPanel loading standard: a list that is on screen", ()
     expect(screen.getByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
   });
 
+  it("does not say the list may be older under the error that has replaced its rows", async () => {
+    mockProviders.mockResolvedValueOnce({ providers: [google] });
+    mockCf.mockResolvedValue(cf());
+    const { router } = renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/new`);
+    await advanceTimers(0);
+    mockProviders.mockRejectedValueOnce(new Error("network down"));
+    await act(async () => {
+      await router.navigate(IDENTITY_PROVIDERS_ROUTE);
+    });
+    await advanceTimers(0);
+    expect(screen.getByText(/Could not refresh this list, so it may show older details/)).toBeTruthy();
+
+    mockToggle.mockRejectedValueOnce(new Error("boom"));
+    mockProviders.mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(screen.getByRole("switch", { name: "Google enabled" }));
+    await advanceTimers(0);
+
+    expect(screen.getByText("Could not load providers")).toBeTruthy();
+    expect(screen.queryByText(/Could not refresh this list/)).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Retry/ })).toHaveLength(1);
+  });
+
   it("keeps the Cloudflare Access card and warns the same way when its refresh fails, and its Retry refreshes it", async () => {
     mockProviders.mockResolvedValue({ providers: [google] });
     mockCf.mockResolvedValueOnce(cf());

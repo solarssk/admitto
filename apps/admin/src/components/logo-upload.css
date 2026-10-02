@@ -40,6 +40,15 @@
   outline-offset: 2px;
 }
 
+/* The bar rides the top edge inside the dashed border, so its corners follow the zone's rounded inner corners. */
+.logo-upload__bar {
+  display: contents;
+}
+
+.logo-upload__zone .at-topbar--container {
+  border-radius: calc(var(--radius-md) - 2px) calc(var(--radius-md) - 2px) 0 0;
+}
+
 .logo-upload__zone--busy {
   opacity: 0.7;
   pointer-events: none;

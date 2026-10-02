@@ -4286,6 +4286,34 @@ describe("EventSettingsPage first load on the loading standard", () => {
     expect(document.activeElement).toBe(generalTab);
   });
 
+  it("leaves the focus alone when something else has taken it by the time the Retry that held it is gone", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    const generalTab = screen.getByRole("tab", { name: "General" });
+    // A browser drops the focus of a removed element on <body>; here a tab takes it, in the same commit.
+    const removeChild = Element.prototype.removeChild;
+    const spy = vi.spyOn(Element.prototype, "removeChild").mockImplementation(function (this: Element, child: Node) {
+      const removed = removeChild.call(this, child);
+      if (child.contains(retry)) generalTab.focus();
+      return removed;
+    } as never);
+    try {
+      vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+      fireEvent.click(retry);
+      await advanceTimers(500);
+
+      expect(screen.getByLabelText("Event title")).toBeTruthy();
+      expect(document.activeElement).toBe(generalTab);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("does not pull the focus to the page when it was on nothing (a click that did not focus the Retry) while the Retry worked", async () => {
     vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
     vi.useFakeTimers();

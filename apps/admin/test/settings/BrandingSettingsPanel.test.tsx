@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrandingSettingsPanel } from "../../src/settings/BrandingSettingsPanel.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { getTooltipText, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -282,27 +283,43 @@ afterEach(() => {
   Reflect.deleteProperty(document, "fonts");
 });
 
-describe("BrandingSettingsPanel - loading and errors", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderWithToast(<BrandingSettingsPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading branding settings…")).toBeTruthy();
-  });
+describePanelLoading({
+  label: "Loading branding settings",
+  errorTitle: "Could not load branding settings",
+  render: () => renderWithToast(<BrandingSettingsPanel />),
+  hang: () => {
+    mockFetchOrg.mockImplementationOnce(hangUntilAborted);
+    mockFetchTheme.mockImplementationOnce(hangUntilAborted);
+  },
+});
 
-  it("shows an operator-safe EmptyState with Retry when loading fails, without a toast", async () => {
+describe("BrandingSettingsPanel - loading and errors", () => {
+  it("shows an operator-safe error with Retry when loading fails, without a toast", async () => {
     mockFetchOrg.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByText("Could not load branding settings")).toBeTruthy();
-    expect(screen.getByText("Could not load branding settings. Use Retry to reload.")).toBeTruthy();
+    expect(screen.getByText("Could not load branding settings.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
     expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("keeps the error and a busy Retry on screen while it loads again, then shows the form", async () => {
+    mockFetchOrg.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    let resolveOrg: (value: typeof defaultOrg) => void = () => {};
+    mockFetchOrg.mockReturnValueOnce(new Promise((resolve) => (resolveOrg = resolve)));
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByText("Could not load branding settings")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading branding settings")).toBeNull();
+    await act(async () => resolveOrg(defaultOrg));
+    expect(await screen.findByLabelText("Organisation name")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("recovers on Retry", async () => {
@@ -415,7 +432,10 @@ describe("BrandingSettingsPanel - organisation fields", () => {
       .mockReturnValueOnce(new Promise((resolve) => (resolveOriginal = resolve)))
       .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Something to save, so that only the upload keeps Save and Reset off.
+    fireEvent.change(nameInput, { target: { value: "Acme Events" } });
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
 
     const [logoInput] = document.querySelectorAll(".logo-upload__file-input");
     fireEvent.change(logoInput!, {
@@ -423,15 +443,44 @@ describe("BrandingSettingsPanel - organisation fields", () => {
     });
 
     await waitFor(() => {
-      expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(true);
+      expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
     });
-    expect(isDisabled(screen.getByRole("button", { name: "Reset to saved" }))).toBe(true);
+    expect(isOff(screen.getByRole("button", { name: "Reset to saved" }))).toBe(true);
 
     resolveOriginal({ url: "/uploads/default/logo-original.png" });
     fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
-      expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(false);
+      expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
     });
+  });
+
+  it("keeps Save and Reset focusable, but off, while nothing has changed", async () => {
+    await renderWithTheme();
+    const save = screen.getByRole("button", { name: "Save" });
+    const reset = screen.getByRole("button", { name: "Reset to saved" });
+    for (const button of [save, reset]) {
+      expect(isOff(button)).toBe(true);
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
+  });
+
+  it("keeps Save focusable and busy, with its label, while it saves, and ignores a second click", async () => {
+    await renderWithTheme();
+    let resolveOrg: (value: typeof defaultOrg) => void = () => {};
+    mockPatchOrg.mockReturnValueOnce(new Promise((resolve) => (resolveOrg = resolve)));
+    mockSaveTheme.mockResolvedValueOnce({ theme: {} });
+    fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "Acme Events" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(save.textContent).toContain("Save");
+    expect(screen.queryByText("Saving…")).toBeNull();
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(save);
+    expect(mockPatchOrg).toHaveBeenCalledTimes(1);
+    await act(async () => resolveOrg({ ...defaultOrg, org_name: "Acme Events" }));
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBeNull());
   });
 
   it("saves logo_original_url and logo_crop after a cropped upload", async () => {
