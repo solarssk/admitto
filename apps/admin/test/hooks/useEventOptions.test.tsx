@@ -46,6 +46,28 @@ describe("useEventOptions", () => {
     expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
   });
 
+  it("hands the browser to the login page for a 401 when asked to, and keeps it an error with a Retry otherwise", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchAdminEvents.mockRejectedValue(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", { configurable: true, value: { pathname: "/admin/x", assign: assignSpy } });
+    try {
+      const plain = renderHook(() => useEventOptions());
+      await settle();
+      expect(plain.result.current.error).toBe("Your session has expired. Sign in again.");
+      expect(assignSpy).not.toHaveBeenCalled();
+
+      const redirecting = renderHook(() => useEventOptions({ redirectOnUnauthorized: true }));
+      await settle();
+      expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fx");
+      expect(redirecting.result.current.error).toBeNull();
+      expect(redirecting.result.current.loading).toBe(true);
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
   it("gives up after the time limit and says so in its words", async () => {
     vi.useFakeTimers();
     fetchAdminEvents.mockImplementation(

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CheckInBehaviourPanel } from "../../src/settings/CheckInBehaviourPanel.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { deferred, getTooltipText, hangUntilAborted, renderWithToast } from "../test-utils.js";
+import { describePanelLoading } from "./panel-loading.js";
 import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -68,6 +70,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describePanelLoading({
+  label: "Loading check-in behaviour",
+  errorTitle: "Could not load check-in behaviour",
+  render: () => renderPanel(),
+  hang: () => {
+    mockFetchOpsConfig.mockImplementation(hangUntilAborted);
+    mockFetchEventItems.mockImplementation(hangUntilAborted);
+  },
+});
+
 describe("CheckInBehaviourPanel — load", () => {
   it("shows the saved toggle states once loaded", async () => {
     mockFetchOpsConfig.mockResolvedValue(
@@ -91,18 +103,6 @@ describe("CheckInBehaviourPanel — load", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByRole("switch", { name: "Require confirmation on scan" })).toBeTruthy();
-  });
-
-  it("shows the loading placeholder only once the fetch has genuinely taken a moment", () => {
-    mockFetchOpsConfig.mockImplementationOnce(() => new Promise(() => {}));
-    vi.useFakeTimers();
-    renderPanel();
-
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-
-    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
   it("does not apply a successful response that resolves after the load was aborted by unmount", async () => {
@@ -131,6 +131,43 @@ describe("CheckInBehaviourPanel — load", () => {
 
     // Nothing to assert on an unmounted tree beyond "this didn't throw" - the real
     // regression this guards is an unhandled rejection / setState-after-unmount warning.
+  });
+});
+
+describe("CheckInBehaviourPanel — Retry and another event", () => {
+  it("keeps the error on screen with a busy Retry until the answer is in, then shows the switches and moves the focus to the tab panel", async () => {
+    mockFetchOpsConfig.mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(
+      <div role="tabpanel" aria-label="Check-in">
+        <CheckInBehaviourPanel eventId="evt-1" isArchived={false} />
+      </div>,
+    );
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    retry.focus();
+    const answer = deferred<OpsConfigDto>();
+    mockFetchOpsConfig.mockReturnValueOnce(answer.promise);
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByLabelText("Loading check-in behaviour")).toBeNull();
+
+    await act(async () => answer.resolve(makeOpsConfig()));
+    expect(await screen.findByRole("switch", { name: "Require confirmation on scan" })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("tabpanel", { name: "Check-in" })));
+  });
+
+  it("is a fresh panel for another event: the previous event's switches are gone at once", async () => {
+    mockFetchOpsConfig
+      .mockResolvedValueOnce(makeOpsConfig({ require_confirm_on_scan: true }))
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const view = render(<CheckInBehaviourPanel eventId="evt-1" isArchived={false} />, { wrapper: ToastProvider });
+    expect(await screen.findByRole("switch", { name: "Require confirmation on scan" })).toHaveProperty("checked", true);
+
+    view.rerender(<CheckInBehaviourPanel eventId="evt-2" isArchived={false} />);
+    expect(screen.queryByRole("switch", { name: "Require confirmation on scan" })).toBeNull();
+    expect(mockFetchOpsConfig).toHaveBeenLastCalledWith("evt-2", expect.anything());
   });
 });
 

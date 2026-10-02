@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -16,7 +17,7 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, EmptyState, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   archiveEvent,
@@ -49,6 +50,9 @@ import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
 import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
+import { EventSettingsHeader } from "../settings/EventSettingsHeader.js";
+import { EventSettingsSkeleton } from "../settings/EventSettingsSkeleton.js";
+import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { buildWalletFieldMappingPatch, type WalletFieldMappingRow } from "../settings/walletFieldMapping.js";
 import { walletTestFingerprint, type WalletExpirationTest } from "../settings/walletExpirationTest.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
@@ -56,15 +60,14 @@ import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad, type PanelLoad } from "../hooks/usePanelLoad.js";
+import { assertPresent } from "../utils/assert-present.js";
 import {
   useWalletCustomFields,
   useWalletLocationPreview,
   useWalletPushHistory,
 } from "../hooks/useEventSettingsWalletTab.js";
 import {
-  EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
   isEventSettingsTab,
   SUPERADMIN_ONLY_TABS,
@@ -135,8 +138,6 @@ type SettingsPatch = Partial<{
   logo_original_url: string | null;
   logo_crop: LogoCropMeta | null;
 }>;
-
-const EVENT_SETTINGS_SUBTITLE = "Manage event details, images, and access.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -531,7 +532,6 @@ function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPasses
 
 interface LoadEventSettingsDeps {
   eventId: string;
-  setLoading: (value: boolean) => void;
   setNotFound: (value: boolean) => void;
   setEvent: (event: EventSettingsDto) => void;
   setForm: (form: SettingsForm) => void;
@@ -539,10 +539,12 @@ interface LoadEventSettingsDeps {
   addToast: AddToast;
 }
 
-/** Extracted out of the `load` callback (SonarCloud S3776). */
+/** Reads the event's settings again after an action that changed them (archive, restore, the bulk Danger Zone actions):
+ * the page is already on screen then, so a failure is a toast and what is there stays. The first read of the page goes
+ * through `usePanelLoad` in `EventSettingsPageBody`, with its own placeholder and error. Extracted out of the `load`
+ * callback (SonarCloud S3776). */
 async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
-  const { eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast } = deps;
-  setLoading(true);
+  const { eventId, setNotFound, setEvent, setForm, setOriginal, addToast } = deps;
   setNotFound(false);
   try {
     const data = await fetchEventSettings(eventId);
@@ -556,8 +558,6 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
     } else {
       addToast(operatorApiErrorMessage(err, "Could not load event settings"), "error");
     }
-  } finally {
-    setLoading(false);
   }
 }
 
@@ -936,43 +936,115 @@ function computeSettingsDirty(form: SettingsForm | null, original: SettingsForm 
   }
 }
 
-interface EventSettingsEarlyExitParams {
-  readonly eventId: string | undefined;
-  readonly loading: boolean;
-  readonly showLoading: boolean;
-  readonly event: EventSettingsDto | null;
-  readonly notFound: boolean;
-  readonly goBack: () => void;
+/** The error of a failed first load is replaced by the whole page when a Retry works (or by "Event not found", when the
+ * answer is a 403 or 404), so the tab panel that `PanelLoadError` would hand the focus to is gone with it: once the page
+ * is there, the focus that was on the Retry (a browser drops it on `<body>`) goes to the page's open tab panel instead, or
+ * to the Back button of "Event not found", so a screen reader hears where it is and the next Tab goes on from there. Focus
+ * that was never in the error (`errorHadFocusRef`: a mouse click does not focus a button in every browser, and the
+ * viewer may have moved to a tab), or is anywhere else by then, is left alone. */
+function useFocusOpenTabAfterRetry(
+  failed: boolean,
+  settled: boolean,
+  rootRef: RefObject<HTMLElement | null>,
+  errorHadFocusRef: RefObject<boolean>,
+): void {
+  const wasFailed = useRef(false);
+  useEffect(() => {
+    if (failed) {
+      wasFailed.current = true;
+      return;
+    }
+    if (!settled || !wasFailed.current) return;
+    wasFailed.current = false;
+    const hadFocus = errorHadFocusRef.current;
+    errorHadFocusRef.current = false;
+    // Only focus that went with the error and is on nothing now (a browser drops it on <body>) is handed on.
+    const onNothing = !document.activeElement || document.activeElement === document.body;
+    if (!hadFocus || !onNothing) return;
+    const target =
+      rootRef.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])') ??
+      rootRef.current?.querySelector<HTMLElement>("button");
+    if (target && !target.hasAttribute("tabindex") && target.getAttribute("role") === "tabpanel") target.tabIndex = -1;
+    target?.focus();
+  }, [failed, settled, rootRef, errorHadFocusRef]);
 }
 
-/** Early-exit states before the real Event Settings UI can render - missing :eventId, the initial
- * load still in flight, or a 404. Returns `undefined` when none apply and the page should render
- * normally (the caller still separately checks `!event || !form` afterwards, so TypeScript keeps
- * narrowing them for the rest of the component - moving that specific check in here too would lose
- * it). Extracted out of EventSettingsPage's own body (SonarCloud S3776) - this guard-clause chain
- * was a large share of that component's cognitive complexity on its own, and these are a
- * self-contained concern in their own right, not just complexity relocated for its own sake. */
+/** The tab panel that holds the error of a failed first read. It notes whether the focus was inside it when it goes (React
+ * runs this cleanup before it takes the panel out of the page, so a focused Retry is still focused here). */
+function EventSettingsLoadError({
+  firstLoad,
+  message,
+  errorHadFocusRef,
+}: Readonly<{ firstLoad: PanelLoad; message: string; errorHadFocusRef: RefObject<boolean> }>) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    return () => {
+      errorHadFocusRef.current = Boolean(panel?.contains(document.activeElement));
+    };
+  }, [errorHadFocusRef]);
+  return (
+    <div ref={panelRef} role="tabpanel" aria-label="Event settings" className="event-settings-tabpanel">
+      <PanelLoadError
+        cardTitle="Event settings"
+        title="Could not load event settings"
+        message={message}
+        retrying={firstLoad.retrying}
+        onRetry={firstLoad.retry}
+      />
+    </div>
+  );
+}
+
+interface EventSettingsEarlyExitParams {
+  readonly firstLoad: PanelLoad;
+  readonly notFound: boolean;
+  readonly tab: EventSettingsTab;
+  readonly isSuperadmin: boolean;
+  readonly onTabChange: (id: string) => void;
+  readonly goBack: () => void;
+  readonly pageRef: RefObject<HTMLDivElement | null>;
+  readonly errorHadFocusRef: RefObject<boolean>;
+}
+
+/** Early-exit states before the real Event Settings UI can render - the first read of the event still in flight (the
+ * header and the tabs, with the open tab's own placeholder), a failure of it (an error with a busy Retry, in a tab panel
+ * so that the focus of a Retry that worked has somewhere to go), or a 404. Returns `undefined` when none apply and the
+ * page should render normally (the caller still separately checks `!event || !form` afterwards, so TypeScript keeps
+ * narrowing them for the rest of the component - moving that specific check in here too would lose it). Extracted out of
+ * EventSettingsPage's own body (SonarCloud S3776) - this guard-clause chain was a large share of that component's
+ * cognitive complexity on its own, and these are a self-contained concern in their own right, not just complexity
+ * relocated for its own sake. */
 function renderEventSettingsEarlyExit({
-  eventId,
-  loading,
-  showLoading,
-  event,
+  firstLoad,
   notFound,
+  tab,
+  isSuperadmin,
+  onTabChange,
   goBack,
+  pageRef,
+  errorHadFocusRef,
 }: EventSettingsEarlyExitParams): ReactNode | undefined {
-  if (!eventId) return <p>Missing event.</p>;
-  if (loading && !event) {
-    if (!showLoading) return null;
+  const header = <EventSettingsHeader tab={tab} isSuperadmin={isSuperadmin} onTabChange={onTabChange} />;
+  if (!firstLoad.gate.showContent) {
     return (
       <div className="event-settings-page screen">
-        <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
-        <output>Loading event settings…</output>
+        {header}
+        <EventSettingsSkeleton tab={tab} held={!firstLoad.gate.showIndicator} slow={firstLoad.slow} />
+      </div>
+    );
+  }
+  if (firstLoad.error) {
+    return (
+      <div className="event-settings-page screen">
+        {header}
+        <EventSettingsLoadError firstLoad={firstLoad} message={firstLoad.error} errorHadFocusRef={errorHadFocusRef} />
       </div>
     );
   }
   if (notFound) {
     return (
-      <div className="event-settings-page">
+      <div ref={pageRef} className="event-settings-page">
         <EmptyState
           variant="error"
           title="Event not found"
@@ -989,9 +1061,17 @@ function renderEventSettingsEarlyExit({
   return undefined;
 }
 
-/** Event-scoped settings: General / Images / Wallet / Danger zone tabs. */
+/** Event-scoped settings: General / Images / Wallet / Danger zone tabs.
+ *
+ * One event, one page: a different `:eventId` is a fresh page (its own load, drafts and open dialogs), never the previous
+ * event's form with new data under it. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
+  if (!eventId) return <p>Missing event.</p>;
+  return <EventSettingsPageBody key={eventId} eventId={eventId} />;
+}
+
+function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { addToast } = useToast();
@@ -1007,7 +1087,6 @@ export function EventSettingsPage() {
   const [event, setEvent] = useState<EventSettingsDto | null>(null);
   const [form, setForm] = useState<SettingsForm | null>(null);
   const [original, setOriginal] = useState<SettingsForm | null>(null);
-  const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
@@ -1105,17 +1184,7 @@ export function EventSettingsPage() {
     visitedTabs,
   );
   const walletCustomFields = useWalletCustomFields(eventId, visitedTabs);
-  const {
-    walletPushHistory,
-    walletPushHistoryTotal,
-    walletPushHistoryError,
-    showWalletPushHistoryLoading,
-    walletPushHistoryPage,
-    walletPushHistoryPageSize,
-    setWalletPushHistoryPage,
-    setWalletPushHistoryPageSize,
-    retryWalletPushHistory,
-  } = useWalletPushHistory(eventId, tab);
+  const walletPushHistory = useWalletPushHistory(eventId, tab);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1143,19 +1212,37 @@ export function EventSettingsPage() {
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
   const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving;
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // these "Loading…" placeholders on and off faster than they can register as loading —
-  // show them only once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
   );
   const isArchived = event?.status === "archived";
 
+  // The first read of the page: nothing is drawn for 200ms, then the header and the tabs with the open tab's own placeholder,
+  // an error with a busy Retry after a failure (or 30 seconds without an answer). A 403 or 404 is "Event not found".
+  const firstLoad = usePanelLoad<EventSettingsDto | null>({
+    fetch: async (signal) => {
+      try {
+        return await fetchEventSettings(eventId, signal);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 403 || err.status === 404)) return null;
+        throw err;
+      }
+    },
+    apply: (data) => {
+      setNotFound(data === null);
+      if (data === null) return;
+      setEvent(data);
+      const f = toForm(data);
+      setForm(f);
+      setOriginal(f);
+    },
+    fallback: "Could not load event settings.",
+  });
+
+  // Reads the event again after an action that changed it (the page is on screen then, so a failure is a toast).
   const load = useCallback(async () => {
-    if (!eventId) return;
-    await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
+    await loadEventSettings({ eventId, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
   // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
@@ -1165,10 +1252,6 @@ export function EventSettingsPage() {
   useEffect(() => {
     deletionStatusSeqRef.current += 1;
   }, [eventId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   useEffect(() => {
     if (!pageDirty && !pageBusy) return;
@@ -1301,12 +1384,22 @@ export function EventSettingsPage() {
     });
   }
 
-  const earlyExit = renderEventSettingsEarlyExit({ eventId, loading, showLoading, event, notFound, goBack });
+  const pageRef = useRef<HTMLDivElement>(null);
+  const errorHadFocusRef = useRef(false);
+  useFocusOpenTabAfterRetry(Boolean(firstLoad.error), Boolean((event && form) || notFound), pageRef, errorHadFocusRef);
+  const earlyExit = renderEventSettingsEarlyExit({
+    firstLoad,
+    notFound,
+    tab,
+    isSuperadmin: isSa,
+    onTabChange: handleTabChange,
+    goBack,
+    pageRef,
+    errorHadFocusRef,
+  });
   if (earlyExit !== undefined) return earlyExit;
-  // renderEventSettingsEarlyExit already returned for a missing :eventId above - re-checked here
-  // (not just `!event || !form`) purely so TypeScript keeps narrowing `eventId` to `string` for the
-  // rest of the component; it can't follow that narrowing through the helper's own return.
-  if (!eventId || !event || !form) return null;
+  assertPresent(event);
+  assertPresent(form);
 
   // The event's *persisted* wallet configuration, not the (possibly unsaved) Wallet-tab draft in
   // `form` - both the Location tab's own save and the suggested-timezone shortcut below only ever
@@ -1353,31 +1446,8 @@ export function EventSettingsPage() {
   );
 
   return (
-    <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
-      <PageHeader
-        title="Event settings"
-        subtitle={EVENT_SETTINGS_SUBTITLE}
-        className="event-settings-pageheader"
-        actions={
-          <a
-            href="https://github.com/solarssk/admitto/wiki"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="at-btn at-btn--secondary"
-          >
-            <span className="at-btn__icon" aria-hidden="true">
-              <i className="ti ti-book" aria-hidden="true" />
-            </span>
-            <span>Documentation</span>
-          </a>
-        }
-      />
-
-      <ScrollFadeTabs
-        value={tab}
-        onChange={handleTabChange}
-        tabs={EVENT_SETTINGS_TABS.filter((t) => isSa || !SUPERADMIN_ONLY_TABS.has(t.id))}
-      />
+    <div ref={pageRef} className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
+      <EventSettingsHeader tab={tab} isSuperadmin={isSa} onTabChange={handleTabChange} />
 
       <EventSettingsTabPanel tab="general" activeTab={tab} visited={visitedTabs} label="General">
         <EventGeneralInfoPanel
@@ -1578,14 +1648,6 @@ export function EventSettingsPage() {
             walletLocationPreview={walletLocationPreview}
             walletCustomFields={walletCustomFields}
             walletPushHistory={walletPushHistory}
-            walletPushHistoryTotal={walletPushHistoryTotal}
-            walletPushHistoryError={walletPushHistoryError}
-            onRetryWalletPushHistory={retryWalletPushHistory}
-            showWalletPushHistoryLoading={showWalletPushHistoryLoading}
-            walletPushHistoryPage={walletPushHistoryPage}
-            walletPushHistoryPageSize={walletPushHistoryPageSize}
-            onWalletPushHistoryPageChange={setWalletPushHistoryPage}
-            onWalletPushHistoryPageSizeChange={setWalletPushHistoryPageSize}
           />
         </EventSettingsTabPanel>
       )}

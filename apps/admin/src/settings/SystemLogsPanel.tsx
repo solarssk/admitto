@@ -1,11 +1,16 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, Input, Notice, useToast } from "@admitto/ui";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Input, Notice, Skeleton, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { SystemLogEntryDto } from "../api/types.js";
+import type { SystemLogEntryDto, SystemLogResponse } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useDelayedLoading, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useBusyEndCount } from "../hooks/useRetry.js";
+import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useListLoad } from "../hooks/useListLoad.js";
+import { useRetryFocusHandover } from "../hooks/useRetryFocusHandover.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 
 type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
@@ -76,28 +81,90 @@ function formatLogLine(entry: SystemLogEntryDto): string {
   return entry.fields && Object.keys(entry.fields).length > 0 ? `${base}  ${JSON.stringify(entry.fields)}` : base;
 }
 
-/** Extracted from the console's render (SonarCloud S3358: nested ternary) - a plain
- * if/return chain reads clearer than 3 chained ternaries for the same
- * loading/error/empty/lines states, with identical output. */
-function renderConsoleBody(
-  showLoadingState: boolean,
-  error: string | null,
-  entries: SystemLogEntryDto[],
-  onRetry: () => void,
-): ReactNode {
-  if (showLoadingState && entries.length === 0) {
-    return <div className="system-log-panel__console-empty">Loading system logs…</div>;
-  }
-  if (error) {
-    return (
-      <div className="system-log-panel__console-empty system-log-panel__console-empty--error" role="alert">
-        <p>{error}</p>
-        <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
-          Retry
+/**
+ * The warning above a live view whose polls have stopped coming through, with its **Retry now**. The button is busy
+ * (`busy`) until the reload has answered. When the reload works the warning goes away together with the button that has the
+ * keyboard focus, so the focus moves to the tab panel (`useRetryFocusHandover`) instead of falling to `<body>`.
+ */
+export function PollDegradedNotice({
+  className,
+  busy,
+  onRetry,
+  children,
+}: Readonly<{ className: string; busy: boolean; onRetry: () => void; children: ReactNode }>) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useRetryFocusHandover(retryRef);
+  return (
+    <Notice
+      variant="warning"
+      role="alert"
+      actionBusy={busy}
+      className={className}
+      action={
+        <Button ref={retryRef} type="button" variant="secondary" size="sm" loading={busy} onClick={onRetry}>
+          Retry now
         </Button>
+      }
+    >
+      {children}
+    </Notice>
+  );
+}
+
+/** The console while its first load is on its way: lines of the shape of a log line (time, level, source, message), in
+ * the dark shell, so the console keeps its look and height. A skeleton whose 200ms have not passed is in the page but
+ * invisible (`held`). */
+function ConsoleSkeleton({ held, slow }: Readonly<{ held: boolean; slow: boolean }>) {
+  return (
+    <output
+      aria-label="Loading system logs"
+      className={held ? "system-log-panel__skeleton at-loading-hold" : "system-log-panel__skeleton"}
+    >
+      <div className="system-log-panel__skeleton-lines" aria-hidden="true">
+        {Array.from({ length: 9 }, (_, line) => (
+          <div key={line} className="system-log-panel__skeleton-line">
+            <Skeleton variant="rect" width={96} height={12} />
+            <Skeleton variant="rect" width={36} height={12} />
+            <Skeleton variant="rect" width={64} height={12} />
+            <Skeleton variant="rect" width={`${38 + ((line * 17) % 40)}%`} height={12} />
+          </div>
+        ))}
       </div>
-    );
-  }
+      {slow ? <span className="system-log-panel__skeleton-note">{SLOW_NOTICE_TEXT}</span> : null}
+    </output>
+  );
+}
+
+/** The console when its load failed: what failed and a Retry that stays on screen, busy, until the answer is in. */
+function ConsoleError({
+  message,
+  retrying,
+  onRetry,
+}: Readonly<{ message: string; retrying: boolean; onRetry: () => Promise<void> }>) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useRetryFocusHandover(retryRef);
+  // A live region says nothing when its text is replaced by the same text: a message that a Retry did not clear is
+  // mounted afresh, so it is heard again (not the button, which keeps its focus).
+  const ends = useBusyEndCount(retrying);
+  return (
+    <div className="system-log-panel__console-empty system-log-panel__console-empty--error" role="alert">
+      <p key={ends}>{message}</p>
+      <Button ref={retryRef} type="button" variant="secondary" size="sm" loading={retrying} onClick={() => void onRetry()}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+/** Extracted from the console's render (SonarCloud S3358: nested ternary) - a plain if/return chain reads clearer
+ * than chained ternaries for the same loading/error/empty/lines states, with identical output. */
+function renderConsoleBody(
+  skeleton: ReactNode,
+  error: ReactNode,
+  entries: SystemLogEntryDto[],
+): ReactNode {
+  if (skeleton) return skeleton;
+  if (error) return error;
   if (entries.length === 0) {
     return (
       <div className="system-log-panel__console-empty">
@@ -177,16 +244,11 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   ref,
 ) {
   const [entries, setEntries] = useState<SystemLogEntryDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState<LevelFilter>("");
   const [source, setSource] = useState<SourceFilter>("");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(true);
-  // Bumped by the Retry action below - included in the snapshot effect's own deps so a
-  // failed initial/filter-change load can be retried without touching level/source/search.
-  const [retryTick, setRetryTick] = useState(0);
   // True once the live poll has failed several times in a row (lost superadmin role, the
   // endpoint returning 500s, a network outage) - a single missed tick is never surfaced, but a
   // sustained run of them must not leave the Live pill green and the lines silently stale
@@ -226,37 +288,29 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  // Full snapshot on mount and whenever a filter changes - deliberately separate from the poll
-  // effect below so pausing/resuming Live doesn't reset the currently-displayed lines.
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetchSystemLogs(
-      { level: level || undefined, source: source || undefined, search: search || undefined },
-      ac.signal,
-    )
-      .then((data) => {
-        if (ac.signal.aborted) return;
-        forceScrollToBottomRef.current = true;
-        setEntries(data.entries);
-        cursorRef.current = data.cursor;
-        // The endpoint answered, so a "Live updates stopped" banner (and the Retry now that asked for this
-        // snapshot) is over now, not only at the next successful poll tick.
-        pollFailureCountRef.current = 0;
-        setPollDegraded(false);
-      })
-      .catch((err) => {
-        if (ac.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Could not load system logs."));
-      })
-      .finally(() => {
-        if (ac.signal.aborted) return;
-        setLoading(false);
-        setRetryingNow(false);
-      });
-    return () => ac.abort();
-  }, [level, source, search, retryTick]);
+  // Full snapshot on mount and whenever a filter changes (a new `fetchSnapshot` is a new query) - deliberately separate
+  // from the poll effect below so pausing/resuming Live doesn't reset the currently-displayed lines. The first load
+  // (and the load after a failed one) leaves the console to its placeholder; a changed filter keeps the lines on
+  // screen, dimmed, until the new snapshot answers; each request has the 30 second limit.
+  const fetchSnapshot = useCallback(
+    (signal: AbortSignal) =>
+      fetchSystemLogs({ level: level || undefined, source: source || undefined, search: search || undefined }, signal),
+    [level, source, search],
+  );
+  const applySnapshot = useCallback((data: SystemLogResponse) => {
+    forceScrollToBottomRef.current = true;
+    setEntries(data.entries);
+    cursorRef.current = data.cursor;
+    // The endpoint answered, so a "Live updates stopped" banner (and the Retry now that asked for this
+    // snapshot) is over now, not only at the next successful poll tick.
+    pollFailureCountRef.current = 0;
+    setPollDegraded(false);
+  }, []);
+  const snapshot = useListLoad({ fetcher: fetchSnapshot, fallback: "Could not load system logs.", onData: applySnapshot });
+  const consoleRetry = useRetryKeepingError(snapshot.error, snapshot.reload);
+  // A Retry is not a first load to cover with a placeholder: the error that was on screen stays, with its busy button.
+  const loadGate = useLoadingGate(snapshot.loading && !consoleRetry.running);
+  const slowLoad = useDelayedLoading(snapshot.loading && !consoleRetry.running, SLOW_NOTICE_MS);
 
   // Polling loop, independent of filter changes - reads filtersRef/cursorRef fresh each tick so
   // toggling Live off and back on resumes from where it left off instead of resetting the view.
@@ -335,9 +389,13 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   // snapshot that resolves during that time hits a console with scrollHeight 0 - consuming the
   // flag there would leave it never actually applied, since switching back to System only
   // flips isVisible, not entries, so this effect wouldn't otherwise rerun (bot review).
+  //
+  // And only once the lines are what the console shows: while a placeholder (kept for at least 400ms once it has been
+  // drawn) or an error still fills it, there is nothing to scroll, and the flag would be spent for nothing.
+  const showingLines = loadGate.showContent && !consoleRetry.error && entries.length > 0;
   useEffect(() => {
     const el = consoleRef.current;
-    if (!el || !isVisible) return;
+    if (!el || !isVisible || !showingLines) return;
     if (forceScrollToBottomRef.current) {
       forceScrollToBottomRef.current = false;
       el.scrollTop = el.scrollHeight;
@@ -345,7 +403,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) el.scrollTop = el.scrollHeight;
-  }, [entries, isVisible]);
+  }, [entries, isVisible, showingLines]);
 
   const lines = useMemo(() => entries.map(formatLogLine), [entries]);
 
@@ -372,10 +430,6 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     [lines],
   );
 
-  // A request that resolves near-instantly (localhost, a warm cache) shouldn't flip the empty
-  // state between "Loading…" and "No log activity yet" every time a filter changes - only a
-  // load that's genuinely taking a moment earns the loading copy.
-  const showLoadingState = useDelayedLoading(loading);
   const activeFilterCount = (source ? 1 : 0) + (level ? 1 : 0);
 
   const sourceSelect = (
@@ -480,37 +534,34 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       </div>
 
       {live && pollDegraded && (
-        <Notice
-          variant="warning"
-          role="alert"
-          actionBusy={retryBusy}
+        <PollDegradedNotice
           className="system-log-panel__poll-warning"
-          action={
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              loading={retryBusy}
-              onClick={() => {
-                setRetryingNow(true);
-                setRetryTick((t) => t + 1);
-              }}
-            >
-              Retry now
-            </Button>
-          }
+          busy={retryBusy}
+          onRetry={() => {
+            setRetryingNow(true);
+            // With the console showing an error, the console's own Retry is the one that keeps it on screen.
+            void (snapshot.error ? consoleRetry.retry() : snapshot.reload()).finally(() => setRetryingNow(false));
+          }}
         >
           Live updates stopped coming through - the lines below may be out of date.
-        </Notice>
+        </PollDegradedNotice>
       )}
 
       {/* Always renders this same dark shell, at the same height, regardless of content -
           Clear view (which empties `entries`) used to swap the whole console out for a
           plain light EmptyState card at a different height, which read as the panel itself
           breaking rather than a deliberately cleared terminal. */}
-      <div ref={consoleRef} className="system-log-panel__console" role="log" aria-live="off">
-        {renderConsoleBody(showLoadingState, error, entries, () => setRetryTick((t) => t + 1))}
-      </div>
+      <RefetchRegion refreshing={snapshot.refreshing} label="Loading system logs">
+        <div ref={consoleRef} className="system-log-panel__console" role="log" aria-live="off">
+          {renderConsoleBody(
+            loadGate.showContent ? null : <ConsoleSkeleton held={!loadGate.showIndicator} slow={slowLoad} />,
+            consoleRetry.error ? (
+              <ConsoleError message={consoleRetry.error} retrying={consoleRetry.retrying} onRetry={consoleRetry.retry} />
+            ) : null,
+            entries,
+          )}
+        </div>
+      </RefetchRegion>
 
       <div className="system-log-panel__footer">
         <span className="system-log-panel__count">{`Showing ${entries.length} line${entries.length === 1 ? "" : "s"}`}</span>
@@ -518,7 +569,13 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           <Button type="button" variant="secondary" size="sm" disabled={lines.length === 0} onClick={() => void handleCopy()}>
             Copy
           </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={entries.length === 0} onClick={() => setEntries([])}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-disabled={entries.length === 0}
+            onClick={() => setEntries([])}
+          >
             Clear view
           </Button>
         </div>

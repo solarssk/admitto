@@ -5,7 +5,16 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { makeOrgAdminAssignment, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import {
+  advanceTimers,
+  deferred,
+  hangUntilAborted,
+  isOff,
+  makeOrgAdminAssignment,
+  makeSuperadminAssignment,
+  mockMatchMedia,
+  renderWithToast,
+} from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
 
 const superadminAssignments: RoleAssignment[] = [
@@ -112,6 +121,7 @@ vi.mock("../../src/components/crop/CropImageModal.js", () => ({
 import {
   archiveEvent,
   deleteEvent,
+  exportEventPii,
   fetchEventImageAssets,
   fetchEventMailSettings,
   fetchEventBounceIngestSettings,
@@ -396,16 +406,16 @@ describe("EventSettingsPage subtitle", () => {
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
-    // useDelayedLoading only shows the placeholder once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
-    // be installed before render so the hook's setTimeout is one of ours.
+    // The placeholder is drawn only once the fetch has stayed pending past its 200ms grace window
+    // (avoids flashing it for a near-instant response) — fake timers must be installed before
+    // render so the loading gate's setTimeout is one of ours.
     vi.useFakeTimers();
     renderSettings();
     act(() => {
       vi.advanceTimersByTime(200);
     });
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toMatch(/Loading event settings/);
+    expect(screen.getByRole("status", { name: "Loading event settings" })).toBeTruthy();
     vi.useRealTimers();
   });
 
@@ -1311,7 +1321,7 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
   });
 
-  it("shows Loading… while wallet push history is in flight, then clears it", async () => {
+  it("shows the history's placeholder while wallet push history is in flight, then clears it", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     let resolveHistory!: (page: { items: never[]; total: number }) => void;
     vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(
@@ -1321,12 +1331,41 @@ describe("EventSettingsPage tabs", () => {
     );
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
-    expect(await screen.findByText("Loading…")).toBeTruthy();
+    expect(await screen.findByLabelText("Loading wallet push history")).toBeTruthy();
 
     resolveHistory({ items: [], total: 0 });
 
-    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText("Loading wallet push history")).toBeNull());
     expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("counts the history placeholder's 200ms and 8 seconds from the request that returning to the Wallet tab starts, not from the first one that was left", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(0);
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1);
+    await advanceTimers(500);
+    expect(screen.getByRole("status", { name: "Loading wallet push history" })).toBeTruthy();
+
+    // The tab is left before the history has answered, and stays left for longer than the 8 seconds of a wait.
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    await advanceTimers(12_000);
+    // Nothing was answered, so the hidden card does not claim that the history is empty.
+    expect(screen.queryByText("No wallet pushes yet")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await advanceTimers(0);
+
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2);
+    const placeholder = () => screen.getByRole("status", { name: "Loading wallet push history" });
+    expect(placeholder().className).toContain("at-loading-hold");
+    expect(placeholder().textContent).not.toContain("Taking longer than usual");
+    await advanceTimers(200);
+    expect(placeholder().className).not.toContain("at-loading-hold");
+    expect(placeholder().textContent).not.toContain("Taking longer than usual");
+    await advanceTimers(7_800);
+    expect(placeholder().textContent).toContain("Taking longer than usual");
   });
 
   it("paginates wallet push history via the shared PaginationFooter", async () => {
@@ -3917,10 +3956,10 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
 
     await router.navigate("/admin/events/evt-2/settings?tab=ticket-types");
 
-    // The card must fall back to its first-load "Loading…" placeholder and drop event A's
-    // stale row immediately on navigation, before event B's fetch has resolved.
+    // The card must fall back to its first-load placeholder and drop event A's stale row
+    // immediately on navigation, before event B's fetch has resolved.
     await waitFor(() => {
-      expect(screen.getByText("Loading…")).toBeTruthy();
+      expect(screen.getByLabelText("Loading ticket types")).toBeTruthy();
     });
     expect(screen.queryByDisplayValue("VIP")).toBeNull();
 
@@ -3928,7 +3967,7 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("Staff")).toBeTruthy();
     });
-    expect(screen.queryByText("Loading…")).toBeNull();
+    expect(screen.queryByLabelText("Loading ticket types")).toBeNull();
   });
 
   it("clears the previous event's stale ticket types when the new event's fetch fails", async () => {
@@ -4155,5 +4194,443 @@ describe("EventSettingsPage — Wallet push history cross-event staleness (CodeR
     expect(vi.mocked(fetchWalletPushHistory).mock.calls.some((call) => call[0] === "evt-2" && call[1] === 2)).toBe(
       false,
     );
+  });
+});
+
+describe("EventSettingsPage first load on the loading standard", () => {
+  const placeholder = () => screen.queryByRole("status", { name: "Loading event settings" });
+
+  it("keeps the header and the tabs from the first frame, holds the room of the open tab invisibly for 200ms, then draws its cards under their real titles", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=general");
+
+    expect(screen.getByText("Event settings")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "General" })).toBeTruthy();
+    expect(placeholder()?.className).toContain("at-loading-hold");
+
+    await advanceTimers(200);
+    expect(placeholder()?.className).not.toContain("at-loading-hold");
+    expect(screen.getByText("Basic information")).toBeTruthy();
+    expect(screen.queryByLabelText("Event title")).toBeNull();
+    expect(placeholder()?.textContent).not.toContain("Taking longer than usual");
+
+    await advanceTimers(7_800);
+    expect(placeholder()?.textContent).toContain("Taking longer than usual");
+  });
+
+  it("draws the placeholder of the tab the address names, and the real tabs let the viewer move while it waits", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=checkin-behaviour");
+    await advanceTimers(200);
+
+    expect(screen.getByText("Check-in behaviour")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Check-in", selected: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Location" }));
+    await advanceTimers(0);
+    expect(screen.getByText("Directions & accessibility")).toBeTruthy();
+  });
+
+  it("never draws the placeholder for an answer that comes within 200ms", async () => {
+    const answer = deferred<typeof activeEvent>();
+    vi.mocked(fetchEventSettings).mockReturnValue(answer.promise as never);
+    vi.useFakeTimers();
+    renderSettings();
+
+    await advanceTimers(100);
+    await act(async () => answer.resolve(activeEvent));
+    expect(placeholder()).toBeNull();
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+  });
+
+  it("ends in an error with a Retry after 30 seconds instead of a placeholder that never stops, and does not also toast", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings();
+
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(placeholder()).toBeNull();
+    expect(screen.getByText("Could not load event settings")).toBeTruthy();
+    expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.getByRole("tab", { name: "General" })).toBeTruthy();
+  });
+
+  it("shows a failed first load as an error with a Retry, not as a blank page behind a toast", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    expect(screen.getByRole("alert").textContent).toContain("Could not load event settings");
+    expect(screen.queryByLabelText("Event title")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("keeps the error on screen with a busy Retry until the answer is in, then shows the page and moves the focus to its tab panel", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    const answer = deferred<typeof activeEvent>();
+    vi.mocked(fetchEventSettings).mockReturnValueOnce(answer.promise as never);
+    fireEvent.click(retry);
+    await advanceTimers(0);
+
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(isOff(retry)).toBe(true);
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(placeholder()).toBeNull();
+    fireEvent.click(retry);
+    expect(vi.mocked(fetchEventSettings)).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer.resolve(activeEvent));
+    await advanceTimers(0);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+    expect(document.activeElement?.getAttribute("role")).toBe("tabpanel");
+  });
+
+  it("leaves the focus alone when the Retry that worked was not the focused control", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const generalTab = screen.getByRole("tab", { name: "General" });
+    generalTab.focus();
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    // A click that does not focus the button (some browsers), while the focus is on a tab.
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+    expect(document.activeElement).toBe(generalTab);
+  });
+
+  it("leaves the focus alone when something else has taken it by the time the Retry that held it is gone", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    const generalTab = screen.getByRole("tab", { name: "General" });
+    // A browser drops the focus of a removed element on <body>; here a tab takes it, in the same commit.
+    const removeChild = Element.prototype.removeChild;
+    const spy = vi.spyOn(Element.prototype, "removeChild").mockImplementation(function (this: Element, child: Node) {
+      const removed = removeChild.call(this, child);
+      if (child.contains(retry)) generalTab.focus();
+      return removed;
+    } as never);
+    try {
+      vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+      fireEvent.click(retry);
+      await advanceTimers(500);
+
+      expect(screen.getByLabelText("Event title")).toBeTruthy();
+      expect(document.activeElement).toBe(generalTab);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not pull the focus to the page when it was on nothing (a click that did not focus the Retry) while the Retry worked", async () => {
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+
+    expect(screen.getByLabelText("Event title")).toBeTruthy();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("moves the focus to Back when the Retry that was focused ends in Event not found", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.useFakeTimers();
+    renderSettings();
+    await advanceTimers(0);
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(404, "not_found", "not_found"));
+    fireEvent.click(retry);
+    await advanceTimers(500);
+
+    expect(screen.getByText("Event not found")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back" }));
+  });
+
+  it.each([404, 403])("still says Event not found for a %i and offers Back, not a Retry", async (status) => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(status, "not_found", "not_found"));
+    renderSettings();
+
+    expect(await screen.findByText("Event not found")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+  });
+
+  it.each([
+    ["general", "Basic information"],
+    ["location", "Address"],
+    ["ticket-types", "Ticket types"],
+    ["images", "Event logo"],
+    ["checkin-behaviour", "Check-in behaviour"],
+    ["mail", "Bounce detection"],
+    ["wallet", "Wallet"],
+    ["danger-zone", "Danger zone"],
+  ])("draws the cards of the %s tab as the placeholder while the event is read, under the real tab strip", async (tab, title) => {
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings(`/admin/events/evt-1/settings?tab=${tab}`);
+    await advanceTimers(200);
+
+    expect(within(placeholder()!).getAllByText(title).length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { selected: true })).toBeTruthy();
+  });
+
+  it("does not offer the superadmin-only tabs, nor draw their placeholder, to an organisation admin", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(200);
+
+    expect(screen.queryByRole("tab", { name: "Wallet" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Mailing" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "General", selected: true })).toBeTruthy();
+    expect(within(placeholder()!).getAllByText("Basic information").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the page on screen and only toasts when the reload after an action fails", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(archiveEvent).mockResolvedValue(undefined as never);
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => expect(vi.mocked(fetchEventSettings)).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Could not load event settings")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Danger zone" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("starts a fresh page for another event, with its own placeholder, instead of the previous event's form", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation(((id: string) =>
+      id === "evt-1" ? Promise.resolve(activeEvent) : new Promise(() => {})) as never);
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> }],
+      { initialEntries: ["/admin/events/evt-1/settings"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Summit")).toBeTruthy();
+
+    await act(async () => {
+      await router.navigate("/admin/events/evt-3/settings");
+    });
+    expect(screen.queryByDisplayValue("Summit")).toBeNull();
+    expect(placeholder()).not.toBeNull();
+  });
+});
+
+describe("EventSettingsPage Danger zone: Export personal data", () => {
+  it("shows the button busy, as 'Exporting…', while the file is made: it keeps its focus and ignores a second click", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    const file = deferred<Response>();
+    vi.mocked(exportEventPii).mockReturnValue(file.promise);
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+
+    const button = await screen.findByRole("button", { name: "Export personal data" });
+    button.focus();
+    fireEvent.click(button);
+
+    const busy = await screen.findByRole("button", { name: "Exporting…" });
+    expect(busy).toBe(button);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(vi.mocked(exportEventPii)).toHaveBeenCalledTimes(1);
+
+    await act(async () => file.resolve(new Response("a,b", { headers: { "Content-Disposition": 'attachment; filename="x.csv"' } })));
+    const idle = await screen.findByRole("button", { name: "Export personal data" });
+    expect(idle.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(idle);
+  });
+});
+
+describe("EventSettingsPage Wallet tab on the loading standard", () => {
+  const historyPlaceholder = () => screen.queryByRole("status", { name: "Loading wallet push history" });
+  const row = (id: string) => ({
+    id,
+    created_at: "2026-06-07T10:00:00.000Z",
+    reissued: 1,
+    skipped: 0,
+    errored: 0,
+    status: "succeeded" as const,
+    error: null,
+    scope: null,
+    client_timezone: null,
+  });
+
+  it("shows the Test connection button busy as 'Testing…', with its focus kept, and ignores a second click", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue({ ...activeEvent, wallet_template_id: "tmpl-1" });
+    const probe = deferred<{ ok: boolean; message?: string }>();
+    vi.mocked(testWalletConnection).mockReturnValue(probe.promise as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => expect(document.getElementById("event-wallet-template-id")).toBeTruthy());
+    const test = screen.getByRole("button", { name: "Test connection" });
+    test.focus();
+
+    fireEvent.click(test);
+    const busy = await screen.findByRole("button", { name: "Testing…" });
+    expect(busy).toBe(test);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(testWalletConnection).toHaveBeenCalledTimes(1);
+
+    await act(async () => probe.resolve({ ok: true, message: "Connected." }));
+    expect(screen.getByRole("button", { name: "Test connection" }).getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("holds the history's room for 200ms, draws rows of placeholders after, and says it is taking longer after 8 seconds", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(0);
+
+    expect(historyPlaceholder()?.className).toContain("at-loading-hold");
+    await advanceTimers(200);
+    expect(historyPlaceholder()?.className).not.toContain("at-loading-hold");
+    expect(screen.getByText("Wallet push history")).toBeTruthy();
+    await advanceTimers(7_800);
+    expect(historyPlaceholder()?.textContent).toContain("Taking longer than usual");
+  });
+
+  it("ends in an error with a Retry after 30 seconds, and the Retry stays on screen, busy, until the answer is in", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementationOnce(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+
+    expect(screen.getByText("Could not load wallet push history")).toBeTruthy();
+    expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const answer = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(answer.promise as never);
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(historyPlaceholder()).toBeNull();
+
+    await act(async () => answer.resolve({ items: [row("job-1")], total: 1 }));
+    await advanceTimers(0);
+    expect(screen.queryByText("Could not load wallet push history")).toBeNull();
+    expect(screen.getByText("Showing 1–1 of 1")).toBeTruthy();
+  });
+
+  it("keeps the rows on screen, blocked, and the pager busy but focusable, while the next page is on its way", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 25 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    const previous = screen.getByRole("button", { name: "Previous" });
+    expect(next.getAttribute("aria-disabled")).toBeNull();
+    next.focus();
+    const page2 = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(page2.promise as never);
+
+    fireEvent.click(next);
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
+
+    // The pager already names the page that was asked for, while the rows of the one before stay, blocked.
+    expect(screen.getByText("Page 2 of 3")).toBeTruthy();
+    expect(screen.getByText("Succeeded")).toBeTruthy();
+    expect(historyPlaceholder()).toBeNull();
+    expect(document.querySelector(".refetch-card--busy")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    expect(previous.getAttribute("aria-disabled")).toBe("true");
+    expect(next.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(next);
+    fireEvent.click(next);
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2);
+
+    await act(async () => page2.resolve({ items: [{ ...row("job-2"), reissued: 7 }], total: 25 }));
+    await waitFor(() => expect(next.getAttribute("aria-disabled")).toBeNull());
+    expect(previous.getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(document.querySelector(".refetch-card--busy")).toBeNull();
+  });
+
+  it("keeps the pager busy, not live, for the read that follows a failed page, so Next cannot be mashed past pages", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 25 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(next);
+    await screen.findByText("Could not load wallet push history");
+
+    const again = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(again.promise as never);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(3));
+
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
+    await act(async () => again.resolve({ items: [row("job-3")], total: 25 }));
+  });
+
+  it("reads the history only while the Wallet tab is open, and again when it is opened again", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValue({ items: [row("job-1")], total: 1 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=general");
+    await screen.findByLabelText("Event title");
+    expect(fetchWalletPushHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
+    await screen.findByText("Showing 1–1 of 1");
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
+  });
+
+  it("replaces the rows with the error and a Retry when the next page cannot be read, since they no longer answer what was asked", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 15 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(next);
+
+    expect(await screen.findByText("Could not load wallet push history")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("Succeeded")).toBeNull();
   });
 });

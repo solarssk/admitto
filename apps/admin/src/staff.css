@@ -3331,7 +3331,7 @@ html:not(.icons-ready) .ti {
   font-size: 1.1rem;
 }
 
-.identity-providers__skeleton {
+.rows-skeleton {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -3533,17 +3533,16 @@ html:not(.icons-ready) .ti {
   gap: var(--space-3);
 }
 
-/* Centered (not left-aligned like .identity-editor__error below) — this is
-   the modal's only content while loading, so a corner-anchored spinner in an
-   otherwise-empty panel reads as "the popup is briefly narrower" before the
-   real form fills the same, unchanged panel width. */
-.identity-editor__loading {
+/* The lines of a hint or an intro in an Identity editor's placeholder (IdentityEditorSkeleton): 16px bars, 2px apart. */
+.identity-skeleton__lines {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-height: 12rem;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The hint sits 3px lower than the bars of a bare list of lines, as the real hint does under its control. */
+.identity-skeleton__hint {
+  padding-top: 3px;
 }
 
 .identity-editor__error {
@@ -6164,26 +6163,10 @@ output.mail-field-hint {
   gap: var(--space-2);
 }
 
-.audit-log-skeleton__row {
-  height: 2.5rem;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--surface-muted) 25%,
-    var(--surface-elevated) 50%,
-    var(--surface-muted) 75%
-  );
-  background-size: 200% 100%;
-  animation: audit-log-shimmer 1.2s ease-in-out infinite;
-}
-
-@keyframes audit-log-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+.audit-log-skeleton__note {
+  display: block;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 /* Details popover — absolutely positioned so opening it never changes the
@@ -6329,14 +6312,6 @@ output.mail-field-hint {
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
   color: var(--text-muted);
-}
-
-/* Re-fetching with existing rows still on screen (filter/page change) — dim them
-   instead of blanking the table out while the new page loads (matches AttendeesTable). */
-.audit-log-table-wrap--loading {
-  opacity: 0.5;
-  transition: opacity var(--dur-fast);
-  pointer-events: none;
 }
 
 /* Mobile card list (< 768px) — same data as the table, one entry per card instead of a
@@ -6686,6 +6661,48 @@ output.mail-field-hint {
 
 .system-log-panel__console-empty--error {
   color: var(--at-red);
+}
+
+/* The console's placeholder (ConsoleSkeleton): lines shaped like log lines, light on the dark shell. */
+.system-log-panel__console .at-skeleton {
+  --skeleton-base: rgba(255, 255, 255, 0.08);
+  --skeleton-highlight: rgba(255, 255, 255, 0.16);
+}
+
+.system-log-panel__skeleton {
+  display: block;
+}
+
+.system-log-panel__skeleton-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+.system-log-panel__skeleton-line {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+
+.system-log-panel__skeleton-note {
+  display: block;
+  margin-top: var(--space-3);
+  color: var(--at-gray-400);
+  text-align: center;
+}
+
+/* Forced colours: the placeholder's light tints would vanish on a light palette, so the shapes take a system colour. */
+@media (forced-colors: active) {
+  .system-log-panel__console .at-skeleton {
+    background: GrayText;
+  }
+}
+
+/* The console holds no controls (a refetch swallows clicks in it) and scrolls: let the pointer wheel and drag scroll it
+   while a changed filter loads, as the keyboard already can. */
+.refetch-card--busy .system-log-panel__console {
+  pointer-events: auto;
 }
 
 .system-log-panel__line {

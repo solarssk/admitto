@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
-import { useDelayedLoading, useLoadingGate, useMinimumBusy, type LoadingGate } from "./useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate, type LoadingGate } from "./useDelayedLoading.js";
 import { useListLoad } from "./useListLoad.js";
+import { useRetryKeepingError } from "./useRetryKeepingError.js";
 
 export interface PanelLoad {
   /** The placeholder's timing: it is drawn after 200ms (`showIndicator`), and the content waits for `showContent`. */
@@ -45,26 +46,10 @@ export function usePanelLoad<T>({
   const onData = useCallback((data: T) => applyRef.current(data), []);
   const list = useListLoad({ fetcher, fallback, onData });
 
-  const [retrying, setRetrying] = useState(false);
-  const busy = useMinimumBusy(retrying);
-  const lastError = useRef<string | null>(null);
-  useEffect(() => {
-    if (list.error) lastError.current = list.error;
-  });
-  const { reload, error: failure } = list;
-  const retry = useCallback(async () => {
-    if (!failure) return;
-    setRetrying(true);
-    try {
-      await reload();
-    } finally {
-      setRetrying(false);
-    }
-  }, [reload, failure]);
+  const { error, retrying, running, retry } = useRetryKeepingError(list.error, list.reload);
 
   // A Retry is not a first load to cover with a placeholder: the error that was on screen stays, with its busy button.
-  const gate = useLoadingGate(list.loading && !retrying);
-  const slow = useDelayedLoading(list.loading && !retrying, SLOW_NOTICE_MS);
-  const error = list.error ?? (retrying ? lastError.current : null);
-  return { gate, slow, error, retrying: busy, retry };
+  const gate = useLoadingGate(list.loading && !running);
+  const slow = useDelayedLoading(list.loading && !running, SLOW_NOTICE_MS);
+  return { gate, slow, error, retrying, retry };
 }

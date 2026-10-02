@@ -1,16 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, EmptyState, HintLabel, Switch, Tooltip, useToast } from "@admitto/ui";
+import { useEffect, useState } from "react";
+import { Card, HintLabel, Switch, Tooltip, useToast } from "@admitto/ui";
 import { isBadgeItemUsable } from "@admitto/tickets/event-item-usability";
 import { ApiError, fetchEventItems, fetchOpsConfig, updateOpsConfig } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { OpsConfigDto } from "../api/types.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { usePanelLoad } from "../hooks/usePanelLoad.js";
+import { assertPresent } from "../utils/assert-present.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
+import { PanelLoadError } from "./PanelLoadError.js";
+import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 
 const CHECK_IN_BEHAVIOUR_HINT =
   "Controls how the check-in screen behaves for operators: confirmation prompts, manual lookup, and what happens automatically after a valid scan.";
 const BADGE_INACTIVE_TOOLTIP =
   "Can't enable this. The badge item is disabled or has \"Issue on check-in\" turned off.";
+
+/** The card of the panel's placeholder: four switch rows (a title and a two-line description each). */
+export const CHECKIN_BEHAVIOUR_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+  { id: "behaviour", title: "Check-in behaviour", rows: 4, rowHeight: 64 },
+];
 
 type OpsConfigField = keyof OpsConfigDto;
 
@@ -22,59 +30,43 @@ function diffOpsConfig(draft: OpsConfigDto, saved: OpsConfigDto): Partial<OpsCon
   return patch;
 }
 
-/** Check-in behaviour tab: how the operator check-in screen behaves (badge issuance, scan
- * confirmation, manual lookup, auto-advance). Own load/save/SettingsFooter - like Location/Mail/
- * Ticket types, not part of the shared General-tab `form`, since it patches the separate
- * `Event.ops_config` endpoint rather than the main event-settings patch. */
-export function CheckInBehaviourPanel({
-  eventId,
-  isArchived,
-  onDirtyChange,
-  onSavingChange,
-}: Readonly<{
+interface CheckInBehaviourPanelProps {
   eventId: string;
   isArchived: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
-}>) {
+}
+
+/** Check-in behaviour tab: how the operator check-in screen behaves (badge issuance, scan
+ * confirmation, manual lookup, auto-advance). Own load/save/SettingsFooter - like Location/Mail/
+ * Ticket types, not part of the shared General-tab `form`, since it patches the separate
+ * `Event.ops_config` endpoint rather than the main event-settings patch.
+ *
+ * One event, one panel: a different `eventId` is a fresh panel (its own load and draft), never the previous event's
+ * switches with new data under them. */
+export function CheckInBehaviourPanel(props: Readonly<CheckInBehaviourPanelProps>) {
+  return <CheckInBehaviourPanelBody key={props.eventId} {...props} />;
+}
+
+function CheckInBehaviourPanelBody({ eventId, isArchived, onDirtyChange, onSavingChange }: Readonly<CheckInBehaviourPanelProps>) {
   const { addToast } = useToast();
   const [draft, setDraft] = useState<OpsConfigDto | null>(null);
   const [savedDraft, setSavedDraft] = useState<OpsConfigDto | null>(null);
   const [badgeInactive, setBadgeInactive] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const loadAbortRef = useRef<AbortController | null>(null);
-  const showLoading = useDelayedLoading(loading);
 
-  const load = useCallback(async () => {
-    loadAbortRef.current?.abort();
-    const ac = new AbortController();
-    loadAbortRef.current = ac;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const [ops, items] = await Promise.all([
-        fetchOpsConfig(eventId, ac.signal),
-        fetchEventItems(eventId, ac.signal),
-      ]);
-      if (ac.signal.aborted) return;
+  // The first load: nothing is drawn for 200ms, then the card's own placeholder, an error with a busy Retry after a
+  // failure (or 30 seconds without an answer). The switches and the badge item are read together.
+  const panel = usePanelLoad({
+    fetch: (signal) => Promise.all([fetchOpsConfig(eventId, signal), fetchEventItems(eventId, signal)]),
+    apply: ([ops, items]) => {
       setDraft(ops);
       setSavedDraft(ops);
       const badgeItem = items.find((i) => i.key === "badge");
       setBadgeInactive(!badgeItem || !isBadgeItemUsable(badgeItem.enabled, badgeItem.config));
-    } catch {
-      if (ac.signal.aborted) return;
-      setLoadError("Could not load check-in behaviour.");
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId]);
-
-  useEffect(() => {
-    void load();
-    return () => loadAbortRef.current?.abort();
-  }, [load]);
+    },
+    fallback: "Could not load check-in behaviour.",
+  });
 
   const patch = draft && savedDraft ? diffOpsConfig(draft, savedDraft) : null;
   const dirty = !!patch && Object.keys(patch).length > 0;
@@ -119,24 +111,30 @@ export function CheckInBehaviourPanel({
     }
   }
 
-  if (loadError) {
+  if (!panel.gate.showContent) {
     return (
-      <EmptyState
-        variant="error"
-        title="Could not load check-in behaviour"
-        description={loadError}
-        action={
-          <Button type="button" variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        }
+      <SettingsPanelSkeleton
+        label="Loading check-in behaviour"
+        held={!panel.gate.showIndicator}
+        slow={panel.slow}
+        cards={CHECKIN_BEHAVIOUR_SKELETON_CARDS}
       />
     );
   }
 
-  if (!draft) {
-    return showLoading ? <p>Loading…</p> : null;
+  if (panel.error !== null) {
+    return (
+      <PanelLoadError
+        cardTitle={<HintLabel hint={CHECK_IN_BEHAVIOUR_HINT}>Check-in behaviour</HintLabel>}
+        title="Could not load check-in behaviour"
+        message={panel.error}
+        retrying={panel.retrying}
+        onRetry={panel.retry}
+      />
+    );
   }
+  // A successful load always fills the draft; a failure is `panel.error`, above.
+  assertPresent(draft);
 
   return (
     <div className="settings-sections">

@@ -182,15 +182,15 @@ describe("AuditLogPanel rendering", () => {
       }),
     );
 
-    // useDelayedLoading only shows the skeleton once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
-    // be installed before render so the hook's setTimeout is one of ours.
+    // The skeleton is in the page from the first frame, invisible (it holds the list's room) until a request that is
+    // still pending after 200ms earns it - fake timers must be installed before render so the gate's timers are ours.
     vi.useFakeTimers();
     renderAuditPanel();
+    expect(screen.getByLabelText("Loading audit log").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByLabelText("Loading audit log")).toBeTruthy();
+    expect(screen.getByLabelText("Loading audit log").className).not.toContain("at-loading-hold");
     vi.useRealTimers();
 
     resolveAuditLog(emptyAuditLog());
@@ -251,10 +251,10 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     pickSearchableOption("Action", "Event created");
 
-    // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
-    // unfiltered empty state right away, even though the new request is still in flight - the
-    // skeleton must never appear while it settles.
-    expect(screen.getByText("No matches")).toBeTruthy();
+    // The answer on screen was asked without filters, so the unfiltered empty state stays (blocked and dimmed, see the
+    // loading tests) until the answer to the new query is in - and the skeleton must never appear while it settles.
+    expect(screen.getByText("No audit log entries yet")).toBeTruthy();
+    expect(screen.queryByText("No matches")).toBeNull();
     expect(screen.queryByLabelText("Loading audit log")).toBeNull();
 
     resolveFiltered(emptyAuditLog());
@@ -1458,10 +1458,11 @@ describe("AuditLogPanel Security view rendering", () => {
 
     vi.useFakeTimers();
     renderSecurityPanel();
+    expect(screen.getByLabelText("Loading security audit log").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByLabelText("Loading security audit log")).toBeTruthy();
+    expect(screen.getByLabelText("Loading security audit log").className).not.toContain("at-loading-hold");
     vi.useRealTimers();
 
     resolveSecurityLog(emptySecurityLog());
@@ -2049,10 +2050,10 @@ describe("AuditLogPanel Security view rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     pickSearchableOption("Event", "Access denied");
 
-    // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
-    // unfiltered empty state right away, even though the new request is still in flight - the
-    // skeleton must never appear while it settles.
-    expect(screen.getByText("No matches")).toBeTruthy();
+    // The answer on screen was asked without filters, so the unfiltered empty state stays until the answer to the new
+    // query is in - and the skeleton must never appear while it settles.
+    expect(screen.getByText("No security events yet")).toBeTruthy();
+    expect(screen.queryByText("No matches")).toBeNull();
     expect(screen.queryByLabelText("Loading security audit log")).toBeNull();
 
     resolveFiltered(emptySecurityLog());

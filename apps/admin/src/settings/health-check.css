@@ -38,17 +38,6 @@
   gap: 0.35rem;
 }
 
-.health-check__actions .ti-refresh.at-spin {
-  display: inline-block;
-  animation: at-spin 0.7s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .health-check__actions .ti-refresh.at-spin {
-    animation: none;
-  }
-}
-
 /* "Generated ... · vX · sha" is the second line of the intro caption: same size, colour and
    typeface as the sentence above it, wrapping like normal text on narrow screens. Only the small
    step under the sentence is its own; the space below the pair is the card body's gap. */
