@@ -5,6 +5,7 @@ import { ApiError, fetchEventItems, fetchOpsConfig, updateOpsConfig } from "../a
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { OpsConfigDto } from "../api/types.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
+import { assertPresent } from "../utils/assert-present.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
 import { PanelLoadError } from "./PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
@@ -121,18 +122,19 @@ function CheckInBehaviourPanelBody({ eventId, isArchived, onDirtyChange, onSavin
     );
   }
 
-  // A successful load always fills the draft; a failure is `panel.error`.
-  if (panel.error || !draft) {
+  if (panel.error !== null) {
     return (
       <PanelLoadError
         cardTitle={<HintLabel hint={CHECK_IN_BEHAVIOUR_HINT}>Check-in behaviour</HintLabel>}
         title="Could not load check-in behaviour"
-        message={panel.error ?? "Unexpected error."}
+        message={panel.error}
         retrying={panel.retrying}
         onRetry={panel.retry}
       />
     );
   }
+  // A successful load always fills the draft; a failure is `panel.error`, above.
+  assertPresent(draft);
 
   return (
     <div className="settings-sections">

@@ -61,6 +61,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { usePanelLoad, type PanelLoad } from "../hooks/usePanelLoad.js";
+import { assertPresent } from "../utils/assert-present.js";
 import {
   useWalletCustomFields,
   useWalletLocationPreview,
@@ -957,14 +958,14 @@ function useFocusOpenTabAfterRetry(
     wasFailed.current = false;
     const hadFocus = errorHadFocusRef.current;
     errorHadFocusRef.current = false;
-    if (!hadFocus) return;
-    if (document.activeElement && document.activeElement !== document.body) return;
+    // Only focus that went with the error and is on nothing now (a browser drops it on <body>) is handed on.
+    const onNothing = !document.activeElement || document.activeElement === document.body;
+    if (!hadFocus || !onNothing) return;
     const target =
       rootRef.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])') ??
       rootRef.current?.querySelector<HTMLElement>("button");
-    if (!target) return;
-    if (!target.hasAttribute("tabindex") && target.getAttribute("role") === "tabpanel") target.tabIndex = -1;
-    target.focus();
+    if (target && !target.hasAttribute("tabindex") && target.getAttribute("role") === "tabpanel") target.tabIndex = -1;
+    target?.focus();
   }, [failed, settled, rootRef, errorHadFocusRef]);
 }
 
@@ -972,8 +973,9 @@ function useFocusOpenTabAfterRetry(
  * runs this cleanup before it takes the panel out of the page, so a focused Retry is still focused here). */
 function EventSettingsLoadError({
   firstLoad,
+  message,
   errorHadFocusRef,
-}: Readonly<{ firstLoad: PanelLoad; errorHadFocusRef: RefObject<boolean> }>) {
+}: Readonly<{ firstLoad: PanelLoad; message: string; errorHadFocusRef: RefObject<boolean> }>) {
   const panelRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -986,7 +988,7 @@ function EventSettingsLoadError({
       <PanelLoadError
         cardTitle="Event settings"
         title="Could not load event settings"
-        message={firstLoad.error ?? "Unexpected error."}
+        message={message}
         retrying={firstLoad.retrying}
         onRetry={firstLoad.retry}
       />
@@ -1036,7 +1038,7 @@ function renderEventSettingsEarlyExit({
     return (
       <div className="event-settings-page screen">
         {header}
-        <EventSettingsLoadError firstLoad={firstLoad} errorHadFocusRef={errorHadFocusRef} />
+        <EventSettingsLoadError firstLoad={firstLoad} message={firstLoad.error} errorHadFocusRef={errorHadFocusRef} />
       </div>
     );
   }
@@ -1406,7 +1408,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     errorHadFocusRef,
   });
   if (earlyExit !== undefined) return earlyExit;
-  if (!event || !form) return null;
+  assertPresent(event);
+  assertPresent(form);
 
   // The event's *persisted* wallet configuration, not the (possibly unsaved) Wallet-tab draft in
   // `form` - both the Location tab's own save and the suggested-timezone shortcut below only ever
