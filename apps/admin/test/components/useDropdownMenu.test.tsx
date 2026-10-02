@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
 import { mockVisualViewport } from "./panelPlacementMocks.js";
@@ -457,5 +458,58 @@ describe("useDropdownMenu", () => {
 
     expect(() => fireEvent.keyDown(document, { key: "ArrowDown" })).not.toThrow();
     expect(document.activeElement).toBe(field);
+  });
+});
+
+describe("useDropdownMenu keeps focus in an open panel", () => {
+  /** A menu whose first row can go away, like Mark all as read once everything is read. */
+  function MenuWithDisappearingRow() {
+    const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+    const [showMarkAll, setShowMarkAll] = useState(true);
+    return (
+      <div ref={rootRef}>
+        <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+          Trigger
+        </button>
+        {open && (
+          <div ref={panelRef} role="menu" style={panelStyle}>
+            {showMarkAll && (
+              <button role="menuitem" onClick={() => setShowMarkAll(false)}>
+                Mark all
+              </button>
+            )}
+            <button role="menuitem">Clear all</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const settle = () => act(async () => {});
+
+  it("moves focus to the first remaining control when the focused one disappears, instead of dropping it on <body>", async () => {
+    render(<MenuWithDisappearingRow />);
+    fireEvent.click(screen.getByText("Trigger"));
+    const markAll = screen.getByRole("menuitem", { name: "Mark all" });
+    markAll.focus();
+    expect(document.activeElement).toBe(markAll);
+
+    fireEvent.click(markAll);
+    await settle();
+
+    expect(screen.queryByRole("menuitem", { name: "Mark all" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Clear all" }));
+  });
+
+  it("does not take focus when the panel is closed", async () => {
+    render(<MenuWithDisappearingRow />);
+    fireEvent.click(screen.getByText("Trigger"));
+    screen.getByRole("menuitem", { name: "Mark all" }).focus();
+    fireEvent.click(screen.getByText("Trigger"));
+    await settle();
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    // The panel went away with the control that held focus; nothing was moved into it or anywhere else.
+    expect(document.activeElement).toBe(document.body);
   });
 });

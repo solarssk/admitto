@@ -776,7 +776,9 @@ html:not(.icons-ready) .ti {
   gap: var(--space-3);
 }
 
-.notif-bell__icon-action {
+/* An IconButton with this class: the parent class raises the specificity above `.at-iconbtn`, so the size
+ * and colours below win whatever the stylesheet order. */
+.notif-bell__head-actions .notif-bell__icon-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -788,16 +790,12 @@ html:not(.icons-ready) .ti {
   color: var(--text-secondary);
   font-size: 1rem;
   cursor: pointer;
+  transition: none;
 }
 
-.notif-bell__icon-action:hover:not(:disabled) {
+.notif-bell__head-actions .notif-bell__icon-action:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--surface-hover);
   color: var(--text-primary);
-}
-
-.notif-bell__icon-action:disabled {
-  color: var(--text-muted);
-  cursor: default;
 }
 
 .notif-bell__status {
@@ -813,15 +811,6 @@ html:not(.icons-ready) .ti {
 
 .notif-bell__status i {
   font-size: 1.5rem;
-}
-
-.notif-bell__retry {
-  border: 1px solid var(--border);
-  background: none;
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  font-size: var(--fs-xs);
-  cursor: pointer;
 }
 
 .notif-bell__list {
@@ -1320,6 +1309,17 @@ html:not(.icons-ready) .ti {
 .link-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Busy (`aria-disabled`, still focusable, clicks ignored): looks like a disabled one, with the progress cursor
+ * while its own action runs. */
+.link-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.link-btn[aria-busy="true"] {
+  cursor: progress;
 }
 
 /* Check-in v2 layout */

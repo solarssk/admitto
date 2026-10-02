@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
+import { useFocusRecovery } from "./useFocusRecovery.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
 
@@ -75,6 +76,8 @@ export function useDropdownMenu<
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
   const panelRef = useRef<TPanel>(null);
+  // A control in the panel that goes away (a button hidden once its job is done) must not leave focus on <body>.
+  useFocusRecovery(panelRef, open);
 
   useEffect(() => {
     if (!open || escapeSuspended) return;

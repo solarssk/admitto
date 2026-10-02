@@ -31,4 +31,23 @@ describe("Button loading CSS (jsdom does not load the stylesheet, so the source 
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) expect(rule, rule).toContain(':not(:disabled, [aria-disabled="true"])');
   });
+
+  it("keeps the aria-disabled-but-busy icon button fully opaque and shows a progress cursor", () => {
+    const rule = declarationsOf('.at-iconbtn[aria-busy="true"][aria-disabled="true"]');
+    expect(rule).toMatch(/opacity:\s*1/);
+    expect(rule).toMatch(/cursor:\s*progress/);
+  });
+
+  it("gives no hover colour to an icon button that is aria-disabled (busy)", () => {
+    const rule = css.split("\n").find((line) => line.startsWith(".at-iconbtn:hover"));
+    expect(rule).toBeDefined();
+    expect(rule).toContain(':not(:disabled, [aria-disabled="true"])');
+  });
+
+  it("draws the icon button's spinner with the same ring rule as the button's, not a copy of it", () => {
+    const header = css.slice(css.indexOf(".at-btn__spinner,"), css.indexOf("{", css.indexOf(".at-btn__spinner,")));
+    expect(header).toContain(".at-iconbtn__spinner");
+    expect(css.match(/\n\.at-iconbtn__spinner[,\s{]/g)?.length).toBe(1);
+  });
 });
+
