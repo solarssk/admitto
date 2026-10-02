@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PanelLoadError } from "../../src/settings/PanelLoadError.js";
 import { SettingsPanelSkeleton } from "../../src/settings/SettingsPanelSkeleton.js";
@@ -98,5 +98,91 @@ describe("PanelLoadError", () => {
     const before = screen.getByText("Could not load");
     rerender(<PanelLoadError cardTitle="C" title="Could not load" message="Why." retrying={false} onRetry={async () => {}} />);
     expect(screen.getByText("Could not load")).not.toBe(before);
+  });
+
+  describe("keyboard focus when the retry worked", () => {
+    // A settings panel in its tab panel: the failed card, then (once the retry has worked) the form.
+    function Harness({ failed, retrying = false, tabIndex, formAutoFocus = false }: Readonly<{ failed: boolean; retrying?: boolean; tabIndex?: number; formAutoFocus?: boolean }>) {
+      return (
+        <div>
+          <button type="button">Elsewhere</button>
+          <div role="tabpanel" aria-label="General" tabIndex={tabIndex}>
+            {failed ? (
+              <PanelLoadError cardTitle="Instance URL" title="Could not load" message="Why." retrying={retrying} onRetry={async () => {}} />
+            ) : (
+              <form>
+                <input aria-label="Instance URL" autoFocus={formAutoFocus} />
+              </form>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    it("moves focus from the Retry that has gone to the tab panel, and the next field is a Tab away", async () => {
+      const { rerender } = render(<Harness failed />);
+      screen.getByRole("button", { name: "Retry" }).focus();
+      rerender(<Harness failed={false} />);
+      const panel = screen.getByRole("tabpanel", { name: "General" });
+      await waitFor(() => expect(document.activeElement).toBe(panel));
+      expect(panel.getAttribute("tabindex")).toBe("-1");
+      expect(panel.contains(screen.getByLabelText("Instance URL"))).toBe(true);
+    });
+
+    it("keeps a tabindex the tab panel already has", async () => {
+      const { rerender } = render(<Harness failed tabIndex={0} />);
+      screen.getByRole("button", { name: "Retry" }).focus();
+      rerender(<Harness failed={false} tabIndex={0} />);
+      const panel = screen.getByRole("tabpanel", { name: "General" });
+      await waitFor(() => expect(document.activeElement).toBe(panel));
+      expect(panel.getAttribute("tabindex")).toBe("0");
+    });
+
+    it("leaves focus alone when it is on something else by then", async () => {
+      const { rerender } = render(<Harness failed />);
+      const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+      elsewhere.focus();
+      rerender(<Harness failed={false} />);
+      await Promise.resolve();
+      expect(document.activeElement).toBe(elsewhere);
+      expect(screen.getByRole("tabpanel", { name: "General" }).hasAttribute("tabindex")).toBe(false);
+    });
+
+    it("leaves focus alone when the Retry did not have it (a click does not focus a button in Safari)", async () => {
+      const { rerender } = render(<Harness failed />);
+      expect(document.activeElement).toBe(document.body);
+      rerender(<Harness failed={false} />);
+      await Promise.resolve();
+      expect(document.activeElement).toBe(document.body);
+      expect(screen.getByRole("tabpanel", { name: "General" }).hasAttribute("tabindex")).toBe(false);
+    });
+
+    it("leaves focus alone when the new content has taken it", async () => {
+      const { rerender } = render(<Harness failed />);
+      screen.getByRole("button", { name: "Retry" }).focus();
+      rerender(<Harness failed={false} formAutoFocus />);
+      await Promise.resolve();
+      expect(document.activeElement).toBe(screen.getByLabelText("Instance URL"));
+      expect(screen.getByRole("tabpanel", { name: "General" }).hasAttribute("tabindex")).toBe(false);
+    });
+
+    it("does not move focus while the Retry is still there, busy or failed again", async () => {
+      const { rerender } = render(<Harness failed />);
+      const retry = screen.getByRole("button", { name: "Retry" });
+      retry.focus();
+      rerender(<Harness failed retrying />);
+      rerender(<Harness failed />);
+      await Promise.resolve();
+      expect(document.activeElement).toBe(retry);
+      expect(screen.getByRole("tabpanel", { name: "General" }).hasAttribute("tabindex")).toBe(false);
+    });
+
+    it("has nothing to move focus to outside a tab panel, and does not fail", async () => {
+      const { unmount } = render(<PanelLoadError cardTitle="C" title="Could not load" message="Why." retrying={false} onRetry={async () => {}} />);
+      screen.getByRole("button", { name: "Retry" }).focus();
+      unmount();
+      await Promise.resolve();
+      expect(document.activeElement).toBe(document.body);
+    });
   });
 });
