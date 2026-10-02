@@ -54,7 +54,7 @@ import { PanelLoadError } from "./PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 
 /** The cards of the card's placeholder: the source switch with the organisation's transport, and the test-send card. */
-const EVENT_MAIL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+export const EVENT_MAIL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "transport", title: "Mail transport", intro: true, rows: 1, rowHeight: 68 },
   { id: "test", title: "Send test email", intro: true, fields: 1, controlHeight: 42 },
 ];

@@ -52,7 +52,9 @@ export function SettingsPanelSkeleton({ label, held, slow, cards, footer = true 
   return (
     <output aria-label={label} className={held ? "settings-skeleton at-loading-hold" : "settings-skeleton"}>
       {cards.map((card) => (
-        <Card key={card.id} title={card.title}>
+        // The cards are decoration (the region is named by its label): hidden from assistive tech, so that the region does
+        // not read their titles out again when the 8 second note joins it, or when another tab's cards take their place.
+        <Card key={card.id} title={card.title} aria-hidden="true">
           <div className="settings-card-stack" aria-hidden="true">
             {card.intro && <SkeletonIntro lines={card.intro === true ? 1 : card.intro} />}
             {(card.fields ?? 0) > 0 && (

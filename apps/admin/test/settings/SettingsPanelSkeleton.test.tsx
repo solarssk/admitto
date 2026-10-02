@@ -22,6 +22,13 @@ describe("SettingsPanelSkeleton", () => {
     expect(screen.getByText("Sessions")).toBeTruthy();
   });
 
+  it("hides the cards from assistive tech, so the region does not read their titles again when the slow note joins it", () => {
+    const { container } = render(<SettingsPanelSkeleton label="Loading" held={false} slow cards={cards} />);
+    expect(container.querySelectorAll('.at-card[aria-hidden="true"]')).toHaveLength(cards.length);
+    // What is exposed in the region is its name and the note.
+    expect(screen.getByText(/Taking longer than usual/).closest('[aria-hidden="true"]')).toBeNull();
+  });
+
   it("holds its room invisible until it is drawn", () => {
     const { rerender } = render(<SettingsPanelSkeleton label="Loading" held slow={false} cards={cards} />);
     expect(screen.getByLabelText("Loading").className).toContain("at-loading-hold");

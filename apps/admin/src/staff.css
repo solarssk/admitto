@@ -3331,7 +3331,7 @@ html:not(.icons-ready) .ti {
   font-size: 1.1rem;
 }
 
-.identity-providers__skeleton {
+.rows-skeleton {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
