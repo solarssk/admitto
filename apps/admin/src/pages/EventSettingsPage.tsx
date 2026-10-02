@@ -1184,17 +1184,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     visitedTabs,
   );
   const walletCustomFields = useWalletCustomFields(eventId, visitedTabs);
-  const {
-    walletPushHistory,
-    walletPushHistoryTotal,
-    walletPushHistoryError,
-    showWalletPushHistoryLoading,
-    walletPushHistoryPage,
-    walletPushHistoryPageSize,
-    setWalletPushHistoryPage,
-    setWalletPushHistoryPageSize,
-    retryWalletPushHistory,
-  } = useWalletPushHistory(eventId, tab);
+  const walletPushHistory = useWalletPushHistory(eventId, tab);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1658,14 +1648,6 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             walletLocationPreview={walletLocationPreview}
             walletCustomFields={walletCustomFields}
             walletPushHistory={walletPushHistory}
-            walletPushHistoryTotal={walletPushHistoryTotal}
-            walletPushHistoryError={walletPushHistoryError}
-            onRetryWalletPushHistory={retryWalletPushHistory}
-            showWalletPushHistoryLoading={showWalletPushHistoryLoading}
-            walletPushHistoryPage={walletPushHistoryPage}
-            walletPushHistoryPageSize={walletPushHistoryPageSize}
-            onWalletPushHistoryPageChange={setWalletPushHistoryPage}
-            onWalletPushHistoryPageSizeChange={setWalletPushHistoryPageSize}
           />
         </EventSettingsTabPanel>
       )}

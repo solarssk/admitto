@@ -96,7 +96,9 @@ describe("TicketTypesCard first load on the loading standard", () => {
     await act(async () => answer.resolve([vip]));
     await advanceTimers(0);
     expect(screen.getByDisplayValue("VIP")).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByRole("tabpanel", { name: "Ticket types" }));
+    // The card that holds the list stays, so the focus goes there and not to the top of the tab.
+    expect(document.activeElement?.classList.contains("at-card")).toBe(true);
+    expect(document.activeElement?.textContent).toContain("Ticket types");
   });
 
   it("is a fresh card for another event: the previous event's rows are gone at once", async () => {

@@ -356,6 +356,82 @@ describe("VenueAutocomplete", () => {
     expect(await screen.findByText("Address lookup failed. Try again shortly.")).toBeTruthy();
   });
 
+  it("shows Find on map busy while it searches, keeps its focus, and ignores a second click", async () => {
+    const slow = createDeferred<GeocodingSearchResponse>();
+    mockSearch.mockReturnValue(slow.promise);
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), { target: { value: "Downing St" } });
+    const find = screen.getByRole("button", { name: "Find on map" });
+    find.focus();
+
+    fireEvent.click(find);
+    const busy = screen.getByRole("button", { name: "Searching…" });
+    expect(busy).toBe(find);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    const calls = mockSearch.mock.calls.length;
+    fireEvent.click(busy);
+    expect(mockSearch.mock.calls).toHaveLength(calls);
+
+    slow.resolve({ results: [makeResult()], contact_configured: true });
+    await act(async () => {
+      await slow.promise;
+    });
+    expect(screen.getByRole("button", { name: "Find on map" }).getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Find on map" }));
+  });
+
+  it("does not start another Find when Enter is pressed while one is running", async () => {
+    const slow = createDeferred<GeocodingSearchResponse>();
+    mockSearch.mockReturnValue(slow.promise);
+    renderWithToast(<Harness />);
+    const field = screen.getByLabelText("Venue name or address");
+    fireEvent.change(field, { target: { value: "Downing St" } });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    const calls = mockSearch.mock.calls.length;
+
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(mockSearch.mock.calls).toHaveLength(calls);
+
+    slow.resolve({ results: [], contact_configured: true });
+    await act(async () => {
+      await slow.promise;
+    });
+  });
+
+  it("does not leave Find busy for good when a typed search takes over from it", async () => {
+    vi.useFakeTimers();
+    try {
+      const slow = createDeferred<GeocodingSearchResponse>();
+      mockSearch.mockReturnValueOnce(slow.promise).mockResolvedValueOnce({ results: [], contact_configured: true });
+      renderWithToast(<Harness />);
+      const field = screen.getByLabelText("Venue name or address");
+      fireEvent.change(field, { target: { value: "Downing St" } });
+      fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+      expect(screen.getByRole("button", { name: "Searching…" })).toBeTruthy();
+
+      fireEvent.change(field, { target: { value: "Downing Street" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(screen.getByRole("button", { name: "Find on map" }).getAttribute("aria-busy")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("announces a second Find that ends as the first did, by mounting its notice afresh", async () => {
+    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), { target: { value: "Downing St" } });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    const first = await screen.findByText(/No match found on OpenStreetMap/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    await waitFor(() => expect(screen.getByText(/No match found on OpenStreetMap/)).not.toBe(first));
+  });
+
   it("clears Searching… when the query is shortened below the minimum during an in-flight Find", async () => {
     const slow = createDeferred<GeocodingSearchResponse>();
     mockSearch.mockReturnValueOnce(slow.promise);

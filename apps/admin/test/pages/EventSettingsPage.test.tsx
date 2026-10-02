@@ -1321,7 +1321,7 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
   });
 
-  it("shows Loading… while wallet push history is in flight, then clears it", async () => {
+  it("shows the history's placeholder while wallet push history is in flight, then clears it", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     let resolveHistory!: (page: { items: never[]; total: number }) => void;
     vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(
@@ -1331,12 +1331,41 @@ describe("EventSettingsPage tabs", () => {
     );
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
-    expect(await screen.findByText("Loading…")).toBeTruthy();
+    expect(await screen.findByLabelText("Loading wallet push history")).toBeTruthy();
 
     resolveHistory({ items: [], total: 0 });
 
-    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText("Loading wallet push history")).toBeNull());
     expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("counts the history placeholder's 200ms and 8 seconds from the request that returning to the Wallet tab starts, not from the first one that was left", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(0);
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1);
+    await advanceTimers(500);
+    expect(screen.getByRole("status", { name: "Loading wallet push history" })).toBeTruthy();
+
+    // The tab is left before the history has answered, and stays left for longer than the 8 seconds of a wait.
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    await advanceTimers(12_000);
+    // Nothing was answered, so the hidden card does not claim that the history is empty.
+    expect(screen.queryByText("No wallet pushes yet")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await advanceTimers(0);
+
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2);
+    const placeholder = () => screen.getByRole("status", { name: "Loading wallet push history" });
+    expect(placeholder().className).toContain("at-loading-hold");
+    expect(placeholder().textContent).not.toContain("Taking longer than usual");
+    await advanceTimers(200);
+    expect(placeholder().className).not.toContain("at-loading-hold");
+    expect(placeholder().textContent).not.toContain("Taking longer than usual");
+    await advanceTimers(7_800);
+    expect(placeholder().textContent).toContain("Taking longer than usual");
   });
 
   it("paginates wallet push history via the shared PaginationFooter", async () => {
@@ -4445,5 +4474,163 @@ describe("EventSettingsPage Danger zone: Export personal data", () => {
     const idle = await screen.findByRole("button", { name: "Export personal data" });
     expect(idle.getAttribute("aria-busy")).toBeNull();
     expect(document.activeElement).toBe(idle);
+  });
+});
+
+describe("EventSettingsPage Wallet tab on the loading standard", () => {
+  const historyPlaceholder = () => screen.queryByRole("status", { name: "Loading wallet push history" });
+  const row = (id: string) => ({
+    id,
+    created_at: "2026-06-07T10:00:00.000Z",
+    reissued: 1,
+    skipped: 0,
+    errored: 0,
+    status: "succeeded" as const,
+    error: null,
+    scope: null,
+    client_timezone: null,
+  });
+
+  it("shows the Test connection button busy as 'Testing…', with its focus kept, and ignores a second click", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue({ ...activeEvent, wallet_template_id: "tmpl-1" });
+    const probe = deferred<{ ok: boolean; message?: string }>();
+    vi.mocked(testWalletConnection).mockReturnValue(probe.promise as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => expect(document.getElementById("event-wallet-template-id")).toBeTruthy());
+    const test = screen.getByRole("button", { name: "Test connection" });
+    test.focus();
+
+    fireEvent.click(test);
+    const busy = await screen.findByRole("button", { name: "Testing…" });
+    expect(busy).toBe(test);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(busy);
+    fireEvent.click(busy);
+    expect(testWalletConnection).toHaveBeenCalledTimes(1);
+
+    await act(async () => probe.resolve({ ok: true, message: "Connected." }));
+    expect(screen.getByRole("button", { name: "Test connection" }).getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("holds the history's room for 200ms, draws rows of placeholders after, and says it is taking longer after 8 seconds", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementation(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(0);
+
+    expect(historyPlaceholder()?.className).toContain("at-loading-hold");
+    await advanceTimers(200);
+    expect(historyPlaceholder()?.className).not.toContain("at-loading-hold");
+    expect(screen.getByText("Wallet push history")).toBeTruthy();
+    await advanceTimers(7_800);
+    expect(historyPlaceholder()?.textContent).toContain("Taking longer than usual");
+  });
+
+  it("ends in an error with a Retry after 30 seconds, and the Retry stays on screen, busy, until the answer is in", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockImplementationOnce(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+
+    expect(screen.getByText("Could not load wallet push history")).toBeTruthy();
+    expect(screen.getByText(/The server did not answer in time/)).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const answer = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(answer.promise as never);
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(historyPlaceholder()).toBeNull();
+
+    await act(async () => answer.resolve({ items: [row("job-1")], total: 1 }));
+    await advanceTimers(0);
+    expect(screen.queryByText("Could not load wallet push history")).toBeNull();
+    expect(screen.getByText("Showing 1–1 of 1")).toBeTruthy();
+  });
+
+  it("keeps the rows on screen, blocked, and the pager busy but focusable, while the next page is on its way", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 25 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    const previous = screen.getByRole("button", { name: "Previous" });
+    expect(next.getAttribute("aria-disabled")).toBeNull();
+    next.focus();
+    const page2 = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(page2.promise as never);
+
+    fireEvent.click(next);
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
+
+    // The pager already names the page that was asked for, while the rows of the one before stay, blocked.
+    expect(screen.getByText("Page 2 of 3")).toBeTruthy();
+    expect(screen.getByText("Succeeded")).toBeTruthy();
+    expect(historyPlaceholder()).toBeNull();
+    expect(document.querySelector(".refetch-card--busy")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Next" })).toBe(next);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    expect(previous.getAttribute("aria-disabled")).toBe("true");
+    expect(next.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(next);
+    fireEvent.click(next);
+    expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2);
+
+    await act(async () => page2.resolve({ items: [{ ...row("job-2"), reissued: 7 }], total: 25 }));
+    await waitFor(() => expect(next.getAttribute("aria-disabled")).toBeNull());
+    expect(previous.getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(document.querySelector(".refetch-card--busy")).toBeNull();
+  });
+
+  it("keeps the pager busy, not live, for the read that follows a failed page, so Next cannot be mashed past pages", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 25 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(next);
+    await screen.findByText("Could not load wallet push history");
+
+    const again = deferred<{ items: ReturnType<typeof row>[]; total: number }>();
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(again.promise as never);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(3));
+
+    expect(screen.getByRole("button", { name: "Next" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
+    await act(async () => again.resolve({ items: [row("job-3")], total: 25 }));
+  });
+
+  it("reads the history only while the Wallet tab is open, and again when it is opened again", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValue({ items: [row("job-1")], total: 1 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=general");
+    await screen.findByLabelText("Event title");
+    expect(fetchWalletPushHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
+    await screen.findByText("Showing 1–1 of 1");
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
+  });
+
+  it("replaces the rows with the error and a Retry when the next page cannot be read, since they no longer answer what was asked", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row("job-1")], total: 15 } as never);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    const next = await screen.findByRole("button", { name: "Next" });
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(next);
+
+    expect(await screen.findByText("Could not load wallet push history")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("Succeeded")).toBeNull();
   });
 });

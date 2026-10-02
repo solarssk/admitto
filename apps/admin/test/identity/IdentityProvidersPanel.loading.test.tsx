@@ -156,9 +156,11 @@ describe("IdentityProvidersPanel loading standard: Retry", () => {
     await act(async () => answer.resolve({ providers: [google] }));
     expect(screen.queryByRole("button", { name: "Retry loading providers" })).toBeNull();
     expect(screen.getByText("Google")).toBeTruthy();
-    // The panel is a labelled tab panel, so the focus that was on the Retry goes there instead of falling to <body>.
+    // The card that holds the list stays, so the focus that was on the Retry goes there instead of falling to <body>.
     await advanceTimers(0);
-    expect(document.activeElement).toBe(screen.getByRole("tabpanel", { name: "Identity" }));
+    expect(document.activeElement?.classList.contains("at-card")).toBe(true);
+    expect(document.activeElement?.textContent).toContain("Google");
+    expect(screen.getByRole("tabpanel", { name: "Identity" }).contains(document.activeElement)).toBe(true);
   });
 
   it("says a repeated failure again, in a message that is mounted afresh while the button stays", async () => {

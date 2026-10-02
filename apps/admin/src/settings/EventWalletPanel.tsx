@@ -13,9 +13,14 @@ import {
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
-import type { WalletPushHistoryEntry, WalletPushHistoryScope } from "../api/client.js";
+import type { WalletPushHistoryScope } from "../api/client.js";
 import type { EventCustomFieldDto, EventLocationDto, EventSettingsDto } from "../api/types.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
+import { RowsSkeleton } from "../components/RowsSkeleton.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
+import type { WalletPushHistoryState } from "../hooks/useEventSettingsWalletTab.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
 import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
@@ -86,6 +91,8 @@ const WALLET_ATTENDEE_SCOPED_HINTS: Partial<Record<(typeof WALLET_MAPPING_PLACEH
 };
 
 export const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
+/** The hover preview of a field whose value comes from data that has not arrived (or could not be read): not "not set", which would be a claim. */
+export const WALLET_VALUE_NOT_LOADED = "Not loaded yet.";
 
 /** event_hours preview - country deliberately not threaded through (same as
  * formatWalletDatePreview above), so this stays exact for events with no address, an
@@ -182,7 +189,7 @@ export function computeWalletCustomFieldPreview(
   customFields: EventCustomFieldDto[] | undefined,
 ): string | undefined {
   if (!id.startsWith(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX)) return undefined;
-  if (customFields === undefined) return "Loading…";
+  if (customFields === undefined) return WALLET_VALUE_NOT_LOADED;
   const sourceField = id.slice(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX.length);
   const field = customFields.find(
     (f) => f.source_field === sourceField && (f.type === "select" || f.type === "boolean"),
@@ -195,7 +202,7 @@ export function computeWalletCustomFieldPreview(
  * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
  * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
  * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
-function computeWalletPlaceholderPreview(
+export function computeWalletPlaceholderPreview(
   id: string,
   form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone" | "eventType">,
   location: EventLocationDto | null | undefined,
@@ -210,7 +217,7 @@ function computeWalletPlaceholderPreview(
   if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_hours") return computeWalletEventHoursPreview(form);
   if (id === "event_type") return form.eventType ? EVENT_TYPE_LABELS[form.eventType] : WALLET_VALUE_NOT_SET;
-  if (location === undefined) return "Loading…";
+  if (location === undefined) return WALLET_VALUE_NOT_LOADED;
   return computeWalletLocationPlaceholderPreview(id, location);
 }
 
@@ -226,15 +233,7 @@ const WALLET_PUSH_HISTORY_TIME_HINT =
   "Top: when this ran, in UTC. Below: the same moment in the local time of whoever's browser triggered it, when known.";
 
 interface WalletPushHistoryCardProps {
-  readonly history: WalletPushHistoryEntry[] | null;
-  readonly total: number;
-  readonly error: string | null;
-  readonly onRetry: () => void;
-  readonly showLoading: boolean;
-  readonly page: number;
-  readonly pageSize: number;
-  readonly onPageChange: (page: number) => void;
-  readonly onPageSizeChange: (pageSize: number) => void;
+  readonly history: WalletPushHistoryState;
 }
 
 /** "3 attendees", "Whole event · location update" - the scope column's text. `null` (a job from
@@ -257,95 +256,84 @@ function describeWalletPushScope(scope: WalletPushHistoryScope | null): string {
  * This is the automatic *data* refresh (name/ticket type/venue/etc. already on an issued pass) -
  * not the same thing as a custom text message, which is Communication > Wallets > Send, and has
  * its own separate history there. */
-function WalletPushHistoryCard({
-  history,
-  total,
-  error,
-  onRetry,
-  showLoading,
-  page,
-  pageSize,
-  onPageChange,
-  onPageSizeChange,
-}: WalletPushHistoryCardProps) {
+function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
+  const { list, page, pageSize, setPage, setPageSize } = history;
+  const card = useCardLoad(list);
+  const rows = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
   let body: ReactNode;
-  if (error) {
+  if (!card.gate.showContent || card.idle) {
     body = (
-      <EmptyState
-        variant="error"
-        title="Could not load wallet push history"
-        description={error}
-        action={
-          <Button type="button" variant="secondary" onClick={onRetry}>
-            Retry
-          </Button>
-        }
-      />
+      <div className="wallet-push-history-card__body-note">
+        <RowsSkeleton label="Loading wallet push history" held={!card.gate.showIndicator} slow={card.slow} rows={3} rowHeight={54} />
+      </div>
     );
-  } else if (history === null) {
-    // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
-    // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
-    // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
-    // rules). wallet-push-history-card__body-note adds the padding .audit-log-table-wrap used to
-    // give this card for free, now that the Card itself is unpadded (see below).
-    body = showLoading ? (
-      <p className="settings-card-intro wallet-push-history-card__body-note">Loading…</p>
-    ) : null;
-  } else if (history.length === 0) {
+  } else if (card.failure.error) {
     body = (
-      <EmptyState
-        icon={<i className="ti ti-history" aria-hidden="true" />}
-        title="No wallet pushes yet"
-        description="Pushes appear here after a bulk wallet push for this event, such as a ticket-type change."
+      <RetryEmptyState
+        title="Could not load wallet push history"
+        message={card.failure.error}
+        retrying={card.failure.retrying}
+        onRetry={card.failure.retry}
       />
     );
   } else {
     body = (
-      <div className="wallet-push-history-table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>
-                <HintLabel hint={WALLET_PUSH_HISTORY_TIME_HINT}>Date</HintLabel>
-              </th>
-              <th>Status</th>
-              <th>Scope</th>
-              <th>Updated</th>
-              <th>Skipped</th>
-              <th>Errored</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((entry) => (
-              <tr key={entry.id}>
-                <td>
-                  {formatUtcDateTime(entry.created_at)}
-                  {entry.client_timezone && (
-                    <div className="sessions-subdued">
-                      {formatZonedClockTime(entry.created_at, entry.client_timezone)}
-                    </div>
-                  )}
-                </td>
-                <td>
-                  <StatusBadge status={entry.status} />
-                  {entry.status === "failed" && entry.error && (
-                    <div style={{ color: "var(--text-muted)" }}>{entry.error}</div>
-                  )}
-                </td>
-                <td>{describeWalletPushScope(entry.scope)}</td>
-                <td>{entry.reissued}</td>
-                <td>{entry.skipped}</td>
-                <td>{entry.errored}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <RefetchRegion refreshing={list.refreshing} label="Loading wallet push history">
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={<i className="ti ti-history" aria-hidden="true" />}
+            title="No wallet pushes yet"
+            description="Pushes appear here after a bulk wallet push for this event, such as a ticket-type change."
+          />
+        ) : (
+          <div className="wallet-push-history-table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>
+                    <HintLabel hint={WALLET_PUSH_HISTORY_TIME_HINT}>Date</HintLabel>
+                  </th>
+                  <th>Status</th>
+                  <th>Scope</th>
+                  <th>Updated</th>
+                  <th>Skipped</th>
+                  <th>Errored</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>
+                      {formatUtcDateTime(entry.created_at)}
+                      {entry.client_timezone && (
+                        <div className="sessions-subdued">
+                          {formatZonedClockTime(entry.created_at, entry.client_timezone)}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <StatusBadge status={entry.status} />
+                      {entry.status === "failed" && entry.error && (
+                        <div style={{ color: "var(--text-muted)" }}>{entry.error}</div>
+                      )}
+                    </td>
+                    <td>{describeWalletPushScope(entry.scope)}</td>
+                    <td>{entry.reissued}</td>
+                    <td>{entry.skipped}</td>
+                    <td>{entry.errored}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </RefetchRegion>
     );
   }
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
 
   return (
     <Card title="Wallet push history" className="event-settings-card wallet-push-history-card" padded={false}>
@@ -363,12 +351,13 @@ function WalletPushHistoryCard({
             totalPages={totalPages}
             totalRows={total}
             pageSizeOptions={WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS}
+            busy={list.refreshing || list.loading}
             onPageSizeChange={(size) => {
-              onPageSizeChange(size);
-              onPageChange(1);
+              setPageSize(size);
+              setPage(1);
             }}
-            onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
-            onNext={() => onPageChange(safePage + 1)}
+            onPrevious={() => setPage(Math.max(1, safePage - 1))}
+            onNext={() => setPage(safePage + 1)}
           />
         </div>
       )}
@@ -397,14 +386,6 @@ export function EventWalletPanel({
   walletLocationPreview,
   walletCustomFields,
   walletPushHistory,
-  walletPushHistoryTotal,
-  walletPushHistoryError,
-  onRetryWalletPushHistory,
-  showWalletPushHistoryLoading,
-  walletPushHistoryPage,
-  walletPushHistoryPageSize,
-  onWalletPushHistoryPageChange,
-  onWalletPushHistoryPageSizeChange,
 }: Readonly<
   EventSettingsFormPanelProps & {
     event: EventSettingsDto;
@@ -413,15 +394,7 @@ export function EventWalletPanel({
     walletExpirationTest: WalletExpirationTest | null;
     walletLocationPreview: EventLocationDto | null | undefined;
     walletCustomFields: EventCustomFieldDto[] | undefined;
-    walletPushHistory: WalletPushHistoryEntry[] | null;
-    walletPushHistoryTotal: number;
-    walletPushHistoryError: string | null;
-    onRetryWalletPushHistory: () => void;
-    showWalletPushHistoryLoading: boolean;
-    walletPushHistoryPage: number;
-    walletPushHistoryPageSize: number;
-    onWalletPushHistoryPageChange: (page: number) => void;
-    onWalletPushHistoryPageSizeChange: (pageSize: number) => void;
+    walletPushHistory: WalletPushHistoryState;
   }
 >) {
   // Computed once per render, not per field-mapping row (v0.7.1) - the fixed vocabulary plus this
@@ -475,11 +448,13 @@ export function EventWalletPanel({
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={isArchived || walletTesting || saving || !form.walletTemplateId.trim()}
+                    disabled={isArchived || saving || !form.walletTemplateId.trim()}
+                    loading={walletTesting}
+                    loadingLabel="Testing…"
                     onClick={onTestWallet}
                     icon={<i className="ti ti-plug" aria-hidden="true" />}
                   >
-                    {walletTesting ? "Testing…" : "Test connection"}
+                    Test connection
                   </Button>
                 </div>
               </div>
@@ -716,17 +691,7 @@ export function EventWalletPanel({
           </div>
         </div>
       </Card>
-      <WalletPushHistoryCard
-        history={walletPushHistory}
-        total={walletPushHistoryTotal}
-        error={walletPushHistoryError}
-        onRetry={onRetryWalletPushHistory}
-        showLoading={showWalletPushHistoryLoading}
-        page={walletPushHistoryPage}
-        pageSize={walletPushHistoryPageSize}
-        onPageChange={onWalletPushHistoryPageChange}
-        onPageSizeChange={onWalletPushHistoryPageSizeChange}
-      />
+      <WalletPushHistoryCard history={walletPushHistory} />
       {!isArchived && (
         <SettingsFooter
           validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping, walletCustomFieldOptions)}

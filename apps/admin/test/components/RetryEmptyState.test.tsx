@@ -56,6 +56,21 @@ describe("RetryEmptyState", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
   });
 
+  it("hands the focus to the card that holds the list, which stays, rather than to the top of the tab panel", async () => {
+    const props = { title: "Could not load", message: "Network down.", onRetry: () => Promise.resolve() };
+    const card = (children: React.ReactNode) => (
+      <div role="tabpanel">
+        <div className="at-card">{children}</div>
+      </div>
+    );
+    const { rerender } = render(card(<RetryEmptyState {...props} retrying={false} />));
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(card(<p>Loaded</p>));
+    await Promise.resolve();
+    expect(document.activeElement).toBe(document.querySelector(".at-card"));
+  });
+
   it("hands the focus of a Retry that goes away to the tab panel it sat in", async () => {
     const props = { title: "Could not load", message: "Network down.", onRetry: () => Promise.resolve() };
     const { rerender } = render(tabPanel(<RetryEmptyState {...props} retrying={false} />));
