@@ -1211,6 +1211,13 @@ export function CommunicationPage() {
   return <CommunicationPageBody key={eventId} eventId={eventId} routeEventIdRef={routeEventIdRef} />;
 }
 
+/** Whether the address bar is on a page of another event (`/admin/events/<id>/...`). It is not on any when it is on a page that
+ * belongs to no event (Users, Account), which is the operator leaving the page, not switching the event. */
+function addressBarIsOnAnotherEvent(eventId: string): boolean {
+  const match = /^\/admin\/events\/([^/]+)/.exec(window.location.pathname);
+  return match !== null && match[1] !== encodeURIComponent(eventId);
+}
+
 function CommunicationPageBody({
   eventId,
   routeEventIdRef,
@@ -1666,8 +1673,10 @@ function CommunicationPageBody({
       // The page is keyed by its event, so an instance never sees its id change: it is replaced. When the event was switched,
       // what is still on its way (a save, a delete, a preview, a template that was being opened) is stale from here on, and
       // says nothing (no toast) about an event that is no longer on screen. When the operator just left the page, it is not:
-      // a delete that fails after they have gone still says so.
-      if (routeEventIdRef.current === eventId) return;
+      // a delete that fails after they have gone still says so. A route that moves to another event's Communication page
+      // re-renders `CommunicationPage`, which updates the ref; one that goes straight to another event's other page (its
+      // Overview) unmounts the page without a re-render, so the address bar, which the router has already moved, tells.
+      if (routeEventIdRef.current === eventId && !addressBarIsOnAnotherEvent(eventId)) return;
       saveSeqRef.current += 1;
       deleteTemplateSeqRef.current += 1;
       previewSeqRef.current += 1;
@@ -1699,7 +1708,7 @@ function CommunicationPageBody({
       setTemplates(items);
       setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
       setRequiredPlaceholders(data.required_url_placeholders);
-      setImagePlaceholders(data.image_placeholders ?? []);
+      setImagePlaceholders(data.image_placeholders);
       setBrandingLogoUrl(data.logo_url);
       if (ticket && detail) {
         setActiveKey(ticket.id);

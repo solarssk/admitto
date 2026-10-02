@@ -47,13 +47,14 @@ function SkeletonIntro({ lines }: Readonly<{ lines: number }>) {
  * so that the region does not read the titles out again when the 8 second note joins it, or when another tab's cards take
  * their place. */
 export function SettingsSkeletonCardView({ card }: Readonly<{ card: SettingsSkeletonCard }>) {
+  const fields = card.fields ?? 0;
   return (
     <Card title={card.title} aria-hidden="true">
       <div className="settings-card-stack" aria-hidden="true">
         {card.intro && <SkeletonIntro lines={card.intro === true ? 1 : card.intro} />}
-        {(card.fields ?? 0) > 0 && (
+        {fields > 0 && (
           <div className={card.columns === 2 ? "settings-skeleton__fields mail-transport-section" : "settings-skeleton__fields"}>
-            {Array.from({ length: card.fields ?? 0 }, (_, fieldIndex) => (
+            {Array.from({ length: fields }, (_, fieldIndex) => (
               <div key={fieldIndex} className="settings-skeleton__field">
                 <Skeleton variant="rect" width="28%" height={17} />
                 <Skeleton variant="rect" height={card.controlHeight ?? 38} />
