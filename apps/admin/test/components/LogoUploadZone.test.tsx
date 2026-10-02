@@ -446,6 +446,52 @@ describe("LogoUploadZone", () => {
     expect(screen.getByRole("button", { name: "Edit image" })).toHaveProperty("disabled", true);
   });
 
+  it("shows the file going up as a spinner and a bar along the zone, not as the invitation to drop one", async () => {
+    let resolveUpload!: (v: { url: string }) => void;
+    mockUploadFile.mockReturnValueOnce(new Promise<{ url: string }>((r) => (resolveUpload = r)));
+    const onUploadingChange = vi.fn();
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} onUploadingChange={onUploadingChange} />);
+    expect(screen.queryByText("Uploading logo")).toBeNull();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["a"], "a.png", { type: "image/png" })] } });
+    // Said by a status outside the zone (a role="button" would flatten one inside it); the bar and spinner are decoration.
+    await waitFor(() => expect(screen.getByText("Uploading logo").closest(".logo-upload__zone")).toBeNull());
+    expect(screen.getByText("Uploading logo").tagName).toBe("OUTPUT");
+    expect(document.querySelector(".logo-upload__bar")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Uploading logo$/ }).getAttribute("aria-busy")).toBe("true");
+    expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeTruthy();
+    expect(screen.queryByText(/drop logo here/i)).toBeNull();
+    expect(screen.queryByText("Uploading…")).toBeNull();
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true);
+
+    resolveUpload({ url: "/uploads/default/a-original.png" });
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy());
+    expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeNull();
+    expect(onUploadingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps Replace image and Edit image focusable but off while a file goes up, instead of disabling them", async () => {
+    mockUploadFile.mockReturnValueOnce(new Promise<{ url: string }>(() => {}));
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890-original.png"
+        onChange={() => {}}
+      />,
+    );
+    const replace = screen.getByRole("button", { name: "Replace image" });
+    const edit = screen.getByRole("button", { name: "Edit image" });
+    expect(replace.getAttribute("aria-disabled")).toBeNull();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["a"], "a.png", { type: "image/png" })] } });
+    await waitFor(() => expect(replace.getAttribute("aria-disabled")).toBe("true"));
+    expect(edit.getAttribute("aria-disabled")).toBe("true");
+    expect((replace as HTMLButtonElement).disabled).toBe(false);
+    expect((edit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(replace);
+    expect(mockUploadFile).toHaveBeenCalledTimes(1);
+  });
+
   it("stale original upload is ignored when a newer pick supersedes it", async () => {
     let resolveFirst!: (v: { url: string }) => void;
     const first = new Promise<{ url: string }>((r) => {
