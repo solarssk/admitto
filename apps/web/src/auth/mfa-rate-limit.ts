@@ -58,39 +58,23 @@ export async function checkMfaVerifyRateLimit(
   const totpAttempt = isTotpMfaAttempt(code);
   const { windowMs, max } =
     INLINE_RATE_LIMITS[totpAttempt ? "mfa:verify-totp" : "mfa:verify-recovery"];
+  const kind = totpAttempt ? "totp" : "recovery";
 
-  const sessionKey = totpAttempt
-    ? mfaTotpSessionKey(sessionId, action)
-    : mfaRecoverySessionKey(sessionId, action);
-  const ipKey = totpAttempt ? mfaTotpIpKey(ip, action) : mfaRecoveryIpKey(ip, action);
-
-  const sessionResult = await store.hit(sessionKey, windowMs, max);
-  if (!sessionResult.allowed) {
-    logRateLimitExceeded({
-      scope: "mfa_verify",
-      ip,
-      keyHint: totpAttempt ? "session_totp" : "session_recovery",
-    });
-    return false;
-  }
-  const ipResult = await store.hit(ipKey, windowMs, max);
-  if (!ipResult.allowed) {
-    logRateLimitExceeded({
-      scope: "mfa_verify",
-      ip,
-      keyHint: totpAttempt ? "ip_totp" : "ip_recovery",
-    });
-    return false;
-  }
+  const buckets = [
+    {
+      hint: "session",
+      key: totpAttempt ? mfaTotpSessionKey(sessionId, action) : mfaRecoverySessionKey(sessionId, action),
+    },
+    { hint: "ip", key: totpAttempt ? mfaTotpIpKey(ip, action) : mfaRecoveryIpKey(ip, action) },
+  ];
   if (userId) {
-    const userKey = totpAttempt ? mfaTotpUserKey(userId) : mfaRecoveryUserKey(userId);
-    const userResult = await store.hit(userKey, windowMs, max);
-    if (!userResult.allowed) {
-      logRateLimitExceeded({
-        scope: "mfa_verify",
-        ip,
-        keyHint: totpAttempt ? "user_totp" : "user_recovery",
-      });
+    buckets.push({ hint: "user", key: totpAttempt ? mfaTotpUserKey(userId) : mfaRecoveryUserKey(userId) });
+  }
+
+  for (const { hint, key } of buckets) {
+    const result = await store.hit(key, windowMs, max);
+    if (!result.allowed) {
+      logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: `${hint}_${kind}` });
       return false;
     }
   }
