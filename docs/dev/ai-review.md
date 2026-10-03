@@ -116,8 +116,13 @@ token the other saved; that needs a renewal and is rare, because refreshes happe
 
 - The workflow is `pull_request_target`, limited to same-repository PRs by the repository owner;
   forks and Dependabot never reach the secrets.
-- Nothing from the PR is checked out or run. Codex runs in a read-only sandbox, with web search
-  off, no session files and no user config, in the base-branch checkout, with no GitHub token.
+- Nothing from the PR is checked out or run. Codex runs in the base-branch checkout with no GitHub
+  token, web search off, no session files and no user config.
+- A plain read-only Codex sandbox can still read every file, including its own login. So the sandbox
+  uses a profile that is read-only and hides the login, the token list and the cache directory, and
+  before any model runs the script proves it on the real runner: the sandbox starts, reads the
+  repository, cannot write and cannot read the login. Otherwise nothing runs (`sandbox_failed`).
+  The sandbox also has its own process namespace, so the model cannot read the script's environment.
 - The credential is written to a `0600` file in a temp directory, never passed as an argument,
   removed when the script exits, and each token in it is masked in the log individually.
 - The model could be prompt-injected by the diff. Before anything is published, the review text is

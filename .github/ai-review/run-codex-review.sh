@@ -98,7 +98,30 @@ unset CODEX_AUTH_JSON LOGIN CACHED
 jq 'walk(if type == "object" and has("properties") then .additionalProperties = false else . end)' \
   "$SCHEMA_SRC" > "$WORK/schema.json"
 
-ARGS=(--ignore-user-config --ephemeral --skip-git-repo-check --color never --sandbox read-only
+# The model runs shell commands in Codex's sandbox. A plain read-only sandbox can still read every
+# file, including the login and the token list, so a prompt-injected diff could ask for them. This
+# profile is read-only everywhere and hides those directories entirely (verified below, before the
+# model gets to run anything).
+FS_PROFILE="{\"/\"=\"read\", \"$CODEX_HOME\"=\"deny\", \"$WORK\"=\"deny\", \"$CACHE_DIR\"=\"deny\"}"
+SANDBOX_ARGS=(-c 'default_permissions="reviewer"' -c "permissions.reviewer.filesystem=$FS_PROFILE")
+
+# Fail closed: the sandbox must start, must still read the repository, must not write, and must not
+# see the login. If any of that is not true on this runner, no model runs and the login stays unused.
+if ! "$CODEX_BIN" sandbox "${SANDBOX_ARGS[@]}" cat "$PROMPT" > /dev/null 2>&1; then
+  unavailable sandbox_failed "the Codex sandbox could not start on this runner"
+fi
+mkdir -p .ai-review
+if "$CODEX_BIN" sandbox "${SANDBOX_ARGS[@]}" sh -c 'touch .ai-review/.sandbox-write-test' > /dev/null 2>&1; then
+  rm -f .ai-review/.sandbox-write-test
+  unavailable sandbox_failed "refusing to run: the sandbox is not read-only"
+fi
+for HIDDEN in "$CODEX_HOME/auth.json" "$WORK/tokens.txt"; do
+  if "$CODEX_BIN" sandbox "${SANDBOX_ARGS[@]}" cat "$HIDDEN" > /dev/null 2>&1; then
+    unavailable sandbox_failed "refusing to run: the sandbox does not hide the Codex login"
+  fi
+done
+
+ARGS=(--ignore-user-config --ephemeral --skip-git-repo-check --color never "${SANDBOX_ARGS[@]}"
   -c 'cli_auth_credentials_store="file"' -c 'web_search="disabled"')
 if [ "$MODE" = keepalive ]; then
   INPUT="$WORK/keepalive-prompt.txt"
@@ -109,7 +132,8 @@ else
 fi
 
 set +e
-# Read-only sandbox, no web search, no session files, no user config. The prompt goes in on stdin.
+# Read-only sandbox without the login, no web search, no session files, no user config. The prompt
+# goes in on stdin.
 timeout "$TIMEOUT_SECONDS" "$CODEX_BIN" exec "${ARGS[@]}" - < "$INPUT" > "$WORK/codex.log" 2>&1
 RC=$?
 set -e

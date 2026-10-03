@@ -173,7 +173,18 @@ test('the Codex CLI is pinned by an exact version and a lockfile', () => {
 const hasBash = spawnSync('bash', ['--version']).status === 0
 
 const CACHE_KEY = 'test-cache-key-not-a-real-secret'
-function runCodexScript({ authJson, stub, cacheKey, cachedLogin, mode }) {
+// Stands in for `codex sandbox ...` the way the real one behaves: the repository is readable, the
+// login is hidden and nothing can be written, unless SANDBOX_LEAKS says to break one of those.
+const sandboxStub = `if [ "$1" = sandbox ]; then
+  shift; while [ "$1" = -c ]; do shift 2; done
+  case "$*" in
+    *auth.json*|*tokens.txt*) [ "$SANDBOX_LEAKS" = login ] && exec "$@"; exit 1 ;;
+    *touch*) [ "$SANDBOX_LEAKS" = write ] && exec "$@"; exit 1 ;;
+    *) [ "$SANDBOX_LEAKS" = broken ] && exit 1; exec "$@" ;;
+  esac
+fi`
+
+function runCodexScript({ authJson, stub, cacheKey, cachedLogin, mode, sandboxLeaks = '' }) {
   const dir = mkdtempSync(join(tmpdir(), 'codex-review-test-'))
   try {
     if (cachedLogin !== undefined) {
@@ -182,10 +193,10 @@ function runCodexScript({ authJson, stub, cacheKey, cachedLogin, mode }) {
       assert.equal(enc.status, 0)
     }
     const bin = join(dir, 'codex')
-    writeFileSync(bin, `#!/usr/bin/env bash\n${stub}\n`, { mode: 0o755 })
+    writeFileSync(bin, `#!/usr/bin/env bash\n${sandboxStub}\n${stub}\n`, { mode: 0o755 })
     const out = join(dir, 'github-output')
     writeFileSync(out, '')
-    const env = { PATH: process.env.PATH, RUNNER_TEMP: dir, GITHUB_OUTPUT: out, CODEX_BIN: bin }
+    const env = { PATH: process.env.PATH, RUNNER_TEMP: dir, GITHUB_OUTPUT: out, CODEX_BIN: bin, SANDBOX_LEAKS: sandboxLeaks }
     if (authJson !== undefined) env.CODEX_AUTH_JSON = authJson
     if (cacheKey !== undefined) env.CODEX_CACHE_KEY = cacheKey
     if (mode !== undefined) env.CODEX_MODE = mode
@@ -297,4 +308,15 @@ test('the refreshed login is saved whatever happens, and only the encrypted copy
   assert.equal((live.match(/secrets\.CODEX_CACHE_KEY/g) ?? []).length, 1)
   // The keep-alive never touches a PR and holds no write permission.
   assert.doesNotMatch(keepalive, /pull_request|pull-requests|contents: write/)
+})
+
+test('run-codex-review.sh refuses to run a model unless the sandbox hides the login and is read-only', { skip: !(hasJq && hasBash) }, () => {
+  for (const [leak, what] of [['login', 'shows the login'], ['write', 'allows writes'], ['broken', 'does not start']]) {
+    const { run, outputs, leftovers } = runCodexScript({ authJson: seed, sandboxLeaks: leak, stub: 'echo "the model must not run" >&2; exit 0' })
+    assert.equal(run.status, 0, run.stderr)
+    assert.equal(outputs.reason, 'sandbox_failed', `a sandbox that ${what}`)
+    assert.equal(outputs.ok, 'false')
+    assert.doesNotMatch(run.stdout + run.stderr, /the model must not run/, `a sandbox that ${what}`)
+    assert.equal(leftovers, false)
+  }
 })
