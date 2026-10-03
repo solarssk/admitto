@@ -82,6 +82,69 @@ describe("createApp", () => {
     expect(res.status).toBe(401);
   });
 
+  describe("body size caps on routes that parse the body before authenticating the caller", () => {
+    const oversized = "x".repeat(70 * 1024);
+    const makeApp = () =>
+      createApp({
+        checkinToken: null,
+        allowCheckinBearer: false,
+        baseUrl: "https://tickets.example.com",
+        skipCheckinBootValidation: true,
+      });
+
+    it.each([
+      ["/api/auth/login", "application/json", JSON.stringify({ email: "a@example.com", password: oversized })],
+      ["/api/auth/mfa/verify", "application/json", JSON.stringify({ code: oversized })],
+      ["/login", "application/x-www-form-urlencoded", `email=a%40example.com&password=${oversized}`],
+      ["/setup", "application/x-www-form-urlencoded", `email=a%40example.com&password=${oversized}`],
+      ["/mfa/verify", "application/x-www-form-urlencoded", `code=${oversized}`],
+    ])("rejects an oversized POST %s with 413 before it is parsed", async (path, contentType, body) => {
+      const res = await makeApp().request(path, {
+        method: "POST",
+        headers: { "Content-Type": contentType, Origin: "http://localhost" },
+        body,
+      });
+      expect(res.status).toBe(413);
+    });
+
+    it("counts oversized webhook requests against the rate limit instead of refusing them for free", async () => {
+      const app = makeApp();
+      const send = () =>
+        app.request("/api/wallet/webhook/passcreator/evt-rate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signedData: oversized }),
+        });
+      for (let i = 0; i < 120; i++) expect((await send()).status).toBe(413);
+      expect((await send()).status).toBe(429);
+    });
+
+    it("counts oversized login requests against the login rate limit", async () => {
+      const app = makeApp();
+      const send = () =>
+        app.request("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "http://localhost" },
+          body: JSON.stringify({ email: "a@example.com", password: oversized }),
+        });
+      for (let i = 0; i < 10; i++) expect((await send()).status).toBe(413);
+      expect((await send()).status).toBe(429);
+    });
+
+    it.each([
+      "/api/wallet/webhook/passcreator/evt-1",
+      "/api/wallet/webhook/passcreator/evt-1/voided",
+      "/api/wallet/webhook/passcreator/evt-1/first-confirmed",
+    ])("rejects an oversized wallet webhook POST %s with 413 before it is parsed", async (path) => {
+      const res = await makeApp().request(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signedData: oversized }),
+      });
+      expect(res.status).toBe(413);
+    });
+  });
+
   it("rejects Bearer when ALLOW_CHECKIN_BEARER is false", async () => {
     const app = createApp({
       checkinToken: "secret-token",

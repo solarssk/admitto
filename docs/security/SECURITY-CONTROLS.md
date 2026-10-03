@@ -225,8 +225,8 @@ process.
 | Surface | Bucket | Limit / window | Auth required |
 |---------|--------|----------------|---------------|
 | `POST /login`, `POST /api/auth/login` | client IP | 10 / 60 s | no |
-| same | normalized email | 10 / 60 s | no (defense-in-depth inside handler) |
-| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
+| same | normalized email | 10 / 60 s | no (inside the handler, counted before the password is checked, so a correct password is refused too once the budget is spent) |
+| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account (one counter per user across all sessions and addresses) | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
 | `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
@@ -323,6 +323,7 @@ just gated at the HTTP-route layer - see **Outbound HTTP** below.
 ≤ 0.5 MB, with each attendee id itself capped at 128 characters - see
 `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
 `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
+The pre-authentication routes (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`) are capped at 16 KB and the three wallet webhook routes at 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`); where a route has an IP rate limit it runs before the cap, so oversized requests are counted too. XLSX imports are additionally checked by their real unpacked size (inflated with a hard output cap), not by the sizes the file declares.
 
 ---
 
@@ -336,7 +337,7 @@ itself.
 
 | Header | Used for |
 |--------|----------|
-| `X-Forwarded-For` (first hop) | Rate limits, audit IP, login throttling |
+| `X-Forwarded-For` (first hop) | Rate limits (an IPv6 client is keyed by its /64 network, an IPv4-mapped address as its IPv4), audit IP, login throttling |
 | `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
 | `X-Forwarded-Proto` | Session cookie `Secure` flag |
 

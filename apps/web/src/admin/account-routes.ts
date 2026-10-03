@@ -971,6 +971,9 @@ export async function handlePatchAccountPassword(
         data: { password_hash, must_change_password: false },
       });
       const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+      // A remembered device skips the MFA step on password login, so one planted before the
+      // change would keep working for whoever learns the new password.
+      await revokeAllTrustedDevicesForUser(tx, userId);
       await writeAdminAuditLog(tx, {
         organizationId: orgId,
         actorUserId: audit.operator ?? userId,

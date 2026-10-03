@@ -845,6 +845,20 @@ export function createApp(options: CreateAppOptions = {}) {
     maxSize: Math.ceil(0.5 * 1024 * 1024),
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
+  // Pre-authentication routes (login, setup, MFA code entry) carry a handful of short fields.
+  // Without a cap the body is buffered whole before any credential check, and the Origin-header
+  // CSRF guard is satisfied by an attacker-chosen header, so size has to be bounded here. Where a
+  // route has an IP rate limiter it runs first: a chunked body is read up to the cap before the
+  // 413, so a limiter placed after this one would never see those requests.
+  const preAuthBodyLimit = bodyLimit({
+    maxSize: 16 * 1024,
+    onError: (c) => c.json({ error: "request too large" }, 413),
+  });
+  // Wallet provider webhooks are parsed before the signature can be checked, so cap the body first.
+  const walletWebhookBodyLimit = bodyLimit({
+    maxSize: 64 * 1024,
+    onError: (c) => c.json({ error: "request too large" }, 413),
+  });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot, db });
 
@@ -1448,7 +1462,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handleOpsSystemLogIngest(c, { opsHealthToken }),
   );
 
-  app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>
+  app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, preAuthBodyLimit, (c) =>
     handleLogin(c, db, rateLimitStore),
   );
   app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
@@ -2472,7 +2486,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));
   app.put("/api/staff/theme", jsonPostCsrf, requireSession, (c) => handlePutStaffTheme(c, db));
 
-  app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/verify", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
   );
   app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, (c) =>
@@ -2606,11 +2620,11 @@ export function createApp(options: CreateAppOptions = {}) {
   );
 
   app.get("/setup", (c) => handleGetSetup(c, db));
-  app.post("/setup", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostSetup(c, db));
+  app.post("/setup", htmlPostCsrf, loginRateLimitHtml, preAuthBodyLimit, (c) => handlePostSetup(c, db));
   app.get("/login", (c) => handleGetLogin(c, db));
-  app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
+  app.post("/login", htmlPostCsrf, loginRateLimitHtml, preAuthBodyLimit, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c, db));
-  app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/verify", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaVerify(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
@@ -2822,18 +2836,18 @@ export function createApp(options: CreateAppOptions = {}) {
   // PassCreator webhook deliveries (registration events: pushnotification_registered,
   // pushnotification_unregistered - first_pushnotification_registered has its own route below)
   // - never a browser navigation.
-  app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, (c) =>
+  app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider),
   );
   // pass_voided gets its own target URL (subscribeWalletWebhooksBestEffort) since PassCreator's
   // payload never names which event fired - see handlePassCreatorWebhook's doc comment.
-  app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, (c) =>
+  app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider, true),
   );
   // first_pushnotification_registered gets its own target URL too, same reason as pass_voided
   // above - stamps WalletPass.first_confirmed_at (applyFirstConfirmedAt) the first time a pass is
   // actually added to a wallet app.
-  app.post("/api/wallet/webhook/passcreator/:eventId/first-confirmed", walletWebhookRateLimit, (c) =>
+  app.post("/api/wallet/webhook/passcreator/:eventId/first-confirmed", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider, false, true),
   );
 

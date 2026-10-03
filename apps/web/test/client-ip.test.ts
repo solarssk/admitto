@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { clientIpFromHeaders, resolveClientIp } from "../src/rate-limit/client-ip.js";
+import { clientIpFromHeaders, rateLimitIpKey, resolveClientIp } from "../src/rate-limit/client-ip.js";
 
 vi.mock("@hono/node-server/conninfo", () => ({
   getConnInfo: vi.fn(),
@@ -65,5 +65,42 @@ describe("resolveClientIp", () => {
     mockedShouldTrustForwardedHeaders.mockReturnValue(true);
     const res = await appWithRequest({ "X-Forwarded-For": ",203.0.113.55" });
     expect(await res.json()).toEqual({ ip: "198.51.100.7" });
+  });
+});
+
+describe("rateLimitIpKey", () => {
+  it("keeps IPv4 addresses as-is", () => {
+    expect(rateLimitIpKey("203.0.113.10")).toBe("203.0.113.10");
+  });
+
+  it("unwraps IPv4-mapped IPv6", () => {
+    expect(rateLimitIpKey("::ffff:203.0.113.10")).toBe("203.0.113.10");
+  });
+
+  it("keys IPv4-mapped IPv6 addresses as IPv4 in dotted, hexadecimal and fully written forms", () => {
+    expect(rateLimitIpKey("::ffff:c000:201")).toBe("192.0.2.1");
+    expect(rateLimitIpKey("::FFFF:C000:201")).toBe("192.0.2.1");
+    expect(rateLimitIpKey("0:0:0:0:0:ffff:192.0.2.1")).toBe("192.0.2.1");
+    expect(rateLimitIpKey("::ffff:c000:202")).not.toBe(rateLimitIpKey("::ffff:c000:201"));
+  });
+
+  it("collapses IPv6 addresses to their /64", () => {
+    expect(rateLimitIpKey("2001:db8:1:2::1")).toBe(rateLimitIpKey("2001:0db8:0001:0002:ffff:ffff:ffff:ffff"));
+    expect(rateLimitIpKey("2001:db8:1:2::1")).toBe("2001:db8:1:2::/64");
+    expect(rateLimitIpKey("2001:db8:1:3::1")).not.toBe(rateLimitIpKey("2001:db8:1:2::1"));
+  });
+
+  it("ignores an IPv6 zone index and keeps an address with an embedded IPv4 tail as-is", () => {
+    expect(rateLimitIpKey("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
+    expect(rateLimitIpKey("64:ff9b::192.0.2.1")).toBe("64:ff9b:0:0::/64");
+  });
+
+  it("keys a full eight-group address without :: by its first four groups", () => {
+    expect(rateLimitIpKey("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+  });
+
+  it("expands :: that sits inside the first four groups", () => {
+    expect(rateLimitIpKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(rateLimitIpKey("::1")).toBe("0:0:0:0::/64");
   });
 });
