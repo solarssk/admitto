@@ -1,0 +1,8 @@
+{
+  "name": "ai-review-codex-cli",
+  "private": true,
+  "description": "Pinned Codex CLI for the AI review fallback (.github/workflows/ai-review.yml). Not part of the npm workspaces; installed with npm ci into a temp directory.",
+  "dependencies": {
+    "@openai/codex": "0.160.0"
+  }
+}
