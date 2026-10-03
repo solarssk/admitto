@@ -209,6 +209,11 @@ jobs:
           if [ "$HAS_CREDENTIAL" != "true" ]; then
             REASON=not_configured
           elif [ -n "$EXEC_FILE" ] && [ -f "$EXEC_FILE" ]; then
+            # What the classifier saw, without any text from the file: error codes and numbers only.
+            jq -r '"Claude run: typed errors=\([.. | objects | select(.type == "assistant") | .error? // empty] | unique | join(",") | if . == "" then "none" else . end), "
+              + "is_error=\([.. | objects | select(.type == "result")] | last | .is_error), "
+              + "cost_usd=\([.. | objects | select(.type == "result")] | last | .total_cost_usd), "
+              + "model_usage_entries=\([.. | objects | select(.type == "result")] | last | (.modelUsage // {}) | length)"' "$EXEC_FILE" || true
             REASON=$(jq -r -f .github/ai-review/classify-claude-failure.jq "$EXEC_FILE" || true)
           else
             REASON=""

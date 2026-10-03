@@ -37,7 +37,8 @@ Codex runs only when the Claude run **failed** and its execution file shows a pr
 | Login rejected or expired, account on hold (`authentication_failed`, `oauth_org_not_allowed`, `account_on_hold`, `verification_required`, `cloud_credential_error`) | Yes |
 | Usage limit or billing problem (`rate_limit`, `billing_error`) | Yes |
 | Service overloaded or erroring (`overloaded`, `server_error`) | Yes |
-| Bad request, unknown model, out of turns, no structured output, no execution file, anything else | **No.** The job stays red with the Claude error visible; this is our configuration, not an outage |
+| An error result before any model answered (no cost, no model usage, no typed error): what a rejected login or an exhausted subscription looks like in practice (`no_model_response`) | Yes |
+| Bad request, unknown model, out of turns, an error after real work, no execution file, anything else | **No.** The job stays red with the Claude error visible; this is our configuration, not an outage |
 | A failure in our own steps (diff, budget, prompt, a script) | **No.** Those steps fail the job on their own |
 
 If Codex is also unavailable (`not_configured`, `bad_credential`, `credential_rejected`,

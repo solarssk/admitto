@@ -13,12 +13,22 @@ def provider_errors: [
   "billing_error", "rate_limit", "overloaded", "server_error", "cloud_credential_error"
 ];
 def last_result: [.. | objects | select(.type == "result")] | last // {};
+# Our own configuration or a review that did not finish, not an outage.
+def not_an_outage: ["invalid_request", "model_not_found", "max_output_tokens", "unknown"];
 
-([.. | objects | select(.type == "assistant") | .error? // empty]
-  | map(select(. as $e | provider_errors | index($e))) | last) as $code
+([.. | objects | select(.type == "assistant") | .error? // empty]) as $errors
+| ($errors | map(select(. as $e | provider_errors | index($e))) | last) as $code
+| last_result as $result
 | if $code != null then $code
-  # A run that ended in an error result without the typed error above (older CLI wording).
-  elif (last_result.is_error == true)
-    and ((last_result.result // "") | test("usage limit|rate limit|overloaded|please run /login|invalid api key|oauth token|credit balance|\\b(529|50[0234])\\b"; "i"))
+  # A typed error that is ours: never a fallback, whatever else the result says.
+  elif ($errors | map(select(. as $e | not_an_outage | index($e))) | length) > 0 then empty
+  # Older wording: an error result whose text names a provider problem.
+  elif ($result.is_error == true)
+    and (($result.result // "") | test("usage limit|rate limit|overloaded|please run /login|invalid api key|oauth token|credit balance|\\b(529|50[0234])\\b"; "i"))
   then "provider_error"
+  # An error result (subtype success with is_error, not error_max_turns and the like) before any model
+  # answered: no tokens, no model usage, no typed error. This is
+  # what a rejected login or an exhausted subscription looks like from the action's side.
+  elif ($result.is_error == true) and ($result.subtype == "success") and (($result.total_cost_usd // 0) == 0) and (($result.modelUsage // {}) | length) == 0
+  then "no_model_response"
   else empty end

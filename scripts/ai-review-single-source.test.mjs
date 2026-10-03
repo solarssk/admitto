@@ -125,9 +125,16 @@ test('classify-claude-failure.jq falls back only for provider problems', { skip:
   assert.equal(classify([assistantError('unknown'), resultMessage({ is_error: true })]), '')
   assert.equal(classify([resultMessage({ subtype: 'error_max_turns', is_error: true })]), '')
   assert.equal(classify([resultMessage({ subtype: 'error_max_structured_output_retries', is_error: true })]), '')
-  assert.equal(classify([resultMessage({ is_error: true, result: 'Schema validation failed' })]), '')
+  assert.equal(classify([resultMessage({ is_error: true, result: 'Schema validation failed', total_cost_usd: 0.3, modelUsage: { m: {} } })]), '')
   assert.equal(classify([resultMessage({ result: 'The diff has blocking findings (port 5290)' })]), '')
   assert.equal(classify([]), '')
+  // What a rejected login or an exhausted subscription looked like on a real run: an error result
+  // after 0.4 s, no cost, no model usage, and no typed error in the execution file.
+  assert.equal(classify([resultMessage({ is_error: true, total_cost_usd: 0, num_turns: 1, modelUsage: {} })]), 'no_model_response')
+  // The same shape with a typed error that is ours stays a failure, not an outage.
+  assert.equal(classify([assistantError('invalid_request'), resultMessage({ is_error: true, total_cost_usd: 0, modelUsage: {} })]), '')
+  // An error after real work (cost or model usage) is a review that did not finish.
+  assert.equal(classify([resultMessage({ is_error: true, total_cost_usd: 0.2, modelUsage: { m: {} } })]), '')
 })
 
 // A step's lines, without the comment lines that precede the next step.
