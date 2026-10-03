@@ -143,9 +143,16 @@ describe("CommunicationPage archived lockdown", () => {
     });
     expectArchivedLock(screen.getByRole("button", { name: "Edit template" }));
 
-    // Save is already disabled while the form isn't dirty (editing is impossible
-    // anyway since the fieldset below is disabled) — confirm it stays blocked.
-    expect((screen.getByRole("button", { name: "Saved" }) as HTMLButtonElement).disabled).toBe(true);
+    // Save is already off while the form isn't dirty (editing is impossible anyway
+    // since the fieldset below is disabled) - confirm the archived lock is what holds it.
+    expectArchivedLock(screen.getByRole("button", { name: "Saved" }));
+
+    // With no recipient yet, "Send test" names both reasons it is off: the archived
+    // event and the missing address.
+    const reasons = (screen.getByRole("button", { name: "Send test" }).getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent);
+    expect(reasons).toEqual([ARCHIVED_ACTION_TOOLTIP, "Enter a valid email address."]);
 
     // Give "Send test" a valid recipient (that field isn't part of the disabled
     // fieldset) to isolate the archived lock from the unrelated "invalid email" disable.
