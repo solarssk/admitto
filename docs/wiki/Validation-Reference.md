@@ -24,8 +24,8 @@ Every field-level and cross-field rule Admitto enforces, organised by screen. Us
 |---|---|
 | Email and password are both required | "Invalid email or password." |
 | Wrong password, unknown email, and a disabled account all return the *same* generic failure, at the *same* speed - by design, so a failed attempt can't be used to guess which part was wrong | "Invalid email or password." |
-| Max 10 login attempts per IP address, per minute | "Too many requests." |
-| Max 10 login attempts per email address, per minute (separate limit, checked after a failed attempt) | "Too many requests." |
+| Max 10 login attempts per IP address, per minute (an IPv6 network, a /64 block, counts as one address) | "Too many requests." |
+| Max 10 login attempts per email address, per minute (separate limit, counted before the password is checked, so once it is used up even the correct password is refused until the minute is over) | "Too many requests." |
 | Passkey sign-in: max 10 attempts per minute, in two separate stages (start / finish) | "Too many requests." |
 | A rejected or cancelled passkey sign-in re-enables the password form | "Could not sign in with your passkey. Try again, or use your email and password below." |
 | 5 consecutive failed sign-ins or MFA attempts against an admin/superadmin account raises an internal security alert - this doesn't change what you see, it's recorded for a Superadmin reviewing [Logs and Audit](Logs-and-Audit) | No visible change |
@@ -48,7 +48,7 @@ Every field-level and cross-field rule Admitto enforces, organised by screen. Us
 | A 6-digit numeric code is treated as an authenticator-app code; anything else is treated as a backup code | Routed automatically, no separate message |
 | A code must be current (±30 seconds) and **cannot be reused** - even a code that's numerically correct is rejected if it (or an earlier one) was already accepted | "Invalid code. Try again." |
 | Enrolling requires a local password - an account that only signs in via SSO can't enroll local 2FA until it has one | "Password is managed by your identity provider." |
-| Max 10 verification attempts per 15 minutes (checked per session **and** per IP - both must pass) | "Too many requests." |
+| Max 10 verification attempts per 15 minutes (checked per session, per IP **and**, at sign-in, per account - all must pass, so opening new sessions or switching addresses does not add attempts) | "Too many requests." |
 | Across every 2FA-protected action combined (not just one), max 20 proof attempts per 15 minutes, so switching between actions can't multiply your attempts | "Too many requests." |
 | After your *first* confirmed 2FA method, you must acknowledge saving your backup codes before continuing - this can't be bypassed | Redirected to the backup-codes step |
 
