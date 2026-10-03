@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -172,18 +172,30 @@ test('the Codex CLI is pinned by an exact version and a lockfile', () => {
 
 const hasBash = spawnSync('bash', ['--version']).status === 0
 
-function runCodexScript({ authJson, stub }) {
+const CACHE_KEY = 'test-cache-key-not-a-real-secret'
+function runCodexScript({ authJson, stub, cacheKey, cachedLogin, mode }) {
   const dir = mkdtempSync(join(tmpdir(), 'codex-review-test-'))
   try {
+    if (cachedLogin !== undefined) {
+      mkdirSync(join(dir, 'codex-cache'))
+      const enc = spawnSync('openssl', ['enc', '-aes-256-cbc', '-pbkdf2', '-pass', 'env:K', '-out', join(dir, 'codex-cache', 'auth.enc')], { input: cachedLogin, env: { ...process.env, K: CACHE_KEY } })
+      assert.equal(enc.status, 0)
+    }
     const bin = join(dir, 'codex')
     writeFileSync(bin, `#!/usr/bin/env bash\n${stub}\n`, { mode: 0o755 })
     const out = join(dir, 'github-output')
     writeFileSync(out, '')
     const env = { PATH: process.env.PATH, RUNNER_TEMP: dir, GITHUB_OUTPUT: out, CODEX_BIN: bin }
     if (authJson !== undefined) env.CODEX_AUTH_JSON = authJson
+    if (cacheKey !== undefined) env.CODEX_CACHE_KEY = cacheKey
+    if (mode !== undefined) env.CODEX_MODE = mode
     const run = spawnSync('bash', [repoFile('.github/ai-review/run-codex-review.sh')], { cwd: repoFile(''), env, encoding: 'utf8' })
     const outputs = Object.fromEntries(readFileSync(out, 'utf8').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]))
-    return { run, outputs, leftovers: existsSync(join(dir, 'codex-home')) }
+    const cacheFile = join(dir, 'codex-cache', 'auth.enc')
+    const cacheContent = existsSync(cacheFile)
+      ? spawnSync('openssl', ['enc', '-d', '-aes-256-cbc', '-pbkdf2', '-pass', 'env:K', '-in', cacheFile], { env: { ...process.env, K: CACHE_KEY }, encoding: 'utf8' }).stdout
+      : undefined
+    return { run, outputs, cacheContent, leftovers: existsSync(join(dir, 'codex-home')) }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -224,4 +236,65 @@ test('run-codex-review.sh passes a good review through as structured output', { 
   assert.equal(run.status, 0, run.stderr)
   assert.equal(outputs.ok, 'true')
   assert.deepEqual(JSON.parse(outputs.structured), JSON.parse(goodReview))
+})
+
+const loginAt = (marker, lastRefresh) =>
+  JSON.stringify({
+    auth_mode: 'chatgpt',
+    OPENAI_API_KEY: null,
+    last_refresh: lastRefresh,
+    tokens: { id_token: `id-${marker}-0123456789abcdef`, access_token: `access-${marker}-0123456789abcdef`, refresh_token: `refresh-${marker}-0123456789abcdef` },
+  })
+const seed = loginAt('seed', '2026-10-01T00:00:00Z')
+// The stub reviews only when the login Codex was handed contains the marker.
+const needsLogin = (marker) => `grep -q '${marker}' "$CODEX_HOME/auth.json" || { echo "wrong login" >&2; exit 1; }\n${writeResult(goodReview)}`
+
+test('run-codex-review.sh uses the newer of the cached login and the secret', { skip: !(hasJq && hasBash) }, () => {
+  const newer = runCodexScript({ authJson: seed, cacheKey: CACHE_KEY, cachedLogin: loginAt('cached', '2026-10-05T00:00:00Z'), stub: needsLogin('refresh-cached') })
+  assert.equal(newer.outputs.ok, 'true', newer.run.stdout)
+  // A secret pasted after the cache was written wins over the stale cache.
+  const older = runCodexScript({ authJson: seed, cacheKey: CACHE_KEY, cachedLogin: loginAt('cached', '2026-09-01T00:00:00Z'), stub: needsLogin('refresh-seed') })
+  assert.equal(older.outputs.ok, 'true', older.run.stdout)
+  // An entry that does not decrypt (wrong key, damaged, planted) is ignored, never fatal.
+  const garbage = runCodexScript({ authJson: seed, cacheKey: 'another-key', cachedLogin: loginAt('cached', '2026-10-05T00:00:00Z'), stub: needsLogin('refresh-seed') })
+  assert.equal(garbage.outputs.ok, 'true', garbage.run.stdout)
+  // Without a cache key the cache is not read at all.
+  const noKey = runCodexScript({ authJson: seed, cachedLogin: loginAt('cached', '2026-10-05T00:00:00Z'), stub: needsLogin('refresh-seed') })
+  assert.equal(noKey.outputs.ok, 'true', noKey.run.stdout)
+})
+
+test('run-codex-review.sh keeps a refreshed login even when the review then fails', { skip: !(hasJq && hasBash) }, () => {
+  const refreshed = loginAt('rotated', '2026-10-09T00:00:00Z').replaceAll('"', '\\"')
+  const stub = `printf '%s' "${refreshed}" > "$CODEX_HOME/auth.json"; echo "You have hit your usage limit" >&2; exit 1`
+  const { run, outputs, cacheContent } = runCodexScript({ authJson: seed, cacheKey: CACHE_KEY, stub })
+  assert.equal(outputs.reason, 'usage_limit')
+  assert.equal(outputs.cache_updated, 'true')
+  assert.equal(JSON.parse(cacheContent).tokens.refresh_token, 'refresh-rotated-0123456789abcdef')
+  assert.doesNotMatch(run.stdout + run.stderr, /^(?!::add-mask::).*rotated-0123456789abcdef/m)
+  // No key: nothing is written, and the log says the secret may go stale.
+  const noKey = runCodexScript({ authJson: seed, stub })
+  assert.equal(noKey.outputs.cache_updated, undefined)
+  assert.match(noKey.run.stdout, /::warning::.*CODEX_CACHE_KEY/)
+  // A login that did not change is not written.
+  const unchanged = runCodexScript({ authJson: seed, cacheKey: CACHE_KEY, stub: writeResult(goodReview) })
+  assert.equal(unchanged.outputs.cache_updated, undefined)
+  assert.equal(unchanged.cacheContent, undefined)
+})
+
+test('keep-alive mode needs no review output and only reports whether the login works', { skip: !(hasJq && hasBash) }, () => {
+  const ok = runCodexScript({ authJson: seed, mode: 'keepalive', stub: 'cat > /dev/null; exit 0' })
+  assert.equal(ok.outputs.ok, 'true')
+  const rejected = runCodexScript({ authJson: seed, mode: 'keepalive', stub: 'echo "401 Unauthorized" >&2; exit 1' })
+  assert.equal(rejected.outputs.reason, 'credential_rejected')
+})
+
+test('the refreshed login is saved whatever happens, and only the encrypted copy is cached', () => {
+  const keepalive = read('.github/workflows/ai-review-codex-keepalive.yml')
+  for (const [name, text] of [['ai-review', live], ['keep-alive', keepalive]]) {
+    assert.match(text, /if: \$\{\{ always\(\) && steps\.codex\.outputs\.cache_updated == 'true' \}\}\n\s+uses: actions\/cache\/save@/, name)
+    assert.match(text, /path: \$\{\{ runner\.temp \}\}\/codex-cache/, name)
+  }
+  assert.equal((live.match(/secrets\.CODEX_CACHE_KEY/g) ?? []).length, 1)
+  // The keep-alive never touches a PR and holds no write permission.
+  assert.doesNotMatch(keepalive, /pull_request|pull-requests|contents: write/)
 })

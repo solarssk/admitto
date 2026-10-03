@@ -1,0 +1,80 @@
+name: AI review Codex keep-alive
+
+# The Codex fallback of ai-review.yml runs on a ChatGPT login whose refresh token is single use and
+# whose refreshed copy lives in an encrypted Actions cache entry (see run-codex-review.sh). The
+# fallback only runs when Claude is down, so without this job the login would never be refreshed
+# and the cache entry would be evicted after 7 days unused. Every few days it makes one trivial
+# Codex request, which refreshes the login when it is due and keeps the cache entry alive.
+#
+# A red run here means the stored login no longer works: renew CODEX_AUTH_JSON
+# (docs/dev/ai-review.md). Nothing else depends on this job, and it never touches a pull request.
+
+on:
+  schedule:
+    - cron: "17 5 */4 * *"
+  workflow_dispatch:
+
+# One at a time, so two runs never refresh the same single-use token together.
+concurrency:
+  group: codex-login-keepalive
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  keepalive:
+    name: Keep the Codex login alive
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout of the default branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.17.0"
+
+      - name: Install the Codex CLI
+        id: codex_cli
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/codex-cli"
+          cp .github/ai-review/codex/package.json .github/ai-review/codex/package-lock.json "$RUNNER_TEMP/codex-cli/"
+          (cd "$RUNNER_TEMP/codex-cli" && npm ci --ignore-scripts --no-audit --no-fund)
+          echo "bin=$RUNNER_TEMP/codex-cli/node_modules/.bin/codex" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the refreshed Codex login
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/codex-cache
+          key: codex-auth-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: codex-auth-
+
+      - name: Make one trivial Codex request
+        id: codex
+        timeout-minutes: 10
+        env:
+          CODEX_MODE: keepalive
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          CODEX_CACHE_KEY: ${{ secrets.CODEX_CACHE_KEY }}
+          CODEX_BIN: ${{ steps.codex_cli.outputs.bin }}
+        run: bash .github/ai-review/run-codex-review.sh
+
+      - name: Save the refreshed Codex login
+        if: ${{ always() && steps.codex.outputs.cache_updated == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/codex-cache
+          key: codex-auth-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # The script exits 0 when Codex is unavailable; here that is the thing to be told about.
+      - name: Fail when the login is not usable
+        if: ${{ steps.codex.outputs.ok != 'true' }}
+        env:
+          REASON: ${{ steps.codex.outputs.reason }}
+        run: |
+          echo "::error::The Codex login is not usable (${REASON:-unknown}). Renew CODEX_AUTH_JSON: see docs/dev/ai-review.md."
+          exit 1

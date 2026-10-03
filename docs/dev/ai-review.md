@@ -51,7 +51,8 @@ protection keeps the PR unmergeable until you re-run the job or review by hand.
 | Secret | Required | Purpose |
 |---|---|---|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Yes | Primary reviewer, on your Claude subscription |
-| `CODEX_AUTH_JSON` | No (without it there is no fallback) | Fallback reviewer, on your ChatGPT subscription |
+| `CODEX_AUTH_JSON` | No (without it there is no fallback) | Fallback reviewer, on your ChatGPT subscription; the seed login |
+| `CODEX_CACHE_KEY` | Recommended with `CODEX_AUTH_JSON` | Encrypts the refreshed Codex login that is kept between runs (see Renewal) |
 | `ANTHROPIC_API_KEY` | No | Only the manual backtest and PR-Agent workflows use it; the live review does not |
 
 There is deliberately **no** `OPENAI_API_KEY`. The live review never calls a paid API: the Codex
@@ -80,13 +81,36 @@ A throwaway `CODEX_HOME` keeps this login separate from your own Codex sessions,
 yourself does not rotate the token the workflow holds. Treat the file like a password: never paste
 it into a PR, an issue or a log.
 
+### Keeping the login alive
+
+A ChatGPT refresh token is **single use**, and Codex swaps it for a new one when it refreshes (after
+8 days, or when the token is rejected). A runner is thrown away, so a plain secret would stop
+working after the first refresh. To avoid that:
+
+```bash
+openssl rand -hex 32 | gh secret set CODEX_CACHE_KEY --repo solarssk/admitto
+```
+
+- After every Codex run, if the login changed, it is encrypted (AES-256, key `CODEX_CACHE_KEY`) and
+  saved to the Actions cache; the next run restores it and uses the newer of the cached login and
+  `CODEX_AUTH_JSON`. A freshly pasted secret therefore always wins over an older cache entry, and
+  an entry that cannot be decrypted is ignored. The cache is encrypted because caches of the default
+  branch are readable by other workflows.
+- The `AI review Codex keep-alive` workflow runs every 4 days and makes one trivial Codex request.
+  Without it the fallback, which only runs when Claude is down, would never refresh the login, and
+  the cache entry would be evicted after 7 days unused. It uses a tiny part of your subscription.
+- A red keep-alive run (`Codex login is not usable`) is the signal to renew.
+
+Without `CODEX_CACHE_KEY` the fallback still works until the first refresh, after which the secret
+may go stale (the run warns about it).
+
 ### Renewal
 
-ChatGPT logins expire and their refresh tokens rotate. Codex refreshes the login when it is old and
-writes the new one back to `auth.json`, but the runner is discarded, so the secret is not updated
-and can go stale. Plan on repeating the commands above when you see `Codex unavailable:
-credential_rejected` in the run summary, or the warning `Codex refreshed its login during this
-run`. Because Codex only runs as a fallback, a stale credential costs nothing until Claude is down.
+Repeat the login commands above and replace `CODEX_AUTH_JSON`. This is needed when the keep-alive
+run is red, or the run summary says `Codex unavailable: credential_rejected`. Known limit: if two
+runs refresh at the same moment (the keep-alive and a fallback review), one of them can burn the
+token the other saved; that needs a renewal and is rare, because refreshes happen about once every
+8 days.
 
 ## Security notes
 

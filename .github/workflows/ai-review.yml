@@ -239,6 +239,16 @@ jobs:
           (cd "$RUNNER_TEMP/codex-cli" && npm ci --ignore-scripts --no-audit --no-fund)
           echo "bin=$RUNNER_TEMP/codex-cli/node_modules/.bin/codex" >> "$GITHUB_OUTPUT"
 
+      # The newest Codex login, encrypted (the cache of the default branch is readable by other
+      # workflows, so it never holds the login in the clear). See run-codex-review.sh.
+      - name: Restore the refreshed Codex login
+        if: steps.claude_status.outputs.fallback == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/codex-cache
+          key: codex-auth-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: codex-auth-
+
       # No continue-on-error: the script exits 0 for every "Codex is unavailable" case and reports it
       # in its outputs, so a non-zero exit is a bug in the script and stays red. No GitHub token here.
       - name: Review the diff with Codex
@@ -247,8 +257,18 @@ jobs:
         timeout-minutes: 12
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          CODEX_CACHE_KEY: ${{ secrets.CODEX_CACHE_KEY }}
           CODEX_BIN: ${{ steps.codex_cli.outputs.bin }}
         run: bash .github/ai-review/run-codex-review.sh
+
+      # Even when the review failed: a refresh uses up the old refresh token, so the new login must
+      # be kept whatever happened afterwards.
+      - name: Save the refreshed Codex login
+        if: ${{ always() && steps.codex.outputs.cache_updated == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/codex-cache
+          key: codex-auth-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Report the reviewer provider
         if: ${{ !cancelled() && steps.reviewer.outputs.eligible == 'true' }}
