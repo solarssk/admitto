@@ -86,11 +86,9 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
   const statusBlurredRef = useRef(false);
   const holdsFlowFocus = useFocusHandover(phase, () => {
     if (phase === "done" && statusBlurredRef.current) return null;
-    const selector = phase === "polling"
-      ? "output.at-notice"
-      : phase === "done"
-        ? '[data-send-another]'
-        : '[role="radio"][aria-checked="true"]';
+    let selector = '[role="radio"][aria-checked="true"]';
+    if (phase === "polling") selector = "output.at-notice";
+    if (phase === "done") selector = '[data-send-another]';
     return panelRef.current?.querySelector<HTMLElement>(selector);
   });
 
