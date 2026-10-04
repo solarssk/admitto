@@ -8,7 +8,9 @@ export type EncryptedData = {
   keyVersion: number;
 };
 
-const CURRENT_KEY_VERSION = 1;
+/** keyVersion 1: no additional authenticated data (legacy). 2: bound to a caller-supplied purpose. */
+const LEGACY_KEY_VERSION = 1;
+const CONTEXT_KEY_VERSION = 2;
 const GCM_IV_BYTES = 12;
 const GCM_AUTH_TAG_BYTES = 16;
 
@@ -43,25 +45,35 @@ function assertEncryptedPayload(payload: EncryptedData): void {
   }
 }
 
-export function encrypt(plaintext: string): EncryptedData {
+/**
+ * `context` names what the value is for (e.g. "totp-secret"). It is authenticated as AES-GCM
+ * additional data (not stored), so a ciphertext copied into a column with another purpose
+ * fails to decrypt. Without a context the legacy keyVersion 1 format is written.
+ */
+export function encrypt(plaintext: string, context?: string): EncryptedData {
   const key = getEncryptionKey();
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_AUTH_TAG_BYTES });
+  if (context !== undefined) cipher.setAAD(Buffer.from(context, "utf8"));
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return {
     ciphertext: encrypted.toString("base64"),
     iv: iv.toString("base64"),
     authTag: authTag.toString("base64"),
-    keyVersion: CURRENT_KEY_VERSION,
+    keyVersion: context === undefined ? LEGACY_KEY_VERSION : CONTEXT_KEY_VERSION,
   };
 }
 
-export function decrypt(payload: EncryptedData): string {
+/**
+ * Legacy (keyVersion 1) values decrypt with or without `context`, so existing rows keep
+ * working. A keyVersion 2 value only decrypts with the exact context it was written with.
+ */
+export function decrypt(payload: EncryptedData, context?: string): string {
   assertEncryptedPayload(payload);
-  if (payload.keyVersion !== CURRENT_KEY_VERSION) {
+  if (payload.keyVersion !== LEGACY_KEY_VERSION && payload.keyVersion !== CONTEXT_KEY_VERSION) {
     throw new Error(
-      `Unsupported key version: ${payload.keyVersion}. Current supported version: ${CURRENT_KEY_VERSION}.`,
+      `Unsupported key version: ${payload.keyVersion}. Current supported versions: ${LEGACY_KEY_VERSION}, ${CONTEXT_KEY_VERSION}.`,
     );
   }
   const key = getEncryptionKey();
@@ -71,6 +83,9 @@ export function decrypt(payload: EncryptedData): string {
   try {
     const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_AUTH_TAG_BYTES });
     decipher.setAuthTag(authTag);
+    if (payload.keyVersion === CONTEXT_KEY_VERSION) {
+      decipher.setAAD(Buffer.from(context ?? "", "utf8"));
+    }
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch {
     // Node's raw message here is "Unsupported state or unable to authenticate data" - true
@@ -81,17 +96,17 @@ export function decrypt(payload: EncryptedData): string {
   }
 }
 
-export function encryptToString(plaintext: string): string {
-  return JSON.stringify(encrypt(plaintext));
+export function encryptToString(plaintext: string, context?: string): string {
+  return JSON.stringify(encrypt(plaintext, context));
 }
 
-export function decryptFromString(s: string): string {
+export function decryptFromString(s: string, context?: string): string {
   try {
     const parsed: unknown = JSON.parse(s);
     if (!parsed || typeof parsed !== "object") {
       throw new Error("Invalid encrypted payload: expected JSON object");
     }
-    return decrypt(parsed as EncryptedData);
+    return decrypt(parsed as EncryptedData, context);
   } catch (err) {
     // decrypt() already throws CryptoDecryptionError for AES-GCM failures - pass it through
     // unchanged. Everything else here (invalid JSON, wrong shape, unsupported keyVersion) is

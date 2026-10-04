@@ -219,3 +219,28 @@ describe("keyVersion guard", () => {
     expect(() => decrypt(legacyPayload as any)).toThrow("Unsupported key version: undefined");
   });
 });
+
+describe("context-bound encryption (keyVersion 2)", () => {
+  it("writes keyVersion 2 and round-trips with the same context", () => {
+    const payload = encrypt("secret", "purpose-a");
+    expect(payload.keyVersion).toBe(2);
+    expect(decrypt(payload, "purpose-a")).toBe("secret");
+    expect(decryptFromString(encryptToString("secret", "purpose-a"), "purpose-a")).toBe("secret");
+  });
+
+  it("refuses a different or missing context", () => {
+    const payload = encrypt("secret", "purpose-a");
+    expect(() => decrypt(payload, "purpose-b")).toThrow(CryptoDecryptionError);
+    expect(() => decrypt(payload)).toThrow(CryptoDecryptionError);
+    expect(() => decryptFromString(JSON.stringify(payload), "purpose-b")).toThrow(
+      CryptoDecryptionError,
+    );
+  });
+
+  it("still reads legacy keyVersion 1 values, with or without a context", () => {
+    const legacy = encrypt("old");
+    expect(legacy.keyVersion).toBe(1);
+    expect(decrypt(legacy)).toBe("old");
+    expect(decrypt(legacy, "purpose-a")).toBe("old");
+  });
+});
