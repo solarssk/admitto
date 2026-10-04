@@ -33,17 +33,20 @@ export CODEX_HOME
 WORK="$RUNNER_TEMP/codex-review"
 CACHE_DIR="${CODEX_CACHE_DIR:-$RUNNER_TEMP/codex-cache}"
 CACHE_FILE="$CACHE_DIR/auth.enc"
+AUTH_FILE="$CODEX_HOME/auth.json"
+SANDBOX_FAILED=sandbox_failed
 MODE="${CODEX_MODE:-review}"
 # Kept in a plain variable so the model's shell never inherits it, see below.
 CACHE_PASS="${CODEX_CACHE_KEY:-}"
 unset CODEX_CACHE_KEY
-cleanup() { rm -rf "$CODEX_HOME" "$WORK"; }
+cleanup() { rm -rf "$CODEX_HOME" "$WORK"; return 0; }
 trap cleanup EXIT
 mkdir -p "$CODEX_HOME" "$WORK"
 
-unavailable() { # $1 reason word (fixed set), $2 message for the log
-  echo "Codex unavailable: $2"
-  { echo "ok=false"; echo "reason=$1"; } >> "$GITHUB_OUTPUT"
+unavailable() { # reason word (fixed set), message for the log
+  local reason="$1" message="$2"
+  echo "Codex unavailable: ${message}" >&2
+  { echo "ok=false"; echo "reason=${reason}"; } >> "$GITHUB_OUTPUT"
   exit 0
 }
 
@@ -59,9 +62,9 @@ mask_tokens() {
   jq -r '[.tokens | .. | strings | select(length >= 16)] | unique | .[]' | tee -a "$WORK/tokens.txt" |
     while IFS= read -r TOKEN; do echo "::add-mask::${TOKEN}"; done
 }
-refreshed_at() { jq -r '(.last_refresh // "")[0:19]'; }
+refreshed_at() { jq -r '(.last_refresh // "")[0:19]' || return; }
 
-if [ -z "${CODEX_AUTH_JSON:-}" ]; then
+if [[ -z "${CODEX_AUTH_JSON:-}" ]]; then
   unavailable not_configured "the CODEX_AUTH_JSON secret is not set"
 fi
 if ! is_subscription_login <<< "$CODEX_AUTH_JSON"; then
@@ -71,7 +74,7 @@ fi
 mask_tokens <<< "$CODEX_AUTH_JSON"
 
 LOGIN="$CODEX_AUTH_JSON"
-if [ -n "$CACHE_PASS" ] && [ -f "$CACHE_FILE" ]; then
+if [[ -n "$CACHE_PASS" ]] && [[ -f "$CACHE_FILE" ]]; then
   # An unreadable or foreign cache entry is ignored: the seed secret still works.
   if CACHED=$(CODEX_CACHE_KEY="$CACHE_PASS" openssl enc -d -aes-256-cbc -pbkdf2 -pass env:CODEX_CACHE_KEY -in "$CACHE_FILE" 2> /dev/null) \
      && is_subscription_login <<< "$CACHED"; then
@@ -87,9 +90,9 @@ if [ -n "$CACHE_PASS" ] && [ -f "$CACHE_FILE" ]; then
   fi
 fi
 
-printf '%s' "$LOGIN" > "$CODEX_HOME/auth.json"
-chmod 600 "$CODEX_HOME/auth.json"
-cp "$CODEX_HOME/auth.json" "$WORK/auth.before"
+printf '%s' "$LOGIN" > "$AUTH_FILE"
+chmod 600 "$AUTH_FILE"
+cp "$AUTH_FILE" "$WORK/auth.before"
 # The model's shell must not inherit the credential.
 unset CODEX_AUTH_JSON LOGIN CACHED
 
@@ -108,22 +111,22 @@ SANDBOX_ARGS=(-c 'default_permissions="reviewer"' -c "permissions.reviewer.files
 # Fail closed: the sandbox must start, must still read the repository, must not write, and must not
 # see the login. If any of that is not true on this runner, no model runs and the login stays unused.
 if ! "$CODEX_BIN" sandbox "${SANDBOX_ARGS[@]}" cat "$PROMPT" > /dev/null 2>&1; then
-  unavailable sandbox_failed "the Codex sandbox could not start on this runner"
+  unavailable "$SANDBOX_FAILED" "the Codex sandbox could not start on this runner"
 fi
 mkdir -p .ai-review
 if "$CODEX_BIN" sandbox "${SANDBOX_ARGS[@]}" sh -c 'touch .ai-review/.sandbox-write-test' > /dev/null 2>&1; then
   rm -f .ai-review/.sandbox-write-test
-  unavailable sandbox_failed "refusing to run: the sandbox is not read-only"
+  unavailable "$SANDBOX_FAILED" "refusing to run: the sandbox is not read-only"
 fi
-for HIDDEN in "$CODEX_HOME/auth.json" "$WORK/tokens.txt"; do
+for HIDDEN in "$AUTH_FILE" "$WORK/tokens.txt"; do
   if "$CODEX_BIN" sandbox "${SANDBOX_ARGS[@]}" cat "$HIDDEN" > /dev/null 2>&1; then
-    unavailable sandbox_failed "refusing to run: the sandbox does not hide the Codex login"
+    unavailable "$SANDBOX_FAILED" "refusing to run: the sandbox does not hide the Codex login"
   fi
 done
 
 ARGS=(--ignore-user-config --ephemeral --skip-git-repo-check --color never "${SANDBOX_ARGS[@]}"
   -c 'cli_auth_credentials_store="file"' -c 'web_search="disabled"')
-if [ "$MODE" = keepalive ]; then
+if [[ "$MODE" = keepalive ]]; then
   INPUT="$WORK/keepalive-prompt.txt"
   echo "Reply with the single word: ok" > "$INPUT"
 else
@@ -140,13 +143,13 @@ set -e
 
 # Codex rewrites auth.json when it refreshes its tokens, and the old refresh token is then dead.
 # Save the new login before anything else can end this script, whatever the review's outcome.
-if ! cmp -s "$WORK/auth.before" "$CODEX_HOME/auth.json"; then
-  if is_subscription_login < "$CODEX_HOME/auth.json"; then
-    mask_tokens < "$CODEX_HOME/auth.json"
-    if [ -n "$CACHE_PASS" ]; then
+if ! cmp -s "$WORK/auth.before" "$AUTH_FILE"; then
+  if is_subscription_login < "$AUTH_FILE"; then
+    mask_tokens < "$AUTH_FILE"
+    if [[ -n "$CACHE_PASS" ]]; then
       mkdir -p "$CACHE_DIR"
       CODEX_CACHE_KEY="$CACHE_PASS" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:CODEX_CACHE_KEY \
-        -in "$CODEX_HOME/auth.json" -out "$CACHE_FILE"
+        -in "$AUTH_FILE" -out "$CACHE_FILE"
       echo "cache_updated=true" >> "$GITHUB_OUTPUT"
       echo "Codex refreshed its login; the new one is saved to the encrypted cache."
     else
@@ -155,16 +158,16 @@ if ! cmp -s "$WORK/auth.before" "$CODEX_HOME/auth.json"; then
   fi
 fi
 
-if [ "$RC" -ne 0 ]; then
+if [[ "$RC" -ne 0 ]]; then
   # Only a fixed category reaches the outputs; a short, token-masked tail of the log helps debugging.
   if grep -qiE 'refresh token|log ?in again|sign ?in|not logged in|unauthori[sz]ed|\b401\b|token.*(expired|revoked|invalid)' "$WORK/codex.log"; then
     REASON=credential_rejected
   elif grep -qiE 'usage limit|rate limit|quota|\b429\b' "$WORK/codex.log"; then
     REASON=usage_limit
-  elif [ "$RC" -eq 124 ]; then
+  elif [[ "$RC" -eq 124 ]]; then
     REASON=timeout
   elif grep -qiE 'bwrap|bubblewrap|landlock|seccomp|namespace' "$WORK/codex.log"; then
-    REASON=sandbox_failed
+    REASON="$SANDBOX_FAILED"
   else
     REASON=error
   fi
@@ -173,13 +176,13 @@ if [ "$RC" -ne 0 ]; then
   unavailable "$REASON" "codex exec exited with ${RC} (${REASON})"
 fi
 
-if [ "$MODE" = keepalive ]; then
+if [[ "$MODE" = keepalive ]]; then
   echo "ok=true" >> "$GITHUB_OUTPUT"
   echo "Codex login is alive."
   exit 0
 fi
 
-if [ ! -s "$WORK/result.json" ] || ! jq -e '(.verdict == "approve" or .verdict == "comment") and (.summary | type == "string") and (.blocking_findings | type == "array")' "$WORK/result.json" > /dev/null 2>&1; then
+if [[ ! -s "$WORK/result.json" ]] || ! jq -e '(.verdict == "approve" or .verdict == "comment") and (.summary | type == "string") and (.blocking_findings | type == "array")' "$WORK/result.json" > /dev/null 2>&1; then
   unavailable invalid_output "Codex finished without a usable review"
 fi
 # The review text is published. Never let it carry the login, whatever a prompt-injected diff asked.
