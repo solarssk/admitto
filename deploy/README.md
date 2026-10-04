@@ -282,7 +282,8 @@ Migrations apply in the one-shot `migrate` service. `docker compose up -d` block
 ## Self-hosted SMTP on a private address
 
 Mail destinations (SMTP host, Power Automate URL host, bounce IMAP host) are blocked when they are
-or resolve to loopback / RFC1918 / link-local / cloud-metadata addresses. That protects production
+or resolve to loopback / RFC1918 / link-local / carrier-grade NAT (100.64.0.0/10, including
+Tailscale) / cloud-metadata addresses. That protects production
 from SSRF via Settings UI.
 
 If your MTA is only reachable on the LAN (for example AdGuard rewrites `mail.example.lan` to

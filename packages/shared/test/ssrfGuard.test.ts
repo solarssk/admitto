@@ -108,6 +108,44 @@ describe("isBlockedPrivateOrMetadataHost", () => {
     expect(isBlockedPrivateOrMetadataHost("2001:db8::ffff:10.0.0.1")).toBe(false);
   });
 
+  it.each([
+    "0.1.2.3", // "this network" beyond 0.0.0.0
+    "100.64.0.1", // carrier-grade NAT (also Tailscale)
+    "100.100.100.200", // Alibaba Cloud metadata
+    "100.127.255.254",
+    "192.0.0.8",
+    "198.18.0.1",
+    "224.0.0.1",
+    "239.255.255.250",
+    "240.0.0.1",
+    "255.255.255.255",
+    "ff02::1",
+  ])("blocks non-public range address %s", (address) => {
+    expect(isBlockedPrivateOrMetadataHost(address)).toBe(true);
+  });
+
+  it.each(["100.63.255.255", "100.128.0.1", "198.17.255.255", "198.20.0.1", "223.255.255.255"])(
+    "does not block the public neighbour %s of a blocked range",
+    (address) => {
+      expect(isBlockedPrivateOrMetadataHost(address)).toBe(false);
+    },
+  );
+
+  it.each([
+    "64:ff9b::a9fe:a9fe", // NAT64 -> 169.254.169.254
+    "64:ff9b::7f00:1", // NAT64 -> 127.0.0.1
+    "2002:a9fe:a9fe::1", // 6to4 -> 169.254.169.254
+    "2002:0a00:0001::1", // 6to4 -> 10.0.0.1
+    "::7f00:1", // IPv4-compatible -> 127.0.0.1
+  ])("blocks IPv4 embedded in IPv6 literal %s", (address) => {
+    expect(isBlockedPrivateOrMetadataHost(address)).toBe(true);
+  });
+
+  it("allows IPv6 that embeds a public IPv4", () => {
+    expect(isBlockedPrivateOrMetadataHost("64:ff9b::5db8:d822")).toBe(false); // 93.184.216.34
+    expect(isBlockedPrivateOrMetadataHost("2002:5db8:d822::1")).toBe(false);
+  });
+
   it("allows a public hostname/IP", () => {
     expect(isBlockedPrivateOrMetadataHost("example.com")).toBe(false);
     expect(isBlockedPrivateOrMetadataHost("93.184.216.34")).toBe(false);

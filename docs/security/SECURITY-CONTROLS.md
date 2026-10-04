@@ -382,7 +382,10 @@ Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC
 [`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
 - HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
-- Literal private, link-local, and metadata hostnames rejected.
+- Literal private, link-local, carrier-grade NAT (100.64.0.0/10, which includes Tailscale
+  addresses), multicast/reserved, and metadata hostnames rejected, including IPv4 embedded in
+  NAT64/6to4 IPv6 literals. Operators who reach an IdP over a tailnet add its exact host to the
+  SSO allowlist.
 - **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
   connection uses a custom undici `lookup` to the validated address while the request URL keeps
   the original hostname (correct Host/SNI). All validated A/AAAA records are cached; on
