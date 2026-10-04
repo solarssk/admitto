@@ -5,7 +5,7 @@ import { routePath } from "hono/route";
 import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
 import { getEncryptionKey } from "@admitto/crypto";
 import { CHECKIN_STREAM_LIMITS, type CheckinStreamLimits } from "../checkin-stream-config.js";
-import { resolveClientIp } from "./client-ip.js";
+import { rateLimitIpKey, resolveClientIp } from "./client-ip.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
 
@@ -70,7 +70,7 @@ function ipScopedPolicy(
   return {
     checks: [
       {
-        keyOf: (c) => `${keyPrefix}:ip:${resolveClientIp(c)}`,
+        keyOf: (c) => `${keyPrefix}:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs,
         max,
         logOnExceeded: { scope },
@@ -297,7 +297,7 @@ export const RATE_POLICIES = {
   "auth:login-ip": {
     checks: [
       {
-        keyOf: (c) => `auth:login:ip:${resolveClientIp(c)}`,
+        keyOf: (c) => `auth:login:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs: 60_000,
         max: 10,
         logOnExceeded: { scope: "login_ip" },
