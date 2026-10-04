@@ -100,6 +100,10 @@ Branches aren't auto-deleted on merge (`delete_branch_on_merge` is off): this re
 GitHub stacked PRs, where a later branch's base is an earlier, still-open PR's branch, so branches
 routinely need to outlive their own PR's merge.
 
+For Claude review credentials, provider-unavailable outcomes and recovery, see
+[Automated AI review](../docs/dev/ai-review.md). A provider-unavailable run does not approve
+the PR and does not replace the independent approval required by branch protection.
+
 **Required conversation resolution (2026-09-04):** `main` requires every review thread to be
 resolved before merge. CodeRabbit is disabled by default (`.coderabbit.yaml`) and PR-Agent
 (`.github/workflows/pr-agent.yml`) only runs on an explicit `/review`, `/describe`, `/improve`, or

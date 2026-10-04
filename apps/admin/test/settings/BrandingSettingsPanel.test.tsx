@@ -454,6 +454,31 @@ describe("BrandingSettingsPanel - organisation fields", () => {
     });
   });
 
+  it("gives Save and Reset back when the logo is removed while a replacement file goes up", async () => {
+    mockFetchOrg.mockResolvedValueOnce({ ...defaultOrg, logo_url: "https://cdn.example.com/logo.png" });
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    let resolveOriginal!: (result: { url: string }) => void;
+    mockUploadFile.mockReturnValueOnce(new Promise((resolve) => (resolveOriginal = resolve)));
+    renderWithToast(<BrandingSettingsPanel />);
+    fireEvent.change(await screen.findByLabelText("Organisation name"), { target: { value: "Acme Events" } });
+    const [logoInput] = document.querySelectorAll(".logo-upload__file-input");
+    fireEvent.change(logoInput!, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Remove .*logo$/i }));
+    // The upload Remove dropped answers late: it must not keep Save off for good.
+    await act(async () => {
+      resolveOriginal({ url: "/uploads/default/logo-original.png" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
+    expect(isOff(screen.getByRole("button", { name: "Reset to saved" }))).toBe(false);
+  });
+
   it("keeps Save and Reset focusable, but off, while nothing has changed", async () => {
     await renderWithTheme();
     const save = screen.getByRole("button", { name: "Save" });
