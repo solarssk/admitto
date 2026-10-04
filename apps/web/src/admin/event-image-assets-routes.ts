@@ -2,7 +2,13 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { ALLOWED_PLACEHOLDERS, logoCropFromDb, parseLogoCrop, type LogoCropMeta } from "@admitto/mail-templates";
+import {
+  ALLOWED_PLACEHOLDERS,
+  logoCropFromDb,
+  parseLogoCrop,
+  validateBrandingUrl,
+  type LogoCropMeta,
+} from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -257,6 +263,13 @@ async function validateCreateAssetRequest(
     ({ originalUrl, crop } = parseOriginalAndCrop(body));
   } catch {
     return { ok: false, response: c.json({ error: "invalid_crop" }, 400) };
+  }
+  if (originalUrl !== null) {
+    try {
+      originalUrl = validateBrandingUrl("original_url", originalUrl);
+    } catch {
+      return { ok: false, response: c.json({ error: "invalid_original_url" }, 400) };
+    }
   }
 
   // Fast-path rejection only (avoids writing a file to disk when the library is obviously
