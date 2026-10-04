@@ -49,30 +49,33 @@ export async function runCodexFallback({ repository, number, head, triggerToken,
   return waitForCodex({api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep})
 }
 
-async function waitForCodex({api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep}) {
-  const deadline = Date.now() + 8 * 60 * 1000
-  for (let attempt = 0; attempt < attempts && Date.now() < deadline; attempt++) {
-    if (!currentOwnerPr(await api(prPath, readToken), repository, head)) return { status: 'stale', reason: '' }
-    const [comments, reviews] = await Promise.all([
-      api(commentPath, readToken, 'GET', undefined, true),
-      api(`${prPath}/reviews`, readToken, 'GET', undefined, true),
-    ])
-    const result = assessCodexResult({ comments, reviews, head, requestedAt: request.created_at })
-    if (result.status === 'candidate') {
-      const commit = await api(`${root}/commits/${result.commitRef}`, readToken)
-      if (commit.sha === head) return { status: 'clean', reason: '', resultId: result.resultId, resultKind: 'comment' }
-    } else if (result.status !== 'pending') return result
-    await sleep(10000)
-  }
-  return { status: 'unavailable', reason: 'review_timeout' }
+function waitForCodex(config) {
+  return pollCodex({...config, deadline: Date.now() + 8 * 60 * 1000}, 0)
 }
 
-export async function githubApi(path, token, method = 'GET', body, paginated = false) {
+async function pollCodex(config, attempt) {
+  const {api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep, deadline} = config
+  if (attempt >= attempts || Date.now() >= deadline) return { status: 'unavailable', reason: 'review_timeout' }
+  if (!currentOwnerPr(await api(prPath, readToken), repository, head)) return { status: 'stale', reason: '' }
+  const [comments, reviews] = await Promise.all([
+    api(commentPath, readToken, 'GET', undefined, true),
+    api(`${prPath}/reviews`, readToken, 'GET', undefined, true),
+  ])
+  const result = assessCodexResult({ comments, reviews, head, requestedAt: request.created_at })
+  if (result.status === 'candidate') {
+    const commit = await api(`${root}/commits/${result.commitRef}`, readToken)
+    if (commit.sha === head) return { status: 'clean', reason: '', resultId: result.resultId, resultKind: 'comment' }
+  } else if (result.status !== 'pending') return result
+  await sleep(10000)
+  return pollCodex(config, attempt + 1)
+}
+
+export async function githubApi(path, token, method, body, paginated = false) {
   const results = []
   for (let page = 1; page <= 20; page++) {
     const suffix = paginated ? `?per_page=100&page=${page}` : ''
     const response = await fetch(`https://api.github.com${path}${suffix}`, {
-      method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
+      method: method ?? 'GET', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28' },
       body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000),
     })

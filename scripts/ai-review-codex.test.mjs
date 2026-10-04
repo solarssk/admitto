@@ -120,3 +120,21 @@ test('entrypoint writes fixed outputs and sanitizes setup/API failures', async (
     assert.doesNotMatch(output, /Secret-shaped|trigger-token|read-token/)
   } finally { rmSync(dir, {recursive: true, force: true}) }
 })
+
+test('polling waits between attempts and stops once a result arrives', async () => {
+  const {config} = harness()
+  const originalApi = config.api
+  let lists = 0
+  let waits = 0
+  const result = await runCodexFallback({...config, attempts: 3,
+    sleep: async (ms) => { assert.equal(ms, 10000); waits++ },
+    api: async (...args) => {
+      const data = await originalApi(...args)
+      if (args[0].endsWith('/comments') && args[2] !== 'POST' && ++lists <= 2) return []
+      return data
+    },
+  })
+  assert.equal(result.status, 'clean')
+  assert.equal(waits, 1)
+  assert.equal(lists, 3)
+})
