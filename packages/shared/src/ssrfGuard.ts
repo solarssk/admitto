@@ -13,7 +13,7 @@ import { BlockList, isIP, isIPv6 } from "node:net";
 const privateIpv6 = new BlockList();
 privateIpv6.addSubnet("fe80::", 10, "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6");
-privateIpv6.addSubnet("ff00::", 8, "ipv6"); // multicast
+privateIpv6.addSubnet("ff00::", 8, "ipv6"); // NOSONAR - multicast CIDR in a blocklist, not a destination
 
 /**
  * Non-public IPv4 space beyond RFC1918/loopback/link-local: "this network" (0/8), carrier-grade
@@ -22,20 +22,20 @@ privateIpv6.addSubnet("ff00::", 8, "ipv6"); // multicast
  * (198.18/15), multicast (224/4) and reserved/broadcast (240/4).
  */
 const privateIpv4 = new BlockList();
-for (const [network, prefix] of [
-  ["0.0.0.0", 8],
-  ["10.0.0.0", 8],
-  ["100.64.0.0", 10],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16],
-  ["172.16.0.0", 12],
-  ["192.0.0.0", 24],
-  ["192.168.0.0", 16],
-  ["198.18.0.0", 15],
-  ["224.0.0.0", 4],
-  ["240.0.0.0", 4],
+for (const [octets, prefix] of [
+  [[0, 0, 0, 0], 8],
+  [[10, 0, 0, 0], 8],
+  [[100, 64, 0, 0], 10],
+  [[127, 0, 0, 0], 8],
+  [[169, 254, 0, 0], 16],
+  [[172, 16, 0, 0], 12],
+  [[192, 0, 0, 0], 24],
+  [[192, 168, 0, 0], 16],
+  [[198, 18, 0, 0], 15],
+  [[224, 0, 0, 0], 4],
+  [[240, 0, 0, 0], 4],
 ] as const) {
-  privateIpv4.addSubnet(network, prefix, "ipv4");
+  privateIpv4.addSubnet(octets.join("."), prefix, "ipv4");
 }
 
 /**

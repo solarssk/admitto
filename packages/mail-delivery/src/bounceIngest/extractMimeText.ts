@@ -68,7 +68,10 @@ export function stripHtmlTagsSafely(html: string): string {
  * Buffers/Uint8Arrays are treated as raw octets. JS strings are Unicode: encode
  * as UTF-8 first so 8bit/7bit and libqp see real octets (e.g. `î` → C3 AE), not
  * UTF-16 code units misread as latin1 bytes (`î` → EE → mojibake). */
-function sourceToBinaryString(source: Buffer | Uint8Array | string | undefined): string {
+/** Raw RFC 822 source as an IMAP client hands it over. */
+type RawMimeSource = Buffer | Uint8Array | string | undefined;
+
+function sourceToBinaryString(source: RawMimeSource): string {
   if (!source) return "";
   if (typeof source === "string") {
     return Buffer.from(source, "utf8").subarray(0, MAX_BODY_BYTES).toString("binary");
@@ -245,24 +248,26 @@ const MESSAGE_ID_TOKEN_RE = /<[^<>\s]{1,998}>/g;
 const MESSAGE_ID_HEADERS = new Set(["message-id", "in-reply-to", "references"]);
 
 /**
+ * Whether a header line starts (`true`), continues (`inRelevantHeader`) or leaves a header that
+ * can carry Message-IDs. Folded continuation lines start with a space or tab.
+ */
+function isMessageIdHeaderLine(line: string, inRelevantHeader: boolean): boolean {
+  if (line.startsWith(" ") || line.startsWith("\t")) return inRelevantHeader;
+  const colon = line.indexOf(":");
+  return colon > 0 && MESSAGE_ID_HEADERS.has(line.slice(0, colon).toLowerCase());
+}
+
+/**
  * Message-IDs named by `Message-ID`, `In-Reply-To` and `References` header lines anywhere in the
  * raw source, so the headers a mail server quotes from the original message (text/rfc822-headers
  * or message/rfc822 parts) are included. Lower-cased and de-duplicated, capped to bound memory.
  */
-export function extractReferencedMessageIds(
-  source: Buffer | Uint8Array | string | undefined,
-): string[] {
-  const raw = sourceToBinaryString(source);
+export function extractReferencedMessageIds(source: RawMimeSource): string[] {
   const ids = new Set<string>();
   let inRelevantHeader = false;
-  for (const line of raw.split(/\r?\n/)) {
-    if (line.startsWith(" ") || line.startsWith("\t")) {
-      if (!inRelevantHeader) continue;
-    } else {
-      const colon = line.indexOf(":");
-      inRelevantHeader = colon > 0 && MESSAGE_ID_HEADERS.has(line.slice(0, colon).toLowerCase());
-      if (!inRelevantHeader) continue;
-    }
+  for (const line of sourceToBinaryString(source).split(/\r?\n/)) {
+    inRelevantHeader = isMessageIdHeaderLine(line, inRelevantHeader);
+    if (!inRelevantHeader) continue;
     for (const token of line.match(MESSAGE_ID_TOKEN_RE) ?? []) {
       ids.add(token.toLowerCase());
       if (ids.size >= MAX_REFERENCED_MESSAGE_IDS) return [...ids];

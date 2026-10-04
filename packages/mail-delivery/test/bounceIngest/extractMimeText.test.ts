@@ -164,6 +164,11 @@ describe("extractReferencedMessageIds", () => {
     ]);
   });
 
+  it("ignores folded lines of other headers and header lines without an id", () => {
+    const source = ["Subject: x", "\t<folded@x.test>", "Message-ID: no-angle-brackets", "References:", "\t<ok@x.test>"].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual(["<ok@x.test>"]);
+  });
+
   it("returns an empty list for missing or header-free input and caps the count", () => {
     expect(extractReferencedMessageIds(undefined)).toEqual([]);
     expect(extractReferencedMessageIds("just text")).toEqual([]);

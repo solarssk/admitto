@@ -78,7 +78,12 @@ export function truncateEmailForLog(email: string): string {
 
 /** An RFC 5322 Message-ID (`<local@host>`), as opposed to an opaque provider request id. */
 function isRfcMessageId(value: string | null): value is string {
-  return typeof value === "string" && /^<[^<>\s]+@[^<>\s]+>$/.test(value);
+  return (
+    typeof value === "string" &&
+    value.startsWith("<") &&
+    value.endsWith(">") &&
+    /^[^<>\s@]+@[^<>\s@]+$/.test(value.slice(1, -1))
+  );
 }
 
 /**

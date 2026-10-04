@@ -73,23 +73,15 @@ describe("resolveClientIp", () => {
     expect(await res.json()).toEqual({ ip: "198.51.100.7" });
   });
 
-  it("uses valid X-Forwarded-For when the request is from a trusted proxy", async () => {
+  // 10.0.0.5 is our proxy (mock above); the chain case has 1.2.3.4 supplied by the client.
+  it.each([
+    ["a valid single hop", "203.0.113.55", "203.0.113.55"],
+    ["the rightmost untrusted hop, ignoring hops a client put in front", "1.2.3.4, 203.0.113.9, 10.0.0.5", "203.0.113.9"],
+    ["the socket address when the header is malformed", ",203.0.113.55", "198.51.100.7"],
+  ])("from a trusted proxy resolves %s", async (_name, header, expected) => {
     mockedShouldTrustForwardedHeaders.mockReturnValue(true);
-    const res = await appWithRequest({ "X-Forwarded-For": "203.0.113.55" });
-    expect(await res.json()).toEqual({ ip: "203.0.113.55" });
-  });
-
-  it("ignores hops a client put in front of the proxy chain: takes the rightmost untrusted hop", async () => {
-    mockedShouldTrustForwardedHeaders.mockReturnValue(true);
-    // 10.0.0.5 is our proxy (mock above); 203.0.113.9 is what it saw; 1.2.3.4 was supplied by the client.
-    const res = await appWithRequest({ "X-Forwarded-For": "1.2.3.4, 203.0.113.9, 10.0.0.5" });
-    expect(await res.json()).toEqual({ ip: "203.0.113.9" });
-  });
-
-  it("falls back to socket when X-Forwarded-For is malformed even from a trusted proxy", async () => {
-    mockedShouldTrustForwardedHeaders.mockReturnValue(true);
-    const res = await appWithRequest({ "X-Forwarded-For": ",203.0.113.55" });
-    expect(await res.json()).toEqual({ ip: "198.51.100.7" });
+    const res = await appWithRequest({ "X-Forwarded-For": header });
+    expect(await res.json()).toEqual({ ip: expected });
   });
 });
 
