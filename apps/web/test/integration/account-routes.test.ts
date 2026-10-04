@@ -387,12 +387,14 @@ describe("PATCH /api/account/password", () => {
 
   it("changes hash, clears must_change_password, revokes other sessions", async () => {
     const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const device = await createTrustedDevice(prisma, { userId });
     const res = await app.request("/api/account/password", {
       method: "PATCH",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ current_password: PASSWORD, new_password: NEW_PASSWORD, new_password_confirm: NEW_PASSWORD }),
     });
     expect(res.status).toBe(200);
+    expect((await prisma.trustedDevice.findUnique({ where: { id: device.trustedDevice.id } }))?.revoked_at).not.toBeNull();
     const dbUser = await prisma.user.findUnique({ where: { id: userId } });
     expect(dbUser?.must_change_password).toBe(false);
     expect(await verifyPassword(NEW_PASSWORD, dbUser!.password_hash!)).toBe(true);

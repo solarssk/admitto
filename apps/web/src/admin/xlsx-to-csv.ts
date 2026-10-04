@@ -1,3 +1,4 @@
+import { inflateRawSync } from "node:zlib";
 import ExcelJS from "exceljs";
 
 /** Cap rows materialized from XLSX/CSV to limit decompression-bomb memory use. */
@@ -63,8 +64,8 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
 }
 
 /**
- * Scan the ZIP central directory and enforce entry count plus declared uncompressed
- * sizes before ExcelJS inflates the archive.
+ * Scan the ZIP central directory and enforce entry count plus the real (measured, not declared)
+ * uncompressed sizes before ExcelJS inflates the archive.
  */
 function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
   const bytes = new Uint8Array(buf);
@@ -89,10 +90,47 @@ function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
 
     if (uncompressed > MAX_XLSX_UNCOMPRESSED_ENTRY) throw new ImportZipBombError();
 
-    totalUncompressed += uncompressed;
+    // The declared size is attacker-controlled, so it only serves as a cheap early reject. What
+    // the entry really inflates to is measured below, against the same limits.
+    const actual = measureInflatedEntrySize(bytes, pos, MAX_XLSX_UNCOMPRESSED_TOTAL - totalUncompressed);
+    totalUncompressed += actual;
     if (totalUncompressed > MAX_XLSX_UNCOMPRESSED_TOTAL) throw new ImportZipBombError();
 
     pos += 46 + nameLen + extraLen + commentLen;
+  }
+}
+
+const ZIP_METHOD_STORED = 0;
+const ZIP_METHOD_DEFLATE = 8;
+const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
+
+/**
+ * Real uncompressed size of the entry whose central-directory header starts at `cdPos`, found by
+ * inflating its data with a hard output cap (never allocates more than the cap, whatever the
+ * entry claims). Throws ImportZipBombError on any malformed header or when the cap is exceeded.
+ */
+function measureInflatedEntrySize(bytes: Uint8Array, cdPos: number, remainingTotalBudget: number): number {
+  const method = readUint16LE(bytes, cdPos + 10);
+  const compressedSize = readUint32LE(bytes, cdPos + 20);
+  const localHeaderOffset = readUint32LE(bytes, cdPos + 42);
+
+  if (localHeaderOffset + 30 > bytes.length) throw new ImportZipBombError();
+  if (readUint32LE(bytes, localHeaderOffset) !== LOCAL_FILE_HEADER_SIGNATURE) throw new ImportZipBombError();
+  const dataStart =
+    localHeaderOffset + 30 + readUint16LE(bytes, localHeaderOffset + 26) + readUint16LE(bytes, localHeaderOffset + 28);
+  if (dataStart + compressedSize > bytes.length) throw new ImportZipBombError();
+
+  const cap = Math.min(MAX_XLSX_UNCOMPRESSED_ENTRY, remainingTotalBudget);
+  if (method === ZIP_METHOD_STORED) {
+    if (compressedSize > cap) throw new ImportZipBombError();
+    return compressedSize;
+  }
+  if (method !== ZIP_METHOD_DEFLATE) throw new ImportZipBombError();
+  try {
+    return inflateRawSync(bytes.subarray(dataStart, dataStart + compressedSize), { maxOutputLength: cap }).length;
+  } catch {
+    // Output over the cap (ERR_BUFFER_TOO_LARGE) or a corrupt stream - neither is a workbook to open.
+    throw new ImportZipBombError();
   }
 }
 

@@ -138,6 +138,12 @@ export async function handleLogin(
     return c.json(AUTH_ERROR, 401);
   }
 
+  // Counted before the password is verified, so a correct guess after the budget is spent is
+  // refused too (otherwise the throttle only slows down wrong guesses, not the final right one).
+  if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
   const trustedDeviceToken = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
 
   const result = await login(db, {
@@ -150,9 +156,6 @@ export async function handleLogin(
   });
 
   if (!result.ok) {
-    if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
     return c.json(AUTH_ERROR, 401);
   }
 
@@ -352,7 +355,7 @@ export async function handleMfaVerify(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code, undefined, partial.userId))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -852,7 +855,7 @@ export async function handleTotpConfirm(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code, undefined, partial.userId))) {
     return c.json({ error: "too many requests" }, 429);
   }
 

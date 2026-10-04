@@ -514,6 +514,36 @@ describe("HTML /mfa/verify — passkey button", () => {
   });
 });
 
+describe("body size cap on routes a password-only (partial) session can reach", () => {
+  const oversized = "x".repeat(70 * 1024);
+
+  it.each([
+    ["/api/auth/mfa/totp/enroll", "application/json", JSON.stringify({ x: oversized })],
+    ["/api/auth/mfa/totp/confirm", "application/json", JSON.stringify({ code: oversized })],
+    ["/api/auth/mfa/webauthn/register/begin", "application/json", JSON.stringify({ attachment: oversized })],
+    ["/mfa/enroll/start", "application/x-www-form-urlencoded", `x=${oversized}`],
+    ["/mfa/enroll", "application/x-www-form-urlencoded", `code=${oversized}`],
+  ])("%s answers an oversized body with 413 once the partial session is valid", async (path, contentType, body) => {
+    // Each sign-in counts against the per-email login limit now, which this file's store carries over.
+    rateLimitStore.reset();
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect(((await loginRes.json()) as { next: string }).next).toBe(LOGIN_NEXT.ENROLLMENT_REQUIRED);
+
+    const res = await app.request(path, {
+      method: "POST",
+      headers: { "Content-Type": contentType, ...sameOrigin, ...cookieHeader(loginRes) },
+      body,
+    });
+    expect(res.status).toBe(413);
+  });
+});
+
 describe("HTML MFA enroll", () => {
   it("GET /mfa/enroll does not create pending enrollment", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });

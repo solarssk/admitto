@@ -227,8 +227,8 @@ export async function handlePassCreatorWebhook(
   // Grep System Logs for "wallet_webhook_" during live setup: signature/key/mismatch warnings mean
   // delivery arrived but was rejected before this point; neither this nor those appearing at all
   // means PassCreator isn't reaching this URL (subscription/network problem, not a signature one).
-  const { matched } = await applyWebhookUpdate(db, data);
-  if (isFirstConfirmedRoute) await applyFirstConfirmedAt(db, data);
+  const { matched } = await applyWebhookUpdate(db, eventId, data);
+  if (isFirstConfirmedRoute) await applyFirstConfirmedAt(db, eventId, data);
   emitSystemLog("wallet", "info", matched ? "wallet_webhook_applied" : "wallet_webhook_unmatched", {
     eventId,
   });

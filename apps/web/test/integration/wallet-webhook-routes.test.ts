@@ -432,6 +432,30 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(row?.status).toBe("active");
   });
 
+  it.each(["", "/first-confirmed"])(
+    "does not let a delivery on one event's route%s change another event's pass it names by identifier alone",
+    async (suffix) => {
+      const provider = stubProvider(keyPair.publicKey);
+      const app = makeApp(provider);
+      // No userProvidedId, so payloadNamesADifferentEvent has nothing to compare - only the
+      // event-scoped write keeps this from landing on SWITCH_OFF_EVENT_ID's pass.
+      const body = signedRequest({ identifier: "pc-switch-off-1", operatingSystem: "iOS", noOfActivePasses: 7 });
+
+      const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}${suffix}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      expect(res.status).toBe(200);
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: SWITCH_OFF_ATTENDEE_ID } });
+      expect(row?.apple_active_registrations).toBeNull();
+      expect(row?.registration_checked_at).toBeNull();
+      expect(row?.first_confirmed_at).toBeNull();
+      expect(querySystemLogs({ search: "wallet_webhook_unmatched" })).toHaveLength(1);
+    },
+  );
+
   it("returns 404 for an unknown event id", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);
