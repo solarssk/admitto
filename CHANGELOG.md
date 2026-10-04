@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Automated PR review reports Claude provider unavailability without failing the workflow or approving unreviewed code; Codex subscription fallback is deferred.
+- Automated PR review now grants an explicit policy approval when Claude is unavailable or the automatic review budget is exhausted, stating that no AI review ran and the maintainer must review the diff manually before merging. Internal errors and incomplete diffs still receive no approval; Codex subscription fallback is deferred.
 - Finishing the setup wizard or saving an operator's device label no longer resets the whole app: the session is refreshed in place instead of replacing every open page with a loading screen and dropping what was on it.
 - Every wallet-related confirm dialog, notice, hover hint and report description is now short enough to actually read before deciding: the two densest confirm dialogs (**Void every active wallet pass**, **Remove inactive wallet passes**) drop from a multi-sentence paragraph plus four bullet points each to one or two short sentences, and the same treatment applies across every other wallet dialog, the Wallets report's card descriptions, and its hover hints. Nothing that was safety-critical was cut - reversibility and how an action differs from a similarly-destructive one are still stated - only restated scope, mechanism, and edge cases that are better learned from the result than read upfront on every click.
 - Event Settings → Danger zone's warning notice under the panel no longer sits about twice as far below it as the notices and cards elsewhere in Event Settings. It now uses the same standard gap.

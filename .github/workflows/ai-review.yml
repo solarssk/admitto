@@ -1,6 +1,6 @@
 name: AI review
 
-# A real, automated code review by a second identity (github-actions[bot]), so a single-maintainer
+# Automated review, with explicit policy approvals when Claude is unavailable, so a single-maintainer
 # repo has a reviewer other than the PR author. It only ever reviews: it approves or comments, it
 # never merges, never pushes, and never changes labels. The maintainer keeps the final say and
 # merges by hand; the required status checks and branch protection still apply on top.
@@ -226,30 +226,27 @@ jobs:
               done
           }
 
-          # All publication paths use the current PR head, including provider-unavailable comments.
+          # All publication paths use the current PR head, including provider-unavailable policy approvals.
           LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
           if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
             echo "PR head moved during the review - submitting nothing."
             exit 0
           fi
 
-          if [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
-            dismiss_bot_approvals
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review skipped:** ${BUDGET_REASON}. Nothing was approved. Re-run the AI review job to review this commit anyway." || true
-            exit 0
-          fi
-
-          if [ "${DOCS_ONLY:-}" = "true" ]; then
-            printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
-            APPROVE=true
-          elif [ "${TOO_LARGE:-}" = "true" ]; then
+          if [ "${TOO_LARGE:-}" = "true" ]; then
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
+          elif [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
+            printf '**Conditional approval by maintainer policy — no AI code review ran.** The automated review budget was exhausted (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply. Re-run the job to request an AI review.\n' "$BUDGET_REASON" > "$BODY"
+            APPROVE=true
+          elif [ "${DOCS_ONLY:-}" = "true" ]; then
+            printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
+            APPROVE=true
           elif [ "${CLAUDE_STATUS:-}" = "unavailable" ]; then
             echo "Claude unavailable: ${CLAUDE_REASON}. No review was produced."
             echo "AI reviewer provider: none" >> "$GITHUB_STEP_SUMMARY"
-            printf '**AI review could not run:** Claude was unavailable (%s). Nothing was approved. Re-run the AI review job later.\n' "$CLAUDE_REASON" > "$BODY"
-            APPROVE=false
+            printf '**Conditional approval by maintainer policy — no AI code review ran.** Claude was unavailable (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply. Re-run the job when Claude access returns.\n' "$CLAUDE_REASON" > "$BODY"
+            APPROVE=true
           elif [ "${CLAUDE_STATUS:-}" != "reviewed" ]; then
             echo "AI review failed: Claude did not produce a usable review and no provider outage was confirmed."
             dismiss_bot_approvals
@@ -280,6 +277,7 @@ jobs:
           # A file the reviewer could not see is never approved, whatever the model said.
           if [ "${UNAVAILABLE:-}" = "true" ]; then
             APPROVE=false
+            printf '%s\n' '**No approval:** at least one changed file has no readable diff. The maintainer must review it manually.' > "$BODY"
           fi
 
           # Fail closed: this is a public repo and the reviewer process holds a credential, so a

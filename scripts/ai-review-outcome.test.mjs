@@ -70,20 +70,23 @@ function publish(overrides = {}, stale = false) {
     const run = spawnSync('bash', ['-c', submit], {encoding: 'utf8', env: {
       PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_STEP_SUMMARY: join(dir, 'summary'),
       GITHUB_REPOSITORY: 'example/repo', PR_NUMBER: '1', HEAD_SHA: 'head', CALLS: join(dir, 'calls'),
-      CLAUDE_STATUS: 'unavailable', CLAUDE_REASON: 'no_model_response', ...overrides,
+      CLAUDE_STATUS: 'unavailable', CLAUDE_REASON: 'no_model_response', BUDGET_REASON: 'budget exhausted', ...overrides,
     }})
     let calls = ''
     try { calls = readFileSync(join(dir, 'calls'), 'utf8') } catch { /* No writes for a stale result. */ }
-    return {run, calls}
+    let body = ''
+    try { body = readFileSync(join(dir, 'review.md'), 'utf8') } catch { /* Failure before publication. */ }
+    return {run, calls, body}
   } finally { rmSync(dir, {recursive: true, force: true}) }
 }
-test('provider unavailability publishes one COMMENT, dismisses prior approval and stays green', () => {
-  const {run, calls} = publish()
+test('provider unavailability publishes one policy APPROVE with an explicit manual-review warning', () => {
+  const {run, calls, body} = publish()
   assert.equal(run.status, 0, run.stderr)
-  assert.match(calls, /dismissals/)
+  assert.doesNotMatch(calls, /dismissals/)
   assert.equal((calls.match(/-X POST/g) ?? []).length, 1)
-  assert.match(calls, /event=COMMENT/)
-  assert.doesNotMatch(calls, /event=APPROVE/)
+  assert.match(calls, /event=APPROVE/)
+  assert.match(body, /no AI code review ran/)
+  assert.match(body, /review the diff manually before merging/)
 })
 test('review findings comment, clean reviews approve, own errors fail and stale results write nothing', () => {
   const findings = publish({CLAUDE_STATUS: 'reviewed', STRUCTURED: valid})
@@ -97,12 +100,20 @@ test('review findings comment, clean reviews approve, own errors fail and stale 
   assert.doesNotMatch(failed.calls, /-X POST/)
   assert.equal(publish({}, true).calls, '')
 })
-test('path rule and non-approving diff/budget skips retain their behavior', () => {
+test('path and budget policy approvals keep diff completeness and size guards', () => {
   assert.match(publish({DOCS_ONLY: 'true'}).calls, /event=APPROVE/)
   assert.match(publish({TOO_LARGE: 'true'}).calls, /event=COMMENT/)
   const budget = publish({BUDGET_EXHAUSTED: 'true', BUDGET_REASON: 'budget exhausted'})
   assert.equal(budget.run.status, 0, budget.run.stderr)
-  assert.doesNotMatch(budget.calls, /event=APPROVE/)
+  assert.match(budget.calls, /event=APPROVE/)
+  assert.match(budget.body, /budget was exhausted/)
+  assert.match(budget.body, /no AI code review ran/)
+  for (const overrides of [{UNAVAILABLE: 'true'}, {BUDGET_EXHAUSTED: 'true', UNAVAILABLE: 'true'}, {BUDGET_EXHAUSTED: 'true', TOO_LARGE: 'true'}]) {
+    const incomplete = publish(overrides)
+    assert.equal(incomplete.run.status, 0, incomplete.run.stderr)
+    assert.match(incomplete.calls, /event=COMMENT/)
+    assert.match(incomplete.calls, /dismissals/)
+  }
 })
 test('the live workflow keeps fork protection and a single publisher without Codex credentials', () => {
   assert.match(workflow, /head\.repo\.full_name == github\.repository/)

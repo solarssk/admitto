@@ -22,8 +22,9 @@ issue, log, cache or artifact. Renewing a token does not reset a subscription us
 |---|---|---|
 | Valid review without blocking findings | Approval | Success |
 | Valid review with findings | Comment with findings; no approval | Success |
-| Recognized provider authentication, usage or service failure | Comment explaining that no review ran; no approval | Success |
-| Empty error result before any model response, with explicit zero cost and no model usage | Comment stating `no_model_response`; no approval | Success |
+| Recognized provider authentication, usage or service failure | Policy approval explaining that no review ran; manual review required | Success |
+| Empty error result before any model response, with explicit zero cost and no model usage | Policy approval stating `no_model_response`; manual review required | Success |
+| Automated review budget exhausted | Policy approval explaining the budget skip; manual review required | Success |
 | Missing or unreadable execution file, malformed verdict, turn limit, unknown failure | No approval | Failure |
 
 An empty result does not prove the exact cause: a quota or rejected login can produce it.
@@ -32,12 +33,19 @@ Explicit configuration errors take precedence over provider errors. A review wit
 never causes another provider to run. An earlier bot approval of the reviewed commit is
 removed when the current result does not approve it.
 
-Documentation-only approvals, diff limits, budget controls and fork restrictions retain
-their existing behavior. A newer PR commit makes a running review stale; stale runs publish
-nothing. When a provider is unavailable, wait until access returns and re-run the job.
+Documentation-only approvals, diff limits and fork restrictions retain their existing
+behavior. Budget controls still prevent additional automatic model calls, but publish
+a policy approval when the budget is exhausted. A newer PR commit makes a running review stale; stale runs publish
+nothing. When a provider is unavailable, re-run the job after access returns to obtain
+a model review.
 
-A green unavailable-review run is not an approval. Repository protection can still require
-an independent approval before merge; this workflow does not bypass that requirement.
+At the maintainer's explicit request, provider unavailability and budget exhaustion produce
+`APPROVE` with a prominent "no AI code review ran" warning. GitHub treats this as a full
+approval; "conditional" is explanatory text, not an enforceable GitHub approval state.
+The maintainer must review the diff manually before merging. Required status checks remain
+in force, and incomplete or oversized diffs and internal errors never gain a policy approval.
+The bot never merges. Because the workflow runs from the base branch, this policy takes
+effect only after the workflow change is merged.
 
 ## Codex subscription fallback
 
