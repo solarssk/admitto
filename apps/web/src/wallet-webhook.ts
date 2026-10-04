@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
+import { logRateLimitExceeded } from "@admitto/auth";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import {
   applyFirstConfirmedAt,
@@ -17,6 +19,9 @@ import {
   type WalletStatusRefreshOutcome,
   type WebhookPassTarget,
 } from "@admitto/wallet";
+import { resolveClientIp } from "./rate-limit/client-ip.js";
+import { INLINE_RATE_LIMITS } from "./rate-limit/policies.js";
+import type { RateLimitStore } from "./rate-limit/types.js";
 
 interface WebhookCapableProvider {
   getWebhookPublicKey(): Promise<string>;
@@ -29,23 +34,25 @@ function hasWebhookSupport(
 }
 
 /** PassCreator's webhook signing key belongs to the API key/account, not to one delivery - cached
- * per event for the life of the process rather than refetched on every delivery. A key rotation on
- * PassCreator's side would need a process restart to pick up; acceptable for a fast-follow. */
-const publicKeyCache = new Map<string, string>();
+ * per event rather than refetched on every delivery. The entry also remembers a fingerprint of the
+ * event's stored credentials, so saving a different PassCreator API key makes the next delivery
+ * fetch (and verify against) the new account's key instead of the old one until a restart. */
+const publicKeyCache = new Map<string, { publicKey: string; credentialFingerprint: string }>();
 
-/** Cached public key for eventId, fetching + caching on a cold cache. Returns null (having already
- * logged the failure) instead of throwing - the caller turns that into a 502. Split out of
- * handlePassCreatorWebhook to keep its own cognitive complexity under the SonarCloud threshold
- * (S3776). */
+/** Cached public key for eventId, fetching + caching on a cold cache or after the event's
+ * credentials changed. Returns null (having already logged the failure) instead of throwing - the
+ * caller turns that into a 502. Split out of handlePassCreatorWebhook to keep its own cognitive
+ * complexity under the SonarCloud threshold (S3776). */
 async function resolveCachedPublicKey(
   eventId: string,
+  credentialFingerprint: string,
   provider: WebhookCapableProvider,
 ): Promise<string | null> {
   const cached = publicKeyCache.get(eventId);
-  if (cached) return cached;
+  if (cached?.credentialFingerprint === credentialFingerprint) return cached.publicKey;
   try {
     const publicKey = await provider.getWebhookPublicKey();
-    publicKeyCache.set(eventId, publicKey);
+    publicKeyCache.set(eventId, { publicKey, credentialFingerprint });
     return publicKey;
   } catch (err) {
     emitSystemLog("wallet", "error", "wallet_webhook_public_key_fetch_failed", {
@@ -123,7 +130,7 @@ async function resolveEventWebhookProvider(
   db: PrismaClient,
   eventId: string,
   injectedProvider?: WalletPassProvider,
-): Promise<(WalletPassProvider & WebhookCapableProvider) | null> {
+): Promise<{ provider: WalletPassProvider & WebhookCapableProvider; credentialFingerprint: string } | null> {
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: { wallet_template_id: true, wallet_api_key_enc: true },
@@ -142,7 +149,12 @@ async function resolveEventWebhookProvider(
     injectedProvider,
   );
   if (!provider || !hasWebhookSupport(provider)) return null;
-  return provider;
+  // Hash only - the encrypted key itself never leaves this function. It changes whenever the key is
+  // re-saved (a fresh IV per encryption), which is exactly when the cached signing key may be stale.
+  const credentialFingerprint = createHash("sha256")
+    .update(event.wallet_api_key_enc ?? "")
+    .digest("hex");
+  return { provider, credentialFingerprint };
 }
 
 /**
@@ -177,14 +189,16 @@ async function resolveEventWebhookProvider(
 export async function handlePassCreatorWebhook(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   injectedProvider?: WalletPassProvider,
   isVoidedRoute = false,
   isFirstConfirmedRoute = false,
 ): Promise<Response> {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.body(null, 404);
-  const provider = await resolveEventWebhookProvider(db, eventId, injectedProvider);
-  if (!provider) return c.body(null, 404);
+  const resolved = await resolveEventWebhookProvider(db, eventId, injectedProvider);
+  if (!resolved) return c.body(null, 404);
+  const { provider, credentialFingerprint } = resolved;
 
   let body: unknown;
   try {
@@ -195,12 +209,21 @@ export async function handlePassCreatorWebhook(
   const envelope = parseWebhookEnvelope(body);
   if (!envelope) return c.body(null, 400);
 
-  const publicKey = await resolveCachedPublicKey(eventId, provider);
+  const publicKey = await resolveCachedPublicKey(eventId, credentialFingerprint, provider);
   if (!publicKey) return c.body(null, 502);
 
   if (!verifyWebhookSignature(envelope.signedData, envelope.signature, publicKey)) {
     emitSystemLog("security", "warn", "wallet_webhook_signature_invalid", { eventId });
     return c.body(null, 401);
+  }
+
+  // Per-event ceiling, counted only for signature-verified deliveries: the :eventId segment is public
+  // and unauthenticated, so counting anything earlier would let junk requests starve real ones.
+  const { windowMs, max } = INLINE_RATE_LIMITS["wallet:webhook-event"];
+  const budget = await rateLimitStore.hit(`wallet:webhook:event:${eventId}`, windowMs, max);
+  if (!budget.allowed) {
+    logRateLimitExceeded({ scope: "wallet_webhook", ip: resolveClientIp(c), keyHint: "event" });
+    return c.body(null, 429);
   }
 
   const data = parseWebhookData(envelope.signedData);

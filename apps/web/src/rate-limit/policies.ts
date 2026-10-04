@@ -93,6 +93,9 @@ export const INLINE_RATE_LIMITS = {
   "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
   "account:password-check": { windowMs: 60_000, max: 10 },
   "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
+  /** Per-event ceiling on signature-verified PassCreator deliveries (retryEnabled bursts of one
+   * event must not throttle another's). Checked by the webhook handler after verification. */
+  "wallet:webhook-event": { windowMs: 60_000, max: 120 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -257,23 +260,16 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  /** PassCreator webhook deliveries. Two checks (both must pass): per-event, since PassCreator's
-   * own servers (not the attendee's browser) are the caller and retryEnabled means one event's
-   * bursts must not throttle another's; and per-IP, since :eventId is an unauthenticated,
-   * caller-controlled path segment - without this second check, rotating fake event ids gets a
-   * fresh 120-request allowance every time and the per-event check alone bounds nothing. The IP
-   * ceiling is deliberately generous (matches PassCreator's own documented 600 req/min outbound
-   * limit, ADR 0041 §3) so a real instance's legitimate multi-event traffic from PassCreator's
-   * servers is never the thing that trips it. */
+  /** PassCreator webhook deliveries, before the signature is known: per-IP only. :eventId is an
+   * unauthenticated, caller-controlled path segment, so a per-event bucket here would let anyone
+   * who knows a (public) event id burn that event's allowance with junk and starve PassCreator's
+   * real deliveries. The per-event ceiling (`wallet:webhook-event`, INLINE_RATE_LIMITS) is applied
+   * by the handler only once the signature has verified. The IP ceiling is deliberately generous
+   * (matches PassCreator's own documented 600 req/min outbound limit, ADR 0041 §3) so a real
+   * instance's legitimate multi-event traffic from PassCreator's servers is never the thing that
+   * trips it. */
   "wallet:webhook": {
     checks: [
-      {
-        keyOf: (c) => `wallet:webhook:event:${c.req.param("eventId") ?? "unknown"}`,
-        windowMs: 60_000,
-        max: 120,
-        onExceeded: (c) => c.body(null, 429),
-        logOnExceeded: { scope: "wallet_webhook" },
-      },
       {
         keyOf: (c) => `wallet:webhook:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,

@@ -7,6 +7,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
   createCheckinPreAuth,
   createCheckinEventScope,
+  createCheckinStreamRevalidator,
 } from "../../src/checkin-gate.js";
 import { rateLimit } from "../../src/rate-limit/policies.js";
 import { createCheckinStreamConcurrencyLimit } from "../../src/checkin-stream-limit.js";
@@ -80,6 +81,7 @@ async function seed(client: PrismaClient) {
 function buildStreamApp() {
   const deps = { prisma, config: { allowBearer: false, operatorToken: null } };
   const rateLimitStore = new InMemoryRateLimitStore();
+  const revalidate = createCheckinStreamRevalidator(deps);
   const app = new Hono();
   app.get(
     "/api/checkin/events/:eventId/stream",
@@ -87,7 +89,7 @@ function buildStreamApp() {
     rateLimit(rateLimitStore, "checkin:stream"),
     createCheckinEventScope(deps, (c) => c.req.param("eventId")),
     createCheckinStreamConcurrencyLimit(),
-    (c) => handleEventStream(c),
+    (c) => handleEventStream(c, () => revalidate(c, c.req.param("eventId") ?? "")),
   );
   return app;
 }
@@ -127,7 +129,7 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
   });
 
   it("emits ping events on heartbeat interval", async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       const app = buildStreamApp();
 
@@ -159,6 +161,95 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("authorization is re-checked on every heartbeat", () => {
+    /** Reads until the server closes the stream; false if it is still open after `timeoutMs`. */
+    async function closesWithin(reader: ReadableStreamDefaultReader<Uint8Array>, timeoutMs = 3000) {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const result = await Promise.race([
+          reader.read(),
+          new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 250)),
+        ]);
+        if (result !== "pending" && result.done) return true;
+      }
+      return false;
+    }
+
+    async function openStream(cookie: string) {
+      const app = buildStreamApp();
+      const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      await reader.read();
+      return reader;
+    }
+
+    async function freshOperatorSession() {
+      const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
+      return { cookie: `admitto_session=${rawToken}`, sessionId: session.id };
+    }
+
+    it("keeps a still-authorized stream open", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        const reader = await openStream((await freshOperatorSession()).cookie);
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+        expect(await closesWithin(reader, 1000)).toBe(false);
+        await reader.cancel();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("closes the stream once the session is revoked", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        const { cookie, sessionId } = await freshOperatorSession();
+        const reader = await openStream(cookie);
+        await prisma.session.update({ where: { id: sessionId }, data: { revoked_at: new Date() } });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+        expect(await closesWithin(reader)).toBe(true);
+        expect(subscriberCount(EVENT_A)).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("closes the stream once the operator's role on the event is removed", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        const reader = await openStream((await freshOperatorSession()).cookie);
+        await prisma.roleAssignment.deleteMany({ where: { user_id: USER_OP_A } });
+        try {
+          await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+          expect(await closesWithin(reader)).toBe(true);
+        } finally {
+          await prisma.roleAssignment.create({
+            data: { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
+          });
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("closes the stream once the event is archived", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        const reader = await openStream((await freshOperatorSession()).cookie);
+        await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+        try {
+          await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+          expect(await closesWithin(reader)).toBe(true);
+        } finally {
+          await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("delivers published checkin events and cleans up subscribers on disconnect", async () => {

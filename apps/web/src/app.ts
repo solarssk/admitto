@@ -87,6 +87,7 @@ import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
   createCheckinEventScope,
+  createCheckinStreamRevalidator,
   parseScanBodyMiddleware,
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
@@ -861,6 +862,7 @@ export function createApp(options: CreateAppOptions = {}) {
     onError: (c) => c.json({ error: "request too large" }, 413),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
+  const checkinStreamRevalidator = createCheckinStreamRevalidator(checkinAuthDeps);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot, db });
 
   void sweepExpiredOidcAuthStates(db).catch((err) => {
@@ -2839,18 +2841,18 @@ export function createApp(options: CreateAppOptions = {}) {
   // pushnotification_unregistered - first_pushnotification_registered has its own route below)
   // - never a browser navigation.
   app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
-    handlePassCreatorWebhook(c, db, options.walletPassProvider),
+    handlePassCreatorWebhook(c, db, rateLimitStore, options.walletPassProvider),
   );
   // pass_voided gets its own target URL (subscribeWalletWebhooksBestEffort) since PassCreator's
   // payload never names which event fired - see handlePassCreatorWebhook's doc comment.
   app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
-    handlePassCreatorWebhook(c, db, options.walletPassProvider, true),
+    handlePassCreatorWebhook(c, db, rateLimitStore, options.walletPassProvider, true),
   );
   // first_pushnotification_registered gets its own target URL too, same reason as pass_voided
   // above - stamps WalletPass.first_confirmed_at (applyFirstConfirmedAt) the first time a pass is
   // actually added to a wallet app.
   app.post("/api/wallet/webhook/passcreator/:eventId/first-confirmed", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
-    handlePassCreatorWebhook(c, db, options.walletPassProvider, false, true),
+    handlePassCreatorWebhook(c, db, rateLimitStore, options.walletPassProvider, false, true),
   );
 
   // Mode B hosted QR — filename param is "{public_ref}.png"
@@ -3035,7 +3037,7 @@ export function createApp(options: CreateAppOptions = {}) {
     checkinStreamRateLimit,
     createCheckinEventScope(checkinAuthDeps, (c) => c.req.param("eventId")),
     createCheckinStreamConcurrencyLimit(),
-    (c) => handleEventStream(c),
+    (c) => handleEventStream(c, () => checkinStreamRevalidator(c, c.req.param("eventId") ?? "")),
   );
 
   app.get(

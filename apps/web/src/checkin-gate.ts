@@ -114,6 +114,45 @@ export function createCheckinEventScope(
   };
 }
 
+/**
+ * Re-checks, while a check-in event stream is open, the decisions the connect-time middleware made
+ * once: the event is still not archived and, for a session, that the session is still valid
+ * (not revoked or expired, the account still active) and still allowed to check in at this event.
+ * Reads only - it must not go through the session validator, which would refresh `last_seen_at`
+ * and let an open stream keep an otherwise idle session alive forever. A Cloudflare Access login
+ * has no session row to re-read, so for it only the role and the archive state are re-checked; the
+ * emergency Bearer path only the archive state. Returns false when the stream should be closed.
+ * A failure to read (a database blip) leaves the stream open: the next tick tries again, and the
+ * same outage stops new events from being published anyway.
+ */
+export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
+  return async (c: Context, eventId: string): Promise<boolean> => {
+    try {
+      const event = await deps.prisma.event.findUnique({
+        where: { id: eventId },
+        select: { archived_at: true },
+      });
+      if (event?.archived_at) return false;
+      if (c.get("checkinAuth") === "bearer") return true;
+
+      const userId = c.get("operatorUserId") as string | undefined;
+      if (!userId) return false;
+      const sessionId = c.get("checkinSessionId") as string | undefined;
+      if (sessionId) {
+        const session = await deps.prisma.session.findUnique({
+          where: { id: sessionId },
+          select: { revoked_at: true, expires_at: true, user: { select: { is_active: true } } },
+        });
+        if (!session || session.revoked_at || session.expires_at.getTime() <= Date.now()) return false;
+        if (!session.user.is_active) return false;
+      }
+      return await canPerformCheckIn(deps.prisma, userId, eventId);
+    } catch {
+      return true;
+    }
+  };
+}
+
 /** Parse POST /api/checkin/scan JSON body once; store on context for handler reuse. */
 export async function parseScanBodyMiddleware(c: Context, next: Next): Promise<Response | void> {
   let body: unknown;
