@@ -98,6 +98,12 @@ describe("createApp", () => {
       ["/login", "application/x-www-form-urlencoded", `email=a%40example.com&password=${oversized}`],
       ["/setup", "application/x-www-form-urlencoded", `email=a%40example.com&password=${oversized}`],
       ["/mfa/verify", "application/x-www-form-urlencoded", `code=${oversized}`],
+      ["/api/auth/mfa/totp/confirm", "application/json", JSON.stringify({ code: oversized })],
+      ["/api/auth/mfa/totp/backup-codes/complete", "application/json", JSON.stringify({ x: oversized })],
+      ["/mfa/enroll", "application/x-www-form-urlencoded", `code=${oversized}`],
+      ["/mfa/enroll/backup-codes", "application/x-www-form-urlencoded", `x=${oversized}`],
+      ["/mfa/enroll/download-codes", "application/x-www-form-urlencoded", `x=${oversized}`],
+      ["/change-password", "application/x-www-form-urlencoded", `new_password=${oversized}`],
     ])("rejects an oversized POST %s with 413 before it is parsed", async (path, contentType, body) => {
       const res = await makeApp().request(path, {
         method: "POST",

@@ -845,7 +845,8 @@ export function createApp(options: CreateAppOptions = {}) {
     maxSize: Math.ceil(0.5 * 1024 * 1024),
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
-  // Pre-authentication routes (login, setup, MFA code entry) carry a handful of short fields.
+  // Pre-authentication routes (login, setup, and every step reachable with only a password: MFA code
+  // entry and enrollment, the forced password change) carry a handful of short fields.
   // Without a cap the body is buffered whole before any credential check, and the Origin-header
   // CSRF guard is satisfied by an attacker-chosen header, so size has to be bounded here. Where a
   // route has an IP rate limiter it runs first: a chunked body is read up to the cap before the
@@ -2489,7 +2490,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/mfa/verify", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
   );
-  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, preAuthBodyLimit, (c) =>
     handlePostMfaWebauthnBegin(c, db, mailInjectedBaseUrl),
   );
   app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, webauthnBodyLimit, requirePartialSession, (c) =>
@@ -2515,6 +2516,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     requirePartialSession,
     mfaEnrollRateLimitJson,
+    preAuthBodyLimit,
     (c) => handlePostMfaWebauthnEnrollBegin(c, db, mailInjectedBaseUrl),
   );
   app.post(
@@ -2525,13 +2527,13 @@ export function createApp(options: CreateAppOptions = {}) {
     mfaEnrollRateLimitJson,
     (c) => handlePostMfaWebauthnEnrollFinish(c, db, mailInjectedBaseUrl),
   );
-  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, (c) =>
+  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, preAuthBodyLimit, (c) =>
     handleTotpEnroll(c, db),
   );
-  app.post("/api/auth/mfa/totp/confirm", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/totp/confirm", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleTotpConfirm(c, db, rateLimitStore),
   );
-  app.post("/api/auth/mfa/totp/backup-codes/complete", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/totp/backup-codes/complete", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleTotpBackupCodesComplete(c, db),
   );
 
@@ -2630,26 +2632,26 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
   app.get("/mfa/enroll/method", requirePartialSessionHtml, (c) => handleGetMfaEnrollMethod(c, db));
   app.get("/mfa/enroll/webauthn", requirePartialSessionHtml, (c) => handleGetMfaEnrollWebauthn(c, db));
-  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, (c) =>
+  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, preAuthBodyLimit, (c) =>
     handlePostMfaEnrollStart(c, db),
   );
-  app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnroll(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll/backup-codes", requirePartialSessionHtml, (c) =>
     handleGetMfaEnrollBackupCodes(c, db),
   );
-  app.post("/mfa/enroll/backup-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll/backup-codes", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollBackupCodes(c, db),
   );
-  app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll/download-codes", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, async (c) =>
     handlePostLogout(c, db, await resolveOidcPublicBaseUrlOrNull(db, mailInjectedBaseUrl)),
   );
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
-  app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
+  app.post("/change-password", preAuthBodyLimit, htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),
   );
 
