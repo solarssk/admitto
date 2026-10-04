@@ -275,7 +275,6 @@ export function TemplateEditorCard({
   saving,
   templateActionBusy,
   isDirty,
-  saveButtonLabel,
   onSave,
 }: Readonly<{
   event: EventDto;
@@ -300,7 +299,6 @@ export function TemplateEditorCard({
   saving: boolean;
   templateActionBusy: boolean;
   isDirty: boolean;
-  saveButtonLabel: string;
   onSave: () => void;
 }>) {
   // The lint's "known" set is a superset of the chip list's own allowedPlaceholders: chips hide
@@ -453,10 +451,9 @@ export function TemplateEditorCard({
               // which could then get saved over the one actually being edited (real bot-review find).
               // A switch to a DIFFERENT event doesn't need event.id here too, even though activeKey
               // alone can stay unchanged across one (e.g. both events fall back to the same default
-              // virtual-ticket template): CommunicationPage's own `if (loading) return ...` (below,
-              // near the component's end) unconditionally unmounts this entire subtree on every
-              // eventId change while its own template fetch is in flight, which already forces a
-              // fresh CodeMirror mount with a blank undo history - proven by
+              // virtual-ticket template): CommunicationPage is keyed by its event, so every eventId
+              // change replaces this entire subtree, which already forces a fresh CodeMirror mount
+              // with a blank undo history - proven by
               // "resets the body editor's undo history on an event switch" in
               // CommunicationPage.placeholders.test.tsx, which passes with or without event.id in
               // this key (verified both ways; a second bot-review report of this same finding is a
@@ -509,7 +506,7 @@ export function TemplateEditorCard({
         <ArchivedGuard
           event={event}
           reasonId="save-template-reason"
-          disabled={saving || templateActionBusy || !isDirty || editorSnapshotMissing}
+          disabled={editorSnapshotMissing}
         >
           {(guard) => (
             <Button
@@ -517,8 +514,12 @@ export function TemplateEditorCard({
               icon={<i className="ti ti-device-floppy" aria-hidden="true" />}
               onClick={onSave}
               {...guard}
+              loading={saving}
+              // Off with aria-disabled, not `disabled`: the button that has just saved turns off on the same commit
+              // (nothing is unsaved any more) and would lose the keyboard focus.
+              aria-disabled={!isDirty || templateActionBusy}
             >
-              {saveButtonLabel}
+              {isDirty ? "Save *" : "Saved"}
             </Button>
           )}
         </ArchivedGuard>
