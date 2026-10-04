@@ -288,7 +288,7 @@ jobs:
       - name: Unit tests for repo scripts (scripts/*.test.mjs)
         run: |
           mkdir -p scripts/coverage
-          node --test --experimental-test-coverage --test-coverage-include=scripts/ai-review-outcome.mjs \
+          node --test --experimental-test-coverage --test-coverage-include=scripts/ai-review-outcome.mjs --test-coverage-include=scripts/ai-review-codex.mjs \
             --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout \
             --test-reporter-destination=scripts/coverage/lcov.info scripts/*.test.mjs
       - name: Upload script coverage for SonarCloud
