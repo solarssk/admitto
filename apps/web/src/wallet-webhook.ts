@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { logRateLimitExceeded } from "@admitto/auth";
@@ -149,12 +148,10 @@ async function resolveEventWebhookProvider(
     injectedProvider,
   );
   if (!provider || !hasWebhookSupport(provider)) return null;
-  // Hash only - the encrypted key itself never leaves this function. It changes whenever the key is
-  // re-saved (a fresh IV per encryption), which is exactly when the cached signing key may be stale.
-  const credentialFingerprint = createHash("sha256")
-    .update(event.wallet_api_key_enc ?? "")
-    .digest("hex");
-  return { provider, credentialFingerprint };
+  // The stored value is ciphertext (never the API key) and stays in process memory only. It
+  // changes whenever the key is re-saved (a fresh IV per encryption), which is exactly when the
+  // cached signing key may be stale, so it is compared as is instead of being hashed.
+  return { provider, credentialFingerprint: event.wallet_api_key_enc ?? "" };
 }
 
 /**
