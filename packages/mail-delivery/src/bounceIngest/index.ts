@@ -3,6 +3,7 @@ import { applyBounceResult } from "./applyBounceResult.js";
 import {
   findDeliveriesForBounceBatch,
   normalizeBounceRecipientEmail,
+  selectBounceDeliveryIndex,
   truncateEmailForLog,
 } from "./correlate.js";
 import { ImapInboundProvider } from "./imapProvider.js";
@@ -97,7 +98,9 @@ async function applyParsedLine(
   try {
     const key = normalizeBounceRecipientEmail(line.recipientEmail);
     const queue = deliveryByRecipient.get(key);
-    const delivery = queue?.[0];
+    const index = queue ? selectBounceDeliveryIndex(queue, message.referencedMessageIds) : -1;
+    // `.at(-1)` would wrap to the last row, so a miss (-1) is checked explicitly.
+    const delivery = index >= 0 ? queue?.at(index) : undefined;
     if (!delivery || !queue) {
       summary.noMatchingDelivery += 1;
       log(
@@ -108,7 +111,7 @@ async function applyParsedLine(
     const outcome = await applyBounceResult(db, delivery, line, log);
     if (outcome === "hard_bounced") {
       summary.bouncesApplied += 1;
-      queue.shift();
+      queue.splice(index, 1);
     } else if (outcome === "soft_logged") {
       summary.softBouncesLogged += 1;
     }

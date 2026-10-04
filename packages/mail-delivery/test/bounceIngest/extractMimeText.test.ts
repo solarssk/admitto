@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractPlainTextFromSource, stripHtmlTagsSafely } from "../../src/bounceIngest/extractMimeText.js";
+import {
+  extractPlainTextFromSource,
+  extractReferencedMessageIds,
+  stripHtmlTagsSafely,
+} from "../../src/bounceIngest/extractMimeText.js";
 import { parseBounceLines } from "../../src/bounceIngest/parseBounceLine.js";
 import {
   iso8859QpNdr,
@@ -136,5 +140,34 @@ describe("stripHtmlTagsSafely", () => {
     expect(stripHtmlTagsSafely("<a ".repeat(100_000))).toBe("<a ".repeat(100_000).trim().replace(/[ \t]+/g, " "));
     expect(stripHtmlTagsSafely(`<a ${"x ".repeat(100_000)}`)).toContain("<a x x");
     expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe("extractReferencedMessageIds", () => {
+  it("collects ids from Message-ID, In-Reply-To and folded References headers, lower-cased", () => {
+    const source = [
+      "Message-ID: <Outer@bounce.example.com>",
+      "Subject: Undelivered",
+      "",
+      "Original headers follow:",
+      "Message-ID: <Orig123@mail.example.com>",
+      "References: <a@x.test>",
+      "\t<B@x.test>",
+      "Subject: Message-ID: <not-a-header@x.test>",
+      "X-Other: <ignored@x.test>",
+    ].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual([
+      "<outer@bounce.example.com>",
+      "<orig123@mail.example.com>",
+      "<a@x.test>",
+      "<b@x.test>",
+    ]);
+  });
+
+  it("returns an empty list for missing or header-free input and caps the count", () => {
+    expect(extractReferencedMessageIds(undefined)).toEqual([]);
+    expect(extractReferencedMessageIds("just text")).toEqual([]);
+    const many = Array.from({ length: 80 }, (_, i) => `<${i}@x.test>`).join(" ");
+    expect(extractReferencedMessageIds(`References: ${many}`)).toHaveLength(50);
   });
 });

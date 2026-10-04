@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   findDeliveriesForBounceBatch,
   findDeliveryForBounce,
+  selectBounceDeliveryIndex,
   truncateEmailForLog,
 } from "../../src/bounceIngest/correlate.js";
 
@@ -118,5 +119,28 @@ describe("truncateEmailForLog", () => {
     const out = truncateEmailForLog("nobody@example.com");
     expect(out).toBe("n***@example.com");
     expect(out).not.toContain("nobody");
+  });
+});
+
+describe("selectBounceDeliveryIndex", () => {
+  const smtp = { id: "smtp", provider_message_id: "<Abc@mail.example.com>" };
+  const opaque = { id: "graph", provider_message_id: "3f2c-request-id" };
+  const none = { id: "none", provider_message_id: null };
+  const q = (...rows: object[]) => rows as never[];
+
+  it("accepts an SMTP delivery only when the DSN names its Message-ID (case-insensitive)", () => {
+    expect(selectBounceDeliveryIndex(q(smtp), ["<abc@mail.example.com>"])).toBe(0);
+    expect(selectBounceDeliveryIndex(q(smtp), ["<other@mail.example.com>"])).toBe(-1);
+    expect(selectBounceDeliveryIndex(q(smtp), [])).toBe(-1);
+    expect(selectBounceDeliveryIndex(q(smtp), undefined)).toBe(-1);
+  });
+
+  it("keeps recipient-only matching for deliveries without an RFC Message-ID", () => {
+    expect(selectBounceDeliveryIndex(q(opaque), [])).toBe(0);
+    expect(selectBounceDeliveryIndex(q(none), undefined)).toBe(0);
+  });
+
+  it("skips a non-matching SMTP row and selects the next eligible one", () => {
+    expect(selectBounceDeliveryIndex(q(smtp, none), [])).toBe(1);
   });
 });

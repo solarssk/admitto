@@ -239,3 +239,34 @@ export function extractPlainTextFromSource(
 
   return chunks.join("\n\n").slice(0, MAX_BODY_BYTES);
 }
+
+const MAX_REFERENCED_MESSAGE_IDS = 50;
+const MESSAGE_ID_TOKEN_RE = /<[^<>\s]{1,998}>/g;
+const MESSAGE_ID_HEADERS = new Set(["message-id", "in-reply-to", "references"]);
+
+/**
+ * Message-IDs named by `Message-ID`, `In-Reply-To` and `References` header lines anywhere in the
+ * raw source, so the headers a mail server quotes from the original message (text/rfc822-headers
+ * or message/rfc822 parts) are included. Lower-cased and de-duplicated, capped to bound memory.
+ */
+export function extractReferencedMessageIds(
+  source: Buffer | Uint8Array | string | undefined,
+): string[] {
+  const raw = sourceToBinaryString(source);
+  const ids = new Set<string>();
+  let inRelevantHeader = false;
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith(" ") || line.startsWith("\t")) {
+      if (!inRelevantHeader) continue;
+    } else {
+      const colon = line.indexOf(":");
+      inRelevantHeader = colon > 0 && MESSAGE_ID_HEADERS.has(line.slice(0, colon).toLowerCase());
+      if (!inRelevantHeader) continue;
+    }
+    for (const token of line.match(MESSAGE_ID_TOKEN_RE) ?? []) {
+      ids.add(token.toLowerCase());
+      if (ids.size >= MAX_REFERENCED_MESSAGE_IDS) return [...ids];
+    }
+  }
+  return [...ids];
+}

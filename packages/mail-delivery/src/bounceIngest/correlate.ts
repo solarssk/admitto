@@ -75,3 +75,28 @@ export async function findDeliveryForBounce(
 export function truncateEmailForLog(email: string): string {
   return redactEmail(normalizeBounceRecipientEmail(email));
 }
+
+/** An RFC 5322 Message-ID (`<local@host>`), as opposed to an opaque provider request id. */
+function isRfcMessageId(value: string | null): value is string {
+  return typeof value === "string" && /^<[^<>\s]+@[^<>\s]+>$/.test(value);
+}
+
+/**
+ * Pick the delivery a bounce may apply to. A delivery sent over SMTP carries its real
+ * Message-ID, which only the sender and the recipient's mail system know, so a bounce is
+ * accepted for it only when the DSN names that id. This stops anyone who can mail the bounce
+ * mailbox from forging a DSN for an attendee. Deliveries without an RFC Message-ID (Graph and
+ * Power Automate return opaque request ids) still match by recipient alone.
+ * Returns the index into `queue`, or -1.
+ */
+export function selectBounceDeliveryIndex(
+  queue: readonly EmailDelivery[],
+  referencedMessageIds: readonly string[] | undefined,
+): number {
+  const referenced = new Set(referencedMessageIds ?? []);
+  return queue.findIndex(
+    (d) =>
+      !isRfcMessageId(d.provider_message_id) ||
+      referenced.has(d.provider_message_id.toLowerCase()),
+  );
+}
