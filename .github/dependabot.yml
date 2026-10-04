@@ -52,12 +52,6 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-  # The Codex CLI the AI review falls back to (.github/workflows/ai-review.yml). Its own lockfile,
-  # outside the npm workspaces, so a bump is a one-file PR that the review job itself exercises.
-  - package-ecosystem: "npm"
-    directory: "/.github/ai-review/codex"
-    schedule:
-      interval: "weekly"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

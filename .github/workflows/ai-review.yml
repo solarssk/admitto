@@ -11,13 +11,7 @@ name: AI review
 # branch. The diff is treated as untrusted data (see the prompt), the tools are read-only, and the
 # verdict is a fixed JSON schema, so injected text in a diff cannot do more than skew the verdict.
 # The review text is also scanned for credential-shaped strings before it is posted, because this
-# repository is public and the model's process holds the API key.
-#
-# Reviewer order: Claude (the maintainer's subscription) is the only reviewer unless it cannot
-# produce a review at all (login rejected, usage limit, outage); then Codex (the maintainer's
-# ChatGPT subscription) reviews the same diff with the same prompt and schema, and the one Submit
-# step below publishes whichever review exists. A review that found problems is a result, never a
-# reason to fall back. See docs/dev/ai-review.md.
+# repository is public and the model's process holds the Claude subscription credential.
 #
 # Scope: same-repository PRs opened by the repository owner. Dependabot PRs and forks get no
 # secrets here and are skipped; they stay unreviewed by this bot on purpose.
@@ -157,23 +151,20 @@ jobs:
             echo
             echo "${DELIM}"
             echo "schema=$(jq -c . .github/ai-review/schema-live.json)"
-            echo "eligible=true"
           } >> "$GITHUB_OUTPUT"
 
-      # An empty secret is a credential problem, not a reason to run an action that will fail on it.
       - name: Check the Claude credential
-        id: claude_cred
-        if: steps.reviewer.outputs.eligible == 'true'
+        id: claude_credential
+        if: steps.diff.outputs.too_large != 'true' && steps.diff.outputs.docs_only != 'true' && steps.budget.outputs.exhausted != 'true'
         env:
           CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           if [ -n "$CLAUDE_TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
 
-      # continue-on-error so a failed run can be told apart below; the next step decides whether it
-      # was a provider problem (fall back) or anything else (stay red, nothing is hidden).
       - name: Review the diff
         id: review
-        if: steps.reviewer.outputs.eligible == 'true' && steps.claude_cred.outputs.present == 'true'
+        if: steps.claude_credential.outputs.present == 'true'
+        # Inspect the CLI result before deciding whether an action failure is a provider outage.
         continue-on-error: true
         uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829  # v1.0.236
         with:
@@ -187,113 +178,22 @@ jobs:
             --allowedTools "Read,Grep,Glob"
             --json-schema '${{ steps.reviewer.outputs.schema }}'
 
+      - name: Classify Claude outcome
+        id: claude_status
+        if: ${{ !cancelled() && steps.claude_credential.outputs.present != '' }}
+        env:
+          CLAUDE_OUTCOME: ${{ steps.review.outcome }}
+          CLAUDE_CREDENTIAL_PRESENT: ${{ steps.claude_credential.outputs.present }}
+          CLAUDE_STRUCTURED: ${{ steps.review.outputs.structured_output }}
+          CLAUDE_EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: node scripts/ai-review-outcome.mjs
+
       - name: Report review cost
         if: ${{ !cancelled() && steps.review.outputs.execution_file != '' }}
         env:
           EXEC_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
           jq -r '[.. | objects | select(.type == "result")] | last | "AI review cost: \(.total_cost_usd // "n/a") USD, \(.num_turns // "n/a") turns"' "$EXEC_FILE" >> "$GITHUB_STEP_SUMMARY" || true
-
-      # Fallback gate. Only a run that could not produce a review for a provider reason may fall
-      # through to Codex: the reason comes from the typed errors in the execution file (rules and
-      # tests in .github/ai-review/classify-claude-failure.jq), never from `failure()` alone. A
-      # review with findings is a successful run and never gets here.
-      - name: Decide whether Claude was unavailable
-        id: claude_status
-        if: ${{ !cancelled() && steps.reviewer.outputs.eligible == 'true' && steps.review.outcome != 'success' }}
-        env:
-          HAS_CREDENTIAL: ${{ steps.claude_cred.outputs.present }}
-          EXEC_FILE: ${{ steps.review.outputs.execution_file }}
-        run: |
-          set -euo pipefail
-          if [ "$HAS_CREDENTIAL" != "true" ]; then
-            REASON=not_configured
-          elif [ -n "$EXEC_FILE" ] && [ -f "$EXEC_FILE" ]; then
-            # What the classifier saw, without any text from the file: error codes and numbers only.
-            jq -r '"Claude run: typed errors=\([.. | objects | select(.type == "assistant") | .error? // empty] | unique | join(",") | if . == "" then "none" else . end), "
-              + "is_error=\([.. | objects | select(.type == "result")] | last | .is_error), "
-              + "cost_usd=\([.. | objects | select(.type == "result")] | last | .total_cost_usd), "
-              + "model_usage_entries=\([.. | objects | select(.type == "result")] | last | (.modelUsage // {}) | length)"' "$EXEC_FILE" || true
-            REASON=$(jq -r -f .github/ai-review/classify-claude-failure.jq "$EXEC_FILE" || true)
-          else
-            REASON=""
-          fi
-          if [[ "$REASON" =~ ^[a-z_]+$ ]]; then
-            echo "Claude unavailable: ${REASON}"
-            echo "Falling back to Codex"
-            { echo "fallback=true"; echo "reason=${REASON}"; } >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::The Claude review failed, but not in a way that means the provider is unavailable, so Codex is not used. Check the 'Review the diff' step."
-            { echo "fallback=false"; echo "reason=not_an_outage"; } >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        if: steps.claude_status.outputs.fallback == 'true'
-        with:
-          node-version: "24.17.0"
-
-      # Pinned by version and lockfile (integrity hashes), installed into a temp directory, without
-      # lifecycle scripts. A failure here is a CI problem and stays red.
-      - name: Install the Codex CLI
-        id: codex_cli
-        if: steps.claude_status.outputs.fallback == 'true'
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/codex-cli"
-          cp .github/ai-review/codex/package.json .github/ai-review/codex/package-lock.json "$RUNNER_TEMP/codex-cli/"
-          (cd "$RUNNER_TEMP/codex-cli" && npm ci --ignore-scripts --no-audit --no-fund)
-          echo "bin=$RUNNER_TEMP/codex-cli/node_modules/.bin/codex" >> "$GITHUB_OUTPUT"
-
-      # The newest Codex login, encrypted (the cache of the default branch is readable by other
-      # workflows, so it never holds the login in the clear). See run-codex-review.sh.
-      - name: Restore the refreshed Codex login
-        if: steps.claude_status.outputs.fallback == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: ${{ runner.temp }}/codex-cache
-          key: codex-auth-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: codex-auth-
-
-      # No continue-on-error: the script exits 0 for every "Codex is unavailable" case and reports it
-      # in its outputs, so a non-zero exit is a bug in the script and stays red. No GitHub token here.
-      - name: Review the diff with Codex
-        id: codex
-        if: steps.claude_status.outputs.fallback == 'true'
-        timeout-minutes: 12
-        env:
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
-          CODEX_CACHE_KEY: ${{ secrets.CODEX_CACHE_KEY }}
-          CODEX_BIN: ${{ steps.codex_cli.outputs.bin }}
-        run: bash .github/ai-review/run-codex-review.sh
-
-      # Even when the review failed: a refresh uses up the old refresh token, so the new login must
-      # be kept whatever happened afterwards.
-      - name: Save the refreshed Codex login
-        if: ${{ always() && steps.codex.outputs.cache_updated == 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: ${{ runner.temp }}/codex-cache
-          key: codex-auth-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Report the reviewer provider
-        if: ${{ !cancelled() && steps.reviewer.outputs.eligible == 'true' }}
-        env:
-          CLAUDE_OUTCOME: ${{ steps.review.outcome }}
-          CLAUDE_REASON: ${{ steps.claude_status.outputs.reason }}
-          CODEX_OK: ${{ steps.codex.outputs.ok }}
-          CODEX_REASON: ${{ steps.codex.outputs.reason }}
-        run: |
-          if [ "$CLAUDE_OUTCOME" = "success" ]; then
-            MSG="AI reviewer provider: Claude"
-          elif [ "$CODEX_OK" = "true" ]; then
-            MSG="Claude unavailable: ${CLAUDE_REASON}. AI reviewer provider: Codex (fallback)"
-          elif [ -n "$CODEX_REASON" ]; then
-            MSG="Claude unavailable: ${CLAUDE_REASON}. Codex unavailable: ${CODEX_REASON}. No review was produced"
-          else
-            MSG="Claude failed (${CLAUDE_REASON:-no result}); no fallback was attempted. No review was produced"
-          fi
-          echo "$MSG"
-          echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
 
       # Not always(): a run cancelled by a newer push must not go on to dismiss or post anything.
       - name: Submit the review
@@ -307,11 +207,9 @@ jobs:
           DOCS_ONLY: ${{ steps.diff.outputs.docs_only }}
           BUDGET_EXHAUSTED: ${{ steps.budget.outputs.exhausted }}
           BUDGET_REASON: ${{ steps.budget.outputs.reason }}
-          # Claude's review when it ran, otherwise Codex's: one review, one publication.
-          STRUCTURED: ${{ steps.review.outputs.structured_output || steps.codex.outputs.structured }}
-          REVIEWER: ${{ steps.review.outcome == 'success' && 'Claude' || (steps.codex.outputs.ok == 'true' && 'Codex' || '') }}
+          CLAUDE_STATUS: ${{ steps.claude_status.outputs.status }}
           CLAUDE_REASON: ${{ steps.claude_status.outputs.reason }}
-          CODEX_REASON: ${{ steps.codex.outputs.reason }}
+          STRUCTURED: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
           BODY="$RUNNER_TEMP/review.md"
@@ -328,6 +226,13 @@ jobs:
               done
           }
 
+          # All publication paths use the current PR head, including provider-unavailable comments.
+          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
+            echo "PR head moved during the review - submitting nothing."
+            exit 0
+          fi
+
           if [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
             dismiss_bot_approvals
             gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review skipped:** ${BUDGET_REASON}. Nothing was approved. Re-run the AI review job to review this commit anyway." || true
@@ -340,17 +245,19 @@ jobs:
           elif [ "${TOO_LARGE:-}" = "true" ]; then
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
-          elif [ -z "${STRUCTURED:-}" ] || ! jq -e '.verdict and .summary' <<< "$STRUCTURED" >/dev/null 2>&1; then
-            echo "No usable verdict from the reviewer - not approving."
+          elif [ "${CLAUDE_STATUS:-}" = "unavailable" ]; then
+            echo "Claude unavailable: ${CLAUDE_REASON}. No review was produced."
+            echo "AI reviewer provider: none" >> "$GITHUB_STEP_SUMMARY"
+            printf '**AI review could not run:** Claude was unavailable (%s). Nothing was approved. Re-run the AI review job later.\n' "$CLAUDE_REASON" > "$BODY"
+            APPROVE=false
+          elif [ "${CLAUDE_STATUS:-}" != "reviewed" ]; then
+            echo "AI review failed: Claude did not produce a usable review and no provider outage was confirmed."
             dismiss_bot_approvals
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review could not run.** Claude: ${CLAUDE_REASON:-no result}. Codex fallback: ${CODEX_REASON:-not attempted}. Nothing was approved. Re-run the AI review job later." || true
             exit 1
           else
+            echo "AI reviewer provider: Claude" >> "$GITHUB_STEP_SUMMARY"
             {
               echo "**AI review** (automated, second identity; the maintainer merges)"
-              if [ "${REVIEWER:-}" = "Codex" ]; then
-                echo "_Reviewed by Codex: Claude was unavailable (${CLAUDE_REASON:-unknown})._"
-              fi
               echo
               jq -r '.summary' <<< "$STRUCTURED"
               if [ "$(jq '.blocking_findings | length' <<< "$STRUCTURED")" -gt 0 ]; then
@@ -375,9 +282,9 @@ jobs:
             APPROVE=false
           fi
 
-          # Fail closed: this is a public repo and the reviewer process holds the API key, so a
+          # Fail closed: this is a public repo and the reviewer process holds a credential, so a
           # review text that looks like it carries a credential is never posted.
-          if grep -Eq 'sk-ant-|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|-----BEGIN|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}' "$BODY"; then
+          if grep -Eq 'sk-ant-|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|-----BEGIN' "$BODY"; then
             echo "Review text looks like it contains a credential - not posting."
             dismiss_bot_approvals
             exit 1

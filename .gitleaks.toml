@@ -8,7 +8,3 @@ description = "Synthetic test fixtures that match secret-shaped regexes but carr
 paths = [
   '''^apps/admin/test/account/AccountPage\.test\.tsx$''',
 ]
-# The AI review's Codex script test hands it an API-key-shaped login to prove that it refuses one.
-regexes = [
-  '''sk-test-0123456789abcdef''',
-]
