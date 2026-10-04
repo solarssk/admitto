@@ -164,6 +164,29 @@ describe("extractReferencedMessageIds", () => {
     ]);
   });
 
+  it("reads ids from a base64-encoded quoted original, which the raw scan cannot see", () => {
+    const original = "Message-ID: <Encoded@mail.example.com>\r\nSubject: hi\r\n";
+    const source = [
+      "Message-ID: <outer@bounce.example.com>",
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="b1"',
+      "",
+      "--b1",
+      "Content-Type: text/plain",
+      "",
+      "Undeliverable",
+      "--b1",
+      "Content-Type: text/rfc822-headers",
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(original).toString("base64"),
+      "--b1--",
+    ].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual([
+      "<outer@bounce.example.com>",
+      "<encoded@mail.example.com>",
+    ]);
+  });
+
   it("ignores folded lines of other headers and header lines without an id", () => {
     const source = ["Subject: x", "\t<folded@x.test>", "Message-ID: no-angle-brackets", "References:", "\t<ok@x.test>"].join("\r\n");
     expect(extractReferencedMessageIds(source)).toEqual(["<ok@x.test>"]);

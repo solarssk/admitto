@@ -138,13 +138,19 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
       const userId = c.get("operatorUserId") as string | undefined;
       if (!userId) return false;
       const sessionId = c.get("checkinSessionId") as string | undefined;
+      // Deactivation revokes sessions but leaves role assignments, so the account status is read
+      // for every caller, including Cloudflare Access streams that have no session row.
+      const user = await deps.prisma.user.findUnique({
+        where: { id: userId },
+        select: { is_active: true },
+      });
+      if (!user?.is_active) return false;
       if (sessionId) {
         const session = await deps.prisma.session.findUnique({
           where: { id: sessionId },
-          select: { revoked_at: true, expires_at: true, user: { select: { is_active: true } } },
+          select: { revoked_at: true, expires_at: true },
         });
         if (!session || session.revoked_at || session.expires_at.getTime() <= Date.now()) return false;
-        if (!session.user.is_active) return false;
       }
       return await canPerformCheckIn(deps.prisma, userId, eventId);
     } catch {

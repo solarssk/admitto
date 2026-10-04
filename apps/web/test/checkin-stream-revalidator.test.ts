@@ -13,7 +13,8 @@ const FUTURE = new Date(Date.now() + 3_600_000);
 
 function setup(opts: {
   event?: { archived_at: Date | null } | null;
-  session?: { revoked_at: Date | null; expires_at: Date; user: { is_active: boolean } } | null;
+  session?: { revoked_at: Date | null; expires_at: Date } | null;
+  user?: { is_active: boolean } | null;
   vars: Record<string, unknown>;
   throwOn?: "event";
 }) {
@@ -24,13 +25,16 @@ function setup(opts: {
         : vi.fn().mockResolvedValue(opts.event === undefined ? { archived_at: null } : opts.event),
     },
     session: { findUnique: vi.fn().mockResolvedValue(opts.session ?? null) },
+    user: {
+      findUnique: vi.fn().mockResolvedValue(opts.user === undefined ? { is_active: true } : opts.user),
+    },
   };
   const revalidate = createCheckinStreamRevalidator({ prisma, config: {} } as never);
   const c = { get: (key: string) => opts.vars[key] } as unknown as Context;
   return { prisma, run: () => revalidate(c, "evt-1") };
 }
 
-const liveSession = { revoked_at: null, expires_at: FUTURE, user: { is_active: true } };
+const liveSession = { revoked_at: null, expires_at: FUTURE };
 
 describe("createCheckinStreamRevalidator", () => {
   beforeEach(() => {
@@ -57,10 +61,20 @@ describe("createCheckinStreamRevalidator", () => {
     ["is gone", null],
     ["was revoked", { ...liveSession, revoked_at: new Date() }],
     ["expired", { ...liveSession, expires_at: new Date(Date.now() - 1000) }],
-    ["belongs to a deactivated user", { ...liveSession, user: { is_active: false } }],
   ])("denies when the session %s", async (_name, session) => {
     const { run } = setup({ session, vars: { operatorUserId: "u1", checkinSessionId: "s1" } });
     expect(await run()).toBe(false);
+    expect(canPerformCheckIn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["deactivated", { is_active: false }],
+    ["missing", null],
+  ])("denies a %s user, with or without a session row", async (_name, user) => {
+    for (const vars of [{ operatorUserId: "u1" }, { operatorUserId: "u1", checkinSessionId: "s1" }]) {
+      const { run } = setup({ user, session: liveSession, vars });
+      expect(await run()).toBe(false);
+    }
     expect(canPerformCheckIn).not.toHaveBeenCalled();
   });
 

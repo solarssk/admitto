@@ -257,21 +257,42 @@ function isMessageIdHeaderLine(line: string, inRelevantHeader: boolean): boolean
   return colon > 0 && MESSAGE_ID_HEADERS.has(line.slice(0, colon).toLowerCase());
 }
 
-/**
- * Message-IDs named by `Message-ID`, `In-Reply-To` and `References` header lines anywhere in the
- * raw source, so the headers a mail server quotes from the original message (text/rfc822-headers
- * or message/rfc822 parts) are included. Lower-cased and de-duplicated, capped to bound memory.
- */
-export function extractReferencedMessageIds(source: RawMimeSource): string[] {
-  const ids = new Set<string>();
+/** Add the ids named by header lines in `text` to `ids`; true once the cap is reached. */
+function collectMessageIds(text: string, ids: Set<string>): boolean {
   let inRelevantHeader = false;
-  for (const line of sourceToBinaryString(source).split(/\r?\n/)) {
+  for (const line of text.split(/\r?\n/)) {
     inRelevantHeader = isMessageIdHeaderLine(line, inRelevantHeader);
     if (!inRelevantHeader) continue;
     for (const token of line.match(MESSAGE_ID_TOKEN_RE) ?? []) {
       ids.add(token.toLowerCase());
-      if (ids.size >= MAX_REFERENCED_MESSAGE_IDS) return [...ids];
+      if (ids.size >= MAX_REFERENCED_MESSAGE_IDS) return true;
     }
+  }
+  return false;
+}
+
+/** Quoted original message parts, whose headers a mail server may have base64 / QP encoded. */
+const QUOTED_ORIGINAL_TYPES = new Set(["message/rfc822", "text/rfc822-headers"]);
+
+/**
+ * Message-IDs named by `Message-ID`, `In-Reply-To` and `References` header lines in the raw
+ * source and in the transfer-decoded quoted original message (message/rfc822 or
+ * text/rfc822-headers parts, which some servers base64 or quoted-printable encode).
+ * Lower-cased and de-duplicated, capped to bound memory.
+ */
+export function extractReferencedMessageIds(source: RawMimeSource): string[] {
+  const raw = sourceToBinaryString(source);
+  const ids = new Set<string>();
+  if (collectMessageIds(raw, ids)) return [...ids];
+
+  let leaves: MimeLeaf[];
+  try {
+    leaves = splitMimeMessage(raw);
+  } catch {
+    leaves = [];
+  }
+  for (const leaf of leaves) {
+    if (QUOTED_ORIGINAL_TYPES.has(leaf.contentType) && collectMessageIds(leaf.text, ids)) break;
   }
   return [...ids];
 }
