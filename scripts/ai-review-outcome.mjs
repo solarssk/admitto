@@ -5,22 +5,25 @@ const providerErrors = new Set([
   'billing_error', 'rate_limit', 'overloaded', 'server_error', 'cloud_credential_error',
 ])
 
+function isValidReview(structured) {
+  if (typeof structured !== 'string') return false
+  try {
+    const review = JSON.parse(structured)
+    return (review?.verdict === 'approve' || review?.verdict === 'comment') &&
+      typeof review.summary === 'string' && review.summary.trim().length > 0 &&
+      Array.isArray(review.blocking_findings) &&
+      review.blocking_findings.every((finding) =>
+        typeof finding?.file === 'string' && typeof finding.issue === 'string')
+  } catch {
+    return false
+  }
+}
+
 // Only explicit provider errors or the observed empty pre-model error are unavailable.
 // Invalid output, exhausted turns and errors in our own CI remain failures.
 export function classifyClaudeReview({ outcome, structured, executionFile, credentialPresent }) {
   if (credentialPresent === 'false') return { status: 'unavailable', reason: 'not_configured' }
-  if (outcome === 'success' && typeof structured === 'string') {
-    try {
-      const review = JSON.parse(structured)
-      if (
-        review && (review.verdict === 'approve' || review.verdict === 'comment') &&
-        typeof review.summary === 'string' && review.summary.trim().length > 0 &&
-        Array.isArray(review.blocking_findings) &&
-        review.blocking_findings.every((finding) => finding &&
-          typeof finding.file === 'string' && typeof finding.issue === 'string')
-      ) return { status: 'reviewed', reason: '' }
-    } catch { /* An invalid result is a CI error, not a provider outage. */ }
-  }
+  if (outcome === 'success' && isValidReview(structured)) return { status: 'reviewed', reason: '' }
 
   if (!executionFile) return { status: 'error', reason: 'missing_execution_file' }
   let events
@@ -44,7 +47,7 @@ export function classifyClaudeReview({ outcome, structured, executionFile, crede
   }
   visit(events)
   const result = results.at(-1)
-  if (!result || result.is_error !== true ||
+  if (result?.is_error !== true ||
       !['success', 'error_during_execution'].includes(result.subtype)) {
     return { status: 'error', reason: 'no_usable_review' }
   }
@@ -86,5 +89,6 @@ if (process.argv[1]?.endsWith('/ai-review-outcome.mjs')) {
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `status=${result.status}\nreason=${result.reason}\n`)
   }
-  console.log(`Claude review status: ${result.status}${result.reason ? ` (${result.reason})` : ''}`)
+  const reasonSuffix = result.reason ? ` (${result.reason})` : ''
+  console.log(`Claude review status: ${result.status}${reasonSuffix}`)
 }
