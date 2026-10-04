@@ -184,6 +184,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   invalid_device_label: "Device label must be text.",
   invalid_event_id: "Invalid event ID.",
   invalid_org_id: "Invalid organization ID.",
+  invalid_original_url: "The original image address is not valid. Upload the image again and try again.",
   invalid_request: "Check the form and try again.",
   invalid_tile_url: "That map tile URL isn't valid. Check the format and try again.",
   invalid_type: 'Type must be "link" or "file".',
