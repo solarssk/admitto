@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@admitto/ui";
-import { cancelBulkSend, fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
+import { cancelBulkSend, fetchBulkSendStatus, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, TicketTypeDto, WalletLifecycleStatus } from "../api/types.js";
+import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, WalletLifecycleStatus } from "../api/types.js";
 import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { RetryHint } from "../components/RetryHint.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useRetry } from "../hooks/useRetry.js";
+import { useFocusHandover } from "../hooks/useFocusHandover.js";
+import { useTicketTypeOptions } from "../hooks/useTicketTypeOptions.js";
+import { LookupSlot } from "../pages/users/LookupSlot.js";
 import { AttendeePicker } from "./AttendeePicker.js";
 import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
 import "./send-progress.css";
@@ -231,11 +232,10 @@ export function CommunicationSendPanel({
   isDirty,
 }: Readonly<CommunicationSendPanelProps>) {
   const runIdRef = useRef(0);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const [filterType, setFilterType] = useState<BulkSendFilter["type"]>("all");
   const [ticketType, setTicketType] = useState("");
-  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
-  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
   // Defaults to the most likely real use case: reminding attendees who haven't added the wallet
   // pass yet, the same reasoning as rsvpStatus defaulting to "confirmed" above.
@@ -243,29 +243,40 @@ export function CommunicationSendPanel({
   const [selectedAttendees, setSelectedAttendees] = useState<AttendeeRowDto[]>([]);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<SendPhase>("form");
-  const [busy, setBusy] = useState(false);
+  // One flag per action: Count recipients and Send can each be busy without the other looking busy.
+  const [counting, setCounting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const busy = counting || sending;
   const [error, setError] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null);
-  const ticketTypesRetry = useRetry();
-  const { token: ticketTypesToken, begin: beginTicketTypes, end: endTicketTypes } = ticketTypesRetry;
+  // Read once, while there is a template to send: the ticket types the "By ticket type" filter offers.
+  const ticketTypes = useTicketTypeOptions(eventId, !snapshotMissing);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
+  // Send, Stop and Send another each go away with the step they started (the progress replaces the form, the result replaces
+  // Stop, the form replaces Send another): the keyboard focus moves on to the next step's first control, not to the page.
+  const stopRef = useRef<HTMLButtonElement>(null);
+  const sendAnotherRef = useRef<HTMLButtonElement>(null);
+  const holdsFlowFocus = useFocusHandover(phase, () => {
+    if (phase === "polling") return stopRef.current;
+    if (phase === "done") return sendAnotherRef.current;
+    return panelRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
+  });
 
   const resetForm = useCallback(() => {
     runIdRef.current += 1;
     setFilterType("all");
     setTicketType("");
-    setTicketTypes([]);
-    setTicketTypesError(null);
     setRsvpStatus("confirmed");
     setWalletStatus("never_installed");
     setSelectedAttendees([]);
     setRecipientCount(null);
     setPhase("form");
-    setBusy(false);
+    setCounting(false);
+    setSending(false);
     setError(null);
     setResultMessage(null);
     setBatchId(null);
@@ -276,15 +287,22 @@ export function CommunicationSendPanel({
   }, []);
 
   // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
-  // ticket type / RSVP / wallet status / specific attendees). Ticket type *value* and options are
-  // cleared by the fetch effect below. Selected attendee chips *are* cleared on event switch -
-  // those IDs belong to the previous event and must not be submitted against the new one.
+  // ticket type / RSVP / wallet status / specific attendees). The ticket type *value* is cleared
+  // (leaving a previous event's key selected would keep filterReady true and could count or send
+  // against a key that means nothing, or something else, on the new event), and the options are
+  // read again for the new event by `useTicketTypeOptions`. Only the value resets, not filterType -
+  // silently reverting the admin's chosen filter *strategy* to "all recipients" would be a bigger,
+  // more surprising change than asking them to re-pick a value. Selected attendee chips *are*
+  // cleared on event switch - those IDs belong to the previous event and must not be submitted
+  // against the new one.
   const resetSendOutcome = useCallback(() => {
     runIdRef.current += 1;
+    setTicketType("");
     setSelectedAttendees([]);
     setRecipientCount(null);
     setPhase("form");
-    setBusy(false);
+    setCounting(false);
+    setSending(false);
     setError(null);
     setResultMessage(null);
     setBatchId(null);
@@ -305,38 +323,6 @@ export function CommunicationSendPanel({
   useEffect(() => {
     resetSendOutcome();
   }, [eventId, resetSendOutcome]);
-
-  useEffect(() => {
-    if (snapshotMissing) return;
-    // Clears the selected value along with the stale options list below - not just cosmetic:
-    // leaving a previous event's ticket_type key selected would keep filterReady true (it only
-    // checks the string is non-empty) and could send/count against a key that means nothing, or
-    // something different, on the new event (review). Only the value resets, not filterType -
-    // silently reverting the admin's chosen filter *strategy* back to "all recipients" would be
-    // a bigger, more surprising behavior change than asking them to re-pick a value.
-    setTicketType("");
-    setTicketTypes([]);
-    let cancelled = false;
-    // A retry keeps its error, and the busy Retry next to it, on screen until the answer is in.
-    if (!beginTicketTypes()) setTicketTypesError(null);
-    fetchTicketTypes(eventId)
-      .then((types) => {
-        if (cancelled) return;
-        setTicketTypes(types);
-        setTicketTypesError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setTicketTypes([]);
-        setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
-      })
-      .finally(() => {
-        if (!cancelled) endTicketTypes();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId, templateId, snapshotMissing, ticketTypesToken, beginTicketTypes, endTicketTypes]);
 
   useEffect(() => {
     if (phase !== "polling" || !batchId) return;
@@ -409,11 +395,11 @@ export function CommunicationSendPanel({
   // non-destructive and re-enabling the cards a beat later just for that read as flicker.
   const pickerLocked = phase !== "form";
 
-  // Both runDryRun and runSend are only ever invoked from a button gated by
-  // disabled={busy || !filterReady} below - filterReady is guaranteed true here.
+  // Both runDryRun and runSend are only ever invoked from a button that is off while the other action
+  // runs and while !filterReady below - filterReady is guaranteed true here.
   const runDryRun = async () => {
     const runId = runIdRef.current;
-    setBusy(true);
+    setCounting(true);
     setError(null);
     setRecipientCount(null);
     try {
@@ -430,13 +416,13 @@ export function CommunicationSendPanel({
       if (runId !== runIdRef.current) return;
       setError(operatorApiErrorMessage(err, "Count failed."));
     } finally {
-      if (runId === runIdRef.current) setBusy(false);
+      if (runId === runIdRef.current) setCounting(false);
     }
   };
 
   const runSend = async () => {
     const runId = runIdRef.current;
-    setBusy(true);
+    setSending(true);
     setError(null);
     setResultMessage(null);
     try {
@@ -472,7 +458,7 @@ export function CommunicationSendPanel({
       if (runId !== runIdRef.current) return;
       setError(operatorApiErrorMessage(err, "Send failed."));
     } finally {
-      if (runId === runIdRef.current) setBusy(false);
+      if (runId === runIdRef.current) setSending(false);
     }
   };
 
@@ -497,7 +483,7 @@ export function CommunicationSendPanel({
 
   return (
     <Card title="Send to">
-      <div className="settings-card-stack">
+      <div className="settings-card-stack" ref={panelRef}>
         <p className="settings-card-intro">
           Choose which attendees get this template, check how many that is, then send.
         </p>
@@ -561,29 +547,28 @@ export function CommunicationSendPanel({
         {filterType === "ticket_type" && (
           <>
             <div className="communication-half-field">
-              <SearchableSelect
-                id="communication-send-ticket-type"
-                label="Ticket type"
-                placeholder="Choose…"
-                searchPlaceholder="Search ticket types…"
-                emptyLabel="No ticket types found"
-                value={ticketType}
-                disabled={pickerLocked}
-                options={ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
-                onChange={(id) => {
-                  setTicketType(id);
-                  setRecipientCount(null);
-                  setError(null);
-                }}
-              />
+              <LookupSlot lookup={ticketTypes} label="ticket types">
+                <SearchableSelect
+                  id="communication-send-ticket-type"
+                  label="Ticket type"
+                  placeholder="Choose…"
+                  searchPlaceholder="Search ticket types…"
+                  emptyLabel="No ticket types found"
+                  value={ticketType}
+                  disabled={pickerLocked || ticketTypes.error !== null}
+                  options={ticketTypes.ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
+                  onChange={(id) => {
+                    setTicketType(id);
+                    setRecipientCount(null);
+                    setError(null);
+                  }}
+                />
+              </LookupSlot>
             </div>
             <p className="mail-field-hint">
               Attendees holding this ticket type will receive the email.
             </p>
           </>
-        )}
-        {filterType === "ticket_type" && ticketTypesError && (
-          <RetryHint message={ticketTypesError} busy={ticketTypesRetry.busy} onRetry={ticketTypesRetry.retry} />
         )}
         {filterType === "attendee_ids" && (
           <AttendeePicker
@@ -616,10 +601,12 @@ export function CommunicationSendPanel({
                 type="button"
                 variant="secondary"
                 icon={<i className="ti ti-calculator" aria-hidden="true" />}
-                disabled={busy || !filterReady}
+                loading={counting}
+                loadingLabel="Checking…"
+                disabled={sending || !filterReady}
                 onClick={() => void runDryRun()}
               >
-                {busy ? "Checking…" : "Count recipients"}
+                Count recipients
               </Button>
               <ArchivedGuard
                 event={event}
@@ -631,10 +618,12 @@ export function CommunicationSendPanel({
                     type="button"
                     variant="primary"
                     icon={<i className="ti ti-send" aria-hidden="true" />}
+                    loading={sending}
+                    onFocus={holdsFlowFocus}
                     onClick={() => void runSend()}
                     {...guard}
                   >
-                    {busy ? "Sending…" : "Send"}
+                    Send
                   </Button>
                 )}
               </ArchivedGuard>
@@ -652,9 +641,11 @@ export function CommunicationSendPanel({
             {phase === "polling" && (
               <div className="communication-send-panel__actions">
                 <Button
+                  ref={stopRef}
                   type="button"
                   variant="secondary"
                   icon={<i className="ti ti-player-stop" aria-hidden="true" />}
+                  onFocus={holdsFlowFocus}
                   onClick={() => setStopConfirmOpen(true)}
                 >
                   Stop
@@ -674,10 +665,12 @@ export function CommunicationSendPanel({
             {phase === "done" && (
               <div className="communication-send-panel__actions">
                 <Button
+                  ref={sendAnotherRef}
                   type="button"
                   variant="secondary"
                   icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
                   disabled={busy}
+                  onFocus={holdsFlowFocus}
                   onClick={resetForm}
                 >
                   Send another

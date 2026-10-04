@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EditTemplateModal } from "../../src/communication/EditTemplateModal.js";
+import { isOff } from "../test-utils.js";
 import type { MailTemplateListItem } from "../../src/api/types.js";
 
 const reminder: MailTemplateListItem = {
@@ -114,7 +115,10 @@ describe("EditTemplateModal", () => {
         onDelete={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Saving…" }));
+    // The busy Save keeps its label (it says it works with aria-busy) and stays focusable, so a click on it is swallowed.
+    const busySave = screen.getByRole("button", { name: "Save" });
+    expect(busySave.getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(busySave);
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
@@ -168,5 +172,30 @@ describe("EditTemplateModal", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(screen.getByRole("dialog", { name: "Delete template?" })).toBeTruthy();
+  });
+
+  it("shows only the action that the operator started as busy: Delete while a delete runs, Save while a save runs", () => {
+    const props = { open: true, template: reminder, onClose: vi.fn(), onSave: vi.fn(), onDelete: vi.fn() };
+    const { rerender } = render(<EditTemplateModal {...props} busy={false} />);
+    const deleteButton = () => within(screen.getByRole("dialog", { name: "Edit template" })).getByRole("button", { name: "Delete" });
+    const saveButton = () => screen.getByRole("button", { name: "Save" });
+
+    fireEvent.click(deleteButton());
+    const confirm = screen.getByRole("dialog", { name: "Delete template?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete" }));
+    rerender(<EditTemplateModal {...props} busy />);
+    expect(deleteButton().getAttribute("aria-busy")).toBe("true");
+    expect(saveButton().getAttribute("aria-busy")).toBeNull();
+    expect(isOff(saveButton())).toBe(true);
+
+    // The delete ended (the modal stays, say it failed): neither looks busy, and a save is a save.
+    rerender(<EditTemplateModal {...props} busy={false} />);
+    expect(deleteButton().getAttribute("aria-busy")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Template label"), { target: { value: "Reminder!" } });
+    fireEvent.click(saveButton());
+    rerender(<EditTemplateModal {...props} busy />);
+    expect(saveButton().getAttribute("aria-busy")).toBe("true");
+    expect(deleteButton().getAttribute("aria-busy")).toBeNull();
+    expect(isOff(deleteButton())).toBe(true);
   });
 });
