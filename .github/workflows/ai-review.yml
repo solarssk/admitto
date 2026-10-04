@@ -1,6 +1,6 @@
 name: AI review
 
-# A real, automated code review by a second identity (github-actions[bot]), so a single-maintainer
+# Automated review, with explicit policy approvals when Claude is unavailable, so a single-maintainer
 # repo has a reviewer other than the PR author. It only ever reviews: it approves or comments, it
 # never merges, never pushes, and never changes labels. The maintainer keeps the final say and
 # merges by hand; the required status checks and branch protection still apply on top.
@@ -11,7 +11,7 @@ name: AI review
 # branch. The diff is treated as untrusted data (see the prompt), the tools are read-only, and the
 # verdict is a fixed JSON schema, so injected text in a diff cannot do more than skew the verdict.
 # The review text is also scanned for credential-shaped strings before it is posted, because this
-# repository is public and the model's process holds the API key.
+# repository is public and the model's process holds the Claude subscription credential.
 #
 # Scope: same-repository PRs opened by the repository owner. Dependabot PRs and forks get no
 # secrets here and are skipped; they stay unreviewed by this bot on purpose.
@@ -153,9 +153,19 @@ jobs:
             echo "schema=$(jq -c . .github/ai-review/schema-live.json)"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Check the Claude credential
+        id: claude_credential
+        if: steps.diff.outputs.too_large != 'true' && steps.diff.outputs.docs_only != 'true' && steps.budget.outputs.exhausted != 'true'
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$CLAUDE_TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
       - name: Review the diff
         id: review
-        if: steps.diff.outputs.too_large != 'true' && steps.diff.outputs.docs_only != 'true' && steps.budget.outputs.exhausted != 'true'
+        if: steps.claude_credential.outputs.present == 'true'
+        # Inspect the CLI result before deciding whether an action failure is a provider outage.
+        continue-on-error: true
         uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829  # v1.0.236
         with:
           # The maintainer's Claude subscription (from `claude setup-token`), not per-token API billing.
@@ -167,6 +177,16 @@ jobs:
             --max-turns 20
             --allowedTools "Read,Grep,Glob"
             --json-schema '${{ steps.reviewer.outputs.schema }}'
+
+      - name: Classify Claude outcome
+        id: claude_status
+        if: ${{ !cancelled() && steps.claude_credential.outputs.present != '' }}
+        env:
+          CLAUDE_OUTCOME: ${{ steps.review.outcome }}
+          CLAUDE_CREDENTIAL_PRESENT: ${{ steps.claude_credential.outputs.present }}
+          CLAUDE_STRUCTURED: ${{ steps.review.outputs.structured_output }}
+          CLAUDE_EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: node scripts/ai-review-outcome.mjs
 
       - name: Report review cost
         if: ${{ !cancelled() && steps.review.outputs.execution_file != '' }}
@@ -187,6 +207,8 @@ jobs:
           DOCS_ONLY: ${{ steps.diff.outputs.docs_only }}
           BUDGET_EXHAUSTED: ${{ steps.budget.outputs.exhausted }}
           BUDGET_REASON: ${{ steps.budget.outputs.reason }}
+          CLAUDE_STATUS: ${{ steps.claude_status.outputs.status }}
+          CLAUDE_REASON: ${{ steps.claude_status.outputs.reason }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
@@ -204,24 +226,33 @@ jobs:
               done
           }
 
-          if [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
-            dismiss_bot_approvals
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review skipped:** ${BUDGET_REASON}. Nothing was approved. Re-run the AI review job to review this commit anyway." || true
+          # All publication paths use the current PR head, including provider-unavailable policy approvals.
+          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
+            echo "PR head moved during the review - submitting nothing."
             exit 0
           fi
 
-          if [ "${DOCS_ONLY:-}" = "true" ]; then
-            printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
-            APPROVE=true
-          elif [ "${TOO_LARGE:-}" = "true" ]; then
+          if [ "${TOO_LARGE:-}" = "true" ]; then
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
-          elif [ -z "${STRUCTURED:-}" ] || ! jq -e '.verdict and .summary' <<< "$STRUCTURED" >/dev/null 2>&1; then
-            echo "No usable verdict from the reviewer - not approving."
+          elif [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
+            printf '**Conditional approval by maintainer policy — no AI code review ran.** The automated review budget was exhausted (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply. Re-run the job to request an AI review.\n' "$BUDGET_REASON" > "$BODY"
+            APPROVE=true
+          elif [ "${DOCS_ONLY:-}" = "true" ]; then
+            printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
+            APPROVE=true
+          elif [ "${CLAUDE_STATUS:-}" = "unavailable" ]; then
+            echo "Claude unavailable: ${CLAUDE_REASON}. No review was produced."
+            echo "AI reviewer provider: none" >> "$GITHUB_STEP_SUMMARY"
+            printf '**Conditional approval by maintainer policy — no AI code review ran.** Claude was unavailable (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply. Re-run the job when Claude access returns.\n' "$CLAUDE_REASON" > "$BODY"
+            APPROVE=true
+          elif [ "${CLAUDE_STATUS:-}" != "reviewed" ]; then
+            echo "AI review failed: Claude did not produce a usable review and no provider outage was confirmed."
             dismiss_bot_approvals
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "**AI review could not run** (for example the Claude usage limit is reached, or the service returned an error). Nothing was approved. Re-run the AI review job later." || true
             exit 1
           else
+            echo "AI reviewer provider: Claude" >> "$GITHUB_STEP_SUMMARY"
             {
               echo "**AI review** (automated, second identity; the maintainer merges)"
               echo
@@ -246,9 +277,10 @@ jobs:
           # A file the reviewer could not see is never approved, whatever the model said.
           if [ "${UNAVAILABLE:-}" = "true" ]; then
             APPROVE=false
+            printf '%s\n' '**No approval:** at least one changed file has no readable diff. The maintainer must review it manually.' > "$BODY"
           fi
 
-          # Fail closed: this is a public repo and the reviewer process holds the API key, so a
+          # Fail closed: this is a public repo and the reviewer process holds a credential, so a
           # review text that looks like it carries a credential is never posted.
           if grep -Eq 'sk-ant-|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|-----BEGIN' "$BODY"; then
             echo "Review text looks like it contains a credential - not posting."

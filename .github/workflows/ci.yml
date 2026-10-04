@@ -286,7 +286,17 @@ jobs:
         run: python3 scripts/sync-release-docs.py --check
       - run: npm run lint
       - name: Unit tests for repo scripts (scripts/*.test.mjs)
-        run: npm run test:scripts
+        run: |
+          mkdir -p scripts/coverage
+          node --test --experimental-test-coverage --test-coverage-include=scripts/ai-review-outcome.mjs \
+            --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout \
+            --test-reporter-destination=scripts/coverage/lcov.info scripts/*.test.mjs
+      - name: Upload script coverage for SonarCloud
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-scripts
+          path: scripts/coverage/lcov.info
+          retention-days: 1
       - run: npm run typecheck --workspaces --if-present
 
   actionlint:
@@ -607,7 +617,7 @@ jobs:
     name: Code quality (SonarCloud)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [changes, test-web, test-admin, test-rest]
+    needs: [changes, lint-and-typecheck, test-web, test-admin, test-rest]
     # Fork PRs never receive repo secrets, and unlike Codecov's upload action this scanner has no
     # fail_ci_if_error-style soft-fail - an empty SONAR_TOKEN errors the step for real. Means fork
     # PRs get no SonarCloud analysis post-migration (Automatic Analysis covered them today, just
@@ -630,6 +640,11 @@ jobs:
         with:
           pattern: coverage-*
           merge-multiple: true
+      # A single-file artifact has no directory prefix; restore the script report explicitly.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: coverage-scripts
+          path: scripts/coverage
       - name: SonarQube Cloud Scan
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
         env:
