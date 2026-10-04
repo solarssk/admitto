@@ -234,6 +234,35 @@ describe("the hand-over of the keyboard focus through the steps of a send", () =
     expect(document.activeElement).toBe(screen.getByRole("radio", { name: "All attendees with a wallet" }));
   });
 
+  it("moves focus straight from Send to Send another when no wallet recipients match", async () => {
+    vi.mocked(sendWalletMessage).mockResolvedValueOnce({ jobId: null, recipientCount: 0 });
+    render(<WalletsSendPanel event={event} eventId="evt-1" text="Hi" />);
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    fireEvent.click(send);
+    await advanceTimers(0);
+
+    expect(screen.getByText("No recipients matched.")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Send another" }));
+  });
+
+  it("moves focus from the disappearing wallet status to Send another when the job fails", async () => {
+    vi.mocked(sendWalletMessage).mockResolvedValueOnce({ jobId: "job-1", recipientCount: 1 });
+    const outcome = deferred<unknown>();
+    vi.mocked(fetchWalletMessageJob).mockReturnValueOnce(outcome.promise as never);
+    render(<WalletsSendPanel event={event} eventId="evt-1" text="Hi" />);
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    fireEvent.click(send);
+    await advanceTimers(0);
+
+    const status = document.querySelector("output.at-notice") as HTMLElement;
+    expect(document.activeElement).toBe(status);
+    await act(async () => outcome.resolve({ jobId: "job-1", status: "failed", error: "Send failed." }));
+    expect(screen.getByRole("alert").textContent).toContain("Send failed.");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Send another" }));
+  });
+
   it("does not take the focus when the operator has put it on the page after a hand-over (wallets)", async () => {
     vi.mocked(sendWalletMessage).mockResolvedValueOnce({ jobId: "job-1", recipientCount: 1 });
     vi.mocked(fetchWalletMessageJob)

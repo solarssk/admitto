@@ -81,12 +81,18 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
   const [jobStatus, setJobStatus] = useState<{ sent: number; skipped: number; errored: number } | null>(null);
   // Read once: the ticket types the "By ticket type" filter offers.
   const ticketTypes = useTicketTypeOptions(eventId);
-  // Send and Send another each go away with the step they started (the progress replaces the form, the form replaces Send
-  // another): the keyboard focus moves on to the next step's first control, not to the page. While a message is on its way
-  // nothing in the panel can take it but the status that says so, which stays when the result comes in.
-  const holdsFlowFocus = useFocusHandover(phase, () =>
-    panelRef.current?.querySelector<HTMLElement>(phase === "polling" ? "output.at-notice" : '[role="radio"][aria-checked="true"]'),
-  );
+  // Send and Send another each go away with the step they started. The focused progress status may also disappear when
+  // a failed job replaces it with an error, so it participates in the same hand-over.
+  const statusBlurredRef = useRef(false);
+  const holdsFlowFocus = useFocusHandover(phase, () => {
+    if (phase === "done" && statusBlurredRef.current) return null;
+    const selector = phase === "polling"
+      ? "output.at-notice"
+      : phase === "done"
+        ? '[data-send-another]'
+        : '[role="radio"][aria-checked="true"]';
+    return panelRef.current?.querySelector<HTMLElement>(selector);
+  });
 
   const resetOutcome = useCallback(() => {
     runIdRef.current += 1;
@@ -327,7 +333,10 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
                     variant="primary"
                     icon={<i className="ti ti-send" aria-hidden="true" />}
                     loading={sending}
-                    onFocus={holdsFlowFocus}
+                    onFocus={() => {
+                      statusBlurredRef.current = false;
+                      holdsFlowFocus();
+                    }}
                     onClick={() => void runSend()}
                     {...guard}
                   >
@@ -341,7 +350,16 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
         {(phase === "polling" || phase === "done") && (
           <>
             {resultMessage && (
-              <Notice variant={resultVariant(phase, jobStatus)} as="output" tabIndex={-1}>
+              <Notice
+                variant={resultVariant(phase, jobStatus)}
+                as="output"
+                tabIndex={-1}
+                onFocus={() => {
+                  statusBlurredRef.current = false;
+                  holdsFlowFocus();
+                }}
+                onBlur={() => { statusBlurredRef.current = true; }}
+              >
                 {resultMessage}
               </Notice>
             )}
@@ -357,6 +375,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
                 <Button
                   type="button"
                   variant="secondary"
+                  data-send-another
                   icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
                   disabled={busy}
                   onFocus={holdsFlowFocus}
