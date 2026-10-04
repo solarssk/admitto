@@ -85,7 +85,7 @@ test('provider unavailability publishes one policy APPROVE with an explicit manu
   assert.doesNotMatch(calls, /dismissals/)
   assert.equal((calls.match(/-X POST/g) ?? []).length, 1)
   assert.match(calls, /event=APPROVE/)
-  assert.match(body, /no AI code review ran/)
+  assert.match(body, /no AI code review completed/)
   assert.match(body, /review the diff manually before merging/)
 })
 test('review findings comment, clean reviews approve, own errors fail and stale results write nothing', () => {
@@ -123,4 +123,23 @@ test('the live workflow keeps fork protection and a single publisher without Cod
   assert.match(workflow, /CLAUDE_CREDENTIAL_PRESENT: \$\{\{ steps\.claude_credential\.outputs\.present \}\}/)
   assert.equal((workflow.match(/-f commit_id=/g) ?? []).length, 1)
   assert.doesNotMatch(workflow, /CODEX_AUTH_JSON|CODEX_CACHE_KEY|OPENAI_API_KEY|actions\/cache\//)
+})
+
+test('Codex results approve only clean completed reviews and internal fallback errors stay red', () => {
+  const clean = publish({CODEX_STATUS: 'clean', CODEX_RESULT_ID: '123', CODEX_RESULT_KIND: 'comment'})
+  assert.equal(clean.run.status, 0, clean.run.stderr)
+  assert.match(clean.calls, /event=APPROVE/)
+  assert.match(clean.body, /Codex subscription fallback/)
+  assert.doesNotMatch(clean.body, /Conditional approval/)
+  const findings = publish({CODEX_STATUS: 'findings', CODEX_RESULT_ID: '456', CODEX_RESULT_KIND: 'review'})
+  assert.equal(findings.run.status, 0, findings.run.stderr)
+  assert.match(findings.calls, /event=COMMENT/)
+  assert.match(findings.calls, /dismissals/)
+  for (const overrides of [{CODEX_STATUS: 'error'}, {CODEX_OUTCOME: 'failure'}]) {
+    const failed = publish(overrides)
+    assert.equal(failed.run.status, 1)
+    assert.doesNotMatch(failed.calls, /event=APPROVE/)
+  }
+  const primary = publish({CLAUDE_STATUS: 'reviewed', STRUCTURED: valid, CODEX_STATUS: 'clean'})
+  assert.match(primary.calls, /event=COMMENT/)
 })

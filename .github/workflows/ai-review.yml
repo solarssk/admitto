@@ -33,7 +33,7 @@ jobs:
   review:
     name: AI review
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     if: >-
       ${{
         !github.event.pull_request.draft &&
@@ -188,6 +188,19 @@ jobs:
           CLAUDE_EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: node scripts/ai-review-outcome.mjs
 
+      - name: Request Codex subscription fallback
+        id: codex
+        if: >-
+          ${{ !cancelled() && steps.claude_status.outputs.status == 'unavailable' &&
+              steps.diff.outputs.unavailable != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODEX_REVIEW_TRIGGER_TOKEN: ${{ secrets.CODEX_REVIEW_TRIGGER_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ai-review-codex.mjs
+
       - name: Report review cost
         if: ${{ !cancelled() && steps.review.outputs.execution_file != '' }}
         env:
@@ -209,6 +222,11 @@ jobs:
           BUDGET_REASON: ${{ steps.budget.outputs.reason }}
           CLAUDE_STATUS: ${{ steps.claude_status.outputs.status }}
           CLAUDE_REASON: ${{ steps.claude_status.outputs.reason }}
+          CODEX_STATUS: ${{ steps.codex.outputs.status }}
+          CODEX_REASON: ${{ steps.codex.outputs.reason }}
+          CODEX_RESULT_ID: ${{ steps.codex.outputs.resultId }}
+          CODEX_RESULT_KIND: ${{ steps.codex.outputs.resultKind }}
+          CODEX_OUTCOME: ${{ steps.codex.outcome }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
@@ -242,10 +260,32 @@ jobs:
           elif [ "${DOCS_ONLY:-}" = "true" ]; then
             printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
             APPROVE=true
+          elif [ "${CLAUDE_STATUS:-}" = "unavailable" ] && \
+               { [ "${CODEX_STATUS:-}" = "error" ] || [ "${CODEX_OUTCOME:-}" = "failure" ]; }; then
+            echo "Codex fallback setup or GitHub API failed."
+            dismiss_bot_approvals
+            exit 1
+          elif [ "${CLAUDE_STATUS:-}" = "unavailable" ] && \
+               { [ "${CODEX_STATUS:-}" = "clean" ] || [ "${CODEX_STATUS:-}" = "findings" ]; }; then
+            [[ "$CODEX_RESULT_ID" =~ ^[0-9]+$ ]]
+            if [ "$CODEX_RESULT_KIND" = "review" ]; then
+              RESULT_ANCHOR="pullrequestreview-${CODEX_RESULT_ID}"
+            else
+              RESULT_ANCHOR="issuecomment-${CODEX_RESULT_ID}"
+            fi
+            RESULT_URL="https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}#${RESULT_ANCHOR}"
+            echo "AI reviewer provider: Codex subscription" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$CODEX_STATUS" = "clean" ]; then
+              printf '**AI review — Codex subscription fallback.** Claude was unavailable. The official Codex connector reported no major issues for this commit: %s. This approval is submitted by github-actions[bot]; the maintainer merges and required checks still apply.\n' "$RESULT_URL" > "$BODY"
+              APPROVE=true
+            else
+              printf '**AI review — Codex subscription fallback.** Claude was unavailable. Codex reported findings for this commit: %s. Nothing is approved; address the findings before merging.\n' "$RESULT_URL" > "$BODY"
+              APPROVE=false
+            fi
           elif [ "${CLAUDE_STATUS:-}" = "unavailable" ]; then
             echo "Claude unavailable: ${CLAUDE_REASON}. No review was produced."
             echo "AI reviewer provider: none" >> "$GITHUB_STEP_SUMMARY"
-            printf '**Conditional approval by maintainer policy — no AI code review ran.** Claude was unavailable (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply. Re-run the job when Claude access returns.\n' "$CLAUDE_REASON" > "$BODY"
+            printf '**Conditional approval by maintainer policy — no AI code review completed.** Claude was unavailable (%s); Codex fallback did not return a usable result (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply.\n' "$CLAUDE_REASON" "${CODEX_REASON:-not_run}" > "$BODY"
             APPROVE=true
           elif [ "${CLAUDE_STATUS:-}" != "reviewed" ]; then
             echo "AI review failed: Claude did not produce a usable review and no provider outage was confirmed."
