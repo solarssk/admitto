@@ -20,7 +20,7 @@ open, non-draft PR authored by the owner or Dependabot, with both branches in th
 and the default branch as its base. Forks and other authors are rejected before reading a
 provider credential. The workflow reads only trusted workflow code and a text diff; it never
 checks out or runs the PR head. Manual runs share the default branch's attempt budget and
-the existing daily budget. The reviewed commit is checked again before publication.
+the existing daily budget. Both reviewed commits, the base branch and PR eligibility are checked again before publication.
 
 ## Credentials
 

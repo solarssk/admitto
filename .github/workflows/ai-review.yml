@@ -48,7 +48,6 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           github.event.pull_request.user.login == github.repository_owner) ||
         (github.event_name == 'workflow_dispatch' &&
-          github.actor_id == github.event.repository.owner.id &&
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
       }}
     permissions:
@@ -76,10 +75,12 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           OWNER_ID: ${{ github.event.repository.owner.id }}
+          ACTOR_ID: ${{ github.actor_id }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [[ "$ACTOR_ID" != "$OWNER_ID" ]]; then exit 1; fi
             if ! [[ "$TRIGGERING_ACTOR" =~ ^[A-Za-z0-9-]+$ ]]; then exit 1; fi
             if [[ "$(gh api "users/${TRIGGERING_ACTOR}" --jq .id)" != "$OWNER_ID" ]]; then exit 1; fi
           fi
@@ -92,9 +93,10 @@ jobs:
               .head.repo.full_name == $repo and .base.repo.full_name == $repo and
               (.user.login == $owner or ($event == "workflow_dispatch" and .user.login == "dependabot[bot]")) and
               ($event != "workflow_dispatch" or .base.ref == $branch) and
-              (.head.sha | test("^[a-f0-9]{40}$"))
+              (.head.sha | test("^[a-f0-9]{40}$")) and
+              (.base.sha | test("^[a-f0-9]{40}$"))
             ' "$TARGET" > /dev/null
-          jq -r '"pr_number=\(.number)\nhead_sha=\(.head.sha)\nhead_ref=\(.head.ref)"' "$TARGET" >> "$GITHUB_OUTPUT"
+          jq -r '"pr_number=\(.number)\nhead_sha=\(.head.sha)\nhead_ref=\(.head.ref)\nbase_sha=\(.base.sha)\nbase_ref=\(.base.ref)"' "$TARGET" >> "$GITHUB_OUTPUT"
 
       # Debounce: a newer push cancels this run (concurrency above) while it is still waiting, so
       # a quick series of pushes costs one review, not one per push. Runner minutes are free on a
@@ -256,6 +258,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.target.outputs.pr_number }}
           HEAD_SHA: ${{ steps.target.outputs.head_sha }}
+          BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          BASE_REF: ${{ steps.target.outputs.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           TOO_LARGE: ${{ steps.diff.outputs.too_large }}
           UNAVAILABLE: ${{ steps.diff.outputs.unavailable }}
           DOCS_ONLY: ${{ steps.diff.outputs.docs_only }}
@@ -285,10 +291,21 @@ jobs:
               done
           }
 
-          # All publication paths use the current PR head, including provider-unavailable policy approvals.
-          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
-            echo "PR head moved during the review - submitting nothing."
+          # Recheck eligibility and the complete reviewed diff before any publication.
+          current_review_target() {
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" |
+              jq -e --arg repo "$GITHUB_REPOSITORY" --arg owner "$GITHUB_REPOSITORY_OWNER" \
+                --arg head "$HEAD_SHA" --arg base "$BASE_SHA" --arg ref "$BASE_REF" \
+                --arg event "$EVENT_NAME" --arg branch "$DEFAULT_BRANCH" '
+                  .state == "open" and .draft == false and
+                  .head.repo.full_name == $repo and .base.repo.full_name == $repo and
+                  (.user.login == $owner or ($event == "workflow_dispatch" and .user.login == "dependabot[bot]")) and
+                  .head.sha == $head and .base.sha == $base and .base.ref == $ref and
+                  ($event != "workflow_dispatch" or .base.ref == $branch)
+                ' > /dev/null
+          }
+          if ! current_review_target; then
+            echo "PR eligibility or reviewed diff changed - submitting nothing."
             exit 0
           fi
 
@@ -369,12 +386,9 @@ jobs:
             exit 1
           fi
 
-          # The diff was read at HEAD_SHA. If a push landed while the reviewer ran, this run is stale
-          # (its concurrency cancellation can race with this very call), so it submits nothing and
-          # the run for the new head takes over.
-          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
-            echo "PR head moved from ${HEAD_SHA} to ${LIVE_HEAD} during the review - submitting nothing."
+          # A push, retarget or eligibility change makes this review stale.
+          if ! current_review_target; then
+            echo "PR eligibility or reviewed diff changed - submitting nothing."
             exit 0
           fi
 
