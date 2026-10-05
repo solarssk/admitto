@@ -405,6 +405,8 @@ jobs:
           fail_ci_if_error: false
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+        # Bootstrap/TLS failures can bypass the action's fail_ci_if_error option.
+        continue-on-error: true
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -475,6 +477,8 @@ jobs:
           fail_ci_if_error: false
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+        # Bootstrap/TLS failures can bypass the action's fail_ci_if_error option.
+        continue-on-error: true
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -591,6 +595,8 @@ jobs:
           fail_ci_if_error: false
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+        # Bootstrap/TLS failures can bypass the action's fail_ci_if_error option.
+        continue-on-error: true
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -646,7 +652,7 @@ jobs:
           name: coverage-scripts
           path: scripts/coverage
       - name: SonarQube Cloud Scan
-        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v8.3.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
