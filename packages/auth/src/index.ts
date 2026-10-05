@@ -43,6 +43,7 @@ export {
   createSession,
   validateSession,
   isSessionIdleExpired,
+  isFullSessionMfaPolicySatisfied,
   validatePartialSession,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,

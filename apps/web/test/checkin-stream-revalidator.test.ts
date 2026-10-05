@@ -3,12 +3,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const canPerformCheckIn = vi.hoisted(() => vi.fn());
 const isSessionIdleExpired = vi.hoisted(() => vi.fn());
+const isFullSessionMfaPolicySatisfied = vi.hoisted(() => vi.fn());
+const getCfAccessConfigCached = vi.hoisted(() => vi.fn());
+const validateAccessJwt = vi.hoisted(() => vi.fn());
+const findCloudflareAccessProvider = vi.hoisted(() => vi.fn());
 vi.mock("@admitto/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@admitto/auth")>()),
   canPerformCheckIn,
   isSessionIdleExpired,
+  isFullSessionMfaPolicySatisfied,
+  getCfAccessConfigCached,
+  validateAccessJwt,
+  findCloudflareAccessProvider,
 }));
 
+import { CfAccessJwtError } from "@admitto/auth";
 import { createCheckinStreamRevalidator } from "../src/checkin-gate.js";
 
 const FUTURE = new Date(Date.now() + 3_600_000);
@@ -18,6 +27,7 @@ function setup(opts: {
   session?: { revoked_at: Date | null; expires_at: Date } | null;
   user?: { is_active: boolean } | null;
   vars: Record<string, unknown>;
+  headers?: Record<string, string>;
   throwOn?: "event";
 }) {
   const prisma = {
@@ -32,7 +42,10 @@ function setup(opts: {
     },
   };
   const revalidate = createCheckinStreamRevalidator({ prisma, config: {} } as never);
-  const c = { get: (key: string) => opts.vars[key] } as unknown as Context;
+  const c = {
+    get: (key: string) => opts.vars[key],
+    req: { raw: { headers: new Headers(opts.headers ?? {}) } },
+  } as unknown as Context;
   return { prisma, run: () => revalidate(c, "evt-1") };
 }
 
@@ -42,6 +55,10 @@ describe("createCheckinStreamRevalidator", () => {
   beforeEach(() => {
     canPerformCheckIn.mockReset().mockResolvedValue(true);
     isSessionIdleExpired.mockReset().mockResolvedValue(false);
+    isFullSessionMfaPolicySatisfied.mockReset().mockResolvedValue(true);
+    getCfAccessConfigCached.mockReset().mockResolvedValue({ enabled: true });
+    validateAccessJwt.mockReset().mockResolvedValue({});
+    findCloudflareAccessProvider.mockReset().mockResolvedValue({ enabled: true });
   });
 
   it("denies once the event is archived, even for the emergency bearer", async () => {
@@ -80,6 +97,42 @@ describe("createCheckinStreamRevalidator", () => {
     const { run } = setup({ session: liveSession, vars: { operatorUserId: "u1", checkinSessionId: "s1" } });
     expect(await run()).toBe(false);
     expect(canPerformCheckIn).not.toHaveBeenCalled();
+  });
+
+  it("denies a session that no longer satisfies the MFA policy (role granted after sign-in)", async () => {
+    isFullSessionMfaPolicySatisfied.mockResolvedValue(false);
+    const { run } = setup({ session: liveSession, vars: { operatorUserId: "u1", checkinSessionId: "s1" } });
+    expect(await run()).toBe(false);
+    expect(canPerformCheckIn).not.toHaveBeenCalled();
+  });
+
+  describe("Cloudflare Access streams", () => {
+    const cf = {
+      vars: { operatorUserId: "u1", checkinAuthSource: "cloudflare-access" },
+      headers: { "cf-access-jwt-assertion": "jwt" },
+    };
+
+    it("stays open while the assertion, integration and provider are valid", async () => {
+      expect(await setup(cf).run()).toBe(true);
+      expect(validateAccessJwt).toHaveBeenCalledWith("jwt", expect.anything());
+    });
+
+    it("closes once the integration is disabled, the token is gone or the provider is disabled", async () => {
+      getCfAccessConfigCached.mockResolvedValueOnce({ enabled: false });
+      expect(await setup(cf).run()).toBe(false);
+      expect(await setup({ ...cf, headers: {} }).run()).toBe(false);
+      findCloudflareAccessProvider.mockResolvedValueOnce({ enabled: false });
+      expect(await setup(cf).run()).toBe(false);
+      findCloudflareAccessProvider.mockResolvedValueOnce(null);
+      expect(await setup(cf).run()).toBe(false);
+    });
+
+    it("closes when the assertion expired but not on a transient verification failure", async () => {
+      validateAccessJwt.mockRejectedValueOnce(new CfAccessJwtError("expired", "expired"));
+      expect(await setup(cf).run()).toBe(false);
+      validateAccessJwt.mockRejectedValueOnce(new Error("jwks fetch failed"));
+      expect(await setup(cf).run()).toBe(true);
+    });
   });
 
   it.each([

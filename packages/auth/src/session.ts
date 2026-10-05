@@ -318,7 +318,7 @@ export async function validateSession(
 /** Reject full sessions that predate MFA-required role grants or lack enrolled TOTP. */
 async function assertFullSessionMfaPolicy(
   prisma: PrismaClient | Prisma.TransactionClient,
-  validated: ValidatedPartialSession,
+  validated: { userId: string; session: { created_at: Date; auth_method: string } },
 ): Promise<boolean> {
   // Backup-code acknowledgment is mandatory before a full session is honored for
   // every auth method, including OIDC (IAM-002).
@@ -341,6 +341,17 @@ async function assertFullSessionMfaPolicy(
     return false;
   }
   return true;
+}
+
+/**
+ * The MFA / backup-code policy {@link validateSession} applies to a full session, as a read-only
+ * check for a long-lived connection (the check-in live stream) that holds an already-loaded row.
+ */
+export async function isFullSessionMfaPolicySatisfied(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  session: { user_id: string; created_at: Date; auth_method: string },
+): Promise<boolean> {
+  return assertFullSessionMfaPolicy(prisma, { userId: session.user_id, session });
 }
 
 /**

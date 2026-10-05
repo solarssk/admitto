@@ -1,7 +1,16 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Context, Next } from "hono";
 import type { PrismaClient } from "@admitto/db";
-import { canPerformCheckIn, isSessionIdleExpired } from "@admitto/auth";
+import {
+  canPerformCheckIn,
+  CfAccessJwtError,
+  extractAccessTokenFromHeaders,
+  findCloudflareAccessProvider,
+  getCfAccessConfigCached,
+  isFullSessionMfaPolicySatisfied,
+  isSessionIdleExpired,
+  validateAccessJwt,
+} from "@admitto/auth";
 import { assertEventNotArchived } from "./admin/event-archiving.js";
 import { rejectCrossSitePost } from "./auth/same-origin-post.js";
 import { resolveStaffAuthFromRequest } from "./auth/resolve-staff-auth.js";
@@ -53,6 +62,7 @@ export function createCheckinPreAuth(deps: CheckinSessionAuthDeps) {
     }
 
     c.set("checkinAuth", "session");
+    c.set("checkinAuthSource", result.auth.authSource);
     c.set("operatorUserId", result.auth.userId);
     if (result.auth.sessionId) {
       c.set("checkinSessionId", result.auth.sessionId);
@@ -114,16 +124,55 @@ export function createCheckinEventScope(
   };
 }
 
+/** A full cookie session as validateSession would still honour it, without touching `last_seen_at`. */
+async function sessionStillValid(
+  prisma: PrismaClient,
+  sessionId: string,
+): Promise<boolean> {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: {
+      revoked_at: true,
+      expires_at: true,
+      user_id: true,
+      remember_me: true,
+      stage: true,
+      last_seen_at: true,
+      created_at: true,
+      auth_method: true,
+    },
+  });
+  if (!session || session.revoked_at || session.expires_at.getTime() <= Date.now()) return false;
+  // Same inactivity and MFA policy as validateSession, read-only.
+  if (await isSessionIdleExpired(prisma, session)) return false;
+  return isFullSessionMfaPolicySatisfied(prisma, session);
+}
+
 /**
- * Re-checks, while a check-in event stream is open, the decisions the connect-time middleware made
- * once: the event is still not archived and, for a session, that the session is still valid
- * (not revoked or expired, the account still active) and still allowed to check in at this event.
- * Reads only - it must not go through the session validator, which would refresh `last_seen_at`
- * and let an open stream keep an otherwise idle session alive forever. A Cloudflare Access login
- * has no session row to re-read, so for it only the role and the archive state are re-checked; the
- * emergency Bearer path only the archive state. Returns false when the stream should be closed.
- * A failure to read (a database blip) leaves the stream open: the next tick tries again, and the
- * same outage stops new events from being published anyway.
+ * The Cloudflare Access assertion a stream was opened with, as a fresh request would be judged:
+ * integration still enabled, provider still enabled and the JWT (signature, audience, expiry)
+ * still valid. Only a verdict on the credential closes the stream; a transient JWKS or network
+ * failure keeps it open, since the client's reconnect is then judged by the full auth path.
+ */
+async function cfAccessCredentialStillValid(c: Context, prisma: PrismaClient): Promise<boolean> {
+  const config = await getCfAccessConfigCached(prisma);
+  if (!config.enabled) return false;
+  const token = extractAccessTokenFromHeaders(Object.fromEntries(c.req.raw.headers.entries()));
+  if (!token) return false;
+  try {
+    await validateAccessJwt(token, config);
+  } catch (err) {
+    return !(err instanceof CfAccessJwtError);
+  }
+  return (await findCloudflareAccessProvider(prisma))?.enabled === true;
+}
+
+/**
+ * Re-checks, on every SSE heartbeat, what the first request was judged on: archived or deleted
+ * event, account status, the credential it was opened with (session row or Cloudflare Access
+ * assertion) and the operator's role on the event. Returns false once any of them no longer
+ * holds. Never refreshes `last_seen_at`, so an open stream cannot keep an idle session alive, and
+ * fails open on a database error so a blip does not drop every operator at once.
  */
 export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
   return async (c: Context, eventId: string): Promise<boolean> => {
@@ -138,7 +187,6 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
 
       const userId = c.get("operatorUserId") as string | undefined;
       if (!userId) return false;
-      const sessionId = c.get("checkinSessionId") as string | undefined;
       // Deactivation revokes sessions but leaves role assignments, so the account status is read
       // for every caller, including Cloudflare Access streams that have no session row.
       const user = await deps.prisma.user.findUnique({
@@ -146,21 +194,14 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
         select: { is_active: true },
       });
       if (!user?.is_active) return false;
-      if (sessionId) {
-        const session = await deps.prisma.session.findUnique({
-          where: { id: sessionId },
-          select: {
-            revoked_at: true,
-            expires_at: true,
-            user_id: true,
-            remember_me: true,
-            stage: true,
-            last_seen_at: true,
-          },
-        });
-        if (!session || session.revoked_at || session.expires_at.getTime() <= Date.now()) return false;
-        // Same inactivity policy as validateSession, without refreshing last_seen_at.
-        if (await isSessionIdleExpired(deps.prisma, session)) return false;
+
+      const sessionId = c.get("checkinSessionId") as string | undefined;
+      if (sessionId && !(await sessionStillValid(deps.prisma, sessionId))) return false;
+      if (
+        c.get("checkinAuthSource") === "cloudflare-access" &&
+        !(await cfAccessCredentialStillValid(c, deps.prisma))
+      ) {
+        return false;
       }
       return await canPerformCheckIn(deps.prisma, userId, eventId);
     } catch {
