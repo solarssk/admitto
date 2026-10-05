@@ -34,7 +34,7 @@ function harness(options = {}) {
   const calls = []
   let prReads = 0
   const owner = {login: 'example', id: 1}
-  const pr = {state: 'open', head: {sha: head, repo: {full_name: 'example/repo'}}, user: owner}
+  const pr = {state: 'open', head: {sha: head, repo: {full_name: 'example/repo'}}, user: options.author ?? owner}
   return { calls, config: { repository: 'example/repo', number: '1', head,
     triggerToken: 'trigger-token', readToken: 'read-token', attempts: 1, sleep: async () => {},
     api: async (path, token, method = 'GET', body) => {
@@ -69,6 +69,25 @@ test('duplicate requests reuse the same commit; findings do not approve', async 
   assert.equal((await runCodexFallback(reuse.config)).status, 'clean')
   assert.equal(reuse.calls.filter((call) => call.method === 'POST').length, 0)
   assert.equal((await runCodexFallback(harness({reviews: [review]}).config)).status, 'findings')
+})
+test('Dependabot fallback requires the explicit manual opt-in and still checks identity during polling', async () => {
+  const author = { login: 'dependabot[bot]' }
+  const automatic = harness({ author })
+  assert.equal((await runCodexFallback(automatic.config)).status, 'stale')
+  assert.equal(automatic.calls.filter(call => call.method === 'POST').length, 0)
+  const manual = harness({ author })
+  assert.equal((await runCodexFallback({ ...manual.config, allowDependabot: true })).status, 'clean')
+  assert.equal((await runCodexFallback({ ...harness({ author, stale: true }).config, allowDependabot: true })).status, 'stale')
+  const foreign = harness({ author: { login: 'external-contributor' } })
+  assert.equal((await runCodexFallback({ ...foreign.config, allowDependabot: true })).status, 'stale')
+  const fork = harness({ author })
+  const originalApi = fork.config.api
+  assert.equal((await runCodexFallback({ ...fork.config, allowDependabot: true,
+    api: async (...args) => {
+      const value = await originalApi(...args)
+      return args[0].endsWith('/pulls/1') ? { ...value, head: { ...value.head, repo: { full_name: 'external/fork' } } } : value
+    },
+  })).status, 'stale')
 })
 test('missing trigger, stale head, ambiguous SHA and timeout never become a clean review', async () => {
   const noToken = harness()
