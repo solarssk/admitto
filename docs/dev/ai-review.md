@@ -5,6 +5,23 @@ same-repository, non-draft PRs with Claude Code on the maintainer's subscription
 It reads the base branch and a text diff; it never checks out or runs PR code.
 Both findings and approvals go through one publication step, bound to the reviewed commit.
 
+## Manually review a dependency update
+
+When a human pushes a fix to a Dependabot PR, branch protection can require approval from
+another identity. Automatic AI review still skips Dependabot PRs. The repository owner can
+request the same reviewer manually:
+
+1. Open **Actions → AI review → Run workflow**.
+2. Select the repository's default branch and enter the open PR number.
+3. Wait for the review and check its published verdict before merging.
+
+The dispatch and any rerun must be initiated by the repository owner. The target must be an
+open, non-draft PR authored by the owner or Dependabot, with both branches in this repository
+and the default branch as its base. Forks and other authors are rejected before reading a
+provider credential. The workflow reads only trusted workflow code and a text diff; it never
+checks out or runs the PR head. Manual runs share the default branch's attempt budget and
+the existing daily budget. The reviewed commit is checked again before publication.
+
 ## Credentials
 
 | Secret | Purpose |
@@ -84,7 +101,8 @@ Bot type. A clean result must use the observed connector success format, name th
 expected commit and resolve through GitHub to the exact full SHA. Reviews with findings
 for that commit override clean comments. Responses predating the request, spoofed
 comments, reactions alone, unknown formats and results for another commit do not qualify.
-The PR must remain open, owner-authored, same-repository and at the expected head.
+The PR must remain open, same-repository and at the expected head. Automatic requests require
+the owner as author; an owner-authorized manual dispatch also permits Dependabot.
 
 The connector is checked every ten seconds for at most eight minutes, plus bounded API
 request time. Configuration, identity and GitHub API errors fail the workflow without
