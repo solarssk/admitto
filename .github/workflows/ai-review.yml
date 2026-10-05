@@ -48,8 +48,7 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           github.event.pull_request.user.login == github.repository_owner) ||
         (github.event_name == 'workflow_dispatch' &&
-          github.actor == github.repository_owner &&
-          github.triggering_actor == github.repository_owner &&
+          github.actor_id == github.event.repository.owner.id &&
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
       }}
     permissions:
@@ -76,8 +75,14 @@ jobs:
           REQUESTED_PR: ${{ github.event.pull_request.number || inputs.pr_number }}
           EVENT_NAME: ${{ github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          OWNER_ID: ${{ github.event.repository.owner.id }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if ! [[ "$TRIGGERING_ACTOR" =~ ^[A-Za-z0-9-]+$ ]]; then exit 1; fi
+            if [[ "$(gh api "users/${TRIGGERING_ACTOR}" --jq .id)" != "$OWNER_ID" ]]; then exit 1; fi
+          fi
           [[ "$REQUESTED_PR" =~ ^[1-9][0-9]*$ ]]
           TARGET="$RUNNER_TEMP/ai-review-target.json"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${REQUESTED_PR}" > "$TARGET"

@@ -7,7 +7,7 @@ import test from 'node:test'
 
 const workflow = readFileSync(new URL('../.github/workflows/ai-review.yml', import.meta.url), 'utf8')
 const step = workflow.split('      - name: Resolve review target\n')[1].split('      # Debounce:')[0]
-const script = step.split('        run: |\n')[1].split('\n').map(line => line.replace(/^          /, '')).join('\n')
+const script = step.split('        run: |\n')[1].split('\n').map(line => line.replace(/^ {10}/, '')).join('\n')
 const sha = 'a'.repeat(40)
 const pull = () => ({
   number: 1574, state: 'open', draft: false, user: { login: 'dependabot[bot]' },
@@ -18,7 +18,7 @@ const pull = () => ({
 function resolve(target, env = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'ai-review-target-'))
   try {
-    writeFileSync(join(directory, 'gh'), '#!/bin/sh\nprintf "%s" "$TARGET_JSON"\nprintf "%s" "$*" > "$RUNNER_TEMP/api-call"\n', { mode: 0o755 })
+    writeFileSync(join(directory, 'gh'), '#!/bin/sh\ncase "$2" in users/*) printf "%s" "$REQUESTER_ID";; *) printf "%s" "$TARGET_JSON";; esac\n', { mode: 0o755 })
     const output = join(directory, 'output')
     writeFileSync(output, '')
     const run = spawnSync('bash', ['-c', script], {
@@ -26,6 +26,7 @@ function resolve(target, env = {}) {
       env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory,
         GITHUB_OUTPUT: output, GITHUB_REPOSITORY: 'maintainer/project', GITHUB_REPOSITORY_OWNER: 'maintainer',
         DEFAULT_BRANCH: 'main', REQUESTED_PR: '1574', EVENT_NAME: 'workflow_dispatch',
+        OWNER_ID: '7', REQUESTER_ID: '7', TRIGGERING_ACTOR: 'maintainer',
         TARGET_JSON: JSON.stringify(target), ...env },
     })
     return { status: run.status, stderr: run.stderr, output: readFileSync(output, 'utf8') }
@@ -76,9 +77,13 @@ test('invalid targets fail without publishing a review target', () => {
 test('manual dispatch is restricted to the owner and trusted default branch', () => {
   const guard = workflow.split('    if: >-\n')[1].split('    permissions:')[0]
   assert.match(guard, /github\.event_name == 'workflow_dispatch'/)
-  assert.match(guard, /github\.actor == github\.repository_owner/)
-  assert.match(guard, /github\.triggering_actor == github\.repository_owner/)
+  assert.match(guard, /github\.actor_id == github\.event\.repository\.owner\.id/)
   assert.match(guard, /github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/)
   assert.doesNotMatch(workflow, /ref:.*steps\.target\.outputs\.head/)
   assert.equal((workflow.match(/-f commit_id=/g) ?? []).length, 1)
+  for (const env of [{ REQUESTER_ID: '8' }, { TRIGGERING_ACTOR: '../foreign' }]) {
+    const result = resolve(pull(), env)
+    assert.notEqual(result.status, 0, JSON.stringify({ env, result }))
+    assert.equal(result.output, '')
+  }
 })
