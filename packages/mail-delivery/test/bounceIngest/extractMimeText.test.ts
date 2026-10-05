@@ -187,6 +187,25 @@ describe("extractReferencedMessageIds", () => {
     ]);
   });
 
+  it("reads Original-Message-ID from a plain and from a base64 delivery-status part", () => {
+    const status = "Reporting-MTA: dns; mx.example.com\r\nOriginal-Message-ID: <Orig@mail.example.com>\r\n";
+    const build = (encoding: string, body: string) =>
+      [
+        'Content-Type: multipart/report; report-type=delivery-status; boundary="b1"',
+        "",
+        "--b1",
+        "Content-Type: message/delivery-status",
+        `Content-Transfer-Encoding: ${encoding}`,
+        "",
+        body,
+        "--b1--",
+      ].join("\r\n");
+    expect(extractReferencedMessageIds(build("7bit", status))).toEqual(["<orig@mail.example.com>"]);
+    expect(extractReferencedMessageIds(build("base64", Buffer.from(status).toString("base64")))).toEqual([
+      "<orig@mail.example.com>",
+    ]);
+  });
+
   it("ignores folded lines of other headers and header lines without an id", () => {
     const source = ["Subject: x", "\t<folded@x.test>", "Message-ID: no-angle-brackets", "References:", "\t<ok@x.test>"].join("\r\n");
     expect(extractReferencedMessageIds(source)).toEqual(["<ok@x.test>"]);

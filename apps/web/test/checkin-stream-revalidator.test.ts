@@ -46,6 +46,11 @@ describe("createCheckinStreamRevalidator", () => {
     expect(await run()).toBe(false);
   });
 
+  it("denies once the event no longer exists, even for the emergency bearer", async () => {
+    const { run } = setup({ event: null, vars: { checkinAuth: "bearer" } });
+    expect(await run()).toBe(false);
+  });
+
   it("keeps a bearer stream open while the event is active", async () => {
     const { run, prisma } = setup({ vars: { checkinAuth: "bearer" } });
     expect(await run()).toBe(true);

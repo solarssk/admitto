@@ -245,7 +245,12 @@ export function extractPlainTextFromSource(
 
 const MAX_REFERENCED_MESSAGE_IDS = 50;
 const MESSAGE_ID_TOKEN_RE = /<[^<>\s]{1,998}>/g;
-const MESSAGE_ID_HEADERS = new Set(["message-id", "in-reply-to", "references"]);
+const MESSAGE_ID_HEADERS = new Set([
+  "message-id",
+  "in-reply-to",
+  "references",
+  "original-message-id", // RFC 3464 per-message field in message/delivery-status
+]);
 
 /**
  * Whether a header line starts (`true`), continues (`inRelevantHeader`) or leaves a header that
@@ -271,13 +276,17 @@ function collectMessageIds(text: string, ids: Set<string>): boolean {
   return false;
 }
 
-/** Quoted original message parts, whose headers a mail server may have base64 / QP encoded. */
-const QUOTED_ORIGINAL_TYPES = new Set(["message/rfc822", "text/rfc822-headers"]);
+/** Parts that name the original message and that a mail server may have base64 / QP encoded. */
+const QUOTED_ORIGINAL_TYPES = new Set([
+  "message/rfc822",
+  "text/rfc822-headers",
+  "message/delivery-status",
+]);
 
 /**
- * Message-IDs named by `Message-ID`, `In-Reply-To` and `References` header lines in the raw
- * source and in the transfer-decoded quoted original message (message/rfc822 or
- * text/rfc822-headers parts, which some servers base64 or quoted-printable encode).
+ * Message-IDs named by `Message-ID`, `In-Reply-To`, `References` and `Original-Message-ID` header
+ * lines in the raw source and in the transfer-decoded quoted original message or delivery status
+ * (message/rfc822, text/rfc822-headers, message/delivery-status; some servers base64 them).
  * Lower-cased and de-duplicated, capped to bound memory.
  */
 export function extractReferencedMessageIds(source: RawMimeSource): string[] {

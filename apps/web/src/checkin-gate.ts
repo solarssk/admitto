@@ -132,7 +132,8 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
         where: { id: eventId },
         select: { archived_at: true },
       });
-      if (event?.archived_at) return false;
+      // A deleted event has no row at all, which is as final as an archived one.
+      if (!event || event.archived_at) return false;
       if (c.get("checkinAuth") === "bearer") return true;
 
       const userId = c.get("operatorUserId") as string | undefined;
