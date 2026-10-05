@@ -137,6 +137,8 @@ describe("isBlockedPrivateOrMetadataHost", () => {
     "2002:a9fe:a9fe::1", // 6to4 -> 169.254.169.254
     "2002:0a00:0001::1", // 6to4 -> 10.0.0.1
     "::7f00:1", // IPv4-compatible -> 127.0.0.1
+    "64:ff9b:1::1", // RFC 8215 local-use NAT64, blocked outright
+    "64:ff9b:1:ffff::a00:1",
   ])("blocks IPv4 embedded in IPv6 literal %s", (address) => {
     expect(isBlockedPrivateOrMetadataHost(address)).toBe(true);
   });

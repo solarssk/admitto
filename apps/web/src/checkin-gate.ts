@@ -3,12 +3,12 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import {
   canPerformCheckIn,
-  CfAccessJwtError,
   extractAccessTokenFromHeaders,
   findCloudflareAccessProvider,
   getCfAccessConfigCached,
   isFullSessionMfaPolicySatisfied,
   isSessionIdleExpired,
+  isTransientCfAccessJwtFailure,
   validateAccessJwt,
 } from "@admitto/auth";
 import { assertEventNotArchived } from "./admin/event-archiving.js";
@@ -151,8 +151,9 @@ async function sessionStillValid(
 /**
  * The Cloudflare Access assertion a stream was opened with, as a fresh request would be judged:
  * integration still enabled, provider still enabled and the JWT (signature, audience, expiry)
- * still valid. Only a verdict on the credential closes the stream; a transient JWKS or network
- * failure keeps it open, since the client's reconnect is then judged by the full auth path.
+ * still valid. Only a verdict on the credential closes the stream; a transient JWKS timeout or
+ * network failure (see isTransientCfAccessJwtFailure) keeps it open, since the client's reconnect
+ * is then judged by the full auth path.
  */
 async function cfAccessCredentialStillValid(c: Context, prisma: PrismaClient): Promise<boolean> {
   const config = await getCfAccessConfigCached(prisma);
@@ -162,7 +163,7 @@ async function cfAccessCredentialStillValid(c: Context, prisma: PrismaClient): P
   try {
     await validateAccessJwt(token, config);
   } catch (err) {
-    return !(err instanceof CfAccessJwtError);
+    return isTransientCfAccessJwtFailure(err);
   }
   return (await findCloudflareAccessProvider(prisma))?.enabled === true;
 }

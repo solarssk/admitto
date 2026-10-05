@@ -132,6 +132,11 @@ describe("createCheckinStreamRevalidator", () => {
       expect(await setup(cf).run()).toBe(false);
       validateAccessJwt.mockRejectedValueOnce(new Error("jwks fetch failed"));
       expect(await setup(cf).run()).toBe(true);
+      // validateAccessJwt wraps whatever verification threw; a network cause stays transient.
+      validateAccessJwt.mockRejectedValueOnce(
+        new CfAccessJwtError("fetch failed", "invalid_jwt", { cause: new TypeError("fetch failed") }),
+      );
+      expect(await setup(cf).run()).toBe(true);
     });
   });
 

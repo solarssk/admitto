@@ -137,6 +137,7 @@ export {
 export {
   validateAccessJwt,
   CfAccessJwtError,
+  isTransientCfAccessJwtFailure,
   isServiceTokenShape,
   clearCfAccessJwksCacheForTests,
 } from "./cloudflare-access/validate.js";
