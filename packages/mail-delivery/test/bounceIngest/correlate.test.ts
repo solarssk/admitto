@@ -140,6 +140,11 @@ describe("selectBounceDeliveryIndex", () => {
     expect(selectBounceDeliveryIndex(q(none), undefined)).toBe(0);
   });
 
+  it("prefers the SMTP row the DSN names over a newer opaque-id row", () => {
+    expect(selectBounceDeliveryIndex(q(opaque, smtp), ["<abc@mail.example.com>"])).toBe(1);
+    expect(selectBounceDeliveryIndex(q(none, smtp), ["<abc@mail.example.com>"])).toBe(1);
+  });
+
   it("skips a non-matching SMTP row and selects the next eligible one", () => {
     expect(selectBounceDeliveryIndex(q(smtp, none), [])).toBe(1);
   });

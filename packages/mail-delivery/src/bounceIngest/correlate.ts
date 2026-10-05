@@ -92,16 +92,17 @@ function isRfcMessageId(value: string | null): value is string {
  * accepted for it only when the DSN names that id. This stops anyone who can mail the bounce
  * mailbox from forging a DSN for an attendee. Deliveries without an RFC Message-ID (Graph and
  * Power Automate return opaque request ids) still match by recipient alone.
- * Returns the index into `queue`, or -1.
+ * A delivery whose Message-ID the DSN names always wins over the recipient-only fallback, so a
+ * newer Graph row cannot take a bounce meant for an SMTP row. Returns the index into `queue`, or -1.
  */
 export function selectBounceDeliveryIndex(
   queue: readonly EmailDelivery[],
   referencedMessageIds: readonly string[] | undefined,
 ): number {
   const referenced = new Set(referencedMessageIds ?? []);
-  return queue.findIndex(
-    (d) =>
-      !isRfcMessageId(d.provider_message_id) ||
-      referenced.has(d.provider_message_id.toLowerCase()),
+  const exact = queue.findIndex(
+    (d) => isRfcMessageId(d.provider_message_id) && referenced.has(d.provider_message_id.toLowerCase()),
   );
+  if (exact !== -1) return exact;
+  return queue.findIndex((d) => !isRfcMessageId(d.provider_message_id));
 }
