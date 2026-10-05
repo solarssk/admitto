@@ -13,18 +13,25 @@ name: AI review
 # The review text is also scanned for credential-shaped strings before it is posted, because this
 # repository is public and the model's process holds the Claude subscription credential.
 #
-# Scope: same-repository PRs opened by the repository owner. Dependabot PRs and forks get no
-# secrets here and are skipped; they stay unreviewed by this bot on purpose.
+# Automatic scope: same-repository PRs opened by the repository owner. The owner can also
+# dispatch a review of a same-repository Dependabot PR from the default branch. Forks remain
+# excluded, and the target is validated through the API before any provider credential is used.
 #
-# A new push dismisses the approval (branch protection: dismiss stale reviews), and this workflow
-# runs again on every push, so the approval always refers to the code that would be merged.
+# A new push dismisses the approval (branch protection: dismiss stale reviews). Owner PRs run
+# again automatically; Dependabot PRs need a new manual dispatch for the updated commit.
 
 on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Open pull request to review (owner or Dependabot, same repository)"
+        required: true
+        type: string
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  group: ai-review-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 permissions: {}
@@ -36,9 +43,12 @@ jobs:
     timeout-minutes: 30
     if: >-
       ${{
-        !github.event.pull_request.draft &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.login == github.repository_owner
+        (github.event_name == 'pull_request_target' &&
+          !github.event.pull_request.draft &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login == github.repository_owner) ||
+        (github.event_name == 'workflow_dispatch' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
       }}
     permissions:
       contents: read # checkout of the BASE branch and reading it
@@ -57,6 +67,37 @@ jobs:
       DEBOUNCE_SECONDS: 60
 
     steps:
+      - name: Resolve review target
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_PR: ${{ github.event.pull_request.number || inputs.pr_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          OWNER_ID: ${{ github.event.repository.owner.id }}
+          ACTOR_ID: ${{ github.actor_id }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [[ "$ACTOR_ID" != "$OWNER_ID" ]]; then exit 1; fi
+            if ! [[ "$TRIGGERING_ACTOR" =~ ^[A-Za-z0-9-]+$ ]]; then exit 1; fi
+            if [[ "$(gh api "users/${TRIGGERING_ACTOR}" --jq .id)" != "$OWNER_ID" ]]; then exit 1; fi
+          fi
+          [[ "$REQUESTED_PR" =~ ^[1-9][0-9]*$ ]]
+          TARGET="$RUNNER_TEMP/ai-review-target.json"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${REQUESTED_PR}" > "$TARGET"
+          jq -e --arg repo "$GITHUB_REPOSITORY" --arg owner "$GITHUB_REPOSITORY_OWNER" \
+            --arg number "$REQUESTED_PR" --arg event "$EVENT_NAME" --arg branch "$DEFAULT_BRANCH" '
+              .state == "open" and .draft == false and .number == ($number | tonumber) and
+              .head.repo.full_name == $repo and .base.repo.full_name == $repo and
+              (.user.login == $owner or ($event == "workflow_dispatch" and .user.login == "dependabot[bot]")) and
+              ($event != "workflow_dispatch" or .base.ref == $branch) and
+              (.head.sha | test("^[a-f0-9]{40}$")) and
+              (.base.sha | test("^[a-f0-9]{40}$"))
+            ' "$TARGET" > /dev/null
+          jq -r '"pr_number=\(.number)\nhead_sha=\(.head.sha)\nhead_ref=\(.head.ref)\nbase_sha=\(.base.sha)\nbase_ref=\(.base.ref)"' "$TARGET" >> "$GITHUB_OUTPUT"
+
       # Debounce: a newer push cancels this run (concurrency above) while it is still waiting, so
       # a quick series of pushes costs one review, not one per push. Runner minutes are free on a
       # public repo; the model tokens are what this saves. Skipped on a manual re-run (attempt 2
@@ -65,9 +106,10 @@ jobs:
         if: ${{ github.run_attempt == 1 }}
         run: sleep "$DEBOUNCE_SECONDS"
 
-      # No ref: on pull_request_target this is the base branch, never the PR head.
+      # Read the validated base commit, including on reruns after the base branch advances.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ steps.target.outputs.base_sha }}
           persist-credentials: false
 
       # Built from the per-file API instead of `gh pr diff` so lockfiles (large, machine-written, and
@@ -79,7 +121,7 @@ jobs:
         id: diff
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
         run: |
           set -euo pipefail
           mkdir -p .ai-review
@@ -117,7 +159,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # Manual reviews share the default branch's attempt budget; the daily limit also applies.
+          HEAD_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || steps.target.outputs.head_ref }}
         run: |
           set -euo pipefail
           FIELDS=databaseId,status,conclusion,createdAt,startedAt,updatedAt
@@ -197,8 +240,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CODEX_REVIEW_TRIGGER_TOKEN: ${{ secrets.CODEX_REVIEW_TRIGGER_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ALLOW_DEPENDABOT: ${{ github.event_name == 'workflow_dispatch' }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.target.outputs.head_sha }}
         run: node scripts/ai-review-codex.mjs
 
       - name: Report review cost
@@ -210,11 +254,15 @@ jobs:
 
       # Not always(): a run cancelled by a newer push must not go on to dismiss or post anything.
       - name: Submit the review
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.target.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.target.outputs.head_sha }}
+          BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          BASE_REF: ${{ steps.target.outputs.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           TOO_LARGE: ${{ steps.diff.outputs.too_large }}
           UNAVAILABLE: ${{ steps.diff.outputs.unavailable }}
           DOCS_ONLY: ${{ steps.diff.outputs.docs_only }}
@@ -244,10 +292,21 @@ jobs:
               done
           }
 
-          # All publication paths use the current PR head, including provider-unavailable policy approvals.
-          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
-            echo "PR head moved during the review - submitting nothing."
+          # Recheck eligibility and the complete reviewed diff before any publication.
+          current_review_target() {
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" |
+              jq -e --arg repo "$GITHUB_REPOSITORY" --arg owner "$GITHUB_REPOSITORY_OWNER" \
+                --arg head "$HEAD_SHA" --arg base "$BASE_SHA" --arg ref "$BASE_REF" \
+                --arg event "$EVENT_NAME" --arg branch "$DEFAULT_BRANCH" '
+                  .state == "open" and .draft == false and
+                  .head.repo.full_name == $repo and .base.repo.full_name == $repo and
+                  (.user.login == $owner or ($event == "workflow_dispatch" and .user.login == "dependabot[bot]")) and
+                  .head.sha == $head and .base.sha == $base and .base.ref == $ref and
+                  ($event != "workflow_dispatch" or .base.ref == $branch)
+                ' > /dev/null
+          }
+          if ! current_review_target; then
+            echo "PR eligibility or reviewed diff changed - submitting nothing."
             exit 0
           fi
 
@@ -328,12 +387,9 @@ jobs:
             exit 1
           fi
 
-          # The diff was read at HEAD_SHA. If a push landed while the reviewer ran, this run is stale
-          # (its concurrency cancellation can race with this very call), so it submits nothing and
-          # the run for the new head takes over.
-          LIVE_HEAD="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          if [ "$LIVE_HEAD" != "$HEAD_SHA" ]; then
-            echo "PR head moved from ${HEAD_SHA} to ${LIVE_HEAD} during the review - submitting nothing."
+          # A push, retarget or eligibility change makes this review stale.
+          if ! current_review_target; then
+            echo "PR eligibility or reviewed diff changed - submitting nothing."
             exit 0
           fi
 

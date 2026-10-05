@@ -66,9 +66,13 @@ const submit = workflow.split('      - name: Submit the review\n')[1].split('   
 function publish(overrides = {}, stale = false) {
   const dir = mkdtempSync(join(tmpdir(), 'ai-review-submit-'))
   try {
-    writeFileSync(join(dir, 'gh'), `#!/bin/bash\nif [[ "$*" == *'--jq .head.sha'* ]]; then echo '${stale ? 'new' : 'head'}'; exit 0; fi\nif [[ "$*" == *'--paginate'* ]]; then echo 123; exit 0; fi\necho "$*" >> "$CALLS"\n`, {mode: 0o755})
+    const target = {state: 'open', draft: false, user: {login: 'example'},
+      head: {sha: stale ? 'new' : 'head', repo: {full_name: 'example/repo'}},
+      base: {sha: 'base', ref: 'main', repo: {full_name: 'example/repo'}}}
+    writeFileSync(join(dir, 'gh'), `#!/bin/bash\nif [[ "$2" == 'repos/example/repo/pulls/1' ]]; then printf '%s' '$TARGET_PLACEHOLDER'; exit 0; fi\nif [[ "$*" == *'--paginate'* ]]; then echo 123; exit 0; fi\necho "$*" >> "$CALLS"\n`.replace('$TARGET_PLACEHOLDER', JSON.stringify(target)), {mode: 0o755})
     const run = spawnSync('bash', ['-c', submit], {encoding: 'utf8', env: {
       PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_STEP_SUMMARY: join(dir, 'summary'),
+      GITHUB_REPOSITORY_OWNER: 'example', BASE_SHA: 'base', BASE_REF: 'main', EVENT_NAME: 'pull_request_target', DEFAULT_BRANCH: 'main',
       GITHUB_REPOSITORY: 'example/repo', PR_NUMBER: '1', HEAD_SHA: 'head', CALLS: join(dir, 'calls'),
       CLAUDE_STATUS: 'unavailable', CLAUDE_REASON: 'no_model_response', BUDGET_REASON: 'budget exhausted', ...overrides,
     }})
