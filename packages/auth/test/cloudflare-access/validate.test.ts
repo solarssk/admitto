@@ -144,6 +144,17 @@ describe("isTransientCfAccessJwtFailure", () => {
     expect(isTransientCfAccessJwtFailure(new CfAccessJwtError("type", "invalid_type"))).toBe(false);
   });
 
+  it("treats a non-200 JWKS answer and a malformed key set as transient, but not a token verdict from jose", () => {
+    const wrap = (cause: Error) => new CfAccessJwtError("m", "invalid_jwt", { cause });
+    expect(
+      isTransientCfAccessJwtFailure(wrap(new jose.errors.JOSEError("Expected 200 OK from the JSON Web Key Set HTTP response"))),
+    ).toBe(true);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWKSInvalid("malformed")))).toBe(true);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWKSNoMatchingKey()))).toBe(false);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWSSignatureVerificationFailed()))).toBe(false);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWTInvalid("bad")))).toBe(false);
+  });
+
   it("treats a JWKS timeout, a network error and an unrelated error as transient", () => {
     expect(
       isTransientCfAccessJwtFailure(
