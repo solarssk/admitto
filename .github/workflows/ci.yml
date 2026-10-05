@@ -405,6 +405,8 @@ jobs:
           fail_ci_if_error: false
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+        # Bootstrap/TLS failures can bypass the action's fail_ci_if_error option.
+        continue-on-error: true
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -475,6 +477,8 @@ jobs:
           fail_ci_if_error: false
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+        # Bootstrap/TLS failures can bypass the action's fail_ci_if_error option.
+        continue-on-error: true
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -591,6 +595,8 @@ jobs:
           fail_ci_if_error: false
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+        # Bootstrap/TLS failures can bypass the action's fail_ci_if_error option.
+        continue-on-error: true
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
