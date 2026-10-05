@@ -463,7 +463,8 @@ describe("RoleAssignmentsTab on the loading standard", () => {
 
     fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), { target: { value: "jane" } });
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
-    expect(onCountChange).toHaveBeenLastCalledWith(undefined);
+    // Seeing the error does not guarantee its count-reporting effect has run.
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(undefined));
   });
 
   it("keeps the dialog open, with the reason and a usable button, when the revoke itself fails, and does not refresh a list that did not change", async () => {
