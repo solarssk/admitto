@@ -25,13 +25,13 @@ export function assessCodexResult({ comments, reviews, head, requestedAt }) {
   return { status: 'pending', reason: '', resultId: '', resultKind: '' }
 }
 
-function currentOwnerPr(pr, repository, head) {
+function currentOwnerPr(pr, repository, head, allowDependabot) {
   return pr.state === 'open' && pr.head?.sha === head && pr.head.repo?.full_name === repository &&
-    pr.user?.login === repository.split('/')[0]
+    (pr.user?.login === repository.split('/')[0] || (allowDependabot && pr.user?.login === 'dependabot[bot]'))
 }
 
 export async function runCodexFallback({ repository, number, head, triggerToken, readToken,
-  api, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), attempts = 48 }) {
+  api, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), attempts = 48, allowDependabot = false }) {
   if (!triggerToken) return { status: 'unavailable', reason: 'trigger_not_configured' }
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !/^\d+$/.test(String(number)) || !/^[a-f0-9]{40}$/.test(head)) {
     throw new Error('Invalid request')
@@ -41,12 +41,12 @@ export async function runCodexFallback({ repository, number, head, triggerToken,
   const commentPath = `${root}/issues/${number}/comments`
   const requester = await api('/user', triggerToken)
   if (requester.login !== repository.split('/')[0]) throw new Error('Trigger identity must be repository owner')
-  if (!currentOwnerPr(await api(prPath, readToken), repository, head)) return { status: 'stale', reason: '' }
+  if (!currentOwnerPr(await api(prPath, readToken), repository, head, allowDependabot)) return { status: 'stale', reason: '' }
   const body = `@codex review\n\n<!-- admitto-codex-fallback:${head} -->`
   const existing = await api(commentPath, readToken, 'GET', undefined, true)
   const request = existing.find((comment) => comment.user?.id === requester.id && comment.body === body) ??
     await api(commentPath, triggerToken, 'POST', { body })
-  return waitForCodex({api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep})
+  return waitForCodex({api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep, allowDependabot})
 }
 
 function waitForCodex(config) {
@@ -54,9 +54,9 @@ function waitForCodex(config) {
 }
 
 async function pollCodex(config, attempt) {
-  const {api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep, deadline} = config
+  const {api, readToken, root, prPath, commentPath, repository, head, request, attempts, sleep, deadline, allowDependabot} = config
   if (attempt >= attempts || Date.now() >= deadline) return { status: 'unavailable', reason: 'review_timeout' }
-  if (!currentOwnerPr(await api(prPath, readToken), repository, head)) return { status: 'stale', reason: '' }
+  if (!currentOwnerPr(await api(prPath, readToken), repository, head, allowDependabot)) return { status: 'stale', reason: '' }
   const [comments, reviews] = await Promise.all([
     api(commentPath, readToken, 'GET', undefined, true),
     api(`${prPath}/reviews`, readToken, 'GET', undefined, true),
@@ -93,7 +93,8 @@ export async function main(env = process.env, api = githubApi) {
   try {
     const result = await runCodexFallback({ repository: env.GITHUB_REPOSITORY,
       number: env.PR_NUMBER, head: env.HEAD_SHA,
-      triggerToken: env.CODEX_REVIEW_TRIGGER_TOKEN, readToken: env.GH_TOKEN, api })
+      triggerToken: env.CODEX_REVIEW_TRIGGER_TOKEN, readToken: env.GH_TOKEN, api,
+      allowDependabot: env.ALLOW_DEPENDABOT === 'true' })
     const outputs = ['status', 'reason', 'resultId', 'resultKind'].map((key) => `${key}=${result[key] ?? ''}`).join('\n')
     appendFileSync(env.GITHUB_OUTPUT, `${outputs}\n`)
     console.log(`Codex connector status: ${result.status}`)
