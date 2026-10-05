@@ -131,7 +131,7 @@ function expandIpv6Groups(host: string): number[] {
 /**
  * IPv4 carried inside an IPv6 literal that a NAT64 gateway, 6to4 relay or legacy IPv4-compatible
  * stack would deliver to that IPv4 host: 64:ff9b::/96 (RFC 6052), 2002::/16 (6to4, IPv4 in
- * groups 1-2) and ::/96 (deprecated IPv4-compatible).
+ * groups 1-2), ::ffff:0:0:0/96 (RFC 6145 IPv4-translatable) and ::/96 (deprecated IPv4-compatible).
  */
 function extractEmbeddedIpv4(host: string): string | null {
   const lower = host.toLowerCase();
@@ -143,6 +143,10 @@ function extractEmbeddedIpv4(host: string): string | null {
     return dotted(g[6]!, g[7]!);
   }
   if (g[0] === 0x2002) return dotted(g[1]!, g[2]!);
+  // RFC 6145 IPv4-translatable (SIIT): ::ffff:0:a.b.c.d
+  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) {
+    return dotted(g[6]!, g[7]!);
+  }
   if (g.slice(0, 6).every((x) => x === 0)) return dotted(g[6]!, g[7]!);
   return null;
 }

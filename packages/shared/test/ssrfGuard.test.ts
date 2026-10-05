@@ -138,6 +138,8 @@ describe("isBlockedPrivateOrMetadataHost", () => {
     "2002:0a00:0001::1", // 6to4 -> 10.0.0.1
     "::7f00:1", // IPv4-compatible -> 127.0.0.1
     "64:ff9b:1::1", // RFC 8215 local-use NAT64, blocked outright
+    "::ffff:0:7f00:1", // RFC 6145 IPv4-translatable -> 127.0.0.1
+    "::ffff:0:a9fe:a9fe", // RFC 6145 IPv4-translatable -> 169.254.169.254
     "64:ff9b:1:ffff::a00:1",
   ])("blocks IPv4 embedded in IPv6 literal %s", (address) => {
     expect(isBlockedPrivateOrMetadataHost(address)).toBe(true);
@@ -146,6 +148,7 @@ describe("isBlockedPrivateOrMetadataHost", () => {
   it("allows IPv6 that embeds a public IPv4", () => {
     expect(isBlockedPrivateOrMetadataHost("64:ff9b::5db8:d822")).toBe(false); // 93.184.216.34
     expect(isBlockedPrivateOrMetadataHost("2002:5db8:d822::1")).toBe(false);
+    expect(isBlockedPrivateOrMetadataHost("::ffff:0:5db8:d822")).toBe(false);
   });
 
   it("allows a public hostname/IP", () => {

@@ -3,6 +3,7 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import {
   canPerformCheckIn,
+  cfAccessIdentityBindingStillHolds,
   extractAccessTokenFromHeaders,
   findCloudflareAccessProvider,
   getCfAccessConfigCached,
@@ -150,22 +151,29 @@ async function sessionStillValid(
 
 /**
  * The Cloudflare Access assertion a stream was opened with, as a fresh request would be judged:
- * integration still enabled, provider still enabled and the JWT (signature, audience, expiry)
- * still valid. Only a verdict on the credential closes the stream; a transient JWKS timeout or
+ * integration still enabled, provider still enabled, the JWT (signature, audience, expiry) still
+ * valid and its identity still linked to this operator through the configured source provider
+ * (cfAccessIdentityBindingStillHolds). Only a verdict on the credential closes the stream; a transient JWKS timeout or
  * network failure (see isTransientCfAccessJwtFailure) keeps it open, since the client's reconnect
  * is then judged by the full auth path.
  */
-async function cfAccessCredentialStillValid(c: Context, prisma: PrismaClient): Promise<boolean> {
+async function cfAccessCredentialStillValid(
+  c: Context,
+  prisma: PrismaClient,
+  userId: string,
+): Promise<boolean> {
   const config = await getCfAccessConfigCached(prisma);
   if (!config.enabled) return false;
   const token = extractAccessTokenFromHeaders(Object.fromEntries(c.req.raw.headers.entries()));
   if (!token) return false;
+  let payload;
   try {
-    await validateAccessJwt(token, config);
+    payload = await validateAccessJwt(token, config);
   } catch (err) {
     return isTransientCfAccessJwtFailure(err);
   }
-  return (await findCloudflareAccessProvider(prisma))?.enabled === true;
+  if ((await findCloudflareAccessProvider(prisma))?.enabled !== true) return false;
+  return cfAccessIdentityBindingStillHolds(prisma, { config, payload, userId });
 }
 
 /**
@@ -200,7 +208,7 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
       if (sessionId && !(await sessionStillValid(deps.prisma, sessionId))) return false;
       if (
         c.get("checkinAuthSource") === "cloudflare-access" &&
-        !(await cfAccessCredentialStillValid(c, deps.prisma))
+        !(await cfAccessCredentialStillValid(c, deps.prisma, userId))
       ) {
         return false;
       }

@@ -219,17 +219,21 @@ export async function handlePassCreatorWebhook(
 
   if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
 
-  // Per-event ceiling, counted only for deliveries that verified AND name this event: the :eventId
-  // segment is public and unauthenticated, and accounts share one signing key across events, so a
-  // replayed payload signed for another event must not spend this event's allowance either.
-  const { windowMs, max } = INLINE_RATE_LIMITS["wallet:webhook-event"];
-  const budget = await rateLimitStore.hit(`wallet:webhook:event:${eventId}`, windowMs, max);
-  if (!budget.allowed) {
-    logRateLimitExceeded({ scope: "wallet_webhook", ip: resolveClientIp(c), keyHint: "event" });
-    return c.body(null, 429);
+  const target = await findWebhookPassTarget(db, eventId, data);
+
+  // Per-event ceiling, counted only for deliveries that verified AND bind to a pass of this event:
+  // the :eventId segment is public and unauthenticated, and accounts share one signing key across
+  // events, so a payload captured for another event (with or without a userProvidedId) must not
+  // spend this event's allowance. An unbound payload is still handled below, just not charged.
+  if (target) {
+    const { windowMs, max } = INLINE_RATE_LIMITS["wallet:webhook-event"];
+    const budget = await rateLimitStore.hit(`wallet:webhook:event:${eventId}`, windowMs, max);
+    if (!budget.allowed) {
+      logRateLimitExceeded({ scope: "wallet_webhook", ip: resolveClientIp(c), keyHint: "event" });
+      return c.body(null, 429);
+    }
   }
 
-  const target = await findWebhookPassTarget(db, eventId, data);
   if (target?.providerRemovedAt) {
     emitSystemLog("wallet", "info", "wallet_webhook_removed_skipped", { eventId });
     return c.body(null, 200);

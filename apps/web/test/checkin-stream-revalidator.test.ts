@@ -7,6 +7,7 @@ const isFullSessionMfaPolicySatisfied = vi.hoisted(() => vi.fn());
 const getCfAccessConfigCached = vi.hoisted(() => vi.fn());
 const validateAccessJwt = vi.hoisted(() => vi.fn());
 const findCloudflareAccessProvider = vi.hoisted(() => vi.fn());
+const cfAccessIdentityBindingStillHolds = vi.hoisted(() => vi.fn());
 vi.mock("@admitto/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@admitto/auth")>()),
   canPerformCheckIn,
@@ -15,6 +16,7 @@ vi.mock("@admitto/auth", async (importOriginal) => ({
   getCfAccessConfigCached,
   validateAccessJwt,
   findCloudflareAccessProvider,
+  cfAccessIdentityBindingStillHolds,
 }));
 
 import { CfAccessJwtError } from "@admitto/auth";
@@ -59,6 +61,7 @@ describe("createCheckinStreamRevalidator", () => {
     getCfAccessConfigCached.mockReset().mockResolvedValue({ enabled: true });
     validateAccessJwt.mockReset().mockResolvedValue({});
     findCloudflareAccessProvider.mockReset().mockResolvedValue({ enabled: true });
+    cfAccessIdentityBindingStillHolds.mockReset().mockResolvedValue(true);
   });
 
   it("denies once the event is archived, even for the emergency bearer", async () => {
@@ -125,6 +128,15 @@ describe("createCheckinStreamRevalidator", () => {
       expect(await setup(cf).run()).toBe(false);
       findCloudflareAccessProvider.mockResolvedValueOnce(null);
       expect(await setup(cf).run()).toBe(false);
+    });
+
+    it("closes once the identity is unlinked or the source provider is disabled", async () => {
+      cfAccessIdentityBindingStillHolds.mockResolvedValueOnce(false);
+      expect(await setup(cf).run()).toBe(false);
+      expect(cfAccessIdentityBindingStillHolds).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ userId: "u1" }),
+      );
     });
 
     it("closes when the assertion expired but not on a transient verification failure", async () => {
