@@ -2,9 +2,11 @@ import type { Context } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const canPerformCheckIn = vi.hoisted(() => vi.fn());
+const isSessionIdleExpired = vi.hoisted(() => vi.fn());
 vi.mock("@admitto/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@admitto/auth")>()),
   canPerformCheckIn,
+  isSessionIdleExpired,
 }));
 
 import { createCheckinStreamRevalidator } from "../src/checkin-gate.js";
@@ -39,6 +41,7 @@ const liveSession = { revoked_at: null, expires_at: FUTURE };
 describe("createCheckinStreamRevalidator", () => {
   beforeEach(() => {
     canPerformCheckIn.mockReset().mockResolvedValue(true);
+    isSessionIdleExpired.mockReset().mockResolvedValue(false);
   });
 
   it("denies once the event is archived, even for the emergency bearer", async () => {
@@ -68,6 +71,13 @@ describe("createCheckinStreamRevalidator", () => {
     ["expired", { ...liveSession, expires_at: new Date(Date.now() - 1000) }],
   ])("denies when the session %s", async (_name, session) => {
     const { run } = setup({ session, vars: { operatorUserId: "u1", checkinSessionId: "s1" } });
+    expect(await run()).toBe(false);
+    expect(canPerformCheckIn).not.toHaveBeenCalled();
+  });
+
+  it("denies a session that has been idle longer than its role allows", async () => {
+    isSessionIdleExpired.mockResolvedValue(true);
+    const { run } = setup({ session: liveSession, vars: { operatorUserId: "u1", checkinSessionId: "s1" } });
     expect(await run()).toBe(false);
     expect(canPerformCheckIn).not.toHaveBeenCalled();
   });

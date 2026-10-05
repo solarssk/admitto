@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Context, Next } from "hono";
 import type { PrismaClient } from "@admitto/db";
-import { canPerformCheckIn } from "@admitto/auth";
+import { canPerformCheckIn, isSessionIdleExpired } from "@admitto/auth";
 import { assertEventNotArchived } from "./admin/event-archiving.js";
 import { rejectCrossSitePost } from "./auth/same-origin-post.js";
 import { resolveStaffAuthFromRequest } from "./auth/resolve-staff-auth.js";
@@ -149,9 +149,18 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
       if (sessionId) {
         const session = await deps.prisma.session.findUnique({
           where: { id: sessionId },
-          select: { revoked_at: true, expires_at: true },
+          select: {
+            revoked_at: true,
+            expires_at: true,
+            user_id: true,
+            remember_me: true,
+            stage: true,
+            last_seen_at: true,
+          },
         });
         if (!session || session.revoked_at || session.expires_at.getTime() <= Date.now()) return false;
+        // Same inactivity policy as validateSession, without refreshing last_seen_at.
+        if (await isSessionIdleExpired(deps.prisma, session)) return false;
       }
       return await canPerformCheckIn(deps.prisma, userId, eventId);
     } catch {

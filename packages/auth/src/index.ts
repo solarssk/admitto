@@ -42,6 +42,7 @@ export { normalizeEmail, isValidEmailFormat, createUser, findUserByEmail, findUs
 export {
   createSession,
   validateSession,
+  isSessionIdleExpired,
   validatePartialSession,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
