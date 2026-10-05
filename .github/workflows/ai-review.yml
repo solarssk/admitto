@@ -106,9 +106,10 @@ jobs:
         if: ${{ github.run_attempt == 1 }}
         run: sleep "$DEBOUNCE_SECONDS"
 
-      # No ref: on pull_request_target this is the base branch, never the PR head.
+      # Read the validated base commit, including on reruns after the base branch advances.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ steps.target.outputs.base_sha }}
           persist-credentials: false
 
       # Built from the per-file API instead of `gh pr diff` so lockfiles (large, machine-written, and

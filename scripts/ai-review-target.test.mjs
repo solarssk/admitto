@@ -81,6 +81,7 @@ test('manual dispatch is restricted to the owner and trusted default branch', ()
   assert.match(step, /OWNER_ID: \$\{\{ github\.event\.repository\.owner\.id \}\}/)
   assert.match(guard, /github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/)
   assert.doesNotMatch(workflow, /ref:.*steps\.target\.outputs\.head/)
+  assert.match(workflow, /ref: \$\{\{ steps\.target\.outputs\.base_sha \}\}/)
   assert.equal((workflow.match(/-f commit_id=/g) ?? []).length, 1)
   for (const env of [{ ACTOR_ID: '8' }, { REQUESTER_ID: '8' }, { TRIGGERING_ACTOR: '../foreign' }]) {
     const result = resolve(pull(), env)
