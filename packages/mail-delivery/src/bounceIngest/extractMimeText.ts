@@ -71,12 +71,12 @@ export function stripHtmlTagsSafely(html: string): string {
 /** Raw RFC 822 source as an IMAP client hands it over. */
 type RawMimeSource = Buffer | Uint8Array | string | undefined;
 
-function sourceToBinaryString(source: RawMimeSource): string {
+function sourceToBinaryString(source: RawMimeSource, maxBytes = MAX_BODY_BYTES): string {
   if (!source) return "";
   if (typeof source === "string") {
-    return Buffer.from(source, "utf8").subarray(0, MAX_BODY_BYTES).toString("binary");
+    return Buffer.from(source, "utf8").subarray(0, maxBytes).toString("binary");
   }
-  const buf = Buffer.from(source).subarray(0, MAX_BODY_BYTES);
+  const buf = Buffer.from(source).subarray(0, maxBytes);
   return buf.toString("binary");
 }
 
@@ -244,6 +244,12 @@ export function extractPlainTextFromSource(
 }
 
 const MAX_REFERENCED_MESSAGE_IDS = 50;
+/**
+ * Bound on the source scanned for correlation ids. Much larger than the display-body cap
+ * ({@link MAX_BODY_BYTES}): a genuine NDR can put more than 64 KiB of explanatory HTML before the
+ * part that quotes the original headers, and truncating there would lose the Message-ID.
+ */
+const MAX_CORRELATION_SOURCE_BYTES = 4 * 1024 * 1024;
 const MESSAGE_ID_TOKEN_RE = /<[^<>\s]{1,998}>/g;
 const MESSAGE_ID_HEADERS = new Set([
   "message-id",
@@ -290,7 +296,7 @@ const QUOTED_ORIGINAL_TYPES = new Set([
  * Lower-cased and de-duplicated, capped to bound memory.
  */
 export function extractReferencedMessageIds(source: RawMimeSource): string[] {
-  const raw = sourceToBinaryString(source);
+  const raw = sourceToBinaryString(source, MAX_CORRELATION_SOURCE_BYTES);
   const ids = new Set<string>();
   if (collectMessageIds(raw, ids)) return [...ids];
 

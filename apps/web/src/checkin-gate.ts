@@ -3,13 +3,15 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import {
   canPerformCheckIn,
-  cfAccessIdentityBindingStillHolds,
+  ExternalIdentityLinkError,
+  extractClaims,
   extractAccessTokenFromHeaders,
   findCloudflareAccessProvider,
   getCfAccessConfigCached,
   isFullSessionMfaPolicySatisfied,
   isSessionIdleExpired,
   isTransientCfAccessJwtFailure,
+  resolveCfAccessIdentityFromValidatedJwt,
   validateAccessJwt,
 } from "@admitto/auth";
 import { assertEventNotArchived } from "./admin/event-archiving.js";
@@ -152,8 +154,8 @@ async function sessionStillValid(
 /**
  * The Cloudflare Access assertion a stream was opened with, as a fresh request would be judged:
  * integration still enabled, provider still enabled, the JWT (signature, audience, expiry) still
- * valid and its identity still linked to this operator through the configured source provider
- * (cfAccessIdentityBindingStillHolds). Only a verdict on the credential closes the stream; a transient JWKS timeout or
+ * valid and its identity still resolving to this operator through the configured source provider,
+ * with the provider-owned roles reconciled (resolveCfAccessIdentityFromValidatedJwt). Only a verdict on the credential closes the stream; a transient JWKS timeout or
  * network failure (see isTransientCfAccessJwtFailure) keeps it open, since the client's reconnect
  * is then judged by the full auth path.
  */
@@ -172,8 +174,26 @@ async function cfAccessCredentialStillValid(
   } catch (err) {
     return isTransientCfAccessJwtFailure(err);
   }
-  if ((await findCloudflareAccessProvider(prisma))?.enabled !== true) return false;
-  return cfAccessIdentityBindingStillHolds(prisma, { config, payload, userId });
+  const provider = await findCloudflareAccessProvider(prisma);
+  if (provider?.enabled !== true || typeof payload.sub !== "string" || !payload.sub) return false;
+  try {
+    // The very resolution a fresh request goes through, so the identity binding, the source
+    // provider, the account and the provider-owned roles are all reconciled exactly as they would
+    // be on the next API call (and concurrent calls for one token coalesce into one transaction).
+    const resolved = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      config,
+      cloudflareProvider: provider,
+      cloudflareSubject: payload.sub,
+      payload,
+      claims: extractClaims(payload, provider),
+    });
+    return resolved.userId === userId;
+  } catch (err) {
+    // A verdict on the binding closes the stream; anything else (a database blip) is left to
+    // createCheckinStreamRevalidator's fail-open catch.
+    if (err instanceof ExternalIdentityLinkError) return false;
+    throw err;
+  }
 }
 
 /**

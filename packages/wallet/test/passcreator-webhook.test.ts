@@ -5,6 +5,7 @@ import {
   applyFirstConfirmedAt,
   applyWebhookUpdate,
   findWebhookPassTarget,
+  webhookNamesAPassOfEvent,
   parseAdmittoUserProvidedId,
   parseFirstDownloadedAtUtc,
   parseWebhookData,
@@ -539,5 +540,37 @@ describe("parseFirstDownloadedAtUtc", () => {
 
   it("returns null for a value with fractional seconds", () => {
     expect(parseFirstDownloadedAtUtc("2026-08-13 10:00:00.123")).toBeNull();
+  });
+});
+
+describe("webhookNamesAPassOfEvent", () => {
+  const db = (row: unknown) => ({ walletPass: { findFirst: vi.fn().mockResolvedValue(row) } });
+
+  it("is true for a pass of the event matched by user_provided_id or, failing that, identifier", async () => {
+    const byId = db({ attendee_id: "att-1" });
+    expect(await webhookNamesAPassOfEvent(byId as never, "evt-1", { userProvidedId: "admitto:evt-1:att-1" })).toBe(true);
+    expect(byId.walletPass.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { provider: "passcreator", user_provided_id: "admitto:evt-1:att-1", attendee: { event_id: "evt-1" } },
+      }),
+    );
+    const byIdentifier = db({ attendee_id: "att-1" });
+    expect(await webhookNamesAPassOfEvent(byIdentifier as never, "evt-1", { identifier: "pc-1" })).toBe(true);
+    expect(byIdentifier.walletPass.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { provider: "passcreator", provider_pass_id: "pc-1", attendee: { event_id: "evt-1" } },
+      }),
+    );
+  });
+
+  it("is true for a legacy pass with an identifier but no user_provided_id, which findWebhookPassTarget skips", async () => {
+    expect(await webhookNamesAPassOfEvent(db({ attendee_id: "att-1" }) as never, "evt-1", { identifier: "pc-legacy" })).toBe(true);
+  });
+
+  it("is false when no pass of the event matches, or the payload names nothing", async () => {
+    expect(await webhookNamesAPassOfEvent(db(null) as never, "evt-1", { identifier: "pc-other" })).toBe(false);
+    const none = db({ attendee_id: "att-1" });
+    expect(await webhookNamesAPassOfEvent(none as never, "evt-1", {})).toBe(false);
+    expect(none.walletPass.findFirst).not.toHaveBeenCalled();
   });
 });

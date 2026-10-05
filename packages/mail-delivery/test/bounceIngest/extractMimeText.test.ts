@@ -206,6 +206,24 @@ describe("extractReferencedMessageIds", () => {
     ]);
   });
 
+  it("finds the original Message-ID even after more than 64 KiB of explanatory text", () => {
+    const source = [
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="b1"',
+      "",
+      "--b1",
+      "Content-Type: text/plain",
+      "",
+      "x".repeat(200_000),
+      "--b1",
+      "Content-Type: text/rfc822-headers",
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from("Message-ID: <Late@mail.example.com>\r\n").toString("base64"),
+      "--b1--",
+    ].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual(["<late@mail.example.com>"]);
+  });
+
   it("ignores folded lines of other headers and header lines without an id", () => {
     const source = ["Subject: x", "\t<folded@x.test>", "Message-ID: no-angle-brackets", "References:", "\t<ok@x.test>"].join("\r\n");
     expect(extractReferencedMessageIds(source)).toEqual(["<ok@x.test>"]);

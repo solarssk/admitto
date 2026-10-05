@@ -162,6 +162,26 @@ function webhookMatchFilter(data: PassCreatorWebhookData): Prisma.WalletPassWher
 }
 
 /**
+ * Whether a delivery names any PassCreator pass of `eventId` at all, by user_provided_id or, failing
+ * that, identifier: the binding that makes a signature-valid payload this event's traffic rather
+ * than another event's captured one (accounts share a signing key across events). Looser than
+ * {@link findWebhookPassTarget}, which also needs a provider identity to re-read the pass by.
+ */
+export async function webhookNamesAPassOfEvent(
+  db: PrismaClient,
+  eventId: string,
+  data: PassCreatorWebhookData,
+): Promise<boolean> {
+  const where = webhookMatchFilter(data);
+  if (!where) return false;
+  const row = await db.walletPass.findFirst({
+    where: { ...where, attendee: { event_id: eventId } },
+    select: { attendee_id: true },
+  });
+  return row !== null;
+}
+
+/**
  * The pass of `eventId` that a delivery names, as the reference a re-read of it needs - null when
  * nothing matches or the row has no provider identity to read by yet. Scoped to the event because
  * the payload's own `identifier` alone (no userProvidedId) says nothing about which Admitto event

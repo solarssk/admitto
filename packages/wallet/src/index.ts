@@ -65,6 +65,7 @@ export {
   applyFirstConfirmedAt,
   applyWebhookUpdate,
   findWebhookPassTarget,
+  webhookNamesAPassOfEvent,
   parseAdmittoUserProvidedId,
   parseFirstDownloadedAtUtc,
   parseWebhookData,

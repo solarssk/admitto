@@ -10,7 +10,6 @@ vi.mock("../../src/audit.js", () => ({
 }));
 
 import {
-  cfAccessIdentityBindingStillHolds,
   clearCfAccessIdentityCacheForTests,
   extractCfAccessSourceGroups,
   extractCfAccessSourceSubject,
@@ -34,48 +33,6 @@ describe("extractCfAccessSourceSubject", () => {
     [{ custom: { admitto_identity: ["not-a-subject"] } }, "non-string identity value"],
   ])("rejects %s", (payload) => {
     expect(() => extractCfAccessSourceSubject(payload)).toThrow(ExternalIdentityLinkError);
-  });
-});
-
-describe("cfAccessIdentityBindingStillHolds", () => {
-  const payload = { custom: { admitto_identity: "src-subject-1" } };
-  const config = { enabled: true, sourceProviderId: " src-provider " };
-
-  function db(opts: { provider?: { id: string; enabled: boolean } | null; identity?: { user_id: string } | null }) {
-    const findFirst = vi.fn().mockResolvedValue(opts.provider === undefined ? { id: "src-provider", enabled: true } : opts.provider);
-    const findUnique = vi.fn().mockResolvedValue(opts.identity === undefined ? { user_id: "u1" } : opts.identity);
-    return {
-      prisma: { identityProvider: { findFirst }, externalIdentity: { findUnique } } as unknown as PrismaClient,
-      findFirst,
-      findUnique,
-    };
-  }
-
-  it("holds while the source identity is linked to this user on an enabled OIDC provider", async () => {
-    const { prisma, findFirst, findUnique } = db({});
-    expect(await cfAccessIdentityBindingStillHolds(prisma, { config, payload, userId: "u1" })).toBe(true);
-    expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "src-provider", provider_type: "oidc" } }),
-    );
-    expect(findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { provider_id_subject: { provider_id: "src-provider", subject: "src-subject-1" } },
-      }),
-    );
-  });
-
-  it.each([
-    ["integration disabled", { config: { ...config, enabled: false } }, {}],
-    ["no source provider configured", { config: { ...config, sourceProviderId: "  " } }, {}],
-    ["canonical identity missing from the assertion", { payload: {} }, {}],
-    ["source provider gone", {}, { provider: null }],
-    ["source provider disabled", {}, { provider: { id: "src-provider", enabled: false } }],
-    ["identity unlinked", {}, { identity: null }],
-    ["identity relinked to another user", {}, { identity: { user_id: "u2" } }],
-  ])("no longer holds: %s", async (_name, override, dbOpts) => {
-    const { prisma } = db(dbOpts);
-    const input = { config, payload, userId: "u1", ...override };
-    expect(await cfAccessIdentityBindingStillHolds(prisma, input)).toBe(false);
   });
 });
 

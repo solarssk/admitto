@@ -7,7 +7,8 @@ const isFullSessionMfaPolicySatisfied = vi.hoisted(() => vi.fn());
 const getCfAccessConfigCached = vi.hoisted(() => vi.fn());
 const validateAccessJwt = vi.hoisted(() => vi.fn());
 const findCloudflareAccessProvider = vi.hoisted(() => vi.fn());
-const cfAccessIdentityBindingStillHolds = vi.hoisted(() => vi.fn());
+const resolveCfAccessIdentityFromValidatedJwt = vi.hoisted(() => vi.fn());
+const extractClaims = vi.hoisted(() => vi.fn());
 vi.mock("@admitto/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@admitto/auth")>()),
   canPerformCheckIn,
@@ -16,10 +17,11 @@ vi.mock("@admitto/auth", async (importOriginal) => ({
   getCfAccessConfigCached,
   validateAccessJwt,
   findCloudflareAccessProvider,
-  cfAccessIdentityBindingStillHolds,
+  resolveCfAccessIdentityFromValidatedJwt,
+  extractClaims,
 }));
 
-import { CfAccessJwtError } from "@admitto/auth";
+import { CfAccessJwtError, ExternalIdentityLinkError } from "@admitto/auth";
 import { createCheckinStreamRevalidator } from "../src/checkin-gate.js";
 
 const FUTURE = new Date(Date.now() + 3_600_000);
@@ -61,7 +63,9 @@ describe("createCheckinStreamRevalidator", () => {
     getCfAccessConfigCached.mockReset().mockResolvedValue({ enabled: true });
     validateAccessJwt.mockReset().mockResolvedValue({});
     findCloudflareAccessProvider.mockReset().mockResolvedValue({ enabled: true });
-    cfAccessIdentityBindingStillHolds.mockReset().mockResolvedValue(true);
+    resolveCfAccessIdentityFromValidatedJwt.mockReset().mockResolvedValue({ userId: "u1" });
+    extractClaims.mockReset().mockReturnValue({});
+    validateAccessJwt.mockResolvedValue({ sub: "cf-sub" });
   });
 
   it("denies once the event is archived, even for the emergency bearer", async () => {
@@ -130,13 +134,24 @@ describe("createCheckinStreamRevalidator", () => {
       expect(await setup(cf).run()).toBe(false);
     });
 
-    it("closes once the identity is unlinked or the source provider is disabled", async () => {
-      cfAccessIdentityBindingStillHolds.mockResolvedValueOnce(false);
-      expect(await setup(cf).run()).toBe(false);
-      expect(cfAccessIdentityBindingStillHolds).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ userId: "u1" }),
+    it("closes once the identity no longer resolves to this operator", async () => {
+      resolveCfAccessIdentityFromValidatedJwt.mockRejectedValueOnce(
+        new ExternalIdentityLinkError("source_identity_not_linked"),
       );
+      expect(await setup(cf).run()).toBe(false);
+      resolveCfAccessIdentityFromValidatedJwt.mockResolvedValueOnce({ userId: "someone-else" });
+      expect(await setup(cf).run()).toBe(false);
+      expect(resolveCfAccessIdentityFromValidatedJwt).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ cloudflareSubject: "cf-sub" }),
+      );
+    });
+
+    it("keeps the stream open on a database error during the resolution, and denies a token without sub", async () => {
+      resolveCfAccessIdentityFromValidatedJwt.mockRejectedValueOnce(new Error("db down"));
+      expect(await setup(cf).run()).toBe(true);
+      validateAccessJwt.mockResolvedValueOnce({});
+      expect(await setup(cf).run()).toBe(false);
     });
 
     it("closes when the assertion expired but not on a transient verification failure", async () => {

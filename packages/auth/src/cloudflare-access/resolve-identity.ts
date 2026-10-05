@@ -140,37 +140,6 @@ export interface ResolveCfAccessIdentityInput {
 }
 
 /**
- * Whether the binding {@link resolveCfAccessIdentityFromValidatedJwt} would accept still holds for
- * `userId`, as a read-only check for a long-lived connection (the check-in live stream) opened
- * with an assertion that has since been judged valid: Cloudflare Access still enabled with a
- * source provider, that provider still an enabled OIDC provider, and the assertion's canonical
- * identity still linked on it to this same user. Writes nothing, so it can run on every heartbeat.
- */
-export async function cfAccessIdentityBindingStillHolds(
-  prisma: PrismaClient | Prisma.TransactionClient,
-  input: { config: Pick<CfAccessConfig, "enabled" | "sourceProviderId">; payload: JWTPayload; userId: string },
-): Promise<boolean> {
-  const sourceProviderId = input.config.sourceProviderId.trim();
-  if (!input.config.enabled || !sourceProviderId) return false;
-  let sourceSubject: string;
-  try {
-    sourceSubject = extractCfAccessSourceSubject(input.payload);
-  } catch {
-    return false;
-  }
-  const provider = await prisma.identityProvider.findFirst({
-    where: { id: sourceProviderId, provider_type: "oidc" },
-    select: { id: true, enabled: true },
-  });
-  if (!provider?.enabled) return false;
-  const identity = await prisma.externalIdentity.findUnique({
-    where: { provider_id_subject: { provider_id: provider.id, subject: sourceSubject } },
-    select: { user_id: true },
-  });
-  return identity?.user_id === input.userId;
-}
-
-/**
  * A staff admin page load fires many parallel `/api/admin/*` requests, each carrying the same
  * Cloudflare-issued JWT and each independently reaching this resolver. Without this, every one of
  * them opens its own SERIALIZABLE transaction against the same two ExternalIdentity rows, which
