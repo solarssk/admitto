@@ -50,13 +50,22 @@ export function handleEventStream(c: Context, stillAuthorized?: () => Promise<bo
         resolve();
       };
 
+      // One check at a time per stream: a slow database or JWKS lookup must not pile up further
+      // checks behind it every tick, which would amplify the very slowdown it is waiting on.
+      let checking = false;
       heartbeat = setInterval(() => {
+        if (checking) return;
+        checking = true;
         void (async () => {
-          if (stillAuthorized && !(await stillAuthorized())) {
-            finish();
-            return;
+          try {
+            if (stillAuthorized && !(await stillAuthorized())) {
+              finish();
+              return;
+            }
+            await writeEvent({ type: "ping" });
+          } finally {
+            checking = false;
           }
-          await writeEvent({ type: "ping" });
         })();
       }, HEARTBEAT_MS);
 

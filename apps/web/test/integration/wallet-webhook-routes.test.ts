@@ -527,6 +527,30 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(real.status).toBe(200);
   });
 
+  it("does not let a signed payload replayed from another event spend this event's allowance", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const post = (body: object) =>
+      app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    // Accounts share a signing key across events, so a payload genuinely signed for the other event
+    // verifies here too; it names another event and must be acked without charging this one's budget.
+    const foreign = signedRequest({
+      identifier: "pc-webhook-1",
+      userProvidedId: `admitto:${OTHER_EVENT_ID}:${ATTENDEE_ID}`,
+    });
+    for (let i = 0; i < 125; i++) {
+      expect((await post(foreign)).status).toBe(200);
+    }
+
+    const real = await post(signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID }));
+    expect(real.status).toBe(200);
+  });
+
   it("answers 429 to signature-verified deliveries beyond the per-event ceiling, and keeps other events unaffected", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);

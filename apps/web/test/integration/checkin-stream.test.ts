@@ -203,6 +203,36 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
       }
     });
 
+    it("never runs a second check while the previous one is still pending", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        let calls = 0;
+        let release: (allowed: boolean) => void = () => undefined;
+        const slow = () => {
+          calls += 1;
+          return new Promise<boolean>((resolve) => {
+            release = resolve;
+          });
+        };
+        const app = new Hono();
+        app.get("/api/checkin/events/:eventId/stream", (c) => handleEventStream(c, slow));
+        const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`);
+        const reader = res.body!.getReader();
+        await reader.read();
+
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 4);
+        expect(calls).toBe(1);
+
+        release(true);
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+        expect(calls).toBe(2);
+        release(false);
+        expect(await closesWithin(reader)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("closes the stream once the session is revoked", async () => {
       vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
       try {

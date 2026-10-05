@@ -214,19 +214,20 @@ export async function handlePassCreatorWebhook(
     return c.body(null, 401);
   }
 
-  // Per-event ceiling, counted only for signature-verified deliveries: the :eventId segment is public
-  // and unauthenticated, so counting anything earlier would let junk requests starve real ones.
+  const data = parseWebhookData(envelope.signedData);
+  if (!data) return c.body(null, 400);
+
+  if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
+
+  // Per-event ceiling, counted only for deliveries that verified AND name this event: the :eventId
+  // segment is public and unauthenticated, and accounts share one signing key across events, so a
+  // replayed payload signed for another event must not spend this event's allowance either.
   const { windowMs, max } = INLINE_RATE_LIMITS["wallet:webhook-event"];
   const budget = await rateLimitStore.hit(`wallet:webhook:event:${eventId}`, windowMs, max);
   if (!budget.allowed) {
     logRateLimitExceeded({ scope: "wallet_webhook", ip: resolveClientIp(c), keyHint: "event" });
     return c.body(null, 429);
   }
-
-  const data = parseWebhookData(envelope.signedData);
-  if (!data) return c.body(null, 400);
-
-  if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
 
   const target = await findWebhookPassTarget(db, eventId, data);
   if (target?.providerRemovedAt) {
