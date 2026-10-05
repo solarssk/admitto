@@ -14,8 +14,7 @@ const privateIpv6 = new BlockList();
 privateIpv6.addSubnet("fe80::", 10, "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6");
 privateIpv6.addSubnet("ff00::", 8, "ipv6"); // NOSONAR - multicast CIDR in a blocklist, not a destination
-// NOSONAR - RFC 8215 local-use NAT64 prefix, blocked outright (its translation form is deployment-defined)
-privateIpv6.addSubnet("64:ff9b:1::", 48, "ipv6");
+privateIpv6.addSubnet("64:ff9b:1::", 48, "ipv6"); // NOSONAR - RFC 8215 local-use NAT64 CIDR in a blocklist, not a destination
 
 /**
  * Non-public IPv4 space beyond RFC1918/loopback/link-local: "this network" (0/8), carrier-grade
