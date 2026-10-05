@@ -156,6 +156,29 @@ async function resolveEventWebhookProvider(
 }
 
 /**
+ * Per-event ceiling, counted only for deliveries that verified AND name a pass of this event: the
+ * :eventId segment is public and unauthenticated, and accounts share one signing key across
+ * events, so a payload captured for another event (with or without a userProvidedId) must not
+ * spend this event's allowance. The binding check is looser than the `target` lookup in the
+ * handler, which also needs a provider identity. An unbound payload is still handled, just not
+ * charged. False when the event's budget is spent.
+ */
+async function withinEventBudget(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  eventId: string,
+  data: PassCreatorWebhookData,
+): Promise<boolean> {
+  if (!(await webhookNamesAPassOfEvent(db, eventId, data))) return true;
+  const { windowMs, max } = INLINE_RATE_LIMITS["wallet:webhook-event"];
+  const budget = await rateLimitStore.hit(`wallet:webhook:event:${eventId}`, windowMs, max);
+  if (budget.allowed) return true;
+  logRateLimitExceeded({ scope: "wallet_webhook", ip: resolveClientIp(c), keyHint: "event" });
+  return false;
+}
+
+/**
  * Receives PassCreator's signed webhook deliveries (registration/void events) for one event's
  * wallet template. The target URL is scoped per event at subscribe time (subscribeWebhook()), so
  * the :eventId path segment is how a delivery is matched back to the right API key/public key -
@@ -220,19 +243,7 @@ export async function handlePassCreatorWebhook(
 
   if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
 
-  // Per-event ceiling, counted only for deliveries that verified AND name a pass of this event:
-  // the :eventId segment is public and unauthenticated, and accounts share one signing key across
-  // events, so a payload captured for another event (with or without a userProvidedId) must not
-  // spend this event's allowance. Looser than `target` below, which also needs a provider identity.
-  // An unbound payload is still handled, just not charged.
-  if (await webhookNamesAPassOfEvent(db, eventId, data)) {
-    const { windowMs, max } = INLINE_RATE_LIMITS["wallet:webhook-event"];
-    const budget = await rateLimitStore.hit(`wallet:webhook:event:${eventId}`, windowMs, max);
-    if (!budget.allowed) {
-      logRateLimitExceeded({ scope: "wallet_webhook", ip: resolveClientIp(c), keyHint: "event" });
-      return c.body(null, 429);
-    }
-  }
+  if (!(await withinEventBudget(c, db, rateLimitStore, eventId, data))) return c.body(null, 429);
 
   const target = await findWebhookPassTarget(db, eventId, data);
   if (target?.providerRemovedAt) {
