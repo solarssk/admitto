@@ -95,7 +95,9 @@ export async function revokeTrustedDeviceByToken(
   });
 }
 
-/** Revoke all trusted devices for a user. */
+/** Revoke all trusted devices for a user. Also drops every session's "MFA just passed" mark
+ * (`mfa_verified_at`), so a remember-device request that was still pending from before this
+ * revocation (an open follow-up prompt in another tab) cannot mint a replacement device. */
 export async function revokeAllTrustedDevicesForUser(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
@@ -103,6 +105,10 @@ export async function revokeAllTrustedDevicesForUser(
   const result = await prisma.trustedDevice.updateMany({
     where: { user_id: userId, revoked_at: null },
     data: { revoked_at: new Date() },
+  });
+  await prisma.session.updateMany({
+    where: { user_id: userId, mfa_verified_at: { not: null } },
+    data: { mfa_verified_at: null },
   });
   return result.count;
 }
