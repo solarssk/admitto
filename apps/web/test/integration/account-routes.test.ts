@@ -1298,6 +1298,19 @@ describe("POST /api/account/mfa/totp/confirm with an existing MFA method", () =>
     ).toBe(0);
   });
 
+  it("does not burn the recovery code used as the proof when the new authenticator code is mistyped", async () => {
+    const { credential, secret } = await startEnrollment();
+    const recoveryCode = credential.backupCodes[0];
+
+    const wrongNewCode = await confirm({ code: "000000", step_up: { code: recoveryCode } });
+    expect(wrongNewCode.status).toBe(400);
+    expect(((await wrongNewCode.json()) as { code: string }).code).toBe("invalid_code");
+
+    const retry = await confirm({ code: generateTotpCode(secret), step_up: { code: recoveryCode } });
+    expect(retry.status).toBe(200);
+    await expectAuthFactorChangedNotification(userId, "An authenticator app was added");
+  });
+
   it("attaches it when a valid recovery code from the existing method is sent as the proof", async () => {
     const { credential, secret } = await startEnrollment();
     const res = await confirm({ code: generateTotpCode(secret), step_up: { code: credential.backupCodes[0] } });

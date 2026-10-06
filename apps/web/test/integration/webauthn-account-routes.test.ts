@@ -380,6 +380,28 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(2);
   });
 
+  it("does not burn the recovery code used as the proof when the ceremony fails verification", async () => {
+    const first = await registerCredential(userCookie, "platform", "Key 1");
+    const recoveryCode = (first.finishBody as { backupCodes: string[] }).backupCodes[0]!;
+
+    const { body: begin } = await beginRegistration(userCookie, "cross-platform");
+    const badResponse = createVirtualAuthenticator().register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: "https://evil.example.com",
+    });
+    const failed = await app.request("/api/account/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "cross-platform", response: badResponse, step_up: { code: recoveryCode } }),
+    });
+    expect(failed.status).toBe(400);
+    expect(((await failed.json()) as { code: string }).code).toBe("verification_failed");
+
+    const second = await registerCredential(userCookie, "cross-platform", "Key 2", { code: recoveryCode });
+    expect(second.finishRes.status).toBe(200);
+  });
+
   it("returns 400 for a malformed JSON body", async () => {
     const res = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",

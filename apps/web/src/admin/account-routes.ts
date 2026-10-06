@@ -405,17 +405,29 @@ export async function withStepUpGate<T>(
  * fields: TOTP confirm already uses `code` for the new authenticator's own code. */
 const addMethodStepUpSchema = z.object(stepUpProofFields).strict();
 
+/** Thrown by an `addMfaMethodWithStepUp` callback to refuse the enrollment: the surrounding
+ * transaction rolls back, taking the step-up proof's one-time consumption with it. */
+class MfaEnrollmentRejected extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
 /**
- * Step-up before a signed-in session may add an MFA method (passkey, security key, authenticator
- * app). Without it a stolen session cookie could attach the thief's own second factor to the
- * account. Required whenever the account already has a confirmed method (TOTP, passkey or an
- * emergency recovery code, via `userHasAnyConfirmedMfaMethod`), whatever its role: `forceRequired`
- * makes the gate ignore the role policy. The first method is exempt, because there is nothing yet
- * to prove possession of. Runs before the new credential is written and, for a passkey, before the
- * registration challenge is consumed, so a wrong or missing proof can be retried with the same
- * ceremony response. Returns the Response to send back, or null to continue.
+ * Run an enrollment (adding a passkey, a security key or an authenticator app) behind a step-up
+ * for the signed-in session. Without it a stolen session cookie could attach the thief's own
+ * second factor to the account. Required whenever the account already has a confirmed method (via
+ * `userHasAnyConfirmedMfaMethod`), whatever its role: `forceRequired` makes the gate ignore the
+ * role policy. The account's first method is exempt, because there is nothing yet to prove
+ * possession of.
+ *
+ * `enroll` runs inside the same transaction as the proof check, so a TOTP or recovery code used as
+ * the proof is only consumed when the enrollment itself succeeds; `enroll` throws
+ * `MfaEnrollmentRejected` to refuse (mistyped new code, failed ceremony) and the whole transaction,
+ * the consumed proof included, rolls back. A wrong or missing proof is refused before `enroll`
+ * runs, so a passkey ceremony response can be retried with the proof.
  */
-async function requireStepUpToAddMfaMethod(
+async function addMfaMethodWithStepUp<T>(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
@@ -426,23 +438,32 @@ async function requireStepUpToAddMfaMethod(
     rateLimitAction: string;
     injectedBaseUrl?: string;
   },
-): Promise<Response | null> {
-  if (!(await userHasAnyConfirmedMfaMethod(db, params.userId))) return null;
-  const gated = await withStepUpGate(
-    c,
-    db,
-    rateLimitStore,
-    {
-      userId: params.userId,
-      currentSessionId: params.sessionId,
-      stepUpBody: params.stepUp ?? {},
-      rateLimitAction: params.rateLimitAction,
-      forceRequired: true,
-      injectedBaseUrl: params.injectedBaseUrl,
-    },
-    () => Promise.resolve(true),
-  );
-  return gated.ok ? null : gated.response;
+  enroll: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
+  try {
+    if (!(await userHasAnyConfirmedMfaMethod(db, params.userId))) {
+      const orgId = await resolveInstanceOrganizationId(db);
+      const audit = adminAuditFromContext(c);
+      return { ok: true, value: await runInTransaction(db, (tx) => enroll(tx, orgId, audit)) };
+    }
+    return await withStepUpGate(
+      c,
+      db,
+      rateLimitStore,
+      {
+        userId: params.userId,
+        currentSessionId: params.sessionId,
+        stepUpBody: params.stepUp ?? {},
+        rateLimitAction: params.rateLimitAction,
+        forceRequired: true,
+        injectedBaseUrl: params.injectedBaseUrl,
+      },
+      enroll,
+    );
+  } catch (err) {
+    if (err instanceof MfaEnrollmentRejected) return { ok: false, response: c.json({ code: err.code }, 400) };
+    throw err;
+  }
 }
 
 const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
@@ -1202,45 +1223,43 @@ export async function handlePostMfaConfirm(
   const sessionId = auth.sessionId;
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
 
-  // An account that already has a method must prove it before a new one is attached (see
-  // requireStepUpToAddMfaMethod). The first method needs no proof.
-  const stepUpDenied = await requireStepUpToAddMfaMethod(c, db, rateLimitStore, {
-    userId,
-    sessionId,
-    stepUp: parsed.data.step_up,
-    rateLimitAction: "account-totp-enroll",
-    injectedBaseUrl,
-  });
-  if (stepUpDenied) return stepUpDenied;
-
   const ip = resolveMfaClientIp(c);
   if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code, "mfa-confirm"))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
+  // An account that already has a method must prove it before a new one is attached, in the same
+  // transaction as the enrollment (see addMfaMethodWithStepUp). The first method needs no proof.
+  const added = await addMfaMethodWithStepUp(
+    c,
+    db,
+    rateLimitStore,
+    {
+      userId,
+      sessionId,
+      stepUp: parsed.data.step_up,
+      rateLimitAction: "account-totp-enroll",
+      injectedBaseUrl,
+    },
+    async (tx, orgId, audit) => {
+      if (!(await confirmTotpEnrollment(tx, userId, code))) throw new MfaEnrollmentRejected("invalid_code");
 
-  const ok = await runInTransaction(db, async (tx) => {
-    const confirmed = await confirmTotpEnrollment(tx, userId, code);
-    if (!confirmed) return false;
-
-    // Self-service enroll already returned backup codes to the client (unlike the
-    // login-time flow's separate acknowledgment step), mark them acknowledged now so
-    // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
-    // its very next request.
-    await markBackupCodesAcknowledged(tx, userId);
-    await writeAdminAuditLog(tx, {
-      organizationId: orgId,
-      actorUserId: audit.operator ?? userId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "account_mfa_enrolled",
-    });
-    return true;
-  });
-  if (!ok) return c.json({ code: "invalid_code" }, 400);
+      // Self-service enroll already returned backup codes to the client (unlike the
+      // login-time flow's separate acknowledgment step), mark them acknowledged now so
+      // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
+      // its very next request.
+      await markBackupCodesAcknowledged(tx, userId);
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_mfa_enrolled",
+      });
+    },
+  );
+  if (!added.ok) return added.response;
 
   void notifyAuthFactorChanged(
     db,
@@ -1444,7 +1463,7 @@ const webauthnRegisterFinishSchema = z
  * credential. The ceremony proves possession of the new authenticator, not that the person at the
  * keyboard owns the account, so an account that already has a confirmed method must also send a
  * step-up proof (`step_up`: a code, or a WebAuthn assertion from an existing credential); the
- * account's first method needs none (see requireStepUpToAddMfaMethod).
+ * account's first method needs none (see addMfaMethodWithStepUp).
  */
 export async function handlePostAccountWebauthnRegisterFinish(
   c: Context,
@@ -1474,57 +1493,60 @@ export async function handlePostAccountWebauthnRegisterFinish(
   const parsed = webauthnRegisterFinishSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  // Before the registration challenge is consumed, so a missing or wrong proof can be retried with
-  // the same ceremony response.
-  const stepUpDenied = await requireStepUpToAddMfaMethod(c, db, rateLimitStore, {
-    userId,
-    sessionId,
-    stepUp: parsed.data.step_up,
-    rateLimitAction: "account-webauthn-register",
-    injectedBaseUrl,
-  });
-  if (stepUpDenied) return stepUpDenied;
-
-  const challenge = consumeWebauthnChallenge("register", sessionId);
-  if (!challenge) return c.json({ code: "challenge_expired" }, 400);
-
   const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
   if (rp instanceof Response) return rp;
 
-  // Verified (and, on success, persisted) using the plain client, before any wrapping
-  // transaction opens - finishWebauthnRegistration already does its own crypto-verify first and
-  // only opens a short internal transaction for the dup-check/create, so passing `db` here (not
-  // a caller-held `tx`) keeps that bounded work from running inside a longer-lived transaction.
-  const created = await finishWebauthnRegistration(
+  // The proof is checked, the registration challenge consumed and the credential stored in one
+  // transaction (see addMfaMethodWithStepUp): a missing or wrong proof leaves the challenge alone,
+  // so the same ceremony response can be retried with it, and a failed verification rolls the
+  // proof's one-time consumption back.
+  let created: NonNullable<Awaited<ReturnType<typeof finishWebauthnRegistration>>> | undefined;
+  const added = await addMfaMethodWithStepUp(
+    c,
     db,
-    userId,
-    parsed.data.response as RegistrationResponseJSON,
-    challenge,
-    parsed.data.attachment,
-    parsed.data.label?.trim() || null,
-    rp,
+    rateLimitStore,
+    {
+      userId,
+      sessionId,
+      stepUp: parsed.data.step_up,
+      rateLimitAction: "account-webauthn-register",
+      injectedBaseUrl,
+    },
+    async (tx, orgId, audit) => {
+      const challenge = consumeWebauthnChallenge("register", sessionId);
+      if (!challenge) throw new MfaEnrollmentRejected("challenge_expired");
+
+      const result = await finishWebauthnRegistration(
+        tx,
+        userId,
+        parsed.data.response as RegistrationResponseJSON,
+        challenge,
+        parsed.data.attachment,
+        parsed.data.label?.trim() || null,
+        rp,
+      );
+      if (!result) throw new MfaEnrollmentRejected("verification_failed");
+      created = result;
+
+      // Self-service registration returns backup codes to the client directly (unlike the
+      // login-time flow's separate acknowledgment step): mark them acknowledged now so this
+      // already-`full` session isn't rejected by the backup-codes gate (IAM-002) on its very next
+      // request. A no-op when this wasn't the user's first MFA method (no fresh codes to ack).
+      await markBackupCodesAcknowledged(tx, userId);
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_mfa_enrolled",
+        metadata: { method: "webauthn", attachment: parsed.data.attachment },
+      });
+    },
   );
+  if (!added.ok) return added.response;
+  /* v8 ignore next */
   if (!created) return c.json({ code: "verification_failed" }, 400);
-
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-
-  await runInTransaction(db, async (tx) => {
-    // Self-service registration returns backup codes to the client directly (unlike the
-    // login-time flow's separate acknowledgment step): mark them acknowledged now so this
-    // already-`full` session isn't rejected by the backup-codes gate (IAM-002) on its very next
-    // request. A no-op when this wasn't the user's first MFA method (no fresh codes to ack).
-    await markBackupCodesAcknowledged(tx, userId);
-    await writeAdminAuditLog(tx, {
-      organizationId: orgId,
-      actorUserId: audit.operator ?? userId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "account_mfa_enrolled",
-      metadata: { method: "webauthn", attachment: parsed.data.attachment },
-    });
-  });
 
   void notifyAuthFactorChanged(
     db,
