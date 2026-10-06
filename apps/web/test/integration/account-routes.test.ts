@@ -1263,6 +1263,52 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
   });
 });
 
+describe("POST /api/account/mfa/totp/confirm with an existing MFA method", () => {
+  async function startEnrollment() {
+    const credential = await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, userId);
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(enrollRes.status).toBe(200);
+    const enroll = (await enrollRes.json()) as { otpauthUri: string };
+    return { credential, secret: parseTotpSecretFromOtpauthUri(enroll.otpauthUri)! };
+  }
+
+  const confirm = (body: unknown) =>
+    app.request("/api/account/mfa/totp/confirm", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("refuses to attach an authenticator app without a step-up proof, even for a non-MFA-required role", async () => {
+    const { secret } = await startEnrollment();
+
+    const missing = await confirm({ code: generateTotpCode(secret) });
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { code: string }).code).toBe("totp_required");
+
+    const wrong = await confirm({ code: generateTotpCode(secret), step_up: { code: "not-a-real-code" } });
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as { code: string }).code).toBe("invalid_totp");
+
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp", confirmed_at: { not: null } } }),
+    ).toBe(0);
+  });
+
+  it("attaches it when a valid recovery code from the existing method is sent as the proof", async () => {
+    const { credential, secret } = await startEnrollment();
+    const res = await confirm({ code: generateTotpCode(secret), step_up: { code: credential.backupCodes[0] } });
+    expect(res.status).toBe(200);
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp", confirmed_at: { not: null } } }),
+    ).toBe(1);
+    await expectAuthFactorChangedNotification(userId, "An authenticator app was added");
+  });
+});
+
 describe("DELETE /api/account/mfa/totp/enroll", () => {
   it("cancels pending enrollment and backup codes", async () => {
     const enrollRes = await app.request("/api/account/mfa/totp/enroll", {

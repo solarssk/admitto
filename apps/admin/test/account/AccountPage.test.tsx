@@ -879,6 +879,43 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("asks for a step-up code before attaching an authenticator app to an account that has a method", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce(baseAccount)
+      .mockResolvedValueOnce(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: [],
+      backupCodesAlreadyShown: true,
+    });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockConfirmMfaTotp
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce(undefined);
+
+    renderWithToast(<AccountPage activeTab="password" />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enable" }));
+
+    const proofField = await screen.findByLabelText("Authenticator or backup code");
+    expect(screen.getByRole("button", { name: "Enable" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(proofField, { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enable" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Two-factor authentication is enabled\./);
+    });
+    expect(mockConfirmMfaTotp).toHaveBeenLastCalledWith({ code: "123456", step_up: { code: "654321" } });
+  });
+
   it("toasts MFA reset success", async () => {
     mockFetchAccount
       .mockResolvedValueOnce(totpEnrolledAccount)
@@ -2483,6 +2520,61 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       expect(screen.getByText("1 registered")).toBeTruthy();
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
+  });
+
+  it("asks for a code when the account already has a method, and reuses the browser ceremony for the retry", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce(baseAccount)
+      .mockResolvedValueOnce({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFinishWebauthnRegistration
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true, id: "cred-1", backupCodes: [] });
+
+    const dialog = await openAddPasskeyDialogAndSubmit();
+    const codeField = await within(dialog).findByLabelText("Authenticator or backup code");
+    expect(within(dialog).getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(codeField, { target: { value: " 123456 " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Passkey added\./);
+    });
+    expect(mockBeginWebauthnRegistration).toHaveBeenCalledTimes(1);
+    expect(mockStartRegistration).toHaveBeenCalledTimes(1);
+    expect(mockFinishWebauthnRegistration).toHaveBeenLastCalledWith({
+      attachment: "platform",
+      label: "MacBook Touch ID",
+      response: FAKE_REGISTRATION_RESPONSE,
+      step_up: { code: "123456" },
+    });
+  });
+
+  it("keeps the code field and says so when the proof is wrong", async () => {
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFinishWebauthnRegistration
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
+
+    const dialog = await openAddPasskeyDialogAndSubmit();
+    fireEvent.change(await within(dialog).findByLabelText("Authenticator or backup code"), {
+      target: { value: "000000" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
+    });
+    expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    expect(mockStartRegistration).toHaveBeenCalledTimes(1);
   });
 
   it("shows and requires saving the first-ever batch of backup codes when adding a passkey", async () => {

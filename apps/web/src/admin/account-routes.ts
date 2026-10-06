@@ -401,6 +401,50 @@ export async function withStepUpGate<T>(
   return { ok: true, value: result.value };
 }
 
+/** Body field carrying the step-up proof when adding an MFA method. Kept apart from the action's own
+ * fields: TOTP confirm already uses `code` for the new authenticator's own code. */
+const addMethodStepUpSchema = z.object(stepUpProofFields).strict();
+
+/**
+ * Step-up before a signed-in session may add an MFA method (passkey, security key, authenticator
+ * app). Without it a stolen session cookie could attach the thief's own second factor to the
+ * account. Required whenever the account already has a confirmed method (TOTP, passkey or an
+ * emergency recovery code, via `userHasAnyConfirmedMfaMethod`), whatever its role: `forceRequired`
+ * makes the gate ignore the role policy. The first method is exempt, because there is nothing yet
+ * to prove possession of. Runs before the new credential is written and, for a passkey, before the
+ * registration challenge is consumed, so a wrong or missing proof can be retried with the same
+ * ceremony response. Returns the Response to send back, or null to continue.
+ */
+async function requireStepUpToAddMfaMethod(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  params: {
+    userId: string;
+    sessionId: string;
+    stepUp: { code?: string; webauthn?: { response: unknown } } | undefined;
+    rateLimitAction: string;
+    injectedBaseUrl?: string;
+  },
+): Promise<Response | null> {
+  if (!(await userHasAnyConfirmedMfaMethod(db, params.userId))) return null;
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    {
+      userId: params.userId,
+      currentSessionId: params.sessionId,
+      stepUpBody: params.stepUp ?? {},
+      rateLimitAction: params.rateLimitAction,
+      forceRequired: true,
+      injectedBaseUrl: params.injectedBaseUrl,
+    },
+    () => Promise.resolve(true),
+  );
+  return gated.ok ? null : gated.response;
+}
+
 const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
 
 function highestRole(assignments: { role: string }[]): string {
@@ -1132,13 +1176,14 @@ export async function handleDeleteMfaEnroll(c: Context, db: PrismaClient): Promi
   return c.json({ ok: true });
 }
 
-const confirmSchema = z.object({ code: z.string().min(1) }).strict();
+const confirmSchema = z.object({ code: z.string().min(1), step_up: addMethodStepUpSchema.optional() }).strict();
 
 /** POST /api/account/mfa/totp/confirm, confirm pending TOTP enrollment. */
 export async function handlePostMfaConfirm(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -1156,6 +1201,17 @@ export async function handlePostMfaConfirm(
   const code = parsed.data.code.trim();
   const sessionId = auth.sessionId;
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
+
+  // An account that already has a method must prove it before a new one is attached (see
+  // requireStepUpToAddMfaMethod). The first method needs no proof.
+  const stepUpDenied = await requireStepUpToAddMfaMethod(c, db, rateLimitStore, {
+    userId,
+    sessionId,
+    stepUp: parsed.data.step_up,
+    rateLimitAction: "account-totp-enroll",
+    injectedBaseUrl,
+  });
+  if (stepUpDenied) return stepUpDenied;
 
   const ip = resolveMfaClientIp(c);
   if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code, "mfa-confirm"))) {
@@ -1379,18 +1435,21 @@ const webauthnRegisterFinishSchema = z
     attachment: webauthnAttachmentSchema,
     label: z.string().trim().max(120).optional(),
     response: webauthnRegistrationResponseSchema,
+    step_up: addMethodStepUpSchema.optional(),
   })
   .strict();
 
 /**
  * POST /api/account/mfa/webauthn/register/finish, verify the browser ceremony and store the new
- * credential. No step-up code required, unlike password change/MFA reset: the ceremony itself
- * already proves possession of a real, previously-unregistered authenticator, which is a
- * stronger proof than a 6-digit code (mirrors TOTP confirm, which is also step-up-free).
+ * credential. The ceremony proves possession of the new authenticator, not that the person at the
+ * keyboard owns the account, so an account that already has a confirmed method must also send a
+ * step-up proof (`step_up`: a code, or a WebAuthn assertion from an existing credential); the
+ * account's first method needs none (see requireStepUpToAddMfaMethod).
  */
 export async function handlePostAccountWebauthnRegisterFinish(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
@@ -1414,6 +1473,17 @@ export async function handlePostAccountWebauthnRegisterFinish(
   }
   const parsed = webauthnRegisterFinishSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  // Before the registration challenge is consumed, so a missing or wrong proof can be retried with
+  // the same ceremony response.
+  const stepUpDenied = await requireStepUpToAddMfaMethod(c, db, rateLimitStore, {
+    userId,
+    sessionId,
+    stepUp: parsed.data.step_up,
+    rateLimitAction: "account-webauthn-register",
+    injectedBaseUrl,
+  });
+  if (stepUpDenied) return stepUpDenied;
 
   const challenge = consumeWebauthnChallenge("register", sessionId);
   if (!challenge) return c.json({ code: "challenge_expired" }, 400);

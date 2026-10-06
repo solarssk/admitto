@@ -8,6 +8,7 @@ import {
   resolveStepUpProof,
 } from "../../src/admin/account-routes.js";
 import { stashWebauthnChallenge, clearWebauthnChallengeCacheForTests } from "../../src/auth/webauthn-challenge-cache.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
 /** Mirrors `handlePostAccountWebauthnRegisterBegin`/`...Finish`'s own gates: neither depends on
  * anything else `c` exposes, so a Context this thin is enough to drive them directly - same
@@ -98,7 +99,10 @@ describe("resolveWebauthnRp propagates a 422 when no instance URL is configured"
 
   it("register/finish returns 422 instance_url_required with no injected/env/persisted URL", async () => {
     stashWebauthnChallenge("register", "sess-1", "some-challenge");
-    const db = { systemSettings: { findUnique: async () => null } } as unknown as PrismaClient;
+    const db = {
+      systemSettings: { findUnique: async () => null },
+      userMfaMethod: { findFirst: async () => null },
+    } as unknown as PrismaClient;
     const ctx = mockContext(
       { userId: "user-1", sessionId: "sess-1" },
       {
@@ -113,7 +117,7 @@ describe("resolveWebauthnRp propagates a 422 when no instance URL is configured"
       },
     );
 
-    const res = await handlePostAccountWebauthnRegisterFinish(ctx, db);
+    const res = await handlePostAccountWebauthnRegisterFinish(ctx, db, new InMemoryRateLimitStore());
     expect(res.status).toBe(422);
     expect(((await res.json()) as { error: string }).error).toBe("instance_url_required");
   });
@@ -124,7 +128,7 @@ describe("handlePostAccountWebauthnRegisterFinish - defensive branch unreachable
 
   it("returns 401 for a cloudflare-access principal (no sessionId)", async () => {
     const ctx = mockContext({ userId: "user-1" });
-    const res = await handlePostAccountWebauthnRegisterFinish(ctx, {} as PrismaClient);
+    const res = await handlePostAccountWebauthnRegisterFinish(ctx, {} as PrismaClient, new InMemoryRateLimitStore());
     expect(res.status).toBe(401);
   });
 });

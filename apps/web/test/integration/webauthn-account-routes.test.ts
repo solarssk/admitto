@@ -217,6 +217,7 @@ async function registerCredential(
   cookie: string,
   attachment: "platform" | "cross-platform",
   label?: string,
+  stepUp?: { code: string },
 ) {
   const authenticator = createVirtualAuthenticator();
   const { body: begin } = await beginRegistration(cookie, attachment);
@@ -225,7 +226,7 @@ async function registerCredential(
   const finishRes = await app.request("/api/account/mfa/webauthn/register/finish", {
     method: "POST",
     headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
-    body: JSON.stringify({ attachment, label, response }),
+    body: JSON.stringify({ attachment, label, response, step_up: stepUp }),
   });
   const finishBody = await finishRes.json();
   if (finishRes.status === 200) await drainAddedNotification();
@@ -343,8 +344,40 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const first = await registerCredential(userCookie, "platform", "Key 1");
     expect((first.finishBody as { backupCodes: string[] }).backupCodes.length).toBeGreaterThan(0);
 
-    const second = await registerCredential(userCookie, "cross-platform", "Key 2");
+    const second = await registerCredential(userCookie, "cross-platform", "Key 2", {
+      code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
+    });
     expect((second.finishBody as { backupCodes: string[] }).backupCodes).toEqual([]);
+  });
+
+  it("refuses a second credential without a step-up proof, keeps the challenge for a retry, and stores nothing", async () => {
+    const first = await registerCredential(userCookie, "platform", "Key 1");
+    const codes = (first.finishBody as { backupCodes: string[] }).backupCodes;
+
+    const authenticator = createVirtualAuthenticator();
+    const { body: begin } = await beginRegistration(userCookie, "cross-platform");
+    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
+    const send = (stepUp?: { code: string }) =>
+      app.request("/api/account/mfa/webauthn/register/finish", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attachment: "cross-platform", label: "Thief key", response, step_up: stepUp }),
+      });
+
+    const missing = await send();
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { code: string }).code).toBe("totp_required");
+
+    const wrong = await send({ code: "not-a-real-code" });
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
+
+    // The same ceremony response still works once the proof is right: the challenge was not spent.
+    const ok = await send({ code: codes[0]! });
+    expect(ok.status).toBe(200);
+    await drainAddedNotification();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(2);
   });
 
   it("returns 400 for a malformed JSON body", async () => {
@@ -405,6 +438,7 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
       body: JSON.stringify({ attachment: "platform", response }),
     });
     expect(first.status).toBe(200);
+    const firstCodes = ((await first.json()) as { backupCodes: string[] }).backupCodes;
     // This registration succeeded directly against app.request, not through registerCredential -
     // drain its own account.auth_factor.changed notification the same way that helper does (see
     // its own doc comment) so it can't straggle into a later test.
@@ -413,7 +447,9 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const replay = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "platform", response }),
+      // The account has a credential now, so the replay must carry a step-up proof to get as far
+      // as the (already consumed) challenge.
+      body: JSON.stringify({ attachment: "platform", response, step_up: { code: firstCodes[0] } }),
     });
     expect(replay.status).toBe(400);
     expect(((await replay.json()) as { code: string }).code).toBe("challenge_expired");
@@ -496,8 +532,10 @@ describe("WebAuthn RP origin, an Instance URL with a path", () => {
 
 describe("GET /api/account/mfa/webauthn", () => {
   it("lists registered credentials, newest last", async () => {
-    await registerCredential(userCookie, "platform", "First");
-    await registerCredential(userCookie, "cross-platform", "Second");
+    const first = await registerCredential(userCookie, "platform", "First");
+    await registerCredential(userCookie, "cross-platform", "Second", {
+      code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
+    });
 
     const res = await app.request("/api/account/mfa/webauthn", { headers: { Cookie: userCookie } });
     expect(res.status).toBe(200);
