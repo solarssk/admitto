@@ -9,12 +9,15 @@ import {
   createSession,
   finishWebauthnRegistration,
   hashPassword,
+  parseTotpSecretFromOtpauthUri,
   markBackupCodesAcknowledged,
   SESSION_STAGE,
   SETTING_WEBAUTHN_ENABLED,
 } from "@admitto/auth";
+import { generateTotpCode } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
 import { createApp } from "../../src/app.js";
+import { clearWebauthnChallengeCacheForTests } from "../../src/auth/webauthn-challenge-cache.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -400,6 +403,44 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
 
     const second = await registerCredential(userCookie, "cross-platform", "Key 2", { code: recoveryCode });
     expect(second.finishRes.status).toBe(200);
+  });
+
+  it("lets only one of two overlapping first-method enrollments through without a proof", async () => {
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    const secret = parseTotpSecretFromOtpauthUri(((await enrollRes.json()) as { otpauthUri: string }).otpauthUri)!;
+    const { body: begin } = await beginRegistration(userCookie, "platform");
+    const response = createVirtualAuthenticator().register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: BASE_URL,
+    });
+
+    const [totp, passkey] = await Promise.all([
+      app.request("/api/account/mfa/totp/confirm", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: generateTotpCode(secret) }),
+      }),
+      app.request("/api/account/mfa/webauthn/register/finish", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attachment: "platform", response }),
+      }),
+    ]);
+
+    expect([totp.status, passkey.status].sort()).toEqual([200, 400]);
+    const refused = totp.status === 400 ? totp : passkey;
+    expect(((await refused.json()) as { code: string }).code).toBe("totp_required");
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: { in: ["totp", "webauthn"] }, confirmed_at: { not: null } } }),
+    ).toBe(1);
+    // A refused passkey request leaves its (unconsumed) challenge behind; the next test must not see it.
+    clearWebauthnChallengeCacheForTests();
+    await prisma.notification.deleteMany({ where: { user_id: userId } });
+    await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
   });
 
   it("returns 400 for a malformed JSON body", async () => {
