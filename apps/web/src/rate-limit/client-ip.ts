@@ -1,7 +1,10 @@
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { isIP, isIPv6 } from "node:net";
-import { isTrustedProxyAddress, shouldTrustForwardedHeaders } from "./trust-proxy.js";
+import { resolveTrustedProxyCidrs, shouldTrustForwardedHeaders } from "./trust-proxy.js";
+
+/** Longest X-Forwarded-For chain honoured; a longer one is not a real proxy path (socket address is used). */
+const MAX_FORWARDED_HOPS = 32;
 
 /**
  * The client address in an X-Forwarded-For list: the rightmost hop that is not one of our own
@@ -11,7 +14,8 @@ import { isTrustedProxyAddress, shouldTrustForwardedHeaders } from "./trust-prox
  * would let a client pick its own rate-limit bucket behind a proxy that appends instead of
  * overwriting. When every hop is trusted (a request that never left the proxy chain) the leftmost
  * one is used. Returns undefined when the header is missing or any hop is not a valid IP (the
- * caller then falls back to the socket address, avoiding shared "unknown" buckets).
+ * caller then falls back to the socket address, avoiding shared "unknown" buckets) or has more
+ * than MAX_FORWARDED_HOPS hops.
  */
 export function clientIpFromHeaders(
   forwardedFor: string | undefined,
@@ -22,7 +26,7 @@ export function clientIpFromHeaders(
     const trimmed = hop.trim();
     return trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed;
   });
-  if (hops.some((hop) => !isIP(hop))) return undefined;
+  if (hops.length > MAX_FORWARDED_HOPS || hops.some((hop) => !isIP(hop))) return undefined;
   for (let i = hops.length - 1; i >= 0; i--) {
     if (!isTrustedHop(hops[i]!)) return hops[i];
   }
@@ -44,7 +48,10 @@ function socketRemoteAddress(c: Context): string {
 export function resolveClientIp(c: Context): string {
   if (shouldTrustForwardedHeaders(c)) {
     const forwarded = c.req.header("x-forwarded-for");
-    const fromHeader = clientIpFromHeaders(forwarded, (hop) => isTrustedProxyAddress(hop));
+    const trusted = resolveTrustedProxyCidrs();
+    const fromHeader = clientIpFromHeaders(forwarded, (hop) =>
+      trusted.check(hop, isIPv6(hop) ? "ipv6" : "ipv4"),
+    );
     if (fromHeader) return fromHeader;
   }
 

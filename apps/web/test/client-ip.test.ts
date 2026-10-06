@@ -9,7 +9,7 @@ vi.mock("@hono/node-server/conninfo", () => ({
 
 vi.mock("../src/rate-limit/trust-proxy.js", () => ({
   shouldTrustForwardedHeaders: vi.fn(() => false),
-  isTrustedProxyAddress: vi.fn((address: string) => address === "10.0.0.5"),
+  resolveTrustedProxyCidrs: vi.fn(() => ({ check: (address: string) => address === "10.0.0.5" })),
 }));
 
 import { shouldTrustForwardedHeaders } from "../src/rate-limit/trust-proxy.js";
@@ -34,6 +34,12 @@ describe("clientIpFromHeaders", () => {
     expect(clientIpFromHeaders("1.2.3.4, 203.0.113.10, 10.0.0.1, 10.0.0.2", trusted)).toBe("203.0.113.10");
     // With no hop trusted, the last one is the nearest hop we can vouch for.
     expect(clientIpFromHeaders("203.0.113.10, 10.0.0.1")).toBe("10.0.0.1");
+  });
+
+  it("ignores a chain longer than 32 hops so the socket address is used", () => {
+    const longChain = Array.from({ length: 33 }, () => "10.0.0.1").join(", ");
+    expect(clientIpFromHeaders(longChain, () => true)).toBeUndefined();
+    expect(clientIpFromHeaders(longChain.split(", ").slice(1).join(", "), () => true)).toBe("10.0.0.1");
   });
 
   it("falls back to the leftmost hop when every hop is a trusted proxy", () => {
