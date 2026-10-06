@@ -133,6 +133,38 @@ describe("handlePostAccountWebauthnRegisterFinish - defensive branch unreachable
   });
 });
 
+describe("handlePostAccountWebauthnRegisterFinish - unexpected failures", () => {
+  afterEach(() => clearWebauthnChallengeCacheForTests());
+
+  it("rethrows an error that is not an enrollment refusal instead of masking it as a 400", async () => {
+    const db = {
+      systemSettings: { findUnique: async () => null },
+      userMfaMethod: {
+        findFirst: async () => {
+          throw new Error("database unavailable");
+        },
+      },
+    } as unknown as PrismaClient;
+    const ctx = mockContext(
+      { userId: "user-1", sessionId: "sess-1" },
+      {
+        attachment: "platform",
+        response: {
+          id: "cred-id",
+          rawId: "cred-id",
+          response: { clientDataJSON: "cdj", attestationObject: "ao" },
+          clientExtensionResults: {},
+          type: "public-key",
+        },
+      },
+    );
+
+    await expect(handlePostAccountWebauthnRegisterFinish(ctx, db, new InMemoryRateLimitStore())).rejects.toThrow(
+      "database unavailable",
+    );
+  });
+});
+
 describe("resolveStepUpProof - webauthn proof branches", () => {
   afterEach(() => clearWebauthnChallengeCacheForTests());
 
