@@ -916,6 +916,38 @@ describe("AccountPage toasts", () => {
     expect(mockConfirmMfaTotp).toHaveBeenLastCalledWith({ code: "123456", step_up: { code: "654321" } });
   });
 
+  it("keeps a rejected authenticator-app step-up proof inside the dialog instead of a toast", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: [],
+      backupCodesAlreadyShown: true,
+    });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockConfirmMfaTotp
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
+
+    renderWithToast(<AccountPage activeTab="password" />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enable" }));
+    fireEvent.change(await screen.findByLabelText("Authenticator or backup code"), { target: { value: "000000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enable" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Set up two-factor authentication" });
+    await waitFor(() => {
+      expect(within(dialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
+    });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
   it("toasts MFA reset success", async () => {
     mockFetchAccount
       .mockResolvedValueOnce(totpEnrolledAccount)
@@ -2552,6 +2584,53 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       response: FAKE_REGISTRATION_RESPONSE,
       step_up: { code: "123456" },
     });
+  });
+
+  it("adds a security key with an existing passkey as the step-up proof", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true, mfa_methods: [makeWebauthnMethod()] });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    mockFinishWebauthnRegistration
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true, id: "cred-2", backupCodes: [] });
+
+    await openAddSecurityKeyDialogAndSubmit();
+    fireEvent.click(await screen.findByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Security key added\./);
+    });
+    expect(mockFinishWebauthnRegistration).toHaveBeenLastCalledWith({
+      attachment: "cross-platform",
+      label: "YubiKey 5C",
+      response: FAKE_REGISTRATION_RESPONSE,
+      step_up: { webauthn: { response: { id: "cred-1" } } },
+    });
+    expect(mockBeginWebauthnRegistration).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a fresh ceremony after a failure that is not about the proof", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+    mockBeginWebauthnRegistration.mockResolvedValue({ options: FAKE_REGISTRATION_OPTIONS });
+    mockStartRegistration.mockResolvedValue(FAKE_REGISTRATION_RESPONSE);
+    mockFinishWebauthnRegistration
+      .mockRejectedValueOnce(new ApiError(400, "verification_failed", "verification_failed"))
+      .mockResolvedValueOnce({ ok: true, id: "cred-1", backupCodes: [] });
+
+    const dialog = await openAddPasskeyDialogAndSubmit();
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert")).toBeTruthy();
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockBeginWebauthnRegistration).toHaveBeenCalledTimes(2);
+    });
+    expect(mockStartRegistration).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the code field and says so when the proof is wrong", async () => {

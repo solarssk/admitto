@@ -582,6 +582,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   // ceremony response so a retry with the proof does not need a second prompt.
   const [addStepUpRequired, setAddStepUpRequired] = useState(false);
   const [addStepUpCode, setAddStepUpCode] = useState("");
+  const [totpStepUpError, setTotpStepUpError] = useState<string | null>(null);
   const pendingRegistrationRef = useRef<{ attachment: WebauthnAttachment; response: RegistrationResponseJSON } | null>(null);
   const [addPasskeyOpen, setAddPasskeyOpen] = useState(false);
   const [addPasskeyLabel, setAddPasskeyLabel] = useState("");
@@ -1036,6 +1037,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   function resetAddStepUp(): void {
     setAddStepUpRequired(false);
     setAddStepUpCode("");
+    setTotpStepUpError(null);
     pendingRegistrationRef.current = null;
   }
 
@@ -1293,6 +1295,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   async function handleTotpEnrollConfirm(proof?: StepUpProofBody): Promise<void> {
     setMfaConfirming(true);
+    setTotpStepUpError(null);
     try {
       const stepUp = proof ?? (addStepUpCode.trim() ? { code: addStepUpCode.trim() } : undefined);
       await confirmMfaTotp({ code: totpCode, step_up: stepUp });
@@ -1306,8 +1309,11 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       await loadBackupCodesStatus();
     } catch (err) {
       if (isStepUpApiError(err)) {
+        // The proof field is in the dialog, so its explanation belongs there too, not in a toast.
         setAddStepUpRequired(true);
-        if (!hasApiErrorCode(err, "totp_required")) addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error");
+        if (!hasApiErrorCode(err, "totp_required")) {
+          setTotpStepUpError(operatorApiErrorMessage(err, "Could not confirm. Try again."));
+        }
       } else {
         addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error");
       }
@@ -1796,6 +1802,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         confirmLabel="Enable"
         confirmVariant="primary"
         loading={mfaConfirming}
+        errorMessage={totpStepUpError ?? undefined}
         disableConfirm={
           totpCode.length < 6 ||
           ((enrollData?.backupCodes.length ?? 0) > 0 && !backupCodesSaved) ||
@@ -1805,7 +1812,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         onCancel={() => void handleTotpEnrollCancel()}
       >
         {renderMfaEnrollment()}
-        {renderAddStepUpFields(mfaConfirming, setMfaConfirming, (message) => message && addToast(message, "error"), (proof) => handleTotpEnrollConfirm(proof))}
+        {renderAddStepUpFields(mfaConfirming, setMfaConfirming, setTotpStepUpError, (proof) => handleTotpEnrollConfirm(proof))}
       </ConfirmDialog>
     );
   }
