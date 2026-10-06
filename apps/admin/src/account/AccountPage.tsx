@@ -582,6 +582,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   // ceremony response so a retry with the proof does not need a second prompt.
   const [addStepUpRequired, setAddStepUpRequired] = useState(false);
   const [addStepUpCode, setAddStepUpCode] = useState("");
+  // Own flag for the passkey step-up button, so the dialog's primary button does not look busy
+  // while only the proof is being collected.
+  const [addStepUpBusy, setAddStepUpBusy] = useState(false);
   const [totpStepUpError, setTotpStepUpError] = useState<string | null>(null);
   const pendingRegistrationRef = useRef<{ attachment: WebauthnAttachment; response: RegistrationResponseJSON } | null>(null);
   const [addPasskeyOpen, setAddPasskeyOpen] = useState(false);
@@ -1037,6 +1040,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   function resetAddStepUp(): void {
     setAddStepUpRequired(false);
     setAddStepUpCode("");
+    setAddStepUpBusy(false);
     setTotpStepUpError(null);
     pendingRegistrationRef.current = null;
   }
@@ -1806,13 +1810,14 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         disableConfirm={
           totpCode.length < 6 ||
           ((enrollData?.backupCodes.length ?? 0) > 0 && !backupCodesSaved) ||
-          (addStepUpRequired && !addStepUpCode.trim())
+          (addStepUpRequired && !addStepUpCode.trim()) ||
+          addStepUpBusy
         }
         onConfirm={() => void handleTotpEnrollConfirm()}
         onCancel={() => void handleTotpEnrollCancel()}
       >
         {renderMfaEnrollment()}
-        {renderAddStepUpFields(mfaConfirming, setMfaConfirming, setTotpStepUpError, (proof) => handleTotpEnrollConfirm(proof))}
+        {renderAddStepUpFields(mfaConfirming, setTotpStepUpError, (proof) => handleTotpEnrollConfirm(proof))}
       </ConfirmDialog>
     );
   }
@@ -1821,7 +1826,6 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
    * the server asks to confirm it is really the account owner adding a method. */
   function renderAddStepUpFields(
     busy: boolean,
-    setBusy: (busy: boolean) => void,
     onError: (message: string | null) => void,
     submit: (proof: StepUpProofBody) => Promise<void>,
   ) {
@@ -1837,12 +1841,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           autoCapitalize="off"
           spellCheck={false}
           value={addStepUpCode}
-          disabled={busy}
+          disabled={busy || addStepUpBusy}
           onChange={(e) => setAddStepUpCode(e.target.value)}
           {...stepUpCodeFieldAttrs}
         />
         {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
-          <WebauthnStepUpButton busy={busy} onBusyChange={setBusy} onError={onError} onSubmit={submit} />
+          <WebauthnStepUpButton busy={addStepUpBusy} onBusyChange={setAddStepUpBusy} onError={onError} onSubmit={submit} />
         )}
       </>
     );
@@ -1864,7 +1868,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         cancelLabel={addPasskeyBackupCodes ? "Close" : "Cancel"}
         loading={addingPasskey}
         errorMessage={addPasskeyError ?? undefined}
-        disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim() || (addStepUpRequired && !addStepUpCode.trim())}
+        disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim() || (addStepUpRequired && !addStepUpCode.trim()) || addStepUpBusy}
         onConfirm={() => void handleAddPasskeyConfirm()}
         onCancel={handleAddPasskeyCancel}
       >
@@ -1883,7 +1887,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           />
         )}
         {!addPasskeyBackupCodes &&
-          renderAddStepUpFields(addingPasskey, setAddingPasskey, setAddPasskeyError, (proof) => handleAddPasskeyConfirm(proof))}
+          renderAddStepUpFields(addingPasskey, setAddPasskeyError, (proof) => handleAddPasskeyConfirm(proof))}
       </ConfirmDialog>
     );
   }
@@ -1904,7 +1908,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         cancelLabel={addSecurityKeyBackupCodes ? "Close" : "Cancel"}
         loading={addingSecurityKey}
         errorMessage={addSecurityKeyError ?? undefined}
-        disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim() || (addStepUpRequired && !addStepUpCode.trim())}
+        disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim() || (addStepUpRequired && !addStepUpCode.trim()) || addStepUpBusy}
         onConfirm={() => void handleAddSecurityKeyConfirm()}
         onCancel={handleAddSecurityKeyCancel}
       >
@@ -1923,7 +1927,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           />
         )}
         {!addSecurityKeyBackupCodes &&
-          renderAddStepUpFields(addingSecurityKey, setAddingSecurityKey, setAddSecurityKeyError, (proof) => handleAddSecurityKeyConfirm(proof))}
+          renderAddStepUpFields(addingSecurityKey, setAddSecurityKeyError, (proof) => handleAddSecurityKeyConfirm(proof))}
       </ConfirmDialog>
     );
   }
