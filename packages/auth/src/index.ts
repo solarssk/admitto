@@ -42,6 +42,8 @@ export { normalizeEmail, isValidEmailFormat, createUser, findUserByEmail, findUs
 export {
   createSession,
   validateSession,
+  isSessionIdleExpired,
+  isFullSessionMfaPolicySatisfied,
   validatePartialSession,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
@@ -135,6 +137,7 @@ export {
 export {
   validateAccessJwt,
   CfAccessJwtError,
+  isTransientCfAccessJwtFailure,
   isServiceTokenShape,
   clearCfAccessJwksCacheForTests,
 } from "./cloudflare-access/validate.js";

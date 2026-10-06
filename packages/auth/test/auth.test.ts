@@ -10,6 +10,7 @@ import { normalizeEmail, createUser, findUserByEmail } from "../src/user.js";
 import {
   createSession,
   validateSession,
+  isSessionIdleExpired,
   revokeSession,
   revokeAllOperatorSessionsForEvent,
   validatePartialSession,
@@ -315,6 +316,21 @@ describe("session", () => {
       // Left in place it widened the operator idle window for every later test in the file.
       await prisma.systemSettings.deleteMany({ where: { key: "operator_session_idle_timeout" } });
     }
+  });
+
+  it("isSessionIdleExpired applies the idle window read-only (no revoke, no last_seen_at refresh)", async () => {
+    const { session } = await createSession(prisma, { userId: USER_OP_A });
+    const stale = new Date(Date.now() - SESSION_IDLE_TIMEOUT_OPERATOR_MS - 1000);
+    await prisma.session.update({ where: { id: session.id }, data: { last_seen_at: stale } });
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
+
+    expect(await isSessionIdleExpired(prisma, row)).toBe(true);
+    expect(await isSessionIdleExpired(prisma, { ...row, last_seen_at: new Date() })).toBe(false);
+    expect(await isSessionIdleExpired(prisma, { ...row, stage: SESSION_STAGE.MFA_PENDING })).toBe(false);
+
+    const after = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
+    expect(after.revoked_at).toBeNull();
+    expect(after.last_seen_at.getTime()).toBe(stale.getTime());
   });
 
   it("keeps full session alive within the idle window", async () => {

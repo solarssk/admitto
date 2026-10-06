@@ -75,3 +75,43 @@ export async function findDeliveryForBounce(
 export function truncateEmailForLog(email: string): string {
   return redactEmail(normalizeBounceRecipientEmail(email));
 }
+
+/** An RFC 5322 Message-ID (`<local@host>`), as opposed to an opaque provider request id. */
+function isRfcMessageId(value: string | null): value is string {
+  return (
+    typeof value === "string" &&
+    value.startsWith("<") &&
+    value.endsWith(">") &&
+    /^[^<>\s@]+@[^<>\s@]+$/.test(value.slice(1, -1))
+  );
+}
+
+/**
+ * Transports that cannot supply an RFC Message-ID (Graph, Power Automate) may match by recipient
+ * alone. An SMTP delivery never may, even while it is still queued and its Message-ID is not
+ * persisted yet, or a DSN naming only the recipient could mark it bounced.
+ */
+function canMatchByRecipientOnly(d: EmailDelivery): boolean {
+  return d.provider !== "smtp" && !isRfcMessageId(d.provider_message_id);
+}
+
+/**
+ * Pick the delivery a bounce may apply to. A delivery sent over SMTP carries its real
+ * Message-ID, which only the sender and the recipient's mail system know, so a bounce is
+ * accepted for it only when the DSN names that id. This stops anyone who can mail the bounce
+ * mailbox from forging a DSN for an attendee. Deliveries over transports without an RFC Message-ID
+ * (Graph and Power Automate return opaque request ids) still match by recipient alone.
+ * A delivery whose Message-ID the DSN names always wins over the recipient-only fallback, so a
+ * newer Graph row cannot take a bounce meant for an SMTP row. Returns the index into `queue`, or -1.
+ */
+export function selectBounceDeliveryIndex(
+  queue: readonly EmailDelivery[],
+  referencedMessageIds: readonly string[] | undefined,
+): number {
+  const referenced = new Set(referencedMessageIds ?? []);
+  const exact = queue.findIndex(
+    (d) => isRfcMessageId(d.provider_message_id) && referenced.has(d.provider_message_id.toLowerCase()),
+  );
+  if (exact !== -1) return exact;
+  return queue.findIndex(canMatchByRecipientOnly);
+}

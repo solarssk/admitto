@@ -713,6 +713,23 @@ describe("PATCH /api/admin/events/:eventId/image-assets/:assetId", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/image-assets original_url", () => {
+  it.each(["javascript:alert(1)", "/uploads/../../etc/passwd", "/not-uploads/x.png"])(
+    "rejects %s as original_url without writing a file",
+    async (badUrl) => {
+      const fd = uploadForm("bad_original");
+      fd.append("original_url", badUrl);
+      const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: fd,
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "invalid_original_url" });
+    },
+  );
+});
+
 describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("also best-effort deletes the pre-crop original file when the asset has one", async () => {
     // A raw pre-crop upload (no asset row yet) - same shape as the admin UI's upload-then-crop

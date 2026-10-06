@@ -92,6 +92,22 @@ async function resolveIdleTimeoutMs(
     : getSessionIdleTimeoutOperatorMs(prisma);
 }
 
+/**
+ * Whether a `full` session has been inactive for longer than its role's idle window. Read-only:
+ * unlike {@link lookupSessionByToken} it neither revokes the session nor refreshes `last_seen_at`,
+ * so a long-lived connection (the check-in live stream) can apply the same policy without
+ * keeping an idle session alive.
+ */
+export async function isSessionIdleExpired(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  session: { user_id: string; remember_me: boolean; stage: string; last_seen_at: Date },
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (session.stage !== SESSION_STAGE.FULL) return false;
+  const idleTimeoutMs = await resolveIdleTimeoutMs(prisma, session.user_id, session.remember_me);
+  return idleTimeoutMs !== null && now.getTime() - session.last_seen_at.getTime() >= idleTimeoutMs;
+}
+
 /** How far the Event.date noon-UTC sentinel can sit from `now` while the sign-in still falls in the
  * event's window, as a cheap query prefilter: up to 26 hours ahead (UTC+14 at its local midnight)
  * and, behind, nearly 48 hours (an overnight event in UTC-12 that ends late the next day). 72
@@ -302,7 +318,7 @@ export async function validateSession(
 /** Reject full sessions that predate MFA-required role grants or lack enrolled TOTP. */
 async function assertFullSessionMfaPolicy(
   prisma: PrismaClient | Prisma.TransactionClient,
-  validated: ValidatedPartialSession,
+  validated: { userId: string; session: { created_at: Date; auth_method: string } },
 ): Promise<boolean> {
   // Backup-code acknowledgment is mandatory before a full session is honored for
   // every auth method, including OIDC (IAM-002).
@@ -325,6 +341,17 @@ async function assertFullSessionMfaPolicy(
     return false;
   }
   return true;
+}
+
+/**
+ * The MFA / backup-code policy {@link validateSession} applies to a full session, as a read-only
+ * check for a long-lived connection (the check-in live stream) that holds an already-loaded row.
+ */
+export async function isFullSessionMfaPolicySatisfied(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  session: { user_id: string; created_at: Date; auth_method: string },
+): Promise<boolean> {
+  return assertFullSessionMfaPolicy(prisma, { userId: session.user_id, session });
 }
 
 /**

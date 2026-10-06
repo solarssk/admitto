@@ -58,6 +58,7 @@ import { userRequiresMfa, userHasConfirmedTotp, markBackupCodesAcknowledged } fr
 import {
   createSession,
   validateSession,
+  isFullSessionMfaPolicySatisfied,
   validatePartialSession,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
@@ -278,6 +279,9 @@ describe("login MFA flow", () => {
     const partial = await validatePartialSession(prisma, result.rawToken);
     expect(partial?.stage).toBe(SESSION_STAGE.ENROLLMENT_REQUIRED);
     expect(await validateSession(prisma, result.rawToken)).toBeNull();
+    // The read-only variant used by the check-in stream reaches the same verdict.
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: partial!.session.id } });
+    expect(await isFullSessionMfaPolicySatisfied(prisma, row)).toBe(false);
   });
 
   it("admin with TOTP gets mfa_pending then full after verify", async () => {

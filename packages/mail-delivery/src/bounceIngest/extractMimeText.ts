@@ -68,12 +68,15 @@ export function stripHtmlTagsSafely(html: string): string {
  * Buffers/Uint8Arrays are treated as raw octets. JS strings are Unicode: encode
  * as UTF-8 first so 8bit/7bit and libqp see real octets (e.g. `î` → C3 AE), not
  * UTF-16 code units misread as latin1 bytes (`î` → EE → mojibake). */
-function sourceToBinaryString(source: Buffer | Uint8Array | string | undefined): string {
+/** Raw RFC 822 source as an IMAP client hands it over. */
+type RawMimeSource = Buffer | Uint8Array | string | undefined;
+
+function sourceToBinaryString(source: RawMimeSource, maxBytes = MAX_BODY_BYTES): string {
   if (!source) return "";
   if (typeof source === "string") {
-    return Buffer.from(source, "utf8").subarray(0, MAX_BODY_BYTES).toString("binary");
+    return Buffer.from(source, "utf8").subarray(0, maxBytes).toString("binary");
   }
-  const buf = Buffer.from(source).subarray(0, MAX_BODY_BYTES);
+  const buf = Buffer.from(source).subarray(0, maxBytes);
   return buf.toString("binary");
 }
 
@@ -238,4 +241,73 @@ export function extractPlainTextFromSource(
   if (chunks.length === 0) chunks.push(fallbackBodyText(raw));
 
   return chunks.join("\n\n").slice(0, MAX_BODY_BYTES);
+}
+
+const MAX_REFERENCED_MESSAGE_IDS = 50;
+/**
+ * Bound on the source scanned for correlation ids. Much larger than the display-body cap
+ * ({@link MAX_BODY_BYTES}): a genuine NDR can put more than 64 KiB of explanatory HTML before the
+ * part that quotes the original headers, and truncating there would lose the Message-ID.
+ */
+const MAX_CORRELATION_SOURCE_BYTES = 4 * 1024 * 1024;
+const MESSAGE_ID_TOKEN_RE = /<[^<>\s]{1,998}>/g;
+const MESSAGE_ID_HEADERS = new Set([
+  "message-id",
+  "in-reply-to",
+  "references",
+  "original-message-id", // RFC 3464 per-message field in message/delivery-status
+]);
+
+/**
+ * Whether a header line starts (`true`), continues (`inRelevantHeader`) or leaves a header that
+ * can carry Message-IDs. Folded continuation lines start with a space or tab.
+ */
+function isMessageIdHeaderLine(line: string, inRelevantHeader: boolean): boolean {
+  if (line.startsWith(" ") || line.startsWith("\t")) return inRelevantHeader;
+  const colon = line.indexOf(":");
+  return colon > 0 && MESSAGE_ID_HEADERS.has(line.slice(0, colon).toLowerCase());
+}
+
+/** Add the ids named by header lines in `text` to `ids`; true once the cap is reached. */
+function collectMessageIds(text: string, ids: Set<string>): boolean {
+  let inRelevantHeader = false;
+  for (const line of text.split(/\r?\n/)) {
+    inRelevantHeader = isMessageIdHeaderLine(line, inRelevantHeader);
+    if (!inRelevantHeader) continue;
+    for (const token of line.match(MESSAGE_ID_TOKEN_RE) ?? []) {
+      ids.add(token.toLowerCase());
+      if (ids.size >= MAX_REFERENCED_MESSAGE_IDS) return true;
+    }
+  }
+  return false;
+}
+
+/** Parts that name the original message and that a mail server may have base64 / QP encoded. */
+const QUOTED_ORIGINAL_TYPES = new Set([
+  "message/rfc822",
+  "text/rfc822-headers",
+  "message/delivery-status",
+]);
+
+/**
+ * Message-IDs named by `Message-ID`, `In-Reply-To`, `References` and `Original-Message-ID` header
+ * lines in the raw source and in the transfer-decoded quoted original message or delivery status
+ * (message/rfc822, text/rfc822-headers, message/delivery-status; some servers base64 them).
+ * Lower-cased and de-duplicated, capped to bound memory.
+ */
+export function extractReferencedMessageIds(source: RawMimeSource): string[] {
+  const raw = sourceToBinaryString(source, MAX_CORRELATION_SOURCE_BYTES);
+  const ids = new Set<string>();
+  if (collectMessageIds(raw, ids)) return [...ids];
+
+  let leaves: MimeLeaf[];
+  try {
+    leaves = splitMimeMessage(raw);
+  } catch {
+    leaves = [];
+  }
+  for (const leaf of leaves) {
+    if (QUOTED_ORIGINAL_TYPES.has(leaf.contentType) && collectMessageIds(leaf.text, ids)) break;
+  }
+  return [...ids];
 }

@@ -14,7 +14,7 @@ const EXPECTED_POLICIES: Record<
   "ops:healthz": { windowMs: [60_000], max: [120], checks: 1 },
   "ops:readyz": { windowMs: [60_000], max: [10], checks: 1 },
   "ops:system-logs": { windowMs: [60_000], max: [120], checks: 1 },
-  "wallet:webhook": { windowMs: [60_000, 60_000], max: [120, 600], checks: 2 },
+  "wallet:webhook": { windowMs: [60_000], max: [600], checks: 1 },
   "auth:oidc": { windowMs: [60_000], max: [20], checks: 1 },
   "auth:login-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:passkey-login-begin-ip": { windowMs: [60_000], max: [10], checks: 1 },
@@ -70,6 +70,7 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "mfa:enroll": { windowMs: 900_000, max: 10 },
     "account:password-check": { windowMs: 60_000, max: 10 },
     "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
+    "wallet:webhook-event": { windowMs: 60_000, max: 120 },
   };
 
 describe("RATE_POLICIES registry", () => {

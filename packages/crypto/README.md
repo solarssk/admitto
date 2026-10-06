@@ -13,9 +13,11 @@ const payload = encrypt("client-secret");
 const plain = decrypt(payload);
 ```
 
-`encryptToString` / `decryptFromString` store `{ ciphertext, iv, authTag, keyVersion }` (base64 strings; 12-byte `iv`, 16-byte `authTag`, `keyVersion` currently `1`) as a single JSON string. It is used for `Attendee.token_enc`, IdP `client_secret`, TOTP secrets, mail provider credentials, wallet API keys, IMAP bounce-ingest passwords, the weather API key and the notification webhook URL.
+`encryptToString` / `decryptFromString` store `{ ciphertext, iv, authTag, keyVersion }` (base64 strings; 12-byte `iv`, 16-byte `authTag`, `keyVersion` `1` or `2`) as a single JSON string. It is used for `Attendee.token_enc`, IdP `client_secret`, TOTP secrets, mail provider credentials, wallet API keys, IMAP bounce-ingest passwords, the weather API key and the notification webhook URL.
 
 ## Errors
+
+Both functions take an optional `context` string. With one, the value is written as `keyVersion` `2` and the context is authenticated as AES-GCM additional data (not stored), so a ciphertext moved into a column with another purpose does not decrypt; TOTP secrets and IdP client secrets use it. Without one, `keyVersion` `1` is written. Version `1` values decrypt with or without a context, so existing rows keep working, but a build older than this change cannot read version `2` values (no rollback for those rows).
 
 `decrypt` throws `CryptoDecryptionError` (`err.code === "decryption_failed"`) when the key does not match or the ciphertext was altered. `decryptFromString` throws the same error for malformed JSON, a wrong shape or an unsupported `keyVersion`, so callers can branch on one type. A structurally invalid payload passed straight to `decrypt` throws `TypeError` / `Error` instead. The key is read from `ENCRYPTION_KEY` once per process and cached, so a changed key needs a restart. `getEncryptionKey()` and the `EncryptedData` / `CryptoErrorCode` types are exported too.
 

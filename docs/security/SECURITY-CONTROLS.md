@@ -337,7 +337,7 @@ itself.
 
 | Header | Used for |
 |--------|----------|
-| `X-Forwarded-For` (first hop) | Rate limits (an IPv6 client is keyed by its /64 network, an IPv4-mapped address as its IPv4), audit IP, login throttling |
+| `X-Forwarded-For` (rightmost hop outside `TRUSTED_PROXY_CIDRS`) | Rate limits (an IPv6 client is keyed by its /64 network, an IPv4-mapped address as its IPv4), audit IP, login throttling |
 | `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
 | `X-Forwarded-Proto` | Session cookie `Secure` flag |
 
@@ -348,10 +348,11 @@ Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/ra
 [`is-secure-request.ts`](../../apps/web/src/is-secure-request.ts) (used for the session cookie
 `Secure` flag).
 
-**Operator requirement:** the edge proxy must set a **single** trusted client IP (e.g. nginx
-`proxy_set_header X-Forwarded-For $remote_addr`). If the proxy **appends** to a client-sent
-`X-Forwarded-For` chain, an attacker can pick the rate-limit bucket. This is a **deployment**
-misconfiguration risk, not bypassable from the app alone.
+**Operator requirement:** the edge proxy should set a **single** trusted client IP (e.g. nginx
+`proxy_set_header X-Forwarded-For $remote_addr`). The app takes the **rightmost** hop that is not
+inside `TRUSTED_PROXY_CIDRS`, so a client-supplied prefix in an appended chain is ignored; every
+proxy in a multi-proxy chain must be listed in `TRUSTED_PROXY_CIDRS`, otherwise the nearest unlisted
+proxy is taken for the client and everyone behind it shares one rate-limit bucket.
 
 **Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
 of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
@@ -381,7 +382,10 @@ Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC
 [`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
 - HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
-- Literal private, link-local, and metadata hostnames rejected.
+- Literal private, link-local, carrier-grade NAT (100.64.0.0/10, which includes Tailscale
+  addresses), multicast/reserved, and metadata hostnames rejected, including IPv4 embedded in
+  NAT64/6to4 IPv6 literals. Operators who reach an IdP over a tailnet add its exact host to the
+  SSO allowlist.
 - **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
   connection uses a custom undici `lookup` to the validated address while the request URL keeps
   the original hostname (correct Host/SNI). All validated A/AAAA records are cached; on
@@ -559,8 +563,8 @@ Useful when repeating internal or vendor PEN tests against a staging instance:
 4. **AuthZ:** `GET /api/admin/events` without session → 401.
 5. **SSRF:** OIDC discover to private IP literal blocked; hostname resolving to RFC1918 blocked
    after DNS check (superadmin action).
-6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP -
-   verify deploy runbook, not app-only config.
+6. **Residual:** a proxy missing from `TRUSTED_PROXY_CIDRS` is taken for the client (shared
+   rate-limit bucket); verify the deploy runbook lists every proxy in the chain.
 
 Source constants: `apps/web/src/rate-limit/policies.ts` (definitions), `apps/web/src/app.ts`
 (wiring), `packages/auth/src/oidc/safe-url.ts`, `packages/auth/src/oidc/safe-oidc-fetch.ts`.

@@ -9,6 +9,7 @@ vi.mock("@hono/node-server/conninfo", () => ({
 
 vi.mock("../src/rate-limit/trust-proxy.js", () => ({
   shouldTrustForwardedHeaders: vi.fn(() => false),
+  resolveTrustedProxyCidrs: vi.fn(() => ({ check: (address: string) => address === "10.0.0.5" })),
 }));
 
 import { shouldTrustForwardedHeaders } from "../src/rate-limit/trust-proxy.js";
@@ -23,8 +24,31 @@ function appWithRequest(headers: Record<string, string> = {}) {
 }
 
 describe("clientIpFromHeaders", () => {
-  it("returns first valid IPv4 hop", () => {
-    expect(clientIpFromHeaders("203.0.113.10, 10.0.0.1")).toBe("203.0.113.10");
+  it("returns the only hop of a single-hop header", () => {
+    expect(clientIpFromHeaders("203.0.113.10")).toBe("203.0.113.10");
+  });
+
+  it("returns the rightmost hop that is not a trusted proxy, never a hop the client could have supplied", () => {
+    const trusted = (ip: string) => ip === "10.0.0.1" || ip === "10.0.0.2";
+    // client-forged "1.2.3.4" on the left, the real client as seen by the first trusted proxy next to it.
+    expect(clientIpFromHeaders("1.2.3.4, 203.0.113.10, 10.0.0.1, 10.0.0.2", trusted)).toBe("203.0.113.10");
+    // With no hop trusted, the last one is the nearest hop we can vouch for.
+    expect(clientIpFromHeaders("203.0.113.10, 10.0.0.1")).toBe("10.0.0.1");
+  });
+
+  it("ignores a chain longer than 32 hops so the socket address is used", () => {
+    const longChain = Array.from({ length: 33 }, () => "10.0.0.1").join(", ");
+    expect(clientIpFromHeaders(longChain, () => true)).toBeUndefined();
+    expect(clientIpFromHeaders(longChain.split(", ").slice(1).join(", "), () => true)).toBe("10.0.0.1");
+  });
+
+  it("falls back to the leftmost hop when every hop is a trusted proxy", () => {
+    expect(clientIpFromHeaders("10.0.0.1, 10.0.0.2", () => true)).toBe("10.0.0.1");
+  });
+
+  it("rejects the whole header when any hop is not a valid IP", () => {
+    expect(clientIpFromHeaders("203.0.113.10, garbage")).toBeUndefined();
+    expect(clientIpFromHeaders("garbage, 203.0.113.10")).toBeUndefined();
   });
 
   it("returns undefined for malformed leading hop", () => {
@@ -55,16 +79,15 @@ describe("resolveClientIp", () => {
     expect(await res.json()).toEqual({ ip: "198.51.100.7" });
   });
 
-  it("uses valid X-Forwarded-For when the request is from a trusted proxy", async () => {
+  // 10.0.0.5 is our proxy (mock above); the chain case has 1.2.3.4 supplied by the client.
+  it.each([
+    ["a valid single hop", "203.0.113.55", "203.0.113.55"],
+    ["the rightmost untrusted hop, ignoring hops a client put in front", "1.2.3.4, 203.0.113.9, 10.0.0.5", "203.0.113.9"],
+    ["the socket address when the header is malformed", ",203.0.113.55", "198.51.100.7"],
+  ])("from a trusted proxy resolves %s", async (_name, header, expected) => {
     mockedShouldTrustForwardedHeaders.mockReturnValue(true);
-    const res = await appWithRequest({ "X-Forwarded-For": "203.0.113.55" });
-    expect(await res.json()).toEqual({ ip: "203.0.113.55" });
-  });
-
-  it("falls back to socket when X-Forwarded-For is malformed even from a trusted proxy", async () => {
-    mockedShouldTrustForwardedHeaders.mockReturnValue(true);
-    const res = await appWithRequest({ "X-Forwarded-For": ",203.0.113.55" });
-    expect(await res.json()).toEqual({ ip: "198.51.100.7" });
+    const res = await appWithRequest({ "X-Forwarded-For": header });
+    expect(await res.json()).toEqual({ ip: expected });
   });
 });
 
