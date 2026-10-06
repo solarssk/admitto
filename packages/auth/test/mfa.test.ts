@@ -158,6 +158,27 @@ describe("TOTP enrollment", () => {
     expect(await confirmTotpEnrollment(prisma, userId, "000000")).toBe(false);
   });
 
+  it("with onlyFirstMethod, confirms while the account has no method and refuses once it has one", async () => {
+    const userId = "user-totp-only-first";
+    await prisma.user.create({
+      data: { id: userId, email: "totp-only-first@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await startTotpEnrollment(prisma, userId);
+    const secret = decryptTotpSecret(
+      (await prisma.userMfaMethod.findFirstOrThrow({ where: { user_id: userId, type: "totp" } })).secret_enc!,
+    );
+
+    // Another method got confirmed meanwhile (a second, stale partial session).
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "webauthn", confirmed_at: new Date(), webauthn_credential_id: "cred-only-first" },
+    });
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), { onlyFirstMethod: true })).toBe(false);
+    expect(await userHasConfirmedTotp(prisma, userId)).toBe(false);
+
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: userId, type: "webauthn" } });
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), { onlyFirstMethod: true })).toBe(true);
+  });
+
   it("getOrStartTotpEnrollment resumes pending setup without rotating secret", async () => {
     const userId = "user-totp-resume";
     const password_hash = await hashPassword(PASSWORD);

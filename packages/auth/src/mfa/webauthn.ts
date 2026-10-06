@@ -16,6 +16,7 @@ import { findUserById } from "../user.js";
 import { ensureFreshEnrollmentBackupCodes } from "./backup-recovery.js";
 import { userHasAnyConfirmedMfaMethod } from "./policy.js";
 import { runInTransaction } from "../prisma-tx.js";
+import { acquireMfaEnrollmentLock } from "./enrollment-lock.js";
 
 /** "platform" = passkey (Touch ID/Windows Hello/password manager); "cross-platform" = security
  * key (USB/NFC/BLE FIDO2 device). Same ceremony either way, only this hint and the My Account
@@ -122,6 +123,7 @@ export async function finishWebauthnRegistration(
   attachment: WebauthnAttachment,
   label: string | null,
   rp: WebauthnRpConfig,
+  options: { onlyFirstMethod?: boolean } = {},
 ): Promise<FinishWebauthnRegistrationResult | null> {
   let verification;
   try {
@@ -140,6 +142,11 @@ export async function finishWebauthnRegistration(
   const { credential, aaguid } = verification.registrationInfo;
 
   return runInTransaction(prisma, async (tx) => {
+    if (options.onlyFirstMethod) {
+      // Login-time enrollment: refuse once the account has a confirmed method, see confirmTotpEnrollment.
+      await acquireMfaEnrollmentLock(tx, userId);
+      if (await userHasAnyConfirmedMfaMethod(tx, userId)) return null;
+    }
     const dup = await tx.userMfaMethod.findFirst({
       where: { webauthn_credential_id: credential.id },
       select: { id: true },

@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { Prisma, type PrismaClient } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simplewebauthn/server";
 import {
@@ -17,6 +17,7 @@ import {
   revokeSession,
   runInTransaction,
   userHasAnyConfirmedMfaMethod,
+  acquireMfaEnrollmentLock,
   userHasConfirmedTotp,
   userRequiresMfaStepUp,
   verifyPasswordOrDummy,
@@ -450,9 +451,7 @@ async function addMfaMethodWithStepUp<T>(
           // Two first-method enrollments can overlap (the owner's and a stolen session's). The lock
           // makes them run one after the other, and the re-check, made after the lock, sees the
           // earlier one's commit: the later one is then no longer "first" and must carry a proof.
-          await tx.$executeRaw(
-            Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`account-mfa-enroll:${params.userId}`}))`,
-          );
+          await acquireMfaEnrollmentLock(tx, params.userId);
           if (await userHasAnyConfirmedMfaMethod(tx, params.userId)) throw new MfaEnrollmentRejected("totp_required");
           return enroll(tx, orgId, audit);
         }),
