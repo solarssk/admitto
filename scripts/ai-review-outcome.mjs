@@ -19,6 +19,16 @@ function isValidReview(structured) {
   }
 }
 
+// The action writes its execution log as one JSON array, or as one JSON object per line.
+export function readExecutionEvents(executionFile) {
+  const contents = readFileSync(executionFile, 'utf8')
+  try {
+    return JSON.parse(contents)
+  } catch {
+    return contents.split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  }
+}
+
 // Only explicit provider errors or the observed empty pre-model error are unavailable.
 // Invalid output, exhausted turns and errors in our own CI remain failures.
 export function classifyClaudeReview({ outcome, structured, executionFile, credentialPresent }) {
@@ -28,12 +38,7 @@ export function classifyClaudeReview({ outcome, structured, executionFile, crede
   if (!executionFile) return { status: 'error', reason: 'missing_execution_file' }
   let events
   try {
-    const contents = readFileSync(executionFile, 'utf8')
-    try {
-      events = JSON.parse(contents)
-    } catch {
-      events = contents.split('\n').filter(Boolean).map((line) => JSON.parse(line))
-    }
+    events = readExecutionEvents(executionFile)
   } catch {
     return { status: 'error', reason: 'unreadable_execution_file' }
   }

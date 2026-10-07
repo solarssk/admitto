@@ -22,6 +22,51 @@ provider credential. The workflow reads only trusted workflow code and a text di
 checks out or runs the PR head. Manual runs share the default branch's attempt budget and
 the existing daily budget. Both reviewed commits, the base branch and PR eligibility are checked again before publication.
 
+## Status comment and commands
+
+Every review run keeps one comment on the pull request, edited in place and headed
+"AI review" with the state: reviewing, approved, comments, a policy approval, failed and so
+on. It shows the commit, the size of the change, the model and its turns, how much of the
+diff the reviewer actually read, the other files it opened, the run and where the attempt
+budget stands. Coverage is counted from the reviewer's tool calls in the execution log, not
+from what the model says about itself, and a file that was never read is listed. The verdict
+and any findings stay in the GitHub review; the comment carries no model text. When a run
+does not finish, the comment says why and what to do.
+
+The repository owner can control a review from a comment on the pull request:
+
+| Command | What it does |
+|---|---|
+| `/ai-review` | Reviews the current commit again. A running review is stopped first, and the attempt budget is bypassed. |
+| `/ai-review status` | Writes a live status comment: the latest run, where the attempt budget stands and a link to the last report. |
+| `/ai-review cancel` | Stops a running review and withdraws the bot's approval of that commit. |
+
+Only the owner can use them: the workflow (`ai-review-command.yml`) compares the commenter's
+immutable user id with the repository owner's, and the script checks it again. The person who
+started the run must be the owner too, so re-running an old command from the Actions page does
+nothing for anyone else. A reaction
+shows the command was seen, and a refusal is answered with a comment saying why. `/ai-review`
+is a GitHub re-run of the latest run, the same manual re-run the workflow treats as attempt
+two, so it needs no extra secret. The re-run reads the pull request again, so it reviews the
+commit that is there now, but it uses the workflow file of the run it repeats: a run that
+started before a workflow change was merged re-runs the old version, and a fresh run (a push,
+or closing and reopening the pull request) takes the new one. A Dependabot pull request is
+reviewed from **Actions, AI review, Run workflow**, because that dispatch has to be started
+by the owner themselves, so a comment cannot do it.
+
+The model step is stopped after 15 minutes, well inside the 30 minute job limit, so a hung
+reviewer ends with a failed run and a status comment instead of a silent timeout.
+
+| What the comment says | What to do |
+|---|---|
+| The reviewer did not finish within 15 minutes | Comment `/ai-review`. |
+| Claude unavailable, the login was rejected | Run `claude setup-token`, replace `CLAUDE_CODE_OAUTH_TOKEN`, comment `/ai-review`. |
+| Claude unavailable, a usage limit or no model response | Wait until the limit resets (a new token does not reset it), then comment `/ai-review`. |
+| Claude unavailable, a service problem | Comment `/ai-review` in a few minutes. |
+| Budget used up (policy approval) | Review the diff yourself, or comment `/ai-review` for a real review that bypasses the budget. |
+| The diff is too large, or a file has no readable diff | Split the pull request or review by hand; `/ai-review` does not help. |
+| Failed with a reason such as `missing_execution_file` | A CI problem, not a provider outage: comment `/ai-review`, and open the run log if it repeats. |
+
 ## Credentials
 
 | Secret | Purpose |
@@ -43,6 +88,7 @@ issue, log, cache or artifact. Renewing a token does not reset a subscription us
 | Empty error result before any model response, with explicit zero cost and no model usage | Policy approval stating `no_model_response`; manual review required | Success |
 | Automated review budget exhausted | Policy approval explaining the budget skip; manual review required | Success |
 | Missing or unreadable execution file, malformed verdict, turn limit, unknown failure | No approval | Failure |
+| The model step runs longer than 15 minutes and is stopped | No approval | Failure |
 
 An empty result does not prove the exact cause: a quota or rejected login can produce it.
 The workflow reports `no_model_response` rather than inventing a quota diagnosis.
