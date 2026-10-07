@@ -240,6 +240,7 @@ export {
   userIsInstanceSuperadmin,
 } from "./bootstrap.js";
 export { revokeUserAuthState, revokeOtherSessions } from "./revocation.js";
+export { acquireMfaEnrollmentLock } from "./mfa/enrollment-lock.js";
 export { runInTransaction } from "./prisma-tx.js";
 export {
   userRequiresMfa,
@@ -287,6 +288,7 @@ export {
 } from "./mfa/webauthn.js";
 export {
   createTrustedDevice,
+  createTrustedDeviceIfMfaRecent,
   validateTrustedDevice,
   revokeTrustedDeviceByToken,
   revokeAllTrustedDevicesForUser,

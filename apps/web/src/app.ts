@@ -2432,8 +2432,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.delete("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountMfaEnroll(c, db),
   );
-  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
-    handlePostAccountMfaConfirm(c, db, rateLimitStore),
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
+    handlePostAccountMfaConfirm(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post("/api/account/mfa/reset", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
     handlePostAccountMfaReset(c, db, rateLimitStore, mailInjectedBaseUrl),
@@ -2454,7 +2454,7 @@ export function createApp(options: CreateAppOptions = {}) {
     webauthnBodyLimit,
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
-    (c) => handlePostAccountWebauthnRegisterFinish(c, db, mailInjectedBaseUrl),
+    (c) => handlePostAccountWebauthnRegisterFinish(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post(
     "/api/account/mfa/webauthn/assert/begin",

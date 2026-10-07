@@ -303,6 +303,39 @@ describe("POST /api/auth/login MFA", () => {
   });
 });
 
+describe("login-time enrollment with a stale partial session", () => {
+  it("refuses to add a second method once another session has enrolled the first one", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+
+    // A password-only sign-in of a role that requires MFA gets an enrollment-only session.
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    const enrollRes = await app.request("/api/auth/mfa/totp/enroll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(enrollRes.status).toBe(200);
+    const secret = parseTotpSecretFromOtpauthUri(((await enrollRes.json()) as { otpauth_uri: string }).otpauth_uri)!;
+
+    // Meanwhile the account owner enrols the first method from another session.
+    await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, admin!.id);
+
+    const confirm = await app.request("/api/auth/mfa/totp/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    expect(confirm.status).toBe(401);
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp", confirmed_at: { not: null } } }),
+    ).toBe(0);
+  });
+});
+
 describe("pending session check-in gate", () => {
   it("admin mfa_pending cannot scan", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -1767,7 +1800,7 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
     const response = authenticator.register({ challenge: begin!.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
     // Deliberately skip markBackupCodesAcknowledged, unlike registerConfirmedWebauthnCredential -
     // this is what promotes the completed session into BACKUP_CODES_REQUIRED instead of FULL.
-    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", "Seeded key", WEBAUTHN_RP);
+    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", WEBAUTHN_RP, { label: "Seeded key" });
 
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
