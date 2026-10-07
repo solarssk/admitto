@@ -418,6 +418,21 @@ Additional instance superadmins can be assigned in the admin UI (Users) or via O
 Before demoting a superadmin in your IdP, ensure at least one other **active** instance superadmin
 remains - see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md).
 
+## Upgrading stored secrets to purpose-bound encryption
+
+Existing mail credentials, event wallet API keys, the bounce-mailbox IMAP password and the
+notification webhook URL keep working after an upgrade and are re-encrypted when saved again. To
+upgrade all of them at once, run the one-off command (preview first; it exits 1 if a value cannot be
+decrypted, and leaves such values untouched):
+
+```bash
+docker compose run --rm app node packages/db/dist/scripts/rebind-secret-contexts.js --dry-run
+docker compose run --rm app node packages/db/dist/scripts/rebind-secret-contexts.js
+```
+
+Take a database backup first and do not roll back to an older release afterwards: upgraded values
+cannot be read by it.
+
 ## Emergency CLI (event-day failover)
 
 When the admin SPA or scanner is down, use the unified emergency binary (same production `app` image - `npm`/`npx` are not available):
