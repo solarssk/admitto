@@ -94,6 +94,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   legacy_name_requires_both_fields:
     "This attendee doesn't have separate first and last names yet. Set both fields together.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
+  mfa_recent_required: "Confirm your sign-in again to remember this device.",
   manual_lookup_disabled: "Manual lookup is disabled for this event. Use QR scan only.",
   mail_not_configured:
     "Mail transport isn't configured for this event or organization. Set it up in Instance Settings → Mail (or this event's Mailing settings) before sending.",
@@ -184,6 +185,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   invalid_device_label: "Device label must be text.",
   invalid_event_id: "Invalid event ID.",
   invalid_org_id: "Invalid organization ID.",
+  invalid_original_url: "The original image address is not valid. Upload the image again and try again.",
   invalid_request: "Check the form and try again.",
   invalid_tile_url: "That map tile URL isn't valid. Check the format and try again.",
   invalid_type: 'Type must be "link" or "file".',

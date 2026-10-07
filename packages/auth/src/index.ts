@@ -42,8 +42,12 @@ export { normalizeEmail, isValidEmailFormat, createUser, findUserByEmail, findUs
 export {
   createSession,
   validateSession,
+  isSessionIdleExpired,
+  isFullSessionMfaPolicySatisfied,
   validatePartialSession,
   promoteSessionToFull,
+  isMfaRecentlyVerified,
+  MFA_RECENT_WINDOW_MS,
   promoteSessionToBackupCodesStep,
   persistentCookieMaxAgeSeconds,
   revokeSession,
@@ -135,6 +139,7 @@ export {
 export {
   validateAccessJwt,
   CfAccessJwtError,
+  isTransientCfAccessJwtFailure,
   isServiceTokenShape,
   clearCfAccessJwksCacheForTests,
 } from "./cloudflare-access/validate.js";
@@ -194,6 +199,7 @@ export {
   logMfaSuccess,
   logMfaFailure,
   logMfaRecoveryConsumed,
+  logTrustedDeviceCreated,
   logLogout,
   logRateLimitExceeded,
   logOidcLoginSuccess,
@@ -234,6 +240,7 @@ export {
   userIsInstanceSuperadmin,
 } from "./bootstrap.js";
 export { revokeUserAuthState, revokeOtherSessions } from "./revocation.js";
+export { acquireMfaEnrollmentLock } from "./mfa/enrollment-lock.js";
 export { runInTransaction } from "./prisma-tx.js";
 export {
   userRequiresMfa,

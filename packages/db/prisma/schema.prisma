@@ -998,6 +998,10 @@ model Session {
   // (no JS, older sessions). Mirrors AdminAuditLog.actor_timezone.
   timezone         String?
   created_at       DateTime          @default(now())
+  // When this session completed a real MFA step (TOTP/recovery code or WebAuthn assertion), set by
+  // promoteSessionToFull's caller only. Null for OIDC, passkey-login and trusted-device sessions,
+  // and for sessions created before the column existed: POST /api/auth/mfa/remember-device needs it.
+  mfa_verified_at  DateTime?
   last_seen_at     DateTime          @default(now())
   // True for an event-day session (operator-only account signing in on the day of an event it is
   // assigned to): expires at the end of that day and has no inactivity window. Decided again when a

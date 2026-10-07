@@ -36,6 +36,8 @@ import {
   beginWebauthnRegistration,
   finishWebauthnRegistration,
   createTrustedDevice,
+  isMfaRecentlyVerified,
+  logTrustedDeviceCreated,
   beginPasskeyLogin,
   loginWithPasskey,
 } from "@admitto/auth";
@@ -666,21 +668,27 @@ export async function handlePostPasskeyLoginFinish(
 }
 
 /** POST /api/auth/mfa/remember-device, marks the current device as trusted for future logins.
- * Full session only - remembering only ever follows an already-completed MFA step, it never
- * gates one. Exists for the auto-starting WebAuthn ceremony on `/mfa/verify` (mfaWebauthnScript):
- * that ceremony fires immediately on page load, before the user has any real chance to check
- * "Remember this device" ahead of time, so the page instead offers it as a one-tap follow-up once
- * verification already succeeded. */
+ * Full session only, and only for a session that itself completed MFA a moment ago
+ * (`mfa_verified_at`, see `isMfaRecentlyVerified`): remembering only ever follows an already-completed
+ * MFA step, it never gates one. A full session without that proof (a stolen cookie, an OIDC or
+ * passkey-login session, one minted by a trusted-device cookie) must not be able to mint a device
+ * that later skips MFA on its own. Exists for the auto-starting WebAuthn ceremony on `/mfa/verify`
+ * (mfaWebauthnScript): that ceremony fires immediately on page load, before the user has any real
+ * chance to check "Remember this device" ahead of time, so the page instead offers it as a one-tap
+ * follow-up once verification already succeeded. */
 export async function handlePostMfaRememberDevice(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
+  if (!auth.sessionId) return c.json({ error: "unauthorized" }, 401);
   const days = await getTrustedDeviceDays(db);
   if (days > 0) {
-    const { rawToken } = await createTrustedDevice(db, {
-      userId: auth.userId,
-      ip: resolveClientIp(c),
-      userAgent: c.req.header("user-agent"),
-    });
+    if (!(await isMfaRecentlyVerified(db, auth.sessionId))) {
+      return c.json({ code: "mfa_recent_required" }, 403);
+    }
+    const ip = resolveClientIp(c);
+    const userAgent = c.req.header("user-agent");
+    const { rawToken } = await createTrustedDevice(db, { userId: auth.userId, ip, userAgent });
     await setTrustedDeviceCookie(c, db, rawToken);
+    await logTrustedDeviceCreated(db, { userId: auth.userId, sessionId: auth.sessionId, ip, userAgent });
   }
   return c.json({ ok: true });
 }
@@ -775,6 +783,7 @@ export async function handlePostMfaWebauthnEnrollFinish(
     parsed.data.attachment,
     null,
     rp,
+    { onlyFirstMethod: true },
   );
   if (!created) return c.json({ code: "verification_failed" }, 400);
 
@@ -859,7 +868,7 @@ export async function handleTotpConfirm(
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, partial.userId, code);
+  const ok = await confirmTotpEnrollment(db, partial.userId, code, { onlyFirstMethod: true });
   if (!ok) {
     return c.json(AUTH_ERROR, 401);
   }

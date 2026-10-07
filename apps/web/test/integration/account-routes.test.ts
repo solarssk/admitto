@@ -1263,6 +1263,65 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
   });
 });
 
+describe("POST /api/account/mfa/totp/confirm with an existing MFA method", () => {
+  async function startEnrollment() {
+    const credential = await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, userId);
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(enrollRes.status).toBe(200);
+    const enroll = (await enrollRes.json()) as { otpauthUri: string };
+    return { credential, secret: parseTotpSecretFromOtpauthUri(enroll.otpauthUri)! };
+  }
+
+  const confirm = (body: unknown) =>
+    app.request("/api/account/mfa/totp/confirm", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("refuses to attach an authenticator app without a step-up proof, even for a non-MFA-required role", async () => {
+    const { secret } = await startEnrollment();
+
+    const missing = await confirm({ code: generateTotpCode(secret) });
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { code: string }).code).toBe("totp_required");
+
+    const wrong = await confirm({ code: generateTotpCode(secret), step_up: { code: "not-a-real-code" } });
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as { code: string }).code).toBe("invalid_totp");
+
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp", confirmed_at: { not: null } } }),
+    ).toBe(0);
+  });
+
+  it("does not burn the recovery code used as the proof when the new authenticator code is mistyped", async () => {
+    const { credential, secret } = await startEnrollment();
+    const recoveryCode = credential.backupCodes[0];
+
+    const wrongNewCode = await confirm({ code: "000000", step_up: { code: recoveryCode } });
+    expect(wrongNewCode.status).toBe(400);
+    expect(((await wrongNewCode.json()) as { code: string }).code).toBe("invalid_code");
+
+    const retry = await confirm({ code: generateTotpCode(secret), step_up: { code: recoveryCode } });
+    expect(retry.status).toBe(200);
+    await expectAuthFactorChangedNotification(userId, "An authenticator app was added");
+  });
+
+  it("attaches it when a valid recovery code from the existing method is sent as the proof", async () => {
+    const { credential, secret } = await startEnrollment();
+    const res = await confirm({ code: generateTotpCode(secret), step_up: { code: credential.backupCodes[0] } });
+    expect(res.status).toBe(200);
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp", confirmed_at: { not: null } } }),
+    ).toBe(1);
+    await expectAuthFactorChangedNotification(userId, "An authenticator app was added");
+  });
+});
+
 describe("DELETE /api/account/mfa/totp/enroll", () => {
   it("cancels pending enrollment and backup codes", async () => {
     const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
@@ -1332,6 +1391,21 @@ describe("DELETE /api/account/mfa/totp", () => {
     expect(audit?.actor_user_id).toBe(userId);
 
     await expectAuthFactorChangedNotification(userId, "An authenticator app was removed");
+  });
+
+  it("forgets every trusted device when TOTP is removed", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    await createTrustedDevice(prisma, { userId, ip: "203.0.113.5", userAgent: "test" });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
   });
 
   it("removes TOTP even when it is the user's only confirmed MFA method (no server-side last-method block)", async () => {

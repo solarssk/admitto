@@ -7,14 +7,18 @@ import {
   beginWebauthnRegistration,
   bootstrapSuperadmin,
   createSession,
+  createTrustedDevice,
   finishWebauthnRegistration,
   hashPassword,
+  parseTotpSecretFromOtpauthUri,
   markBackupCodesAcknowledged,
   SESSION_STAGE,
   SETTING_WEBAUTHN_ENABLED,
 } from "@admitto/auth";
+import { generateTotpCode } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
 import { createApp } from "../../src/app.js";
+import { clearWebauthnChallengeCacheForTests } from "../../src/auth/webauthn-challenge-cache.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -217,6 +221,7 @@ async function registerCredential(
   cookie: string,
   attachment: "platform" | "cross-platform",
   label?: string,
+  stepUp?: { code: string },
 ) {
   const authenticator = createVirtualAuthenticator();
   const { body: begin } = await beginRegistration(cookie, attachment);
@@ -225,7 +230,7 @@ async function registerCredential(
   const finishRes = await app.request("/api/account/mfa/webauthn/register/finish", {
     method: "POST",
     headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
-    body: JSON.stringify({ attachment, label, response }),
+    body: JSON.stringify({ attachment, label, response, step_up: stepUp }),
   });
   const finishBody = await finishRes.json();
   if (finishRes.status === 200) await drainAddedNotification();
@@ -343,8 +348,100 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const first = await registerCredential(userCookie, "platform", "Key 1");
     expect((first.finishBody as { backupCodes: string[] }).backupCodes.length).toBeGreaterThan(0);
 
-    const second = await registerCredential(userCookie, "cross-platform", "Key 2");
+    const second = await registerCredential(userCookie, "cross-platform", "Key 2", {
+      code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
+    });
     expect((second.finishBody as { backupCodes: string[] }).backupCodes).toEqual([]);
+  });
+
+  it("refuses a second credential without a step-up proof, keeps the challenge for a retry, and stores nothing", async () => {
+    const first = await registerCredential(userCookie, "platform", "Key 1");
+    const codes = (first.finishBody as { backupCodes: string[] }).backupCodes;
+
+    const authenticator = createVirtualAuthenticator();
+    const { body: begin } = await beginRegistration(userCookie, "cross-platform");
+    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
+    const send = (stepUp?: { code: string }) =>
+      app.request("/api/account/mfa/webauthn/register/finish", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attachment: "cross-platform", label: "Thief key", response, step_up: stepUp }),
+      });
+
+    const missing = await send();
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { code: string }).code).toBe("totp_required");
+
+    const wrong = await send({ code: "not-a-real-code" });
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
+
+    // The same ceremony response still works once the proof is right: the challenge was not spent.
+    const ok = await send({ code: codes[0]! });
+    expect(ok.status).toBe(200);
+    await drainAddedNotification();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(2);
+  });
+
+  it("does not burn the recovery code used as the proof when the ceremony fails verification", async () => {
+    const first = await registerCredential(userCookie, "platform", "Key 1");
+    const recoveryCode = (first.finishBody as { backupCodes: string[] }).backupCodes[0]!;
+
+    const { body: begin } = await beginRegistration(userCookie, "cross-platform");
+    const badResponse = createVirtualAuthenticator().register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: "https://evil.example.com",
+    });
+    const failed = await app.request("/api/account/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "cross-platform", response: badResponse, step_up: { code: recoveryCode } }),
+    });
+    expect(failed.status).toBe(400);
+    expect(((await failed.json()) as { code: string }).code).toBe("verification_failed");
+
+    const second = await registerCredential(userCookie, "cross-platform", "Key 2", { code: recoveryCode });
+    expect(second.finishRes.status).toBe(200);
+  });
+
+  it("lets only one of two overlapping first-method enrollments through without a proof", async () => {
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    const secret = parseTotpSecretFromOtpauthUri(((await enrollRes.json()) as { otpauthUri: string }).otpauthUri)!;
+    const { body: begin } = await beginRegistration(userCookie, "platform");
+    const response = createVirtualAuthenticator().register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: BASE_URL,
+    });
+
+    const [totp, passkey] = await Promise.all([
+      app.request("/api/account/mfa/totp/confirm", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: generateTotpCode(secret) }),
+      }),
+      app.request("/api/account/mfa/webauthn/register/finish", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attachment: "platform", response }),
+      }),
+    ]);
+
+    expect([totp.status, passkey.status].sort()).toEqual([200, 400]);
+    const refused = totp.status === 400 ? totp : passkey;
+    expect(((await refused.json()) as { code: string }).code).toBe("totp_required");
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: { in: ["totp", "webauthn"] }, confirmed_at: { not: null } } }),
+    ).toBe(1);
+    // A refused passkey request leaves its (unconsumed) challenge behind; the next test must not see it.
+    clearWebauthnChallengeCacheForTests();
+    await prisma.notification.deleteMany({ where: { user_id: userId } });
+    await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
   });
 
   it("returns 400 for a malformed JSON body", async () => {
@@ -405,6 +502,7 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
       body: JSON.stringify({ attachment: "platform", response }),
     });
     expect(first.status).toBe(200);
+    const firstCodes = ((await first.json()) as { backupCodes: string[] }).backupCodes;
     // This registration succeeded directly against app.request, not through registerCredential -
     // drain its own account.auth_factor.changed notification the same way that helper does (see
     // its own doc comment) so it can't straggle into a later test.
@@ -413,7 +511,9 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const replay = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "platform", response }),
+      // The account has a credential now, so the replay must carry a step-up proof to get as far
+      // as the (already consumed) challenge.
+      body: JSON.stringify({ attachment: "platform", response, step_up: { code: firstCodes[0] } }),
     });
     expect(replay.status).toBe(400);
     expect(((await replay.json()) as { code: string }).code).toBe("challenge_expired");
@@ -496,8 +596,10 @@ describe("WebAuthn RP origin, an Instance URL with a path", () => {
 
 describe("GET /api/account/mfa/webauthn", () => {
   it("lists registered credentials, newest last", async () => {
-    await registerCredential(userCookie, "platform", "First");
-    await registerCredential(userCookie, "cross-platform", "Second");
+    const first = await registerCredential(userCookie, "platform", "First");
+    await registerCredential(userCookie, "cross-platform", "Second", {
+      code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
+    });
 
     const res = await app.request("/api/account/mfa/webauthn", { headers: { Cookie: userCookie } });
     expect(res.status).toBe(200);
@@ -577,6 +679,19 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
     });
     expect(res.status).toBe(404);
     expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(1);
+  });
+
+  it("forgets every trusted device when a credential is removed", async () => {
+    const { credentialRowId } = await seedConfirmedWebauthnCredential(userId);
+    await createTrustedDevice(prisma, { userId, ip: "203.0.113.5", userAgent: "test" });
+
+    const res = await app.request(`/api/account/mfa/webauthn/${credentialRowId}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
   });
 
   it("requires a step-up code for the MFA-required superadmin fixture", async () => {

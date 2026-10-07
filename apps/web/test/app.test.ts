@@ -121,7 +121,7 @@ describe("createApp", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signedData: oversized }),
         });
-      for (let i = 0; i < 120; i++) expect((await send()).status).toBe(413);
+      for (let i = 0; i < 600; i++) expect((await send()).status).toBe(413);
       expect((await send()).status).toBe(429);
     });
 

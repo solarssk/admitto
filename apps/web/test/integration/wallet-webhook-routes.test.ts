@@ -15,6 +15,8 @@ const EVENT_ID = "evt-wallet-webhook";
 const OTHER_EVENT_ID = "evt-wallet-webhook-other";
 const UNCONFIGURED_EVENT_ID = "evt-wallet-webhook-unconfigured";
 const CACHE_TEST_EVENT_ID = "evt-wallet-webhook-cache";
+// Own id for the credential-rotation test, same reason as the cache test above (module-level key cache).
+const ROTATION_EVENT_ID = "evt-wallet-webhook-rotation";
 // Own event id for the public-key-fetch-failure test below, never reused elsewhere in this
 // file - publicKeyCache is module-scoped and never cleared between tests, so reusing an id
 // another test has already delivered to would silently skip the fetch this test needs to fail.
@@ -66,6 +68,7 @@ async function seedFixture(client: PrismaClient): Promise<void> {
     OTHER_EVENT_ID,
     UNCONFIGURED_EVENT_ID,
     CACHE_TEST_EVENT_ID,
+    ROTATION_EVENT_ID,
     KEY_FETCH_FAILURE_EVENT_ID,
     SWITCH_OFF_EVENT_ID,
   ];
@@ -103,6 +106,17 @@ async function seedFixture(client: PrismaClient): Promise<void> {
       date: new Date("2026-09-01"),
       organization_id: ORG_ID,
       wallet_enabled: false,
+    },
+  });
+  await client.event.create({
+    data: {
+      id: ROTATION_EVENT_ID,
+      title: "Rotation Gala",
+      slug: "rotation-gala",
+      date: new Date("2026-09-01"),
+      organization_id: ORG_ID,
+      wallet_template_id: "tmpl-rotation-gala",
+      wallet_api_key_enc: encryptToString("first-api-key"),
     },
   });
   await client.event.create({
@@ -218,6 +232,7 @@ afterAll(async () => {
     OTHER_EVENT_ID,
     UNCONFIGURED_EVENT_ID,
     CACHE_TEST_EVENT_ID,
+    ROTATION_EVENT_ID,
     KEY_FETCH_FAILURE_EVENT_ID,
     SWITCH_OFF_EVENT_ID,
   ];
@@ -388,6 +403,37 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(provider.getWebhookPublicKey).toHaveBeenCalledTimes(1);
   });
 
+  it("fetches the signing key again after the event's API key is replaced, instead of verifying against the old account's key", async () => {
+    const oldKey = generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const post = (app: ReturnType<typeof makeApp>, privateKeyPem: string) =>
+      app.request(`/api/wallet/webhook/passcreator/${ROTATION_EVENT_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signedRequest({ identifier: "pc-rotation" }, privateKeyPem)),
+      });
+
+    // First account: its key is fetched and cached.
+    const firstProvider = stubProvider(oldKey.publicKey);
+    expect((await post(makeApp(firstProvider), oldKey.privateKey)).status).toBe(200);
+
+    // The event is switched to another PassCreator account.
+    await prisma.event.update({
+      where: { id: ROTATION_EVENT_ID },
+      data: { wallet_api_key_enc: encryptToString("second-api-key") },
+    });
+    const secondProvider = stubProvider(keyPair.publicKey);
+    const secondApp = makeApp(secondProvider);
+
+    // The new account's genuine delivery verifies, and the old account's key no longer does.
+    expect((await post(secondApp, keyPair.privateKey)).status).toBe(200);
+    expect(secondProvider.getWebhookPublicKey).toHaveBeenCalledTimes(1);
+    expect((await post(secondApp, oldKey.privateKey)).status).toBe(401);
+  });
+
   it("rejects an invalid signature with 401 and does not touch the row", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);
@@ -455,6 +501,94 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
       expect(querySystemLogs({ search: "wallet_webhook_unmatched" })).toHaveLength(1);
     },
   );
+
+  it("does not let unsigned requests burn an event's per-event allowance: a real delivery still gets through afterwards", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const post = (body: object) =>
+      app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    // Signed with another key, so every one is rejected as 401 - none may count toward the event's bucket.
+    const stranger = generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const forged = signedRequest({ identifier: "pc-webhook-1" }, stranger.privateKey);
+    for (let i = 0; i < 125; i++) {
+      expect((await post(forged)).status).toBe(401);
+    }
+
+    const real = await post(signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID }));
+    expect(real.status).toBe(200);
+  });
+
+  it("does not let a signed payload replayed from another event spend this event's allowance", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const post = (body: object) =>
+      app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    // Accounts share a signing key across events, so a payload genuinely signed for the other event
+    // verifies here too; it names another event and must be acked without charging this one's budget.
+    const foreign = signedRequest({
+      identifier: "pc-webhook-1",
+      userProvidedId: `admitto:${OTHER_EVENT_ID}:${ATTENDEE_ID}`,
+    });
+    for (let i = 0; i < 125; i++) {
+      expect((await post(foreign)).status).toBe(200);
+    }
+
+    const real = await post(signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID }));
+    expect(real.status).toBe(200);
+  });
+
+  it("does not charge a signed identifier-only payload that binds to no pass of this event", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const post = (body: object) =>
+      app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    // No userProvidedId, so the cross-event check cannot reject it; the identifier belongs to a pass
+    // of ANOTHER event, so no target of this event exists and it must not spend this event's budget.
+    const foreign = signedRequest({ identifier: "pc-switch-off-1", operatingSystem: "iOS", noOfActivePasses: 1 });
+    for (let i = 0; i < 125; i++) {
+      expect((await post(foreign)).status).toBe(200);
+    }
+
+    const real = await post(signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID }));
+    expect(real.status).toBe(200);
+  });
+
+  it("answers 429 to signature-verified deliveries beyond the per-event ceiling, and keeps other events unaffected", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const deliver = (eventId: string) =>
+      app.request(`/api/wallet/webhook/passcreator/${eventId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signedRequest({ identifier: "pc-webhook-1" })),
+      });
+
+    for (let i = 0; i < 120; i++) {
+      expect((await deliver(EVENT_ID)).status).toBe(200);
+    }
+    expect((await deliver(EVENT_ID)).status).toBe(429);
+    // Another event with its own credentials is still served.
+    expect((await deliver(OTHER_EVENT_ID)).status).not.toBe(429);
+  });
 
   it("returns 404 for an unknown event id", async () => {
     const provider = stubProvider(keyPair.publicKey);

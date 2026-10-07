@@ -191,6 +191,55 @@ describe("ingestBounces", () => {
     );
   });
 
+  it("ignores a forged DSN that does not name the SMTP Message-ID of the delivery", async () => {
+    const row = settings();
+    const run = async (referencedMessageIds: string[]) => {
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const db = eventScopedDb(row, {
+        bounceIngestProcessedUid: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
+        emailDelivery: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "del_smtp",
+              status: "sent",
+              recipient_email: "user@example.com",
+              event_id: "evt_1",
+              provider_message_id: "<real-id@mail.example.com>",
+            },
+          ]),
+          updateMany,
+        },
+      }) as never;
+      const summary = await ingestBounces(db, {
+        eventId: "evt_1",
+        createProvider: async () =>
+          mockProvider([
+            {
+              uid: "201",
+              receivedAt: new Date(),
+              subject: "Delivery Status Notification",
+              bodyText: HARD_BODY,
+              referencedMessageIds,
+            },
+          ]),
+        log: () => undefined,
+      });
+      return { summary, updateMany };
+    };
+
+    const forged = await run([]);
+    expect(forged.summary.bouncesApplied).toBe(0);
+    expect(forged.summary.noMatchingDelivery).toBe(1);
+    expect(forged.updateMany).not.toHaveBeenCalled();
+
+    const genuine = await run(["<real-id@mail.example.com>"]);
+    expect(genuine.summary.bouncesApplied).toBe(1);
+    expect(genuine.updateMany).toHaveBeenCalled();
+  });
+
   it("persists last_run_ok false when IMAP connect fails", async () => {
     const row = settings();
     const update = vi.fn().mockResolvedValue(row);

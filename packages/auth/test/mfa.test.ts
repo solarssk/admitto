@@ -58,6 +58,7 @@ import { userRequiresMfa, userHasConfirmedTotp, markBackupCodesAcknowledged } fr
 import {
   createSession,
   validateSession,
+  isFullSessionMfaPolicySatisfied,
   validatePartialSession,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
@@ -155,6 +156,27 @@ describe("TOTP enrollment", () => {
     expect(await confirmTotpEnrollment(prisma, userId, code)).toBe(true);
     expect(await userHasConfirmedTotp(prisma, userId)).toBe(true);
     expect(await confirmTotpEnrollment(prisma, userId, "000000")).toBe(false);
+  });
+
+  it("with onlyFirstMethod, confirms while the account has no method and refuses once it has one", async () => {
+    const userId = "user-totp-only-first";
+    await prisma.user.create({
+      data: { id: userId, email: "totp-only-first@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await startTotpEnrollment(prisma, userId);
+    const secret = decryptTotpSecret(
+      (await prisma.userMfaMethod.findFirstOrThrow({ where: { user_id: userId, type: "totp" } })).secret_enc!,
+    );
+
+    // Another method got confirmed meanwhile (a second, stale partial session).
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "webauthn", confirmed_at: new Date(), webauthn_credential_id: "cred-only-first" },
+    });
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), { onlyFirstMethod: true })).toBe(false);
+    expect(await userHasConfirmedTotp(prisma, userId)).toBe(false);
+
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: userId, type: "webauthn" } });
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), { onlyFirstMethod: true })).toBe(true);
   });
 
   it("getOrStartTotpEnrollment resumes pending setup without rotating secret", async () => {
@@ -278,6 +300,9 @@ describe("login MFA flow", () => {
     const partial = await validatePartialSession(prisma, result.rawToken);
     expect(partial?.stage).toBe(SESSION_STAGE.ENROLLMENT_REQUIRED);
     expect(await validateSession(prisma, result.rawToken)).toBeNull();
+    // The read-only variant used by the check-in stream reaches the same verdict.
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: partial!.session.id } });
+    expect(await isFullSessionMfaPolicySatisfied(prisma, row)).toBe(false);
   });
 
   it("admin with TOTP gets mfa_pending then full after verify", async () => {
@@ -822,6 +847,16 @@ describe("trusted device", () => {
     const { rawToken } = await createTrustedDevice(prisma, { userId: USER_ADMIN });
     await revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
     expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(false);
+  });
+
+  it("revoking trusted devices also drops the sessions' MFA-just-passed mark, so a pending remember-device cannot replace them", async () => {
+    const { session } = await createSession(prisma, { userId: USER_ADMIN, stage: SESSION_STAGE.FULL });
+    await prisma.session.update({ where: { id: session.id }, data: { mfa_verified_at: new Date() } });
+
+    await revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
+
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
+    expect(row.mfa_verified_at).toBeNull();
   });
 
   it("revokeTrustedDeviceByToken revokes only matching cookie token", async () => {

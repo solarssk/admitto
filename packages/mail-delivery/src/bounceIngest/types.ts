@@ -5,6 +5,12 @@ export interface InboundMessage {
   subject: string;
   /** Plain-text body — forwarded NDRs put the diagnostic line in quoted text. */
   bodyText: string;
+  /**
+   * Lower-cased `<id>` tokens from Message-ID / In-Reply-To / References headers in the raw
+   * source (includes headers quoted from the original message). Used to tie a bounce to the
+   * delivery whose SMTP Message-ID it names.
+   */
+  referencedMessageIds?: readonly string[];
 }
 
 export interface FetchCandidateOptions {
