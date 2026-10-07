@@ -361,7 +361,7 @@ async function completeMfaInTransaction(
     return { ok: false, reason: codeResult.totpReplay ? "totp_replay" : "invalid_code" };
   }
 
-  const promoted = await promoteSessionToFull(tx, sessionId, userId);
+  const promoted = await promoteSessionToFull(tx, sessionId, userId, { mfaVerified: true });
   if (!promoted) throw new SessionPromotionFailedAfterCodeVerifiedError(codeResult.method);
 
   const method: MfaMethod = codeResult.method;
@@ -532,7 +532,7 @@ async function completeMfaWithWebauthnInTransaction(
 ): Promise<CompleteMfaWithWebauthnTxResult> {
   const { sessionId, userId } = input;
 
-  const promoted = await promoteSessionToFull(tx, sessionId, userId);
+  const promoted = await promoteSessionToFull(tx, sessionId, userId, { mfaVerified: true });
   if (!promoted) throw new WebauthnSessionPromotionFailedAfterVerifiedError();
 
   if (input.rememberDevice) {

@@ -414,6 +414,7 @@ export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
   userId: string,
+  options: { mfaVerified?: boolean } = {},
 ): Promise<{ stage: SessionStage; rawToken: string; cookieMaxAgeSeconds?: number } | null> {
   const targetStage = await resolvePostMfaStage(prisma, userId);
   // TTL is resolved at promotion time (not cached from login) so SystemSettings changes apply immediately.
@@ -458,6 +459,8 @@ export async function promoteSessionToFull(
       expires_at: new Date(now.getTime() + ttlMs),
       remember_me: eventDayEnd !== null,
       last_seen_at: now,
+      // Only the MFA completion callers pass this, right after the code/assertion verified.
+      ...(options.mfaVerified ? { mfa_verified_at: now } : {}),
     },
   });
   if (result.count !== 1) return null;
@@ -466,6 +469,29 @@ export async function promoteSessionToFull(
     rawToken,
     cookieMaxAgeSeconds: eventDayEnd ? Math.floor(ttlMs / 1000) : undefined,
   };
+}
+
+/** How long after a completed MFA step a session may still remember the device. */
+export const MFA_RECENT_WINDOW_MS = 5 * 60 * 1000;
+
+/** Whether this session itself completed MFA within {@link MFA_RECENT_WINDOW_MS}. False for OIDC,
+ * passkey-login and trusted-device sessions (they never set `mfa_verified_at`) and for revoked or
+ * expired sessions. */
+export async function isMfaRecentlyVerified(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  sessionId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const row = await prisma.session.findFirst({
+    where: {
+      id: sessionId,
+      revoked_at: null,
+      expires_at: { gt: now },
+      mfa_verified_at: { gte: new Date(now.getTime() - MFA_RECENT_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
 /** Set or clear device label on the active session (operator check-in step). */
