@@ -1650,6 +1650,9 @@ export async function handleDeleteAccountWebauthnCredential(
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
+        // Removing a factor is how an account owner reacts to a lost or compromised device; a
+        // remembered device would keep skipping MFA, so forget them all like a password change does.
+        await revokeAllTrustedDevicesForUser(tx, userId);
         await writeAdminAuditLog(tx, {
           organizationId: orgId,
           actorUserId: audit.operator ?? userId,
@@ -1702,6 +1705,7 @@ export async function handleDeleteAccountTotp(
     async (tx, orgId, audit) => {
       const removed = await removeTotpMethod(tx, userId);
       if (removed) {
+        await revokeAllTrustedDevicesForUser(tx, userId);
         await writeAdminAuditLog(tx, {
           organizationId: orgId,
           actorUserId: audit.operator ?? userId,

@@ -849,6 +849,16 @@ describe("trusted device", () => {
     expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(false);
   });
 
+  it("revoking trusted devices also drops the sessions' MFA-just-passed mark, so a pending remember-device cannot replace them", async () => {
+    const { session } = await createSession(prisma, { userId: USER_ADMIN, stage: SESSION_STAGE.FULL });
+    await prisma.session.update({ where: { id: session.id }, data: { mfa_verified_at: new Date() } });
+
+    await revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
+
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
+    expect(row.mfa_verified_at).toBeNull();
+  });
+
   it("revokeTrustedDeviceByToken revokes only matching cookie token", async () => {
     const first = await createTrustedDevice(prisma, { userId: USER_ADMIN });
     const second = await createTrustedDevice(prisma, { userId: USER_ADMIN });

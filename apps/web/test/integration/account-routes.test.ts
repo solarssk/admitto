@@ -1393,6 +1393,21 @@ describe("DELETE /api/account/mfa/totp", () => {
     await expectAuthFactorChangedNotification(userId, "An authenticator app was removed");
   });
 
+  it("forgets every trusted device when TOTP is removed", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    await createTrustedDevice(prisma, { userId, ip: "203.0.113.5", userAgent: "test" });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
+  });
+
   it("removes TOTP even when it is the user's only confirmed MFA method (no server-side last-method block)", async () => {
     await prisma.userMfaMethod.create({
       data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },

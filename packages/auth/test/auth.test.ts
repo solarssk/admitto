@@ -11,6 +11,8 @@ import {
   createSession,
   validateSession,
   isSessionIdleExpired,
+  isMfaRecentlyVerified,
+  MFA_RECENT_WINDOW_MS,
   revokeSession,
   revokeAllOperatorSessionsForEvent,
   validatePartialSession,
@@ -678,6 +680,21 @@ describe("session", () => {
       const promoted = await promoteSessionToFull(prisma, session.id, USER_OP_A);
       expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
       expect(promoted?.cookieMaxAgeSeconds).toBeUndefined();
+    });
+
+    it("stamps mfa_verified_at only when the caller says an MFA step was verified", async () => {
+      const plain = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.MFA_PENDING });
+      await promoteSessionToFull(prisma, plain.session.id, USER_OP_A);
+      expect(await isMfaRecentlyVerified(prisma, plain.session.id)).toBe(false);
+
+      const verified = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.MFA_PENDING });
+      await promoteSessionToFull(prisma, verified.session.id, USER_OP_A, { mfaVerified: true });
+      expect(await isMfaRecentlyVerified(prisma, verified.session.id)).toBe(true);
+      const later = new Date(Date.now() + MFA_RECENT_WINDOW_MS + 1000);
+      expect(await isMfaRecentlyVerified(prisma, verified.session.id, later)).toBe(false);
+
+      await prisma.session.update({ where: { id: verified.session.id }, data: { revoked_at: new Date() } });
+      expect(await isMfaRecentlyVerified(prisma, verified.session.id)).toBe(false);
     });
 
     it("does not promote a session that does not exist", async () => {

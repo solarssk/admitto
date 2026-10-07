@@ -10,6 +10,9 @@ import {
   finishWebauthnRegistration,
   SETTING_WEBAUTHN_ENABLED,
   SETTING_TRUSTED_DEVICE_DAYS,
+  createSession,
+  SESSION_STAGE,
+  AUTH_METHOD,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
@@ -2065,6 +2068,63 @@ describe("POST /api/auth/mfa/remember-device", () => {
       body: "{}",
     });
     expect(res.status).toBe(401);
+  });
+
+  it("records an auth.trusted_device.created audit row when a device is remembered", async () => {
+    const loginRes = await loginToFullSession();
+    await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.trusted_device.created" } });
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    const audit = await prisma.securityAuditLog.findFirst({
+      where: { user_id: admin!.id, event_type: "auth.trusted_device.created" },
+    });
+    expect(audit).not.toBeNull();
+  });
+
+  it("refuses a full session that never completed MFA (stolen cookie, OIDC, passkey login) and sets no cookie", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, admin!.id);
+    for (const authMethod of [AUTH_METHOD.LOCAL, AUTH_METHOD.OIDC]) {
+      const { rawToken } = await createSession(prisma, {
+        userId: admin!.id,
+        stage: SESSION_STAGE.FULL,
+        authMethod,
+      });
+      const res = await app.request("/api/auth/mfa/remember-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: `admitto_session=${rawToken}` },
+        body: "{}",
+      });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe("mfa_recent_required");
+      const trustedCookie = res.headers.getSetCookie?.().find((c) =>
+        c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`),
+      );
+      expect(trustedCookie).toBeUndefined();
+    }
+    expect(await prisma.trustedDevice.count({ where: { user_id: admin!.id, revoked_at: null } })).toBe(0);
+  });
+
+  it("refuses once the MFA step is older than the recent window", async () => {
+    const loginRes = await loginToFullSession();
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.session.updateMany({
+      where: { user_id: admin!.id },
+      data: { mfa_verified_at: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(res.status).toBe(403);
+    expect(await prisma.trustedDevice.count({ where: { user_id: admin!.id, revoked_at: null } })).toBe(0);
   });
 
   it("does not set a cookie when the instance's trusted-device days is 0", async () => {

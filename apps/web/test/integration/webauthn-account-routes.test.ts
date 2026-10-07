@@ -7,6 +7,7 @@ import {
   beginWebauthnRegistration,
   bootstrapSuperadmin,
   createSession,
+  createTrustedDevice,
   finishWebauthnRegistration,
   hashPassword,
   parseTotpSecretFromOtpauthUri,
@@ -678,6 +679,19 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
     });
     expect(res.status).toBe(404);
     expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(1);
+  });
+
+  it("forgets every trusted device when a credential is removed", async () => {
+    const { credentialRowId } = await seedConfirmedWebauthnCredential(userId);
+    await createTrustedDevice(prisma, { userId, ip: "203.0.113.5", userAgent: "test" });
+
+    const res = await app.request(`/api/account/mfa/webauthn/${credentialRowId}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
   });
 
   it("requires a step-up code for the MFA-required superadmin fixture", async () => {
