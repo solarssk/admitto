@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db/client";
 import { hasScope } from "@admitto/db/roles";
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 
 /** High-level permission names used by HTTP middleware and future admin UI. */
 export type AuthCapability = "checkin" | "manageEvent" | "manageInstance";
@@ -225,7 +225,7 @@ export function locationPinFields(
 function isWalletConfigured(templateId: string | null, apiKeyEnc: string | null): boolean {
   if (!templateId || !apiKeyEnc) return false;
   try {
-    decryptFromString(apiKeyEnc);
+    decryptFromString(apiKeyEnc, SECRET_CONTEXTS.walletApiKey);
     return true;
   } catch {
     return false;

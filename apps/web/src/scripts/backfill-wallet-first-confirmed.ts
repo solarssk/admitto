@@ -39,7 +39,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { prisma } from "@admitto/db";
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { PassCreatorClient, parseFirstDownloadedAtUtc } from "@admitto/wallet";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { subscribeWalletWebhooksBestEffort } from "../admin/event-settings-routes.js";
@@ -97,7 +97,7 @@ export async function backfillEvent(
 
   let apiKey: string;
   try {
-    apiKey = decryptFromString(event.wallet_api_key_enc ?? "");
+    apiKey = decryptFromString(event.wallet_api_key_enc ?? "", SECRET_CONTEXTS.walletApiKey);
   } catch (err) {
     console.error(`[${event.title}] API key decrypt failed, skipping backfill for this event:`, err);
     return;

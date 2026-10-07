@@ -118,3 +118,16 @@ export function decryptFromString(s: string, context?: string): string {
     );
   }
 }
+
+/**
+ * Rewrites a stored legacy (keyVersion 1) value as a context-bound one. A value that is already
+ * keyVersion 2 is returned unchanged after checking it decrypts with `context`. Throws
+ * `CryptoDecryptionError` when the value cannot be read, so a caller never overwrites a secret it
+ * could not decrypt.
+ */
+export function rebindToContext(stored: string, context: string): { value: string; changed: boolean } {
+  const plaintext = decryptFromString(stored, context);
+  const parsed = JSON.parse(stored) as EncryptedData;
+  if (parsed.keyVersion === CONTEXT_KEY_VERSION) return { value: stored, changed: false };
+  return { value: encryptToString(plaintext, context), changed: true };
+}

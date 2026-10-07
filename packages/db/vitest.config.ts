@@ -12,6 +12,8 @@ export default defineConfig({
     // Sequential: tests share a single Postgres test database.
     fileParallelism: false,
     env: {
+      // Fixed test key, tests only (same as packages/crypto).
+      ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       DATABASE_URL: `postgresql://${TEST_DB_USER}:${TEST_DB_PASSWORD}@localhost:5432/admitto_db_test`,
     },
   },

@@ -1,4 +1,4 @@
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import type { PrismaClient, BounceIngestSettings } from "@admitto/db";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import type { ImapConnectConfig } from "./types.js";
@@ -97,7 +97,7 @@ export async function resolveImapConnectConfig(
   }
   let password: string;
   try {
-    password = decryptFromString(settings.imap_password_enc);
+    password = decryptFromString(settings.imap_password_enc, SECRET_CONTEXTS.imapPassword);
   } catch (err) {
     throw new BounceAuthError(
       `Cannot decrypt IMAP password: ${err instanceof Error ? err.message : String(err)}`,
