@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -8,15 +9,8 @@ import {
   type RefObject,
 } from "react";
 import { Link, useOutletContext, useParams } from "react-router";
-import { Button, Card, Notice, PageHeader, Switch, Tooltip, useToast } from "@admitto/ui";
-import {
-  ApiError,
-  commitImport,
-  fetchImportHistory,
-  previewImport,
-  type EventFullMeta,
-  type ImportHistoryEntry,
-} from "../api/client.js";
+import { Button, Card, Notice, PageHeader, Switch, Tooltip, TopProgressBar, useToast } from "@admitto/ui";
+import { ApiError, commitImport, fetchImportHistory, previewImport, type EventFullMeta } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   EventDto,
@@ -28,11 +22,15 @@ import type {
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { CustomColumnsStatus } from "../import/CustomColumnsStatus.js";
+import { ImportHistoryCard } from "../import/ImportHistoryCard.js";
 import { isAbortError, waitForImportJobResult } from "../import/waitForImportJobResult.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime } from "../utils/event-dates.js";
+import { useFocusHandover } from "../hooks/useFocusHandover.js";
+import { useListLoad } from "../hooks/useListLoad.js";
+import { useOptionsLoad } from "../hooks/useOptionsLoad.js";
+import { assertPresent } from "../utils/assert-present.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { pluralize } from "../utils/pluralize.js";
 import "../attendees/attendees.css";
@@ -125,79 +123,6 @@ function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSample
   );
 }
 
-interface ImportHistoryCardProps {
-  history: ImportHistoryEntry[] | null;
-  error: string | null;
-  eventTimezone: string | undefined;
-  onRetry: () => void;
-  showLoading: boolean;
-}
-
-/** One state at a time (error takes priority, then loading, then empty, then the table) — a
- * plain if/return chain instead of nested ternaries (Sonar S3358), which also reads closer to
- * how an operator actually encounters these: never more than one at once. */
-function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showLoading }: ImportHistoryCardProps) {
-  if (error) {
-    return (
-      <div className="import-history__error" role="alert">
-        <p className="import-hint">{error}</p>
-        <Button variant="secondary" onClick={onRetry}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-  if (history === null) {
-    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-    // this text on and off faster than it can register as "loading" — show it only once the
-    // fetch has genuinely taken a moment.
-    return showLoading ? <p className="import-hint import-history__loading">Loading…</p> : null;
-  }
-  if (history.length === 0) {
-    return <p className="import-hint">No imports yet for this event.</p>;
-  }
-  return (
-    <div className="attendees-table-wrap">
-      <table className="table import-history-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>File</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Updated</th>
-            <th>Skipped</th>
-          </tr>
-        </thead>
-        <tbody>
-          {history.map((entry) => (
-            <tr key={entry.id}>
-              <td className="import-history__date">
-                {formatEventDateTime(entry.created_at, eventTimezone)}
-              </td>
-              <td className="import-history__file">
-                {entry.filename ?? <span className="import-sample__empty">-</span>}
-              </td>
-              <td
-                className={
-                  entry.status === "failed"
-                    ? "import-history__num import-history__num--warn"
-                    : "import-history__num import-history__num--ok"
-                }
-              >
-                {entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}
-              </td>
-              <td className="import-history__num import-history__num--ok">{entry.created}</td>
-              <td className="import-history__num import-history__num--warn">{entry.updated}</td>
-              <td className="import-history__num">{entry.skipped}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 /** Email/Reason table explaining each skipped row — without it, "To skip: N" tells an operator
  * nothing about why (usually an existing attendee with Overwrite off), which reads as the import
  * silently doing nothing (PO feedback while testing #358 phase C). */
@@ -221,25 +146,6 @@ function SkippedRowsTable({ rows }: Readonly<{ rows: readonly ImportSkippedRow[]
         </tbody>
       </table>
     </div>
-  );
-}
-
-/** "Import history" card from the design mockup — recent commits with their outcome counts,
- * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
- * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
- * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
-function ImportHistoryCard(props: Readonly<ImportHistoryCardProps>) {
-  const { history, error } = props;
-  return (
-    <Card
-      title="Import history"
-      className="import-card"
-      /* Unpadded only when the table renders — it brings its own scroll wrapper (mockup's
-       * padded={false} table card); every text state keeps the normal card padding. */
-      padded={error !== null || history === null || history.length === 0}
-    >
-      {renderImportHistoryBody(props)}
-    </Card>
   );
 }
 
@@ -338,6 +244,8 @@ interface UploadFileControlProps {
   step: Step;
   dragOver: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  /** The drop zone, where the focus goes when "Import another file" brings the upload step back. */
+  dropzoneRef: RefObject<HTMLButtonElement | null>;
   onDragOverChange: (over: boolean) => void;
   onSelectFile: (file: File | null) => void;
   onOpenFilePicker: () => void;
@@ -357,6 +265,7 @@ function UploadFileControl({
   step,
   dragOver,
   fileInputRef,
+  dropzoneRef,
   onDragOverChange,
   onSelectFile,
   onOpenFilePicker,
@@ -389,6 +298,7 @@ function UploadFileControl({
         </div>
       ) : (
         <button
+          ref={dropzoneRef}
           type="button"
           className={["import-dropzone", dragOver && "import-dropzone--over"]
             .filter(Boolean)
@@ -520,7 +430,10 @@ function CapacityBlockedBanner({
 
 interface ValidationSummaryCardProps {
   preview: ImportPreviewResponse;
-  loading: boolean;
+  /** Re-validate is running: its own button is busy, Commit waits. */
+  validating: boolean;
+  /** The commit is running (it is queued and then waited for): its own button is busy, Re-validate waits. */
+  committing: boolean;
   dryRun: boolean;
   canCommit: boolean;
   event: EventDto;
@@ -528,6 +441,10 @@ interface ValidationSummaryCardProps {
   capacityBlocked: EventFullMeta | null;
   forceCapacity: boolean;
   importCount: number;
+  /** The title, where the focus goes when the summary replaces the Validate button that had it. */
+  titleRef: RefObject<HTMLSpanElement | null>;
+  /** The Commit button reports that it holds the focus (`useFocusHandover`), since the done step replaces it. */
+  onHoldsFocus: () => void;
   onRevalidate: () => void;
   onCommit: () => void;
   onForceCapacityChange: (checked: boolean) => void;
@@ -539,7 +456,8 @@ interface ValidationSummaryCardProps {
  * count). */
 function ValidationSummaryCard({
   preview,
-  loading,
+  validating,
+  committing,
   dryRun,
   canCommit,
   event,
@@ -547,18 +465,24 @@ function ValidationSummaryCard({
   capacityBlocked,
   forceCapacity,
   importCount,
+  titleRef,
+  onHoldsFocus,
   onRevalidate,
   onCommit,
   onForceCapacityChange,
 }: Readonly<ValidationSummaryCardProps>) {
   return (
     <Card
-      title="Validation summary"
+      title={
+        <span ref={titleRef} tabIndex={-1}>
+          Validation summary
+        </span>
+      }
       className="import-card"
       footer={
         <div className="import-actions">
-          <Button variant="secondary" disabled={loading} onClick={onRevalidate}>
-            {loading ? "Validating…" : "Re-validate"}
+          <Button variant="secondary" loading={validating} loadingLabel="Validating…" disabled={committing} onClick={onRevalidate}>
+            Re-validate
           </Button>
           <ArchivedGuard
             event={event}
@@ -567,10 +491,8 @@ function ValidationSummaryCard({
             tooltip={dryRun ? "Turn off Dry run in Options to enable committing." : undefined}
           >
             {(guard) => (
-              <Button variant="primary" onClick={onCommit} {...guard}>
-                {loading
-                  ? "Importing…"
-                  : `Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
+              <Button variant="primary" loading={committing} loadingLabel="Importing…" onClick={onCommit} onFocus={onHoldsFocus} {...guard}>
+                {`Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
               </Button>
             )}
           </ArchivedGuard>
@@ -633,7 +555,7 @@ function ValidationSummaryCard({
           event={event}
           superadmin={superadmin}
           canCreateAny={preview.summary.toCreate > 0}
-          loading={loading}
+          loading={validating || committing}
           forceCapacity={forceCapacity}
           onForceCapacityChange={onForceCapacityChange}
         />
@@ -645,11 +567,22 @@ function ValidationSummaryCard({
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
+  if (!eventId) return <p>Missing event.</p>;
+  // Keyed by the route's id: another event is a fresh page (no file, summary or history of the previous one), and what was
+  // still on its way for the previous event is abandoned with the old one.
+  return <ImportPageBody key={eventId} eventId={eventId} />;
+}
+
+function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { assignments } = useAuth();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropzoneRef = useRef<HTMLButtonElement>(null);
+  const summaryTitleRef = useRef<HTMLSpanElement>(null);
+  const doneTitleRef = useRef<HTMLHeadingElement>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
   const commitPollAbortRef = useRef<AbortController | null>(null);
   const superadmin = isSuperadmin(assignments);
 
@@ -663,59 +596,39 @@ export function ImportPage() {
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  // One busy flag per action: Validate (and Re-validate) and Commit are different actions, each busy only on its own button.
+  const [validating, setValidating] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const loading = validating || committing;
   const [capacityBlocked, setCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [forceCapacity, setForceCapacity] = useState(false);
-  const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
-  const [history, setHistory] = useState<ImportHistoryEntry[] | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [historyToken, setHistoryToken] = useState(0);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const showHistoryLoading = useDelayedLoading(historyLoading);
 
-  useEffect(() => {
-    if (!eventId) return;
-    let cancelled = false;
-    fetchAttendeeCustomFields(eventId)
-      .then((fields) => {
-        if (!cancelled) setAttributeFields(fields);
-      })
-      .catch(() => {
-        if (!cancelled) setAttributeFields([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId]);
+  // The event's custom columns are a lookup of their own: a failure is not an empty table, it says so, with a Retry.
+  const loadCustomColumns = useCallback((signal: AbortSignal) => fetchAttendeeCustomFields(eventId, signal), [eventId]);
+  const customColumns = useOptionsLoad(loadCustomColumns, "Could not load this event's custom columns.");
+  const attributeFields: CustomDataFieldDef[] = customColumns.items;
 
-  useEffect(() => () => commitPollAbortRef.current?.abort(), []);
+  const loadHistory = useCallback((signal: AbortSignal) => fetchImportHistory(eventId, signal), [eventId]);
+  const history = useListLoad({ fetcher: loadHistory, fallback: "Could not load import history." });
+  const { reload: reloadHistory } = history;
+
+  useEffect(
+    () => () => {
+      previewAbortRef.current?.abort();
+      commitPollAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const handleApiError = (err: unknown) => handleImportApiError(err, reportApiError, addToast);
 
-  useEffect(() => {
-    if (!eventId) return;
-    const ac = new AbortController();
-    setHistoryError(null);
-    // Router reuses this component across a direct navigation from one event's import URL to
-    // another's — reset to the loading state so the previous event's history can't flash under
-    // the new event's timezone while this fetch is in flight (CodeRabbit review).
-    setHistory(null);
-    // A dedicated in-flight flag, not `history === null` - that stays true across a failed
-    // fetch (history is never set) all the way through a subsequent Retry, so its rising edge
-    // only ever fires once and useDelayedLoading's no-flash window never gets a fresh start on
-    // retry (bot review).
-    setHistoryLoading(true);
-    fetchImportHistory(eventId, ac.signal)
-      .then((items) => setHistory(items))
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setHistoryError("Could not load import history.");
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setHistoryLoading(false);
-      });
-    return () => ac.abort();
-  }, [eventId, historyToken]);
+  // The Validate button is replaced by the summary, the Commit button by the done card, and "Import another file" by the
+  // upload step again: each hands the keyboard focus on to the first thing of the step that follows.
+  const holdsFocus = useFocusHandover(step, () => {
+    if (step === "preview") return summaryTitleRef.current;
+    if (step === "done") return doneTitleRef.current;
+    return dropzoneRef.current;
+  });
 
   /** Shared by the file picker's onChange and the dropzone's drop handler — same reset. */
   const selectFile = (picked: File | null) => {
@@ -760,10 +673,14 @@ export function ImportPage() {
   };
 
   const onPreview = async () => {
-    if (!eventId || !file) return;
-    setLoading(true);
+    // Validate and Re-validate exist only for a file that has been chosen.
+    assertPresent(file);
+    // Two validations never overlap (the button is busy until the first ends), so the signal is only for leaving the page.
+    const ac = new AbortController();
+    previewAbortRef.current = ac;
+    setValidating(true);
     try {
-      const data = await previewImport(eventId, file, overwrite);
+      const data = await previewImport(eventId, file, overwrite, ac.signal);
       setPreview(data);
       setStep("preview");
       // Force back to the safe state on every fresh validate (including Re-validate, which
@@ -773,18 +690,22 @@ export function ImportPage() {
       // Commit button start already enabled on the summary's first render).
       setDryRun(true);
     } catch (err) {
+      // The page was left meanwhile: its answer, or its failure, is no longer anyone's to hear.
+      if (ac.signal.aborted) return;
       handleApiError(err);
     } finally {
-      setLoading(false);
+      setValidating(false);
     }
   };
 
   const onCommit = async (opts?: { force?: boolean }) => {
-    if (!eventId || !file || !preview) return;
+    // Commit exists only on the summary of a file that has been validated.
+    assertPresent(file);
+    assertPresent(preview);
     commitPollAbortRef.current?.abort();
     const ac = new AbortController();
     commitPollAbortRef.current = ac;
-    setLoading(true);
+    setCommitting(true);
     setCapacityBlocked(null);
     try {
       const queued = await commitImport(eventId, file, overwrite, {
@@ -795,7 +716,7 @@ export function ImportPage() {
       setResult(data);
       setStep("done");
       setForceCapacity(false);
-      setHistoryToken((n) => n + 1);
+      void reloadHistory();
       const skippedTotal = data.skippedCount ?? data.skipped.length;
       addToast(
         `Attendees imported: ${data.created} created, ${data.updated} updated, ${skippedTotal} skipped`,
@@ -804,7 +725,7 @@ export function ImportPage() {
     } catch (err) {
       if (isAbortError(err)) return;
       // Refresh history so a failed/reclaimed job is visible even when the wait ended early.
-      setHistoryToken((n) => n + 1);
+      void reloadHistory();
       const capacityMeta = extractCapacityBlockedMeta(err);
       if (capacityMeta) {
         if (!ac.signal.aborted) setCapacityBlocked(capacityMeta);
@@ -812,7 +733,7 @@ export function ImportPage() {
         handleApiError(err);
       }
     } finally {
-      if (!ac.signal.aborted) setLoading(false);
+      if (!ac.signal.aborted) setCommitting(false);
     }
   };
 
@@ -820,8 +741,8 @@ export function ImportPage() {
 
   const importCount =
     preview !== null ? preview.summary.toCreate + preview.summary.toUpdate : 0;
-
-  if (!eventId) return <p>Missing event.</p>;
+  // What the bar along the file's card is for, named for the action that runs (Re-validate is a validation too).
+  const workLabel = committing ? "Importing attendees" : "Validating file";
 
   return (
     <>
@@ -857,6 +778,11 @@ export function ImportPage() {
                 </a>
               }
             >
+              {/* The file goes to the server for both actions and neither reports progress: an indeterminate bar along the
+                  card of the file, from the click (no 200ms hold: the operator has just asked for it). */}
+              <TopProgressBar active={loading} placement="container" label={workLabel} />
+              {/* Said once for assistive tech: the bar itself is only a name. */}
+              <output className="sr-only">{loading ? `${workLabel}. Actions are paused until it finishes.` : ""}</output>
               <div className="import-form">
                 <Tooltip
                   content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -871,6 +797,7 @@ export function ImportPage() {
                       step={step}
                       dragOver={dragOver}
                       fileInputRef={fileInputRef}
+                      dropzoneRef={dropzoneRef}
                       onDragOverChange={setDragOver}
                       onSelectFile={selectFile}
                       onOpenFilePicker={openFilePicker}
@@ -928,6 +855,7 @@ export function ImportPage() {
                       {attributeFields.map(renderAttributeFieldRow)}
                     </tbody>
                   </table>
+                  <CustomColumnsStatus lookup={customColumns} />
                 </details>
                 {attributeFields.length > 0 ? (
                   <p className="import-hint">
@@ -963,10 +891,17 @@ export function ImportPage() {
               footer={
                 step === "upload" ? (
                   <div className="import-actions">
-                    <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file || loading}>
+                    <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file}>
                       {(guard) => (
-                        <Button variant="primary" onClick={() => void onPreview()} {...guard}>
-                          {loading ? "Validating…" : "Validate file"}
+                        <Button
+                          variant="primary"
+                          loading={validating}
+                          loadingLabel="Validating…"
+                          onClick={() => void onPreview()}
+                          onFocus={holdsFocus}
+                          {...guard}
+                        >
+                          Validate file
                         </Button>
                       )}
                     </ArchivedGuard>
@@ -1017,7 +952,8 @@ export function ImportPage() {
             {step === "preview" && preview && (
               <ValidationSummaryCard
                 preview={preview}
-                loading={loading}
+                validating={validating}
+                committing={committing}
                 dryRun={dryRun}
                 canCommit={canCommit}
                 event={event}
@@ -1025,19 +961,15 @@ export function ImportPage() {
                 capacityBlocked={capacityBlocked}
                 forceCapacity={forceCapacity}
                 importCount={importCount}
+                titleRef={summaryTitleRef}
+                onHoldsFocus={holdsFocus}
                 onRevalidate={() => void onPreview()}
                 onCommit={() => void onCommit({ force: forceCapacity && superadmin })}
                 onForceCapacityChange={setForceCapacity}
               />
             )}
 
-            <ImportHistoryCard
-              history={history}
-              error={historyError}
-              eventTimezone={event.timezone}
-              onRetry={() => setHistoryToken((n) => n + 1)}
-              showLoading={showHistoryLoading}
-            />
+            <ImportHistoryCard list={history} eventTimezone={event.timezone} />
           </div>
         </div>
       )}
@@ -1048,7 +980,9 @@ export function ImportPage() {
             <div className="import-done__icon" aria-hidden="true">
               <i className="ti ti-circle-check" />
             </div>
-            <h2 className="import-done__title">Import complete</h2>
+            <h2 ref={doneTitleRef} tabIndex={-1} className="import-done__title">
+              Import complete
+            </h2>
             <p className="import-done__summary">
               {result.created} attendee{result.created === 1 ? "" : "s"} created · {result.updated}{" "}
               updated · {result.skipped.length} skipped
@@ -1056,6 +990,7 @@ export function ImportPage() {
             <div className="import-done__actions">
               <Button
                 variant="secondary"
+                onFocus={holdsFocus}
                 onClick={() => {
                   setFile(null);
                   setPreview(null);
