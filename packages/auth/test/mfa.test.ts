@@ -50,6 +50,7 @@ import {
 } from "../src/mfa/recovery-hash.js";
 import {
   createTrustedDevice,
+  createTrustedDeviceIfMfaRecent,
   validateTrustedDevice,
   revokeTrustedDeviceByToken,
   revokeAllTrustedDevicesForUser,
@@ -857,6 +858,62 @@ describe("trusted device", () => {
 
     const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
     expect(row.mfa_verified_at).toBeNull();
+  });
+
+  describe("createTrustedDeviceIfMfaRecent vs revocation", () => {
+    async function freshSession() {
+      const { session } = await createSession(prisma, { userId: USER_ADMIN, stage: SESSION_STAGE.FULL });
+      await prisma.session.update({ where: { id: session.id }, data: { mfa_verified_at: new Date() } });
+      return session.id;
+    }
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+    it("creates a device for a fresh session and refuses a session without the MFA mark", async () => {
+      const fresh = await freshSession();
+      const created = await createTrustedDeviceIfMfaRecent(prisma, fresh, { userId: USER_ADMIN });
+      expect(created).not.toBeNull();
+      expect(await validateTrustedDevice(prisma, USER_ADMIN, created!.rawToken)).toBe(true);
+
+      const { session } = await createSession(prisma, { userId: USER_ADMIN, stage: SESSION_STAGE.FULL });
+      expect(await createTrustedDeviceIfMfaRecent(prisma, session.id, { userId: USER_ADMIN })).toBeNull();
+    });
+
+    it("a revocation that starts while the insert is in flight waits and revokes the new device too", async () => {
+      const sessionId = await freshSession();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let rawToken = "";
+      const creating = prisma.$transaction(async (tx) => {
+        const created = await createTrustedDeviceIfMfaRecent(tx, sessionId, { userId: USER_ADMIN });
+        rawToken = created!.rawToken;
+        await gate;
+      });
+      await settle();
+      const revoking = revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
+      await settle();
+      release();
+      await Promise.all([creating, revoking]);
+
+      expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(false);
+    });
+
+    it("a revocation that commits first makes the freshness check fail, so no device is created", async () => {
+      const sessionId = await freshSession();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const revoking = prisma.$transaction(async (tx) => {
+        await revokeAllTrustedDevicesForUser(tx, USER_ADMIN);
+        await gate;
+      });
+      await settle();
+      const creating = createTrustedDeviceIfMfaRecent(prisma, sessionId, { userId: USER_ADMIN });
+      await settle();
+      release();
+      const [, created] = await Promise.all([revoking, creating]);
+
+      expect(created).toBeNull();
+      expect(await prisma.trustedDevice.count({ where: { user_id: USER_ADMIN, revoked_at: null } })).toBe(0);
+    });
   });
 
   it("revokeTrustedDeviceByToken revokes only matching cookie token", async () => {
