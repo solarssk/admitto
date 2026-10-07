@@ -1,3 +1,4 @@
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -142,6 +143,10 @@ describe("setMailSettings", () => {
     });
     expect(row.graph_client_secret_enc).toBeTruthy();
     expect(row.graph_client_secret_enc).not.toBe("graph-secret-xyz");
+    expect(decryptFromString(row.graph_client_secret_enc ?? "", SECRET_CONTEXTS.graphClientSecret)).toBe(
+      "graph-secret-xyz",
+    );
+    expect(() => decryptFromString(row.graph_client_secret_enc ?? "", SECRET_CONTEXTS.smtpPassword)).toThrow();
   });
 
   it("stores power automate url and key encrypted", async () => {
@@ -163,6 +168,12 @@ describe("setMailSettings", () => {
     expect(row.power_automate_url_enc).not.toContain("secret");
     expect(row.power_automate_key_enc).toBeTruthy();
     expect(row.power_automate_key_enc).not.toBe("pa-key-abc");
+    expect(decryptFromString(row.power_automate_url_enc ?? "", SECRET_CONTEXTS.powerAutomateUrl)).toBe(
+      "https://flow.example.com/trigger?sig=secret",
+    );
+    expect(decryptFromString(row.power_automate_key_enc ?? "", SECRET_CONTEXTS.powerAutomateKey)).toBe("pa-key-abc");
+    // A key ciphertext swapped into the URL column no longer decrypts there.
+    expect(() => decryptFromString(row.power_automate_key_enc ?? "", SECRET_CONTEXTS.powerAutomateUrl)).toThrow();
   });
 
   it("blank string fields are stored as null, not empty string", async () => {

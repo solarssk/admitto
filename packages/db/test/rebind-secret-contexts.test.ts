@@ -56,4 +56,47 @@ describe("rebindSecretContexts", () => {
     const second = await rebindSecretContexts(prisma);
     expect(second.find((r) => r.column === "MailSettings.smtp_password_enc")).toMatchObject({ rewritten: 0, alreadyBound: 1 });
   });
+
+  it("binds the event wallet key, the IMAP password and the notification webhook URL", async () => {
+    await prisma.organization.create({ data: { id: "org-rebind-2", name: "Rebind Org", slug: "rebind-org" } });
+    await prisma.event.create({
+      data: {
+        id: "evt-rebind",
+        organization_id: "org-rebind-2",
+        title: "Rebind Event",
+        slug: "rebind-event",
+        date: new Date("2026-09-01"),
+        wallet_api_key_enc: encryptToString("wallet-key"),
+      },
+    });
+    await prisma.bounceIngestSettings.create({
+      data: { event_id: "evt-rebind", imap_password_enc: encryptToString("imap-pw") },
+    });
+    const notification = await prisma.notificationSettings.create({
+      data: {
+        scope_type: "organization",
+        scope_id: "org-rebind-2",
+        webhook_url_enc: encryptToString("https://hooks.example.com/x"),
+      },
+    });
+
+    const results = await rebindSecretContexts(prisma);
+    for (const column of [
+      "Event.wallet_api_key_enc",
+      "BounceIngestSettings.imap_password_enc",
+      "NotificationSettings.webhook_url_enc",
+    ]) {
+      expect(results.find((r) => r.column === column)).toMatchObject({ rewritten: 1, failed: 0 });
+    }
+
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: "evt-rebind" } });
+    expect(decryptFromString(event.wallet_api_key_enc ?? "", SECRET_CONTEXTS.walletApiKey)).toBe("wallet-key");
+    const bounce = await prisma.bounceIngestSettings.findUniqueOrThrow({ where: { event_id: "evt-rebind" } });
+    expect(decryptFromString(bounce.imap_password_enc ?? "", SECRET_CONTEXTS.imapPassword)).toBe("imap-pw");
+    const settings = await prisma.notificationSettings.findUniqueOrThrow({ where: { id: notification.id } });
+    expect(decryptFromString(settings.webhook_url_enc ?? "", SECRET_CONTEXTS.notificationWebhookUrl)).toBe(
+      "https://hooks.example.com/x",
+    );
+    expect(() => decryptFromString(settings.webhook_url_enc ?? "", SECRET_CONTEXTS.imapPassword)).toThrow();
+  });
 });
