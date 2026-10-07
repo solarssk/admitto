@@ -68,7 +68,7 @@ async function registerCredential(
   const begin = await beginWebauthnRegistration(prisma, userId, attachment, RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
   const response = authenticator.register({ challenge: begin.challenge, rpID: RP.rpID, origin: RP.origin });
-  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, attachment, label, RP);
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, attachment, RP, { label });
   return { authenticator, begin, response, result };
 }
 
@@ -159,7 +159,7 @@ describe("WebAuthn registration", () => {
     const beginFirst = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     const respFirst = first.register({ challenge: beginFirst!.challenge, rpID: RP.rpID, origin: RP.origin });
     expect(
-      await finishWebauthnRegistration(prisma, userId, respFirst, beginFirst!.challenge, "platform", null, RP, {
+      await finishWebauthnRegistration(prisma, userId, respFirst, beginFirst!.challenge, "platform", RP, {
         onlyFirstMethod: true,
       }),
     ).not.toBeNull();
@@ -168,7 +168,7 @@ describe("WebAuthn registration", () => {
     const beginSecond = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
     const respSecond = second.register({ challenge: beginSecond!.challenge, rpID: RP.rpID, origin: RP.origin });
     expect(
-      await finishWebauthnRegistration(prisma, userId, respSecond, beginSecond!.challenge, "cross-platform", null, RP, {
+      await finishWebauthnRegistration(prisma, userId, respSecond, beginSecond!.challenge, "cross-platform", RP, {
         onlyFirstMethod: true,
       }),
     ).toBeNull();
@@ -183,7 +183,7 @@ describe("WebAuthn registration", () => {
     const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     const response = authenticator.register({ challenge: "wrong-challenge", rpID: RP.rpID, origin: RP.origin });
 
-    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", null, RP);
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
@@ -204,7 +204,7 @@ describe("WebAuthn registration", () => {
       origin: RP.origin,
     });
 
-    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", null, RP);
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
@@ -220,7 +220,7 @@ describe("WebAuthn registration", () => {
       origin: "https://evil.example.com",
     });
 
-    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", null, RP);
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
@@ -231,7 +231,7 @@ describe("WebAuthn registration", () => {
 
     const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     const response = authenticator.register({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
-    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", null, RP);
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
@@ -256,7 +256,7 @@ describe("WebAuthn registration", () => {
     // "real transports reported" side of the `credential.transports ?? []` fallback.
     response.response.transports = ["usb", "nfc"];
 
-    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "cross-platform", null, RP);
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "cross-platform", RP);
     const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     expect(row?.webauthn_transports).toEqual(["usb", "nfc"]);
   });

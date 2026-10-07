@@ -1533,8 +1533,8 @@ export async function handlePostAccountWebauthnRegisterFinish(
         parsed.data.response as RegistrationResponseJSON,
         challenge,
         parsed.data.attachment,
-        parsed.data.label?.trim() || null,
         rp,
+        { label: parsed.data.label?.trim() || null },
       );
       if (!result) throw new MfaEnrollmentRejected("verification_failed");
       created = result;
