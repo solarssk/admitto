@@ -1,8 +1,15 @@
 import { createBackfillPrismaClient } from "./backfillClient.js";
 import { rebindSecretContexts } from "../rebind-secret-contexts.js";
 
+const args = process.argv.slice(2);
+// Any other argument (a mistyped `--dryrun`, `--help`) must not fall through to the real, irreversible rewrite.
+const unknown = args.filter((arg) => arg !== "--dry-run");
+if (unknown.length > 0) {
+  console.error(`Unknown argument(s): ${unknown.join(", ")}. Usage: rebind-secret-contexts [--dry-run]`);
+  process.exit(2);
+}
+const dryRun = args.includes("--dry-run");
 const prisma = createBackfillPrismaClient();
-const dryRun = process.argv.includes("--dry-run");
 
 /** Manual ops entrypoint (not in `db:migrate`): see rebindSecretContexts. */
 async function main(): Promise<void> {

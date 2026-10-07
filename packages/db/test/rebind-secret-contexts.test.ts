@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
@@ -116,5 +116,34 @@ describe("rebindSecretContexts", () => {
     expect(results.find((r) => r.column === "MailSettings.smtp_password_enc")).toMatchObject({ rewritten: 0 });
     const after = await prisma.mailSettings.findUniqueOrThrow({ where: { id: row.id } });
     expect(decryptFromString(after.smtp_password_enc ?? "", SECRET_CONTEXTS.smtpPassword)).toBe("new-pw");
+  });
+
+  it("rewrites more rows than one batch holds", async () => {
+    const ids = await Promise.all(
+      Array.from({ length: 12 }, (_, n) =>
+        prisma.mailSettings.create({
+          data: { scope_type: "organization", scope_id: `org-batch-${n}`, power_automate_url_enc: encryptToString(`https://example.com/${n}`) },
+        }),
+      ),
+    );
+    const results = await rebindSecretContexts(prisma);
+    expect(results.find((r) => r.column === "MailSettings.power_automate_url_enc")).toMatchObject({ rewritten: 12, failed: 0 });
+    const rows = await prisma.mailSettings.findMany({ where: { id: { in: ids.map((r) => r.id) } } });
+    expect(rows.every((r) => JSON.parse(r.power_automate_url_enc ?? "").keyVersion === 2)).toBe(true);
+  });
+
+  it("refuses unknown arguments instead of falling through to the real rewrite", async () => {
+    const row = await prisma.mailSettings.create({
+      data: { scope_type: "organization", scope_id: "org-cli", smtp_password_enc: encryptToString("cli-pw") },
+    });
+    let status: number | null = null;
+    try {
+      execFileSync("npx", ["tsx", "src/scripts/rebind-secret-contexts.ts", "--dryrun"], { cwd: DB_ROOT, env: { ...process.env }, stdio: "pipe" });
+    } catch (err) {
+      status = (err as { status: number }).status;
+    }
+    expect(status).toBe(2);
+    const after = await prisma.mailSettings.findUniqueOrThrow({ where: { id: row.id } });
+    expect(JSON.parse(after.smtp_password_enc ?? "").keyVersion).toBe(1);
   });
 });
