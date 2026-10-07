@@ -1800,7 +1800,7 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
     const response = authenticator.register({ challenge: begin!.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
     // Deliberately skip markBackupCodesAcknowledged, unlike registerConfirmedWebauthnCredential -
     // this is what promotes the completed session into BACKUP_CODES_REQUIRED instead of FULL.
-    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", "Seeded key", WEBAUTHN_RP);
+    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", WEBAUTHN_RP, { label: "Seeded key" });
 
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",

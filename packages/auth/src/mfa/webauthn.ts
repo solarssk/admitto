@@ -121,9 +121,8 @@ export async function finishWebauthnRegistration(
   response: RegistrationResponseJSON,
   expectedChallenge: string,
   attachment: WebauthnAttachment,
-  label: string | null,
   rp: WebauthnRpConfig,
-  options: { onlyFirstMethod?: boolean } = {},
+  options: { label?: string | null; onlyFirstMethod?: boolean } = {},
 ): Promise<FinishWebauthnRegistrationResult | null> {
   let verification;
   try {
@@ -163,7 +162,7 @@ export async function finishWebauthnRegistration(
       data: {
         user_id: userId,
         type: "webauthn",
-        label,
+        label: options.label ?? null,
         confirmed_at: new Date(),
         last_used_at: new Date(),
         webauthn_credential_id: credential.id,

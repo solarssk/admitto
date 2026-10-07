@@ -86,7 +86,7 @@ async function registerConfirmedWebauthnCredential(userId: string): Promise<void
   const begin = await beginWebauthnRegistration(prisma, userId, "platform", WEBAUTHN_RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
   const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
-  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", null, WEBAUTHN_RP);
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", WEBAUTHN_RP);
   if (!result) throw new Error("finishWebauthnRegistration failed");
   await markBackupCodesAcknowledged(prisma, userId);
 }

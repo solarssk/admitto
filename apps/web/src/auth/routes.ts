@@ -781,7 +781,6 @@ export async function handlePostMfaWebauthnEnrollFinish(
     parsed.data.response as RegistrationResponseJSON,
     challenge,
     parsed.data.attachment,
-    null,
     rp,
     { onlyFirstMethod: true },
   );
