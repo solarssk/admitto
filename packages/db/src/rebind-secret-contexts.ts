@@ -67,11 +67,11 @@ const COLUMNS: Column[] = [
 
 const ROW_BATCH_SIZE = 10;
 
-/** Runs `fn` over `items` in sequential batches (at most `size` at once), keeping order; recursion, not a loop, so no await sits inside one. */
-async function inBatches<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  if (items.length === 0) return [];
-  const head = await Promise.all(items.slice(0, size).map(fn));
-  return [...head, ...(await inBatches(items.slice(size), size, fn))];
+/** Runs `fn` over `items` in sequential batches (at most `size` at once); a cursor and recursion, not a loop, so no await sits inside one and nothing is copied per step. */
+async function forEachInBatches<T>(items: T[], size: number, fn: (item: T) => Promise<void>, from = 0): Promise<void> {
+  if (from >= items.length) return;
+  await Promise.all(items.slice(from, from + size).map(fn));
+  await forEachInBatches(items, size, fn, from + size);
 }
 
 type RowOutcome = "rewritten" | "alreadyBound" | "failed";
@@ -99,9 +99,13 @@ export async function rebindSecretContexts(
   prisma: PrismaClient,
   { dryRun = false }: { dryRun?: boolean } = {},
 ): Promise<RebindResult[]> {
-  return inBatches(COLUMNS, 1, async (column): Promise<RebindResult> => {
-    const outcomes = await inBatches(await column.read(prisma), ROW_BATCH_SIZE, (row) => rebindRow(prisma, column, row, dryRun));
-    const count = (outcome: RowOutcome) => outcomes.filter((o) => o === outcome).length;
-    return { column: column.name, rewritten: count("rewritten"), alreadyBound: count("alreadyBound"), failed: count("failed") };
+  const results: RebindResult[] = [];
+  await forEachInBatches(COLUMNS, 1, async (column) => {
+    const result: RebindResult = { column: column.name, rewritten: 0, alreadyBound: 0, failed: 0 };
+    await forEachInBatches(await column.read(prisma), ROW_BATCH_SIZE, async (row) => {
+      result[await rebindRow(prisma, column, row, dryRun)] += 1;
+    });
+    results.push(result);
   });
+  return results;
 }
