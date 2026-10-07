@@ -65,6 +65,20 @@ const COLUMNS: Column[] = [
   },
 ];
 
+type RowOutcome = "rewritten" | "alreadyBound" | "failed";
+
+async function rebindRow(prisma: PrismaClient, column: Column, row: Row, dryRun: boolean): Promise<RowOutcome> {
+  try {
+    const { value, changed } = rebindToContext(row.value, column.context);
+    if (!changed) return "alreadyBound";
+    // A row rotated since it was read already holds a bound value: nothing to rewrite.
+    if (!dryRun && (await column.write(prisma, row.id, row.value, value)).count === 0) return "alreadyBound";
+    return "rewritten";
+  } catch {
+    return "failed";
+  }
+}
+
 /**
  * Rewrites legacy (keyVersion 1) secret columns as context-bound (keyVersion 2) values, so a
  * ciphertext copied into another column no longer decrypts there. Manual ops step, never part of
@@ -76,21 +90,11 @@ export async function rebindSecretContexts(
   prisma: PrismaClient,
   { dryRun = false }: { dryRun?: boolean } = {},
 ): Promise<RebindResult[]> {
-  const results: RebindResult[] = [];
-  for (const column of COLUMNS) {
-    const result: RebindResult = { column: column.name, rewritten: 0, alreadyBound: 0, failed: 0 };
-    for (const row of await column.read(prisma)) {
-      try {
-        const { value, changed } = rebindToContext(row.value, column.context);
-        // A row rotated since it was read already holds a bound value: nothing to rewrite.
-        const written = changed && !dryRun ? (await column.write(prisma, row.id, row.value, value)).count : 1;
-        if (changed && written > 0) result.rewritten += 1;
-        else result.alreadyBound += 1;
-      } catch {
-        result.failed += 1;
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return Promise.all(
+    COLUMNS.map(async (column): Promise<RebindResult> => {
+      const outcomes = await Promise.all((await column.read(prisma)).map((row) => rebindRow(prisma, column, row, dryRun)));
+      const count = (outcome: RowOutcome) => outcomes.filter((o) => o === outcome).length;
+      return { column: column.name, rewritten: count("rewritten"), alreadyBound: count("alreadyBound"), failed: count("failed") };
+    }),
+  );
 }
