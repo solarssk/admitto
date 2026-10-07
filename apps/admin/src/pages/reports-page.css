@@ -202,9 +202,12 @@
 }
 
 /* The Event day report below the tabs, and each of the other tabs (the report, its placeholder and its error), is one column
- * with the same rhythm as .screen, so what a stack of sections looked like as direct children of the screen is kept. */
+ * with the same rhythm as .screen, so what a stack of sections looked like as direct children of the screen is kept; a report
+ * (or the empty state of Event day) sits in a wrapper that fades in and keeps that rhythm. */
 .reports-eventday,
-.reports-tab {
+.reports-eventday__ready,
+.reports-tab,
+.reports-tab__report {
   display: flex;
   flex-direction: column;
   gap: 18px;
