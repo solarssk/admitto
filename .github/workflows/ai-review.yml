@@ -170,6 +170,8 @@ jobs:
           DAY_RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ai-review.yml --created ">=${TODAY}" \
             --limit 200 --json "$FIELDS" | jq --argjson self "$RUN_ID" --argjson settle "$DEBOUNCE_SECONDS" -f .github/ai-review/count-attempts.jq)
           echo "Runs on this PR: ${PR_RUNS}/${PER_PR_LIMIT}; runs today: ${DAY_RUNS}/${DAILY_LIMIT}"
+          echo "pr_runs=${PR_RUNS}" >> "$GITHUB_OUTPUT"
+          echo "day_runs=${DAY_RUNS}" >> "$GITHUB_OUTPUT"
           if [ "$PR_RUNS" -ge "$PER_PR_LIMIT" ]; then
             echo "exhausted=true" >> "$GITHUB_OUTPUT"
             echo "reason=this PR has used its ${PER_PR_LIMIT} automated review attempts" >> "$GITHUB_OUTPUT"
@@ -204,11 +206,34 @@ jobs:
         run: |
           if [ -n "$CLAUDE_TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
 
+      # One status comment on the pull request, edited in place (scripts/ai-review-status.mjs): this
+      # first version says which commit is being reviewed, the last one says what happened. It never
+      # decides a verdict or an exit code.
+      - name: Report that the review started
+        id: started
+        if: steps.claude_credential.outputs.present == 'true'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.target.outputs.head_sha }}
+          BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          BASE_REF: ${{ steps.target.outputs.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_RUNS: ${{ steps.budget.outputs.pr_runs }}
+          DAY_RUNS: ${{ steps.budget.outputs.day_runs }}
+          REVIEW_TIMEOUT_MINUTES: 15
+        run: node scripts/ai-review-status.mjs start
+
       - name: Review the diff
         id: review
         if: steps.claude_credential.outputs.present == 'true'
         # Inspect the CLI result before deciding whether an action failure is a provider outage.
         continue-on-error: true
+        # A hung reviewer is stopped here, not by the 30 minute job limit, so the run can still say
+        # what happened. REVIEW_TIMEOUT_MINUTES in the two status steps must be this number.
+        timeout-minutes: 15
         uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029  # v1.0.239
         with:
           # The maintainer's Claude subscription (from `claude setup-token`), not per-token API billing.
@@ -276,9 +301,30 @@ jobs:
           CODEX_RESULT_KIND: ${{ steps.codex.outputs.resultKind }}
           CODEX_OUTCOME: ${{ steps.codex.outcome }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
+          PR_RUNS: ${{ steps.budget.outputs.pr_runs }}
+          DAY_RUNS: ${{ steps.budget.outputs.day_runs }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          REVIEW_STARTED: ${{ steps.started.outputs.started }}
+          REVIEW_TIMEOUT_MINUTES: 15
+          CLAUDE_EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
           set -euo pipefail
           BODY="$RUNNER_TEMP/review.md"
+
+          # The readable report on the pull request (scripts/ai-review-status.mjs). Best effort: it
+          # never changes the verdict or the exit code, and every way out of this step goes through
+          # it once. A way out that does not (a failed GitHub call under set -e) is caught by the trap.
+          # An exit caused by a signal (status above 128) is a cancelled run, not a failure to report:
+          # whoever cancelled it, a newer push or a command, writes the status that fits.
+          STATUS_DONE=""
+          publish_status() {
+            STATUS_DONE=1
+            STATUS_STATE="$1" STATUS_DETAIL="${2:-}" node scripts/ai-review-status.mjs final \
+              || echo "The AI review status comment could not be updated."
+          }
+          trap 'rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -gt 128 ] || [ -n "$STATUS_DONE" ] || publish_status failed publication_error' EXIT
+          STATE=""
+          DETAIL=""
 
           # Dismiss this bot's approvals of the reviewed commit. Every path that does not end in a
           # fresh approval goes through here first, including the ones that then fail the job, so
@@ -307,22 +353,28 @@ jobs:
           }
           if ! current_review_target; then
             echo "PR eligibility or reviewed diff changed - submitting nothing."
+            publish_status stale
             exit 0
           fi
 
           if [ "${TOO_LARGE:-}" = "true" ]; then
+            STATE=too-large
             printf '%s\n' '**AI review skipped:** the diff is larger than the automated reviewer accepts. It is not approved; review it by hand.' > "$BODY"
             APPROVE=false
           elif [ "${BUDGET_EXHAUSTED:-}" = "true" ]; then
+            STATE=budget
+            DETAIL="$BUDGET_REASON"
             printf '**Conditional approval by maintainer policy — no AI code review ran.** The automated review budget was exhausted (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply. Re-run the job to request an AI review.\n' "$BUDGET_REASON" > "$BODY"
             APPROVE=true
           elif [ "${DOCS_ONLY:-}" = "true" ]; then
+            STATE=docs-only
             printf '%s\n' '**Approved by a path rule, not by a model review.** Every file in this change is documentation (Markdown under docs/ or CHANGELOG.md), so no AI review was run. The required checks still apply, and the maintainer merges.' > "$BODY"
             APPROVE=true
           elif [ "${CLAUDE_STATUS:-}" = "unavailable" ] && \
                { [ "${CODEX_STATUS:-}" = "error" ] || [ "${CODEX_OUTCOME:-}" = "failure" ]; }; then
             echo "Codex fallback setup or GitHub API failed."
             dismiss_bot_approvals
+            publish_status codex-error
             exit 1
           elif [ "${CLAUDE_STATUS:-}" = "unavailable" ] && \
                { [ "${CODEX_STATUS:-}" = "clean" ] || [ "${CODEX_STATUS:-}" = "findings" ]; }; then
@@ -335,25 +387,29 @@ jobs:
             RESULT_URL="https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}#${RESULT_ANCHOR}"
             echo "AI reviewer provider: Codex subscription" >> "$GITHUB_STEP_SUMMARY"
             if [ "$CODEX_STATUS" = "clean" ]; then
+              STATE=codex-clean
               printf '**AI review — Codex subscription fallback.** Claude was unavailable. The official Codex connector reported no major issues for this commit: %s. This approval is submitted by github-actions[bot]; the maintainer merges and required checks still apply.\n' "$RESULT_URL" > "$BODY"
               APPROVE=true
             else
+              STATE=codex-findings
               printf '**AI review — Codex subscription fallback.** Claude was unavailable. Codex reported findings for this commit: %s. Nothing is approved; address the findings before merging.\n' "$RESULT_URL" > "$BODY"
               APPROVE=false
             fi
           elif [ "${CLAUDE_STATUS:-}" = "unavailable" ]; then
             echo "Claude unavailable: ${CLAUDE_REASON}. No review was produced."
             echo "AI reviewer provider: none" >> "$GITHUB_STEP_SUMMARY"
+            STATE=no-provider
             printf '**Conditional approval by maintainer policy — no AI code review completed.** Claude was unavailable (%s); Codex fallback did not return a usable result (%s). This APPROVE satisfies the review gate only; it does not confirm code correctness. The maintainer must review the diff manually before merging. Required checks still apply.\n' "$CLAUDE_REASON" "${CODEX_REASON:-not_run}" > "$BODY"
             APPROVE=true
           elif [ "${CLAUDE_STATUS:-}" != "reviewed" ]; then
             echo "AI review failed: Claude did not produce a usable review and no provider outage was confirmed."
             dismiss_bot_approvals
+            publish_status failed "${CLAUDE_REASON:-unknown}"
             exit 1
           else
             echo "AI reviewer provider: Claude" >> "$GITHUB_STEP_SUMMARY"
             {
-              echo "**AI review** (automated, second identity; the maintainer merges)"
+              echo "**AI review** of \`${HEAD_SHA:0:7}\` (automated, second identity; the maintainer merges). Model, coverage and run details are in the AI review status comment."
               echo
               jq -r '.summary' <<< "$STRUCTURED"
               if [ "$(jq '.blocking_findings | length' <<< "$STRUCTURED")" -gt 0 ]; then
@@ -368,14 +424,17 @@ jobs:
             if [ "$(jq -r '.verdict' <<< "$STRUCTURED")" = "approve" ] && \
                [ "$(jq '.blocking_findings | length' <<< "$STRUCTURED")" -eq 0 ]; then
               APPROVE=true
+              STATE=approved
             else
               APPROVE=false
+              STATE=findings
             fi
           fi
 
           # A file the reviewer could not see is never approved, whatever the model said.
           if [ "${UNAVAILABLE:-}" = "true" ]; then
             APPROVE=false
+            STATE=unreadable
             printf '%s\n' '**No approval:** at least one changed file has no readable diff. The maintainer must review it manually.' > "$BODY"
           fi
 
@@ -384,12 +443,14 @@ jobs:
           if grep -Eq 'sk-ant-|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|-----BEGIN' "$BODY"; then
             echo "Review text looks like it contains a credential - not posting."
             dismiss_bot_approvals
+            publish_status withheld
             exit 1
           fi
 
           # A push, retarget or eligibility change makes this review stale.
           if ! current_review_target; then
             echo "PR eligibility or reviewed diff changed - submitting nothing."
+            publish_status stale
             exit 0
           fi
 
@@ -402,3 +463,4 @@ jobs:
           fi
           gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
             -f commit_id="$HEAD_SHA" -f event="$EVENT" -F body=@"$BODY" >/dev/null
+          publish_status "$STATE" "$DETAIL"
