@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, isOff, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../../src/api/types.js";
+import { acceptedRow, failedRow } from "./deliveryFixtures.js";
 
 const { fetchEventOverview, fetchEventTemplate, fetchEventTemplates, fetchEventDeliveries } =
   communicationApiMocks;
@@ -51,52 +52,6 @@ const templatePayload = {
   subject_template: "Hello",
   body_template: "<p>Hi</p>",
   template_format: "html" as const,
-};
-
-const acceptedRow: DeliveryDto = {
-  id: "dlv-1",
-  attendee_id: "att-1",
-  attendee_name: "Guest One",
-  purpose: "resend",
-  status: "accepted",
-  provider: "smtp",
-  provider_message_id: "msg-1",
-  attempts: 1,
-  retryable: null,
-  recipient_email: "guest@example.com",
-  rendered_subject: "Your ticket",
-  template_id: null,
-  template_name: null,
-  queued_at: "2026-09-01T11:55:00.000Z",
-  accepted_at: "2026-09-01T12:05:00.000Z",
-  sent_at: null,
-  failed_at: null,
-  error_code: null,
-  error: null,
-  client_timezone: null,
-};
-
-const failedRow: DeliveryDto = {
-  id: "dlv-2",
-  attendee_id: "att-2",
-  attendee_name: "Guest Two",
-  purpose: "initial",
-  status: "failed",
-  provider: "smtp",
-  provider_message_id: null,
-  attempts: 3,
-  retryable: true,
-  recipient_email: "bounce@example.com",
-  rendered_subject: "Your ticket",
-  template_id: null,
-  template_name: null,
-  queued_at: "2026-09-01T13:00:00.000Z",
-  accepted_at: null,
-  sent_at: null,
-  failed_at: "2026-09-01T13:05:00.000Z",
-  error_code: "smtp_connect",
-  error: "Connection timed out",
-  client_timezone: "Europe/Warsaw",
 };
 
 /** Same data as `failedRow` but explicitly a resend - the "current" row viewed in the Delivery
@@ -310,7 +265,7 @@ describe("CommunicationPage delivery log - table", () => {
     expect(table.getByText(formatUtcDateTime(failedRow.failed_at!))).toBeTruthy();
   });
 
-  it("keeps a loading state visible until delivery data resolves", async () => {
+  it("keeps its placeholder, held for the first 200ms, until delivery data resolves", async () => {
     let resolveDeliveries: (value: { items: []; total: number }) => void = () => {};
     fetchEventDeliveries.mockReturnValue(
       new Promise((resolve) => {
@@ -321,10 +276,13 @@ describe("CommunicationPage delivery log - table", () => {
     renderPage();
     await goToDeliveryLogTab();
 
-    expect(await screen.findByText("Loading deliveries…")).toBeTruthy();
+    const placeholder = await screen.findByRole("status", { name: "Loading delivery log" });
+    expect(placeholder.className).toContain("at-loading-hold");
+    expect(screen.queryByText("No messages sent yet")).toBeNull();
 
     resolveDeliveries({ items: [], total: 0 });
     expect(await screen.findByText("No messages sent yet")).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Loading delivery log" })).toBeNull();
   });
 
   it("shows the delivery-log error state when loading fails", async () => {
@@ -524,10 +482,10 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     await goToDeliveryLogTab();
     await screen.findByText("Guest One");
 
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(true);
 
     await applyFailedStatusFilter();
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     await waitFor(() => {
@@ -543,7 +501,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
         expect.any(AbortSignal),
       );
     });
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(true);
   });
 
   it("picking 'All statuses'/'All purposes' back from the filter itself clears it as fully as Clear filters does", async () => {
@@ -559,7 +517,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     await screen.findByText("Guest One");
 
     await applyFailedStatusFilter();
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
     fireEvent.click(screen.getByRole("button", { name: "All statuses" }));
@@ -570,7 +528,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
         expect.any(AbortSignal),
       );
     });
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: /^Purpose,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Resend" }));
@@ -581,7 +539,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
         expect.any(AbortSignal),
       );
     });
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: /^Purpose,/ }));
     fireEvent.click(screen.getByRole("button", { name: "All purposes" }));
@@ -592,7 +550,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
         expect.any(AbortSignal),
       );
     });
-    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+    expect(isOff(screen.getByRole("button", { name: "Clear filters" }))).toBe(true);
   });
 });
 
@@ -1068,7 +1026,9 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     renderPage();
     await goToDeliveryLogTab();
 
-    expect(await screen.findByText("Could not load deliveries.")).toBeTruthy();
+    // What failed (the title) and why (the operator wording for a server error), with a Retry; the status is reported.
+    expect(await screen.findByText("Could not load deliveries")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Something went wrong");
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
@@ -1082,7 +1042,6 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     await goToDeliveryLogTab();
 
     await screen.findByText("Could not load deliveries");
-    expect(screen.getByText("Could not load deliveries.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
@@ -1166,42 +1125,32 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
   });
 
   it("keeps polling on a timer while Live, and clamps the page back once the total shrinks below it", async () => {
-    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText(/Showing 1.*25 of 60/);
-
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() =>
-      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
-        "evt-1",
-        expect.objectContaining({ page: 2 }),
-        expect.any(AbortSignal),
-      ),
-    );
-
-    fetchEventDeliveries.mockClear();
-    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 10 });
-
-    // shouldAdvanceTime lets real microtask/promise resolution (the mocked fetch) keep working
-    // alongside the faked setInterval, so testing-library's own waitFor polling (real setTimeout
-    // under the hood) doesn't deadlock against a fully-frozen clock.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Fake timers from the start, so the live refresh is the only thing that can bring the page back to 1: the interval
+    // is made when the page mounts, and a real one could not be moved by a clock that is faked afterwards.
+    vi.useFakeTimers();
     try {
-      await vi.advanceTimersByTimeAsync(1750);
+      fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
+      renderPage();
+      await advanceTimers(0);
+      fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
+      await advanceTimers(0);
+      expect(screen.getByText(/Showing 1.*25 of 60/)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await advanceTimers(0);
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith("evt-1", expect.objectContaining({ page: 2 }), expect.any(AbortSignal));
+
+      fetchEventDeliveries.mockClear();
+      fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 10 });
+      await advanceTimers(1750);
+
+      // The tick asks for the page the operator is on; its answer (total 10, so one page) clamps the page back to 1,
+      // and that page change is one more load.
+      expect(fetchEventDeliveries).toHaveBeenNthCalledWith(1, "evt-1", expect.objectContaining({ page: 2 }), expect.any(AbortSignal));
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith("evt-1", expect.objectContaining({ page: 1 }), expect.any(AbortSignal));
     } finally {
       vi.useRealTimers();
     }
-
-    // The silent poll's own response (total=10, still on page 2) clamps deliveryPage back to 1
-    // (maxPage = ceil(10/25)); that page change then triggers one more, non-silent load.
-    await waitFor(() =>
-      expect(fetchEventDeliveries).toHaveBeenCalledWith(
-        "evt-1",
-        expect.objectContaining({ page: 1 }),
-        expect.any(AbortSignal),
-      ),
-    );
   });
 
   it("silently ignores a failed poll tick, without showing an error banner over the rows already on screen", async () => {
@@ -1239,6 +1188,8 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     // themselves (see DeliveryLogTable's onStatusChange/onSearchChange/onPurposeChange wrappers),
     // which would mask the clamp effect under test here.
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    // The pager is busy (and the rows blocked) until the answer of page 2 is in, so a second press waits for it.
+    await waitFor(() => expect(isOff(screen.getByRole("button", { name: "Next" }))).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() =>
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(

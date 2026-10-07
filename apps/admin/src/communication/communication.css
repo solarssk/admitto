@@ -1009,10 +1009,16 @@
   color: var(--text-muted);
 }
 
-.communication-empty {
-  padding: var(--space-6);
+/* The delivery log's placeholder (DeliveryLogSkeleton.tsx): the table or the stacked cards of the real list, in a status region. */
+.delivery-log-skeleton {
+  display: block;
+}
+
+.delivery-log-skeleton__note {
+  display: block;
+  padding: var(--space-3) var(--space-4);
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* The header's shared .at-card__header is nowrap by design - but the Delivery log card's title
