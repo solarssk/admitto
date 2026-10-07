@@ -17,13 +17,13 @@ const run = (id, status, conclusion, over = {}) => ({ id, status, conclusion, ev
 const workflowText = '      PER_PR_LIMIT: 6\n      DAILY_LIMIT: 80\n      DEBOUNCE_SECONDS: 60\n'
 
 // A small stand-in for GitHub: it answers the calls the command makes and records every call.
-function github({ pr = {}, runs = [], reviews = [], comments = [], stopAfter = 1, failOn = '' } = {}) {
+function github({ pr = {}, runs = [], reviews = [], comments = [], stopAfter = 1, failOn = '', failStatus } = {}) {
   const calls = []
   const board = [...comments]
   let polls = 0
   const route = (method, path, body) => {
     calls.push({ method, path, body })
-    if (failOn && `${method} ${path}`.includes(failOn)) throw new Error('GitHub refused')
+    if (failOn && `${method} ${path}`.includes(failOn)) throw Object.assign(new Error('GitHub refused'), { status: failStatus })
     if (method === 'GET' && path.endsWith('/pulls/7')) {
       return { state: 'open', draft: false, user: { login: 'maintainer' }, base: { ref: 'main', sha: 'b'.repeat(40) },
         head: { ref: 'feature/x', sha: head, repo: { full_name: 'maintainer/project' } }, ...pr }
@@ -180,6 +180,32 @@ test('/ai-review cancel stops the run, withdraws only this commit\'s bot approva
   assert.equal(fake.calls.find((call) => call.method === 'PUT').body.event, 'DISMISS')
   assert.match(fake.written()[0], /AI review: cancelled by the maintainer/)
   assert.deepEqual(fake.reactions(), ['eyes', '+1'])
+})
+
+test('a run that finishes while it is being cancelled counts as stopped, so the follow-up still happens', async () => {
+  const reviews = [{ id: 1, user: { login: 'github-actions[bot]' }, state: 'APPROVED', commit_id: head }]
+  const conflict = { failOn: 'POST /repos/maintainer/project/actions/runs/42/cancel', failStatus: 409 }
+  const cancel = github({ runs: [run(42, 'in_progress', null)], reviews, ...conflict })
+  assert.deepEqual(await command(cancel, { COMMENT_BODY: '/ai-review cancel' }), { outcome: 'cancel', runId: 42 })
+  assert.deepEqual(cancel.calls.filter((call) => call.method === 'PUT').map((call) => call.path),
+    ['/repos/maintainer/project/pulls/7/reviews/1/dismissals'], 'the approval the run has just posted is withdrawn')
+  assert.match(cancel.written()[0], /AI review: cancelled by the maintainer/)
+  const again = github({ runs: [run(42, 'in_progress', null)], ...conflict })
+  assert.deepEqual(await command(again), { outcome: 'rerun', runId: 42 })
+  assert.ok(again.calls.some((call) => call.path.endsWith('/actions/runs/42/rerun')))
+})
+
+test('a conflict on cancel is not trusted when the run does not stop, and any other refusal is an error', async () => {
+  const cancelPath = 'POST /repos/maintainer/project/actions/runs/42/cancel'
+  const stuck = github({ runs: [run(42, 'in_progress', null)], stopAfter: 1000, failOn: cancelPath, failStatus: 409 })
+  assert.equal((await command(stuck, { COMMENT_BODY: '/ai-review cancel' })).outcome, 'refused')
+  assert.match(stuck.written()[0], /did not stop within 90 seconds/)
+  const reviews = [{ id: 1, user: { login: 'github-actions[bot]' }, state: 'APPROVED', commit_id: head }]
+  for (const failStatus of [403, 404, 500, undefined]) {
+    const refused = github({ runs: [run(42, 'in_progress', null)], reviews, failOn: cancelPath, failStatus })
+    assert.equal((await command(refused, { COMMENT_BODY: '/ai-review cancel' })).outcome, 'error', String(failStatus))
+    assert.ok(!refused.calls.some((call) => call.method === 'PUT'), 'nothing is dismissed when the cancel itself failed')
+  }
 })
 
 test('/ai-review cancel with nothing running, or a run that will not stop, changes nothing', async () => {

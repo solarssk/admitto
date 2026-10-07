@@ -307,7 +307,8 @@ test('the real request sends the token, tolerates an empty answer and names a fa
     globalThis.fetch = async () => ({ ok: true, text: async () => '' })
     assert.deepEqual(await githubRequest('tok', 'POST', '/repos/o/r/actions/runs/1/rerun'), {})
     globalThis.fetch = async () => ({ ok: false, status: 403 })
-    await assert.rejects(githubRequest('tok', 'GET', '/repos/o/r/pulls/1'), /GitHub GET \/repos\/o\/r\/pulls\/1 failed with 403/)
+    await assert.rejects(githubRequest('tok', 'GET', '/repos/o/r/pulls/1'),
+      (error) => error.status === 403 && /GitHub GET \/repos\/o\/r\/pulls\/1 failed with 403/.test(error.message))
   } finally {
     globalThis.fetch = original
   }

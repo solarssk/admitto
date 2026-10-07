@@ -101,7 +101,14 @@ export function renderLive(f) {
 }
 
 async function stopRun(api, repository, run, sleep) {
-  await api.post(`/repos/${repository}/actions/runs/${run.id}/cancel`)
+  try {
+    await api.post(`/repos/${repository}/actions/runs/${run.id}/cancel`)
+  } catch (error) {
+    // A run that finished after it was listed answers 409 Conflict: GitHub's way of saying it is not
+    // running any more. The poll below reads the run again and tells which, so the follow-up (the
+    // re-run, or withdrawing the approval the run has just posted) goes ahead.
+    if (error.status !== 409) throw error
+  }
   for (let waited = 0; waited < 90; waited += 3) {
     if ((await api.get(`/repos/${repository}/actions/runs/${run.id}`)).status === 'completed') return true
     await sleep(3000)

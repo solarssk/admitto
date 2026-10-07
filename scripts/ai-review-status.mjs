@@ -43,7 +43,7 @@ export async function githubRequest(token, method, path, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30000),
   })
-  if (!response.ok) throw new Error(`GitHub ${method} ${path} failed with ${response.status}`)
+  if (!response.ok) throw Object.assign(new Error(`GitHub ${method} ${path} failed with ${response.status}`), { status: response.status })
   const text = await response.text()
   return text ? JSON.parse(text) : {}
 }
