@@ -852,6 +852,25 @@ describe("ReportsPage: the first read of Event day", () => {
     expect(isOff(screen.getByRole("button", { name: /Export/ }))).toBe(false);
   });
 
+  it("fades the report in where the placeholder was once the read has answered, and the empty state too when nothing has been admitted", async () => {
+    const answer = deferred<EventReportsResponse>();
+    fetchEventReports.mockReturnValueOnce(answer.promise);
+    renderPage();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve(reportFixture(5)));
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(document.querySelector(".reports-stats-grid")?.closest(".reports-eventday__ready.at-fade-in")).not.toBeNull();
+    cleanup();
+
+    fetchEventReports.mockResolvedValueOnce(reportFixture(0));
+    renderPage();
+    await advanceTimers(0);
+    expect(screen.getByText("No check-ins yet").closest(".reports-eventday__ready.at-fade-in")).not.toBeNull();
+  });
+
   it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus, and hands the focus to Event day's region when it works", async () => {
     fetchEventReports.mockImplementationOnce(hangUntilAborted as never);
     renderPage();

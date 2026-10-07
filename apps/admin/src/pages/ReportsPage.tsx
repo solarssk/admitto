@@ -1094,103 +1094,108 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             />
           )}
 
-          {view === "ready" && liveAdmitted === 0 && (
-            <EmptyState
-              icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
-              title="No check-ins yet"
-              description="Reports will appear here once attendees start checking in."
-            />
-          )}
+          {view === "ready" && (
+            // What replaces the placeholder fades in; the wrapper is a column of its own with the section's rhythm.
+            <div className="reports-eventday__ready at-fade-in">
+              {liveAdmitted === 0 && (
+                <EmptyState
+                  icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
+                  title="No check-ins yet"
+                  description="Reports will appear here once attendees start checking in."
+                />
+              )}
 
-          {view === "ready" && data && liveAdmitted > 0 && (
-            <>
-            <div className="reports-stats-grid">
-              <Card>
-                <ReportStat
-                  variant="neutral"
-                  icon={<i className="ti ti-users" aria-hidden="true" />}
-                  value={data.summary.total_attendees.toString()}
-                  label="Total attendees"
-                  sub={
-                    data.event.capacity != null
-                      ? `of ${data.event.capacity} capacity`
-                      : "No capacity set"
-                  }
+              {data && liveAdmitted > 0 && (
+                <>
+                <div className="reports-stats-grid">
+                  <Card>
+                    <ReportStat
+                      variant="neutral"
+                      icon={<i className="ti ti-users" aria-hidden="true" />}
+                      value={data.summary.total_attendees.toString()}
+                      label="Total attendees"
+                      sub={
+                        data.event.capacity != null
+                          ? `of ${data.event.capacity} capacity`
+                          : "No capacity set"
+                      }
+                    />
+                  </Card>
+                  <Card>
+                    <ReportStat
+                      variant="ok"
+                      icon={<i className="ti ti-circle-check" aria-hidden="true" />}
+                      value={liveAdmitted.toString()}
+                      label="Admitted"
+                      sub={`${liveRatePct}% admission rate`}
+                    />
+                  </Card>
+                  <Card>
+                    <ReportStat
+                      variant="warn"
+                      icon={<i className="ti ti-circle-x" aria-hidden="true" />}
+                      value={liveNoShows.toString()}
+                      label="No-shows"
+                      sub={`${liveNoShowRatePct}% of total`}
+                    />
+                  </Card>
+                  <Card>
+                    <ReportStat
+                      variant="info"
+                      icon={<i className="ti ti-clock" aria-hidden="true" />}
+                      value={data.summary.peak_hour ?? "-"}
+                      label="Peak hour"
+                      sub={
+                        data.summary.peak_hour
+                          ? `${data.summary.peak_hour_count} admissions`
+                          : "No check-ins yet"
+                      }
+                    />
+                  </Card>
+                </div>
+
+                <div className="reports-panels">
+                  <Card
+                    title="Hourly admissions"
+                    actions={<LiveStatusIndicator />}
+                  >
+                    <HourlyChart byHour={data.by_hour} peakHour={data.summary.peak_hour} />
+                  </Card>
+                  <Card title="By ticket type">
+                    <BreakdownRows rows={ticketTypeBreakdownRows(data.by_ticket_type)} />
+                  </Card>
+                </div>
+
+                <h2 className="reports-section-title">Check-in details</h2>
+                <div className="reports-grid-3">
+                  <Card title={<HintLabel hint={ATTENDANCE_CONFIRMATION_HINT}>Attendance confirmation</HintLabel>}>
+                    <BreakdownRows rows={rsvpBreakdownRows(data.by_rsvp_status, data.summary.admitted)} />
+                  </Card>
+                  <Card title="Check-in method">
+                    <BreakdownRows
+                      rows={checkinMethodBreakdownRows(data.by_checkin_method, data.summary.admitted)}
+                    />
+                  </Card>
+                  <Card title="By operator">
+                    <BreakdownRows rows={operatorBreakdownRows(data.by_operator, data.summary.admitted)} />
+                  </Card>
+                </div>
+
+                <AdmissionLog
+                  key={data.event.id}
+                  eventId={eventId}
+                  log={data.admission_log}
+                  byTicketType={data.by_ticket_type}
+                  byOperator={data.by_operator}
+                  ticketTypes={ticketTypes}
+                  timeZone={data.timezone}
+                  truncated={data.admission_log_truncated}
+                  totalAdmitted={data.admission_log_total}
                 />
-              </Card>
-              <Card>
-                <ReportStat
-                  variant="ok"
-                  icon={<i className="ti ti-circle-check" aria-hidden="true" />}
-                  value={liveAdmitted.toString()}
-                  label="Admitted"
-                  sub={`${liveRatePct}% admission rate`}
-                />
-              </Card>
-              <Card>
-                <ReportStat
-                  variant="warn"
-                  icon={<i className="ti ti-circle-x" aria-hidden="true" />}
-                  value={liveNoShows.toString()}
-                  label="No-shows"
-                  sub={`${liveNoShowRatePct}% of total`}
-                />
-              </Card>
-              <Card>
-                <ReportStat
-                  variant="info"
-                  icon={<i className="ti ti-clock" aria-hidden="true" />}
-                  value={data.summary.peak_hour ?? "-"}
-                  label="Peak hour"
-                  sub={
-                    data.summary.peak_hour
-                      ? `${data.summary.peak_hour_count} admissions`
-                      : "No check-ins yet"
-                  }
-                />
-              </Card>
+
+                </>
+              )}
             </div>
-
-            <div className="reports-panels">
-              <Card
-                title="Hourly admissions"
-                actions={<LiveStatusIndicator />}
-              >
-                <HourlyChart byHour={data.by_hour} peakHour={data.summary.peak_hour} />
-              </Card>
-              <Card title="By ticket type">
-                <BreakdownRows rows={ticketTypeBreakdownRows(data.by_ticket_type)} />
-              </Card>
-            </div>
-
-            <h2 className="reports-section-title">Check-in details</h2>
-            <div className="reports-grid-3">
-              <Card title={<HintLabel hint={ATTENDANCE_CONFIRMATION_HINT}>Attendance confirmation</HintLabel>}>
-                <BreakdownRows rows={rsvpBreakdownRows(data.by_rsvp_status, data.summary.admitted)} />
-              </Card>
-              <Card title="Check-in method">
-                <BreakdownRows
-                  rows={checkinMethodBreakdownRows(data.by_checkin_method, data.summary.admitted)}
-                />
-              </Card>
-              <Card title="By operator">
-                <BreakdownRows rows={operatorBreakdownRows(data.by_operator, data.summary.admitted)} />
-              </Card>
-            </div>
-
-            <AdmissionLog
-              key={data.event.id}
-              eventId={eventId}
-              log={data.admission_log}
-              byTicketType={data.by_ticket_type}
-              byOperator={data.by_operator}
-              ticketTypes={ticketTypes}
-              timeZone={data.timezone}
-              truncated={data.admission_log_truncated}
-              totalAdmitted={data.admission_log_total}
-            />
-
-            </>
           )}
         </section>
       )}
