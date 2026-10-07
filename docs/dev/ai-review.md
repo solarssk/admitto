@@ -5,6 +5,12 @@ same-repository, non-draft PRs with Claude Code on the maintainer's subscription
 It reads the base branch and a text diff; it never checks out or runs PR code.
 Both findings and approvals go through one publication step, bound to the reviewed commit.
 
+| If you want to | Read |
+|---|---|
+| Run it: commands, credentials, what to do when it fails | This page |
+| See how it is built: the flow, the files, what is trusted | [ai-review-how-it-works.md](ai-review-how-it-works.md) |
+| Learn from it for a similar tool: lessons and a build order | [ai-review-lessons.md](ai-review-lessons.md) |
+
 ## Manually review a dependency update
 
 When a human pushes a fix to a Dependabot PR, branch protection can require approval from
@@ -26,12 +32,19 @@ the existing daily budget. Both reviewed commits, the base branch and PR eligibi
 
 Every review run keeps one comment on the pull request, edited in place and headed
 "AI review" with the state: reviewing, approved, comments, a policy approval, failed and so
-on. It shows the commit, the size of the change, the model and its turns, how much of the
-diff the reviewer actually read, the other files it opened, the run and where the attempt
-budget stands. Coverage is counted from the reviewer's tool calls in the execution log, not
-from what the model says about itself, and a file that was never read is listed. The verdict
-and any findings stay in the GitHub review; the comment carries no model text. When a run
-does not finish, the comment says why and what to do.
+on. It shows the commit, the size of the change, the model and its turns (and any other model
+that billed tokens), how much of the diff the reviewer actually saw, the tools it used, the
+other files it opened, the run and where the attempt budget stands. Coverage is counted from the results of the reviewer's tool
+calls in the execution log, not from what the model says about itself: the lines a Read
+returned (taken from the tool's own structured result, so a big file cut to its first page
+counts as that page) and the lines a content search printed. A file that was not read in full
+is listed, and an approval that rests on a partly seen diff carries a warning. If the reviewer
+used a tool beyond Read, Grep and Glob, or a subagent, what it saw that way cannot be counted:
+the figure then says "at least" and the comment names the tools. The verdict and any findings
+stay in the GitHub review; the comment carries no model text. When a run does not finish, the
+comment says why and what to do. The job log of the submit step also prints the shape of the
+execution log (event kinds, tool names and counts, never content) in a group called "AI review
+execution log shape", so the figures can be checked against what the action really writes.
 
 The repository owner can control a review from a comment on the pull request:
 

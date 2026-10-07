@@ -102,65 +102,198 @@ function mergeRanges(ranges) {
   return merged
 }
 
-// The first and last line numbers a Read call really returned (`cat -n` style, a tab or an arrow
-// after the number), so the answer does not depend on the tool's default limits.
+// The tools the review workflow offers on purpose; a call to anything else is reported.
+const REVIEW_TOOLS = new Set(['Read', 'Grep', 'Glob'])
+
+const textOf = (content) => (Array.isArray(content) ? content.map((part) => part?.text ?? '').join('\n') : String(content ?? ''))
+
+// The workspace-relative path of a file the reviewer named, or null when it is missing or outside.
+function insideOf(workspace, path) {
+  if (typeof path !== 'string' || path === '') return null
+  const inside = relative(workspace, resolve(workspace, path))
+  return inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside) ? null : inside
+}
+
+// The first and last line numbers in the text of a Read result (`cat -n` style, a tab or an arrow
+// after the number).
 function returnedRange(content) {
-  const text = Array.isArray(content) ? content.map((part) => part?.text ?? '').join('\n') : String(content ?? '')
-  const numbers = text.split('\n').flatMap((line) => {
+  const numbers = textOf(content).split('\n').flatMap((line) => {
     const match = /^\s*(\d+)[\t→]/.exec(line)
     return match ? [Number(match[1])] : []
   })
   return numbers.length > 0 ? [Math.min(...numbers), Math.max(...numbers)] : null
 }
 
+// The lines a Read returned. The tool's own structured result comes first (startLine and numLines
+// are exact even when a big file was cut to its first page); the numbered text is the fallback.
+function readRange(result, structured) {
+  const file = structured?.file
+  if (Number.isInteger(file?.startLine) && Number.isInteger(file?.numLines) && file.numLines > 0) {
+    return [file.startLine, file.startLine + file.numLines - 1]
+  }
+  return returnedRange(result.content)
+}
+
+// The diff lines a content-mode search printed: `N:text` for a match and `N-text` for context, with
+// the file name in front when the search covered more than the diff.
+function grepLineNumbers(text, workspace, bare) {
+  const prefixes = [DIFF_PATH, `./${DIFF_PATH}`, join(workspace, DIFF_PATH)]
+  const numbers = []
+  for (const line of text.split('\n')) {
+    const prefix = bare ? '' : prefixes.find((candidate) => line.startsWith(candidate))
+    const match = prefix === undefined ? null : /^[:-]?(\d+)[:-]/.exec(line.slice(prefix.length))
+    if (match) numbers.push(Number(match[1]))
+  }
+  return numbers
+}
+
+// The totals of a finished session. The result lists every model that billed tokens, so a helper
+// model shows up there even when the main one is the only one named elsewhere.
+function noteTotals(run, entry) {
+  if (Number.isFinite(entry.num_turns)) run.turns = entry.num_turns
+  if (Number.isFinite(entry.duration_ms)) run.durationMs = entry.duration_ms
+  if (entry.modelUsage && typeof entry.modelUsage === 'object') run.models = Object.keys(entry.modelUsage)
+}
+
 // The model and the totals, from the events that carry them.
 function noteEvent(run, entry) {
   if (entry.type === 'system' && entry.subtype === 'init' && typeof entry.model === 'string') run.model = entry.model
   else if (entry.type === 'assistant' && !run.model && typeof entry.message?.model === 'string') run.model = entry.message.model
-  else if (entry.type === 'result') {
-    if (Number.isFinite(entry.num_turns)) run.turns = entry.num_turns
-    if (Number.isFinite(entry.duration_ms)) run.durationMs = entry.duration_ms
-  }
+  else if (entry.type === 'result') noteTotals(run, entry)
 }
 
-// One finished tool call: what a Read returned, and how many searches were made.
-function noteResult(run, workspace, call, result) {
-  run.results++
-  if (result.is_error) return
-  if (call.name === 'Grep' || call.name === 'Glob') run.searches++
-  if (call.name !== 'Read') return
-  const path = typeof call.input?.file_path === 'string' ? call.input.file_path : ''
-  const inside = relative(workspace, resolve(workspace, path))
-  if (!path || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) run.outside++
+// A tool call, counted by name, and whether it ran inside a subagent.
+function noteCall(run, block, nested) {
+  const name = typeof block.name === 'string' ? block.name : 'unknown'
+  const entry = run.tools.get(name) ?? { calls: 0, failed: 0, nested: 0 }
+  entry.calls++
+  if (nested) entry.nested++
+  run.tools.set(name, entry)
+  return { name, input: block.input, nested }
+}
+
+function noteRead(run, workspace, call, result, structured) {
+  const inside = insideOf(workspace, call.input?.file_path)
+  if (inside === null) run.outside++
   else if (inside === DIFF_PATH) {
-    const range = returnedRange(result.content)
+    const range = readRange(result, structured)
     if (range) run.ranges.push(range)
+    else run.unmeasured++
   } else if (!inside.startsWith('.ai-review/')) run.opened.add(inside)
 }
 
-// The content blocks of one message: a tool call is remembered, a tool result is noted.
+function noteGrep(run, workspace, call, result, structured) {
+  if (call.input?.output_mode !== 'content') return
+  const onDiff = insideOf(workspace, call.input.path) === DIFF_PATH
+  const text = typeof structured?.content === 'string' ? structured.content : textOf(result.content)
+  const numbers = grepLineNumbers(text, workspace, onDiff)
+  for (const line of numbers) run.ranges.push([line, line])
+  if (onDiff && numbers.length === 0 && text.trim() !== '') run.unmeasured++
+}
+
+// One finished tool call. A call that ran inside a subagent only counts as a call: what the
+// subagent read is not what the reviewer itself was shown.
+function noteResult(run, workspace, call, result, structured) {
+  run.results++
+  if (result.is_error) run.tools.get(call.name).failed++
+  else if (call.nested) return
+  else if (call.name === 'Read') noteRead(run, workspace, call, result, structured)
+  else if (call.name === 'Grep') noteGrep(run, workspace, call, result, structured)
+}
+
+// The tool's own structured result, only from a message that holds a single tool result.
+function structuredResult(event, blocks) {
+  const results = blocks.filter((block) => block?.type === 'tool_result')
+  return results.length === 1 ? (event.tool_use_result ?? event.toolUseResult) : undefined
+}
+
+// One content block: a tool call is remembered, a tool result is noted.
+function noteBlock(run, workspace, calls, block, event, structured) {
+  if (block?.type === 'tool_use' && typeof block.id === 'string') {
+    if (!calls.has(block.id)) calls.set(block.id, noteCall(run, block, Boolean(event.parent_tool_use_id)))
+    return
+  }
+  if (block?.type !== 'tool_result') return
+  const call = calls.get(block.tool_use_id)
+  if (call) noteResult(run, workspace, call, block, structured)
+  else run.unmatched++
+}
+
 function noteBlocks(run, workspace, calls, event) {
   const blocks = Array.isArray(event.message?.content) ? event.message.content : []
-  for (const block of blocks) {
-    if (block?.type === 'tool_use' && typeof block.id === 'string') calls.set(block.id, block)
-    else if (block?.type === 'tool_result' && calls.has(block.tool_use_id)) noteResult(run, workspace, calls.get(block.tool_use_id), block)
-  }
+  const structured = structuredResult(event, blocks)
+  for (const block of blocks) noteBlock(run, workspace, calls, block, event, structured)
 }
 
 // What the model did, read from the tool calls in the execution log: the model, the turns, the
-// lines of the diff it read and the other files it opened. Nothing here is the model's own claim:
-// only the events themselves and the content blocks of their messages are read, because a tool
-// call's input and a structured answer are written by the model, and an object nested in them
-// could otherwise pose as a tool result.
+// lines of the diff it was shown, the other files it opened and every tool it called. Nothing here
+// is the model's own claim: only the events themselves and the content blocks of their messages
+// are read, because a tool call's input and a structured answer are written by the model, and an
+// object nested in them could otherwise pose as a tool result.
 export function summarizeExecution(events, workspace) {
   const calls = new Map()
-  const run = { model: '', turns: null, durationMs: null, ranges: [], opened: new Set(), outside: 0, searches: 0, results: 0 }
+  const run = { model: '', models: [], turns: null, durationMs: null, ranges: [], opened: new Set(), outside: 0, results: 0,
+    unmatched: 0, unmeasured: 0, tools: new Map() }
   for (const event of Array.isArray(events) ? events : [events]) {
     if (!event || typeof event !== 'object') continue
     noteEvent(run, event)
     noteBlocks(run, workspace, calls, event)
   }
-  return { ...run, ranges: mergeRanges(run.ranges), opened: [...run.opened].sort((a, b) => a.localeCompare(b, 'en')) }
+  const tools = [...run.tools].map(([name, entry]) => ({ name, ...entry })).sort((a, b) => a.name.localeCompare(b.name, 'en'))
+  const otherTools = tools.filter((tool) => !REVIEW_TOOLS.has(tool.name))
+  // What a subagent, Bash or an unreadable result showed the reviewer cannot be counted here.
+  const unmeasurable = otherTools.length > 0 || tools.some((tool) => tool.nested > 0) || run.unmeasured > 0
+  const otherModels = run.models.filter((model) => model !== run.model).sort((a, b) => a.localeCompare(b, 'en'))
+  return { ...run, tools, otherTools, otherModels, unmeasurable, ranges: mergeRanges(run.ranges),
+    opened: [...run.opened].sort((a, b) => a.localeCompare(b, 'en')) }
+}
+
+// A name from the log (an event kind, a block kind, a tool) is printed only when it is a short plain
+// identifier, so nothing the model wrote can reach the job log through the shape report below.
+const identifier = (value) => (typeof value === 'string' && /^[\w./-]{1,48}$/.test(value) ? value : '?')
+
+const tally = (counts, key) => counts.set(key, (counts.get(key) ?? 0) + 1)
+
+function tallied(counts) {
+  const entries = [...counts].sort(([a], [b]) => a.localeCompare(b, 'en')).map(([key, count]) => `${key} ${count}`)
+  return entries.length === 0 ? 'none' : entries.slice(0, 20).join(', ')
+}
+
+function offeredTools(names) {
+  if (names === null) return 'not in the log'
+  const sorted = [...new Set(names)].sort((a, b) => a.localeCompare(b, 'en'))
+  const shown = sorted.slice(0, 40).join(', ')
+  return sorted.length > 40 ? `${shown} and ${sorted.length - 40} more` : shown
+}
+
+function noteShape(shape, event) {
+  tally(shape.kinds, event.subtype ? `${identifier(event.type)}/${identifier(event.subtype)}` : identifier(event.type))
+  if (event.parent_tool_use_id) shape.subagent++
+  if (event.type === 'system' && event.subtype === 'init' && Array.isArray(event.tools)) shape.offered = event.tools.map(identifier)
+  const blocks = Array.isArray(event.message?.content) ? event.message.content : []
+  for (const block of blocks) tally(shape.blocks, identifier(block?.type))
+  if (blocks.some((block) => block?.type === 'tool_result')) {
+    shape.carriers++
+    if (event.tool_use_result ?? event.toolUseResult) shape.structured++
+  }
+}
+
+// The shape of the execution log without any of its content: how many events and content blocks of
+// each kind it holds, how many tool results come with the tool's structured answer, how many events
+// belong to a subagent and which tools the session offered. The coverage figure is only as good as
+// the reading of this shape, so the job log shows it for the maintainer to check against.
+export function describeShape(events) {
+  const shape = { kinds: new Map(), blocks: new Map(), carriers: 0, structured: 0, subagent: 0, offered: null }
+  for (const event of Array.isArray(events) ? events : [events]) {
+    if (event && typeof event === 'object') noteShape(shape, event)
+  }
+  return [
+    `events: ${tallied(shape.kinds)}`,
+    `content blocks: ${tallied(shape.blocks)}`,
+    `events with a tool result: ${shape.carriers}, of which with the tool's structured answer: ${shape.structured}`,
+    `events that belong to a subagent: ${shape.subagent}`,
+    `tools offered at the start: ${offeredTools(shape.offered)}`,
+  ]
 }
 
 // The file sections of pr.diff as 1-based line ranges. A patch line always starts with a space, +,
@@ -256,7 +389,8 @@ function changesCell(f) {
 }
 
 function reviewerCell(f) {
-  const claude = ['Claude', f.log?.model && code(f.log.model), f.log?.turns != null && plural(f.log.turns, 'turn'),
+  const helpers = f.log?.otherModels?.length > 0 ? `also ${f.log.otherModels.map(code).join(', ')}` : ''
+  const claude = ['Claude', f.log?.model && code(f.log.model), helpers, f.log?.turns != null && plural(f.log.turns, 'turn'),
     f.log?.durationMs != null && duration(f.log.durationMs)].filter(Boolean).join(', ')
   const unavailable = `Claude unavailable (${code(f.claudeReason || 'unknown')})`
   switch (f.state) {
@@ -280,13 +414,27 @@ function reviewerCell(f) {
 
 function coverageCell(f) {
   if (!f.log) return ''
-  if (f.coverage === 'unknown') return 'not available, the execution log has no tool results'
+  if (f.coverage === 'unknown') {
+    return f.log.unmatched > 0
+      ? `not available, ${plural(f.log.unmatched, 'tool result')} in the execution log could not be matched to a tool call`
+      : 'not available, the execution log has no tool results'
+  }
+  const lead = f.coverage?.atLeast ? 'saw at least' : 'saw'
   const read = f.coverage
-    ? `read ${f.coverage.covered.toLocaleString('en-US')} of ${f.coverage.total.toLocaleString('en-US')} diff lines (${percent(f.coverage.covered, f.coverage.total)}%), ` +
+    ? `${lead} ${f.coverage.covered.toLocaleString('en-US')} of ${f.coverage.total.toLocaleString('en-US')} diff lines (${percent(f.coverage.covered, f.coverage.total)}%), ` +
       `${f.coverage.complete} of ${plural(f.coverage.files.length, 'file')} in full`
     : ''
   const opened = f.log.opened.length > 0 ? `${plural(f.log.opened.length, 'base-branch file')} opened` : ''
   return [read, opened].filter(Boolean).join('; ')
+}
+
+const failedNote = (tool) => (tool.failed > 0 ? ` (${tool.failed} failed)` : '')
+
+function toolsCell(f) {
+  if (!f.log || f.log.tools.length === 0) return ''
+  const used = f.log.tools.map((tool) => `${code(tool.name)} ${tool.calls}${failedNote(tool)}`).join(', ')
+  const nested = f.log.tools.reduce((sum, tool) => sum + tool.nested, 0)
+  return nested > 0 ? `${used}; ${plural(nested, 'call')} ran inside a subagent` : used
 }
 
 function runCell(f) {
@@ -368,15 +516,35 @@ function details(summary, items) {
   return ['', '<details>', `<summary>${summary}</summary>`, '', ...items.map((item) => `- ${item}`), '', '</details>']
 }
 
-function logLines(f) {
-  const lines = []
+// An approval from a reviewer that did not see the whole diff says little about the rest of it.
+function coverageWarning(f) {
+  const c = f.coverage
+  if (f.state !== 'approved' || !c || c === 'unknown' || c.covered >= c.total) return []
+  const seen = `${c.covered.toLocaleString('en-US')} of ${c.total.toLocaleString('en-US')} diff lines`
+  if (c.atLeast) return ['', `⚠️ The reviewer's own reads cover ${seen}. The rest may have been seen through the other tools it used, which cannot be counted, or not at all: treat this approval accordingly.`]
+  const unread = plural(c.files.length - c.complete, 'file')
+  return ['', `⚠️ The reviewer saw ${seen} (${percent(c.covered, c.total)}%), so this approval says little about the ${unread} it did not read in full. Review ${unread === '1 file' ? 'it' : 'them'} yourself.`]
+}
+
+function warningLines(f) {
+  const lines = coverageWarning(f)
   if (f.log?.outside > 0) {
     lines.push('', `⚠️ The reviewer opened ${plural(f.log.outside, 'path')} outside the repository checkout. Check the run log.`)
   }
+  if (f.log?.otherTools.length > 0) {
+    const used = f.log.otherTools.map((tool) => `${code(tool.name)} ${tool.calls}`).join(', ')
+    lines.push('', `⚠️ The reviewer used tools beyond Read, Grep and Glob (${used}). The workflow offers only those three, and what was seen through the others is not counted.`)
+  }
+  return lines
+}
+
+function detailLines(f) {
+  const lines = []
   const partial = f.coverage && f.coverage !== 'unknown'
     ? f.coverage.files.filter((file) => file.covered < file.total) : []
   if (partial.length > 0) {
-    lines.push(...details(`${plural(partial.length, 'file')} not read in full`, [
+    const noun = f.coverage.atLeast ? 'not covered by its own reads' : 'not read in full'
+    lines.push(...details(`${plural(partial.length, 'file')} ${noun}`, [
       ...partial.slice(0, 15).map((file) => `${code(file.file)} (${percent(file.covered, file.total)}% read)`),
       ...(partial.length > 15 ? [`and ${partial.length - 15} more`] : []),
     ]))
@@ -387,6 +555,8 @@ function logLines(f) {
   }
   return lines
 }
+
+const logLines = (f) => [...warningLines(f), ...detailLines(f)]
 
 function footer(f) {
   const commands = f.trigger === 'workflow_dispatch'
@@ -399,7 +569,7 @@ function footer(f) {
 export function renderStatus(f, stripped = false) {
   const [icon, title] = STATES[f.state] ?? STATES.failed
   const rows = [['Commit', commitCell(f)], ['Changes', changesCell(f)], ['Reviewer', reviewerCell(f)],
-    ['Coverage', coverageCell(f)], ['Run', runCell(f)], ['Budget', budgetCell(f)]].filter(([, value]) => value)
+    ['Coverage', coverageCell(f)], ['Tools', toolsCell(f)], ['Run', runCell(f)], ['Budget', budgetCell(f)]].filter(([, value]) => value)
   const body = [STATUS_MARKER, `## ${icon} AI review: ${title}`, '', '| | |', '|:--|:--|',
     ...rows.map(([label, value]) => `| **${label}** | ${value} |`), '', outcomeLines(f).join('\n\n'),
     ...(stripped ? ['', 'Some details were left out because they looked like a credential.'] : []), ...logLines(f), ...footer(f)].join('\n')
@@ -444,7 +614,8 @@ function readDiff(workspace) {
 function readLog(env, workspace) {
   if (!env.CLAUDE_EXECUTION_FILE || !existsSync(env.CLAUDE_EXECUTION_FILE)) return null
   try {
-    return summarizeExecution(readExecutionEvents(env.CLAUDE_EXECUTION_FILE), workspace)
+    const events = readExecutionEvents(env.CLAUDE_EXECUTION_FILE)
+    return { ...summarizeExecution(events, workspace), shape: describeShape(events) }
   } catch {
     return null
   }
@@ -456,7 +627,7 @@ export function buildFacts(env, nowMs) {
   const diffText = readDiff(workspace)
   const sections = diffSections(diffText)
   let coverage = null
-  if (log && sections.length > 0) coverage = log.results === 0 ? 'unknown' : diffCoverage(sections, log.ranges)
+  if (log && sections.length > 0) coverage = log.results === 0 ? 'unknown' : { ...diffCoverage(sections, log.ranges), atLeast: log.unmeasurable }
   let detail = env.STATUS_DETAIL ?? ''
   const timeoutMinutes = intOrNull(env.REVIEW_TIMEOUT_MINUTES) ?? 15
   if (env.STATUS_STATE === 'failed' && !detail.startsWith('publication') && reviewTimedOut({
@@ -488,6 +659,19 @@ function parseStructured(text) {
   }
 }
 
+// The shape of the execution log goes to the job log, never to the pull request. The job log of a
+// public repository is public, so text that looks like a credential is not printed here either.
+function printShape(lines) {
+  if (!lines) return
+  if (lines.some((line) => CREDENTIAL.test(line))) {
+    console.log('The execution log shape looked like it contained a credential, so it was not printed.')
+    return
+  }
+  console.log('::group::AI review execution log shape (structure only, no content)')
+  for (const line of lines) console.log(line)
+  console.log('::endgroup::')
+}
+
 // The status comment must never hold up a verdict, so the whole update has a deadline.
 const DEADLINE_MS = 60000
 
@@ -512,7 +696,9 @@ export async function runCli(mode, env = process.env, api = createApi(env.GH_TOK
         console.log(`::warning::AI review start time was not recorded: ${error.code ?? error.message}`)
       }
     }
-    const body = renderStatus(buildFacts({ ...env, STATUS_STATE: state }, nowMs))
+    const facts = buildFacts({ ...env, STATUS_STATE: state }, nowMs)
+    if (mode === 'final') printShape(facts.log?.shape)
+    const body = renderStatus(facts)
     await withDeadline(upsertComment(api, { repository: env.GITHUB_REPOSITORY, number: env.PR_NUMBER, marker: STATUS_MARKER, body }), deadlineMs)
     console.log(`AI review status comment updated: ${state}`)
   } catch (error) {
