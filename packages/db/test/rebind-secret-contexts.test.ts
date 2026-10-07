@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,5 +98,23 @@ describe("rebindSecretContexts", () => {
       "https://hooks.example.com/x",
     );
     expect(() => decryptFromString(settings.webhook_url_enc ?? "", SECRET_CONTEXTS.imapPassword)).toThrow();
+  });
+
+  it("does not overwrite a secret rotated after the row was read", async () => {
+    const row = await prisma.mailSettings.create({
+      data: { scope_type: "organization", scope_id: "org-rotated", smtp_password_enc: encryptToString("old-pw") },
+    });
+    const rotated = encryptToString("new-pw", SECRET_CONTEXTS.smtpPassword);
+    const realFindMany = prisma.mailSettings.findMany.bind(prisma.mailSettings);
+    const spy = vi.spyOn(prisma.mailSettings, "findMany").mockImplementationOnce(async (args) => {
+      const stale = await realFindMany(args);
+      await prisma.mailSettings.update({ where: { id: row.id }, data: { smtp_password_enc: rotated } });
+      return stale;
+    });
+    const results = await rebindSecretContexts(prisma);
+    spy.mockRestore();
+    expect(results.find((r) => r.column === "MailSettings.smtp_password_enc")).toMatchObject({ rewritten: 0 });
+    const after = await prisma.mailSettings.findUniqueOrThrow({ where: { id: row.id } });
+    expect(decryptFromString(after.smtp_password_enc ?? "", SECRET_CONTEXTS.smtpPassword)).toBe("new-pw");
   });
 });

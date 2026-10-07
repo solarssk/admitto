@@ -8,7 +8,8 @@ type Column = {
   name: string;
   context: string;
   read: (prisma: PrismaClient) => Promise<Row[]>;
-  write: (prisma: PrismaClient, id: string, value: string) => Promise<unknown>;
+  // Conditional on the column still holding `from`, so a rotation saved meanwhile is never overwritten.
+  write: (prisma: PrismaClient, id: string, from: string, to: string) => Promise<{ count: number }>;
 };
 
 const mailColumn = (
@@ -25,7 +26,8 @@ const mailColumn = (
     // eslint-disable-next-line security/detect-object-injection
     return rows.map((r) => ({ id: String(r["id"]), value: String(r[col]) }));
   },
-  write: (prisma, id, value) => prisma.mailSettings.update({ where: { id }, data: { [col]: value } }),
+  write: (prisma, id, from, to) =>
+    prisma.mailSettings.updateMany({ where: { id, [col]: from }, data: { [col]: to } }),
 });
 
 const COLUMNS: Column[] = [
@@ -40,7 +42,8 @@ const COLUMNS: Column[] = [
     read: async (prisma) =>
       (await prisma.event.findMany({ where: { wallet_api_key_enc: { not: null } }, select: { id: true, wallet_api_key_enc: true } }))
         .map((r) => ({ id: r.id, value: r.wallet_api_key_enc as string })),
-    write: (prisma, id, value) => prisma.event.update({ where: { id }, data: { wallet_api_key_enc: value } }),
+    write: (prisma, id, from, to) =>
+      prisma.event.updateMany({ where: { id, wallet_api_key_enc: from }, data: { wallet_api_key_enc: to } }),
   },
   {
     name: "BounceIngestSettings.imap_password_enc",
@@ -48,7 +51,8 @@ const COLUMNS: Column[] = [
     read: async (prisma) =>
       (await prisma.bounceIngestSettings.findMany({ where: { imap_password_enc: { not: null } }, select: { id: true, imap_password_enc: true } }))
         .map((r) => ({ id: r.id, value: r.imap_password_enc as string })),
-    write: (prisma, id, value) => prisma.bounceIngestSettings.update({ where: { id }, data: { imap_password_enc: value } }),
+    write: (prisma, id, from, to) =>
+      prisma.bounceIngestSettings.updateMany({ where: { id, imap_password_enc: from }, data: { imap_password_enc: to } }),
   },
   {
     name: "NotificationSettings.webhook_url_enc",
@@ -56,7 +60,8 @@ const COLUMNS: Column[] = [
     read: async (prisma) =>
       (await prisma.notificationSettings.findMany({ where: { webhook_url_enc: { not: null } }, select: { id: true, webhook_url_enc: true } }))
         .map((r) => ({ id: r.id, value: r.webhook_url_enc as string })),
-    write: (prisma, id, value) => prisma.notificationSettings.update({ where: { id }, data: { webhook_url_enc: value } }),
+    write: (prisma, id, from, to) =>
+      prisma.notificationSettings.updateMany({ where: { id, webhook_url_enc: from }, data: { webhook_url_enc: to } }),
   },
 ];
 
@@ -77,11 +82,10 @@ export async function rebindSecretContexts(
     for (const row of await column.read(prisma)) {
       try {
         const { value, changed } = rebindToContext(row.value, column.context);
-        if (!changed) result.alreadyBound += 1;
-        else {
-          if (!dryRun) await column.write(prisma, row.id, value);
-          result.rewritten += 1;
-        }
+        // A row rotated since it was read already holds a bound value: nothing to rewrite.
+        const written = changed && !dryRun ? (await column.write(prisma, row.id, row.value, value)).count : 1;
+        if (changed && written > 0) result.rewritten += 1;
+        else result.alreadyBound += 1;
       } catch {
         result.failed += 1;
       }
