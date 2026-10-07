@@ -10,7 +10,8 @@ import type {
   MailTransportTestSendResponse,
 } from "../../src/api/types.js";
 import { WizardProvider } from "../../src/pages/wizard/WizardContext.js";
-import { isOff, renderWithToast } from "../test-utils.js";
+import { advanceTimers, deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -97,15 +98,102 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("WizardStep2Mail delayed loading", () => {
-  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+describe("WizardStep2Mail first read", () => {
+  const placeholder = () => screen.queryByRole("status", { name: "Loading mail settings" });
+
+  it("holds the form's room invisibly for 200ms, then draws a placeholder of its shape, and says it is taking longer after 8 seconds", async () => {
     vi.useFakeTimers();
+    mockFetch.mockImplementationOnce(hangUntilAborted as never);
     renderStep();
-    act(() => {
-      vi.advanceTimersByTime(200);
+    await advanceTimers(0);
+
+    expect((placeholder() as HTMLElement).classList.contains("at-loading-hold")).toBe(true);
+    expect(screen.queryByText("Loading mail settings…")).toBeNull();
+    await advanceTimers(200);
+    expect((placeholder() as HTMLElement).classList.contains("at-loading-hold")).toBe(false);
+    await advanceTimers(7_799);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+  });
+
+  it("never draws the placeholder for an answer that comes within 200ms", async () => {
+    vi.useFakeTimers();
+    mockFetch.mockResolvedValueOnce(smtpResponse());
+    renderStep();
+    await advanceTimers(0);
+
+    expect(placeholder()).toBeNull();
+    expect(screen.getByLabelText("SMTP host")).toBeTruthy();
+  });
+
+  it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus, and hands the focus to the step's body when it works", async () => {
+    vi.useFakeTimers();
+    mockFetch.mockImplementationOnce(hangUntilAborted as never);
+    renderWithToast(
+      <div className="setup-wizard__body">
+        <WizardProvider>
+          <WizardStep2Mail />
+        </WizardProvider>
+      </div>,
+    );
+    await advanceTimers(0);
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+    expect(screen.queryByLabelText("SMTP host")).toBeNull();
+
+    const answer = deferred<MailSettingsResponse>();
+    mockFetch.mockReturnValueOnce(answer.promise);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(500);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+
+    await act(async () => answer.resolve(smtpResponse()));
+    await advanceTimers(500);
+    expect(screen.getByLabelText("SMTP host")).toBeTruthy();
+    expect(document.activeElement).toBe(document.querySelector(".setup-wizard__body"));
+  });
+
+  it("announces a Retry that fails again with the same message: the message is mounted afresh in its live region", async () => {
+    vi.useFakeTimers();
+    mockFetch.mockRejectedValueOnce(new Error("network down")).mockRejectedValueOnce(new Error("network down"));
+    renderStep();
+    await advanceTimers(0);
+
+    const message = () => screen.getByRole("alert").querySelector(".at-notice__body");
+    const first = message();
+    expect(first?.textContent).toContain("Could not load mail settings.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    // The 400ms minimum of the busy Retry ends in a timer that is set when the answer is in.
+    await advanceTimers(400);
+
+    expect(message()?.textContent).toContain("Could not load mail settings.");
+    expect(message()).not.toBe(first);
+  });
+
+  it("does not save anything before the read has answered, and tells the step to stay", async () => {
+    vi.useFakeTimers();
+    mockFetch.mockImplementationOnce(hangUntilAborted as never);
+    const ref = createRef<WizardStep2MailHandle>();
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep2Mail ref={ref} />
+      </WizardProvider>,
+    );
+    await advanceTimers(0);
+
+    let saved = true;
+    await act(async () => {
+      saved = await ref.current!.saveAndContinue();
     });
-    expect(screen.getByText("Loading mail settings…")).toBeTruthy();
+    expect(saved).toBe(false);
+    expect(mockSave).not.toHaveBeenCalled();
   });
 });
 

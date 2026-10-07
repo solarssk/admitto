@@ -279,18 +279,6 @@
   color: var(--status-warn);
 }
 
-.setup-wizard__check-item-icon .setup-wizard__check-spin {
-  color: var(--text-muted, var(--text-secondary));
-}
-
-.setup-wizard__check-spin {
-  display: inline-block;
-  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
-     spinner.css) instead of a one-off — always loaded globally via the shell. */
-  animation: at-spin 0.9s linear infinite;
-  color: var(--text-muted, var(--text-secondary));
-}
-
 .setup-wizard__check-item-main {
   flex: 1;
   min-width: 0;
@@ -346,6 +334,25 @@
 .setup-wizard__check-retry {
   border-color: var(--status-error) !important;
   color: var(--status-error) !important;
+}
+
+/* The placeholder of a step while its first read runs (WizardStepLoad.tsx): the shapes of what will be there. */
+.setup-wizard__placeholder {
+  display: block;
+}
+
+.setup-wizard__placeholder-note {
+  display: block;
+  padding-top: 0.75rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* The logo's area of the branding step as grey shapes: the rhythm of the real one (LogoUploadZone: a 12px gap). */
+.setup-wizard__placeholder-logo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .setup-wizard__field {

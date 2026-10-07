@@ -8,7 +8,7 @@ import {
   type WizardStep4EventHandle,
 } from "../../src/pages/wizard/WizardStep4Event.js";
 import { WizardProvider } from "../../src/pages/wizard/WizardContext.js";
-import { renderWithToast } from "../test-utils.js";
+import { deferred, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -126,6 +126,37 @@ describe("WizardStep4Event", () => {
     );
 
     await waitFor(() => expect(onHasExistingEventsChange).toHaveBeenCalledWith(false));
+  });
+
+  it("says the check for existing events failed, instead of passing for no events, with a Retry that reruns that lookup only", async () => {
+    const onHasExistingEventsChange = vi.fn();
+    const answer = deferred<{ id: string; title: string }[]>();
+    mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down")).mockReturnValueOnce(answer.promise as never);
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event onCanContinueChange={() => {}} onHasExistingEventsChange={onHasExistingEventsChange} />
+      </WizardProvider>,
+    );
+
+    // While the lookup is on its way the page is told nothing: "no events" is only for an answer.
+    expect(onHasExistingEventsChange).not.toHaveBeenCalled();
+    expect(await screen.findByText("Could not check for existing events.")).toBeTruthy();
+    // The form is there meanwhile, and the step is not told that there are events.
+    expect(screen.getByLabelText(/Event name/)).toBeTruthy();
+    expect(onHasExistingEventsChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByText(/You already have/)).toBeNull();
+
+    const retry = screen.getByRole("button", { name: "Retry checking for existing events" });
+    fireEvent.click(retry);
+    await act(async () => {});
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Could not check for existing events.")).toBeTruthy();
+
+    await act(async () => answer.resolve([{ id: "evt-1", title: "Existing event" }]));
+    expect(screen.queryByText("Could not check for existing events.")).toBeNull();
+    expect(screen.getByText(/You already have\s+an event/)).toBeTruthy();
+    expect(onHasExistingEventsChange).toHaveBeenLastCalledWith(true);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
   });
 
   it("reports and summarizes the sole existing event", async () => {

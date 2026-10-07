@@ -1,13 +1,11 @@
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useId,
   useImperativeHandle,
-  useRef,
   useState,
 } from "react";
-import { Button, Input, Notice, Switch, useToast } from "@admitto/ui";
+import { Button, Input, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
   fetchMailSettings,
   saveMailSettings,
@@ -28,8 +26,9 @@ import {
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
 import { draftFromFields, ValidationErrorList } from "../../settings/mailTransportFormParts.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
-import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
+import { panelView, usePanelLoad } from "../../hooks/usePanelLoad.js";
 import { useWizard } from "./WizardContext.js";
+import { WizardRetryNotice, WizardStepPlaceholder } from "./WizardStepLoad.js";
 
 export type WizardStep2MailHandle = {
   saveAndContinue: () => Promise<boolean>;
@@ -49,13 +48,9 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const [apiData, setApiData] = useState<MailSettingsResponse | null>(null);
     const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
     const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [testSending, setTestSending] = useState(false);
     const [testSent, setTestSent] = useState(false);
-    const [reloadToken, setReloadToken] = useState(0);
-    const loadAbortRef = useRef<AbortController | null>(null);
 
     const fieldLocked = useCallback(
       (key: keyof MailSettingsResponse["fields"]): boolean => {
@@ -73,26 +68,14 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
       setValidationErrors([]);
     }, []);
 
-    useEffect(() => {
-      loadAbortRef.current?.abort();
-      const ac = new AbortController();
-      loadAbortRef.current = ac;
-      setLoading(true);
-      setLoadError(null);
-      void (async () => {
-        try {
-          const data = await fetchMailSettings(ac.signal);
-          if (ac.signal.aborted) return;
-          applyResponse(data);
-        } catch (err) {
-          if (ac.signal.aborted) return;
-          setLoadError(operatorApiErrorMessage(err, "Could not load mail settings."));
-        } finally {
-          if (!ac.signal.aborted) setLoading(false);
-        }
-      })();
-      return () => ac.abort();
-    }, [applyResponse, reloadToken]);
+    // The first read of the step: a placeholder of the form's shape after 200ms, an error with a busy Retry after 30 seconds
+    // or when it fails (never a blank step), and the form once the answer is in.
+    const panel = usePanelLoad({
+      fetch: fetchMailSettings,
+      apply: applyResponse,
+      fallback: "Could not load mail settings.",
+    });
+    const view = panelView(panel);
 
     const updateDraft = (patch: Partial<MailDraft>) => {
       setDraft((prev) => ({ ...prev, ...patch }));
@@ -181,10 +164,6 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     );
 
     const provider = draft.provider;
-    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-    // the "Loading…" text on and off faster than it can register as loading — show it only
-    // once the fetch has genuinely taken a moment.
-    const showLoading = useDelayedLoading(loading);
 
     return (
       <>
@@ -192,23 +171,21 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
           Choose how Admitto sends ticket and lifecycle emails.
         </p>
 
-        {loading && showLoading && <p className="setup-wizard__hint">Loading mail settings…</p>}
-
-        {!loading && loadError && (
-          <Notice
-            variant="error"
-            role="alert"
-            action={
-              <Button type="button" variant="secondary" onClick={() => setReloadToken((t) => t + 1)}>
-                Retry
-              </Button>
-            }
-          >
-            {loadError}
-          </Notice>
+        {view === "loading" && (
+          <WizardStepPlaceholder label="Loading mail settings" held={!panel.gate.showIndicator} slow={panel.slow}>
+            <MailStepSkeleton />
+          </WizardStepPlaceholder>
         )}
 
-        {!loading && apiData && (
+        {view === "error" && panel.error && (
+          <WizardRetryNotice retrying={panel.retrying} onRetry={panel.retry}>
+            <strong>Could not load mail settings</strong>
+            <br />
+            {panel.error}
+          </WizardRetryNotice>
+        )}
+
+        {view === "ready" && apiData && (
           <>
             <ValidationErrorList errors={validationErrors} className="setup-wizard__error-list" />
 
@@ -387,6 +364,16 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     );
   },
 );
+
+/** The shape of the form before it is known which transport is chosen: the transport's label and its select. */
+function MailStepSkeleton() {
+  return (
+    <div className="at-field">
+      <Skeleton variant="rect" width={96} height={17} />
+      <Skeleton variant="rect" height={38} />
+    </div>
+  );
+}
 
 function MailTestControl({
   testSending,
