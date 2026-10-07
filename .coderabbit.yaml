@@ -12,3 +12,15 @@ reviews:
   # than something worth restating per PR. review_status controls exactly these skip-status
   # messages (CodeRabbit's own config reference, "reviews.review_status").
   review_status: false
+  tools:
+    eslint:
+      # CodeRabbit's own ESLint run fails on every PR with "typescript-eslint does not support TS 7.0", so every file
+      # ends up "ESLint skipped: config-incompatibility" and the review carries an error block (our workspaces declare
+      # typescript ^7, which typescript-eslint cannot load yet, typescript-eslint#10940). CI runs ESLint itself
+      # (npm run lint, --max-warnings 0), so nothing is lost. Turn it back on once typescript-eslint supports TS 7.
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      # The default 80% docstring coverage kept raising a warning: this repo comments what is not obvious instead of
+      # documenting every function, so the number says nothing about a change.
+      mode: "off"
