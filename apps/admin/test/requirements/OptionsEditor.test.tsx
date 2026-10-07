@@ -262,6 +262,29 @@ describe("OptionsEditor: counts that are being read, and a save under way", () =
     for (const remove of screen.getAllByRole("button", { name: "Remove option" })) expect((remove as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("keeps the bars for their minimum time when the counts come just after they were drawn, then shows the counts", async () => {
+    vi.useFakeTimers();
+    const rows = optionRowsFromOptions(["S", "M"]);
+    const { rerender } = render(<OptionsEditor rows={rows} usageCounts={null} usageLoading onChange={vi.fn()} />);
+    await advanceTimers(250);
+    expect(bars().some((bar) => !bar.classList.contains("at-loading-hold"))).toBe(true);
+
+    // The answer comes at 250ms, 50ms after the bars were drawn: they stay until 400ms after that (600ms), and the buttons
+    // that depend on the counts work as soon as they are in.
+    rerender(<OptionsEditor rows={rows} usageCounts={{ S: 2 }} usageLoading={false} onChange={vi.fn()} />);
+    await advanceTimers(0);
+    expect(bars()).toHaveLength(2);
+    expect(screen.queryByText("2 attendees")).toBeNull();
+    for (const remove of screen.getAllByRole("button", { name: "Remove option" })) expect((remove as HTMLButtonElement).disabled).toBe(false);
+    await advanceTimers(340);
+    expect(bars()).toHaveLength(2);
+
+    await advanceTimers(60);
+    expect(bars()).toHaveLength(0);
+    expect(screen.getByText("2 attendees")).toBeTruthy();
+    expect(screen.getByText("Unused")).toBeTruthy();
+  });
+
   it("keeps an option's field focusable but read-only while a save is under way, and switches the other controls off", () => {
     render(<OptionsEditor rows={optionRowsFromOptions(["S"])} usageCounts={{}} disabled onChange={vi.fn()} />);
     const input = screen.getByLabelText("Option text") as HTMLInputElement;

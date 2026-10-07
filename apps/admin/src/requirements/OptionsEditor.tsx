@@ -229,9 +229,13 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
           const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
           const risky = (blanked || renamed) && usage > 0;
           const usageKnown = usageCounts !== null;
-          let usageLabel: ReactNode = "Unused";
-          if (!usageKnown) usageLabel = usageGate.showContent ? "Unknown" : <UsageSkeleton held={!usageGate.showIndicator} />;
+          // What the row says is gated on the placeholder having had its minimum time (`showContent`), not only on the counts
+          // being in: an answer that comes just after the 200ms would otherwise show its bar for a few frames and flash.
+          let usageLabel: ReactNode;
+          if (!usageGate.showContent) usageLabel = <UsageSkeleton held={!usageGate.showIndicator} />;
+          else if (!usageKnown) usageLabel = "Unknown";
           else if (usage > 0) usageLabel = `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
+          else usageLabel = "Unused";
 
           if (confirmingKey === row.key) {
             return (
