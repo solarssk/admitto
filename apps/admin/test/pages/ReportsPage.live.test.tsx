@@ -5,7 +5,16 @@ import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from 
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import type { EventReportsResponse } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
-import { connectionStateValue, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import {
+  advanceTimers,
+  connectionStateValue,
+  deferred,
+  hangUntilAborted,
+  isOff,
+  mockMatchMedia,
+  renderWithToast,
+} from "../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -771,5 +780,232 @@ describe("ReportsPage — wallet platform gating", () => {
     });
     expect(screen.queryByRole("tab", { name: "Wallets" })).toBeNull();
     expect(fetchEventWalletReports).not.toHaveBeenCalled();
+  });
+});
+
+const placeholder = () => screen.queryByRole("status", { name: "Loading the report" });
+const eventDayRegion = () => screen.getByRole("region", { name: "Event day report" });
+
+describe("ReportsPage: what the page does not read", () => {
+  it("says there is no event when the route has none, without reading anything", () => {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/reports"]}>
+        <Routes>
+          <Route path="/admin/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Missing event.")).toBeTruthy();
+    expect(fetchEventReports).not.toHaveBeenCalled();
+  });
+
+  it("says there is no capacity set on the total attendees tile when the event has none", async () => {
+    fetchEventReports.mockResolvedValue(
+      reportFixture(5, { event: { id: "evt-1", title: "Demo Event", date: "2026-07-01T18:00:00.000Z", capacity: null } }),
+    );
+    renderPage();
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+    expect(screen.getByText("No capacity set")).toBeTruthy();
+  });
+});
+
+describe("ReportsPage: the first read of Event day", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchEventReports.mockReset();
+    // A read that a test has not set up hangs, instead of answering with nothing.
+    fetchEventReports.mockImplementation(hangUntilAborted as never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the report's room invisibly for 200ms, then draws grey cards with their real titles, and says it is taking longer after 8 seconds", async () => {
+    renderPage();
+    await advanceTimers(0);
+
+    const held = placeholder() as HTMLElement;
+    expect(held.classList.contains("at-loading-hold")).toBe(true);
+    for (const title of ["Total attendees", "Admitted", "No-shows", "Peak hour", "Hourly admissions", "By ticket type", "Check-in details", "Attendance confirmation", "Check-in method", "By operator", "Admission log"]) {
+      expect(within(held).getByText(title)).toBeTruthy();
+    }
+    // The shapes are decoration; nothing claims that there are no check-ins; there is nothing to export yet.
+    expect(held.querySelector(".reports-skeleton")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.queryByText("No check-ins yet")).toBeNull();
+    expect(isOff(screen.getByRole("button", { name: /Export/ }))).toBe(true);
+    await advanceTimers(200);
+    expect((placeholder() as HTMLElement).classList.contains("at-loading-hold")).toBe(false);
+    await advanceTimers(7_799);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+  });
+
+  it("never draws the placeholder for an answer that comes within 200ms", async () => {
+    fetchEventReports.mockResolvedValueOnce(reportFixture(5));
+    renderPage();
+    await advanceTimers(0);
+
+    expect(placeholder()).toBeNull();
+    expect(admittedValue()).toBe("5");
+    expect(isOff(screen.getByRole("button", { name: /Export/ }))).toBe(false);
+  });
+
+  it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus, and hands the focus to Event day's region when it works", async () => {
+    fetchEventReports.mockImplementationOnce(hangUntilAborted as never);
+    renderPage();
+    await advanceTimers(0);
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+    expect(screen.getByRole("alert").textContent).toContain("Could not load report");
+    expect(isOff(screen.getByRole("button", { name: /Export/ }))).toBe(true);
+
+    const answer = deferred<EventReportsResponse>();
+    fetchEventReports.mockReturnValueOnce(answer.promise);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(500);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+    expect(placeholder()).toBeNull();
+
+    await act(async () => answer.resolve(reportFixture(5)));
+    await advanceTimers(500);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(admittedValue()).toBe("5");
+    expect(document.activeElement).toBe(eventDayRegion());
+  });
+
+  it("announces a Retry that fails again with the same message: the message is mounted afresh in its live region", async () => {
+    fetchEventReports.mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline"));
+    renderPage();
+    await advanceTimers(0);
+
+    const first = screen.getByText("Could not load report data.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    // The 400ms minimum of the busy Retry ends in a timer that is set when the answer is in.
+    await advanceTimers(400);
+
+    expect(screen.getByText("Could not load report data.")).not.toBe(first);
+  });
+
+  it("says the viewer has no access on a 403, with a Retry, and tells the connection state", async () => {
+    fetchEventReports.mockRejectedValueOnce(new MockApiError(403, "forbidden"));
+    renderPage();
+    await advanceTimers(0);
+
+    expect(screen.getByRole("alert").textContent).toContain("You do not have access to this event.");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(reportApiError).toHaveBeenCalledWith(403);
+  });
+
+  it("hands the browser to the login page on a 401, instead of flashing an error first", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/reports" });
+    fetchEventReports.mockRejectedValueOnce(new MockApiError(401, "unauthenticated"));
+    renderPage();
+    await advanceTimers(0);
+
+    expect(assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
+    expect(reportApiError).toHaveBeenCalledWith(401);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("starts from the answer when a Retry works, without the live check-ins that were counted while the page was in error, and cancels the refresh they scheduled", async () => {
+    fetchEventReports.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(reportFixture(5));
+    renderPage();
+    await advanceTimers(0);
+    expect(screen.getByRole("alert")).toBeTruthy();
+
+    // A live check-in arrives while the read has failed: it is counted, and a refresh is scheduled for 3 seconds on.
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    expect(admittedValue()).toBe("5");
+
+    await advanceTimers(5_000);
+    expect(fetchEventReports).toHaveBeenCalledTimes(2);
+    expect(admittedValue()).toBe("5");
+  });
+
+  it("is a fresh page for another event, with a placeholder instead of the previous event's numbers", async () => {
+    fetchEventReports.mockImplementation(async (eventId: string) => {
+      if (eventId === "evt-b") return new Promise<never>(() => {});
+      return reportFixture(5);
+    });
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/reports", element: <ReportsPage /> }], {
+      initialEntries: ["/admin/events/evt-a/reports"],
+    });
+    renderWithToast(<RouterProvider router={router} />);
+    await advanceTimers(0);
+    expect(admittedValue()).toBe("5");
+
+    await act(async () => {
+      await router.navigate("/admin/events/evt-b/reports");
+    });
+    await advanceTimers(0);
+
+    expect(placeholder()).not.toBeNull();
+    expect(admittedValue()).toBe("");
+  });
+});
+
+describe("ReportsPage: the export", () => {
+  beforeEach(() => {
+    fetchEventReports.mockReset();
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    exportEventReportsCsv.mockReset();
+  });
+
+  /** Opens the menu with the keyboard's focus on its trigger, and presses CSV. */
+  async function pressCsv(): Promise<HTMLElement> {
+    const trigger = screen.getByRole("button", { name: /Export/ });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+    await act(async () => {});
+    return trigger;
+  }
+
+  it("shows a CSV export at work on the Export button, which keeps its place, and keeps the menu shut until the file is in", async () => {
+    const file = deferred<void>();
+    exportEventReportsCsv.mockReturnValueOnce(file.promise);
+    renderPage();
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+
+    const trigger = await pressCsv();
+    expect(trigger.getAttribute("aria-busy")).toBe("true");
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+    expect(trigger.textContent).toContain("Export report");
+    expect(document.activeElement).toBe(trigger);
+    // A second press does not open the menu, so there is no second export.
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(exportEventReportsCsv).toHaveBeenCalledTimes(1);
+
+    await act(async () => file.resolve());
+    expect(trigger.getAttribute("aria-busy")).toBeNull();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("brings the Export button back, with its focus, when the export fails", async () => {
+    exportEventReportsCsv.mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+
+    const trigger = await pressCsv();
+    await waitFor(() => expect(trigger.getAttribute("aria-busy")).toBeNull());
+
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByText("Export failed.")).toBeTruthy();
   });
 });

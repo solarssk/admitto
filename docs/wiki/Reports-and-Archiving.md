@@ -80,6 +80,7 @@ An export creates a separate file outside Admitto and must be handled accordingl
 
 - **The archive control is disabled:** it is Superadmin-only.
 - **A report time looks unexpected:** check the event time zone and active filters.
+- **Event day shows grey cards, says "Taking longer than usual", or "Could not load report":** the report is being read from the server. The header, the tabs and **Export report** (which waits for the report) stay on screen, and the tab shows grey cards of its own shape. After 30 seconds it stops waiting and shows an error with a **Retry** button; the button stays on screen, busy, until the answer is in. Once the report is there, live check-ins update it as they happen. **Export report** shows a spinner while a CSV file is being made, and its menu opens again when the file is in.
 - **The report does not show an expected admission:** review the attendee activity and the operator's scan result before editing data.
 - **More work is needed after archiving:** ask a Superadmin to verify the reason and restore the event. A Superadmin can select **Restore event** in the archived notice on the event's **Overview** page and confirm, or use **Restore event** in **Event settings** → **Danger zone**. Other roles see the notice without the button.
 

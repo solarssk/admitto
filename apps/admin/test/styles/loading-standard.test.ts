@@ -31,10 +31,6 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
     count: 1,
     reason: "The remove-file chip; the busy control is Validate or Commit, not the chip.",
   },
-  "apps/admin/src/pages/ReportsPage.tsx": {
-    count: 1,
-    reason: "An export row of a menu that closes on click, so the pressed row is gone while it is busy.",
-  },
   "apps/admin/src/pages/users/UserEditModal.tsx": {
     count: 2,
     reason: "The remove chips; the busy control is Save, not the chips.",
@@ -62,7 +58,6 @@ const ALLOWED: Record<Rule, Counts> = {
   },
   "busy-label-swap": {
     "apps/admin/src/pages/EventOverviewPage.tsx": 3,
-    "apps/admin/src/pages/ReportsPage.tsx": 1,
     "apps/admin/src/pages/RequirementsPage.tsx": 1,
     "apps/admin/src/requirements/EventItemDrawer.tsx": 1,
   },
