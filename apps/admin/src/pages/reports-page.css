@@ -201,9 +201,10 @@
   margin-top: 1px;
 }
 
-/* The Event day report below the tabs (the report, its placeholder and its error) is one column with the same rhythm as
- * .screen, so what a stack of sections looked like as direct children of the screen is kept. */
-.reports-eventday {
+/* The Event day report below the tabs, and each of the other tabs (the report, its placeholder and its error), is one column
+ * with the same rhythm as .screen, so what a stack of sections looked like as direct children of the screen is kept. */
+.reports-eventday,
+.reports-tab {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -216,8 +217,35 @@
   pointer-events: none;
 }
 
+/* The lines of a card's description are bars with margins, so that their pitch is the leading of the text (a flex column keeps
+ * the margins from collapsing into each other). */
+.reports-skeleton .wallets-description {
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-skeleton .wallets-description > .at-skeleton {
+  margin: 3.75px 0;
+}
+
 .reports-skeleton .reports-chart__count {
   min-height: 15px;
+}
+
+/* The two lines under a comparison's ring (its label and its figure) and the lines of a stage of the journey are bars with the
+ * margins and the leading of the text they stand for, and a stage's heading is as tall as its figure's line. */
+.reports-skeleton .wallets-compare-group > .at-skeleton:nth-child(2) {
+  margin: 6.75px 0 2.75px;
+}
+
+.reports-skeleton .wallets-compare-group > .at-skeleton:nth-child(3),
+.reports-skeleton .mail-funnel__body > .at-skeleton {
+  margin: 5px 0 3px;
+}
+
+.reports-skeleton .mail-funnel__head {
+  align-items: center;
+  min-height: 24px;
 }
 
 .reports-skeleton .reports-chart__label {
@@ -237,12 +265,6 @@
   align-items: center;
   justify-content: space-between;
   min-height: 57px;
-}
-
-.reports-tab-loading {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-7) var(--space-4);
 }
 
 .reports-panels {
@@ -632,8 +654,9 @@
 /* ---- Wallets tab ----
    No page-scoped tab bar or margin hacks here: the tab strip is the shared @admitto/ui <Tabs>
    component (.at-tabs, styled + spaced by packages/ui/src/styles/shell.css), and every card
-   below is a direct child of .screen, which already applies the standard 18px gap between
-   siblings (shell.css) - adding a per-card margin here would double up on that gap. */
+   below sits in the tab's own section (.reports-tab, one column with the same 18px gap
+   between siblings as .screen, shell.css) - adding a per-card margin here would double up on
+   that gap. */
 
 /* Even 50/50 split, not .reports-panels' 1.2fr/1fr - that ratio exists for Event Day's own
    "Hourly admissions" card specifically (it can show up to 24 hourly bars, see the comment on

@@ -1,8 +1,5 @@
-import { memo } from "react";
-import { Button, Card, EmptyState } from "@admitto/ui";
-import { fetchEventMailReports } from "../api/client.js";
+import { Card, EmptyState } from "@admitto/ui";
 import type { EventMailReportsResponse } from "../api/types.js";
-import { useReportFetch } from "../hooks/useReportFetch.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 import {
   ReportsAdmissionCompare,
@@ -157,44 +154,9 @@ function EventJourneyFunnel({ funnel }: Readonly<{ funnel: EventMailReportsRespo
   );
 }
 
-// Memoized and kept mounted once visited, same reasoning as WalletsReportsTab.tsx/
-// CustomFieldsReportsTab.tsx: ReportsPage re-renders on every live check-in (Event Day's SSE
-// feed), and this tab stays mounted underneath even while Event Day is the visible one.
-// `isActive` still changes on tab switch though, and memo's shallow prop comparison re-renders on
-// that - each chart only mounts its ResponsiveContainer while isActive is true (see
-// ReportsDonutChart's own comment in reports-charts.tsx).
-export const MailReportsTab = memo(function MailReportsTab({
-  eventId,
-  isActive,
-}: Readonly<{ eventId: string; isActive: boolean }>) {
-  const { data, loading, error, showLoadingSkeleton, retry } = useReportFetch(
-    fetchEventMailReports,
-    eventId,
-    "Could not load mail report.",
-  );
-
-  if (loading && showLoadingSkeleton) {
-    return <p className="wallets-description">Loading mail report…</p>;
-  }
-
-  if (!loading && error) {
-    return (
-      <EmptyState
-        variant="error"
-        icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-        title="Could not load mail report"
-        description={error}
-        action={
-          <Button variant="secondary" onClick={retry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (!data) return null;
-
+/** The mail report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
+ * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
+export function MailReport({ data, isActive }: Readonly<{ data: EventMailReportsResponse; isActive: boolean }>) {
   return (
     <>
       {data.delivery.total_attempts === 0 ? (
@@ -315,4 +277,4 @@ export const MailReportsTab = memo(function MailReportsTab({
       </div>
     </>
   );
-});
+}
