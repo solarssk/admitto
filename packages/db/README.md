@@ -40,6 +40,7 @@ npm run db:seed
 | `db:backfill-public-ref` | Idempotent TS backfill for agency rows missing `public_ref` (also runs at end of `db:migrate`) |
 | `db:backfill-event-custom-fields` | Idempotent backfill of the per-event custom-field registry (also runs during `db:migrate`) |
 | `db:backfill-ticket-types` | Idempotent backfill of the per-event ticket-type catalog (also runs during `db:migrate`) |
+| `db:rebind-secret-contexts` | Manual, never part of `db:migrate`: rewrites legacy encrypted secret columns (mail credentials, event wallet API key, IMAP bounce password, notification webhook URL) as purpose-bound values. `-- --dry-run` previews; exits 1 if a value cannot be decrypted. Rewritten values cannot be read by an older release |
 | `db:seed` | Inserts the default organization, 1 event (with a location) and 4 attendees (upsert by `(event_id, email)` - mirrors real import logic). Refuses to run when `NODE_ENV=production` |
 
 From repo root, `npm run db:test-setup` creates the `admitto_*_test` databases the package tests use

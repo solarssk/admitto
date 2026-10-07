@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
-import { encryptToString } from "@admitto/crypto";
+import { encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import type { WebhookKind } from "./channels/webhook.js";
 import type { NotificationChannelKey } from "./types.js";
 
@@ -209,7 +209,7 @@ export async function patchNotificationSettings(
   } else if (patch.webhookUrl.trim() === "") {
     webhookUrlEnc = null;
   } else {
-    webhookUrlEnc = encryptToString(patch.webhookUrl.trim());
+    webhookUrlEnc = encryptToString(patch.webhookUrl.trim(), SECRET_CONTEXTS.notificationWebhookUrl);
   }
 
   let nextRecipients: NotificationEmailRecipient[] | undefined;

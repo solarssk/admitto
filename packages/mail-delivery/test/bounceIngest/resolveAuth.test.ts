@@ -14,6 +14,7 @@ import {
 
 vi.mock("@admitto/crypto", () => ({
   decryptFromString: vi.fn(),
+  SECRET_CONTEXTS: { imapPassword: "admitto:bounce-imap-password" },
 }));
 
 vi.mock("@admitto/mailer-config", () => ({
@@ -120,7 +121,7 @@ describe("resolveImapConnectConfig", () => {
       user: "bounce@example.com",
       password: "s3cret",
     });
-    expect(decryptFromString).toHaveBeenCalledWith("enc-blob");
+    expect(decryptFromString).toHaveBeenCalledWith("enc-blob", "admitto:bounce-imap-password");
   });
 
   it("rejects dedicated auth when username or password is missing", async () => {
