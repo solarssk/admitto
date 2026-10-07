@@ -7067,6 +7067,51 @@ output.mail-field-hint {
   }
 }
 
+/* Everything below the Overview's header (the page, its placeholder and its error) is one column with the same rhythm as
+ * .screen, whose flex gap does not collapse with the KPI row's margin. */
+.overview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* The placeholder is decoration: nothing in it reacts to the pointer. Its stacks of bars (the figure beside the ring, a
+ * glance tile's label and value) are columns, as their real texts are, with a little air between the bars. */
+.overview-skeleton {
+  pointer-events: none;
+}
+
+.overview-skeleton__lines {
+  gap: 4px;
+}
+
+/* A bar that stands in for a line of text keeps the height of that line (measured against the real card in Chrome): the
+ * detail under a checklist row's name, and the two lines of a glance tile. */
+.overview-skeleton .overview-check__body > .at-skeleton {
+  margin: 3px 0;
+}
+
+.overview-skeleton .overview-glance__text {
+  gap: 0;
+}
+
+.overview-skeleton .overview-glance__text > .at-skeleton:first-child {
+  margin: 2px 0;
+}
+
+.overview-skeleton .overview-glance__text > .at-skeleton:last-child {
+  margin: 3.5px 0;
+}
+
+/* A timeline row is two lines of text beside a time: its placeholder keeps that height, and the day heading its own. */
+.overview-skeleton .overview-activity__item {
+  min-height: 57px;
+}
+
+.overview-skeleton .overview-timeline__day {
+  min-height: 18px;
+}
+
 /* Two stacked, genuinely symmetric 1fr/1fr rows (mockup-aligned) instead of a wide-left +
  * narrow-fixed-width sidebar. Collapses to 1-column earlier (900px) than the KPI stat row
  * above (1024px) — these cards' own content (timeline list, donut + legend) stays readable
