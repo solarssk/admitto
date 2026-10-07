@@ -1859,6 +1859,8 @@ export interface MfaEnrollResponse {
 
 export interface ConfirmMfaTotpBody {
   code: string;
+  /** Proof from an existing method, required when the account already has one. */
+  step_up?: StepUpProofBody;
 }
 
 export interface ResetMfaBody extends StepUpProofBody {
@@ -1882,6 +1884,8 @@ export interface WebauthnRegisterFinishBody {
   attachment: WebauthnAttachment;
   label?: string;
   response: RegistrationResponseJSON;
+  /** Proof from an existing method, required when the account already has one. */
+  step_up?: StepUpProofBody;
 }
 
 export interface WebauthnRegisterFinishResponse {

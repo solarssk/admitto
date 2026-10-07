@@ -111,12 +111,13 @@ describe("WebauthnStepUpButton", () => {
     );
   });
 
-  it("disables the button and shows a waiting hint while busy", () => {
+  it("marks the button busy (aria-disabled, so it keeps keyboard focus) and shows a waiting hint while busy", () => {
     render(
       <WebauthnStepUpButton busy={true} onBusyChange={vi.fn()} onError={vi.fn()} onSubmit={vi.fn()} />,
     );
     const button = screen.getByRole("button", { name: "Use a passkey or security key" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.disabled).toBe(false);
     expect(screen.getByText(/Waiting for your browser's passkey or security key prompt/)).toBeTruthy();
   });
 

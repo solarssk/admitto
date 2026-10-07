@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
+import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
 import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Skeleton, Switch, TopProgressBar, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -96,6 +97,11 @@ const stepUpCodeFieldAttrs = {
   "data-1p-ignore": "",
   "data-form-type": "other",
 } as const;
+
+/** The server asks for, or rejects, the step-up proof needed to add an MFA method. */
+function isStepUpApiError(err: unknown): boolean {
+  return ["totp_required", "invalid_totp", "invalid_webauthn"].some((code) => hasApiErrorCode(err, code));
+}
 
 /** Same .txt format and filename as the server-rendered MFA enrollment download. */
 function downloadBackupCodes(codes: string[]): void {
@@ -570,6 +576,17 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   const [unlinkStepUpOpen, setUnlinkStepUpOpen] = useState(false);
   const [unlinkCode, setUnlinkCode] = useState("");
   const [unlinkCodeError, setUnlinkCodeError] = useState<string | null>(null);
+  // Step-up for adding an MFA method (passkey, security key, authenticator app): the server asks for
+  // a code or an existing passkey once the account already has a method. One dialog is open at a
+  // time, so the three add dialogs share this state. `pendingRegistrationRef` keeps the browser's
+  // ceremony response so a retry with the proof does not need a second prompt.
+  const [addStepUpRequired, setAddStepUpRequired] = useState(false);
+  const [addStepUpCode, setAddStepUpCode] = useState("");
+  // Own flag for the passkey step-up button, so the dialog's primary button does not look busy
+  // while only the proof is being collected.
+  const [addStepUpBusy, setAddStepUpBusy] = useState(false);
+  const [totpStepUpError, setTotpStepUpError] = useState<string | null>(null);
+  const pendingRegistrationRef = useRef<{ attachment: WebauthnAttachment; response: RegistrationResponseJSON } | null>(null);
   const [addPasskeyOpen, setAddPasskeyOpen] = useState(false);
   const [addPasskeyLabel, setAddPasskeyLabel] = useState("");
   const [addingPasskey, setAddingPasskey] = useState(false);
@@ -1020,17 +1037,53 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     finally { setResetting(false); }
   }
 
-  async function handleAddPasskeyConfirm(): Promise<void> {
+  function resetAddStepUp(): void {
+    setAddStepUpRequired(false);
+    setAddStepUpCode("");
+    setAddStepUpBusy(false);
+    setTotpStepUpError(null);
+    pendingRegistrationRef.current = null;
+  }
+
+  /** Browser ceremony + finish call shared by the passkey and security-key dialogs. The ceremony
+   * response is kept while the server only asks for (or rejects) a step-up proof, so the retry
+   * reuses it; any other failure drops it and the next attempt starts a fresh ceremony. */
+  async function registerWebauthnMethod(attachment: WebauthnAttachment, label: string, proof?: StepUpProofBody) {
+    let response = pendingRegistrationRef.current?.attachment === attachment ? pendingRegistrationRef.current.response : null;
+    if (!response) {
+      const { options } = await beginWebauthnRegistration({ attachment });
+      response = await startRegistration({ optionsJSON: options });
+      pendingRegistrationRef.current = { attachment, response };
+    }
+    try {
+      const result = await finishWebauthnRegistration({ attachment, label, response, step_up: proof });
+      pendingRegistrationRef.current = null;
+      return result;
+    } catch (err) {
+      if (!isStepUpApiError(err)) pendingRegistrationRef.current = null;
+      throw err;
+    }
+  }
+
+  /** Message for a failed add: a missing proof just reveals the code field, anything else is shown. */
+  function addMethodErrorMessage(err: unknown, fallback: string): string | null {
+    if (isStepUpApiError(err)) {
+      setAddStepUpRequired(true);
+      return hasApiErrorCode(err, "totp_required") ? null : operatorApiErrorMessage(err, fallback);
+    }
+    return err instanceof ApiError ? operatorApiErrorMessage(err, fallback) : webauthnCeremonyErrorMessage(err);
+  }
+
+  async function handleAddPasskeyConfirm(proof?: StepUpProofBody): Promise<void> {
     setAddingPasskey(true);
     setAddPasskeyError(null);
     try {
-      const { options } = await beginWebauthnRegistration({ attachment: "platform" });
-      const response = await startRegistration({ optionsJSON: options });
-      const { backupCodes } = await finishWebauthnRegistration({
-        attachment: "platform",
-        label: addPasskeyLabel.trim(),
-        response,
-      });
+      const { backupCodes } = await registerWebauthnMethod(
+        "platform",
+        addPasskeyLabel.trim(),
+        proof ?? (addStepUpCode.trim() ? { code: addStepUpCode.trim() } : undefined),
+      );
+      resetAddStepUp();
       addToast("Passkey added.", "success");
       await loadAccount();
       // See the matching comment on the TOTP confirm handler above - a first-ever
@@ -1046,27 +1099,22 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         setAddPasskeyLabel("");
       }
     } catch (err) {
-      setAddPasskeyError(
-        err instanceof ApiError
-          ? operatorApiErrorMessage(err, "Could not add passkey.")
-          : webauthnCeremonyErrorMessage(err),
-      );
+      setAddPasskeyError(addMethodErrorMessage(err, "Could not add passkey."));
     } finally {
       setAddingPasskey(false);
     }
   }
 
-  async function handleAddSecurityKeyConfirm(): Promise<void> {
+  async function handleAddSecurityKeyConfirm(proof?: StepUpProofBody): Promise<void> {
     setAddingSecurityKey(true);
     setAddSecurityKeyError(null);
     try {
-      const { options } = await beginWebauthnRegistration({ attachment: "cross-platform" });
-      const response = await startRegistration({ optionsJSON: options });
-      const { backupCodes } = await finishWebauthnRegistration({
-        attachment: "cross-platform",
-        label: addSecurityKeyLabel.trim(),
-        response,
-      });
+      const { backupCodes } = await registerWebauthnMethod(
+        "cross-platform",
+        addSecurityKeyLabel.trim(),
+        proof ?? (addStepUpCode.trim() ? { code: addStepUpCode.trim() } : undefined),
+      );
+      resetAddStepUp();
       addToast("Security key added.", "success");
       await loadAccount();
       // See the matching comment on the TOTP confirm handler above - a first-ever
@@ -1080,11 +1128,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         setAddSecurityKeyLabel("");
       }
     } catch (err) {
-      setAddSecurityKeyError(
-        err instanceof ApiError
-          ? operatorApiErrorMessage(err, "Could not add security key.")
-          : webauthnCeremonyErrorMessage(err),
-      );
+      setAddSecurityKeyError(addMethodErrorMessage(err, "Could not add security key."));
     } finally {
       setAddingSecurityKey(false);
     }
@@ -1253,10 +1297,13 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     }
   }
 
-  async function handleTotpEnrollConfirm(): Promise<void> {
+  async function handleTotpEnrollConfirm(proof?: StepUpProofBody): Promise<void> {
     setMfaConfirming(true);
+    setTotpStepUpError(null);
     try {
-      await confirmMfaTotp({ code: totpCode });
+      const stepUp = proof ?? (addStepUpCode.trim() ? { code: addStepUpCode.trim() } : undefined);
+      await confirmMfaTotp({ code: totpCode, step_up: stepUp });
+      resetAddStepUp();
       setEnrollData(null); setTotpCode("");
       addToast("Two-factor authentication is enabled.", "success");
       await loadAccount();
@@ -1264,13 +1311,24 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       // effect (ensureFreshEnrollmentBackupCodes) - refresh the status shown on the new
       // Backup codes row so it doesn't still read "None generated yet".
       await loadBackupCodesStatus();
-    } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
+    } catch (err) {
+      if (isStepUpApiError(err)) {
+        // The proof field is in the dialog, so its explanation belongs there too, not in a toast.
+        setAddStepUpRequired(true);
+        if (!hasApiErrorCode(err, "totp_required")) {
+          setTotpStepUpError(operatorApiErrorMessage(err, "Could not confirm. Try again."));
+        }
+      } else {
+        addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error");
+      }
+    }
     finally { setMfaConfirming(false); }
   }
 
   async function handleTotpEnrollCancel(): Promise<void> {
     totpInputKey.current += 1;
     setMfaEnrolling(true);
+    resetAddStepUp();
     setEnrollData(null); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);
     try { await cancelMfaEnroll(); } catch { /* best-effort */ }
     finally { setMfaEnrolling(false); }
@@ -1368,6 +1426,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     setAddPasskeyLabel("");
     setAddPasskeyError(null);
     setAddPasskeyBackupCodes(null);
+    resetAddStepUp();
   }
 
   function handleAddSecurityKeyCancel(): void {
@@ -1377,6 +1436,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     setAddSecurityKeyLabel("");
     setAddSecurityKeyError(null);
     setAddSecurityKeyBackupCodes(null);
+    resetAddStepUp();
   }
 
   /** Shared by first-time enrollment (renderMfaEnrollment) and the backup-codes regenerate,
@@ -1746,14 +1806,49 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         confirmLabel="Enable"
         confirmVariant="primary"
         loading={mfaConfirming}
+        errorMessage={totpStepUpError ?? undefined}
         disableConfirm={
-          totpCode.length < 6 || ((enrollData?.backupCodes.length ?? 0) > 0 && !backupCodesSaved)
+          totpCode.length < 6 ||
+          ((enrollData?.backupCodes.length ?? 0) > 0 && !backupCodesSaved) ||
+          (addStepUpRequired && !addStepUpCode.trim()) ||
+          addStepUpBusy
         }
         onConfirm={() => void handleTotpEnrollConfirm()}
         onCancel={() => void handleTotpEnrollCancel()}
       >
         {renderMfaEnrollment()}
+        {renderAddStepUpFields(mfaConfirming, setTotpStepUpError, (proof) => handleTotpEnrollConfirm(proof))}
       </ConfirmDialog>
+    );
+  }
+
+  /** Code field (and, with a registered passkey, the passkey button) that the add dialogs reveal once
+   * the server asks to confirm it is really the account owner adding a method. */
+  function renderAddStepUpFields(
+    busy: boolean,
+    onError: (message: string | null) => void,
+    submit: (proof: StepUpProofBody) => Promise<void>,
+  ) {
+    if (!addStepUpRequired) return null;
+    return (
+      <>
+        <Input
+          id="account-add-method-step-up-code"
+          name="add-method-step-up-code"
+          label="Authenticator or backup code"
+          type="text"
+          autoComplete="one-time-code"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={addStepUpCode}
+          disabled={busy || addStepUpBusy}
+          onChange={(e) => setAddStepUpCode(e.target.value)}
+          {...stepUpCodeFieldAttrs}
+        />
+        {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+          <WebauthnStepUpButton busy={addStepUpBusy} onBusyChange={setAddStepUpBusy} onError={onError} onSubmit={submit} />
+        )}
+      </>
     );
   }
 
@@ -1773,7 +1868,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         cancelLabel={addPasskeyBackupCodes ? "Close" : "Cancel"}
         loading={addingPasskey}
         errorMessage={addPasskeyError ?? undefined}
-        disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim()}
+        disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim() || (addStepUpRequired && !addStepUpCode.trim()) || addStepUpBusy}
         onConfirm={() => void handleAddPasskeyConfirm()}
         onCancel={handleAddPasskeyCancel}
       >
@@ -1791,6 +1886,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             onChange={(e) => setAddPasskeyLabel(e.target.value)}
           />
         )}
+        {!addPasskeyBackupCodes &&
+          renderAddStepUpFields(addingPasskey, setAddPasskeyError, (proof) => handleAddPasskeyConfirm(proof))}
       </ConfirmDialog>
     );
   }
@@ -1811,7 +1908,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         cancelLabel={addSecurityKeyBackupCodes ? "Close" : "Cancel"}
         loading={addingSecurityKey}
         errorMessage={addSecurityKeyError ?? undefined}
-        disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim()}
+        disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim() || (addStepUpRequired && !addStepUpCode.trim()) || addStepUpBusy}
         onConfirm={() => void handleAddSecurityKeyConfirm()}
         onCancel={handleAddSecurityKeyCancel}
       >
@@ -1829,6 +1926,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             onChange={(e) => setAddSecurityKeyLabel(e.target.value)}
           />
         )}
+        {!addSecurityKeyBackupCodes &&
+          renderAddStepUpFields(addingSecurityKey, setAddSecurityKeyError, (proof) => handleAddSecurityKeyConfirm(proof))}
       </ConfirmDialog>
     );
   }

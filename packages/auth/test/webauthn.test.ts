@@ -151,6 +151,30 @@ describe("WebAuthn registration", () => {
     expect(await userHasUnacknowledgedBackupCodes(prisma, userId)).toBe(false);
   });
 
+  it("with onlyFirstMethod, registers the first method and refuses once the account has one", async () => {
+    const userId = "user-wa-only-first";
+    await createAdmin(userId, "wa-only-first@example.com");
+
+    const first = createVirtualAuthenticator();
+    const beginFirst = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    const respFirst = first.register({ challenge: beginFirst!.challenge, rpID: RP.rpID, origin: RP.origin });
+    expect(
+      await finishWebauthnRegistration(prisma, userId, respFirst, beginFirst!.challenge, "platform", null, RP, {
+        onlyFirstMethod: true,
+      }),
+    ).not.toBeNull();
+
+    const second = createVirtualAuthenticator();
+    const beginSecond = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
+    const respSecond = second.register({ challenge: beginSecond!.challenge, rpID: RP.rpID, origin: RP.origin });
+    expect(
+      await finishWebauthnRegistration(prisma, userId, respSecond, beginSecond!.challenge, "cross-platform", null, RP, {
+        onlyFirstMethod: true,
+      }),
+    ).toBeNull();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
+  });
+
   it("rejects a response signed for a different challenge", async () => {
     const userId = "user-wa-bad-challenge";
     await createAdmin(userId, "wa-bad-challenge@example.com");

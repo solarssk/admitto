@@ -783,6 +783,7 @@ export async function handlePostMfaWebauthnEnrollFinish(
     parsed.data.attachment,
     null,
     rp,
+    { onlyFirstMethod: true },
   );
   if (!created) return c.json({ code: "verification_failed" }, 400);
 
@@ -867,7 +868,7 @@ export async function handleTotpConfirm(
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, partial.userId, code);
+  const ok = await confirmTotpEnrollment(db, partial.userId, code, { onlyFirstMethod: true });
   if (!ok) {
     return c.json(AUTH_ERROR, 401);
   }
