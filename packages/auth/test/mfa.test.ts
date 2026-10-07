@@ -54,11 +54,7 @@ import {
   revokeTrustedDeviceByToken,
   revokeAllTrustedDevicesForUser,
 } from "../src/mfa/trusted-device.js";
-import {
-  userRequiresMfa,
-  userHasConfirmedTotp,
-  markBackupCodesAcknowledged,
-} from "../src/mfa/policy.js";
+import { userRequiresMfa, userHasConfirmedTotp, markBackupCodesAcknowledged } from "../src/mfa/policy.js";
 import {
   createSession,
   validateSession,
@@ -67,17 +63,10 @@ import {
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
 } from "../src/session.js";
-import {
-  getSessionTtlAdminMs,
-  getMfaRequiredRoles,
-} from "../src/settings/resolver.js";
+import { getSessionTtlAdminMs, getMfaRequiredRoles } from "../src/settings/resolver.js";
 import { SETTING_SESSION_TTL } from "../src/settings/keys.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
-import {
-  beginWebauthnRegistration,
-  finishWebauthnRegistration,
-  type WebauthnRpConfig,
-} from "../src/mfa/webauthn.js";
+import { beginWebauthnRegistration, finishWebauthnRegistration, type WebauthnRpConfig } from "../src/mfa/webauthn.js";
 import { createVirtualAuthenticator } from "../src/webauthn-testing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -86,40 +75,18 @@ const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
 const USER_ADMIN = "user-mfa-admin";
 const USER_OP = "user-mfa-op";
 const PASSWORD = "mfa-test-pass-123";
-const WEBAUTHN_RP: WebauthnRpConfig = {
-  rpName: "Admitto",
-  rpID: "localhost",
-  origin: "http://localhost:3000",
-};
+const WEBAUTHN_RP: WebauthnRpConfig = { rpName: "Admitto", rpID: "localhost", origin: "http://localhost:3000" };
 
 let prisma: PrismaClient;
 
 /** Register + acknowledge a confirmed WebAuthn credential directly (bypassing any TOTP), so a
  * test can exercise the "user already has a different confirmed method" branch of a guard. */
-async function registerConfirmedWebauthnCredential(
-  userId: string,
-): Promise<void> {
+async function registerConfirmedWebauthnCredential(userId: string): Promise<void> {
   const authenticator = createVirtualAuthenticator();
-  const begin = await beginWebauthnRegistration(
-    prisma,
-    userId,
-    "platform",
-    WEBAUTHN_RP,
-  );
+  const begin = await beginWebauthnRegistration(prisma, userId, "platform", WEBAUTHN_RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
-  const response = authenticator.register({
-    challenge: begin.challenge,
-    rpID: WEBAUTHN_RP.rpID,
-    origin: WEBAUTHN_RP.origin,
-  });
-  const result = await finishWebauthnRegistration(
-    prisma,
-    userId,
-    response,
-    begin.challenge,
-    "platform",
-    WEBAUTHN_RP,
-  );
+  const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", null, WEBAUTHN_RP);
   if (!result) throw new Error("finishWebauthnRegistration failed");
   await markBackupCodesAcknowledged(prisma, userId);
 }
@@ -144,18 +111,8 @@ beforeAll(async () => {
 
   await prisma.roleAssignment.createMany({
     data: [
-      {
-        user_id: USER_ADMIN,
-        role: "admin",
-        scope_type: "instance",
-        scope_id: null,
-      },
-      {
-        user_id: USER_OP,
-        role: "operator",
-        scope_type: "event",
-        scope_id: "evt-mfa",
-      },
+      { user_id: USER_ADMIN, role: "admin", scope_type: "instance", scope_id: null },
+      { user_id: USER_OP, role: "operator", scope_type: "event", scope_id: "evt-mfa" },
     ],
   });
 
@@ -204,45 +161,22 @@ describe("TOTP enrollment", () => {
   it("with onlyFirstMethod, confirms while the account has no method and refuses once it has one", async () => {
     const userId = "user-totp-only-first";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "totp-only-first@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "totp-only-first@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     await startTotpEnrollment(prisma, userId);
     const secret = decryptTotpSecret(
-      (
-        await prisma.userMfaMethod.findFirstOrThrow({
-          where: { user_id: userId, type: "totp" },
-        })
-      ).secret_enc!,
+      (await prisma.userMfaMethod.findFirstOrThrow({ where: { user_id: userId, type: "totp" } })).secret_enc!,
     );
 
     // Another method got confirmed meanwhile (a second, stale partial session).
     await prisma.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "webauthn",
-        confirmed_at: new Date(),
-        webauthn_credential_id: "cred-only-first",
-      },
+      data: { user_id: userId, type: "webauthn", confirmed_at: new Date(), webauthn_credential_id: "cred-only-first" },
     });
-    expect(
-      await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), {
-        onlyFirstMethod: true,
-      }),
-    ).toBe(false);
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), { onlyFirstMethod: true })).toBe(false);
     expect(await userHasConfirmedTotp(prisma, userId)).toBe(false);
 
-    await prisma.userMfaMethod.deleteMany({
-      where: { user_id: userId, type: "webauthn" },
-    });
-    expect(
-      await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), {
-        onlyFirstMethod: true,
-      }),
-    ).toBe(true);
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: userId, type: "webauthn" } });
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret), { onlyFirstMethod: true })).toBe(true);
   });
 
   it("getOrStartTotpEnrollment resumes pending setup without rotating secret", async () => {
@@ -274,17 +208,11 @@ describe("TOTP enrollment", () => {
     const userId = "user-totp-resume-none";
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "totp-resume-none@example.com",
-        password_hash,
-      },
+      data: { id: userId, email: "totp-resume-none@example.com", password_hash },
     });
 
     expect(await resumePendingTotpEnrollment(prisma, userId)).toBeNull();
-    expect(
-      await prisma.userMfaMethod.count({ where: { user_id: userId } }),
-    ).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
   });
 
   it("resumePendingTotpEnrollment clears corrupt pending secret", async () => {
@@ -303,11 +231,7 @@ describe("TOTP enrollment", () => {
     });
 
     expect(await resumePendingTotpEnrollment(prisma, userId)).toBeNull();
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "totp" },
-      }),
-    ).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
     const fresh = await startTotpEnrollment(prisma, userId);
     expect(fresh?.otpauthUri).toMatch(/^otpauth:\/\/totp\//);
   });
@@ -316,38 +240,21 @@ describe("TOTP enrollment", () => {
     const userId = "user-totp-corrupt-second-method";
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "totp-corrupt-second@example.com",
-        password_hash,
-      },
+      data: { id: userId, email: "totp-corrupt-second@example.com", password_hash },
     });
     await registerConfirmedWebauthnCredential(userId);
-    const recoveryCountBefore = await prisma.userMfaMethod.count({
-      where: { user_id: userId, type: "recovery" },
-    });
+    const recoveryCountBefore = await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } });
     expect(recoveryCountBefore).toBeGreaterThan(0);
 
     await prisma.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "totp",
-        secret_enc: "not-valid-encrypted-payload",
-        confirmed_at: null,
-      },
+      data: { user_id: userId, type: "totp", secret_enc: "not-valid-encrypted-payload", confirmed_at: null },
     });
 
     expect(await resumePendingTotpEnrollment(prisma, userId)).toBeNull();
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "totp" },
-      }),
-    ).toBe(0);
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "recovery" },
-      }),
-    ).toBe(recoveryCountBefore);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(
+      recoveryCountBefore,
+    );
   });
 
   it("startTotpEnrollment refuses when TOTP already confirmed", async () => {
@@ -359,9 +266,8 @@ describe("TOTP enrollment", () => {
 
     const enrollment = await startTotpEnrollment(prisma, userId);
     const secret = decryptTotpSecret(
-      (await prisma.userMfaMethod.findFirst({
-        where: { user_id: userId, type: "totp" },
-      }))!.secret_enc!,
+      (await prisma.userMfaMethod.findFirst({ where: { user_id: userId, type: "totp" } }))!
+        .secret_enc!,
     );
     await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret));
 
@@ -395,9 +301,7 @@ describe("login MFA flow", () => {
     expect(partial?.stage).toBe(SESSION_STAGE.ENROLLMENT_REQUIRED);
     expect(await validateSession(prisma, result.rawToken)).toBeNull();
     // The read-only variant used by the check-in stream reaches the same verdict.
-    const row = await prisma.session.findUniqueOrThrow({
-      where: { id: partial!.session.id },
-    });
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: partial!.session.id } });
     expect(await isFullSessionMfaPolicySatisfied(prisma, row)).toBe(false);
   });
 
@@ -472,9 +376,7 @@ describe("login MFA flow", () => {
     // A correct code that can't be promoted must not burn a locked-out user's one-shot
     // recovery code for nothing - consumption rolls back with the rest of the transaction, so
     // the code stays usable on a subsequent attempt.
-    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(
-      true,
-    );
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
 
     const failEvent = events.find((e) => e.event === "auth.mfa.fail");
     expect(failEvent?.reason).toBe("session_not_promoted");
@@ -492,10 +394,7 @@ describe("login MFA flow", () => {
         confirmed_at: new Date(),
       },
     });
-    const { code: emergencyCode } = await generateEmergencyRecoveryCode(
-      prisma,
-      USER_ADMIN,
-    );
+    const { code: emergencyCode } = await generateEmergencyRecoveryCode(prisma, USER_ADMIN);
 
     const loginResult = await login(prisma, {
       email: "mfa-admin@example.com",
@@ -517,9 +416,7 @@ describe("login MFA flow", () => {
 
     expect(mfa.ok).toBe(false);
     // A single active break-glass code must survive a failed promotion attempt intact.
-    expect(
-      await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode),
-    ).toBe(true);
+    expect(await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode)).toBe(true);
   });
 
   it("completes MFA with a backup recovery code, reports method, and consumes it", async () => {
@@ -555,16 +452,10 @@ describe("login MFA flow", () => {
     // Promotion rotates the session token - the pre-MFA token must stop validating.
     expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
     expect(await validateSession(prisma, mfa.sessionRawToken!)).not.toBeNull();
-    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(
-      false,
-    );
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
 
-    expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe(
-      "backup",
-    );
-    expect(
-      events.find((e) => e.event === "auth.mfa.recovery_consumed")?.method,
-    ).toBe("backup");
+    expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe("backup");
+    expect(events.find((e) => e.event === "auth.mfa.recovery_consumed")?.method).toBe("backup");
   });
 
   it("completes MFA with an emergency recovery code and reports method", async () => {
@@ -578,10 +469,7 @@ describe("login MFA flow", () => {
         confirmed_at: new Date(),
       },
     });
-    const { code: emergencyCode } = await generateEmergencyRecoveryCode(
-      prisma,
-      USER_ADMIN,
-    );
+    const { code: emergencyCode } = await generateEmergencyRecoveryCode(prisma, USER_ADMIN);
 
     const loginResult = await login(prisma, {
       email: "mfa-admin@example.com",
@@ -603,16 +491,10 @@ describe("login MFA flow", () => {
     // Promotion rotates the session token - the pre-MFA token must stop validating.
     expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
     expect(await validateSession(prisma, mfa.sessionRawToken!)).not.toBeNull();
-    expect(
-      await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode),
-    ).toBe(false);
+    expect(await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode)).toBe(false);
 
-    expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe(
-      "emergency",
-    );
-    expect(
-      events.find((e) => e.event === "auth.mfa.recovery_consumed")?.method,
-    ).toBe("emergency");
+    expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe("emergency");
+    expect(events.find((e) => e.event === "auth.mfa.recovery_consumed")?.method).toBe("emergency");
   });
 
   it("rejects an invalid MFA code without consuming any recovery row or granting access", async () => {
@@ -647,15 +529,11 @@ describe("login MFA flow", () => {
     expect(mfa.ok).toBe(false);
     expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
     // Unrelated backup codes remain usable: nothing was consumed on a no-match.
-    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(
-      true,
-    );
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
 
     expect(events.some((e) => e.event === "auth.mfa.fail")).toBe(true);
     expect(events.some((e) => e.event === "auth.mfa.success")).toBe(false);
-    expect(events.some((e) => e.event === "auth.mfa.recovery_consumed")).toBe(
-      false,
-    );
+    expect(events.some((e) => e.event === "auth.mfa.recovery_consumed")).toBe(false);
   });
 });
 
@@ -663,11 +541,7 @@ describe("promoteSessionToBackupCodesStep", () => {
   it("rotates the session token and grants the backup-codes TTL", async () => {
     const userId = "user-promote-to-backup-step";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "promote-to-backup-step@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "promote-to-backup-step@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     try {
@@ -676,28 +550,17 @@ describe("promoteSessionToBackupCodesStep", () => {
         stage: SESSION_STAGE.ENROLLMENT_REQUIRED,
       });
 
-      const promoted = await promoteSessionToBackupCodesStep(
-        prisma,
-        session.id,
-        userId,
-      );
+      const promoted = await promoteSessionToBackupCodesStep(prisma, session.id, userId);
       expect(promoted?.rawToken).toBeTruthy();
       expect(promoted!.rawToken).not.toBe(preToken);
 
       // The pre-promotion token must stop validating; the rotated one takes over.
       expect(await validatePartialSession(prisma, preToken)).toBeNull();
-      const validated = await validatePartialSession(
-        prisma,
-        promoted!.rawToken,
-      );
+      const validated = await validatePartialSession(prisma, promoted!.rawToken);
       expect(validated?.stage).toBe(SESSION_STAGE.BACKUP_CODES_REQUIRED);
 
-      const row = await prisma.session.findUnique({
-        where: { id: session.id },
-      });
-      expect(row?.expires_at.getTime()).toBe(
-        row?.last_seen_at.getTime()! + BACKUP_CODES_STEP_TTL_MS,
-      );
+      const row = await prisma.session.findUnique({ where: { id: session.id } });
+      expect(row?.expires_at.getTime()).toBe(row?.last_seen_at.getTime()! + BACKUP_CODES_STEP_TTL_MS);
     } finally {
       await prisma.session.deleteMany({ where: { user_id: userId } });
       await prisma.user.deleteMany({ where: { id: userId } });
@@ -707,21 +570,12 @@ describe("promoteSessionToBackupCodesStep", () => {
   it("refuses a session that is not enrollment_required", async () => {
     const userId = "user-promote-to-backup-step-wrong-stage";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "promote-to-backup-step-wrong@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "promote-to-backup-step-wrong@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     try {
-      const { session } = await createSession(prisma, {
-        userId,
-        stage: SESSION_STAGE.MFA_PENDING,
-      });
-      expect(
-        await promoteSessionToBackupCodesStep(prisma, session.id, userId),
-      ).toBeNull();
+      const { session } = await createSession(prisma, { userId, stage: SESSION_STAGE.MFA_PENDING });
+      expect(await promoteSessionToBackupCodesStep(prisma, session.id, userId)).toBeNull();
     } finally {
       await prisma.session.deleteMany({ where: { user_id: userId } });
       await prisma.user.deleteMany({ where: { id: userId } });
@@ -743,13 +597,7 @@ describe("promoteSessionToFull", () => {
       data: { expires_at: new Date(Date.now() - 1000) },
     });
 
-    expect(
-      await promoteSessionToFull(
-        prisma,
-        loginResult.sessionId,
-        loginResult.userId,
-      ),
-    ).toBeNull();
+    expect(await promoteSessionToFull(prisma, loginResult.sessionId, loginResult.userId)).toBeNull();
   });
 
   it("uses the constrained TTL for backup-code and password-change follow-up stages", async () => {
@@ -758,11 +606,7 @@ describe("promoteSessionToFull", () => {
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.createMany({
       data: [
-        {
-          id: backupUserId,
-          email: "promote-backup@example.com",
-          password_hash,
-        },
+        { id: backupUserId, email: "promote-backup@example.com", password_hash },
         {
           id: passwordUserId,
           email: "promote-password@example.com",
@@ -774,16 +618,8 @@ describe("promoteSessionToFull", () => {
 
     try {
       const enrollment = await startTotpEnrollment(prisma, backupUserId);
-      const backupSecret = parseTotpSecretFromOtpauthUri(
-        enrollment!.otpauthUri,
-      );
-      expect(
-        await confirmTotpEnrollment(
-          prisma,
-          backupUserId,
-          generateTotpCode(backupSecret!),
-        ),
-      ).toBe(true);
+      const backupSecret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri);
+      expect(await confirmTotpEnrollment(prisma, backupUserId, generateTotpCode(backupSecret!))).toBe(true);
 
       const backupSession = await createSession(prisma, {
         userId: backupUserId,
@@ -795,53 +631,23 @@ describe("promoteSessionToFull", () => {
       });
 
       expect(
-        (
-          await promoteSessionToFull(
-            prisma,
-            backupSession.session.id,
-            backupUserId,
-          )
-        )?.stage,
+        (await promoteSessionToFull(prisma, backupSession.session.id, backupUserId))?.stage,
       ).toBe(SESSION_STAGE.BACKUP_CODES_REQUIRED);
       expect(
-        (
-          await promoteSessionToFull(
-            prisma,
-            passwordSession.session.id,
-            passwordUserId,
-          )
-        )?.stage,
+        (await promoteSessionToFull(prisma, passwordSession.session.id, passwordUserId))?.stage,
       ).toBe(SESSION_STAGE.CHANGE_PASSWORD_REQUIRED);
 
       const [promotedBackup, promotedPassword] = await prisma.session.findMany({
-        where: {
-          id: { in: [backupSession.session.id, passwordSession.session.id] },
-        },
+        where: { id: { in: [backupSession.session.id, passwordSession.session.id] } },
       });
-      const backup =
-        promotedBackup!.id === backupSession.session.id
-          ? promotedBackup!
-          : promotedPassword!;
-      const password =
-        promotedPassword!.id === passwordSession.session.id
-          ? promotedPassword!
-          : promotedBackup!;
-      expect(backup.expires_at.getTime() - backup.last_seen_at.getTime()).toBe(
-        BACKUP_CODES_STEP_TTL_MS,
-      );
-      expect(
-        password.expires_at.getTime() - password.last_seen_at.getTime(),
-      ).toBe(MFA_PENDING_SESSION_TTL_MS);
+      const backup = promotedBackup!.id === backupSession.session.id ? promotedBackup! : promotedPassword!;
+      const password = promotedPassword!.id === passwordSession.session.id ? promotedPassword! : promotedBackup!;
+      expect(backup.expires_at.getTime() - backup.last_seen_at.getTime()).toBe(BACKUP_CODES_STEP_TTL_MS);
+      expect(password.expires_at.getTime() - password.last_seen_at.getTime()).toBe(MFA_PENDING_SESSION_TTL_MS);
     } finally {
-      await prisma.session.deleteMany({
-        where: { user_id: { in: [backupUserId, passwordUserId] } },
-      });
-      await prisma.userMfaMethod.deleteMany({
-        where: { user_id: backupUserId },
-      });
-      await prisma.user.deleteMany({
-        where: { id: { in: [backupUserId, passwordUserId] } },
-      });
+      await prisma.session.deleteMany({ where: { user_id: { in: [backupUserId, passwordUserId] } } });
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: backupUserId } });
+      await prisma.user.deleteMany({ where: { id: { in: [backupUserId, passwordUserId] } } });
     }
   });
 
@@ -855,14 +661,9 @@ describe("promoteSessionToFull", () => {
     try {
       const enrollment = await startTotpEnrollment(prisma, userId);
       const secret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri);
-      expect(
-        await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret!)),
-      ).toBe(true);
+      expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret!))).toBe(true);
 
-      const session = await createSession(prisma, {
-        userId,
-        stage: SESSION_STAGE.MFA_PENDING,
-      });
+      const session = await createSession(prisma, { userId, stage: SESSION_STAGE.MFA_PENDING });
 
       // Both requests resolve the same target (backup_codes_required, since codes are still
       // unacknowledged) and race to promote the same still-mfa_pending row.
@@ -879,9 +680,7 @@ describe("promoteSessionToFull", () => {
       expect(loser).toBeNull();
 
       // The winner's token is the one and only token now valid for this session.
-      expect(
-        await validatePartialSession(prisma, winner!.rawToken),
-      ).not.toBeNull();
+      expect(await validatePartialSession(prisma, winner!.rawToken)).not.toBeNull();
     } finally {
       await prisma.session.deleteMany({ where: { user_id: userId } });
       await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
@@ -926,19 +725,10 @@ describe("createSession, resolveInitialSessionStage fallback (stage omitted)", (
   it("fails closed to enrollment_required for an MFA-required user with no confirmed method", async () => {
     const userId = "user-create-session-no-stage";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "create-session-no-stage@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "create-session-no-stage@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     await prisma.roleAssignment.create({
-      data: {
-        user_id: userId,
-        role: "admin",
-        scope_type: "instance",
-        scope_id: null,
-      },
+      data: { user_id: userId, role: "admin", scope_type: "instance", scope_id: null },
     });
 
     // No `stage` passed, every real caller (login, OIDC) always passes one explicitly; this
@@ -961,48 +751,30 @@ describe("backup recovery codes", () => {
   it("hashes codes and rejects second use", async () => {
     const userId = "user-backup-rc";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "backup@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "backup@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     const { codes } = await regenerateBackupRecoveryCodes(prisma, userId);
     const rows = await prisma.userMfaMethod.findMany({
       where: { user_id: userId, type: "recovery" },
     });
-    expect(
-      rows.every(
-        (r) => r.credential_hash && !r.credential_hash.includes(codes[0]!),
-      ),
-    ).toBe(true);
-    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(
+    expect(rows.every((r) => r.credential_hash && !r.credential_hash.includes(codes[0]!))).toBe(
       true,
     );
-    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(
-      false,
-    );
+    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(true);
+    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(false);
   });
 
   it("regenerate invalidates old backup codes", async () => {
     const userId = "user-regen-rc";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "regen@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "regen@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     const first = await regenerateBackupRecoveryCodes(prisma, userId);
     const second = await regenerateBackupRecoveryCodes(prisma, userId);
-    expect(
-      await verifyBackupRecoveryCode(prisma, userId, first.codes[0]!),
-    ).toBe(false);
-    expect(
-      await verifyBackupRecoveryCode(prisma, userId, second.codes[0]!),
-    ).toBe(true);
+    expect(await verifyBackupRecoveryCode(prisma, userId, first.codes[0]!)).toBe(false);
+    expect(await verifyBackupRecoveryCode(prisma, userId, second.codes[0]!)).toBe(true);
   });
 });
 
@@ -1010,36 +782,21 @@ describe("getBackupRecoveryCodesStatus", () => {
   it("returns 0/0 before any codes have been generated", async () => {
     const userId = "user-backup-status-none";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "backup-status-none@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "backup-status-none@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
-    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({
-      total: 0,
-      remaining: 0,
-    });
+    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({ total: 0, remaining: 0 });
   });
 
   it("reports total and remaining reflecting a mix of used and unused codes", async () => {
     const userId = "user-backup-status-mixed";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "backup-status-mixed@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "backup-status-mixed@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     const { codes } = await regenerateBackupRecoveryCodes(prisma, userId);
-    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(
-      true,
-    );
-    expect(await verifyBackupRecoveryCode(prisma, userId, codes[1]!)).toBe(
-      true,
-    );
+    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(true);
+    expect(await verifyBackupRecoveryCode(prisma, userId, codes[1]!)).toBe(true);
 
     expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({
       total: codes.length,
@@ -1050,30 +807,17 @@ describe("getBackupRecoveryCodesStatus", () => {
   it("excludes the break-glass emergency code from total/remaining", async () => {
     const userId = "user-backup-status-emergency";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "backup-status-emergency@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "backup-status-emergency@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     await generateEmergencyRecoveryCode(prisma, userId);
 
-    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({
-      total: 0,
-      remaining: 0,
-    });
+    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({ total: 0, remaining: 0 });
   });
 });
 
 describe("trusted device", () => {
   it("rejects a token that does not match a stored trusted device", async () => {
-    expect(
-      await validateTrustedDevice(
-        prisma,
-        USER_ADMIN,
-        "missing-trusted-device-token",
-      ),
-    ).toBe(false);
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, "missing-trusted-device-token")).toBe(false);
   });
 
   it("skips MFA when valid trusted device token present", async () => {
@@ -1088,9 +832,7 @@ describe("trusted device", () => {
       },
     });
 
-    const { rawToken } = await createTrustedDevice(prisma, {
-      userId: USER_ADMIN,
-    });
+    const { rawToken } = await createTrustedDevice(prisma, { userId: USER_ADMIN });
     const result = await login(prisma, {
       email: "mfa-admin@example.com",
       password: PASSWORD,
@@ -1102,30 +844,18 @@ describe("trusted device", () => {
   });
 
   it("revoke trusted devices invalidates token", async () => {
-    const { rawToken } = await createTrustedDevice(prisma, {
-      userId: USER_ADMIN,
-    });
+    const { rawToken } = await createTrustedDevice(prisma, { userId: USER_ADMIN });
     await revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
-    expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(
-      false,
-    );
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(false);
   });
 
   it("revoking trusted devices also drops the sessions' MFA-just-passed mark, so a pending remember-device cannot replace them", async () => {
-    const { session } = await createSession(prisma, {
-      userId: USER_ADMIN,
-      stage: SESSION_STAGE.FULL,
-    });
-    await prisma.session.update({
-      where: { id: session.id },
-      data: { mfa_verified_at: new Date() },
-    });
+    const { session } = await createSession(prisma, { userId: USER_ADMIN, stage: SESSION_STAGE.FULL });
+    await prisma.session.update({ where: { id: session.id }, data: { mfa_verified_at: new Date() } });
 
     await revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
 
-    const row = await prisma.session.findUniqueOrThrow({
-      where: { id: session.id },
-    });
+    const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
     expect(row.mfa_verified_at).toBeNull();
   });
 
@@ -1135,12 +865,8 @@ describe("trusted device", () => {
 
     await revokeTrustedDeviceByToken(prisma, USER_ADMIN, first.rawToken);
 
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, first.rawToken),
-    ).toBe(false);
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, second.rawToken),
-    ).toBe(true);
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, first.rawToken)).toBe(false);
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, second.rawToken)).toBe(true);
   });
 
   it("accepts a token even when the recorded IP and User-Agent both differ from the current request - not bound to network/browser (see validateTrustedDevice doc comment: NAT/ISP IP rotation makes IP an unreliable signal for this, per OWASP Session Management guidance)", async () => {
@@ -1150,9 +876,7 @@ describe("trusted device", () => {
       userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
     });
 
-    expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(
-      true,
-    );
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(true);
   });
 
   it("login() skips MFA for a trusted-device token even when the request's IP/User-Agent no longer match what was recorded at creation", async () => {
@@ -1222,26 +946,16 @@ describe("emergency recovery", () => {
       return {};
     });
     const fakePrisma = {
-      $transaction: vi.fn(async (fn: (inner: typeof tx) => Promise<unknown>) =>
-        fn(tx),
-      ),
+      $transaction: vi.fn(async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx)),
     };
 
-    const result = await generateEmergencyRecoveryCode(
-      fakePrisma as never,
-      USER_ADMIN,
-    );
+    const result = await generateEmergencyRecoveryCode(fakePrisma as never, USER_ADMIN);
 
     expect(fakePrisma.$transaction).toHaveBeenCalledOnce();
     expect(order).toEqual(["delete", "create"]);
     expect(result.code).toBeTruthy();
     expect(tx.userMfaMethod.deleteMany).toHaveBeenCalledWith({
-      where: {
-        user_id: USER_ADMIN,
-        type: "recovery",
-        label: "emergency",
-        last_used_at: null,
-      },
+      where: { user_id: USER_ADMIN, type: "recovery", label: "emergency", last_used_at: null },
     });
   });
 });
@@ -1288,9 +1002,7 @@ describe("TOTP verify", () => {
     expect(first.valid).toBe(true);
     if (!first.valid) return;
 
-    const replay = verifyTotpCodeDetailed(enc, code, {
-      afterTimeStep: first.timeStep,
-    });
+    const replay = verifyTotpCodeDetailed(enc, code, { afterTimeStep: first.timeStep });
     expect(replay.valid).toBe(false);
     if (replay.valid) return;
     expect(replay.replay).toBe(true);
@@ -1304,9 +1016,7 @@ describe("TOTP verify", () => {
     expect(first.valid).toBe(true);
     if (!first.valid) return;
 
-    const wrong = verifyTotpCodeDetailed(enc, "000000", {
-      afterTimeStep: first.timeStep,
-    });
+    const wrong = verifyTotpCodeDetailed(enc, "000000", { afterTimeStep: first.timeStep });
     expect(wrong.valid).toBe(false);
     if (wrong.valid) return;
     expect(wrong.replay).toBe(false);
@@ -1334,13 +1044,8 @@ describe("TOTP verify", () => {
     // A DIFFERENT, never-submitted-before code from the adjacent step t-1 - still within the
     // ±1-step epoch tolerance of "now", so the unconstrained check alone would call it valid, but
     // it was never actually used and must not be reported as a replay of step t.
-    const codeAtTMinus1 = generateTotpCode(
-      secret,
-      Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC,
-    );
-    const result = verifyTotpCodeDetailed(enc, codeAtTMinus1, {
-      afterTimeStep: accepted.timeStep,
-    });
+    const codeAtTMinus1 = generateTotpCode(secret, Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC);
+    const result = verifyTotpCodeDetailed(enc, codeAtTMinus1, { afterTimeStep: accepted.timeStep });
     expect(result.valid).toBe(false);
     if (result.valid) return;
     expect(result.replay).toBe(false);
@@ -1351,10 +1056,7 @@ describe("TOTP verify", () => {
     const enc = encryptTotpSecret(secret);
 
     // Accept step t-1 first (explicit past epoch, no prior watermark).
-    const codeAtTMinus1 = generateTotpCode(
-      secret,
-      Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC,
-    );
+    const codeAtTMinus1 = generateTotpCode(secret, Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC);
     const acceptedTMinus1 = verifyTotpCodeDetailed(enc, codeAtTMinus1);
     expect(acceptedTMinus1.valid).toBe(true);
     if (!acceptedTMinus1.valid) return;
@@ -1406,11 +1108,7 @@ describe("TOTP verify", () => {
     const userId = "user-totp-replay-detailed";
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "totp-replay-detailed@example.com",
-        password_hash,
-      },
+      data: { id: userId, email: "totp-replay-detailed@example.com", password_hash },
     });
 
     const secret = generateTotpSecret();
@@ -1424,25 +1122,15 @@ describe("TOTP verify", () => {
     });
 
     const code = generateTotpCode(secret);
-    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({
-      ok: true,
-      replay: false,
-    });
-    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({
-      ok: false,
-      replay: true,
-    });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({ ok: true, replay: false });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({ ok: false, replay: true });
   });
 
   it("verifyUserTotpCodeDetailed flags replay of an older-but-recently-used code even after a newer code has advanced the watermark past it (bot review finding, PR #1316)", async () => {
     const userId = "user-totp-replay-older-step";
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "totp-replay-older-step@example.com",
-        password_hash,
-      },
+      data: { id: userId, email: "totp-replay-older-step@example.com", password_hash },
     });
 
     const secret = generateTotpSecret();
@@ -1455,26 +1143,16 @@ describe("TOTP verify", () => {
       },
     });
 
-    const codeAtTMinus1 = generateTotpCode(
-      secret,
-      Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC,
-    );
-    expect(
-      await verifyUserTotpCodeDetailed(prisma, userId, codeAtTMinus1),
-    ).toEqual({ ok: true, replay: false });
+    const codeAtTMinus1 = generateTotpCode(secret, Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC);
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtTMinus1)).toEqual({ ok: true, replay: false });
 
     const codeAtT = generateTotpCode(secret);
-    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtT)).toEqual({
-      ok: true,
-      replay: false,
-    });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtT)).toEqual({ ok: true, replay: false });
 
     // codeAtTMinus1 was genuinely already used above, but the watermark has since advanced to
     // codeAtT's own step - an exact-match-against-the-latest-watermark-only check would wrongly
     // call this an ordinary wrong code instead of a replay.
-    expect(
-      await verifyUserTotpCodeDetailed(prisma, userId, codeAtTMinus1),
-    ).toEqual({ ok: false, replay: true });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtTMinus1)).toEqual({ ok: false, replay: true });
   });
 
   it("verifyUserTotpCodeDetailed does not flag an ordinary wrong code as a replay", async () => {
@@ -1494,10 +1172,7 @@ describe("TOTP verify", () => {
       },
     });
 
-    expect(await verifyUserTotpCodeDetailed(prisma, userId, "000000")).toEqual({
-      ok: false,
-      replay: false,
-    });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, "000000")).toEqual({ ok: false, replay: false });
   });
 });
 
@@ -1506,11 +1181,7 @@ describe("verifyTotpOrRecoveryCodeDetailed", () => {
     const userId = "user-step-up-totp-replay";
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "step-up-totp-replay@example.com",
-        password_hash,
-      },
+      data: { id: userId, email: "step-up-totp-replay@example.com", password_hash },
     });
 
     const secret = generateTotpSecret();
@@ -1524,31 +1195,17 @@ describe("verifyTotpOrRecoveryCodeDetailed", () => {
     });
 
     const code = generateTotpCode(secret);
-    expect(
-      await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code),
-    ).toEqual({ ok: true, method: "totp" });
+    expect(await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code)).toEqual({ ok: true, method: "totp" });
 
-    const replayResult = await verifyTotpOrRecoveryCodeDetailed(
-      prisma,
-      userId,
-      code,
-    );
-    expect(replayResult).toEqual({
-      ok: false,
-      reason: "no_match",
-      totpReplay: true,
-    });
+    const replayResult = await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code);
+    expect(replayResult).toEqual({ ok: false, reason: "no_match", totpReplay: true });
   });
 
   it("does not flag totpReplay for an ordinary wrong code that also matches no recovery code", async () => {
     const userId = "user-step-up-wrong-code";
     const password_hash = await hashPassword(PASSWORD);
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "step-up-wrong-code@example.com",
-        password_hash,
-      },
+      data: { id: userId, email: "step-up-wrong-code@example.com", password_hash },
     });
 
     const secret = generateTotpSecret();
@@ -1561,16 +1218,8 @@ describe("verifyTotpOrRecoveryCodeDetailed", () => {
       },
     });
 
-    const result = await verifyTotpOrRecoveryCodeDetailed(
-      prisma,
-      userId,
-      "000000",
-    );
-    expect(result).toEqual({
-      ok: false,
-      reason: "no_match",
-      totpReplay: false,
-    });
+    const result = await verifyTotpOrRecoveryCodeDetailed(prisma, userId, "000000");
+    expect(result).toEqual({ ok: false, reason: "no_match", totpReplay: false });
   });
 });
 
@@ -1581,28 +1230,14 @@ describe("verifyTotpOrRecoveryCodeDetailed", () => {
 // itself, not anything that needs a real database round trip (bot review finding, PR #1316).
 describe("verifyUserTotpCodeDetailed re-read-after-lost-race classification", () => {
   function stubPrisma(
-    row: {
-      id: string;
-      secret_enc: string;
-      last_totp_time_step: number | null;
-      recent_totp_time_steps?: number[];
-    } | null,
-    reRead: {
-      last_totp_time_step: number | null;
-      recent_totp_time_steps?: number[];
-    } | null,
+    row: { id: string; secret_enc: string; last_totp_time_step: number | null; recent_totp_time_steps?: number[] } | null,
+    reRead: { last_totp_time_step: number | null; recent_totp_time_steps?: number[] } | null,
   ) {
     return {
       userMfaMethod: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValue(row && { recent_totp_time_steps: [], ...row }),
+        findFirst: vi.fn().mockResolvedValue(row && { recent_totp_time_steps: [], ...row }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            reRead && { recent_totp_time_steps: [], ...reRead },
-          ),
+        findUnique: vi.fn().mockResolvedValue(reRead && { recent_totp_time_steps: [], ...reRead }),
       },
     } as unknown as PrismaClient;
   }
@@ -1612,10 +1247,7 @@ describe("verifyUserTotpCodeDetailed re-read-after-lost-race classification", ()
     const secretEnc = encryptTotpSecret(secret);
     const code = generateTotpCode(secret);
 
-    const db = stubPrisma(
-      { id: "row-1", secret_enc: secretEnc, last_totp_time_step: null },
-      null,
-    );
+    const db = stubPrisma({ id: "row-1", secret_enc: secretEnc, last_totp_time_step: null }, null);
     const result = await verifyUserTotpCodeDetailed(db, "user-1", code);
     expect(result).toEqual({ ok: false, replay: false });
   });
@@ -1662,10 +1294,7 @@ describe("verifyUserTotpCodeDetailed re-read-after-lost-race classification", ()
 
     const db = stubPrisma(
       { id: "row-1", secret_enc: secretEnc, last_totp_time_step: null },
-      {
-        last_totp_time_step: verified.timeStep + 1,
-        recent_totp_time_steps: [verified.timeStep + 1, verified.timeStep],
-      },
+      { last_totp_time_step: verified.timeStep + 1, recent_totp_time_steps: [verified.timeStep + 1, verified.timeStep] },
     );
     const result = await verifyUserTotpCodeDetailed(db, "user-1", code);
     expect(result).toEqual({ ok: false, replay: true });
@@ -1676,11 +1305,7 @@ describe("cancelPendingTotpEnrollment", () => {
   it("removes pending TOTP and enrollment backup codes", async () => {
     const userId = "user-cancel-pending";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "cancel-pending@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "cancel-pending@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     const started = await startTotpEnrollment(prisma, userId);
@@ -1688,11 +1313,7 @@ describe("cancelPendingTotpEnrollment", () => {
 
     await cancelPendingTotpEnrollment(prisma, userId);
 
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "totp" },
-      }),
-    ).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
     expect(
       await prisma.userMfaMethod.count({
         where: { user_id: userId, type: "recovery" },
@@ -1703,16 +1324,10 @@ describe("cancelPendingTotpEnrollment", () => {
   it("preserves recovery codes when cancelling a second-method TOTP attempt with another confirmed method", async () => {
     const userId = "user-cancel-second-method";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "cancel-second-method@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "cancel-second-method@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     await registerConfirmedWebauthnCredential(userId);
-    const recoveryCountBefore = await prisma.userMfaMethod.count({
-      where: { user_id: userId, type: "recovery" },
-    });
+    const recoveryCountBefore = await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } });
     expect(recoveryCountBefore).toBeGreaterThan(0);
 
     const started = await startTotpEnrollment(prisma, userId);
@@ -1720,26 +1335,16 @@ describe("cancelPendingTotpEnrollment", () => {
 
     await cancelPendingTotpEnrollment(prisma, userId);
 
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "totp" },
-      }),
-    ).toBe(0);
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "recovery" },
-      }),
-    ).toBe(recoveryCountBefore);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(
+      recoveryCountBefore,
+    );
   });
 
   it("does not delete confirmed TOTP or saved recovery codes when no pending enrollment", async () => {
     const userId = "user-cancel-confirmed";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "cancel-confirmed@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "cancel-confirmed@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     const secret = generateTotpSecret();
@@ -1771,80 +1376,44 @@ describe("removeTotpMethod", () => {
   it("removes confirmed TOTP while leaving WebAuthn credentials and backup recovery codes untouched", async () => {
     const userId = "user-remove-totp-second-method";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "remove-totp-second-method@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "remove-totp-second-method@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     await registerConfirmedWebauthnCredential(userId);
-    const recoveryCountBefore = await prisma.userMfaMethod.count({
-      where: { user_id: userId, type: "recovery" },
-    });
+    const recoveryCountBefore = await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } });
     expect(recoveryCountBefore).toBeGreaterThan(0);
 
     const secret = generateTotpSecret();
     await prisma.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "totp",
-        secret_enc: encryptTotpSecret(secret),
-        confirmed_at: new Date(),
-      },
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
     });
 
     expect(await removeTotpMethod(prisma, userId)).toBe(true);
 
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "totp" },
-      }),
-    ).toBe(0);
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "webauthn" },
-      }),
-    ).toBe(1);
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "recovery" },
-      }),
-    ).toBe(recoveryCountBefore);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(
+      recoveryCountBefore,
+    );
   });
 
   it("removes TOTP even when it is the user's only confirmed MFA method (no server-side last-method block)", async () => {
     const userId = "user-remove-totp-last-method";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "remove-totp-last-method@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "remove-totp-last-method@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     const secret = generateTotpSecret();
     await prisma.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "totp",
-        secret_enc: encryptTotpSecret(secret),
-        confirmed_at: new Date(),
-      },
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
     });
 
     expect(await removeTotpMethod(prisma, userId)).toBe(true);
-    expect(
-      await prisma.userMfaMethod.count({ where: { user_id: userId } }),
-    ).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
   });
 
   it("returns false and changes nothing when there is no TOTP row", async () => {
     const userId = "user-remove-totp-none";
     await prisma.user.create({
-      data: {
-        id: userId,
-        email: "remove-totp-none@example.com",
-        password_hash: await hashPassword(PASSWORD),
-      },
+      data: { id: userId, email: "remove-totp-none@example.com", password_hash: await hashPassword(PASSWORD) },
     });
 
     expect(await removeTotpMethod(prisma, userId)).toBe(false);
@@ -1871,14 +1440,10 @@ describe("resetUserMfa", () => {
     expect(loginResult.ok).toBe(true);
 
     await resetUserMfa(prisma, USER_ADMIN);
-    expect(
-      await prisma.userMfaMethod.count({ where: { user_id: USER_ADMIN } }),
-    ).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: USER_ADMIN } })).toBe(0);
 
     if (loginResult.ok) {
-      expect(
-        await validatePartialSession(prisma, loginResult.rawToken),
-      ).toBeNull();
+      expect(await validatePartialSession(prisma, loginResult.rawToken)).toBeNull();
     }
   });
 });

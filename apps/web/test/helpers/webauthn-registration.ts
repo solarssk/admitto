@@ -19,27 +19,10 @@ export async function registerConfirmedWebauthnCredential(
   label = "Seeded key",
 ) {
   const authenticator = createVirtualAuthenticator();
-  const begin = await beginWebauthnRegistration(
-    prisma,
-    uid,
-    "platform",
-    webauthnRp,
-  );
+  const begin = await beginWebauthnRegistration(prisma, uid, "platform", webauthnRp);
   if (!begin) throw new Error("beginWebauthnRegistration failed");
-  const response = authenticator.register({
-    challenge: begin.challenge,
-    rpID: webauthnRp.rpID,
-    origin: webauthnRp.origin,
-  });
-  const result = await finishWebauthnRegistration(
-    prisma,
-    uid,
-    response,
-    begin.challenge,
-    "platform",
-    webauthnRp,
-    { label: label },
-  );
+  const response = authenticator.register({ challenge: begin.challenge, rpID: webauthnRp.rpID, origin: webauthnRp.origin });
+  const result = await finishWebauthnRegistration(prisma, uid, response, begin.challenge, "platform", webauthnRp, { label });
   if (!result) throw new Error("finishWebauthnRegistration failed");
   await markBackupCodesAcknowledged(prisma, uid);
   return { ...result, authenticator };

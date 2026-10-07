@@ -16,25 +16,14 @@ import {
   finishWebauthnAssertion,
   type WebauthnRpConfig,
 } from "../src/mfa/webauthn.js";
-import {
-  startTotpEnrollment,
-  confirmTotpEnrollment,
-  resetUserMfa,
-} from "../src/mfa/enrollment.js";
-import {
-  generateTotpCode,
-  parseTotpSecretFromOtpauthUri,
-} from "../src/mfa/totp.js";
+import { startTotpEnrollment, confirmTotpEnrollment, resetUserMfa } from "../src/mfa/enrollment.js";
+import { generateTotpCode, parseTotpSecretFromOtpauthUri } from "../src/mfa/totp.js";
 import {
   userHasAnyConfirmedMfaMethod,
   userHasUnacknowledgedBackupCodes,
   userRequiresMfaStepUp,
 } from "../src/mfa/policy.js";
-import {
-  validateSession,
-  validatePartialSession,
-  promoteSessionToFull,
-} from "../src/session.js";
+import { validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { createVirtualAuthenticator } from "../src/webauthn-testing.js";
 
@@ -42,11 +31,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
 
 const PASSWORD = "webauthn-test-pass-123";
-const RP: WebauthnRpConfig = {
-  rpName: "Admitto",
-  rpID: "localhost",
-  origin: "http://localhost:3000",
-};
+const RP: WebauthnRpConfig = { rpName: "Admitto", rpID: "localhost", origin: "http://localhost:3000" };
 
 let prisma: PrismaClient;
 
@@ -69,12 +54,7 @@ async function createAdmin(id: string, email: string) {
     data: { id, email, password_hash: await hashPassword(PASSWORD) },
   });
   await prisma.roleAssignment.create({
-    data: {
-      user_id: id,
-      role: "admin",
-      scope_type: "instance",
-      scope_id: null,
-    },
+    data: { user_id: id, role: "admin", scope_type: "instance", scope_id: null },
   });
 }
 
@@ -87,20 +67,8 @@ async function registerCredential(
   const authenticator = createVirtualAuthenticator();
   const begin = await beginWebauthnRegistration(prisma, userId, attachment, RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
-  const response = authenticator.register({
-    challenge: begin.challenge,
-    rpID: RP.rpID,
-    origin: RP.origin,
-  });
-  const result = await finishWebauthnRegistration(
-    prisma,
-    userId,
-    response,
-    begin.challenge,
-    attachment,
-    RP,
-    { label: label },
-  );
+  const response = authenticator.register({ challenge: begin.challenge, rpID: RP.rpID, origin: RP.origin });
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, attachment, RP, { label });
   return { authenticator, begin, response, result };
 }
 
@@ -109,17 +77,11 @@ describe("WebAuthn registration", () => {
     const userId = "user-wa-passkey";
     await createAdmin(userId, "wa-passkey@example.com");
 
-    const { result } = await registerCredential(
-      userId,
-      "platform",
-      "My MacBook",
-    );
+    const { result } = await registerCredential(userId, "platform", "My MacBook");
     expect(result).not.toBeNull();
     expect(result!.backupCodes.length).toBeGreaterThan(0);
 
-    const row = await prisma.userMfaMethod.findUnique({
-      where: { id: result!.credentialRowId },
-    });
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     expect(row?.type).toBe("webauthn");
     expect(row?.webauthn_attachment).toBe("platform");
     expect(row?.label).toBe("My MacBook");
@@ -135,31 +97,16 @@ describe("WebAuthn registration", () => {
     const userId = "user-wa-seckey";
     await createAdmin(userId, "wa-seckey@example.com");
 
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "cross-platform",
-      RP,
-    );
-    expect(begin?.options.authenticatorSelection?.residentKey).toBe(
-      "discouraged",
-    );
+    const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
+    expect(begin?.options.authenticatorSelection?.residentKey).toBe("discouraged");
     // Non-binding hint only - no hard authenticatorAttachment filter (see beginWebauthnRegistration).
-    expect(
-      begin?.options.authenticatorSelection?.authenticatorAttachment,
-    ).toBeUndefined();
+    expect(begin?.options.authenticatorSelection?.authenticatorAttachment).toBeUndefined();
     expect(begin?.options.hints).toEqual(["security-key"]);
 
-    const { result } = await registerCredential(
-      userId,
-      "cross-platform",
-      "YubiKey 5C",
-    );
+    const { result } = await registerCredential(userId, "cross-platform", "YubiKey 5C");
     expect(result?.credentialRowId).toBeTruthy();
 
-    const row = await prisma.userMfaMethod.findUnique({
-      where: { id: result!.credentialRowId },
-    });
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     expect(row?.webauthn_attachment).toBe("cross-platform");
   });
 
@@ -181,9 +128,7 @@ describe("WebAuthn registration", () => {
     const second = await registerCredential(userId, "cross-platform", "Key 2");
     expect(second.result!.backupCodes).toEqual([]);
     expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "recovery" },
-      }),
+      await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } }),
     ).toBe(recoveryCountBefore);
     expect(await userHasUnacknowledgedBackupCodes(prisma, userId)).toBe(false);
   });
@@ -201,9 +146,7 @@ describe("WebAuthn registration", () => {
     const enrollment = await startTotpEnrollment(prisma, userId);
     expect(enrollment?.backupCodes).toEqual([]);
     const secret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri)!;
-    expect(
-      await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret)),
-    ).toBe(true);
+    expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret))).toBe(true);
 
     expect(await userHasUnacknowledgedBackupCodes(prisma, userId)).toBe(false);
   });
@@ -213,57 +156,23 @@ describe("WebAuthn registration", () => {
     await createAdmin(userId, "wa-only-first@example.com");
 
     const first = createVirtualAuthenticator();
-    const beginFirst = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
-    const respFirst = first.register({
-      challenge: beginFirst!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const beginFirst = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    const respFirst = first.register({ challenge: beginFirst!.challenge, rpID: RP.rpID, origin: RP.origin });
     expect(
-      await finishWebauthnRegistration(
-        prisma,
-        userId,
-        respFirst,
-        beginFirst!.challenge,
-        "platform",
-        RP,
-        { onlyFirstMethod: true },
-      ),
+      await finishWebauthnRegistration(prisma, userId, respFirst, beginFirst!.challenge, "platform", RP, {
+        onlyFirstMethod: true,
+      }),
     ).not.toBeNull();
 
     const second = createVirtualAuthenticator();
-    const beginSecond = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "cross-platform",
-      RP,
-    );
-    const respSecond = second.register({
-      challenge: beginSecond!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const beginSecond = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
+    const respSecond = second.register({ challenge: beginSecond!.challenge, rpID: RP.rpID, origin: RP.origin });
     expect(
-      await finishWebauthnRegistration(
-        prisma,
-        userId,
-        respSecond,
-        beginSecond!.challenge,
-        "cross-platform",
-        RP,
-        { onlyFirstMethod: true },
-      ),
-    ).toBeNull();
-    expect(
-      await prisma.userMfaMethod.count({
-        where: { user_id: userId, type: "webauthn" },
+      await finishWebauthnRegistration(prisma, userId, respSecond, beginSecond!.challenge, "cross-platform", RP, {
+        onlyFirstMethod: true,
       }),
-    ).toBe(1);
+    ).toBeNull();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
   });
 
   it("rejects a response signed for a different challenge", async () => {
@@ -271,26 +180,10 @@ describe("WebAuthn registration", () => {
     await createAdmin(userId, "wa-bad-challenge@example.com");
 
     const authenticator = createVirtualAuthenticator();
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
-    const response = authenticator.register({
-      challenge: "wrong-challenge",
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    const response = authenticator.register({ challenge: "wrong-challenge", rpID: RP.rpID, origin: RP.origin });
 
-    const result = await finishWebauthnRegistration(
-      prisma,
-      userId,
-      response,
-      begin!.challenge,
-      "platform",
-      RP,
-    );
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
@@ -299,12 +192,7 @@ describe("WebAuthn registration", () => {
     await createAdmin(userId, "wa-bad-attestation-sig@example.com");
 
     const authenticator = createVirtualAuthenticator();
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     // Unlike the other rejection tests above (all of which make @simplewebauthn's verifier throw
     // before it ever computes a `verified` result), this response has a real, well-formed
     // "packed" attestation whose signature doesn't match - the verifier resolves normally with
@@ -316,14 +204,7 @@ describe("WebAuthn registration", () => {
       origin: RP.origin,
     });
 
-    const result = await finishWebauthnRegistration(
-      prisma,
-      userId,
-      response,
-      begin!.challenge,
-      "platform",
-      RP,
-    );
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
@@ -332,78 +213,35 @@ describe("WebAuthn registration", () => {
     await createAdmin(userId, "wa-bad-origin@example.com");
 
     const authenticator = createVirtualAuthenticator();
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     const response = authenticator.register({
       challenge: begin!.challenge,
       rpID: RP.rpID,
       origin: "https://evil.example.com",
     });
 
-    const result = await finishWebauthnRegistration(
-      prisma,
-      userId,
-      response,
-      begin!.challenge,
-      "platform",
-      RP,
-    );
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
   it("rejects re-registering the same credential ID", async () => {
     const userId = "user-wa-dup";
     await createAdmin(userId, "wa-dup@example.com");
-    const { authenticator } = await registerCredential(
-      userId,
-      "platform",
-      "First",
-    );
+    const { authenticator } = await registerCredential(userId, "platform", "First");
 
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
-    const response = authenticator.register({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
-    const result = await finishWebauthnRegistration(
-      prisma,
-      userId,
-      response,
-      begin!.challenge,
-      "platform",
-      RP,
-    );
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    const response = authenticator.register({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", RP);
     expect(result).toBeNull();
   });
 
   it("excludes the user's own existing credentials from a new registration's options", async () => {
     const userId = "user-wa-exclude";
     await createAdmin(userId, "wa-exclude@example.com");
-    const { response: firstResponse } = await registerCredential(
-      userId,
-      "platform",
-      "First",
-    );
+    const { response: firstResponse } = await registerCredential(userId, "platform", "First");
 
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "cross-platform",
-      RP,
-    );
-    expect(begin?.options.excludeCredentials?.map((c) => c.id)).toContain(
-      firstResponse.id,
-    );
+    const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
+    expect(begin?.options.excludeCredentials?.map((c) => c.id)).toContain(firstResponse.id);
   });
 
   it("stores the transports the browser reported at registration", async () => {
@@ -411,33 +249,15 @@ describe("WebAuthn registration", () => {
     await createAdmin(userId, "wa-transports@example.com");
 
     const authenticator = createVirtualAuthenticator();
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "cross-platform",
-      RP,
-    );
-    const response = authenticator.register({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
+    const response = authenticator.register({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
     // The virtual authenticator doesn't report transports by default (matches many real
     // authenticators), set them here the way a browser's getTransports() would, to exercise the
     // "real transports reported" side of the `credential.transports ?? []` fallback.
     response.response.transports = ["usb", "nfc"];
 
-    const result = await finishWebauthnRegistration(
-      prisma,
-      userId,
-      response,
-      begin!.challenge,
-      "cross-platform",
-      RP,
-    );
-    const row = await prisma.userMfaMethod.findUnique({
-      where: { id: result!.credentialRowId },
-    });
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "cross-platform", RP);
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     expect(row?.webauthn_transports).toEqual(["usb", "nfc"]);
   });
 
@@ -452,32 +272,15 @@ describe("WebAuthn registration", () => {
       },
     });
     await prisma.roleAssignment.create({
-      data: {
-        user_id: userId,
-        role: "admin",
-        scope_type: "instance",
-        scope_id: null,
-      },
+      data: { user_id: userId, role: "admin", scope_type: "instance", scope_id: null },
     });
 
-    const begin = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     expect(begin?.options.user.displayName).toBe("Ada Lovelace");
   });
 
   it("returns null starting a registration for an unknown user", async () => {
-    expect(
-      await beginWebauthnRegistration(
-        prisma,
-        "user-does-not-exist",
-        "platform",
-        RP,
-      ),
-    ).toBeNull();
+    expect(await beginWebauthnRegistration(prisma, "user-does-not-exist", "platform", RP)).toBeNull();
   });
 
   it("uses the same WebAuthn user handle across separate registration ceremonies for one account, distinct from another account's", async () => {
@@ -486,24 +289,9 @@ describe("WebAuthn registration", () => {
     await createAdmin(userA, "wa-handle-a@example.com");
     await createAdmin(userB, "wa-handle-b@example.com");
 
-    const first = await beginWebauthnRegistration(
-      prisma,
-      userA,
-      "platform",
-      RP,
-    );
-    const second = await beginWebauthnRegistration(
-      prisma,
-      userA,
-      "cross-platform",
-      RP,
-    );
-    const other = await beginWebauthnRegistration(
-      prisma,
-      userB,
-      "platform",
-      RP,
-    );
+    const first = await beginWebauthnRegistration(prisma, userA, "platform", RP);
+    const second = await beginWebauthnRegistration(prisma, userA, "cross-platform", RP);
+    const other = await beginWebauthnRegistration(prisma, userB, "platform", RP);
 
     expect(first?.options.user.id).toBeTruthy();
     expect(second?.options.user.id).toBe(first?.options.user.id);
@@ -531,22 +319,10 @@ describe("WebAuthn credential management", () => {
     const otherUserId = "user-wa-remove-other";
     await createAdmin(userId, "wa-remove@example.com");
     await createAdmin(otherUserId, "wa-remove-other@example.com");
-    const { result } = await registerCredential(
-      userId,
-      "platform",
-      "To remove",
-    );
+    const { result } = await registerCredential(userId, "platform", "To remove");
 
-    expect(
-      await removeWebauthnCredential(
-        prisma,
-        otherUserId,
-        result!.credentialRowId,
-      ),
-    ).toBe(false);
-    expect(
-      await removeWebauthnCredential(prisma, userId, result!.credentialRowId),
-    ).toBe(true);
+    expect(await removeWebauthnCredential(prisma, otherUserId, result!.credentialRowId)).toBe(false);
+    expect(await removeWebauthnCredential(prisma, userId, result!.credentialRowId)).toBe(true);
     expect(await listWebauthnCredentials(prisma, userId)).toHaveLength(0);
   });
 });
@@ -561,32 +337,16 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
   it("verifies a legitimate assertion and advances the sign counter", async () => {
     const userId = "user-wa-assert";
     await createAdmin(userId, "wa-assert@example.com");
-    const { authenticator, result } = await registerCredential(
-      userId,
-      "platform",
-      "Assert key",
-    );
+    const { authenticator, result } = await registerCredential(userId, "platform", "Assert key");
 
     const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
     expect(begin?.options.allowCredentials).toHaveLength(1);
 
-    const response = authenticator.authenticate({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
-    const finished = await finishWebauthnAssertion(
-      prisma,
-      userId,
-      response,
-      begin!.challenge,
-      RP,
-    );
+    const response = authenticator.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
+    const finished = await finishWebauthnAssertion(prisma, userId, response, begin!.challenge, RP);
     expect(finished?.credentialRowId).toBe(result!.credentialRowId);
 
-    const row = await prisma.userMfaMethod.findUnique({
-      where: { id: result!.credentialRowId },
-    });
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     expect(row?.webauthn_sign_count).toBe(2); // 1 from registration, 2 from this assertion
     expect(row?.last_used_at?.getTime()).toBeGreaterThan(0);
   });
@@ -594,37 +354,13 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
   it("rejects replaying the exact same assertion response twice (counter does not advance)", async () => {
     const userId = "user-wa-replay";
     await createAdmin(userId, "wa-replay@example.com");
-    const { authenticator } = await registerCredential(
-      userId,
-      "platform",
-      "Replay key",
-    );
+    const { authenticator } = await registerCredential(userId, "platform", "Replay key");
 
     const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
-    const response = authenticator.authenticate({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const response = authenticator.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
 
-    expect(
-      await finishWebauthnAssertion(
-        prisma,
-        userId,
-        response,
-        begin!.challenge,
-        RP,
-      ),
-    ).not.toBeNull();
-    expect(
-      await finishWebauthnAssertion(
-        prisma,
-        userId,
-        response,
-        begin!.challenge,
-        RP,
-      ),
-    ).toBeNull();
+    expect(await finishWebauthnAssertion(prisma, userId, response, begin!.challenge, RP)).not.toBeNull();
+    expect(await finishWebauthnAssertion(prisma, userId, response, begin!.challenge, RP)).toBeNull();
   });
 
   it("rejects an assertion signed with the wrong key", async () => {
@@ -637,40 +373,20 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
     // Impostor signs with its own key but claims the real credential ID is unknown to it, so
     // its own (different) id won't match any stored row, finishWebauthnAssertion looks up by
     // response.id, which naturally rejects an authenticator that was never registered.
-    const response = impostor.authenticate({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
-    expect(
-      await finishWebauthnAssertion(
-        prisma,
-        userId,
-        response,
-        begin!.challenge,
-        RP,
-      ),
-    ).toBeNull();
+    const response = impostor.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
+    expect(await finishWebauthnAssertion(prisma, userId, response, begin!.challenge, RP)).toBeNull();
   });
 
   it("rejects a forged response that claims the real credential ID but is signed by a different key", async () => {
     const userId = "user-wa-forged-id";
     await createAdmin(userId, "wa-forged-id@example.com");
-    const { response: registration, result } = await registerCredential(
-      userId,
-      "platform",
-      "Real key",
-    );
+    const { response: registration, result } = await registerCredential(userId, "platform", "Real key");
     const impostor = createVirtualAuthenticator();
     // Warm up the impostor's own sign counter past the real (stored) credential's counter (1)
     // first, otherwise @simplewebauthn/server's counter-regression guard throws before it ever
     // reaches signature verification, which would only prove the counter check works, not that a
     // bad signature against the real public key is independently rejected.
-    impostor.authenticate({
-      challenge: "warm-up",
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    impostor.authenticate({ challenge: "warm-up", rpID: RP.rpID, origin: RP.origin });
 
     const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
     // Unlike the "wrong key" case above (a stranger's own, unregistered credential ID, rejected
@@ -679,26 +395,12 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
     // lookup succeeds and the stored (real) public key is used to verify a signature that was
     // never made with it, so rejection has to come from the signature check itself, not the
     // lookup or the counter guard.
-    const forged = impostor.authenticate({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const forged = impostor.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
     forged.id = registration.id;
     forged.rawId = registration.rawId;
 
-    expect(
-      await finishWebauthnAssertion(
-        prisma,
-        userId,
-        forged,
-        begin!.challenge,
-        RP,
-      ),
-    ).toBeNull();
-    const row = await prisma.userMfaMethod.findUnique({
-      where: { id: result!.credentialRowId },
-    });
+    expect(await finishWebauthnAssertion(prisma, userId, forged, begin!.challenge, RP)).toBeNull();
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     expect(row?.webauthn_sign_count).toBe(1); // unchanged, a rejected assertion never advances it
   });
 
@@ -712,22 +414,12 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
   it("rejects a write based on a stale counter snapshot, once another authentication has already advanced it (clone-detection CAS)", async () => {
     const userId = "user-wa-counter-cas";
     await createAdmin(userId, "wa-counter-cas@example.com");
-    const { authenticator, result } = await registerCredential(
-      userId,
-      "platform",
-      "CAS key",
-    );
+    const { authenticator, result } = await registerCredential(userId, "platform", "CAS key");
 
     const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
-    const response = authenticator.authenticate({
-      challenge: begin!.challenge,
-      rpID: RP.rpID,
-      origin: RP.origin,
-    });
+    const response = authenticator.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
 
-    const staleRow = await prisma.userMfaMethod.findUniqueOrThrow({
-      where: { id: result!.credentialRowId },
-    });
+    const staleRow = await prisma.userMfaMethod.findUniqueOrThrow({ where: { id: result!.credentialRowId } });
     // Simulate a second, already-committed authentication (e.g. a cloned credential answering a
     // different challenge) advancing the real stored counter past what `staleRow` still reflects.
     await prisma.userMfaMethod.update({
@@ -740,25 +432,14 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
     const staleReadPrisma = {
       userMfaMethod: {
         findFirst: async () => staleRow,
-        updateMany: (
-          args: Parameters<PrismaClient["userMfaMethod"]["updateMany"]>[0],
-        ) => prisma.userMfaMethod.updateMany(args),
+        updateMany: (args: Parameters<PrismaClient["userMfaMethod"]["updateMany"]>[0]) =>
+          prisma.userMfaMethod.updateMany(args),
       },
     } as unknown as PrismaClient;
 
-    expect(
-      await finishWebauthnAssertion(
-        staleReadPrisma,
-        userId,
-        response,
-        begin!.challenge,
-        RP,
-      ),
-    ).toBeNull();
+    expect(await finishWebauthnAssertion(staleReadPrisma, userId, response, begin!.challenge, RP)).toBeNull();
 
-    const row = await prisma.userMfaMethod.findUnique({
-      where: { id: result!.credentialRowId },
-    });
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
     // Unchanged by the rejected write - still the other authentication's counter, not this one's.
     expect(row?.webauthn_sign_count).toBe(staleRow.webauthn_sign_count! + 10);
   });
@@ -787,11 +468,7 @@ describe("WebAuthn-only user, login and session policy", () => {
     const userId = "user-wa-full-session";
     const email = "wa-full-session@example.com";
     await createAdmin(userId, email);
-    const { result } = await registerCredential(
-      userId,
-      "platform",
-      "Full session key",
-    );
+    const { result } = await registerCredential(userId, "platform", "Full session key");
     await prisma.userMfaMethod.update({
       where: { id: result!.credentialRowId },
       data: { backup_codes_acknowledged_at: new Date() },
@@ -804,11 +481,7 @@ describe("WebAuthn-only user, login and session policy", () => {
     // WebAuthn login-time verification is wired in a later PR; promote directly here to isolate
     // the session-policy check this PR is responsible for (a WebAuthn-only full session must not
     // be rejected the way a TOTP-only check would have rejected it before this change).
-    const promoted = await promoteSessionToFull(
-      prisma,
-      loginResult.sessionId,
-      userId,
-    );
+    const promoted = await promoteSessionToFull(prisma, loginResult.sessionId, userId);
     expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
     // Promotion rotates the session token - the pre-promotion cookie must stop validating.
     expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();

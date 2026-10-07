@@ -1,14 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
@@ -22,10 +14,7 @@ import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
-const adminDistRoot = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../fixtures/admin-dist",
-);
+const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
 const BASE_URL = "https://admitto.example.com";
 const RP_ID = "admitto.example.com";
@@ -44,40 +33,21 @@ let inactiveUserId = "";
 
 async function seed(client: PrismaClient) {
   const emails = [EMAIL_USER, EMAIL_INACTIVE];
-  await client.userMfaMethod.deleteMany({
-    where: { user: { email: { in: emails } } },
-  });
+  await client.userMfaMethod.deleteMany({ where: { user: { email: { in: emails } } } });
   await client.roleAssignment.deleteMany({ where: { scope_id: ORG_PL } });
   await client.user.deleteMany({ where: { email: { in: emails } } });
   await client.organization.deleteMany({ where: { id: ORG_PL } });
 
   const password_hash = await hashPassword(PASSWORD);
-  await client.organization.create({
-    data: {
-      id: ORG_PL,
-      name: "Passkey Login Test Org",
-      slug: "passkey-login-test",
-    },
-  });
+  await client.organization.create({ data: { id: ORG_PL, name: "Passkey Login Test Org", slug: "passkey-login-test" } });
 
-  const user = await client.user.create({
-    data: { email: EMAIL_USER, password_hash },
-  });
+  const user = await client.user.create({ data: { email: EMAIL_USER, password_hash } });
   userId = user.id;
-  const inactiveUser = await client.user.create({
-    data: { email: EMAIL_INACTIVE, password_hash, is_active: false },
-  });
+  const inactiveUser = await client.user.create({ data: { email: EMAIL_INACTIVE, password_hash, is_active: false } });
   inactiveUserId = inactiveUser.id;
 
   await client.roleAssignment.createMany({
-    data: [
-      {
-        user_id: userId,
-        role: "operator",
-        scope_type: "event",
-        scope_id: "evt-passkey-login",
-      },
-    ],
+    data: [{ user_id: userId, role: "operator", scope_type: "event", scope_id: "evt-passkey-login" }],
   });
 }
 
@@ -85,27 +55,10 @@ async function seed(client: PrismaClient) {
  * routes) and acknowledges its backup codes, so login tests exercise the FULL-session path. */
 async function registerCredential(targetUserId: string, label = "Login key") {
   const authenticator = createVirtualAuthenticator();
-  const begin = await beginWebauthnRegistration(
-    prisma,
-    targetUserId,
-    "platform",
-    RP,
-  );
+  const begin = await beginWebauthnRegistration(prisma, targetUserId, "platform", RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
-  const response = authenticator.register({
-    challenge: begin.challenge,
-    rpID: RP_ID,
-    origin: BASE_URL,
-  });
-  const result = await finishWebauthnRegistration(
-    prisma,
-    targetUserId,
-    response,
-    begin.challenge,
-    "platform",
-    RP,
-    { label: label },
-  );
+  const response = authenticator.register({ challenge: begin.challenge, rpID: RP_ID, origin: BASE_URL });
+  const result = await finishWebauthnRegistration(prisma, targetUserId, response, begin.challenge, "platform", RP, { label });
   if (!result) throw new Error("finishWebauthnRegistration returned null");
   await prisma.userMfaMethod.update({
     where: { id: result.credentialRowId },
@@ -117,21 +70,14 @@ async function registerCredential(targetUserId: string, label = "Login key") {
 async function setPasskeyLoginEnabled(enabled: boolean) {
   await prisma.systemSettings.upsert({
     where: { key: SETTING_PASSKEY_LOGIN_ENABLED },
-    create: {
-      key: SETTING_PASSKEY_LOGIN_ENABLED,
-      value_json: JSON.stringify(enabled),
-    },
+    create: { key: SETTING_PASSKEY_LOGIN_ENABLED, value_json: JSON.stringify(enabled) },
     update: { value_json: JSON.stringify(enabled) },
   });
 }
 
 interface BeginResponseBody {
   ceremony: string;
-  options: {
-    challenge: string;
-    allowCredentials?: unknown[];
-    userVerification?: string;
-  };
+  options: { challenge: string; allowCredentials?: unknown[]; userVerification?: string };
 }
 
 async function begin() {
@@ -161,13 +107,9 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await prisma.userMfaMethod.deleteMany({
-    where: { user_id: { in: [userId, inactiveUserId] } },
-  });
+  await prisma.userMfaMethod.deleteMany({ where: { user_id: { in: [userId, inactiveUserId] } } });
   await prisma.systemSettings.deleteMany({
-    where: {
-      key: { in: [SETTING_WEBAUTHN_ENABLED, SETTING_PASSKEY_LOGIN_ENABLED] },
-    },
+    where: { key: { in: [SETTING_WEBAUTHN_ENABLED, SETTING_PASSKEY_LOGIN_ENABLED] } },
   });
   rateLimitStore.reset();
 });
@@ -182,9 +124,7 @@ describe("POST /api/auth/login/webauthn/begin", () => {
   it("returns 403 passkey_login_disabled when the setting is off (default)", async () => {
     const { res, body } = await begin();
     expect(res.status).toBe(403);
-    expect((body as unknown as { code: string }).code).toBe(
-      "passkey_login_disabled",
-    );
+    expect((body as unknown as { code: string }).code).toBe("passkey_login_disabled");
   });
 
   it("returns discoverable-credential options with no allowCredentials and required user verification", async () => {
@@ -211,10 +151,7 @@ describe("POST /api/auth/login/webauthn/begin", () => {
     await setPasskeyLoginEnabled(true);
     const res = await app.request("/api/auth/login/webauthn/begin", {
       method: "POST",
-      headers: {
-        Origin: "https://evil.example.com",
-        "Content-Type": "application/json",
-      },
+      headers: { Origin: "https://evil.example.com", "Content-Type": "application/json" },
     });
     expect(res.status).toBe(403);
   });
@@ -225,11 +162,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
     await setPasskeyLoginEnabled(true);
     const authenticator = await registerCredential(userId);
     const { body: beginBody } = await begin();
-    const response = authenticator.authenticate({
-      challenge: beginBody.options.challenge,
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
+    const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
 
     const res = await app.request("/api/auth/login/webauthn/finish", {
       method: "POST",
@@ -245,9 +178,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       where: { user_id: userId, event_type: "auth.login.success" },
       orderBy: { created_at: "desc" },
     });
-    expect((row?.metadata as { method?: string } | null)?.method).toBe(
-      "passkey",
-    );
+    expect((row?.metadata as { method?: string } | null)?.method).toBe("passkey");
   });
 
   describe("session cookie lifetime", () => {
@@ -257,11 +188,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       await setPasskeyLoginEnabled(true);
       const authenticator = await registerCredential(userId);
       const { body: beginBody } = await begin();
-      const response = authenticator.authenticate({
-        challenge: beginBody.options.challenge,
-        rpID: RP_ID,
-        origin: BASE_URL,
-      });
+      const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
       return app.request("/api/auth/login/webauthn/finish", {
         method: "POST",
         headers: { ...sameOrigin, "Content-Type": "application/json" },
@@ -292,25 +219,18 @@ describe("POST /api/auth/login/webauthn/finish", () => {
           organization_id: ORG_PL,
         },
       });
-      const sessionEnd =
-        Date.parse(`${day}T00:00:00.000Z`) + 30 * 60 * 60 * 1000; // 06:00 UTC the next morning
+      const sessionEnd = Date.parse(`${day}T00:00:00.000Z`) + 30 * 60 * 60 * 1000; // 06:00 UTC the next morning
 
       const res = await finishPasskeyLogin();
       expect(res.status).toBe(200);
-      const cookie = res.headers
-        .getSetCookie()
-        .find((c) => c.startsWith("admitto_session="));
-      expect(cookie).toContain(
-        `Max-Age=${Math.floor((sessionEnd - now.getTime()) / 1000)}`,
-      );
+      const cookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+      expect(cookie).toContain(`Max-Age=${Math.floor((sessionEnd - now.getTime()) / 1000)}`);
     });
 
     it("keeps a browser-session cookie for an operator with no event today", async () => {
       const res = await finishPasskeyLogin();
       expect(res.status).toBe(200);
-      const cookie = res.headers
-        .getSetCookie()
-        .find((c) => c.startsWith("admitto_session="));
+      const cookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
       expect(cookie).toBeDefined();
       expect(cookie).not.toMatch(/Max-Age/i);
     });
@@ -319,11 +239,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
   it("returns 400 challenge_expired when the ceremony token is unknown", async () => {
     await setPasskeyLoginEnabled(true);
     const authenticator = await registerCredential(userId);
-    const response = authenticator.authenticate({
-      challenge: "irrelevant",
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
+    const response = authenticator.authenticate({ challenge: "irrelevant", rpID: RP_ID, origin: BASE_URL });
 
     const res = await app.request("/api/auth/login/webauthn/finish", {
       method: "POST",
@@ -331,9 +247,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       body: JSON.stringify({ ceremony: "unknown-ceremony-token", response }),
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { code: string }).toEqual({
-      code: "challenge_expired",
-    });
+    expect((await res.json()) as { code: string }).toEqual({ code: "challenge_expired" });
   });
 
   it("returns the same generic 401 for an unknown credential and for an inactive account (no enumeration)", async () => {
@@ -341,34 +255,20 @@ describe("POST /api/auth/login/webauthn/finish", () => {
 
     const impostor = createVirtualAuthenticator();
     const { body: beginForImpostor } = await begin();
-    const impostorResponse = impostor.authenticate({
-      challenge: beginForImpostor.options.challenge,
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
+    const impostorResponse = impostor.authenticate({ challenge: beginForImpostor.options.challenge, rpID: RP_ID, origin: BASE_URL });
     const unknownRes = await app.request("/api/auth/login/webauthn/finish", {
       method: "POST",
       headers: { ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ceremony: beginForImpostor.ceremony,
-        response: impostorResponse,
-      }),
+      body: JSON.stringify({ ceremony: beginForImpostor.ceremony, response: impostorResponse }),
     });
 
     const inactiveAuthenticator = await registerCredential(inactiveUserId);
     const { body: beginForInactive } = await begin();
-    const inactiveResponse = inactiveAuthenticator.authenticate({
-      challenge: beginForInactive.options.challenge,
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
+    const inactiveResponse = inactiveAuthenticator.authenticate({ challenge: beginForInactive.options.challenge, rpID: RP_ID, origin: BASE_URL });
     const inactiveRes = await app.request("/api/auth/login/webauthn/finish", {
       method: "POST",
       headers: { ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ceremony: beginForInactive.ceremony,
-        response: inactiveResponse,
-      }),
+      body: JSON.stringify({ ceremony: beginForInactive.ceremony, response: inactiveResponse }),
     });
 
     expect(unknownRes.status).toBe(401);
@@ -380,11 +280,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
     await setPasskeyLoginEnabled(true);
     const authenticator = await registerCredential(userId);
     const { body: beginBody } = await begin();
-    const response = authenticator.authenticate({
-      challenge: beginBody.options.challenge,
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
+    const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
 
     const first = await app.request("/api/auth/login/webauthn/finish", {
       method: "POST",
@@ -408,9 +304,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       body: JSON.stringify({ ceremony: "irrelevant", response: {} }),
     });
     expect(res.status).toBe(403);
-    expect((await res.json()) as { code: string }).toEqual({
-      code: "passkey_login_disabled",
-    });
+    expect((await res.json()) as { code: string }).toEqual({ code: "passkey_login_disabled" });
   });
 
   it("returns 400 invalid JSON for a malformed body", async () => {
@@ -421,9 +315,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       body: "{not json",
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({
-      error: "invalid JSON",
-    });
+    expect((await res.json()) as { error: string }).toEqual({ error: "invalid JSON" });
   });
 
   it("returns 400 invalid body when the response field is missing", async () => {
@@ -434,9 +326,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       body: JSON.stringify({ ceremony: "some-ceremony" }),
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({
-      error: "invalid body",
-    });
+    expect((await res.json()) as { error: string }).toEqual({ error: "invalid body" });
   });
 
   it("routes to the backup-codes step when the passkey is the account's first-ever unacknowledged MFA method", async () => {
@@ -444,33 +334,12 @@ describe("POST /api/auth/login/webauthn/finish", () => {
     // Register directly (not via registerCredential(), which pre-acknowledges backup codes) so
     // this account's first-ever confirmed MFA method still owes that acknowledgment.
     const authenticator = createVirtualAuthenticator();
-    const beginReg = await beginWebauthnRegistration(
-      prisma,
-      userId,
-      "platform",
-      RP,
-    );
-    const regResponse = authenticator.register({
-      challenge: beginReg!.challenge,
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
-    await finishWebauthnRegistration(
-      prisma,
-      userId,
-      regResponse,
-      beginReg!.challenge,
-      "platform",
-      RP,
-      { label: "Key" },
-    );
+    const beginReg = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    const regResponse = authenticator.register({ challenge: beginReg!.challenge, rpID: RP_ID, origin: BASE_URL });
+    await finishWebauthnRegistration(prisma, userId, regResponse, beginReg!.challenge, "platform", RP, { label: "Key" });
 
     const { body: beginBody } = await begin();
-    const response = authenticator.authenticate({
-      challenge: beginBody.options.challenge,
-      rpID: RP_ID,
-      origin: BASE_URL,
-    });
+    const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
     const res = await app.request("/api/auth/login/webauthn/finish", {
       method: "POST",
       headers: { ...sameOrigin, "Content-Type": "application/json" },
@@ -484,17 +353,10 @@ describe("POST /api/auth/login/webauthn/finish", () => {
   it("routes to change-password when the account has a forced password change pending", async () => {
     await setPasskeyLoginEnabled(true);
     const authenticator = await registerCredential(userId);
-    await prisma.user.update({
-      where: { id: userId },
-      data: { must_change_password: true },
-    });
+    await prisma.user.update({ where: { id: userId }, data: { must_change_password: true } });
     try {
       const { body: beginBody } = await begin();
-      const response = authenticator.authenticate({
-        challenge: beginBody.options.challenge,
-        rpID: RP_ID,
-        origin: BASE_URL,
-      });
+      const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
       const res = await app.request("/api/auth/login/webauthn/finish", {
         method: "POST",
         headers: { ...sameOrigin, "Content-Type": "application/json" },
@@ -504,10 +366,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
       const body = (await res.json()) as { ok: boolean; next: string };
       expect(body.next).toBe("/change-password");
     } finally {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { must_change_password: false },
-      });
+      await prisma.user.update({ where: { id: userId }, data: { must_change_password: false } });
     }
   });
 });

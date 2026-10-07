@@ -1,16 +1,10 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import type {
-  AuthenticationResponseJSON,
-  RegistrationResponseJSON,
-} from "@simplewebauthn/server";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@admitto/db";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
-import {
-  sanitizePreferredLocale,
-  sanitizePreferredTimeFormat,
-} from "@admitto/shared";
+import { sanitizePreferredLocale, sanitizePreferredTimeFormat } from "@admitto/shared";
 import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
 import {
   SESSION_COOKIE_NAME,
@@ -49,11 +43,7 @@ import {
 } from "@admitto/auth";
 import { generateToken } from "@admitto/crypto";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import {
-  checkMfaVerifyRateLimit,
-  checkWebauthnStepUpRateLimit,
-  resolveMfaClientIp,
-} from "./mfa-rate-limit.js";
+import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
@@ -61,10 +51,7 @@ import {
   clearEnrollmentBackupCodes,
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
-import {
-  stashWebauthnChallenge,
-  consumeWebauthnChallenge,
-} from "./webauthn-challenge-cache.js";
+import { stashWebauthnChallenge, consumeWebauthnChallenge } from "./webauthn-challenge-cache.js";
 import {
   resolveWebauthnRp,
   webauthnAuthenticationResponseSchema,
@@ -100,11 +87,7 @@ function sessionCookieOptions(c: Context): {
  * event-day session so the cookie outlives the browser or tablet app being closed; every other
  * session keeps a browser-session cookie.
  */
-export function setSessionCookie(
-  c: Context,
-  rawToken: string,
-  maxAgeSeconds?: number,
-): void {
+export function setSessionCookie(c: Context, rawToken: string, maxAgeSeconds?: number): void {
   setCookie(c, SESSION_COOKIE_NAME, rawToken, {
     ...sessionCookieOptions(c),
     ...(maxAgeSeconds === undefined ? {} : { maxAge: maxAgeSeconds }),
@@ -153,20 +136,13 @@ export async function handleLogin(
   }
 
   const { email, password } = body as Record<string, unknown>;
-  if (
-    typeof email !== "string" ||
-    typeof password !== "string" ||
-    !email ||
-    !password
-  ) {
+  if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
     return c.json(AUTH_ERROR, 401);
   }
 
   // Counted before the password is verified, so a correct guess after the budget is spent is
   // refused too (otherwise the throttle only slows down wrong guesses, not the final right one).
-  if (
-    !(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))
-  ) {
+  if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -192,10 +168,7 @@ export async function handleLogin(
       result.sessionId,
       result.userId,
     );
-    return c.json(
-      { ok: true, next: result.next, backup_codes: backupCodes },
-      200,
-    );
+    return c.json({ ok: true, next: result.next, backup_codes: backupCodes }, 200);
   }
   return c.json({ ok: true, next: result.next }, 200);
 }
@@ -205,14 +178,9 @@ export async function handleLogin(
  * that trust itself expires or is explicitly revoked (password change, MFA reset, admin action),
  * not "only until the next logout". A normal sign-out should not force MFA again on next login,
  * on this same device, before that trust window ends. */
-export async function handleLogout(
-  c: Context,
-  db: PrismaClient,
-): Promise<Response> {
+export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const validated = rawToken
-    ? await validatePartialSession(db, rawToken)
-    : null;
+  const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
   return c.json({ ok: true }, 200);
@@ -230,25 +198,16 @@ export interface HandleMeOptions {
   includeSetupComplete?: boolean;
 }
 
-const MAILER_PROVIDERS = [
-  "smtp",
-  "graph",
-  "powerautomate",
-  "export_only",
-] as const;
+const MAILER_PROVIDERS = ["smtp", "graph", "powerautomate", "export_only"] as const;
 
-function toMailerProvider(
-  value: string | null,
-): MailerStatusPayload["provider"] {
+function toMailerProvider(value: string | null): MailerStatusPayload["provider"] {
   if (!value) return null;
   return (MAILER_PROVIDERS as readonly string[]).includes(value)
     ? (value as MailerStatusPayload["provider"])
     : null;
 }
 
-async function resolveMailerStatus(
-  db: PrismaClient,
-): Promise<MailerStatusPayload> {
+async function resolveMailerStatus(db: PrismaClient): Promise<MailerStatusPayload> {
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const desc = await describeMailConfigForOrg(orgId, db, process.env);
   const provider = toMailerProvider(desc.provider.value);
@@ -309,9 +268,7 @@ export async function handleMe(
     user: {
       ...user,
       preferred_locale: sanitizePreferredLocale(user.preferred_locale),
-      preferred_time_format: sanitizePreferredTimeFormat(
-        user.preferred_time_format,
-      ),
+      preferred_time_format: sanitizePreferredTimeFormat(user.preferred_time_format),
     },
     assignments,
     device_label,
@@ -322,15 +279,9 @@ export async function handleMe(
     body.mailer_status = await resolveMailerStatus(db);
   }
 
-  if (
-    opts?.includeSetupComplete ||
-    assignments.some(
-      (a) =>
-        a.role === "superadmin" &&
-        a.scope_type === "instance" &&
-        a.scope_id == null,
-    )
-  ) {
+  if (opts?.includeSetupComplete || assignments.some(
+    (a) => a.role === "superadmin" && a.scope_type === "instance" && a.scope_id == null,
+  )) {
     body.setup_complete = await resolveSetupComplete(db);
   }
 
@@ -338,10 +289,7 @@ export async function handleMe(
 }
 
 /** POST /api/auth/session/device-label, set optional tablet label on the current session. */
-export async function handlePostSessionDeviceLabel(
-  c: Context,
-  db: PrismaClient,
-): Promise<Response> {
+export async function handlePostSessionDeviceLabel(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!auth?.sessionId) {
     return c.json(AUTH_ERROR, 401);
@@ -403,25 +351,13 @@ export async function handleMfaVerify(
     return c.json(AUTH_ERROR, 401);
   }
 
-  const { code, remember_device: rememberDevice } = body as Record<
-    string,
-    unknown
-  >;
+  const { code, remember_device: rememberDevice } = body as Record<string, unknown>;
   if (typeof code !== "string" || !code) {
     return c.json(AUTH_ERROR, 401);
   }
 
   const ip = resolveMfaClientIp(c);
-  if (
-    !(await checkMfaVerifyRateLimit(
-      rateLimitStore,
-      partial.sessionId,
-      ip,
-      code,
-      undefined,
-      partial.userId,
-    ))
-  ) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code, undefined, partial.userId))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -435,12 +371,7 @@ export async function handleMfaVerify(
       ip,
       userAgent: c.req.header("user-agent"),
     },
-    {
-      userId: partial.userId,
-      sessionId: partial.sessionId,
-      ip,
-      userAgent: c.req.header("user-agent"),
-    },
+    { userId: partial.userId, sessionId: partial.sessionId, ip, userAgent: c.req.header("user-agent") },
   );
 
   if (!result.ok) {
@@ -458,17 +389,9 @@ export async function handleMfaVerify(
   // User still owes backup-code acknowledgment, keep them in the constrained
   // stage instead of granting full access (IAM-002).
   if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
-    const backupCodes = await ensureEnrollmentBackupCodesStashed(
-      db,
-      partial.sessionId,
-      partial.userId,
-    );
+    const backupCodes = await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
     return c.json(
-      {
-        ok: true,
-        next: LOGIN_NEXT.BACKUP_CODES_REQUIRED,
-        backup_codes: backupCodes,
-      },
+      { ok: true, next: LOGIN_NEXT.BACKUP_CODES_REQUIRED, backup_codes: backupCodes },
       200,
     );
   }
@@ -500,9 +423,7 @@ export async function resolvePostMfaLandingPath(
   if (stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     await ensureEnrollmentBackupCodesStashed(db, sessionId, userId);
     const next = resolveOptionalSafeRedirectPath(nextRaw);
-    return next
-      ? `/mfa/enroll/backup-codes?next=${encodeURIComponent(next)}`
-      : "/mfa/enroll/backup-codes";
+    return next ? `/mfa/enroll/backup-codes?next=${encodeURIComponent(next)}` : "/mfa/enroll/backup-codes";
   }
   if (stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
     return "/change-password";
@@ -518,10 +439,7 @@ export async function resolvePostMfaLandingPath(
     /* v8 ignore start */
     await revokeSession(db, sessionId);
     clearSessionCookie(c);
-    console.error(
-      "post-login redirect:",
-      err instanceof Error ? err.message : "unknown",
-    );
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
     return "/login";
     /* v8 ignore stop */
   }
@@ -591,14 +509,7 @@ export async function handlePostMfaWebauthnVerify(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (
-    !(await checkWebauthnStepUpRateLimit(
-      rateLimitStore,
-      partial.sessionId,
-      ip,
-      "login-mfa-webauthn",
-    ))
-  ) {
+  if (!(await checkWebauthnStepUpRateLimit(rateLimitStore, partial.sessionId, ip, "login-mfa-webauthn"))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -682,10 +593,8 @@ export async function handlePostPasskeyLoginBegin(
 /** `loginWithPasskey` never returns MFA_REQUIRED/ENROLLMENT_REQUIRED (see its doc comment), so
  * only these three outcomes are reachable here. */
 function sessionStageForLoginNext(next: LoginNext): SessionStage {
-  if (next === LOGIN_NEXT.BACKUP_CODES_REQUIRED)
-    return SESSION_STAGE.BACKUP_CODES_REQUIRED;
-  if (next === LOGIN_NEXT.CHANGE_PASSWORD)
-    return SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
+  if (next === LOGIN_NEXT.BACKUP_CODES_REQUIRED) return SESSION_STAGE.BACKUP_CODES_REQUIRED;
+  if (next === LOGIN_NEXT.CHANGE_PASSWORD) return SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
   return SESSION_STAGE.FULL;
 }
 
@@ -723,10 +632,7 @@ export async function handlePostPasskeyLoginFinish(
   const parsed = passkeyLoginFinishSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const challenge = consumeWebauthnChallenge(
-    "passkey-login",
-    parsed.data.ceremony,
-  );
+  const challenge = consumeWebauthnChallenge("passkey-login", parsed.data.ceremony);
   if (!challenge) return c.json({ code: "challenge_expired" }, 400);
 
   const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
@@ -770,10 +676,7 @@ export async function handlePostPasskeyLoginFinish(
  * (mfaWebauthnScript): that ceremony fires immediately on page load, before the user has any real
  * chance to check "Remember this device" ahead of time, so the page instead offers it as a one-tap
  * follow-up once verification already succeeded. */
-export async function handlePostMfaRememberDevice(
-  c: Context,
-  db: PrismaClient,
-): Promise<Response> {
+export async function handlePostMfaRememberDevice(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!auth.sessionId) return c.json({ error: "unauthorized" }, 401);
   const days = await getTrustedDeviceDays(db);
@@ -783,25 +686,14 @@ export async function handlePostMfaRememberDevice(
     }
     const ip = resolveClientIp(c);
     const userAgent = c.req.header("user-agent");
-    const { rawToken } = await createTrustedDevice(db, {
-      userId: auth.userId,
-      ip,
-      userAgent,
-    });
+    const { rawToken } = await createTrustedDevice(db, { userId: auth.userId, ip, userAgent });
     await setTrustedDeviceCookie(c, db, rawToken);
-    await logTrustedDeviceCreated(db, {
-      userId: auth.userId,
-      sessionId: auth.sessionId,
-      ip,
-      userAgent,
-    });
+    await logTrustedDeviceCreated(db, { userId: auth.userId, sessionId: auth.sessionId, ip, userAgent });
   }
   return c.json({ ok: true });
 }
 
-const mfaWebauthnEnrollBeginSchema = z
-  .object({ attachment: webauthnAttachmentSchema })
-  .strict();
+const mfaWebauthnEnrollBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
 
 /** POST /api/auth/mfa/webauthn/register/begin, start a passkey/security-key registration
  * ceremony during first-time enrollment (partial session, enrollment_required only) - no
@@ -833,12 +725,7 @@ export async function handlePostMfaWebauthnEnrollBegin(
   const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
   if (rp instanceof Response) return rp;
 
-  const begin = await beginWebauthnRegistration(
-    db,
-    partial.userId,
-    parsed.data.attachment,
-    rp,
-  );
+  const begin = await beginWebauthnRegistration(db, partial.userId, parsed.data.attachment, rp);
   // Only reachable if the authenticated user's own row was deleted between session creation and
   // this call - requireSession/requirePartialSession already guarantee the row exists for a live
   // request, so this can't be reproduced without corrupting the DB out from under a real session.
@@ -909,11 +796,7 @@ export async function handlePostMfaWebauthnEnrollFinish(
     stashEnrollmentBackupCodes(partial.sessionId, created.backupCodes);
   }
 
-  const promoted = await promoteSessionToBackupCodesStep(
-    db,
-    partial.sessionId,
-    partial.userId,
-  );
+  const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
   // Only reachable if the session's own stage changed between the enrollment_required check
   // above and this update (revoked/expired mid-request by a concurrent action) - not
   // reproducible in a live request without pausing execution between the two.
@@ -928,10 +811,7 @@ export async function handlePostMfaWebauthnEnrollFinish(
 }
 
 /** POST /api/auth/mfa/totp/enroll, start enrollment (enrollment_required only). */
-export async function handleTotpEnroll(
-  c: Context,
-  db: PrismaClient,
-): Promise<Response> {
+export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
     return c.json(AUTH_ERROR, 401);
@@ -983,22 +863,11 @@ export async function handleTotpConfirm(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (
-    !(await checkMfaVerifyRateLimit(
-      rateLimitStore,
-      partial.sessionId,
-      ip,
-      code,
-      undefined,
-      partial.userId,
-    ))
-  ) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code, undefined, partial.userId))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, partial.userId, code, {
-    onlyFirstMethod: true,
-  });
+  const ok = await confirmTotpEnrollment(db, partial.userId, code, { onlyFirstMethod: true });
   if (!ok) {
     return c.json(AUTH_ERROR, 401);
   }
@@ -1010,11 +879,7 @@ export async function handleTotpConfirm(
     stashEnrollmentBackupCodes(partial.sessionId, codes);
   }
 
-  const promoted = await promoteSessionToBackupCodesStep(
-    db,
-    partial.sessionId,
-    partial.userId,
-  );
+  const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
@@ -1036,10 +901,7 @@ export async function handleTotpConfirm(
 }
 
 /** POST /api/auth/mfa/totp/backup-codes/complete, finish enrollment after saving backup codes. */
-export async function handleTotpBackupCodesComplete(
-  c: Context,
-  db: PrismaClient,
-): Promise<Response> {
+export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     return c.json(AUTH_ERROR, 401);
@@ -1050,10 +912,7 @@ export async function handleTotpBackupCodesComplete(
   const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
   if (!stashed?.length) {
     return c.json(
-      {
-        error:
-          "Backup codes are no longer available. Log in again to restart enrollment.",
-      },
+      { error: "Backup codes are no longer available. Log in again to restart enrollment." },
       401,
     );
   }
