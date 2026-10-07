@@ -35,7 +35,7 @@ Use a row's **…** menu in the delivery log to look deeper at a single delivery
 
 The Communication page header shows a running count of currently bounced attendees. It drops automatically once every bounced attendee has a newer non-bounced delivery, a dismissed bounce, or both.
 
-**Search** (recipient name or email) and the **Template** filter narrow the log alongside Status and Purpose; **Export log** downloads the current filtered view as CSV.
+**Search** (recipient name or email) and the **Template** filter narrow the log alongside Status and Purpose; **Export log** downloads the current filtered view as CSV. The log refreshes itself every couple of seconds while **Live** is on (select it to switch to **Paused**). If the log cannot be read, the tab says so with a **Retry**, and while it is Live it also comes back by itself once the server answers again. When it is the next page that cannot be read, the page buttons stay under the message, so **Previous** takes you back.
 
 ## Related pages
 

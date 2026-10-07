@@ -30,7 +30,6 @@ import {
   ApiError,
   createEventTemplate,
   deleteEventTemplate,
-  fetchEventDeliveries,
   fetchEventMailSettings,
   fetchEventOverview,
   fetchEventTemplate,
@@ -47,8 +46,6 @@ import {
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
-  DeliveryDto,
-  EventDeliveriesListParams,
   EventDto,
   EventTemplateDto,
   MailTemplateDetail,
@@ -72,7 +69,8 @@ import { WalletsTab } from "../communication/WalletsTab.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
 import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
-import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
+import { DeliveryLogTab } from "../communication/DeliveryLogTable.js";
+import { useDeliveryLog } from "../communication/useDeliveryLog.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
 import { forcePreviewColorScheme } from "../communication/forcePreviewColorScheme.js";
@@ -422,30 +420,6 @@ function failInitialTemplateLoad(
   setAccessDenied(status === 403);
   // The server's own wording is not shown for this read: it is a fixed message, as it has always been.
   throw new Error("Could not load template.");
-}
-
-/** Maps a failed deliveries load to UI state, or suppresses it for a silent poll tick (mirrors
- * AuditLogPanel's useLogQuery: a single missed live-refresh is normal noise, not worth surfacing
- * over rows already on screen). Extracted from loadDeliveries so that function's own cognitive
- * complexity stays low. */
-function handleDeliveriesLoadError(
-  err: unknown,
-  silent: boolean,
-  aborted: boolean,
-  reportApiError: (status: number) => void,
-  setDeliveriesError: (message: string) => void,
-): void {
-  if (aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-  if (silent) return;
-  if (err instanceof ApiError) {
-    reportApiError(err.status);
-    if (err.status === 401) {
-      const next = encodeURIComponent(window.location.pathname);
-      window.location.assign(`/login?next=${next}`);
-      return;
-    }
-  }
-  setDeliveriesError("Could not load deliveries.");
 }
 
 /** Retries loading the "ticket" template detail after a delete (the template that just got deleted
@@ -1281,20 +1255,10 @@ function CommunicationPageBody({
   const [testStatus, setTestStatus] = useState<TestSendStatus | null>(null);
   const [testSending, setTestSending] = useState(false);
 
-  const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
-  const [deliveryTotal, setDeliveryTotal] = useState(0);
-  const [deliveryPage, setDeliveryPage] = useState(1);
-  const [deliveryPageSize, setDeliveryPageSize] = useState(DELIVERY_PAGE_SIZE_DEFAULT);
-  const [deliveryStatus, setDeliveryStatus] =
-    useState<NonNullable<EventDeliveriesListParams["status"]>>("all");
-  const [deliveryPurpose, setDeliveryPurpose] =
-    useState<NonNullable<EventDeliveriesListParams["purpose"]>>("all");
-  const [deliveryTemplateId, setDeliveryTemplateId] = useState("all");
-  const [deliverySearchInput, setDeliverySearchInput] = useState("");
-  const [deliverySearch, setDeliverySearch] = useState("");
-  const [deliveriesLoading, setDeliveriesLoading] = useState(false);
-  const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
-  const [deliveriesLive, setDeliveriesLive] = useState(true);
+  // Loads regardless of which tab is active (not gated on tab === "log") so the "Delivery log" tab's own count badge is
+  // correct as soon as the page mounts, instead of staying blank until the operator actually clicks into that tab, and keeps
+  // refreshing while Live, so the count and the table, once opened, both stay current without a manual refresh.
+  const deliveryLog = useDeliveryLog(eventId, reportApiError);
   const [emailBounced, setEmailBounced] = useState(0);
   const [resolvedBounceRowIds, setResolvedBounceRowIds] = useState<Set<string>>(new Set());
   const [pendingBounceRowIds, setPendingBounceRowIds] = useState<Set<string>>(new Set());
@@ -1616,58 +1580,6 @@ function CommunicationPageBody({
 
   const sendTemplateId = resolveSendTemplateId(editorSnapshotMissing, activeKey, templates);
 
-  const loadDeliveries = useCallback(async (signal?: AbortSignal, opts?: { silent?: boolean }) => {
-    if (!eventId) return;
-    const silent = opts?.silent ?? false;
-    if (!silent) {
-      setDeliveriesLoading(true);
-      setDeliveriesError(null);
-    }
-    try {
-      const data = await fetchEventDeliveries(
-        eventId,
-        {
-          page: deliveryPage,
-          pageSize: deliveryPageSize,
-          status: deliveryStatus,
-          purpose: deliveryPurpose,
-          search: deliverySearch || undefined,
-          templateId: deliveryTemplateId,
-        },
-        signal,
-      );
-      if (signal?.aborted) return;
-      setDeliveries(data.items);
-      setDeliveryTotal(data.total);
-      // A silent poll can be the first successful response after an initial/request error -
-      // its fresh rows must clear the stale error state too (mirrors AuditLogPanel's useLogQuery).
-      if (silent) setDeliveriesError(null);
-    } catch (err) {
-      handleDeliveriesLoadError(err, silent, Boolean(signal?.aborted), reportApiError, setDeliveriesError);
-    } finally {
-      if (!signal?.aborted && !silent) {
-        setDeliveriesLoading(false);
-      }
-    }
-  }, [
-    eventId,
-    deliveryPage,
-    deliveryPageSize,
-    deliveryStatus,
-    deliveryPurpose,
-    deliverySearch,
-    deliveryTemplateId,
-    reportApiError,
-  ]);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      setDeliverySearch(deliverySearchInput.trim());
-      setDeliveryPage(1);
-    }, 300);
-    return () => window.clearTimeout(t);
-  }, [deliverySearchInput]);
-
   useEffect(
     () => () => {
       // The page is keyed by its event, so an instance never sees its id change: it is replaced. When the event was switched,
@@ -1779,41 +1691,6 @@ function CommunicationPageBody({
       });
     return () => ac.abort();
   }, [eventId]);
-
-  // Loads regardless of which tab is active (not gated on tab === "log") so the "Delivery log"
-  // tab's own count badge is correct as soon as the page mounts, instead of staying blank until
-  // the operator actually clicks into that tab - same fix already applied to Active sessions'
-  // own tab count (see ActiveSessionsTab's onCountChange).
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadDeliveries(controller.signal);
-    return () => controller.abort();
-  }, [loadDeliveries]);
-
-  // Keeps polling regardless of which tab is active, mirroring AuditLogPanel's Audit/Security
-  // views (both poll continuously even while the operator is looking at System) - so the count
-  // and the table, once opened, both stay current without a manual refresh.
-  useEffect(() => {
-    if (!deliveriesLive) return;
-    const controller = new AbortController();
-    const intervalId = window.setInterval(
-      () => void loadDeliveries(controller.signal, { silent: true }),
-      DELIVERY_POLL_INTERVAL_MS,
-    );
-    return () => {
-      window.clearInterval(intervalId);
-      controller.abort();
-    };
-  }, [deliveriesLive, loadDeliveries]);
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(deliveryTotal / deliveryPageSize));
-    if (deliveryTotal === 0) {
-      if (deliveryPage !== 1) setDeliveryPage(1);
-    } else if (deliveryPage > maxPage) {
-      setDeliveryPage(maxPage);
-    }
-  }, [deliveryTotal, deliveryPage, deliveryPageSize]);
 
   useEffect(() => {
     if (!isDirty) return;
@@ -2109,21 +1986,6 @@ function CommunicationPageBody({
     );
   }
 
-  const hasActiveDeliveryFilters =
-    deliveryStatus !== "all" ||
-    deliveryPurpose !== "all" ||
-    deliveryTemplateId !== "all" ||
-    deliverySearchInput.trim() !== "";
-
-  function clearDeliveryFilters() {
-    setDeliveryStatus("all");
-    setDeliveryPurpose("all");
-    setDeliveryTemplateId("all");
-    setDeliverySearchInput("");
-    setDeliverySearch("");
-    setDeliveryPage(1);
-  }
-
   // Matches templatePickerOptions' own list exactly: every saved template, plus the virtual
   // "Ticket email" entry when there's no explicit "ticket" override yet - that virtual entry is
   // a real, selectable, sendable template from the operator's point of view even though it has
@@ -2140,15 +2002,14 @@ function CommunicationPageBody({
         templatesLabel={isDirty ? "Templates *" : "Templates"}
         // Always ≥ 1: an empty list still counts the virtual inherited ticket row.
         templatesCount={templateTabCount}
-        deliveryTotal={deliveryTotal}
+        deliveryTotal={deliveryLog.total}
       />
 
       <EmailBounceBanner
         count={emailBounced}
         onViewLog={() => {
           setTab("log");
-          setDeliveryStatus("bounced");
-          setDeliveryPage(1);
+          deliveryLog.showBounced();
         }}
       />
 
@@ -2256,29 +2117,8 @@ function CommunicationPageBody({
         <DeliveryLogTab
           eventId={eventId}
           eventTimezone={event.timezone}
-          deliveries={deliveries}
-          deliveryTotal={deliveryTotal}
-          deliveriesLoading={deliveriesLoading}
-          deliveriesError={deliveriesError}
+          log={deliveryLog}
           templates={templates}
-          page={deliveryPage}
-          onPageChange={setDeliveryPage}
-          pageSize={deliveryPageSize}
-          onPageSizeChange={setDeliveryPageSize}
-          status={deliveryStatus}
-          onStatusChange={setDeliveryStatus}
-          purpose={deliveryPurpose}
-          onPurposeChange={setDeliveryPurpose}
-          templateId={deliveryTemplateId}
-          onTemplateIdChange={setDeliveryTemplateId}
-          searchInput={deliverySearchInput}
-          search={deliverySearch}
-          onSearchChange={setDeliverySearchInput}
-          live={deliveriesLive}
-          onLiveChange={setDeliveriesLive}
-          hasActiveFilters={hasActiveDeliveryFilters}
-          onClearFilters={clearDeliveryFilters}
-          onRetry={() => void loadDeliveries()}
           resolvedBounceRowIds={resolvedBounceRowIds}
           onBounceRowResolved={(rowId) => setResolvedBounceRowIds((prev) => new Set(prev).add(rowId))}
           pendingBounceRowIds={pendingBounceRowIds}
