@@ -176,6 +176,31 @@ describe("setMailSettings", () => {
     expect(() => decryptFromString(row.power_automate_key_enc ?? "", SECRET_CONTEXTS.powerAutomateUrl)).toThrow();
   });
 
+  it("updates only the secrets that are supplied and clears one given as an empty string", async () => {
+    const scope = { scopeType: "organization", scopeId: "org-1" } as const;
+    await setMailSettings(
+      scope,
+      {
+        smtpPassword: "pw-1",
+        graphClientSecret: "gs-1",
+        powerAutomateKey: "pk-1",
+        powerAutomateUrl: "https://flow.example.com/one",
+      },
+      prisma,
+    );
+    const before = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-1" } },
+    });
+    await setMailSettings(scope, { smtpPassword: "" }, prisma);
+    const after = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-1" } },
+    });
+    expect(after.smtp_password_enc).toBeNull();
+    expect(after.graph_client_secret_enc).toBe(before.graph_client_secret_enc);
+    expect(after.power_automate_key_enc).toBe(before.power_automate_key_enc);
+    expect(after.power_automate_url_enc).toBe(before.power_automate_url_enc);
+  });
+
   it("blank string fields are stored as null, not empty string", async () => {
     await setMailSettings(
       { scopeType: "organization", scopeId: "org-1" },

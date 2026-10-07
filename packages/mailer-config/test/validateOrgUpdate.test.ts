@@ -1,3 +1,4 @@
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { describe, expect, it } from "vitest";
 import { mergeMailSettingsRow } from "../src/mailSettings.js";
 import { validateOrgMailSettingsUpdate, validateEventMailSettingsUpdate } from "../src/validateOrgUpdate.js";
@@ -287,5 +288,28 @@ describe("validateEventMailSettingsUpdate", () => {
       {},
     );
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("mergeMailSettingsRow secrets", () => {
+  it("encrypts each supplied secret bound to its own column and leaves absent ones alone", () => {
+    const first = mergeMailSettingsRow(null, {
+      smtpPassword: "pw",
+      graphClientSecret: "gs",
+      powerAutomateKey: "pk",
+      powerAutomateUrl: "https://flow.example.com/x",
+    });
+    expect(decryptFromString(first.smtp_password_enc ?? "", SECRET_CONTEXTS.smtpPassword)).toBe("pw");
+    expect(decryptFromString(first.graph_client_secret_enc ?? "", SECRET_CONTEXTS.graphClientSecret)).toBe("gs");
+    expect(decryptFromString(first.power_automate_key_enc ?? "", SECRET_CONTEXTS.powerAutomateKey)).toBe("pk");
+    expect(decryptFromString(first.power_automate_url_enc ?? "", SECRET_CONTEXTS.powerAutomateUrl)).toBe(
+      "https://flow.example.com/x",
+    );
+
+    const second = mergeMailSettingsRow(first, { smtpPassword: "" });
+    expect(second.smtp_password_enc).toBeNull();
+    expect(second.graph_client_secret_enc).toBe(first.graph_client_secret_enc);
+    expect(second.power_automate_key_enc).toBe(first.power_automate_key_enc);
+    expect(second.power_automate_url_enc).toBe(first.power_automate_url_enc);
   });
 });

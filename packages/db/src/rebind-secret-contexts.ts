@@ -36,9 +36,10 @@ const COLUMNS: Column[] = [
   {
     name: "Event.wallet_api_key_enc",
     context: SECRET_CONTEXTS.walletApiKey,
+    // The queries below exclude null, so the cast only narrows the type.
     read: async (prisma) =>
       (await prisma.event.findMany({ where: { wallet_api_key_enc: { not: null } }, select: { id: true, wallet_api_key_enc: true } }))
-        .map((r) => ({ id: r.id, value: r.wallet_api_key_enc ?? "" })),
+        .map((r) => ({ id: r.id, value: r.wallet_api_key_enc as string })),
     write: (prisma, id, value) => prisma.event.update({ where: { id }, data: { wallet_api_key_enc: value } }),
   },
   {
@@ -46,7 +47,7 @@ const COLUMNS: Column[] = [
     context: SECRET_CONTEXTS.imapPassword,
     read: async (prisma) =>
       (await prisma.bounceIngestSettings.findMany({ where: { imap_password_enc: { not: null } }, select: { id: true, imap_password_enc: true } }))
-        .map((r) => ({ id: r.id, value: r.imap_password_enc ?? "" })),
+        .map((r) => ({ id: r.id, value: r.imap_password_enc as string })),
     write: (prisma, id, value) => prisma.bounceIngestSettings.update({ where: { id }, data: { imap_password_enc: value } }),
   },
   {
@@ -54,7 +55,7 @@ const COLUMNS: Column[] = [
     context: SECRET_CONTEXTS.notificationWebhookUrl,
     read: async (prisma) =>
       (await prisma.notificationSettings.findMany({ where: { webhook_url_enc: { not: null } }, select: { id: true, webhook_url_enc: true } }))
-        .map((r) => ({ id: r.id, value: r.webhook_url_enc ?? "" })),
+        .map((r) => ({ id: r.id, value: r.webhook_url_enc as string })),
     write: (prisma, id, value) => prisma.notificationSettings.update({ where: { id }, data: { webhook_url_enc: value } }),
   },
 ];
