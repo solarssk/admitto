@@ -1,6 +1,8 @@
 import type { PrismaClient, Prisma, TrustedDevice } from "@admitto/db";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { getTrustedDeviceDays } from "../settings/resolver.js";
+import { runInTransaction } from "../prisma-tx.js";
+import { MFA_RECENT_WINDOW_MS } from "../session.js";
 
 export interface CreateTrustedDeviceInput {
   userId: string;
@@ -33,6 +35,35 @@ export async function createTrustedDevice(
   });
 
   return { trustedDevice, rawToken };
+}
+
+/**
+ * Create a trusted device for a session that completed MFA within `MFA_RECENT_WINDOW_MS`, or
+ * return null when it did not. The freshness check locks the session row (`FOR UPDATE`) and the
+ * insert happens in the same transaction, while `revokeAllTrustedDevicesForUser` takes the same
+ * row lock (clearing `mfa_verified_at`) before it revokes device rows. So a concurrent
+ * revocation either runs first (the re-checked row is no longer fresh, nothing is created) or
+ * waits for this commit and then revokes the new row too; a device is never left unrevoked.
+ */
+export async function createTrustedDeviceIfMfaRecent(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  sessionId: string,
+  input: CreateTrustedDeviceInput,
+  now: Date = new Date(),
+): Promise<{ trustedDevice: TrustedDevice; rawToken: string } | null> {
+  return runInTransaction(prisma, async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id"
+      FROM "Session"
+      WHERE "id" = ${sessionId}
+        AND "revoked_at" IS NULL
+        AND "expires_at" > ${now}
+        AND "mfa_verified_at" >= ${new Date(now.getTime() - MFA_RECENT_WINDOW_MS)}
+      FOR UPDATE
+    `;
+    if (rows.length === 0) return null;
+    return createTrustedDevice(tx, input);
+  });
 }
 
 /**
@@ -97,18 +128,21 @@ export async function revokeTrustedDeviceByToken(
 
 /** Revoke all trusted devices for a user. Also drops every session's "MFA just passed" mark
  * (`mfa_verified_at`), so a remember-device request that was still pending from before this
- * revocation (an open follow-up prompt in another tab) cannot mint a replacement device. */
+ * revocation (an open follow-up prompt in another tab) cannot mint a replacement device. Call it
+ * inside a transaction so the session row locks last until the device rows are revoked too. */
 export async function revokeAllTrustedDevicesForUser(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<number> {
-  const result = await prisma.trustedDevice.updateMany({
-    where: { user_id: userId, revoked_at: null },
-    data: { revoked_at: new Date() },
-  });
+  // Sessions first: this takes the row locks `createTrustedDeviceIfMfaRecent` holds while it
+  // inserts, so the device update below also sees (and revokes) a device committed meanwhile.
   await prisma.session.updateMany({
     where: { user_id: userId, mfa_verified_at: { not: null } },
     data: { mfa_verified_at: null },
+  });
+  const result = await prisma.trustedDevice.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
   });
   return result.count;
 }
