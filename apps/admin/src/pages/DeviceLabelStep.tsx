@@ -59,7 +59,8 @@ export function DeviceLabelStep({ onSaved, onSkip }: Readonly<DeviceLabelStepPro
               placeholder="Tablet 1, main entrance"
               maxLength={120}
               autoComplete="off"
-              disabled={busy}
+              // Enter in the field submits the form: a field that is `disabled` would lose the keyboard focus while it saves.
+              readOnly={busy}
               hint={detectedLabel ? "Detected from your browser. Edit if needed." : undefined}
               error={error ?? undefined}
             />
@@ -67,8 +68,8 @@ export function DeviceLabelStep({ onSaved, onSkip }: Readonly<DeviceLabelStepPro
               <Button type="button" variant="ghost" disabled={busy} onClick={onSkip}>
                 Continue without label
               </Button>
-              <Button type="submit" variant="primary" disabled={busy}>
-                {busy ? "Saving…" : "Continue"}
+              <Button type="submit" variant="primary" loading={busy} loadingLabel="Saving…">
+                Continue
               </Button>
             </div>
           </form>

@@ -668,12 +668,6 @@
   gap: 0.625rem;
 }
 
-.setup-wizard__spin {
-  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
-     spinner.css) instead of a one-off — always loaded globally via the shell. */
-  animation: at-spin 0.7s linear infinite;
-}
-
 @media (max-width: 640px) {
   .setup-wizard__card {
     padding: 1.25rem 1rem;
