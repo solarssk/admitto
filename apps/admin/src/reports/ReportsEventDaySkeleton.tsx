@@ -1,5 +1,6 @@
 import { Card, Skeleton } from "@admitto/ui";
 import { SettingsSkeletonRegion } from "../settings/SettingsPanelSkeleton.js";
+import { assertPresent } from "../utils/assert-present.js";
 
 /** The four KPI tiles of Event day, by their real names and icons: only their values are what the read says. */
 const STAT_TILES = [
@@ -10,7 +11,20 @@ const STAT_TILES = [
 ] as const;
 
 /** The hours the chart shows at the least (the real chart pads sparse data out to as many columns), as bars of varying height. */
-const CHART_BAR_HEIGHTS = [28, 52, 84, 112, 96, 64, 40, 24, 12] as const;
+const CHART_BARS = [
+  { hour: 9, height: 28 },
+  { hour: 10, height: 52 },
+  { hour: 11, height: 84 },
+  { hour: 12, height: 112 },
+  { hour: 13, height: 96 },
+  { hour: 14, height: 64 },
+  { hour: 15, height: 40 },
+  { hour: 16, height: 24 },
+  { hour: 17, height: 12 },
+] as const;
+
+/** The widths of the names in a breakdown, one after the other (a placeholder has no data to take them from). */
+const NAME_WIDTHS = [120, 96, 140, 104, 88, 112] as const;
 
 /** One row of a breakdown card: a dot, a name and its figures over the track of a bar. */
 function BreakdownRowSkeleton({ nameWidth }: Readonly<{ nameWidth: number }>) {
@@ -28,12 +42,15 @@ function BreakdownRowSkeleton({ nameWidth }: Readonly<{ nameWidth: number }>) {
   );
 }
 
-function BreakdownSkeleton({ widths }: Readonly<{ widths: ReadonlyArray<number> }>) {
+/** A breakdown card's list: `rows` rows, with names of varying width. */
+function BreakdownSkeleton({ rows }: Readonly<{ rows: number }>) {
   return (
     <div className="reports-breakdown-list">
-      {widths.map((width, row) => (
-        <BreakdownRowSkeleton key={row} nameWidth={width} />
-      ))}
+      {Array.from({ length: rows }, (_, row) => {
+        const nameWidth = NAME_WIDTHS[row % NAME_WIDTHS.length];
+        assertPresent(nameWidth);
+        return <BreakdownRowSkeleton key={row} nameWidth={nameWidth} />;
+      })}
     </div>
   );
 }
@@ -41,11 +58,11 @@ function BreakdownSkeleton({ widths }: Readonly<{ widths: ReadonlyArray<number> 
 function ChartSkeleton() {
   return (
     <div className="reports-chart">
-      {CHART_BAR_HEIGHTS.map((height, column) => (
-        <div key={column} className="reports-chart__bar-wrap">
+      {CHART_BARS.map((bar) => (
+        <div key={bar.hour} className="reports-chart__bar-wrap">
           <div className="reports-chart__count" />
           <div className="reports-chart__track">
-            <Skeleton variant="rect" height={height} />
+            <Skeleton variant="rect" height={bar.height} />
           </div>
           <div className="reports-chart__label">
             <Skeleton variant="rect" width={14} height={10} />
@@ -144,20 +161,20 @@ export function ReportsEventDaySkeleton({ held, slow }: Readonly<{ held: boolean
             <ChartSkeleton />
           </Card>
           <Card title="By ticket type">
-            <BreakdownSkeleton widths={[120, 96, 140]} />
+            <BreakdownSkeleton rows={3} />
           </Card>
         </div>
 
         <h2 className="reports-section-title">Check-in details</h2>
         <div className="reports-grid-3">
           <Card title="Attendance confirmation">
-            <BreakdownSkeleton widths={[104, 88, 112, 96, 80, 92]} />
+            <BreakdownSkeleton rows={6} />
           </Card>
           <Card title="Check-in method">
-            <BreakdownSkeleton widths={[96, 120]} />
+            <BreakdownSkeleton rows={2} />
           </Card>
           <Card title="By operator">
-            <BreakdownSkeleton widths={[136, 112]} />
+            <BreakdownSkeleton rows={2} />
           </Card>
         </div>
 
