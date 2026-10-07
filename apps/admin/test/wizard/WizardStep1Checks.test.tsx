@@ -227,8 +227,22 @@ describe("WizardStep1Checks: the results", () => {
     await advanceTimers(500);
 
     expect(screen.getByText("ENCRYPTION_KEY is not set")).toBeTruthy();
-    const alerts = screen.getAllByRole("alert");
-    expect(alerts.some((alert) => alert.textContent?.includes("may show older details"))).toBe(true);
+    // One notice says both (the run failed, and what the operator is to do), with one Retry: two Retry buttons that run the
+    // same checks would be busy independently of each other.
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("may show older details");
+    expect(alert.textContent).toContain("Fix the issues above");
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
     expect(onChecksOk).toHaveBeenLastCalledWith(false);
+
+    // That Retry runs the checks again (once the 400ms of the busy one that failed are over), and the new answer replaces the
+    // warning.
+    await advanceTimers(400);
+    fetchSetupChecks.mockResolvedValueOnce({ checks: failingChecks });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    await advanceTimers(400);
+    expect(screen.getByRole("alert").textContent).not.toContain("may show older details");
+    expect(screen.getByRole("alert").textContent).toContain("Fix the issues above");
   });
 });

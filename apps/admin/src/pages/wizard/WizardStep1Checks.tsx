@@ -3,7 +3,6 @@ import { Skeleton } from "@admitto/ui";
 import { fetchSetupChecks } from "../../api/client.js";
 import type { SetupChecksResponse } from "../../api/types.js";
 import { RefetchRegion } from "../../components/RefetchRegion.js";
-import { RefreshWarning } from "../../components/RefreshWarning.js";
 import { useCardLoad } from "../../hooks/useCardLoad.js";
 import { useMinimumBusy } from "../../hooks/useDelayedLoading.js";
 import { useListLoad } from "../../hooks/useListLoad.js";
@@ -74,7 +73,6 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
             <CheckRow key={key} checkKey={key} result={checks[key]} />
           ))}
         </ul>
-        {list.refreshError ? <RefreshWarning message={list.refreshError} onRetry={list.reload} /> : null}
         {hasCheckErrors && (
           <WizardRetryNotice
             className="setup-wizard__check-error-banner"
@@ -82,6 +80,7 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
             retrying={rerunning}
             onRetry={list.reload}
           >
+            {list.refreshError ? `${list.refreshError} ` : null}
             Fix the issues above, then use Retry to run checks again.
           </WizardRetryNotice>
         )}
