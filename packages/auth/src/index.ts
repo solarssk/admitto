@@ -288,6 +288,7 @@ export {
 } from "./mfa/webauthn.js";
 export {
   createTrustedDevice,
+  createTrustedDeviceIfMfaRecent,
   validateTrustedDevice,
   revokeTrustedDeviceByToken,
   revokeAllTrustedDevicesForUser,
