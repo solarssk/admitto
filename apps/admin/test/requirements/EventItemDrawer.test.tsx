@@ -182,6 +182,21 @@ describe("EventItemDrawer", () => {
     await act(async () => saved.resolve(giftbagItem));
   });
 
+  it("does not save twice when Enter is pressed in a field while the save runs", async () => {
+    const saved = deferred<EventItemDto>();
+    vi.mocked(updateEventItem).mockReturnValueOnce(saved.promise);
+    renderDrawer(giftbagItem);
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag " } });
+    const form = document.getElementById("item-edit-form") as HTMLFormElement;
+    fireEvent.submit(form);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBe("true"));
+
+    fireEvent.submit(form);
+
+    expect(updateEventItem).toHaveBeenCalledTimes(1);
+    await act(async () => saved.resolve(giftbagItem));
+  });
+
   it("brings the Save button back, with the focus and what was typed, when the save fails", async () => {
     vi.mocked(updateEventItem).mockRejectedValueOnce(new Error("network error"));
     renderDrawer(giftbagItem);

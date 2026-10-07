@@ -318,6 +318,8 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
 
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
+    // Enter in the name field submits the form without going through the Create button, which swallows a click while it works.
+    if (adding) return;
     const label = addLabel.trim();
     const key = uniqueItemKey(label, items.map((i) => i.key));
     if (!label || !key) {

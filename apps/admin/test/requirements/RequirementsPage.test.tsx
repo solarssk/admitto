@@ -604,6 +604,24 @@ describe("RequirementsPage: the Create button", () => {
     await waitFor(() => expect(screen.queryByLabelText("Item name")).toBeNull());
   });
 
+  it("does not create twice when Enter is pressed in the name while the creation runs", async () => {
+    const created = deferred<EventItemDto>();
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    createEventItem.mockReturnValueOnce(created.promise);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Gift bag" } });
+    const form = document.getElementById("add-item-form") as HTMLFormElement;
+    fireEvent.submit(form);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create" }).getAttribute("aria-busy")).toBe("true"));
+
+    fireEvent.submit(form);
+
+    expect(createEventItem).toHaveBeenCalledTimes(1);
+    await act(async () => created.resolve(giftBag));
+  });
+
   it("brings the button back, with the focus and what was typed, when the creation fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventItems.mockResolvedValue([badgeItem]);

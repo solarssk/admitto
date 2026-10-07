@@ -111,6 +111,8 @@ export function EventItemDrawer({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    // Enter in a field submits the form without going through the Save button, which swallows a click while it works.
+    if (saving) return;
     setSaving(true);
     try {
       await updateEventItem(eventId, item.id, {
