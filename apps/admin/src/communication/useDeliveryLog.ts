@@ -35,8 +35,9 @@ export interface DeliveryLogAnswer {
  * loading standard (`useListLoad`: the first read, a changed query or page kept on screen while it is on its way, 30 seconds
  * at most, Retry), and what keeps it live. Live reads the same query again every `DELIVERY_POLL_INTERVAL_MS` without a sign of
  * it (`poll`), whichever tab of the page is open, so the number on the tab and the table, once opened, stay current. A
- * failed tick says nothing over the rows on screen, a 401 hands the browser to the login page, and the page it was on
- * disappearing (a smaller total) steps the page back.
+ * failed tick says nothing over the rows on screen, a 401 on a read somebody waits for hands the browser to the login page,
+ * switching Live off abandons the tick that is on its way, and the page it was on disappearing (a smaller total) steps the
+ * page back.
  */
 export function useDeliveryLog(eventId: string, reportApiError: (status: number) => void) {
   const [page, setPage] = useState(1);
@@ -108,8 +109,14 @@ export function useDeliveryLog(eventId: string, reportApiError: (status: number)
   const { poll } = list;
   useEffect(() => {
     if (!live) return;
-    const intervalId = window.setInterval(() => void poll(), DELIVERY_POLL_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
+    // Each stretch of Live has a life of its own: switching it off abandons the tick that is on its way, so a log that says
+    // Paused is not changed by an answer that was already under way.
+    const stretch = new AbortController();
+    const intervalId = window.setInterval(() => void poll(stretch.signal), DELIVERY_POLL_INTERVAL_MS);
+    return () => {
+      window.clearInterval(intervalId);
+      stretch.abort();
+    };
   }, [live, poll]);
 
   // The page the operator is on can be gone when the next answer arrives (a smaller total): step back to the last one that

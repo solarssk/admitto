@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadWithTimeout, rejectOnAbort } from "../../src/utils/load-timeout.js";
+import { anyAbort, loadWithTimeout, rejectOnAbort } from "../../src/utils/load-timeout.js";
 import { LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 
 beforeEach(() => {
@@ -79,3 +79,39 @@ describe("rejectOnAbort", () => {
   });
 });
 
+describe("anyAbort", () => {
+  it("aborts when any of its sources does, and not before", () => {
+    const first = new AbortController();
+    const second = new AbortController();
+    const any = anyAbort([first.signal, second.signal]);
+    expect(any.signal.aborted).toBe(false);
+    second.abort();
+    expect(any.signal.aborted).toBe(true);
+    first.abort();
+    expect(any.signal.aborted).toBe(true);
+  });
+
+  it("is already aborted when one of its sources was", () => {
+    const first = new AbortController();
+    const second = new AbortController();
+    second.abort();
+    expect(anyAbort([first.signal, second.signal]).signal.aborted).toBe(true);
+  });
+
+  it("ignores a source that is not there, and is never aborted by the others being absent", () => {
+    const only = new AbortController();
+    const any = anyAbort([undefined, only.signal]);
+    expect(any.signal.aborted).toBe(false);
+    only.abort();
+    expect(any.signal.aborted).toBe(true);
+    expect(anyAbort([undefined, undefined]).signal.aborted).toBe(false);
+  });
+
+  it("release() unlinks it, so a source that aborts later changes nothing", () => {
+    const source = new AbortController();
+    const any = anyAbort([source.signal]);
+    any.release();
+    source.abort();
+    expect(any.signal.aborted).toBe(false);
+  });
+});

@@ -315,6 +315,53 @@ describe("CommunicationPage delivery log on the loading standard: a later page, 
     expect(screen.queryByText("Guest One")).toBeNull();
   });
 
+  it("drops the answer of a tick that is on its way when Live is switched off, cancels its request, and ticks again when Live is chosen", async () => {
+    serve({ 1: { items: [acceptedRow], total: 60 } });
+    renderLog();
+    await advanceTimers(0);
+
+    const slow = deferred<Answer>();
+    serve({ 1: slow.promise });
+    fetchEventDeliveries.mockClear();
+    await advanceTimers(1_750);
+    expect(fetchEventDeliveries).toHaveBeenCalledTimes(1);
+    const tickSignal = fetchEventDeliveries.mock.calls[0]?.[2] as AbortSignal;
+    expect(tickSignal.aborted).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByRole("button", { name: "Paused" })).toBeTruthy();
+    expect(tickSignal.aborted).toBe(true);
+
+    // The answer that was already under way comes after the log says Paused: the rows stay as they were.
+    await act(async () => slow.resolve({ items: [failedRow], total: 60 }));
+    expect(screen.getByText("Guest One")).toBeTruthy();
+    expect(screen.queryByText("Guest Two")).toBeNull();
+
+    serve({ 1: { items: [failedRow], total: 60 } });
+    fetchEventDeliveries.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Paused" }));
+    await advanceTimers(1_750);
+    expect(fetchEventDeliveries).toHaveBeenCalledTimes(1);
+    await advanceTimers(0);
+    expect(screen.getByText("Guest Two")).toBeTruthy();
+  });
+
+  it("does not let a tick that Live being switched off abandoned end the error of a log that could not be read", async () => {
+    fetchEventDeliveries.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderLog();
+    await advanceTimers(0);
+    expect(screen.getByRole("alert").textContent).toContain("Could not load deliveries");
+
+    const slow = deferred<Answer>();
+    fetchEventDeliveries.mockReturnValueOnce(slow.promise);
+    await advanceTimers(1_750);
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    await act(async () => slow.resolve({ items: [acceptedRow], total: 1 }));
+
+    expect(screen.getByRole("alert").textContent).toContain("Could not load deliveries");
+    expect(screen.queryByText("Guest One")).toBeNull();
+  });
+
   it("does not report or act on a 401 that a missed tick got, as it does for a read the operator waits for", async () => {
     const assignSpy = vi.fn();
     const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");

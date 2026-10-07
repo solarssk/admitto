@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import { loadWithTimeout, rejectOnAbort, type LoadTimeout } from "../utils/load-timeout.js";
+import { anyAbort, loadWithTimeout, rejectOnAbort, type LoadTimeout } from "../utils/load-timeout.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 
 /**
@@ -65,8 +65,10 @@ export interface ListLoad<T> {
    * dropped for a newer tick, and requests do not pile up), a tick that fails changes nothing (a missed one is not an error
    * over rows that are on screen, and the next one tries again), and an answer replaces the one on screen, also the error of
    * a load that failed, so a list that could not be read comes back by itself. Call it from an interval while the list is live.
+   * `until` ends the tick when it aborts, with its request cancelled and its answer dropped: a Live that is switched off
+   * abandons the tick that is on its way, so a list that says it is paused is not changed by it.
    */
-  poll: () => Promise<void>;
+  poll: (until?: AbortSignal) => Promise<void>;
 }
 
 const REFRESH_FAILED = "Could not refresh this list, so it may show older details.";
@@ -154,16 +156,17 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
  * One tick of a live list (see `ListLoad.poll`). It must not take over from a request somebody waits for, so it does
  * nothing while one is on its way, nor while the previous tick is (it would make that one stale and starve the list when
  * the server answers slower than the interval); a failure is ignored, and the request is abandoned like any other (after 30
- * seconds, when the query changes, when the page is left).
+ * seconds, when the query changes, when the page is left) and when the caller's own `until` aborts.
  */
-async function runListPoll<T>(ctx: RunContext<T>, signal?: AbortSignal): Promise<void> {
+async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: AbortSignal): Promise<void> {
   if (!ctx.enabled || ctx.pendingRef.current > 0 || ctx.tickingRef.current) return;
   ctx.tickingRef.current = true;
   const mine = ++ctx.requestRef.current;
-  const limit = loadWithTimeout(signal);
+  const ends = anyAbort([life, until]);
+  const limit = loadWithTimeout(ends.signal);
   try {
     const next = await rejectOnAbort(ctx.fetcher(limit.signal, { poll: true }), limit.signal);
-    if (signal?.aborted || mine !== ctx.requestRef.current) return;
+    if (ends.signal.aborted || mine !== ctx.requestRef.current) return;
     ctx.setData(next);
     ctx.setError(null);
     ctx.setRefreshError(null);
@@ -175,6 +178,7 @@ async function runListPoll<T>(ctx: RunContext<T>, signal?: AbortSignal): Promise
   } finally {
     ctx.tickingRef.current = false;
     limit.done();
+    ends.release();
   }
 }
 
@@ -213,7 +217,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
   }, []);
 
   const run = useCallback(
-    (kind: "query" | "reload" | "poll", signal?: AbortSignal, keepRows?: boolean) => {
+    (kind: "query" | "reload" | "poll", signal?: AbortSignal, keepRows?: boolean, until?: AbortSignal) => {
       const ctx: RunContext<T> = {
         enabled,
         fetcher,
@@ -231,7 +235,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
         setError,
         setRefreshError,
       };
-      return kind === "poll" ? runListPoll(ctx, signal) : runListLoad(ctx, kind, signal, keepRows);
+      return kind === "poll" ? runListPoll(ctx, signal, until) : runListLoad(ctx, kind, signal, keepRows);
     },
     [enabled, fetcher, fallback, setAnswer],
   );
@@ -265,7 +269,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
     [setAnswer],
   );
 
-  const poll = useCallback(() => runRef.current("poll", lifeRef.current?.signal), []);
+  const poll = useCallback((until?: AbortSignal) => runRef.current("poll", lifeRef.current?.signal, undefined, until), []);
 
   return { data, loading, refreshing, error, refreshError, enabled, reload, update, poll };
 }

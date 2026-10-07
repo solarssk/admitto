@@ -560,6 +560,102 @@ describe("useListLoad poll (the live refresh of a list)", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("is abandoned when the signal it was given aborts: its request is cancelled, a late answer changes nothing, and the next tick may start", async () => {
+    const signals: AbortSignal[] = [];
+    const slow = deferred<string>();
+    const fetcher = vi.fn<Fetcher>((signal) => {
+      signals.push(signal);
+      if (signals.length === 1) return Promise.resolve("rows A");
+      return signals.length === 2 ? slow.promise : Promise.resolve("rows C");
+    });
+    const { result } = setup(fetcher);
+    await settle();
+
+    const until = new AbortController();
+    act(() => {
+      void result.current.poll(until.signal);
+    });
+    expect(signals[1]?.aborted).toBe(false);
+
+    await act(async () => until.abort());
+    expect(signals[1]?.aborted).toBe(true);
+    await act(async () => slow.resolve("rows B"));
+    expect(result.current).toMatchObject({ data: "rows A", error: null, loading: false, refreshing: false });
+
+    // The abandoned tick no longer holds the next one back.
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(result.current.data).toBe("rows C");
+  });
+
+  it("does not end the error of a load that failed with the answer of a tick that was abandoned", async () => {
+    const slow = deferred<string>();
+    const fetcher = vi.fn<Fetcher>().mockRejectedValueOnce(new ApiError(500, "boom")).mockReturnValueOnce(slow.promise);
+    const { result } = setup(fetcher);
+    await settle();
+    expect(result.current.error).toBeTruthy();
+
+    const until = new AbortController();
+    act(() => {
+      void result.current.poll(until.signal);
+    });
+    await act(async () => until.abort());
+    await act(async () => slow.resolve("rows A"));
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toBeTruthy();
+  });
+
+  it("drops an answer that was already in when the signal it was given aborted", async () => {
+    const answer = deferred<string>();
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockReturnValueOnce(answer.promise);
+    const { result } = setup(fetcher);
+    await settle();
+
+    const until = new AbortController();
+    act(() => {
+      void result.current.poll(until.signal);
+    });
+    await act(async () => {
+      answer.resolve("rows B");
+      // The abort comes after the answer has arrived and before the tick looks at it.
+      queueMicrotask(() => until.abort());
+    });
+    expect(result.current.data).toBe("rows A");
+  });
+
+  it("starts nothing for a signal that has already aborted, and its answer changes nothing", async () => {
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockResolvedValueOnce("rows B");
+    const { result } = setup(fetcher);
+    await settle();
+
+    const until = new AbortController();
+    until.abort();
+    await act(async () => {
+      await result.current.poll(until.signal);
+    });
+    expect(result.current.data).toBe("rows A");
+  });
+
+  it("is abandoned with the page that is left also when it was given a signal of its own", async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn<Fetcher>((signal) => {
+      signals.push(signal);
+      return signals.length === 1 ? Promise.resolve("rows A") : new Promise<string>(() => {});
+    });
+    const { result, unmount } = setup(fetcher);
+    await settle();
+
+    const until = new AbortController();
+    act(() => {
+      void result.current.poll(until.signal);
+    });
+    expect(signals[1]?.aborted).toBe(false);
+    unmount();
+    expect(signals[1]?.aborted).toBe(true);
+  });
+
   it("is abandoned like any other request: when the page is left, and after 30 seconds, without an error", async () => {
     vi.useFakeTimers();
     const signals: AbortSignal[] = [];
