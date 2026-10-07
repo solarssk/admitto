@@ -1,4 +1,4 @@
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { parseMailerConfig, safeParseMailerConfig, type MailerConfig } from "@admitto/mailer";
 import type { PrismaClient, MailSettings } from "@admitto/db";
 import { rawMailFieldsFromEnv } from "./envFields.js";
@@ -44,10 +44,13 @@ function firstLazy<T>(...loaders: Array<() => T | null | undefined>): T | undefi
   return undefined;
 }
 
-function maybeDecrypt(enc: string | null | undefined): string | undefined {
+function maybeDecrypt(
+  enc: string | null | undefined,
+  context: (typeof SECRET_CONTEXTS)[keyof typeof SECRET_CONTEXTS],
+): string | undefined {
   if (!enc) return undefined;
   try {
-    return decryptFromString(enc);
+    return decryptFromString(enc, context);
   } catch {
     // decryptFromString() normalizes every failure mode (bad key, tampered ciphertext,
     // malformed stored JSON) into CryptoDecryptionError - there is no other exception type
@@ -231,8 +234,8 @@ function buildRawConfig(
         // firstLazy: skip lower-priority decryptions when env secret already wins
         password: firstLazy(
           () => env.smtpPassword,
-          () => maybeDecrypt(ev?.smtp_password_enc),
-          () => (eventOwnsHost ? undefined : maybeDecrypt(org?.smtp_password_enc)),
+          () => maybeDecrypt(ev?.smtp_password_enc, SECRET_CONTEXTS.smtpPassword),
+          () => (eventOwnsHost ? undefined : maybeDecrypt(org?.smtp_password_enc, SECRET_CONTEXTS.smtpPassword)),
         ),
         requireTLS: first(env.requireTls, ev?.require_tls, org?.require_tls),
         tlsRejectUnauthorized: first(
@@ -273,8 +276,8 @@ function buildRawConfig(
         clientId: first(env.clientId, ev?.client_id, org?.client_id),
         clientSecret: firstLazy(
           () => env.graphClientSecret,
-          () => maybeDecrypt(ev?.graph_client_secret_enc),
-          () => maybeDecrypt(org?.graph_client_secret_enc),
+          () => maybeDecrypt(ev?.graph_client_secret_enc, SECRET_CONTEXTS.graphClientSecret),
+          () => maybeDecrypt(org?.graph_client_secret_enc, SECRET_CONTEXTS.graphClientSecret),
         ),
         saveToSentItems: first(
           env.saveToSentItems,
@@ -291,13 +294,13 @@ function buildRawConfig(
         ...base,
         url: firstLazy(
           () => env.powerAutomateUrl,
-          () => maybeDecrypt(ev?.power_automate_url_enc),
-          () => maybeDecrypt(org?.power_automate_url_enc),
+          () => maybeDecrypt(ev?.power_automate_url_enc, SECRET_CONTEXTS.powerAutomateUrl),
+          () => maybeDecrypt(org?.power_automate_url_enc, SECRET_CONTEXTS.powerAutomateUrl),
         ),
         key: firstLazy(
           () => env.powerAutomateKey,
-          () => maybeDecrypt(ev?.power_automate_key_enc),
-          () => (eventOwnsUrl ? undefined : maybeDecrypt(org?.power_automate_key_enc)),
+          () => maybeDecrypt(ev?.power_automate_key_enc, SECRET_CONTEXTS.powerAutomateKey),
+          () => (eventOwnsUrl ? undefined : maybeDecrypt(org?.power_automate_key_enc, SECRET_CONTEXTS.powerAutomateKey)),
         ),
       };
     }
