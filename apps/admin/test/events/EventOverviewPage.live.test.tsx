@@ -460,7 +460,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     // below is different (48, active-only) - the tile must never show either raw number pre-load.
     // Every count tile shows a grey bar pre-load.
     await waitFor(() => {
-      expect(statsRow().querySelectorAll(".at-skeleton").length).toBe(3);
+      expect(statsRow().querySelectorAll(".at-skeleton")).toHaveLength(3);
     });
     // Scoped to the Attendees tile specifically, not a page-wide text search - the Event
     // countdown tile's own value is a real, unrelated day count (computed from the current
