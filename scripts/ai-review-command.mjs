@@ -53,9 +53,9 @@ export function newestRun(runs, number, repository) {
 export function readLimits(workflowText) {
   const read = (pattern) => Number(pattern.exec(workflowText)?.[1]) || null
   return {
-    perPr: read(/^\s+PER_PR_LIMIT: (\d+)/m),
-    daily: read(/^\s+DAILY_LIMIT: (\d+)/m),
-    settle: read(/^\s+DEBOUNCE_SECONDS: (\d+)/m),
+    perPr: read(/^ +PER_PR_LIMIT: (\d+)/m),
+    daily: read(/^ +DAILY_LIMIT: (\d+)/m),
+    settle: read(/^ +DEBOUNCE_SECONDS: (\d+)/m),
   }
 }
 
@@ -82,10 +82,12 @@ function ago(from, now) {
   return minutes < 120 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`
 }
 
+const outOf = (count, limit) => (limit ? `${count} of ${limit}` : String(count))
+
 export function renderLive(f) {
   const run = f.run
-  const budget = f.prRuns == null ? '' : `this PR ${f.prRuns}${f.limits.perPr ? ` of ${f.limits.perPr}` : ''}, ` +
-    `today ${f.dayRuns}${f.limits.daily ? ` of ${f.limits.daily}` : ''} (a \`/ai-review\` re-run bypasses both)`
+  const budget = f.prRuns == null ? ''
+    : `this PR ${outOf(f.prRuns, f.limits.perPr)}, today ${outOf(f.dayRuns, f.limits.daily)} (a \`/ai-review\` re-run bypasses both)`
   const rows = [
     ['Pull request', `#${f.number}, head \`${String(f.head).slice(0, 7)}\``],
     ['Latest run', run
@@ -100,6 +102,14 @@ export function renderLive(f) {
     `<sub>Updated ${new Date(f.now).toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`].join('\n')
 }
 
+// Reads the run until it has completed: 30 reads, three seconds apart.
+async function waitUntilStopped(api, repository, run, sleep, reads = 30) {
+  if ((await api.get(`/repos/${repository}/actions/runs/${run.id}`)).status === 'completed') return true
+  if (reads <= 1) return false
+  await sleep(3000)
+  return waitUntilStopped(api, repository, run, sleep, reads - 1)
+}
+
 async function stopRun(api, repository, run, sleep) {
   try {
     await api.post(`/repos/${repository}/actions/runs/${run.id}/cancel`)
@@ -109,20 +119,15 @@ async function stopRun(api, repository, run, sleep) {
     // re-run, or withdrawing the approval the run has just posted) goes ahead.
     if (error.status !== 409) throw error
   }
-  for (let waited = 0; waited < 90; waited += 3) {
-    if ((await api.get(`/repos/${repository}/actions/runs/${run.id}`)).status === 'completed') return true
-    await sleep(3000)
-  }
-  return false
+  return waitUntilStopped(api, repository, run, sleep)
 }
 
 async function dismissApprovals(api, repository, number, head) {
   const reviews = await api.list(`/repos/${repository}/pulls/${number}/reviews`)
-  for (const review of reviews.filter((item) => item.user?.login === 'github-actions[bot]' &&
-    item.state === 'APPROVED' && item.commit_id === head)) {
-    await api.put(`/repos/${repository}/pulls/${number}/reviews/${review.id}/dismissals`,
-      { message: 'AI review cancelled by the maintainer.', event: 'DISMISS' })
-  }
+  const approvals = reviews.filter((item) => item.user?.login === 'github-actions[bot]' &&
+    item.state === 'APPROVED' && item.commit_id === head)
+  await Promise.all(approvals.map((review) => api.put(`/repos/${repository}/pulls/${number}/reviews/${review.id}/dismissals`,
+    { message: 'AI review cancelled by the maintainer.', event: 'DISMISS' })))
 }
 
 const NOT_STOPPED = 'The running review did not stop within 90 seconds. Try again in a minute.'
@@ -150,7 +155,8 @@ const statusFacts = (c) => ({ server: c.server, repository: c.repository, number
 async function showStatus(c) {
   const limits = readLimits(c.workflowText ?? readFileSync(WORKFLOW_FILE, 'utf8'))
   const today = new Date(c.now).toISOString().slice(0, 10)
-  const day = await c.api.list(`/repos/${c.repository}/actions/workflows/${WORKFLOW}/runs?created=${encodeURIComponent(`>=${today}`)}`, 'workflow_runs')
+  const created = encodeURIComponent(`>=${today}`)
+  const day = await c.api.list(`/repos/${c.repository}/actions/workflows/${WORKFLOW}/runs?created=${created}`, 'workflow_runs')
   const comments = await c.api.list(`/repos/${c.repository}/issues/${c.number}/comments`)
   const report = await findComment(c.api, { repository: c.repository, number: c.number, marker: STATUS_MARKER, comments })
   const counted = (list) => (limits.settle == null ? null : c.count(list, limits.settle))

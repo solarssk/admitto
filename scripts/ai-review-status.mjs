@@ -206,7 +206,8 @@ const percent = (part, whole) => (whole > 0 ? Math.floor((part / whole) * 100) :
 // anything that could end the span or break a table.
 function code(text) {
   const clean = String(text ?? '').replace(/[\p{Cc}`|]/gu, ' ').trim()
-  return `\`${clean.length > 100 ? `${clean.slice(0, 99)}…` : clean}\``
+  const shown = clean.length > 100 ? `${clean.slice(0, 99)}…` : clean
+  return `\`${shown}\``
 }
 
 function plain(text) {
@@ -324,8 +325,10 @@ function outcomeLines(f) {
       return ['The diff is larger than the automated reviewer accepts, so nothing was approved. Split the PR or review it by hand.']
     case 'unreadable':
       return ['GitHub sent no readable diff for at least one changed file, so nothing was approved. Review that file by hand.']
-    case 'budget':
-      return [`The automated review budget was used up${f.detail ? ` (${plain(f.detail)})` : ''}. GitHub counts the approval as a full one, but no AI read this code, so review the diff yourself before merging. To run a real review anyway, ${retry}; that bypasses the budget.`]
+    case 'budget': {
+      const why = f.detail ? ` (${plain(f.detail)})` : ''
+      return [`The automated review budget was used up${why}. GitHub counts the approval as a full one, but no AI read this code, so review the diff yourself before merging. To run a real review anyway, ${retry}; that bypasses the budget.`]
+    }
     case 'no-provider': {
       const [what, fix] = providerAdvice(f.claudeReason)
       return [`Claude was unavailable (${what}) and the Codex fallback gave no usable result. GitHub counts the approval as a full one, but no AI read this code, so review the diff yourself before merging.`,
