@@ -53,6 +53,7 @@ When you reopen an existing Select field to edit it, each option shows how many 
 - **An import value is invalid:** use the field ID as the column and match the selected type or option.
 - **The field cannot be deleted:** remove its use from event items first.
 - **An attendee's Select value now shows as unset:** someone renamed or removed the option it used to match. Open the attendee and choose a current option to reassign it - the confirmation shown when the option was edited names which attendees were affected.
+- **A Select field's Save button is off, or its options say "Unknown":** when you edit a Select field, Admitto reads how many attendees use each option, so that it can warn you before a rename or a removal affects them. The counts are grey bars until they arrive. If they cannot be read (after 30 seconds, or on an error), the options say **Unknown**, an error with a **Retry** button appears (it stays on screen, busy, until the answer is in), and **Save** and the remove buttons stay off, because the numbers decide whether a change is risky. **Save** and **Create field** show a spinner while they work.
 
 ## Related pages
 

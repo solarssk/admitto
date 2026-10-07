@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { OptionsEditor, optionRowsFromOptions, type OptionRow } from "../../src/requirements/OptionsEditor.js";
+import { advanceTimers } from "../test-utils.js";
 
 const ROW_HEIGHT = 40;
 
@@ -33,6 +34,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 /** jsdom never computes real layout (offsetTop/offsetHeight are always 0), but the drag math
@@ -228,5 +230,52 @@ describe("OptionsEditor — blanking an in-use option", () => {
 
     expect(container.querySelector(".options-editor__row--warning")).toBeNull();
     expect(screen.queryByText(/Clearing this removes/)).toBeNull();
+  });
+});
+
+describe("OptionsEditor: counts that are being read, and a save under way", () => {
+  const bars = () => Array.from(document.querySelectorAll(".options-editor__usage-skeleton"));
+
+  it("draws a bar in place of each count while they are read, invisible for the first 200ms, and Unknown if they could not be", async () => {
+    vi.useFakeTimers();
+    const rows = optionRowsFromOptions(["S", "M"]);
+    const { rerender } = render(<OptionsEditor rows={rows} usageCounts={null} usageLoading onChange={vi.fn()} />);
+    await advanceTimers(0);
+
+    expect(bars()).toHaveLength(2);
+    expect(bars().every((bar) => bar.classList.contains("at-loading-hold"))).toBe(true);
+    expect(bars().every((bar) => bar.getAttribute("aria-hidden") === "true")).toBe(true);
+    expect(screen.queryByText("Unknown")).toBeNull();
+    // The bars are decoration: assistive tech is told once they are drawn, and not for an answer that comes at once.
+    expect(screen.queryByText("Checking how many attendees use each option")).toBeNull();
+    await advanceTimers(200);
+    expect(bars().some((bar) => bar.classList.contains("at-loading-hold"))).toBe(false);
+    expect(screen.getByRole("status").textContent).toBe("Checking how many attendees use each option");
+
+    // The read failed: the counts are not known, which is not "Unused", and removing an option stays off.
+    rerender(<OptionsEditor rows={rows} usageCounts={null} usageLoading={false} onChange={vi.fn()} />);
+    await advanceTimers(400);
+    expect(bars()).toHaveLength(0);
+    expect(screen.queryByText("Checking how many attendees use each option")).toBeNull();
+    expect(screen.getAllByText("Unknown")).toHaveLength(2);
+    expect(screen.queryByText("Unused")).toBeNull();
+    for (const remove of screen.getAllByRole("button", { name: "Remove option" })) expect((remove as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps an option's field focusable but read-only while a save is under way, and switches the other controls off", () => {
+    render(<OptionsEditor rows={optionRowsFromOptions(["S"])} usageCounts={{}} disabled onChange={vi.fn()} />);
+    const input = screen.getByLabelText("Option text") as HTMLInputElement;
+
+    input.focus();
+    expect(input.readOnly).toBe(true);
+    expect(input.disabled).toBe(false);
+    expect(document.activeElement).toBe(input);
+    expect((screen.getByRole("button", { name: "+ Add option" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Remove option" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("lets the field be typed in when no save is under way", () => {
+    render(<OptionsEditor rows={optionRowsFromOptions(["S"])} usageCounts={{}} onChange={vi.fn()} />);
+    expect((screen.getByLabelText("Option text") as HTMLInputElement).readOnly).toBe(false);
   });
 });

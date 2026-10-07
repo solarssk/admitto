@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { IconButton } from "@admitto/ui";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { IconButton, Skeleton } from "@admitto/ui";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import "./options-editor.css";
 
 export type OptionRow = { key: string; text: string; originalText: string };
@@ -23,11 +24,26 @@ function usageOf(usageCounts: Record<string, number> | null, originalText: strin
 
 export interface OptionsEditorProps {
   rows: OptionRow[];
-  /** null while the usage-count fetch is still in flight - delete stays disabled and rename
+  /** null while the usage-count fetch is still in flight (or failed) - delete stays disabled and rename
    * warnings stay hidden until it resolves, rather than treating "not loaded yet" as "unused". */
   usageCounts: Record<string, number> | null;
+  /** The usage-count fetch is on its way: each row's count is a placeholder (drawn after 200ms), not "Unknown". */
+  usageLoading?: boolean;
+  /** The row's fields cannot be changed (a save is under way): a field stays focusable, read-only, since a disabled one would
+   * drop the focus of an operator who pressed Enter in it. */
   disabled?: boolean;
   onChange: (rows: OptionRow[]) => void;
+}
+
+/** A row's attendee count while it is being read: a bar as tall as the label's line (18px: the pill is 28px with its padding),
+ * invisible for the first 200ms (the room is reserved). Decoration, so it is hidden from assistive tech: the editor says that
+ * the counts are being read once the bars are drawn. */
+function UsageSkeleton({ held }: Readonly<{ held: boolean }>) {
+  return (
+    <span className={held ? "options-editor__usage-skeleton at-loading-hold" : "options-editor__usage-skeleton"} aria-hidden="true">
+      <Skeleton variant="rect" width={64} height={18} />
+    </span>
+  );
 }
 
 /** Structured editor for a select field's option list - replaces the old plain "one per line"
@@ -35,7 +51,8 @@ export interface OptionsEditorProps {
  * renaming a value that's in use, and turns delete into an in-row confirm instead of removing
  * silently. Reordering is drag (mouse/touch/pen via Pointer Events - no DnD library in this
  * repo) with an Up/Down-arrow keyboard equivalent on the same handle. */
-export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonly<OptionsEditorProps>) {
+export function OptionsEditor({ rows, usageCounts, usageLoading = false, disabled, onChange }: Readonly<OptionsEditorProps>) {
+  const usageGate = useLoadingGate(usageLoading);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef(rows);
@@ -199,6 +216,7 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
 
   return (
     <div className="options-editor">
+      <output className="sr-only">{usageLoading && usageGate.showIndicator ? "Checking how many attendees use each option" : ""}</output>
       <div className="options-editor__list" ref={listRef}>
         {rows.map((row) => {
           const usage = usageOf(usageCounts, row.originalText);
@@ -211,8 +229,8 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
           const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
           const risky = (blanked || renamed) && usage > 0;
           const usageKnown = usageCounts !== null;
-          let usageLabel = "Unused";
-          if (!usageKnown) usageLabel = "…";
+          let usageLabel: ReactNode = "Unused";
+          if (!usageKnown) usageLabel = usageGate.showContent ? "Unknown" : <UsageSkeleton held={!usageGate.showIndicator} />;
           else if (usage > 0) usageLabel = `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
 
           if (confirmingKey === row.key) {
@@ -267,7 +285,7 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
                 className="at-input options-editor__input"
                 data-key={row.key}
                 value={row.text}
-                disabled={disabled}
+                readOnly={disabled}
                 aria-label="Option text"
                 onChange={(e) => updateRow(row.key, e.target.value)}
               />

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
 import { EventCustomFieldModal } from "../../src/requirements/EventCustomFieldModal.js";
-import { renderWithToast } from "../test-utils.js";
+import { advanceTimers, deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE } from "../../src/utils/loading-timing.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -63,10 +64,12 @@ function addOptionRow(text: string) {
   fireEvent.change(inputs[inputs.length - 1]!, { target: { value: text } });
 }
 
+const usagePlaceholder = () => document.querySelector(".options-editor__usage-skeleton");
+
 /** A select field is opened for edit fetches usage counts on mount - wait for that to resolve
- * (Save reads "Checking usage…" and stays disabled until it does) before interacting further. */
+ * (the counts are bars and Save stays disabled until it does) before interacting further. */
 async function waitForUsageLoaded() {
-  await waitFor(() => expect(screen.queryByText("Checking usage…")).toBeNull());
+  await waitFor(() => expect(usagePlaceholder()).toBeNull());
 }
 
 describe("EventCustomFieldModal — create", () => {
@@ -348,8 +351,12 @@ describe("EventCustomFieldModal — edit", () => {
   it("shows how many attendees currently have each option, once loaded", async () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ S: 3, M: 42 });
     renderModal(shirtField);
-    expect(screen.getByText("Checking usage…")).toBeTruthy();
+    expect(usagePlaceholder()).not.toBeNull();
+    // Dirty, so that the counts still being unknown is the only reason for Save to be off.
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt sizes" } });
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
     await waitForUsageLoaded();
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
     expect(await screen.findByText("3 attendees")).toBeTruthy();
     expect(await screen.findByText("42 attendees")).toBeTruthy();
     expect(await screen.findByText("Unused")).toBeTruthy(); // L has no attendees
@@ -445,7 +452,12 @@ describe("EventCustomFieldModal — edit", () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockRejectedValueOnce(new Error("network error"));
     renderModal(shirtField);
     expect(await screen.findByText(/Could not load how many attendees use each option/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Checking usage…" }).hasAttribute("disabled")).toBe(true);
+    // Dirty, so that the counts not being known is the only reason for Save to be off.
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt sizes" } });
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    // A failed lookup is not "unused": every option says that its count is not known.
+    expect(screen.getAllByText("Unknown")).toHaveLength(3);
+    expect(screen.queryByText("Unused")).toBeNull();
   });
 
   it("recovers via Retry after a failed usage fetch, without requiring the modal to be reopened", async () => {
@@ -455,7 +467,7 @@ describe("EventCustomFieldModal — edit", () => {
     renderModal(shirtField);
     expect(await screen.findByText(/Could not load how many attendees use each option/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading option usage" }));
     await waitFor(() => {
       expect(screen.queryByText(/Could not load how many attendees use each option/)).toBeNull();
     });
@@ -479,12 +491,12 @@ describe("EventCustomFieldModal — edit", () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
     renderModal(shirtField);
     expect(await screen.findByText(/Could not load how many attendees use each option/)).toBeTruthy();
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Retry loading option usage" });
     retry.focus();
 
     fireEvent.click(retry);
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Retry loading option usage" })).toBeNull();
     });
     await waitForUsageLoaded();
 
@@ -614,5 +626,182 @@ describe("EventCustomFieldModal — edit", () => {
 
     resolveUsage({});
     await waitForUsageLoaded();
+  });
+});
+
+describe("EventCustomFieldModal: the Save button", () => {
+  const textField: EventCustomFieldDto = {
+    id: "field-diet",
+    source_field: "diet",
+    label: "Diet",
+    description: null,
+    type: "text",
+    required: false,
+    options: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("shows the save on the button, which keeps its label and the keyboard focus, makes the fields read-only and ignores a second press", async () => {
+    const saved = deferred<EventCustomFieldDto>();
+    vi.mocked(updateEventCustomField).mockReturnValueOnce(saved.promise);
+    renderModal(textField);
+    const label = screen.getByLabelText("Display label") as HTMLInputElement;
+    fireEvent.change(label, { target: { value: "Diet needs" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(save.textContent).toContain("Save");
+    expect(isOff(save)).toBe(true);
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(save);
+    expect(label.readOnly).toBe(true);
+    expect((screen.getByLabelText("Description") as HTMLTextAreaElement).readOnly).toBe(true);
+    expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(save);
+    expect(updateEventCustomField).toHaveBeenCalledTimes(1);
+
+    await act(async () => saved.resolve(textField));
+  });
+
+  it("does not save twice when Enter is pressed in a field while the save runs", async () => {
+    const saved = deferred<EventCustomFieldDto>();
+    vi.mocked(updateEventCustomField).mockReturnValueOnce(saved.promise);
+    renderModal(textField);
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Diet needs" } });
+    const form = document.getElementById("custom-field-form") as HTMLFormElement;
+    fireEvent.submit(form);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBe("true"));
+
+    fireEvent.submit(form);
+
+    expect(updateEventCustomField).toHaveBeenCalledTimes(1);
+    await act(async () => saved.resolve(textField));
+  });
+
+  it("brings the button back, with the focus and what was typed, when the save fails", async () => {
+    vi.mocked(updateEventCustomField).mockRejectedValueOnce(new Error("network error"));
+    renderModal(textField);
+    const label = screen.getByLabelText("Display label") as HTMLInputElement;
+    fireEvent.change(label, { target: { value: "Diet needs" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.any(String), "error"));
+    expect(save.getAttribute("aria-busy")).not.toBe("true");
+    expect(isOff(save)).toBe(false);
+    expect(document.activeElement).toBe(save);
+    expect(label.readOnly).toBe(false);
+    expect(label.value).toBe("Diet needs");
+  });
+
+  it("keeps the label of Create field while it works, too", async () => {
+    const created = deferred<EventCustomFieldDto>();
+    vi.mocked(createEventCustomField).mockReturnValueOnce(created.promise);
+    renderModal(null);
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Parking" } });
+    const create = screen.getByRole("button", { name: "Create field" });
+    fireEvent.click(create);
+
+    await waitFor(() => expect(create.getAttribute("aria-busy")).toBe("true"));
+    expect(create.textContent).toContain("Create field");
+    await act(async () => created.resolve(textField));
+  });
+});
+
+describe("EventCustomFieldModal: the option usage lookup", () => {
+  const selectField: EventCustomFieldDto = {
+    id: "field-shirt",
+    source_field: "shirt_size",
+    label: "Shirt size",
+    description: null,
+    type: "select",
+    required: false,
+    options: ["S", "M"],
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the room of the counts invisibly for 200ms, then draws bars, and Save stays off meanwhile", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockImplementation(hangUntilAborted as never);
+    renderModal(selectField);
+    await advanceTimers(0);
+
+    const bars = Array.from(document.querySelectorAll(".options-editor__usage-skeleton"));
+    expect(bars).toHaveLength(2);
+    expect(bars.every((bar) => bar.classList.contains("at-loading-hold"))).toBe(true);
+    expect(screen.queryByText("Unknown")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt sizes" } });
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+
+    await advanceTimers(200);
+    expect(bars.some((bar) => bar.classList.contains("at-loading-hold"))).toBe(false);
+  });
+
+  it("never draws the bars for an answer that comes within 200ms", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ S: 2 });
+    renderModal(selectField);
+    await advanceTimers(0);
+
+    expect(usagePlaceholder()).toBeNull();
+    expect(screen.getByText("2 attendees")).toBeTruthy();
+  });
+
+  it("gives up after 30 seconds with an error and a Retry that stays on screen, busy, until the answer is in", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockImplementationOnce(hangUntilAborted as never);
+    renderModal(selectField);
+    await advanceTimers(0);
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+    expect(screen.getAllByText("Unknown")).toHaveLength(2);
+
+    const answer = deferred<Record<string, number>>();
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockReturnValueOnce(answer.promise);
+    const retry = screen.getByRole("button", { name: "Retry loading option usage" });
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(500);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+
+    await act(async () => answer.resolve({ S: 1 }));
+    await advanceTimers(500);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("1 attendee")).toBeTruthy();
+  });
+
+  it("reads the counts of the field being edited, with a signal that stops the request when the modal closes", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockImplementationOnce(hangUntilAborted as never);
+    const { unmount } = renderWithToast(<EventCustomFieldModal eventId="evt-1" field={selectField} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await waitFor(() => expect(fetchEventCustomFieldOptionUsage).toHaveBeenCalledTimes(1));
+
+    const [eventId, fieldId, signal] = vi.mocked(fetchEventCustomFieldOptionUsage).mock.calls[0] as unknown as [string, string, AbortSignal];
+    expect([eventId, fieldId]).toEqual(["evt-1", "field-shirt"]);
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("reads nothing for a field that is being created, or whose type is not a choice", async () => {
+    const { unmount } = renderWithToast(<EventCustomFieldModal eventId="evt-1" field={null} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await act(async () => {});
+    expect(fetchEventCustomFieldOptionUsage).not.toHaveBeenCalled();
+    unmount();
+
+    renderModal({ ...selectField, id: "field-text", type: "text", options: null });
+    await act(async () => {});
+    expect(fetchEventCustomFieldOptionUsage).not.toHaveBeenCalled();
   });
 });

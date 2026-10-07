@@ -701,11 +701,8 @@ html:not(.icons-ready) .ti {
 }
 
 .sys-status__check--pending {
-  display: inline-block;
+  /* The kit's Spinner (a 16px ring, the size of the icon it stands in for), dimmed like the row's other secondary text. */
   color: var(--text-muted);
-  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
-     spinner.css) instead of a new one-off — always loaded globally via the shell. */
-  animation: at-spin 0.9s linear infinite;
 }
 
 .operator-shell__user-link {
