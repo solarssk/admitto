@@ -3,7 +3,7 @@
  * Superadmin-only — same gate as event mail transport credentials.
  */
 import type { Context } from "hono";
-import { encryptToString } from "@admitto/crypto";
+import { encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import type { PrismaClient, BounceIngestSettings, Prisma } from "@admitto/db";
 import {
   describeMailConfig,
@@ -185,7 +185,7 @@ function applyDedicatedCredentials(
     secretsCleared = true;
     fieldsChanged.push("imap_password");
   } else if (body.imap_password !== undefined && body.imap_password.length > 0) {
-    data.imap_password_enc = encryptToString(body.imap_password);
+    data.imap_password_enc = encryptToString(body.imap_password, SECRET_CONTEXTS.imapPassword);
     secretsRotated = true;
     fieldsChanged.push("imap_password");
   }

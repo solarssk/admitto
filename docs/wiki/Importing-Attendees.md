@@ -20,12 +20,12 @@ Validate and import many attendees from CSV or XLSX while controlling duplicates
 1. Open the event, then **Attendees**.
 2. Select **More**, then **Import**.
 3. Drop a CSV or XLSX file onto the dropzone, or browse to upload.
-4. Keep **Dry run (validate only, no writes)** enabled and select **Validate file**.
+4. Keep **Dry run (validate only, no writes)** enabled and select **Validate file**. The button shows a spinner and a thin bar runs along the file's card while the file is checked; when the summary appears, the keyboard focus moves to its title.
 5. Review valid, invalid, warning, skipped, create, and update counts plus the sample rows.
 6. If needed, change **Overwrite existing attendees**, then select **Re-validate**.
 7. Correct the source file and validate again until the summary is understood.
 8. Turn off **Dry run** only when you intend to write the displayed changes.
-9. Select **Commit**. Admitto queues the import for the background worker and shows progress until it finishes. Keep the worker running (`npm run worker` locally, or compose `worker` in deploy). When it finishes, review the success summary (created / updated / skipped) and **Import history**.
+9. Select **Commit**. Admitto queues the import for the background worker and shows progress until it finishes. Keep the worker running (`npm run worker` locally, or compose `worker` in deploy). While it runs, **Commit** shows a spinner and the same bar runs along the file's card; when the success summary (created / updated / skipped) appears, the keyboard focus moves to its title. Then review **Import history**, which refreshes after the import.
 
 ## Expected result
 
@@ -50,6 +50,8 @@ A committed import changes the attendee list and records an import-history entry
 - **Warning:** review it; unknown columns are ignored and duplicate headers use the last value.
 - **Skipped attendee:** read the reason, then decide whether overwrite is appropriate.
 - **Unknown ticket type:** use a configured label or key and validate again.
+- **Import history could not be loaded:** the card says so with a **Retry** that stays busy until the answer is in. An import that already ran is not affected; **Retry** reads the list again.
+- **The event's custom columns could not be loaded:** the **Required CSV columns** list says so with a **Retry**. Select it before preparing the file, because without it the list is missing the event's own columns.
 - **Event is at capacity:** an Organisation Admin can open **Event settings** and review capacity. A Superadmin-only override is offered only when an authorised exception is required.
 
 ## Related pages

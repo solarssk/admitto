@@ -264,6 +264,26 @@ describe("backfillEvent", () => {
     expect(row?.first_confirmed_at).toBeNull();
   });
 
+  it("skips the whole event's backfill when the event has no API key stored", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATT_CONFIRMED,
+        provider: "passcreator",
+        user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+        provider_pass_id: `pc-${ATT_CONFIRMED}`,
+        status: "active",
+        apple_active_registrations: 1,
+      },
+    });
+    vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+    vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot");
+
+    await expect(backfillEvent(prisma, makeEvent({ wallet_api_key_enc: null }), false)).resolves.toBeUndefined();
+
+    expect(statusSpy).not.toHaveBeenCalled();
+  });
+
   it("continues to the backfill when the webhook re-subscribe itself throws", async () => {
     await prisma.walletPass.create({
       data: {

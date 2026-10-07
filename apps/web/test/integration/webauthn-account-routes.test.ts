@@ -151,7 +151,7 @@ async function seedConfirmedWebauthnCredential(userId: string, label = "Seeded k
   const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
   if (!begin) throw new Error("beginWebauthnRegistration failed");
   const response = authenticator.register({ challenge: begin.challenge, rpID: RP_ID, origin: BASE_URL });
-  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", label, RP);
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", RP, { label });
   if (!result) throw new Error("finishWebauthnRegistration failed");
   // A first-ever method leaves backup_codes_acknowledged_at null (IAM-002) — acknowledge here so
   // this fixture's session stays usable, mirroring what the self-service HTTP finish handler

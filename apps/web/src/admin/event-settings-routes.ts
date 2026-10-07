@@ -25,7 +25,7 @@ import {
 import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
-import { decryptFromString, encryptToString } from "@admitto/crypto";
+import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import {
   PassCreatorClient,
   WalletProviderError,
@@ -482,7 +482,7 @@ export async function handlePostEventWalletTest(c: Context, db: PrismaClient): P
       return c.json({ ok: false, error: "An API key is required to test the connection." });
     }
     try {
-      apiKey = decryptFromString(event.wallet_api_key_enc);
+      apiKey = decryptFromString(event.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
     } catch {
       return c.json({ ok: false, error: "The saved API key could not be decrypted." });
     }
@@ -533,7 +533,7 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
   // Empty string clears the key; omit to keep the previous one.
   if (patch.wallet_api_key !== undefined) {
-    data.wallet_api_key_enc = patch.wallet_api_key ? encryptToString(patch.wallet_api_key) : null;
+    data.wallet_api_key_enc = patch.wallet_api_key ? encryptToString(patch.wallet_api_key, SECRET_CONTEXTS.walletApiKey) : null;
   }
   if (patch.wallet_apple_enabled !== undefined) {
     data.wallet_apple_enabled = patch.wallet_apple_enabled;
@@ -824,7 +824,7 @@ export async function subscribeWalletWebhooksBestEffort(
 
   let apiKey: string;
   try {
-    apiKey = decryptFromString(updated.wallet_api_key_enc);
+    apiKey = decryptFromString(updated.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
   } catch (err) {
     console.error("wallet webhook subscribe: API key decrypt failed:", err);
     return;
@@ -1132,7 +1132,7 @@ async function guardWalletExpirationModeChange(
       return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
     }
     try {
-      apiKey = decryptFromString(existing.wallet_api_key_enc);
+      apiKey = decryptFromString(existing.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
     } catch {
       return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
     }

@@ -223,10 +223,12 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             <Button
               type="button"
               variant="primary"
-              disabled={submitting || !canSubmit}
+              loading={submitting}
+              loadingLabel="Creating…"
+              disabled={!canSubmit}
               onClick={() => void handleSubmit()}
             >
-              {submitting ? "Creating…" : "Create event"}
+              Create event
             </Button>
           </div>
         </div>

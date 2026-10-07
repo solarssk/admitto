@@ -1,5 +1,5 @@
 import type { LookupAddress } from "node:dns";
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import type { PrismaClient } from "@admitto/db";
 import { withPinnedFetch } from "@admitto/mailer";
 import { sanitizeDeliveryError } from "@admitto/mail-delivery";
@@ -183,7 +183,7 @@ export class WebhookChannel implements NotificationChannel {
       });
       if (!settings?.webhook_url_enc) return { ok: true, noop: true };
 
-      const rawUrl = decryptFromString(settings.webhook_url_enc);
+      const rawUrl = decryptFromString(settings.webhook_url_enc, SECRET_CONTEXTS.notificationWebhookUrl);
       const url = assertSafeWebhookUrl(rawUrl, env);
       const kind = (settings.webhook_kind as WebhookKind | null) ?? "generic";
 

@@ -360,10 +360,11 @@ export async function previewImport(
   eventId: string,
   file: File,
   overwrite: boolean,
+  signal?: AbortSignal,
 ): Promise<ImportPreviewResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/import/preview`,
-    multipartPostInit(importFormData(file, overwrite)),
+    multipartPostInit(importFormData(file, overwrite), signal),
   );
   return parseJson<ImportPreviewResponse>(res);
 }

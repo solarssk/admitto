@@ -1,10 +1,10 @@
-import { encryptToString } from "@admitto/crypto";
+import { encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import type { MailSettings, Prisma, PrismaClient } from "@admitto/db";
 import type { MailScope, MailSettingsInput } from "./types.js";
 
-function maybeEncrypt(value: string | undefined): string | undefined {
+function maybeEncrypt(value: string | undefined, context: string): string | undefined {
   if (value === undefined || value === "") return undefined;
-  return encryptToString(value);
+  return encryptToString(value, context);
 }
 
 /** Treats blank strings the same as absent — stores null instead. */
@@ -82,10 +82,10 @@ function applyNumericAndBooleanFields(row: MailSettings, input: MailSettingsInpu
 }
 
 function applySecretFields(row: MailSettings, input: MailSettingsInput): void {
-  if ("smtpPassword" in input) row.smtp_password_enc = maybeEncrypt(input.smtpPassword) ?? null;
-  if ("graphClientSecret" in input) row.graph_client_secret_enc = maybeEncrypt(input.graphClientSecret) ?? null;
-  if ("powerAutomateKey" in input) row.power_automate_key_enc = maybeEncrypt(input.powerAutomateKey) ?? null;
-  if ("powerAutomateUrl" in input) row.power_automate_url_enc = maybeEncrypt(input.powerAutomateUrl) ?? null;
+  if ("smtpPassword" in input) row.smtp_password_enc = maybeEncrypt(input.smtpPassword, SECRET_CONTEXTS.smtpPassword) ?? null;
+  if ("graphClientSecret" in input) row.graph_client_secret_enc = maybeEncrypt(input.graphClientSecret, SECRET_CONTEXTS.graphClientSecret) ?? null;
+  if ("powerAutomateKey" in input) row.power_automate_key_enc = maybeEncrypt(input.powerAutomateKey, SECRET_CONTEXTS.powerAutomateKey) ?? null;
+  if ("powerAutomateUrl" in input) row.power_automate_url_enc = maybeEncrypt(input.powerAutomateUrl, SECRET_CONTEXTS.powerAutomateUrl) ?? null;
 }
 
 /** Applies a partial MailSettingsInput onto a row — org or event, the merge logic
@@ -134,8 +134,9 @@ export async function setMailSettings(
     inputKey: keyof MailSettingsInput,
     dbCol: string,
     rawValue: string | undefined,
+    context: string,
   ): Record<string, string | null> =>
-    inputKey in input ? { [dbCol]: maybeEncrypt(rawValue) ?? null } : {};
+    inputKey in input ? { [dbCol]: maybeEncrypt(rawValue, context) ?? null } : {};
 
   const updateData = {
     ...supplied("provider", str(input.provider)),
@@ -166,10 +167,10 @@ export async function setMailSettings(
     ...mapped("envelopeFrom", "envelope_from", str(input.envelopeFrom)),
     ...mapped("allowedFromDomain", "allowed_from_domain", str(input.allowedFromDomain)),
     // encrypted secrets — only updated when explicitly supplied
-    ...secretCol("smtpPassword", "smtp_password_enc", input.smtpPassword),
-    ...secretCol("graphClientSecret", "graph_client_secret_enc", input.graphClientSecret),
-    ...secretCol("powerAutomateKey", "power_automate_key_enc", input.powerAutomateKey),
-    ...secretCol("powerAutomateUrl", "power_automate_url_enc", input.powerAutomateUrl),
+    ...secretCol("smtpPassword", "smtp_password_enc", input.smtpPassword, SECRET_CONTEXTS.smtpPassword),
+    ...secretCol("graphClientSecret", "graph_client_secret_enc", input.graphClientSecret, SECRET_CONTEXTS.graphClientSecret),
+    ...secretCol("powerAutomateKey", "power_automate_key_enc", input.powerAutomateKey, SECRET_CONTEXTS.powerAutomateKey),
+    ...secretCol("powerAutomateUrl", "power_automate_url_enc", input.powerAutomateUrl, SECRET_CONTEXTS.powerAutomateUrl),
   };
 
   // For create we need all columns explicitly — fields not in input default to null.
@@ -200,10 +201,10 @@ export async function setMailSettings(
     reply_to: str(input.replyTo),
     envelope_from: str(input.envelopeFrom),
     allowed_from_domain: str(input.allowedFromDomain),
-    smtp_password_enc: maybeEncrypt(input.smtpPassword) ?? null,
-    graph_client_secret_enc: maybeEncrypt(input.graphClientSecret) ?? null,
-    power_automate_key_enc: maybeEncrypt(input.powerAutomateKey) ?? null,
-    power_automate_url_enc: maybeEncrypt(input.powerAutomateUrl) ?? null,
+    smtp_password_enc: maybeEncrypt(input.smtpPassword, SECRET_CONTEXTS.smtpPassword) ?? null,
+    graph_client_secret_enc: maybeEncrypt(input.graphClientSecret, SECRET_CONTEXTS.graphClientSecret) ?? null,
+    power_automate_key_enc: maybeEncrypt(input.powerAutomateKey, SECRET_CONTEXTS.powerAutomateKey) ?? null,
+    power_automate_url_enc: maybeEncrypt(input.powerAutomateUrl, SECRET_CONTEXTS.powerAutomateUrl) ?? null,
   };
 
   await prisma.mailSettings.upsert({
