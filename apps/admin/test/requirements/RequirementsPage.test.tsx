@@ -137,6 +137,19 @@ describe("RequirementsPage: the first read", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
+  it("fades the cards in where the placeholder was once the read has answered", async () => {
+    const answer = deferred<EventItemDto[]>();
+    fetchEventItems.mockReturnValueOnce(answer.promise);
+    renderPage();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve([badgeItem]));
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(screen.getByRole("switch", { name: "Disable Badge" }).closest(".at-fade-in")).not.toBeNull();
+  });
+
   it("never draws the placeholder for an answer that comes within 200ms", async () => {
     fetchEventItems.mockResolvedValueOnce([badgeItem]);
     renderPage();

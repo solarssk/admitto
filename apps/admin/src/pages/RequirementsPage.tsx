@@ -368,56 +368,59 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   } else {
     assertPresent(list.data);
     body = (
-      <RefetchRegion refreshing={list.refreshing} label="Refreshing requirements">
-        <section className="requirements-section">
-          <Card
-            padded={false}
-            title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
-            actions={
-              <ArchivedGuard event={event} reasonId="add-item-reason">
-                {(guard) => (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<i className="ti ti-plus" />}
-                    {...guard}
-                    onClick={() => {
-                      if (addOpen) closeAddModal();
-                      else setAddOpen(true);
-                    }}
-                  >
-                    Add
-                  </Button>
-                )}
-              </ArchivedGuard>
-            }
-          >
-            <div className="attendees-table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th className="requirements-item-desc-col">Description</th>
-                    <th className="requirements-item-status-col">Active</th>
-                    <th className="requirements-item-actions" aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  <EventItemsTableBody
-                    items={items}
-                    event={event}
-                    togglingIds={togglingIds}
-                    onToggle={(item) => void handleToggleEnabled(item)}
-                    onEdit={(item) => setSelectedItem(item)}
-                  />
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </section>
+      // What replaces the placeholder fades in.
+      <div className="at-fade-in">
+        <RefetchRegion refreshing={list.refreshing} label="Refreshing requirements">
+          <section className="requirements-section">
+            <Card
+              padded={false}
+              title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
+              actions={
+                <ArchivedGuard event={event} reasonId="add-item-reason">
+                  {(guard) => (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<i className="ti ti-plus" />}
+                      {...guard}
+                      onClick={() => {
+                        if (addOpen) closeAddModal();
+                        else setAddOpen(true);
+                      }}
+                    >
+                      Add
+                    </Button>
+                  )}
+                </ArchivedGuard>
+              }
+            >
+              <div className="attendees-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th className="requirements-item-desc-col">Description</th>
+                      <th className="requirements-item-status-col">Active</th>
+                      <th className="requirements-item-actions" aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <EventItemsTableBody
+                      items={items}
+                      event={event}
+                      togglingIds={togglingIds}
+                      onToggle={(item) => void handleToggleEnabled(item)}
+                      onEdit={(item) => setSelectedItem(item)}
+                    />
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </section>
 
-        <EventCustomFieldsCard eventId={eventId} event={event} fields={customFields} onChanged={refreshRequirements} />
-      </RefetchRegion>
+          <EventCustomFieldsCard eventId={eventId} event={event} fields={customFields} onChanged={refreshRequirements} />
+        </RefetchRegion>
+      </div>
     );
   }
 
