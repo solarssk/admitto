@@ -186,7 +186,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         )}
 
         {view === "ready" && apiData && (
-          <>
+          <div className="at-fade-in">
             <ValidationErrorList errors={validationErrors} className="setup-wizard__error-list" />
 
             <div className="setup-wizard__mail-form">
@@ -358,7 +358,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                 />
               )}
             </div>
-          </>
+          </div>
         )}
       </>
     );

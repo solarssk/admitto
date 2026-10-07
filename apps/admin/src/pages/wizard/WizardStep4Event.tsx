@@ -18,6 +18,7 @@ import { slugFromTitle } from "../../events/slug.js";
 import { useOptionsLoad } from "../../hooks/useOptionsLoad.js";
 import { componentsFromResult } from "../../settings/locationGeocode.js";
 import { useWizard } from "./WizardContext.js";
+import { STEP_BODY } from "./WizardStepLoad.js";
 
 export type WizardStep4EventHandle = {
   createAndContinue: () => Promise<boolean>;
@@ -118,6 +119,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             busy={events.retrying}
             onRetry={events.retry}
             retryLabel="Retry checking for existing events"
+            landmark={STEP_BODY}
           />
         )}
 

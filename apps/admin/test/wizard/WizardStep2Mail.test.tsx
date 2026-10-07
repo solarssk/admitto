@@ -117,6 +117,20 @@ describe("WizardStep2Mail first read", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
+  it("fades the form in where the placeholder was once the read has answered", async () => {
+    vi.useFakeTimers();
+    const answer = deferred<MailSettingsResponse>();
+    mockFetch.mockReturnValueOnce(answer.promise);
+    renderStep();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve(smtpResponse()));
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(screen.getByLabelText("SMTP host").closest(".at-fade-in")).not.toBeNull();
+  });
+
   it("never draws the placeholder for an answer that comes within 200ms", async () => {
     vi.useFakeTimers();
     mockFetch.mockResolvedValueOnce(smtpResponse());

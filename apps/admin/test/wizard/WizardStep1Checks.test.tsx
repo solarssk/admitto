@@ -67,6 +67,19 @@ describe("WizardStep1Checks: the first run", () => {
     expect(screen.getByText("PostgreSQL connected · migrations current")).toBeTruthy();
   });
 
+  it("fades the results in where the placeholder was once the read has answered", async () => {
+    const answer = deferred<{ checks: typeof okChecks }>();
+    fetchSetupChecks.mockReturnValueOnce(answer.promise);
+    renderStep();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve({ checks: okChecks }));
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(screen.getByText("PostgreSQL connected · migrations current").closest(".at-fade-in")).not.toBeNull();
+  });
+
   it("says it is taking longer than usual after 8 seconds", async () => {
     fetchSetupChecks.mockImplementation(hangUntilAborted as never);
     renderStep();

@@ -159,6 +159,27 @@ describe("WizardStep4Event", () => {
     expect(mockCreateEvent).not.toHaveBeenCalled();
   });
 
+  it("hands the focus of a Retry that worked to the body of the step, instead of dropping it on the page", async () => {
+    const answer = deferred<{ id: string; title: string }[]>();
+    mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down")).mockReturnValueOnce(answer.promise as never);
+    renderWithToast(
+      <section className="setup-wizard__body" aria-label="Create your first event">
+        <WizardProvider>
+          <WizardStep4Event onCanContinueChange={() => {}} onHasExistingEventsChange={() => {}} />
+        </WizardProvider>
+      </section>,
+    );
+    const retry = await screen.findByRole("button", { name: "Retry checking for existing events" });
+    retry.focus();
+    fireEvent.click(retry);
+    await act(async () => {});
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => answer.resolve([]));
+    await waitFor(() => expect(screen.queryByText("Could not check for existing events.")).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Create your first event" }));
+  });
+
   it("reports and summarizes the sole existing event", async () => {
     const onHasExistingEventsChange = vi.fn();
     mockFetchAdminEvents.mockResolvedValueOnce([{ id: "evt-1", title: "Existing event" }]);

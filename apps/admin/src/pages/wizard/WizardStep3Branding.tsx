@@ -112,7 +112,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         )}
 
         {view === "ready" && (
-          <>
+          <div className="at-fade-in">
             <div className="setup-wizard__field">
               <Input
                 label="Organisation name"
@@ -147,7 +147,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 onDirty={() => onDirtyChange?.(true)}
               />
             </div>
-          </>
+          </div>
         )}
       </>
     );

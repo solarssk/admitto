@@ -5,7 +5,7 @@ import { SLOW_NOTICE_TEXT } from "../../utils/loading-timing.js";
 import "../setup-wizard.css";
 
 /** Where the focus goes when the Retry that held it goes away because the read worked: the body of the step. */
-const STEP_BODY = ".setup-wizard__body";
+export const STEP_BODY = ".setup-wizard__body";
 
 /**
  * What a step of the wizard shows while its first read runs: the shapes of what will be there, in a status region named after

@@ -67,24 +67,26 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
     // Past the placeholder and the error, the read has answered.
     assertPresent(checks);
     body = (
-      <RefetchRegion refreshing={list.refreshing} label="Running the checks again">
-        <ul className="setup-wizard__check-list">
-          {SETUP_CHECK_ORDER.map((key) => (
-            <CheckRow key={key} checkKey={key} result={checks[key]} />
-          ))}
-        </ul>
-        {hasCheckErrors && (
-          <WizardRetryNotice
-            className="setup-wizard__check-error-banner"
-            retryClassName="setup-wizard__check-retry"
-            retrying={rerunning}
-            onRetry={list.reload}
-          >
-            {list.refreshError ? `${list.refreshError} ` : null}
-            Fix the issues above, then use Retry to run checks again.
-          </WizardRetryNotice>
-        )}
-      </RefetchRegion>
+      <div className="at-fade-in">
+        <RefetchRegion refreshing={list.refreshing} label="Running the checks again">
+          <ul className="setup-wizard__check-list">
+            {SETUP_CHECK_ORDER.map((key) => (
+              <CheckRow key={key} checkKey={key} result={checks[key]} />
+            ))}
+          </ul>
+          {hasCheckErrors && (
+            <WizardRetryNotice
+              className="setup-wizard__check-error-banner"
+              retryClassName="setup-wizard__check-retry"
+              retrying={rerunning}
+              onRetry={list.reload}
+            >
+              {list.refreshError ? `${list.refreshError} ` : null}
+              Fix the issues above, then use Retry to run checks again.
+            </WizardRetryNotice>
+          )}
+        </RefetchRegion>
+      </div>
     );
   }
 

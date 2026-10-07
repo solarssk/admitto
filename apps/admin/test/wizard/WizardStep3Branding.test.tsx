@@ -83,6 +83,19 @@ describe("WizardStep3Branding: the first read", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
+  it("fades the form in where the placeholder was once the read has answered", async () => {
+    const answer = deferred<typeof branding>();
+    fetchOrgBranding.mockReturnValueOnce(answer.promise);
+    renderStep();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve(branding));
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(nameField().closest(".at-fade-in")).not.toBeNull();
+  });
+
   it("never draws the placeholder for an answer within 200ms, and fills the form with what was stored", async () => {
     fetchOrgBranding.mockResolvedValueOnce(branding);
     renderStep();
