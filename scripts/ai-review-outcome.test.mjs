@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
-import { classifyClaudeReview } from './ai-review-outcome.mjs'
+import { classifyClaudeReview, readExecutionEvents } from './ai-review-outcome.mjs'
 
 const valid = JSON.stringify({
   verdict: 'comment', summary: 'Found a real defect.',
@@ -146,4 +146,20 @@ test('Codex results approve only clean completed reviews and internal fallback e
   }
   const primary = publish({CLAUDE_STATUS: 'reviewed', STRUCTURED: valid, CODEX_STATUS: 'clean'})
   assert.match(primary.calls, /event=COMMENT/)
+})
+
+test('the execution log is read as one JSON array or as one JSON object per line', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ai-review-events-'))
+  try {
+    const events = [{ type: 'init' }, { type: 'result', is_error: false }]
+    writeFileSync(join(dir, 'array.json'), JSON.stringify(events))
+    writeFileSync(join(dir, 'lines.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`)
+    writeFileSync(join(dir, 'broken.json'), '{"type":')
+    assert.deepEqual(readExecutionEvents(join(dir, 'array.json')), events)
+    assert.deepEqual(readExecutionEvents(join(dir, 'lines.jsonl')), events)
+    assert.throws(() => readExecutionEvents(join(dir, 'broken.json')))
+    assert.throws(() => readExecutionEvents(join(dir, 'missing.json')))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
