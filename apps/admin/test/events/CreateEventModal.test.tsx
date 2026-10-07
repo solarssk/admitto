@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateEventModal } from "../../src/events/CreateEventModal.js";
+import { deferred, isOff } from "../test-utils.js";
 import * as eventDates from "../../src/utils/event-dates.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -268,6 +269,55 @@ describe("CreateEventModal", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     resolveCreate();
+  });
+
+  it("shows Create event busy on the button itself, with its focus, keeps Cancel and the fields off, and ignores a second press", async () => {
+    const answer = deferred<Awaited<ReturnType<typeof createEvent>>>();
+    mockCreateEvent.mockReturnValueOnce(answer.promise);
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const create = screen.getByRole("button", { name: "Create event" });
+    create.focus();
+    fireEvent.click(create);
+
+    expect(create.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Creating…" })).toBe(create);
+    expect(isOff(create)).toBe(true);
+    expect(document.activeElement).toBe(create);
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText(/Event title/) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(create);
+    expect(mockCreateEvent).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      answer.resolve({
+        id: "evt-1",
+        title: "Test Event",
+        slug: "test-event",
+        date: "2026-09-29",
+        timezone: "Europe/Warsaw",
+        location: null,
+        organization_id: "org-1",
+        archived_at: null,
+      }),
+    );
+  });
+
+  it("brings Create event back with its focus when the creation fails, and keeps what was typed", async () => {
+    mockCreateEvent.mockRejectedValueOnce(new ApiError(500, "boom"));
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const create = screen.getByRole("button", { name: "Create event" });
+    create.focus();
+    fireEvent.click(create);
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(create.getAttribute("aria-busy")).toBeNull();
+    expect(isOff(create)).toBe(false);
+    expect(document.activeElement).toBe(create);
+    expect((screen.getByLabelText(/Event title/) as HTMLInputElement).value).toBe("Test Event");
   });
 
   it("closes and resets when Escape is pressed while idle", () => {

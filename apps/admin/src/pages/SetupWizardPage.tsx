@@ -160,10 +160,21 @@ async function runContinueStep(
   }
 }
 
-function getContinueLabel(step: number, continuing: boolean): string {
-  if (step === 2 || step === 3) return continuing ? "Saving…" : "Save & Continue";
-  if (step === 4) return continuing ? "Creating…" : "Continue";
-  return "Continue";
+/**
+ * The label of the Continue button at rest, and what it says while its action runs. Step 4 has no busy label: "Creating…"
+ * would be longer than "Continue", and a busy label longer than the one at rest makes the button wider all the time, so its
+ * spinner covers the label instead (`workStatus` tells a screen reader what is happening).
+ */
+function continueLabels(step: number): { idle: string; busy?: string } {
+  if (step === 2 || step === 3) return { idle: "Save & Continue", busy: "Saving…" };
+  return { idle: "Continue" };
+}
+
+/** What a screen reader is told once while an action of the footer runs: the button itself only says that it is busy. */
+function workStatus(step: number, continuing: boolean, finishing: boolean): string {
+  if (finishing) return "Finishing setup. Actions are paused until it finishes.";
+  if (!continuing) return "";
+  return `${step === 4 ? "Creating the event" : "Saving"}. Actions are paused until it finishes.`;
 }
 
 type StepDotState = { isActive: boolean; isComplete: boolean; state: "active" | "done" | "pending" };
@@ -284,15 +295,13 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
   };
 
   const showSkip = step === 2 || step === 3 || (step === 4 && hasExistingEvents);
-  const showBack = step > 1 && step < TOTAL_STEPS;
-  const continueDisabled =
-    continuing ||
-    (step === 1 && !checksOk) ||
-    (step === 4 && !eventCanContinue && !hasExistingEvents);
-
-  const continueLabel = getContinueLabel(step, continuing);
-
-  const showContinueArrow = !continuing && step < TOTAL_STEPS;
+  const onReady = step === TOTAL_STEPS;
+  const showBack = step > 1;
+  // Off for a reason of the step, not busy: `aria-disabled`, never `disabled`, because the button that has just moved the
+  // wizard on turns itself off on the same commit when the next step is not ready (the first event's form is empty), and
+  // a browser drops the keyboard focus of a button that becomes `disabled`.
+  const continueOff = (step === 1 && !checksOk) || (step === 4 && !eventCanContinue && !hasExistingEvents);
+  const labels = continueLabels(step);
 
   return (
     <div className="setup-wizard">
@@ -375,50 +384,49 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
           )}
         </div>
 
-        {step === TOTAL_STEPS ? (
-          <footer className="setup-wizard__footer setup-wizard__footer--done">
-            <Button type="button" variant="secondary" onClick={handleBack}>
+        <output className="setup-wizard__sr-only">{workStatus(step, continuing, finishing)}</output>
+
+        {/* One footer for every step, so the Back and the primary button are the same elements from step to step: the one that
+            holds the keyboard focus when the wizard moves on (Continue becomes Open dashboard) keeps it. */}
+        <footer className={onReady ? "setup-wizard__footer setup-wizard__footer--done" : "setup-wizard__footer"}>
+          {showBack ? (
+            <Button type="button" variant="secondary" disabled={onReady ? finishing : continuing} onClick={handleBack}>
               Back
             </Button>
-            <div className="setup-wizard__footer-spacer" />
+          ) : (
+            <span />
+          )}
+          <div className="setup-wizard__footer-spacer" />
+          {showSkip && (
+            <Button type="button" variant="ghost" disabled={continuing} onClick={handleSkip}>
+              Skip for now
+            </Button>
+          )}
+          {onReady ? (
             <Button
               type="button"
               variant="primary"
-              disabled={finishing}
+              loading={finishing}
+              loadingLabel="Finishing…"
               icon={<i className="ti ti-layout-dashboard" aria-hidden="true" />}
               onClick={() => void readyRef.current?.goToDashboard()}
             >
-              {finishing ? "Finishing…" : "Open dashboard"}
+              Open dashboard
             </Button>
-          </footer>
-        ) : (
-          <footer className="setup-wizard__footer">
-            {showBack ? (
-              <Button type="button" variant="secondary" onClick={handleBack}>
-                Back
-              </Button>
-            ) : (
-              <span />
-            )}
-            <div className="setup-wizard__footer-spacer" />
-            {showSkip && (
-              <Button type="button" variant="ghost" disabled={continuing} onClick={handleSkip}>
-                Skip for now
-              </Button>
-            )}
+          ) : (
             <Button
               type="button"
               variant="primary"
-              disabled={continueDisabled}
-              iconRight={
-                showContinueArrow ? <i className="ti ti-arrow-right" aria-hidden="true" /> : undefined
-              }
+              loading={continuing}
+              loadingLabel={labels.busy}
+              aria-disabled={continueOff}
+              iconRight={<i className="ti ti-arrow-right" aria-hidden="true" />}
               onClick={() => void handleContinue()}
             >
-              {continueLabel}
+              {labels.idle}
             </Button>
-          </footer>
-        )}
+          )}
+        </footer>
       </main>
 
       <ConfirmDialog

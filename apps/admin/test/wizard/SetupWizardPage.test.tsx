@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { SetupWizardPage } from "../../src/pages/SetupWizardPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { deferred, isOff, renderWithToast } from "../test-utils.js";
 
 const WIZARD_STEP_KEY = "admitto_wizard_step";
 const WIZARD_UNSAVED_KEY = "admitto_wizard_unsaved_refresh";
@@ -18,7 +18,7 @@ const {
   eventCreateAndContinue: vi.fn(),
   mailSaveAndContinue: vi.fn(),
   readyGoToDashboard: vi.fn(),
-  wizardMockState: { checksOk: true, hasExistingEvents: false },
+  wizardMockState: { checksOk: true, eventCanContinue: true, hasExistingEvents: false },
 }));
 
 vi.mock("../../src/pages/wizard/WizardStep1Checks.js", () => ({
@@ -71,7 +71,7 @@ vi.mock("../../src/pages/wizard/WizardStep4Event.js", () => ({
   ) {
     useImperativeHandle(ref, () => ({ createAndContinue: () => eventCreateAndContinue() }));
     useEffect(() => {
-      onCanContinueChange?.(true);
+      onCanContinueChange?.(wizardMockState.eventCanContinue);
       onDirtyChange?.(true);
       onHasExistingEventsChange?.(wizardMockState.hasExistingEvents);
     }, [onCanContinueChange, onDirtyChange, onHasExistingEventsChange]);
@@ -84,13 +84,24 @@ vi.mock("../../src/pages/wizard/WizardStep5Ready.js", () => ({
     {
       onComplete,
       onGoToChecks,
+      onSubmittingChange,
     }: {
       onComplete: () => Promise<void>;
       onGoToChecks: () => void;
+      onSubmittingChange?: (submitting: boolean) => void;
     },
     ref,
   ) {
-    useImperativeHandle(ref, () => ({ goToDashboard: () => readyGoToDashboard() }));
+    useImperativeHandle(ref, () => ({
+      goToDashboard: async () => {
+        onSubmittingChange?.(true);
+        try {
+          await readyGoToDashboard();
+        } finally {
+          onSubmittingChange?.(false);
+        }
+      },
+    }));
     return (
       <>
         <div>Ready step</div>
@@ -117,6 +128,7 @@ beforeEach(() => {
   eventCreateAndContinue.mockResolvedValue(true);
   mailSaveAndContinue.mockResolvedValue(true);
   wizardMockState.checksOk = true;
+  wizardMockState.eventCanContinue = true;
   wizardMockState.hasExistingEvents = false;
 });
 
@@ -272,41 +284,128 @@ describe("SetupWizardPage step actions", () => {
   });
 });
 
-describe("SetupWizardPage continue labels", () => {
-  it("shows Saving while the mail step is being persisted", async () => {
+describe("SetupWizardPage busy buttons", () => {
+  it("shows Save & Continue busy on its own button, with its focus, keeps Back and Skip off meanwhile, and ignores a second press", async () => {
     sessionStorage.setItem(WIZARD_STEP_KEY, "2");
-    let resolveSave: (value: boolean) => void = () => {};
-    mailSaveAndContinue.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveSave = resolve;
-      }),
-    );
-
+    const save = deferred<boolean>();
+    mailSaveAndContinue.mockReturnValueOnce(save.promise);
     renderWizard();
-    fireEvent.click(screen.getByRole("button", { name: "Save & Continue" }));
+    const continueButton = screen.getByRole("button", { name: "Save & Continue" });
+    continueButton.focus();
+    fireEvent.click(continueButton);
 
-    expect(await screen.findByRole("button", { name: "Saving…" })).toBeTruthy();
+    expect(continueButton.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Saving…" })).toBe(continueButton);
+    expect(isOff(continueButton)).toBe(true);
+    expect(document.activeElement).toBe(continueButton);
+    expect((screen.getByRole("button", { name: "Back" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Skip for now" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Saving. Actions are paused until it finishes.")).toBeTruthy();
+    fireEvent.click(continueButton);
+    expect(mailSaveAndContinue).toHaveBeenCalledTimes(1);
 
-    resolveSave(true);
-    expect(await screen.findByText("Branding step")).toBeTruthy();
+    await act(async () => save.resolve(true));
+    expect(screen.getByText("Branding step")).toBeTruthy();
+    expect(continueButton.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(continueButton);
+    expect(screen.queryByText(/Actions are paused/)).toBeNull();
   });
 
-  it("shows Creating while the first event is being created", async () => {
+  it("keeps Continue busy, with its name and its focus, while the first event is being created, and hands the same button on as Open dashboard", async () => {
     sessionStorage.setItem(WIZARD_STEP_KEY, "4");
-    let resolveCreate: (value: boolean) => void = () => {};
-    eventCreateAndContinue.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveCreate = resolve;
-      }),
-    );
-
+    const create = deferred<boolean>();
+    eventCreateAndContinue.mockReturnValueOnce(create.promise);
     renderWizard();
     await screen.findByText("Event step");
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    continueButton.focus();
+    fireEvent.click(continueButton);
 
-    expect(await screen.findByRole("button", { name: "Creating…" })).toBeTruthy();
+    expect(continueButton.getAttribute("aria-busy")).toBe("true");
+    // No busy label: "Creating…" would be longer than "Continue" and make the button wider all the time.
+    expect(screen.getByRole("button", { name: "Continue" })).toBe(continueButton);
+    expect(document.activeElement).toBe(continueButton);
+    expect(screen.getByText("Creating the event. Actions are paused until it finishes.")).toBeTruthy();
 
-    resolveCreate(true);
-    expect(await screen.findByText("Ready step")).toBeTruthy();
+    await act(async () => create.resolve(true));
+    expect(screen.getByText("Ready step")).toBeTruthy();
+    // The footer is one for every step, so the button that held the focus is Open dashboard now and still holds it.
+    expect(screen.getByRole("button", { name: "Open dashboard" })).toBe(continueButton);
+    expect(document.activeElement).toBe(continueButton);
+  });
+
+  it("brings Continue back with its focus when the save does not go through, and stays on the step", async () => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, "3");
+    const save = deferred<boolean>();
+    brandingSaveAndContinue.mockReturnValueOnce(save.promise);
+    renderWizard();
+    const continueButton = screen.getByRole("button", { name: "Save & Continue" });
+    continueButton.focus();
+    fireEvent.click(continueButton);
+
+    await act(async () => save.resolve(false));
+    expect(screen.getByText("Branding step")).toBeTruthy();
+    expect(continueButton.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(continueButton);
+  });
+
+  it("keeps Continue focusable, off with aria-disabled and not disabled, while the checks have not passed", async () => {
+    wizardMockState.checksOk = false;
+    renderWizard();
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+
+    expect(continueButton.getAttribute("aria-disabled")).toBe("true");
+    expect((continueButton as HTMLButtonElement).disabled).toBe(false);
+    continueButton.focus();
+    expect(document.activeElement).toBe(continueButton);
+    fireEvent.click(continueButton);
+    expect(screen.getByText("System checks step")).toBeTruthy();
+  });
+
+  it("keeps the focus on Continue when it turns itself off because the next step is not ready", async () => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, "3");
+    wizardMockState.eventCanContinue = false;
+    renderWizard();
+    const continueButton = screen.getByRole("button", { name: "Save & Continue" });
+    continueButton.focus();
+    fireEvent.click(continueButton);
+
+    expect(await screen.findByText("Event step")).toBeTruthy();
+    expect(continueButton.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(continueButton);
+  });
+
+  it("shows Open dashboard busy on its own button, with its focus, and keeps Back off while the setup is finished", async () => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, "5");
+    const finishing = deferred<void>();
+    readyGoToDashboard.mockReturnValueOnce(finishing.promise);
+    renderWizard();
+    const openDashboard = screen.getByRole("button", { name: "Open dashboard" });
+    openDashboard.focus();
+    fireEvent.click(openDashboard);
+
+    expect(openDashboard.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Finishing…" })).toBe(openDashboard);
+    expect(document.activeElement).toBe(openDashboard);
+    expect((screen.getByRole("button", { name: "Back" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Finishing setup. Actions are paused until it finishes.")).toBeTruthy();
+    fireEvent.click(openDashboard);
+    expect(readyGoToDashboard).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishing.resolve());
+    expect(openDashboard.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(openDashboard);
+  });
+
+  it("keeps the focus on Back when it moves the wizard from the last step to the one before", async () => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, "5");
+    renderWizard();
+    const back = screen.getByRole("button", { name: "Back" });
+    back.focus();
+    fireEvent.click(back);
+
+    expect(screen.getByText("Event step")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back" })).toBe(back);
+    expect(document.activeElement).toBe(back);
   });
 });

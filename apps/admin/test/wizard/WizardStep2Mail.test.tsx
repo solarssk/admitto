@@ -10,7 +10,7 @@ import type {
   MailTransportTestSendResponse,
 } from "../../src/api/types.js";
 import { WizardProvider } from "../../src/pages/wizard/WizardContext.js";
-import { renderWithToast } from "../test-utils.js";
+import { isOff, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -190,11 +190,20 @@ describe("WizardStep2Mail test-send feedback", () => {
     );
 
     renderStep();
-    fireEvent.click(await screen.findByRole("button", { name: "Send test" }));
+    const sendTest = await screen.findByRole("button", { name: "Send test" });
+    sendTest.focus();
+    fireEvent.click(sendTest);
 
+    // The button itself is busy, with the kit's spinner, and keeps its place and its keyboard focus.
     const sending = await screen.findByRole("button", { name: "Sending…" });
-    expect((sending as HTMLButtonElement).disabled).toBe(true);
-    expect(sending.querySelector(".ti-loader-2")).toBeTruthy();
+    expect(sending).toBe(sendTest);
+    expect(sending.getAttribute("aria-busy")).toBe("true");
+    expect(isOff(sending)).toBe(true);
+    expect(sending.querySelector(".at-btn__spinner")).toBeTruthy();
+    expect(sending.querySelector(".ti-loader-2")).toBeNull();
+    expect(document.activeElement).toBe(sending);
+    fireEvent.click(sending);
+    expect(mockTestSend).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Optional, sent to your login email.")).toBeTruthy();
 
     resolveTestSend({ status: "sent", provider: "smtp" });
