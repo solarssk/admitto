@@ -209,12 +209,14 @@ export function EventItemDrawer({
                     value={form.label}
                     onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
                     required
+                    readOnly={saving}
                   />
                   <Input
                     label="Description (shown to operators)"
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     placeholder="Physical package distributed at the door."
+                    readOnly={saving}
                   />
                   <div className="requirements-toggle-row">
                     <div className="requirements-toggle-row__text">
@@ -360,8 +362,8 @@ export function EventItemDrawer({
                 <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
                   Cancel
                 </Button>
-                <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting || !dirty}>
-                  {saving ? "Saving…" : "Save"}
+                <Button type="submit" form="item-edit-form" variant="primary" loading={saving} disabled={deleting || !dirty}>
+                  Save
                 </Button>
               </div>
             </div>
