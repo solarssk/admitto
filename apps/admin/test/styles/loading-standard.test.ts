@@ -47,7 +47,7 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
 
 const ALLOWED: Record<Rule, Counts> = {
   "hand-rolled-spinner-css": {
-    "apps/admin/src/pages/setup-wizard.css": 2,
+    "apps/admin/src/pages/setup-wizard.css": 1,
     "apps/admin/src/staff.css": 1,
   },
   "bare-loading-text": {
@@ -61,13 +61,9 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/requirements/EventCustomFieldsCard.tsx": 1,
   },
   "busy-label-swap": {
-    "apps/admin/src/events/CreateEventModal.tsx": 1,
-    "apps/admin/src/pages/DeviceLabelStep.tsx": 1,
     "apps/admin/src/pages/EventOverviewPage.tsx": 3,
     "apps/admin/src/pages/ReportsPage.tsx": 1,
     "apps/admin/src/pages/RequirementsPage.tsx": 1,
-    "apps/admin/src/pages/SetupWizardPage.tsx": 3,
-    "apps/admin/src/pages/wizard/WizardStep2Mail.tsx": 1,
     "apps/admin/src/requirements/EventItemDrawer.tsx": 1,
   },
   "error-state-not-an-alert": {},
