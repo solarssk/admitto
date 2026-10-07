@@ -866,7 +866,17 @@ describe("trusted device", () => {
       await prisma.session.update({ where: { id: session.id }, data: { mfa_verified_at: new Date() } });
       return session.id;
     }
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+    // Resolves once some backend is blocked on a row lock, so ordering never depends on elapsed time.
+    async function waitForLockWait(): Promise<void> {
+      for (let i = 0; i < 500; i++) {
+        const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+          SELECT count(*) AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+        if (rows[0]!.n > 0n) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error("no backend ever waited on a lock");
+    }
 
     it("creates a device for a fresh session and refuses a session without the MFA mark", async () => {
       const fresh = await freshSession();
@@ -882,15 +892,16 @@ describe("trusted device", () => {
       const sessionId = await freshSession();
       let release!: () => void;
       const gate = new Promise<void>((resolve) => (release = resolve));
-      let rawToken = "";
+      let inserted!: (token: string) => void;
+      const insertedToken = new Promise<string>((resolve) => (inserted = resolve));
       const creating = prisma.$transaction(async (tx) => {
         const created = await createTrustedDeviceIfMfaRecent(tx, sessionId, { userId: USER_ADMIN });
-        rawToken = created!.rawToken;
+        inserted(created!.rawToken);
         await gate;
       });
-      await settle();
+      const rawToken = await insertedToken;
       const revoking = revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
-      await settle();
+      await waitForLockWait();
       release();
       await Promise.all([creating, revoking]);
 
@@ -901,13 +912,16 @@ describe("trusted device", () => {
       const sessionId = await freshSession();
       let release!: () => void;
       const gate = new Promise<void>((resolve) => (release = resolve));
+      let revoked!: () => void;
+      const revokeDone = new Promise<void>((resolve) => (revoked = resolve));
       const revoking = prisma.$transaction(async (tx) => {
         await revokeAllTrustedDevicesForUser(tx, USER_ADMIN);
+        revoked();
         await gate;
       });
-      await settle();
+      await revokeDone;
       const creating = createTrustedDeviceIfMfaRecent(prisma, sessionId, { userId: USER_ADMIN });
-      await settle();
+      await waitForLockWait();
       release();
       const [, created] = await Promise.all([revoking, creating]);
 
