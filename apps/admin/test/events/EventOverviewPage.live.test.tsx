@@ -12,11 +12,16 @@ import type {
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import {
+  advanceTimers,
   connectionStateValue,
+  deferred,
+  hangUntilAborted,
+  isOff,
   makeSuperadminAssignment,
   makeTicketType,
   renderWithToast,
 } from "../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { formatEventCalendarDate, formatEventDateTime, formatUtcDateTime } from "../../src/utils/event-dates.js";
 
 const fetchEventOverview = vi.fn();
@@ -98,12 +103,14 @@ import {
   createEventContact,
   updateEventContact,
   createEventResource,
+  updateEventResource,
 } from "../../src/api/client.js";
 
 const mockPatchEventNote = vi.mocked(patchEventNote);
 const mockCreateEventContact = vi.mocked(createEventContact);
 const mockUpdateEventContact = vi.mocked(updateEventContact);
 const mockCreateEventResource = vi.mocked(createEventResource);
+const mockUpdateEventResource = vi.mocked(updateEventResource);
 
 const overviewFixture = (
   admitted = 5,
@@ -189,6 +196,19 @@ function checklistCard(): HTMLElement {
  * still carries the optimistic SSE delta instantly, same as the removed tile used to. */
 function admittedLegendValue(): string {
   return document.querySelector(".overview-checkin__count")?.textContent ?? "";
+}
+
+/** Resolves once the page has its answer. The placeholder draws the real card and section titles, so finding a title is no
+ * proof that the data is there. */
+async function loadedPage(): Promise<void> {
+  await waitFor(() => expect(document.querySelector(".overview-skeleton")).toBeNull());
+  expect(screen.getByRole("region", { name: "Event overview" })).toBeTruthy();
+}
+
+/** A section of the Notes & contacts card, once the page is loaded. */
+async function notesSection(label: string): Promise<HTMLElement> {
+  await loadedPage();
+  return screen.getByText(label).closest(".overview-notes-section") as HTMLElement;
 }
 
 afterEach(() => {
@@ -426,7 +446,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByRole("heading", { name: "Demo Event" })).toBeNull();
   });
 
-  it("shows a loading placeholder for the Attendees KPI instead of the raw (revoked-inclusive) events-picker count (#374)", async () => {
+  it("shows a grey placeholder for the Attendees KPI instead of the raw (revoked-inclusive) events-picker count (#374)", async () => {
     let resolveOverview!: (value: EventOverviewDto) => void;
     fetchEventOverview.mockReturnValue(
       new Promise<EventOverviewDto>((resolve) => {
@@ -438,10 +458,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     // event.attendee_count from useOutletContext is 50 (picker total); the real overview total
     // below is different (48, active-only) - the tile must never show either raw number pre-load.
-    // Every KPI tile shows the same "…" placeholder pre-load, so assert at least one renders
-    // rather than a single exact match.
+    // Every count tile shows a grey bar pre-load.
     await waitFor(() => {
-      expect(screen.getAllByText("…").length).toBeGreaterThan(0);
+      expect(statsRow().querySelectorAll(".at-skeleton").length).toBe(3);
     });
     // Scoped to the Attendees tile specifically, not a page-wide text search - the Event
     // countdown tile's own value is a real, unrelated day count (computed from the current
@@ -479,12 +498,17 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("Add a link or file")).toBeNull();
   });
 
-  it("shows KPI dashes only after an initial stats request has actually failed", async () => {
+  it("replaces the page with an error and a Retry when the initial stats request fails, instead of dashes that pass for none", async () => {
     fetchEventOverview.mockRejectedValueOnce(new Error("network unavailable"));
     renderPage();
 
-    await screen.findByText("Could not load event stats.");
-    expect(within(statsRow()).getAllByText("-")).toHaveLength(3);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Could not load the overview");
+    expect(alert.textContent).toContain("Could not load event stats.");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(document.querySelector(".overview-stats")).toBeNull();
+    expect(screen.queryByText("Add a pinned note for staff")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("replaces the duplicate-date Event date tile with a Failed delivery tile and labels the KPI row per the mockup (#350)", async () => {
@@ -1367,9 +1391,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const keyContactsSection = await screen
-      .findByText("Key contacts")
-      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const keyContactsSection = await notesSection("Key contacts");
     fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Add a key contact" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Add contact" });
@@ -1398,9 +1420,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
   async function openAddContactDialog() {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
     renderPage();
-    const keyContactsSection = await screen
-      .findByText("Key contacts")
-      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const keyContactsSection = await notesSection("Key contacts");
     fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Add a key contact" }));
     const dialog = await screen.findByRole("dialog", { name: "Add contact" });
     fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
@@ -1553,9 +1573,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const keyContactsSection = await screen
-      .findByText("Key contacts")
-      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const keyContactsSection = await notesSection("Key contacts");
     fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Edit Jane Doe" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
     fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe Jr" } });
@@ -1597,9 +1615,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const keyContactsSection = await screen
-      .findByText("Key contacts")
-      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const keyContactsSection = await notesSection("Key contacts");
     fireEvent.click(within(keyContactsSection).getByRole("button", { name: /Edit/ }));
     const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
 
@@ -1651,7 +1667,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const linksSection = await notesSection("Links & files");
     // Starting from zero resources, the add flow opens from the dashed empty-state tile.
     act(() => {
       within(linksSection).getByRole("button", { name: "Add a link or file" }).click();
@@ -1695,7 +1711,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const linksSection = await notesSection("Links & files");
     act(() => {
       within(linksSection).getByRole("button", { name: "Add a link or file" }).click();
     });
@@ -1725,7 +1741,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const linksSection = await notesSection("Links & files");
     // Starting from zero resources, the add flow opens from the dashed empty-state tile.
     act(() => {
       within(linksSection).getByRole("button", { name: "Add a link or file" }).click();
@@ -1788,9 +1804,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const keyContactsSection = await screen
-      .findByText("Key contacts")
-      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const keyContactsSection = await notesSection("Key contacts");
     const addContact = within(keyContactsSection).getByRole("button", { name: "Add a key contact" });
     expect(addContact.className).toContain("overview-note-empty");
     expect(within(keyContactsSection).queryByRole("button", { name: "Add" })).toBeNull();
@@ -1815,9 +1829,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const keyContactsSection = await screen
-      .findByText("Key contacts")
-      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const keyContactsSection = await notesSection("Key contacts");
     expect(within(keyContactsSection).getByRole("button", { name: "Add" })).toBeTruthy();
     expect(within(keyContactsSection).queryByRole("button", { name: "Add a key contact" })).toBeNull();
 
@@ -1831,9 +1843,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     renderPage();
 
-    const checkInCard = await screen
-      .findByText("Check-in progress")
-      .then((el) => el.closest(".at-card") as HTMLElement);
+    await loadedPage();
+    const checkInCard = screen.getByText("Check-in progress").closest(".at-card") as HTMLElement;
     expect(within(checkInCard).getByText("No attendees yet")).toBeTruthy();
     expect(within(checkInCard).getByText("Import attendees to start tracking check-ins.")).toBeTruthy();
     expect(checkInCard.querySelector(".overview-ring")).toBeNull();
@@ -2083,5 +2094,370 @@ describe("EventOverviewPage archived event", () => {
     await waitFor(() => expect(within(dialog).getByRole("alert")).toBeTruthy());
     expect(screen.getByRole("dialog", { name: "Restore this event?" })).toBeTruthy();
     expect(mockRefreshEvent).not.toHaveBeenCalled();
+  });
+});
+
+const placeholder = () => screen.queryByRole("status", { name: "Loading the overview" });
+const overviewRegion = () => screen.getByRole("region", { name: "Event overview" });
+
+describe("EventOverviewPage first read", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchEventOverview.mockReset();
+    // A refresh that a test has not set up hangs, instead of answering with nothing.
+    fetchEventOverview.mockImplementation(hangUntilAborted as never);
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the page's room invisibly for 200ms, then draws grey cards with their real titles, and says it is taking longer after 8 seconds", async () => {
+    fetchEventOverview.mockImplementation(hangUntilAborted as never);
+    renderPage();
+    await advanceTimers(0);
+
+    const held = placeholder() as HTMLElement;
+    expect(held.classList.contains("at-loading-hold")).toBe(true);
+    // The header is the event's own, there from the first frame; the cards carry their real titles.
+    expect(screen.getByRole("heading", { name: "Overview", level: 1 })).toBeTruthy();
+    for (const title of ["Check-in progress", "Recent activity", "Setup checklist", "Notes & contacts"]) {
+      expect(within(held).getByText(title)).toBeTruthy();
+    }
+    // The three counts are grey bars; the countdown comes from the event, so it is real from the start.
+    expect(statsRow().querySelectorAll(".at-skeleton")).toHaveLength(3);
+    const countdownTile = statsRow().querySelectorAll(".overview-kpi__body")[2] as HTMLElement;
+    expect(countdownTile.querySelector(".at-skeleton")).toBeNull();
+    expect(countdownTile.querySelector(".overview-kpi__value")?.textContent).not.toBe("");
+    expect(countdownTile.textContent).toMatch(/Days to event|Days since event|Event countdown|Event ended/);
+    // The checklist's rows and the notes' sections are known by their names.
+    for (const label of ["Attendees imported", "Tickets sent", "Email delivery", "Check-in staff", "Event items", "Pinned note", "Key contacts", "Links & files"]) {
+      expect(within(held).getAllByText(label).length).toBeGreaterThan(0);
+    }
+    // The shapes are decoration.
+    expect(held.querySelector(".overview-skeleton")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.queryByText("Add a pinned note for staff")).toBeNull();
+    await advanceTimers(200);
+    expect((placeholder() as HTMLElement).classList.contains("at-loading-hold")).toBe(false);
+    await advanceTimers(7_799);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+  });
+
+  it("never draws the placeholder for an answer that comes within 200ms", async () => {
+    fetchEventOverview.mockResolvedValueOnce(overviewFixture(5, { attendee_count: 48 }));
+    renderPage();
+    await advanceTimers(0);
+
+    expect(placeholder()).toBeNull();
+    expect(within(statsRow()).getByText("48")).toBeTruthy();
+  });
+
+  it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus, and hands the focus to the page's region when it works", async () => {
+    fetchEventOverview.mockImplementationOnce(hangUntilAborted as never);
+    renderPage();
+    await advanceTimers(0);
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+    expect(document.querySelector(".overview-stats")).toBeNull();
+
+    const answer = deferred<EventOverviewDto>();
+    fetchEventOverview.mockReturnValueOnce(answer.promise);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(500);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
+    expect(placeholder()).toBeNull();
+
+    await act(async () => answer.resolve(overviewFixture(5, { attendee_count: 48 })));
+    await advanceTimers(500);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(within(statsRow()).getByText("48")).toBeTruthy();
+    expect(document.activeElement).toBe(overviewRegion());
+  });
+
+  it("announces a Retry that fails again with the same message: the message is mounted afresh in its live region", async () => {
+    fetchEventOverview.mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline"));
+    renderPage();
+    await advanceTimers(0);
+
+    const message = () => screen.getByRole("alert").querySelector(".at-notice__body");
+    const first = message();
+    expect(first?.textContent).toContain("Could not load event stats.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    // The 400ms minimum of the busy Retry ends in a timer that is set when the answer is in.
+    await advanceTimers(400);
+
+    expect(message()?.textContent).toContain("Could not load event stats.");
+    expect(message()).not.toBe(first);
+  });
+
+  it("says why the read failed in an alert, with no toast, no tiles and none of the add prompts that would pass for an empty event, and tells the connection state", async () => {
+    fetchEventOverview.mockRejectedValueOnce(new ApiError(503, "Service unavailable"));
+    renderPage();
+    await advanceTimers(0);
+
+    expect(screen.getByRole("alert").textContent).toContain("Could not load the overview");
+    expect(within(overviewRegion()).queryByText("Key contacts")).toBeNull();
+    expect(screen.queryByText("Add a key contact")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(reportApiError).toHaveBeenCalledWith(503);
+  });
+
+  it("recovers by itself when the next 30 second refresh works, replacing the error with the page", async () => {
+    fetchEventOverview.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(overviewFixture(5, { attendee_count: 48 }));
+    renderPage();
+    await advanceTimers(0);
+    expect(screen.getByRole("alert")).toBeTruthy();
+
+    await advanceTimers(30_000);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(within(statsRow()).getByText("48")).toBeTruthy();
+  });
+
+  it("counts down to the date and time zone in the answer, which are newer than the layout's copy of the event", async () => {
+    // "Today" is read in the event's time zone: 22:00 UTC on 1 June is already 2 June in Kiritimati (UTC+14).
+    vi.setSystemTime(new Date("2026-06-01T22:00:00.000Z"));
+    mockEventOverrides = { date: "2031-07-01T18:00:00.000Z", timezone: "UTC" };
+    const base = overviewFixture(5).event;
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, { event: { ...base, date: "2026-07-01T11:00:00.000Z", timezone: "Pacific/Kiritimati" } }),
+    );
+    renderPage();
+    await advanceTimers(0);
+
+    const countdown = statsRow().querySelectorAll(".overview-kpi__body")[2] as HTMLElement;
+    expect(countdown.querySelector(".overview-kpi__value")?.textContent).toBe("29");
+  });
+
+  it("is a fresh page for another event, with a placeholder instead of the previous event's numbers", async () => {
+    fetchEventOverview.mockResolvedValueOnce(overviewFixture(5, { attendee_count: 48 }));
+    const view = renderPage();
+    await advanceTimers(0);
+    expect(within(statsRow()).getByText("48")).toBeTruthy();
+
+    fetchEventOverview.mockImplementation(hangUntilAborted as never);
+    mockEventOverrides = { id: "evt-2", title: "Other Event" };
+    view.rerender(<ToastProvider>{pageTree()}</ToastProvider>);
+    await advanceTimers(0);
+
+    expect(placeholder()).not.toBeNull();
+    expect(screen.queryByText("48")).toBeNull();
+    expect(fetchEventOverview).toHaveBeenLastCalledWith("evt-2", expect.anything());
+  });
+});
+
+describe("EventOverviewPage refresh", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchEventOverview.mockReset();
+    // A refresh that a test has not set up hangs, instead of answering with nothing.
+    fetchEventOverview.mockImplementation(hangUntilAborted as never);
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps the numbers on screen and says nothing when a refresh fails, and tells the connection state", async () => {
+    fetchEventOverview.mockResolvedValueOnce(overviewFixture(5, { attendee_count: 48 })).mockRejectedValueOnce(new ApiError(503, "Service unavailable"));
+    renderPage();
+    await advanceTimers(0);
+
+    await advanceTimers(30_000);
+
+    expect(within(statsRow()).getByText("48")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(reportApiError).toHaveBeenCalledWith(503);
+  });
+
+  it("cancels the refresh that a live check-in scheduled when the page goes, instead of reading for a page that is not there", async () => {
+    fetchEventOverview.mockResolvedValueOnce(overviewFixture(5));
+    const view = renderPage();
+    await advanceTimers(0);
+    expect(fetchEventOverview).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+    view.unmount();
+    await advanceTimers(5_000);
+
+    expect(fetchEventOverview).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for a slow refresh for as long as it takes, because nobody waits for it, and shows its answer", async () => {
+    const slow = deferred<EventOverviewDto>();
+    fetchEventOverview.mockResolvedValueOnce(overviewFixture(5, { attendee_count: 48 })).mockReturnValueOnce(slow.promise);
+    renderPage();
+    await advanceTimers(0);
+
+    await advanceTimers(30_000);
+    await advanceTimers(60_000);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(within(statsRow()).getByText("48")).toBeTruthy();
+
+    await act(async () => slow.resolve(overviewFixture(5, { attendee_count: 49 })));
+    expect(within(statsRow()).getByText("49")).toBeTruthy();
+  });
+});
+
+describe("EventOverviewPage busy buttons", () => {
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+  });
+
+  /** The dialog's primary button, focused as a keyboard user's is, pressed, with the request held in flight. */
+  async function press(dialog: HTMLElement, name: string): Promise<HTMLElement> {
+    const button = within(dialog).getByRole("button", { name });
+    button.focus();
+    fireEvent.click(button);
+    await act(async () => {});
+    return button;
+  }
+
+  it("shows the pinned note's Save busy on the button, which keeps its place and its label, with Cancel off and a second press ignored", async () => {
+    const answer = deferred<void>();
+    mockPatchEventNote.mockReturnValueOnce(answer.promise);
+    renderPage();
+    await loadedPage();
+    fireEvent.click(screen.getByRole("button", { name: /Add a pinned note for staff/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add pinned note" });
+    fireEvent.change(within(dialog).getByPlaceholderText(/Short operational note/), { target: { value: "Doors at 9" } });
+
+    const save = await press(dialog, "Save");
+    expect(save.getAttribute("aria-busy")).toBe("true");
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(save.textContent).toBe("Save");
+    expect(document.activeElement).toBe(save);
+    expect(isOff(within(dialog).getByRole("button", { name: "Cancel" }))).toBe(true);
+    fireEvent.click(save);
+    expect(mockPatchEventNote).toHaveBeenCalledTimes(1);
+
+    await act(async () => answer.resolve());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("brings the pinned note's Save back, with its focus and what was typed, when the save fails", async () => {
+    mockPatchEventNote.mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+    await loadedPage();
+    fireEvent.click(screen.getByRole("button", { name: /Add a pinned note for staff/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add pinned note" });
+    fireEvent.change(within(dialog).getByPlaceholderText(/Short operational note/), { target: { value: "Doors at 9" } });
+
+    const save = await press(dialog, "Save");
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBeNull());
+
+    expect(document.activeElement).toBe(save);
+    expect((within(dialog).getByPlaceholderText(/Short operational note/) as HTMLTextAreaElement).value).toBe("Doors at 9");
+    expect(isOff(within(dialog).getByRole("button", { name: "Cancel" }))).toBe(false);
+  });
+
+  it("shows a contact's Add busy on the button, which keeps its place and its label", async () => {
+    const answer = deferred<EventContactDto>();
+    mockCreateEventContact.mockReturnValueOnce(answer.promise);
+    renderPage();
+    const section = await notesSection("Key contacts");
+    fireEvent.click(within(section).getByRole("button", { name: "Add a key contact" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
+
+    const add = await press(dialog, "Add");
+    expect(add.getAttribute("aria-busy")).toBe("true");
+    expect(add.hasAttribute("disabled")).toBe(false);
+    expect(add.textContent).toBe("Add");
+    expect(document.activeElement).toBe(add);
+    expect(isOff(within(dialog).getByRole("button", { name: "Cancel" }))).toBe(true);
+
+    await act(async () => answer.reject(new Error("boom")));
+    await waitFor(() => expect(add.getAttribute("aria-busy")).toBeNull());
+    expect(document.activeElement).toBe(add);
+  });
+
+  it("keeps a contact's and a link's Add off until they have what they need", async () => {
+    renderPage();
+    const contacts = await notesSection("Key contacts");
+    fireEvent.click(within(contacts).getByRole("button", { name: "Add a key contact" }));
+    const contactDialog = await screen.findByRole("dialog", { name: "Add contact" });
+    expect(isOff(within(contactDialog).getByRole("button", { name: "Add" }))).toBe(true);
+    // Something typed, but no name yet.
+    fireEvent.change(within(contactDialog).getByLabelText("Role"), { target: { value: "Security lead" } });
+    expect(isOff(within(contactDialog).getByRole("button", { name: "Add" }))).toBe(true);
+    fireEvent.change(within(contactDialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
+    expect(isOff(within(contactDialog).getByRole("button", { name: "Add" }))).toBe(false);
+    fireEvent.click(within(contactDialog).getByRole("button", { name: "Cancel" }));
+
+    const links = await notesSection("Links & files");
+    fireEvent.click(within(links).getByRole("button", { name: "Add a link or file" }));
+    const linkDialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    fireEvent.change(within(linkDialog).getByLabelText("Title *"), { target: { value: "Floor plan" } });
+    expect(isOff(within(linkDialog).getByRole("button", { name: "Add" }))).toBe(true);
+    fireEvent.change(within(linkDialog).getByLabelText("URL *"), { target: { value: "https://example.com/plan" } });
+    expect(isOff(within(linkDialog).getByRole("button", { name: "Add" }))).toBe(false);
+  });
+
+  it("opens a link's Edit as the same dialog, pre-filled, and shows its Save busy on the button until the link is saved", async () => {
+    const link = { id: "r1", title: "Venue floor plan", type: "link", url: "https://example.com/floor-plan", description: null, sort_order: 0 } satisfies EventResourceDto;
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { resources: [link] }));
+    const answer = deferred<EventResourceDto>();
+    mockUpdateEventResource.mockReturnValueOnce(answer.promise);
+    renderPage();
+    const section = await notesSection("Links & files");
+    fireEvent.click(within(section).getByRole("button", { name: "Edit Venue floor plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit link or file" });
+    expect((within(dialog).getByLabelText("Title *") as HTMLInputElement).value).toBe("Venue floor plan");
+    fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Floor plan v2" } });
+
+    const save = await press(dialog, "Save");
+    expect(save.getAttribute("aria-busy")).toBe("true");
+    expect(save.textContent).toBe("Save");
+    expect(mockUpdateEventResource).toHaveBeenCalledWith("evt-1", "r1", {
+      title: "Floor plan v2",
+      type: "link",
+      url: "https://example.com/floor-plan",
+      description: null,
+    });
+
+    await act(async () => answer.resolve({ ...link, title: "Floor plan v2" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(within(await notesSection("Links & files")).getByText("Floor plan v2")).toBeTruthy();
+  });
+
+  it("shows a link's Add busy on the button, which keeps its place and its label", async () => {
+    const answer = deferred<EventResourceDto>();
+    mockCreateEventResource.mockReturnValueOnce(answer.promise);
+    renderPage();
+    const section = await notesSection("Links & files");
+    fireEvent.click(within(section).getByRole("button", { name: "Add a link or file" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Floor plan" } });
+    fireEvent.change(within(dialog).getByLabelText("URL *"), { target: { value: "https://example.com/plan" } });
+
+    const add = await press(dialog, "Add");
+    expect(add.getAttribute("aria-busy")).toBe("true");
+    expect(add.hasAttribute("disabled")).toBe(false);
+    expect(add.textContent).toBe("Add");
+    expect(document.activeElement).toBe(add);
+    expect(isOff(within(dialog).getByRole("button", { name: "Cancel" }))).toBe(true);
+
+    await act(async () => answer.reject(new Error("boom")));
+    await waitFor(() => expect(add.getAttribute("aria-busy")).toBeNull());
   });
 });
