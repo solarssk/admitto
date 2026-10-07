@@ -112,6 +112,19 @@ describe("a Reports tab's first read: the wait", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
+  it("fades the report in where the placeholder was once the read has answered", async () => {
+    const answer = deferred<EventMailReportsResponse>();
+    fetchEventMailReports.mockReturnValueOnce(answer.promise);
+    renderTab();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve(report()));
+    // The report's code comes with its data, so it may still be a moment on its way, and the placeholder draws the same titles.
+    await vi.waitFor(() => expect(placeholder()).toBeNull(), { interval: 5, timeout: 3000 });
+    expect(screen.getByText("Event journey").closest(".reports-tab__report.at-fade-in")).not.toBeNull();
+  });
+
   it("reads once, however often the page draws the tab again", async () => {
     const answer = deferred<EventMailReportsResponse>();
     fetchEventMailReports.mockReturnValue(answer.promise);

@@ -43,7 +43,8 @@ export function ReportTab<T>({
     );
   } else {
     assertPresent(data);
-    body = children(data);
+    // What replaces the placeholder fades in; the wrapper is a column of its own with the section's rhythm.
+    body = <div className="reports-tab__report at-fade-in">{children(data)}</div>;
   }
   return (
     <section className="reports-tab" aria-label={label}>
