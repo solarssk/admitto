@@ -33,11 +33,11 @@ export interface DeliveryLogAnswer {
 /**
  * The delivery log of an event: its query (page, page size, filters, the debounced search), the list that follows the
  * loading standard (`useListLoad`: the first read, a changed query or page kept on screen while it is on its way, 30 seconds
- * at most, Retry), and what keeps it live. Live reads the same query again every `DELIVERY_POLL_INTERVAL_MS` without a sign of
- * it (`poll`), whichever tab of the page is open, so the number on the tab and the table, once opened, stay current. A
- * failed tick says nothing over the rows on screen, a 401 on a read somebody waits for hands the browser to the login page,
- * switching Live off abandons the tick that is on its way, and the page it was on disappearing (a smaller total) steps the
- * page back.
+ * at most for a read somebody waits for, Retry), and what keeps it live. Live reads the same query again every
+ * `DELIVERY_POLL_INTERVAL_MS` without a sign of it (`poll`), whichever tab of the page is open, so the number on the tab and
+ * the table, once opened, stay current. A failed tick says nothing over the rows on screen, a tick waits for its answer
+ * however slow the server is, a 401 on a read somebody waits for hands the browser to the login page, switching Live off
+ * abandons the tick that is on its way, and the page it was on disappearing (a smaller total) steps the page back.
  */
 export function useDeliveryLog(eventId: string, reportApiError: (status: number) => void) {
   const [page, setPage] = useState(1);

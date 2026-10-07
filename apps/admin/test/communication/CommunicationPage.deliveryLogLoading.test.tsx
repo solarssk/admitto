@@ -315,6 +315,65 @@ describe("CommunicationPage delivery log on the loading standard: a later page, 
     expect(screen.queryByText("Guest One")).toBeNull();
   });
 
+  it("waits for a tick that takes longer than 30 seconds: the limit is for what the operator waits for, and the answer is applied when it comes", async () => {
+    serve({ 1: { items: [acceptedRow], total: 60 } });
+    renderLog();
+    await advanceTimers(0);
+
+    const slow = deferred<Answer>();
+    serve({ 1: slow.promise });
+    fetchEventDeliveries.mockClear();
+    await advanceTimers(1_750);
+    expect(fetchEventDeliveries).toHaveBeenCalledTimes(1);
+    const tickSignal = fetchEventDeliveries.mock.calls[0]?.[2] as AbortSignal;
+
+    await advanceTimers(45_000);
+    expect(tickSignal.aborted).toBe(false);
+    expect(fetchEventDeliveries).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Guest One")).toBeTruthy();
+
+    await act(async () => slow.resolve({ items: [failedRow], total: 60 }));
+    expect(screen.getByText("Guest Two")).toBeTruthy();
+    expect(screen.queryByText("Guest One")).toBeNull();
+  });
+
+  it("brings a log that could not be read back with a tick that answers after 30 seconds", async () => {
+    fetchEventDeliveries.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderLog();
+    await advanceTimers(0);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+    const slow = deferred<Answer>();
+    fetchEventDeliveries.mockReturnValueOnce(slow.promise);
+    await advanceTimers(1_750 + 45_000);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+    await act(async () => slow.resolve({ items: [acceptedRow], total: 1 }));
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByText("Guest One")).toBeTruthy();
+  });
+
+  it("lets a Retry go ahead of a tick that has not answered, and ticks again afterwards", async () => {
+    fetchEventDeliveries.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderLog();
+    await advanceTimers(0);
+
+    fetchEventDeliveries.mockReturnValueOnce(deferred<Answer>().promise);
+    await advanceTimers(1_750);
+    const tickSignal = fetchEventDeliveries.mock.calls[1]?.[2] as AbortSignal;
+    expect(tickSignal.aborted).toBe(false);
+
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(500);
+    expect(tickSignal.aborted).toBe(true);
+    expect(screen.getByText("Guest One")).toBeTruthy();
+
+    fetchEventDeliveries.mockClear();
+    await advanceTimers(1_750);
+    expect(fetchEventDeliveries).toHaveBeenCalledTimes(1);
+  });
+
   it("drops the answer of a tick that is on its way when Live is switched off, cancels its request, and ticks again when Live is chosen", async () => {
     serve({ 1: { items: [acceptedRow], total: 60 } });
     renderLog();

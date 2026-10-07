@@ -65,8 +65,11 @@ export interface ListLoad<T> {
    * dropped for a newer tick, and requests do not pile up), a tick that fails changes nothing (a missed one is not an error
    * over rows that are on screen, and the next one tries again), and an answer replaces the one on screen, also the error of
    * a load that failed, so a list that could not be read comes back by itself. Call it from an interval while the list is live.
-   * `until` ends the tick when it aborts, with its request cancelled and its answer dropped: a Live that is switched off
-   * abandons the tick that is on its way, so a list that says it is paused is not changed by it.
+   * A tick has no time limit of its own (the 30 seconds are for what somebody waits for): a server that is slow but does
+   * answer is waited for. It ends when its answer is in, when the query changes or the page is left, when a read somebody
+   * waits for starts (that one is the newer, and a tick that hangs must not hold the next ones back), and when `until`
+   * aborts, with its request cancelled and its answer dropped: a Live that is switched off abandons the tick that is on its
+   * way, so a list that says it is paused is not changed by it.
    */
   poll: (until?: AbortSignal) => Promise<void>;
 }
@@ -85,8 +88,8 @@ interface RunContext<T> {
   requestRef: { current: number };
   /** How many loads, changed queries and reloads (not ticks of `poll`) are on their way: a tick waits for the next one. */
   pendingRef: { current: number };
-  /** A tick of `poll` is on its way: the next one waits for it. */
-  tickingRef: { current: boolean };
+  /** The tick of `poll` that is on its way, if any: the next one waits for it, and a read somebody waits for abandons it. */
+  tickRef: { current: AbortController | null };
   onDataRef: { current: ((data: T) => void) | undefined };
   onErrorRef: { current: ((error: unknown) => void) | undefined };
   setData: (data: T) => void;
@@ -109,6 +112,9 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
     ctx.setRefreshing(false);
     return;
   }
+  // A tick that is on its way is the older read now: its answer would be dropped, and a tick has no time limit, so one that
+  // hangs must not hold the next ones back.
+  ctx.tickRef.current?.abort();
   if (ctx.loadedRef.current) ctx.setRefreshing(true);
   else ctx.setLoading(true);
   ctx.setError(null);
@@ -154,19 +160,18 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
 
 /**
  * One tick of a live list (see `ListLoad.poll`). It must not take over from a request somebody waits for, so it does
- * nothing while one is on its way, nor while the previous tick is (it would make that one stale and starve the list when
- * the server answers slower than the interval); a failure is ignored, and the request is abandoned like any other (after 30
- * seconds, when the query changes, when the page is left) and when the caller's own `until` aborts.
+ * nothing while one is on its way, nor while the previous tick is (the requests would pile up behind a slow server); a
+ * failure is ignored. It has no time limit (a slow server that does answer is waited for) and is abandoned when the query
+ * changes, when the page is left, when the caller's own `until` aborts and when a read somebody waits for starts.
  */
 async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: AbortSignal): Promise<void> {
-  if (!ctx.enabled || ctx.pendingRef.current > 0 || ctx.tickingRef.current) return;
-  ctx.tickingRef.current = true;
-  const mine = ++ctx.requestRef.current;
-  const ends = anyAbort([life, until]);
-  const limit = loadWithTimeout(ends.signal);
+  if (!ctx.enabled || ctx.pendingRef.current > 0 || ctx.tickRef.current) return;
+  const superseded = new AbortController();
+  ctx.tickRef.current = superseded;
+  const ends = anyAbort([life, until, superseded.signal]);
   try {
-    const next = await rejectOnAbort(ctx.fetcher(limit.signal, { poll: true }), limit.signal);
-    if (ends.signal.aborted || mine !== ctx.requestRef.current) return;
+    const next = await rejectOnAbort(ctx.fetcher(ends.signal, { poll: true }), ends.signal);
+    if (ends.signal.aborted) return;
     ctx.setData(next);
     ctx.setError(null);
     ctx.setRefreshError(null);
@@ -176,8 +181,7 @@ async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: Ab
   } catch {
     // A tick that fails changes nothing: the rows on screen stay, and the next tick asks again.
   } finally {
-    ctx.tickingRef.current = false;
-    limit.done();
+    ctx.tickRef.current = null;
     ends.release();
   }
 }
@@ -185,8 +189,8 @@ async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: Ab
 /**
  * A list that follows the loading standard (AGENTS.md "Admin SPA loading and busy states"). Only the first load
  * (or the load after a failed one) leaves nothing to show; every later query or `reload` keeps the answer that is
- * on screen, so a table is never unmounted because a refetch started. Each request has the 30 second limit
- * (`loadWithTimeout`), and an answer that is no longer the latest request, success or failure, is dropped, so an
+ * on screen, so a table is never unmounted because a refetch started. Each load, changed query and `reload` has the 30
+ * second limit (`loadWithTimeout`; a tick of `poll` has none), and an answer that is no longer the latest request, success or failure, is dropped, so an
  * older list never replaces a newer one. A failed `reload` keeps the list and says so (`refreshError`); a failed
  * query replaces it with `error`, because what is on screen no longer answers what was asked.
  */
@@ -201,7 +205,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
   const answeredRef = useRef<ListFetcher<T> | null>(null);
   const requestRef = useRef(0);
   const pendingRef = useRef(0);
-  const tickingRef = useRef(false);
+  const tickRef = useRef<AbortController | null>(null);
   // Aborted when the query changes or the page is left, so a reload started by an action follows the same life.
   const lifeRef = useRef<AbortController | null>(null);
   const onDataRef = useRef(onData);
@@ -226,7 +230,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
         answeredRef,
         requestRef,
         pendingRef,
-        tickingRef,
+        tickRef,
         onDataRef,
         onErrorRef,
         setData: setAnswer,

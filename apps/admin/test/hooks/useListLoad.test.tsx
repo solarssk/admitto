@@ -656,15 +656,14 @@ describe("useListLoad poll (the live refresh of a list)", () => {
     expect(signals[1]?.aborted).toBe(true);
   });
 
-  it("is abandoned like any other request: when the page is left, and after 30 seconds, without an error", async () => {
+  it("has no time limit of its own: a server that answers after 30 seconds is waited for, and the page being left ends the tick", async () => {
     vi.useFakeTimers();
     const signals: AbortSignal[] = [];
+    const slow = deferred<string>();
     const fetcher = vi.fn<Fetcher>((signal) => {
       signals.push(signal);
       if (signals.length === 1) return Promise.resolve("rows A");
-      return new Promise<string>((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
-      });
+      return signals.length === 2 ? slow.promise : new Promise<string>(() => {});
     });
     const { result, unmount } = setup(fetcher);
     await act(async () => {
@@ -675,10 +674,17 @@ describe("useListLoad poll (the live refresh of a list)", () => {
       void result.current.poll();
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS * 2);
     });
-    expect(signals[1]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
     expect(result.current).toMatchObject({ data: "rows A", error: null });
+    // It is still the same tick: nothing else starts meanwhile, and its answer is applied when it comes.
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await act(async () => slow.resolve("rows B"));
+    expect(result.current).toMatchObject({ data: "rows B", error: null });
 
     act(() => {
       void result.current.poll();
@@ -686,6 +692,35 @@ describe("useListLoad poll (the live refresh of a list)", () => {
     expect(signals[2]?.aborted).toBe(false);
     unmount();
     expect(signals[2]?.aborted).toBe(true);
+  });
+
+  it("is abandoned when a read somebody waits for starts, so a tick that never answers does not hold the next ones back", async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn<Fetcher>((signal) => {
+      signals.push(signal);
+      return signals.length === 2 ? new Promise<string>(() => {}) : Promise.resolve(`rows ${signals.length}`);
+    });
+    const { result } = setup(fetcher);
+    await settle();
+    expect(result.current.data).toBe("rows 1");
+
+    act(() => {
+      void result.current.poll();
+    });
+    expect(signals[1]?.aborted).toBe(false);
+
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(signals[1]?.aborted).toBe(true);
+    expect(result.current.data).toBe("rows 3");
+
+    // The tick that hung is gone, so a new one may start.
+    await act(async () => {
+      await result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(result.current.data).toBe("rows 4");
   });
 });
 
