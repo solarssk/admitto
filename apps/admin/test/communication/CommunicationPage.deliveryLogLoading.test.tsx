@@ -474,6 +474,35 @@ describe("CommunicationPage delivery log on the loading standard: a later page, 
     expect(screen.getByRole("tab", { name: /Delivery log\s*1/ })).toBeTruthy();
   });
 
+  it("keeps the number off the tab while the Retry of a failed read is on its way, since the error is still on screen and no answer for the query is", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+    renderLog();
+    await advanceTimers(0);
+    expect(screen.getByRole("tab", { name: /Delivery log\s*1/ })).toBeTruthy();
+
+    fetchEventDeliveries.mockRejectedValueOnce(new Error("blip"));
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
+    await advanceTimers(500);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Delivery log\s*\d/ })).toBeNull();
+
+    // The Retry keeps the error on screen until its answer is in, and the answer the failure left behind is the previous
+    // query's: its count must not come back for the wait.
+    const slow = deferred<Answer>();
+    fetchEventDeliveries.mockReturnValueOnce(slow.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await advanceTimers(0);
+    await advanceTimers(500);
+    expect(isOff(screen.getByRole("button", { name: "Retry" }))).toBe(true);
+    expect(screen.queryByRole("tab", { name: /Delivery log\s*\d/ })).toBeNull();
+
+    await act(async () => slow.resolve({ items: [failedRow], total: 3 }));
+    await advanceTimers(500);
+    expect(screen.getByRole("tab", { name: /Delivery log\s*3/ })).toBeTruthy();
+  });
+
   it("tells the connection state about a failed read the operator waits for, but not about a missed tick", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
     renderLog();

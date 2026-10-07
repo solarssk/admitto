@@ -134,8 +134,12 @@ export function useDeliveryLog(eventId: string, reportApiError: (status: number)
 
   return {
     list,
-    /** The number on the Delivery log tab: only an answer that is on screen counts, not the one a failure replaced. */
-    total: answer && !list.error ? answer.total : 0,
+    /**
+     * The number on the Delivery log tab: only an answer that is on screen counts. The one a failure left behind is not, and
+     * stays out while the Retry of that failure, or the read after it, is on its way (`loading`: the card is a first load
+     * again, and a Retry keeps the error on screen), until the answer that follows is in.
+     */
+    total: answer && !list.error && !list.loading ? answer.total : 0,
     page,
     setPage,
     pageSize,
