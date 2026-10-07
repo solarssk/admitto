@@ -51,7 +51,6 @@ const ALLOWED: Record<Rule, Counts> = {
   },
   "bare-loading-text": {
     "apps/admin/src/pages/CustomFieldsReportsTab.tsx": 1,
-    "apps/admin/src/pages/EventOverviewPage.tsx": 4,
     "apps/admin/src/pages/MailReportsTab.tsx": 1,
     "apps/admin/src/pages/RequirementsPage.tsx": 1,
     "apps/admin/src/pages/WalletsReportsTab.tsx": 1,
@@ -60,7 +59,6 @@ const ALLOWED: Record<Rule, Counts> = {
     "apps/admin/src/requirements/EventCustomFieldsCard.tsx": 1,
   },
   "busy-label-swap": {
-    "apps/admin/src/pages/EventOverviewPage.tsx": 3,
     "apps/admin/src/pages/ReportsPage.tsx": 1,
     "apps/admin/src/pages/RequirementsPage.tsx": 1,
     "apps/admin/src/requirements/EventItemDrawer.tsx": 1,

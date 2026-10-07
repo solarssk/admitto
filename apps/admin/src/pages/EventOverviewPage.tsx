@@ -49,8 +49,9 @@ import {
   pruneAdmitDedupMap,
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
+import { useListLoad } from "../hooks/useListLoad.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
@@ -69,8 +70,14 @@ import {
 } from "@admitto/shared";
 import { isValidEmailFormat } from "../utils/email.js";
 import { mailtoHref, telHref } from "../utils/contactLinks.js";
+import { assertPresent } from "../utils/assert-present.js";
+import { OverviewKpiTile } from "../overview/OverviewKpiTile.js";
+import { OverviewSkeleton } from "../overview/OverviewSkeleton.js";
+import { PanelLoadError } from "../settings/PanelLoadError.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
+/** The region the page, its placeholder and its error sit in: where the focus goes when a Retry that held it works. */
+const OVERVIEW_REGION = ".overview-stack";
 const OVERVIEW_SUBTITLE =
   "Track attendance, check-in progress, and setup status for this event.";
 const RECENT_CHECKINS_MAX = 8;
@@ -126,45 +133,6 @@ function formatBusiestHourRange(hour: string): string {
   if (!Number.isFinite(h)) return hour;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(h)}:${mm}–${pad((h + 1) % 24)}:${mm}`;
-}
-
-type KpiTone = "primary" | "info" | "ok" | "error";
-
-/** Overview's own icon-square-left KPI tile (mockup-aligned): a bigger colored icon square beside
- * a stacked value/label/sub block. ReportsPage has its own separate bespoke KPI tile (ReportStat)
- * with a different layout, not shared with this one — both pages migrated off @admitto/ui's
- * generic Stat component independently, which has since been removed entirely, having ended up
- * with zero remaining consumers (see #590). */
-function OverviewKpiTile({
-  icon,
-  tone,
-  label,
-  value,
-  sub,
-  children,
-}: Readonly<{
-  icon: ReactNode;
-  tone: KpiTone;
-  label: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  children?: ReactNode;
-}>) {
-  return (
-    <Card className="overview-kpi-card">
-      <div className="overview-kpi">
-        <span className={`overview-kpi__icon overview-kpi__icon--${tone}`} aria-hidden="true">
-          {icon}
-        </span>
-        <div className="overview-kpi__body">
-          <span className="overview-kpi__value">{value}</span>
-          <span className="overview-kpi__label">{label}</span>
-          {sub != null && <span className="overview-kpi__sub">{sub}</span>}
-        </div>
-      </div>
-      {children}
-    </Card>
-  );
 }
 
 /** Value and label for the countdown KPI tile.
@@ -287,15 +255,6 @@ function buildReadinessItems(overview: EventOverviewDto, eventId: string): Readi
   ];
 }
 
-/** Placeholder text for a card whose `overview` hasn't arrived yet: blank during the no-flash
- * grace window, "Loading…" once the fetch has genuinely taken a moment, "Unavailable" once it's
- * settled with nothing (shared by SetupChecklistCard and CheckInProgressCard). */
-function unavailablePlaceholderText(loading: boolean, showLoading: boolean): string {
-  if (loading) return showLoading ? "Loading…" : "";
-  return "Unavailable";
-}
-
-
 const READINESS_STATUS_TEXT: Record<ReadinessItem["status"], string> = {
   ok: "Done",
   warn: "Needs attention",
@@ -316,25 +275,11 @@ function checklistTone(items: ReadinessItem[]): "ok" | "warn" | "error" {
 
 function SetupChecklistCard({
   overview,
-  loading,
-  showLoading,
   eventId,
 }: Readonly<{
-  overview: EventOverviewDto | null;
-  loading: boolean;
-  showLoading: boolean;
+  overview: EventOverviewDto;
   eventId: string;
 }>) {
-  if (!overview) {
-    return (
-      <Card title="Setup checklist">
-        <p className="overview-muted">
-          {unavailablePlaceholderText(loading, showLoading)}
-        </p>
-      </Card>
-    );
-  }
-
   const items = buildReadinessItems(overview, eventId);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
@@ -386,29 +331,15 @@ function SetupChecklistCard({
  * "not yet arrived" while the event can still fill up, "no-shows" once it is over. */
 function CheckInProgressCard({
   overview,
-  loading,
-  showLoading,
   admittedCount,
   eventEnded,
 }: Readonly<{
-  overview: EventOverviewDto | null;
-  loading: boolean;
-  showLoading: boolean;
-  admittedCount: number | null;
+  overview: EventOverviewDto;
+  admittedCount: number;
   eventEnded: boolean;
 }>) {
-  if (!overview) {
-    return (
-      <Card title="Check-in progress" className="overview-card--header-fixed">
-        <p className="overview-muted">
-          {unavailablePlaceholderText(loading, showLoading)}
-        </p>
-      </Card>
-    );
-  }
-
   const total = overview.attendee_count;
-  const admitted = Math.min(admittedCount ?? overview.admitted_count, total);
+  const admitted = Math.min(admittedCount, total);
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   // --border-strong (~1.5:1 against white) rather than a --text-muted-based mix: a clearly lighter,
@@ -841,8 +772,8 @@ function PinnedNoteModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" onClick={() => void handleSave()} disabled={saving || !dirty}>
-            {saving ? "Saving…" : "Save"}
+          <Button type="button" variant="primary" onClick={() => void handleSave()} loading={saving} disabled={!dirty}>
+            Save
           </Button>
         </>
       }
@@ -930,14 +861,7 @@ function ContactModal({
     }
   };
 
-  let submitLabel: string;
-  if (saving) {
-    submitLabel = "Saving…";
-  } else if (contact) {
-    submitLabel = "Save";
-  } else {
-    submitLabel = "Add";
-  }
+  const submitLabel = contact ? "Save" : "Add";
 
   return (
     <OverviewModal
@@ -955,7 +879,8 @@ function ContactModal({
             type="button"
             variant="primary"
             onClick={() => void handleSubmit()}
-            disabled={saving || !form.name.trim() || !dirty}
+            loading={saving}
+            disabled={!form.name.trim() || !dirty}
           >
             {submitLabel}
           </Button>
@@ -1091,14 +1016,7 @@ function ResourceModal({
     }
   };
 
-  let submitLabel: string;
-  if (saving) {
-    submitLabel = "Saving…";
-  } else if (resource) {
-    submitLabel = "Save";
-  } else {
-    submitLabel = "Add";
-  }
+  const submitLabel = resource ? "Save" : "Add";
 
   return (
     <OverviewModal
@@ -1116,7 +1034,8 @@ function ResourceModal({
             type="button"
             variant="primary"
             onClick={() => void handleSubmit()}
-            disabled={saving || !form.title.trim() || !form.url.trim() || !dirty}
+            loading={saving}
+            disabled={!form.title.trim() || !form.url.trim() || !dirty}
           >
             {submitLabel}
           </Button>
@@ -1170,14 +1089,10 @@ function ResourceModal({
 
 function PinnedNoteSection({
   note,
-  loading,
-  showLoading,
   archived,
   onSave,
 }: Readonly<{
   note: string | null;
-  loading: boolean;
-  showLoading: boolean;
   archived: boolean;
   onSave: (note: string | null) => Promise<void>;
 }>) {
@@ -1194,8 +1109,6 @@ function PinnedNoteSection({
   let body: ReactNode;
   if (note) {
     body = <p className="overview-pinned-note__body">{note}</p>;
-  } else if (loading) {
-    body = showLoading ? <p className="overview-muted">Loading…</p> : null;
   } else if (archived) {
     body = <p className="overview-muted">No operational note.</p>;
   } else {
@@ -1237,16 +1150,12 @@ function PinnedNoteSection({
 
 function KeyContactsSection({
   contacts,
-  loading,
-  showLoading,
   archived,
   onAdd,
   onUpdate,
   onDelete,
 }: Readonly<{
   contacts: EventContactDto[];
-  loading: boolean;
-  showLoading: boolean;
   archived: boolean;
   onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
@@ -1311,8 +1220,6 @@ function KeyContactsSection({
         ))}
       </ul>
     );
-  } else if (loading) {
-    body = showLoading ? <p className="overview-muted">Loading…</p> : null;
   } else if (archived) {
     body = <p className="overview-muted">No contacts yet.</p>;
   } else {
@@ -1365,16 +1272,12 @@ function KeyContactsSection({
 
 function LinksFilesSection({
   resources,
-  loading,
-  showLoading,
   archived,
   onAdd,
   onUpdate,
   onDelete,
 }: Readonly<{
   resources: EventResourceDto[];
-  loading: boolean;
-  showLoading: boolean;
   archived: boolean;
   onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
@@ -1446,8 +1349,6 @@ function LinksFilesSection({
         )}
       </>
     );
-  } else if (loading) {
-    body = showLoading ? <p className="overview-muted">Loading…</p> : null;
   } else if (archived) {
     body = <p className="overview-muted">No links or files yet.</p>;
   } else {
@@ -1503,8 +1404,6 @@ function LinksFilesSection({
  * only the outer wrapping changed, each section keeps its own state/handlers/rows untouched. */
 function NotesAndContactsCard(props: Readonly<{
   pinnedNote: string | null;
-  loading: boolean;
-  showLoading: boolean;
   archived: boolean;
   onSaveNote: (note: string | null) => Promise<void>;
   contacts: EventContactDto[];
@@ -1520,15 +1419,11 @@ function NotesAndContactsCard(props: Readonly<{
     <Card title="Notes & contacts">
       <PinnedNoteSection
         note={props.pinnedNote}
-        loading={props.loading}
-        showLoading={props.showLoading}
         archived={props.archived}
         onSave={props.onSaveNote}
       />
       <KeyContactsSection
         contacts={props.contacts}
-        loading={props.loading}
-        showLoading={props.showLoading}
         archived={props.archived}
         onAdd={props.onAddContact}
         onUpdate={props.onUpdateContact}
@@ -1536,8 +1431,6 @@ function NotesAndContactsCard(props: Readonly<{
       />
       <LinksFilesSection
         resources={props.resources}
-        loading={props.loading}
-        showLoading={props.showLoading}
         archived={props.archived}
         onAdd={props.onAddResource}
         onUpdate={props.onUpdateResource}
@@ -1547,25 +1440,20 @@ function NotesAndContactsCard(props: Readonly<{
   );
 }
 
-/** A KPI tile's numeric value has 3 states: the real count once loaded, an ellipsis while the
- * initial fetch is in flight, or a dash if it never arrived — extracted so the 3 tiles reading
- * straight off `currentOverview` don't each repeat the same nested ternary. `loading` (raw) picks
- * the state; `showLoading` (delayed) only decides whether the ellipsis itself renders yet, so a
- * fetch still within the no-flash grace window renders blank instead of prematurely claiming the
- * value is unavailable ("—"). */
-function kpiCountText(value: number | null, loading: boolean, showLoading: boolean): string {
-  if (value != null) return String(value);
-  if (loading) return showLoading ? "…" : "";
-  return "-";
-}
+type OverviewOutletContext = { event: EventDto; refreshEvent?: () => Promise<void> };
 
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
- * and a live activity feed. */
+ * and a live activity feed.
+ *
+ * One event, one page: a different `:eventId` is a fresh page (its own read, live feed and forms), never the previous
+ * one's. */
 export function EventOverviewPage() {
-  const { event, refreshEvent } = useOutletContext<{
-    event: EventDto;
-    refreshEvent?: () => Promise<void>;
-  }>();
+  const { event } = useOutletContext<OverviewOutletContext>();
+  return <EventOverviewPageBody key={event.id} />;
+}
+
+function EventOverviewPageBody() {
+  const { event, refreshEvent } = useOutletContext<OverviewOutletContext>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const { assignments } = useAuth();
@@ -1574,20 +1462,21 @@ export function EventOverviewPage() {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
-  const statsErrorToastedRef = useRef(false);
   const reconcileTimerRef = useRef<number | null>(null);
-  const currentEventIdRef = useRef(event.id);
+  const currentEventIdRef = useRef<string | null>(event.id);
 
   useEffect(() => {
     currentEventIdRef.current = event.id;
+    // A page for another event is a new instance: what this one still has in flight (a restore, a save) must not touch
+    // the layout or its own state once it is gone.
+    return () => {
+      currentEventIdRef.current = null;
+    };
   }, [event.id]);
 
-  const [overview, setOverview] = useState<EventOverviewDto | null>(null);
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
   const [recentCheckins, setRecentCheckins] = useState<StreamCheckinEvent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [contacts, setContacts] = useState<EventContactDto[]>([]);
   const [resources, setResources] = useState<EventResourceDto[]>([]);
   const [pinnedNote, setPinnedNote] = useState<string | null>(null);
@@ -1610,19 +1499,33 @@ export function EventOverviewPage() {
     return () => ac.abort();
   }, [event.id]);
 
-  const currentOverview = overview?.event.id === event.id ? overview : null;
-  const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
-  const eventDateIso = currentOverview?.event.date ?? event.date;
-
+  // What the page keeps beside the answer: the contacts, links and note are edited in place, and an answer replaces them.
   const absorbServerOverview = useCallback((data: EventOverviewDto) => {
-    if (data.event.id !== currentEventIdRef.current) return;
     pruneAdmitDedupMap(seenCheckinsRef.current);
-    setOverview(data);
     setOptimisticAdmittedDelta(0);
     setContacts(data.contacts);
     setResources(data.resources);
     setPinnedNote(data.event.pinned_note);
   }, []);
+
+  // The first read has the 30 second limit and a Retry; a refresh every 30 seconds (and after a live signal) is silent, as
+  // a tick of the list is: the numbers stay on screen until the next answer. The connection state hears of every request
+  // that failed, whoever waits for it.
+  const fetchOverview = useCallback(
+    async (signal: AbortSignal) => {
+      try {
+        return await fetchEventOverview(event.id, signal);
+      } catch (err) {
+        if (err instanceof ApiError) reportApiError(err.status);
+        throw err;
+      }
+    },
+    [event.id, reportApiError],
+  );
+  const list = useListLoad({ fetcher: fetchOverview, fallback: "Could not load event stats.", onData: absorbServerOverview });
+  const card = useCardLoad(list);
+  const overview = list.data;
+  const pollOverview = list.poll;
 
   // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
   // restarted, so a steady stream of signals (busy handout desk issuing items back-to-back) still
@@ -1632,11 +1535,9 @@ export function EventOverviewPage() {
     if (reconcileTimerRef.current != null) return;
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
-      void fetchEventOverview(event.id)
-        .then((data) => { absorbServerOverview(data); })
-        .catch(() => { /* keep optimistic value until next poll */ });
+      void pollOverview();
     }, 3000);
-  }, [absorbServerOverview, event.id]);
+  }, [pollOverview]);
 
   const handleLiveCheckin = useCallback(
     (checkin: StreamCheckinEvent) => {
@@ -1736,62 +1637,18 @@ export function EventOverviewPage() {
   }, [event.id, addToast]);
 
   useEffect(() => {
-    abortRef.current?.abort();
-    seenCheckinsRef.current.clear();
-    if (reconcileTimerRef.current != null) {
-      window.clearTimeout(reconcileTimerRef.current);
-      reconcileTimerRef.current = null;
-    }
-    setLoading(true);
-    statsErrorToastedRef.current = false;
-    setOverview(null);
-    setOptimisticAdmittedDelta(0);
-    setRecentCheckins([]);
-    setContacts([]);
-    setResources([]);
-    setPinnedNote(null);
-
-    const load = () => {
-      abortRef.current?.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
-
-      fetchEventOverview(event.id, ac.signal)
-        .then((data) => {
-          if (ac.signal.aborted) return;
-          absorbServerOverview(data);
-          statsErrorToastedRef.current = false;
-        })
-        .catch((err) => {
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          if (err instanceof ApiError) reportApiError(err.status);
-          if (!statsErrorToastedRef.current) {
-            addToast("Could not load event stats.", "error");
-            statsErrorToastedRef.current = true;
-          }
-        })
-        .finally(() => {
-          if (!ac.signal.aborted) setLoading(false);
-        });
-    };
-
-    load();
-    const intervalId = setInterval(load, OVERVIEW_REFRESH_MS);
-
+    const intervalId = setInterval(() => void pollOverview(), OVERVIEW_REFRESH_MS);
     return () => {
       clearInterval(intervalId);
-      abortRef.current?.abort();
       if (reconcileTimerRef.current != null) {
         window.clearTimeout(reconcileTimerRef.current);
         reconcileTimerRef.current = null;
       }
     };
-  }, [absorbServerOverview, event.id, reportApiError, addToast]);
+  }, [pollOverview]);
 
-  const admittedCount =
-    currentOverview?.admitted_count != null
-      ? currentOverview.admitted_count + optimisticAdmittedDelta
-      : null;
+  const eventTimezone = overview?.event.timezone ?? event.timezone;
+  const eventDateIso = overview?.event.date ?? event.date;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
   const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
   // The same "is the event over" moment the public Add to Wallet gate uses: its end time on its own
@@ -1806,23 +1663,6 @@ export function EventOverviewPage() {
       timezone: eventTimezone,
     }).getTime();
   const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel, eventEnded);
-  const emailFailedTotal =
-    currentOverview != null
-      ? currentOverview.email_failed + currentOverview.email_bounced
-      : 0;
-
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // these "Loading…" placeholders on and off faster than they can register as loading —
-  // show them only once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
-
-  // This page stays mounted when the route moves to another event, so a restore still in flight
-  // must not touch the dialog or the layout of the event that is now showing.
-  useEffect(() => {
-    setRestoreOpen(false);
-    setRestoreError(null);
-    setRestoring(false);
-  }, [event.id]);
 
   const handleRestore = async () => {
     const restoringId = event.id;
@@ -1844,8 +1684,10 @@ export function EventOverviewPage() {
     }
   };
 
-  return (
-    <div className="screen">
+  // The header, the archived notice and the restore dialog come from the event, not from the read: they are there from the
+  // first frame, whatever the body below is showing.
+  const header = (
+    <>
       <PageHeader title="Overview" subtitle={OVERVIEW_SUBTITLE} />
 
       {event.archived_at && (
@@ -1889,80 +1731,116 @@ export function EventOverviewPage() {
           }
         }}
       />
+    </>
+  );
 
-      <div className="overview-stats">
-        <OverviewKpiTile
-          tone="primary"
-          icon={<i className="ti ti-users" aria-hidden="true" />}
-          label="Attendees"
-          // No raw event.attendee_count fallback here on purpose (#374) — that picker total
-          // includes revoked attendees, so falling back to it flashed a higher number (e.g.
-          // 5 -> 4) the instant the real active-only overview count arrived.
-          value={kpiCountText(currentOverview?.attendee_count ?? null, loading, showLoading)}
-        />
-        <OverviewKpiTile
-          tone="info"
-          icon={<i className="ti ti-mail-check" aria-hidden="true" />}
-          label="Tickets sent"
-          // Distinct attendees who got their ticket, not raw email_sent: that counts every
-          // delivered mail (resends, reminders, other templates), so it can exceed attendee_count.
-          value={kpiCountText(currentOverview?.attendees_with_ticket ?? null, loading, showLoading)}
-        />
-        {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
-         * count/percentage already shown prominently in the Check-in progress card directly
-         * below, so this slot now carries information the KPI row didn't have yet. Reuses the
-         * existing event-countdown util (computeLabel/useCountdown, added for #160, previously
-         * wired into the now-merged EventInfoCard) rather than reimplementing the date math. */}
-        <OverviewKpiTile
-          tone="ok"
-          icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
-          label={daysToEventLabel}
-          value={countdownValue}
-        />
-        <OverviewKpiTile
-          tone="error"
-          icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-          label="Failed delivery"
-          value={kpiCountText(currentOverview != null ? emailFailedTotal : null, loading, showLoading)}
-        />
-      </div>
-
-      <div className="overview-body">
-        <div className="overview-row overview-row--stretch">
-          <CheckInProgressCard
-            overview={currentOverview}
-            loading={loading}
-            showLoading={showLoading}
-            admittedCount={admittedCount}
-            eventEnded={eventEnded}
+  let body: ReactNode;
+  if (!card.gate.showContent) {
+    body = (
+      <OverviewSkeleton
+        held={!card.gate.showIndicator}
+        slow={card.slow}
+        countdown={{ value: countdownValue, label: daysToEventLabel }}
+      />
+    );
+  } else if (card.failure.error) {
+    // The page's whole read failed, so there is nothing to show but the error and its Retry (a tile or a card with a dash would
+    // pass for "none"). It sits in the same region as the page, which the focus goes to when a Retry works.
+    body = (
+      <PanelLoadError
+        cardTitle="Overview"
+        title="Could not load the overview"
+        message={card.failure.error}
+        retrying={card.failure.retrying}
+        onRetry={card.failure.retry}
+        landmark={OVERVIEW_REGION}
+      />
+    );
+  } else {
+    // Past the placeholder and the error, the read has answered.
+    assertPresent(overview);
+    const emailFailedTotal = overview.email_failed + overview.email_bounced;
+    body = (
+      <>
+        <div className="overview-stats">
+          <OverviewKpiTile
+            tone="primary"
+            icon={<i className="ti ti-users" aria-hidden="true" />}
+            label="Attendees"
+            // No raw event.attendee_count fallback here on purpose (#374) — that picker total
+            // includes revoked attendees, so falling back to it flashed a higher number (e.g.
+            // 5 -> 4) the instant the real active-only overview count arrived.
+            value={String(overview.attendee_count)}
           />
-          <RecentActivityCard
-            eventId={event.id}
-            activity={currentOverview?.recent_activity ?? []}
-            liveCheckins={recentCheckins}
-            ticketTypes={ticketTypes}
-            timezone={getBrowserTimeZone()}
+          <OverviewKpiTile
+            tone="info"
+            icon={<i className="ti ti-mail-check" aria-hidden="true" />}
+            label="Tickets sent"
+            // Distinct attendees who got their ticket, not raw email_sent: that counts every
+            // delivered mail (resends, reminders, other templates), so it can exceed attendee_count.
+            value={String(overview.attendees_with_ticket)}
+          />
+          {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
+           * count/percentage already shown prominently in the Check-in progress card directly
+           * below, so this slot now carries information the KPI row didn't have yet. Reuses the
+           * existing event-countdown util (computeLabel/useCountdown, added for #160, previously
+           * wired into the now-merged EventInfoCard) rather than reimplementing the date math. */}
+          <OverviewKpiTile
+            tone="ok"
+            icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
+            label={daysToEventLabel}
+            value={countdownValue}
+          />
+          <OverviewKpiTile
+            tone="error"
+            icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
+            label="Failed delivery"
+            value={String(emailFailedTotal)}
           />
         </div>
-        <div className="overview-row overview-row--stretch">
-          <SetupChecklistCard overview={currentOverview} loading={loading} showLoading={showLoading} eventId={event.id} />
-          <NotesAndContactsCard
-            pinnedNote={pinnedNote}
-            loading={loading}
-            showLoading={showLoading}
-            archived={!!event.archived_at}
-            onSaveNote={handleSaveNote}
-            contacts={contacts}
-            onAddContact={handleAddContact}
-            onUpdateContact={handleUpdateContact}
-            onDeleteContact={handleDeleteContact}
-            resources={resources}
-            onAddResource={handleAddResource}
-            onUpdateResource={handleUpdateResource}
-            onDeleteResource={handleDeleteResource}
-          />
+
+        <div className="overview-body">
+          <div className="overview-row overview-row--stretch">
+            <CheckInProgressCard
+              overview={overview}
+              admittedCount={overview.admitted_count + optimisticAdmittedDelta}
+              eventEnded={eventEnded}
+            />
+            <RecentActivityCard
+              eventId={event.id}
+              activity={overview.recent_activity}
+              liveCheckins={recentCheckins}
+              ticketTypes={ticketTypes}
+              timezone={getBrowserTimeZone()}
+            />
+          </div>
+          <div className="overview-row overview-row--stretch">
+            <SetupChecklistCard overview={overview} eventId={event.id} />
+            <NotesAndContactsCard
+              pinnedNote={pinnedNote}
+              archived={!!event.archived_at}
+              onSaveNote={handleSaveNote}
+              contacts={contacts}
+              onAddContact={handleAddContact}
+              onUpdateContact={handleUpdateContact}
+              onDeleteContact={handleDeleteContact}
+              resources={resources}
+              onAddResource={handleAddResource}
+              onUpdateResource={handleUpdateResource}
+              onDeleteResource={handleDeleteResource}
+            />
+          </div>
         </div>
-      </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="screen">
+      {header}
+      <section className="overview-stack" aria-label="Event overview">
+        {body}
+      </section>
     </div>
   );
 }
