@@ -57,7 +57,11 @@ export async function beginWebauthnRegistration(
   if (!user) return null;
 
   const existing = await prisma.userMfaMethod.findMany({
-    where: { user_id: userId, type: "webauthn", webauthn_credential_id: { not: null } },
+    where: {
+      user_id: userId,
+      type: "webauthn",
+      webauthn_credential_id: { not: null },
+    },
     select: { webauthn_credential_id: true, webauthn_transports: true },
   });
 
@@ -96,7 +100,8 @@ export async function beginWebauthnRegistration(
     // whether it should is an open dispute (github.com/bitwarden/clients/issues/6963) - a hard
     // requirement there can outright block the ceremony instead of just de-prioritizing it in
     // the picker.
-    preferredAuthenticatorType: attachment === "platform" ? "localDevice" : "securityKey",
+    preferredAuthenticatorType:
+      attachment === "platform" ? "localDevice" : "securityKey",
   });
   // @simplewebauthn/server sets `authenticatorSelection.authenticatorAttachment` itself as a
   // backwards-compatibility side effect of `preferredAuthenticatorType` above - strip it back
@@ -121,9 +126,8 @@ export async function finishWebauthnRegistration(
   response: RegistrationResponseJSON,
   expectedChallenge: string,
   attachment: WebauthnAttachment,
-  label: string | null,
   rp: WebauthnRpConfig,
-  options: { onlyFirstMethod?: boolean } = {},
+  options: { label?: string | null; onlyFirstMethod?: boolean } = {},
 ): Promise<FinishWebauthnRegistrationResult | null> {
   let verification;
   try {
@@ -157,13 +161,15 @@ export async function finishWebauthnRegistration(
     // decide whether this is a fresh (first-ever) enrollment, and creating the row first would
     // make it see itself as "already confirmed".
     const isFirstMfaMethod = !(await userHasAnyConfirmedMfaMethod(tx, userId));
-    const backupCodes = isFirstMfaMethod ? await ensureFreshEnrollmentBackupCodes(tx, userId) : [];
+    const backupCodes = isFirstMfaMethod
+      ? await ensureFreshEnrollmentBackupCodes(tx, userId)
+      : [];
 
     const created = await tx.userMfaMethod.create({
       data: {
         user_id: userId,
         type: "webauthn",
-        label,
+        label: options.label ?? null,
         confirmed_at: new Date(),
         last_used_at: new Date(),
         webauthn_credential_id: credential.id,
@@ -199,7 +205,13 @@ export async function listWebauthnCredentials(
   const rows = await prisma.userMfaMethod.findMany({
     where: { user_id: userId, type: "webauthn", confirmed_at: { not: null } },
     orderBy: { created_at: "asc" },
-    select: { id: true, label: true, webauthn_attachment: true, confirmed_at: true, last_used_at: true },
+    select: {
+      id: true,
+      label: true,
+      webauthn_attachment: true,
+      confirmed_at: true,
+      last_used_at: true,
+    },
   });
   return rows.map((r) => ({
     id: r.id,
@@ -236,7 +248,12 @@ export async function beginWebauthnAssertion(
   rpID: string,
 ): Promise<BeginWebauthnAssertionResult | null> {
   const credentials = await prisma.userMfaMethod.findMany({
-    where: { user_id: userId, type: "webauthn", confirmed_at: { not: null }, webauthn_credential_id: { not: null } },
+    where: {
+      user_id: userId,
+      type: "webauthn",
+      confirmed_at: { not: null },
+      webauthn_credential_id: { not: null },
+    },
     select: { webauthn_credential_id: true, webauthn_transports: true },
   });
   if (credentials.length === 0) return null;
@@ -289,7 +306,11 @@ export async function finishWebauthnAssertion(
       webauthn_credential_id: response.id,
     },
   });
-  if (!row?.webauthn_credential_id || !row.webauthn_public_key || row.webauthn_sign_count == null) {
+  if (
+    !row?.webauthn_credential_id ||
+    !row.webauthn_public_key ||
+    row.webauthn_sign_count == null
+  ) {
     return null;
   }
 
@@ -323,7 +344,10 @@ export async function finishWebauthnAssertion(
   // count 0, meaning the counter it verified against is already stale, and is rejected here.
   const { count } = await prisma.userMfaMethod.updateMany({
     where: { id: row.id, webauthn_sign_count: row.webauthn_sign_count },
-    data: { webauthn_sign_count: verification.authenticationInfo.newCounter, last_used_at: new Date() },
+    data: {
+      webauthn_sign_count: verification.authenticationInfo.newCounter,
+      last_used_at: new Date(),
+    },
   });
   if (count === 0) return null;
 

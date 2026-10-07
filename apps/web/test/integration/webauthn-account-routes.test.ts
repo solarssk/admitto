@@ -1,6 +1,14 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
@@ -21,7 +29,10 @@ import { createApp } from "../../src/app.js";
 import { clearWebauthnChallengeCacheForTests } from "../../src/auth/webauthn-challenge-cache.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
-const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
+const adminDistRoot = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../fixtures/admin-dist",
+);
 const sameOrigin = { Origin: "http://localhost" };
 const BASE_URL = "https://admitto.example.com";
 const RP_ID = "admitto.example.com";
@@ -49,16 +60,32 @@ let prevInstanceOrgId: string | undefined;
 
 async function seed(client: PrismaClient) {
   const emails = [EMAIL_USER, EMAIL_OTHER, EMAIL_OIDC, EMAIL_SUPERADMIN];
-  await client.session.deleteMany({ where: { user: { email: { in: emails } } } });
-  await client.userMfaMethod.deleteMany({ where: { user: { email: { in: emails } } } });
-  await client.roleAssignment.deleteMany({ where: { OR: [{ scope_id: ORG_WEBAUTHN }, { user: { email: EMAIL_SUPERADMIN } }] } });
-  await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_WEBAUTHN } });
+  await client.session.deleteMany({
+    where: { user: { email: { in: emails } } },
+  });
+  await client.userMfaMethod.deleteMany({
+    where: { user: { email: { in: emails } } },
+  });
+  await client.roleAssignment.deleteMany({
+    where: {
+      OR: [{ scope_id: ORG_WEBAUTHN }, { user: { email: EMAIL_SUPERADMIN } }],
+    },
+  });
+  await client.adminAuditLog.deleteMany({
+    where: { organization_id: ORG_WEBAUTHN },
+  });
   await client.user.deleteMany({ where: { email: { in: emails } } });
   await client.event.deleteMany({ where: { id: "evt-webauthn-account" } });
   await client.organization.deleteMany({ where: { id: ORG_WEBAUTHN } });
 
   const password_hash = await hashPassword(PASSWORD);
-  await client.organization.create({ data: { id: ORG_WEBAUTHN, name: "WebAuthn Account Test Org", slug: "webauthn-account-test" } });
+  await client.organization.create({
+    data: {
+      id: ORG_WEBAUTHN,
+      name: "WebAuthn Account Test Org",
+      slug: "webauthn-account-test",
+    },
+  });
   // Backs the event-scoped role assignments below with a real Event row - resolveSelf (audience.ts)
   // validates an event-scoped assignment against the event's own organization_id, so a dangling
   // scope_id with no matching Event row resolves to no standing at all (account.auth_factor.changed
@@ -73,17 +100,33 @@ async function seed(client: PrismaClient) {
     },
   });
 
-  const user = await client.user.create({ data: { email: EMAIL_USER, password_hash } });
+  const user = await client.user.create({
+    data: { email: EMAIL_USER, password_hash },
+  });
   userId = user.id;
-  const otherUser = await client.user.create({ data: { email: EMAIL_OTHER, password_hash } });
+  const otherUser = await client.user.create({
+    data: { email: EMAIL_OTHER, password_hash },
+  });
   otherUserId = otherUser.id;
-  const oidcUser = await client.user.create({ data: { email: EMAIL_OIDC, password_hash: null } });
+  const oidcUser = await client.user.create({
+    data: { email: EMAIL_OIDC, password_hash: null },
+  });
   oidcUserId = oidcUser.id;
 
   await client.roleAssignment.createMany({
     data: [
-      { user_id: userId, role: "operator", scope_type: "event", scope_id: "evt-webauthn-account" },
-      { user_id: otherUserId, role: "operator", scope_type: "event", scope_id: "evt-webauthn-account" },
+      {
+        user_id: userId,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-webauthn-account",
+      },
+      {
+        user_id: otherUserId,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-webauthn-account",
+      },
     ],
   });
 }
@@ -103,40 +146,71 @@ beforeAll(async () => {
     mailDeliveryDeps: { exportSink: () => {} },
   });
 
-  const session = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
+  const session = await createSession(prisma, {
+    userId,
+    stage: SESSION_STAGE.FULL,
+    ip: "127.0.0.1",
+  });
   userCookie = `admitto_session=${session.rawToken}`;
-  const otherSession = await createSession(prisma, { userId: otherUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
+  const otherSession = await createSession(prisma, {
+    userId: otherUserId,
+    stage: SESSION_STAGE.FULL,
+    ip: "127.0.0.1",
+  });
   otherCookie = `admitto_session=${otherSession.rawToken}`;
 
   // MFA-required role (default `mfa_required_roles` includes superadmin). A `full` session for
   // an MFA-required user is only honored once they have a confirmed method (assertFullSessionMfaPolicy)
   // — same invariant a real login already enforces — so each test that needs this fixture's
   // session to actually work seeds one via `seedConfirmedWebauthnCredential` first.
-  const superadmin = await bootstrapSuperadmin(prisma, EMAIL_SUPERADMIN, SUPERADMIN_PASSWORD);
+  const superadmin = await bootstrapSuperadmin(
+    prisma,
+    EMAIL_SUPERADMIN,
+    SUPERADMIN_PASSWORD,
+  );
   superadminUserId = superadmin.userId;
-  const superadminSession = await createSession(prisma, { userId: superadminUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
+  const superadminSession = await createSession(prisma, {
+    userId: superadminUserId,
+    stage: SESSION_STAGE.FULL,
+    ip: "127.0.0.1",
+  });
   superadminCookie = `admitto_session=${superadminSession.rawToken}`;
 });
 
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: otherUserId } });
-  await prisma.userMfaMethod.deleteMany({ where: { user_id: superadminUserId } });
-  await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+  await prisma.userMfaMethod.deleteMany({
+    where: { user_id: superadminUserId },
+  });
+  await prisma.systemSettings.deleteMany({
+    where: { key: SETTING_WEBAUTHN_ENABLED },
+  });
   rateLimitStore.reset();
   // account.auth_factor.changed's throttle claim (dedupe_key = userId) must not survive into the
   // next test - see the identical comment in account-routes.test.ts's own afterEach.
-  await prisma.notification.deleteMany({ where: { user_id: { in: [userId, otherUserId, superadminUserId] } } });
-  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
+  await prisma.notification.deleteMany({
+    where: { user_id: { in: [userId, otherUserId, superadminUserId] } },
+  });
+  await prisma.notificationThrottle.deleteMany({
+    where: { event_type: "account.auth_factor.changed" },
+  });
 });
 
 /** Polls for the account.auth_factor.changed in-app Notification this file's WebAuthn
  * register/remove actions fire (fire-and-forget, see notifyAuthFactorChanged's own doc comment
  * in account-routes.ts) - it can still be in flight when the HTTP response returns. */
-async function expectAuthFactorChangedNotification(forUserId: string, expectedTitle: string): Promise<void> {
+async function expectAuthFactorChangedNotification(
+  forUserId: string,
+  expectedTitle: string,
+): Promise<void> {
   await vi.waitFor(async () => {
     const rows = await prisma.notification.findMany({
-      where: { user_id: forUserId, notification_type: "account.auth_factor.changed", title: expectedTitle },
+      where: {
+        user_id: forUserId,
+        notification_type: "account.auth_factor.changed",
+        title: expectedTitle,
+      },
     });
     expect(rows).toHaveLength(1);
   });
@@ -146,12 +220,27 @@ async function expectAuthFactorChangedNotification(forUserId: string, expectedTi
  * session gate) — simulates a user who already enrolled their first MFA method at login (the
  * only real way an MFA-required user reaches a `full` session at all), so tests can then drive
  * the Account API's own endpoints through a valid HTTP session. */
-async function seedConfirmedWebauthnCredential(userId: string, label = "Seeded key") {
+async function seedConfirmedWebauthnCredential(
+  userId: string,
+  label = "Seeded key",
+) {
   const authenticator = createVirtualAuthenticator();
   const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
   if (!begin) throw new Error("beginWebauthnRegistration failed");
-  const response = authenticator.register({ challenge: begin.challenge, rpID: RP_ID, origin: BASE_URL });
-  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", label, RP);
+  const response = authenticator.register({
+    challenge: begin.challenge,
+    rpID: RP_ID,
+    origin: BASE_URL,
+  });
+  const result = await finishWebauthnRegistration(
+    prisma,
+    userId,
+    response,
+    begin.challenge,
+    "platform",
+    RP,
+    { label: label },
+  );
   if (!result) throw new Error("finishWebauthnRegistration failed");
   // A first-ever method leaves backup_codes_acknowledged_at null (IAM-002) — acknowledge here so
   // this fixture's session stays usable, mirroring what the self-service HTTP finish handler
@@ -161,7 +250,8 @@ async function seedConfirmedWebauthnCredential(userId: string, label = "Seeded k
 }
 
 afterAll(async () => {
-  if (prevInstanceOrgId !== undefined) process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
+  if (prevInstanceOrgId !== undefined)
+    process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
   else delete process.env.INSTANCE_ORG_ID;
   await prisma?.$disconnect();
 });
@@ -170,15 +260,25 @@ interface BeginResponseBody {
   options: {
     challenge: string;
     rp: { id: string; name: string };
-    authenticatorSelection?: { residentKey?: string; authenticatorAttachment?: string };
+    authenticatorSelection?: {
+      residentKey?: string;
+      authenticatorAttachment?: string;
+    };
     hints?: string[];
   };
 }
 
-async function beginRegistration(cookie: string, attachment: "platform" | "cross-platform") {
+async function beginRegistration(
+  cookie: string,
+  attachment: "platform" | "cross-platform",
+) {
   const res = await app.request("/api/account/mfa/webauthn/register/begin", {
     method: "POST",
-    headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+    headers: {
+      Cookie: cookie,
+      ...sameOrigin,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ attachment }),
   });
   return { res, body: (await res.json()) as BeginResponseBody };
@@ -212,9 +312,15 @@ async function drainAddedNotification(): Promise<void> {
   const addedTitle = "A new passkey was added";
   await expectAuthFactorChangedNotification(userId, addedTitle);
   await prisma.notification.deleteMany({
-    where: { user_id: userId, notification_type: "account.auth_factor.changed", title: addedTitle },
+    where: {
+      user_id: userId,
+      notification_type: "account.auth_factor.changed",
+      title: addedTitle,
+    },
   });
-  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
+  await prisma.notificationThrottle.deleteMany({
+    where: { event_type: "account.auth_factor.changed" },
+  });
 }
 
 async function registerCredential(
@@ -225,13 +331,24 @@ async function registerCredential(
 ) {
   const authenticator = createVirtualAuthenticator();
   const { body: begin } = await beginRegistration(cookie, attachment);
-  const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
-
-  const finishRes = await app.request("/api/account/mfa/webauthn/register/finish", {
-    method: "POST",
-    headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
-    body: JSON.stringify({ attachment, label, response, step_up: stepUp }),
+  const response = authenticator.register({
+    challenge: begin.options.challenge,
+    rpID: RP_ID,
+    origin: BASE_URL,
   });
+
+  const finishRes = await app.request(
+    "/api/account/mfa/webauthn/register/finish",
+    {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ attachment, label, response, step_up: stepUp }),
+    },
+  );
   const finishBody = await finishRes.json();
   if (finishRes.status === 200) await drainAddedNotification();
   return { authenticator, credentialId: response.id, finishRes, finishBody };
@@ -251,33 +368,52 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
     // Non-binding hint only - no hard authenticatorAttachment filter (see beginWebauthnRegistration
     // in packages/auth), so a synced/vault-backed authenticator (e.g. a password manager browser
     // extension) can still complete the ceremony even if it doesn't self-identify as "platform".
-    expect(body.options.authenticatorSelection?.authenticatorAttachment).toBeUndefined();
+    expect(
+      body.options.authenticatorSelection?.authenticatorAttachment,
+    ).toBeUndefined();
     expect(body.options.hints).toEqual(["client-device"]);
   });
 
   it("discourages a resident credential for a security key", async () => {
     const { body } = await beginRegistration(userCookie, "cross-platform");
-    expect(body.options.authenticatorSelection?.residentKey).toBe("discouraged");
-    expect(body.options.authenticatorSelection?.authenticatorAttachment).toBeUndefined();
+    expect(body.options.authenticatorSelection?.residentKey).toBe(
+      "discouraged",
+    );
+    expect(
+      body.options.authenticatorSelection?.authenticatorAttachment,
+    ).toBeUndefined();
     expect(body.options.hints).toEqual(["security-key"]);
   });
 
   it("returns 400 no_local_password for an OIDC-only account", async () => {
-    const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
+    const oidcSession = await createSession(prisma, {
+      userId: oidcUserId,
+      stage: SESSION_STAGE.FULL,
+    });
     const res = await app.request("/api/account/mfa/webauthn/register/begin", {
       method: "POST",
-      headers: { Cookie: `admitto_session=${oidcSession.rawToken}`, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: `admitto_session=${oidcSession.rawToken}`,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ attachment: "platform" }),
     });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { code: string }).code).toBe("no_local_password");
+    expect(((await res.json()) as { code: string }).code).toBe(
+      "no_local_password",
+    );
     await prisma.session.delete({ where: { id: oidcSession.session.id } });
   });
 
   it("returns 400 for a malformed JSON body", async () => {
     const res = await app.request("/api/account/mfa/webauthn/register/begin", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: "not json",
     });
     expect(res.status).toBe(400);
@@ -286,7 +422,11 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
   it("returns 400 for a body that fails schema validation", async () => {
     const res = await app.request("/api/account/mfa/webauthn/register/begin", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ attachment: "not-a-real-attachment" }),
     });
     expect(res.status).toBe(400);
@@ -300,11 +440,17 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
     });
     const res = await app.request("/api/account/mfa/webauthn/register/begin", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ attachment: "platform" }),
     });
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { code: string }).code).toBe("webauthn_disabled");
+    expect(((await res.json()) as { code: string }).code).toBe(
+      "webauthn_disabled",
+    );
   });
 
   it("excludes the user's own already-registered credentials", async () => {
@@ -319,15 +465,30 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
 
 describe("POST /api/account/mfa/webauthn/register/finish", () => {
   it("registers a passkey end to end and lists it on GET /api/account", async () => {
-    const { credentialId, finishRes, finishBody } = await registerCredential(userCookie, "platform", "My laptop");
+    const { credentialId, finishRes, finishBody } = await registerCredential(
+      userCookie,
+      "platform",
+      "My laptop",
+    );
     expect(finishRes.status).toBe(200);
     expect((finishBody as { ok: boolean }).ok).toBe(true);
-    expect((finishBody as { backupCodes: string[] }).backupCodes.length).toBeGreaterThan(0);
+    expect(
+      (finishBody as { backupCodes: string[] }).backupCodes.length,
+    ).toBeGreaterThan(0);
 
-    const accountRes = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const accountRes = await app.request("/api/account", {
+      headers: { Cookie: userCookie },
+    });
     const account = (await accountRes.json()) as {
       webauthn_enabled: boolean;
-      mfa_methods: { type: string; confirmed: boolean; label?: string; attachment?: string; id?: string; credential_id?: string }[];
+      mfa_methods: {
+        type: string;
+        confirmed: boolean;
+        label?: string;
+        attachment?: string;
+        id?: string;
+        credential_id?: string;
+      }[];
     };
     expect(account.webauthn_enabled).toBe(true);
     const row = account.mfa_methods.find((m) => m.type === "webauthn");
@@ -346,12 +507,21 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
 
   it("a second credential does not return fresh backup codes (already acknowledged from the first)", async () => {
     const first = await registerCredential(userCookie, "platform", "Key 1");
-    expect((first.finishBody as { backupCodes: string[] }).backupCodes.length).toBeGreaterThan(0);
+    expect(
+      (first.finishBody as { backupCodes: string[] }).backupCodes.length,
+    ).toBeGreaterThan(0);
 
-    const second = await registerCredential(userCookie, "cross-platform", "Key 2", {
-      code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
-    });
-    expect((second.finishBody as { backupCodes: string[] }).backupCodes).toEqual([]);
+    const second = await registerCredential(
+      userCookie,
+      "cross-platform",
+      "Key 2",
+      {
+        code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
+      },
+    );
+    expect(
+      (second.finishBody as { backupCodes: string[] }).backupCodes,
+    ).toEqual([]);
   });
 
   it("refuses a second credential without a step-up proof, keeps the challenge for a retry, and stores nothing", async () => {
@@ -359,50 +529,100 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const codes = (first.finishBody as { backupCodes: string[] }).backupCodes;
 
     const authenticator = createVirtualAuthenticator();
-    const { body: begin } = await beginRegistration(userCookie, "cross-platform");
-    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
+    const { body: begin } = await beginRegistration(
+      userCookie,
+      "cross-platform",
+    );
+    const response = authenticator.register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: BASE_URL,
+    });
     const send = (stepUp?: { code: string }) =>
       app.request("/api/account/mfa/webauthn/register/finish", {
         method: "POST",
-        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ attachment: "cross-platform", label: "Thief key", response, step_up: stepUp }),
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          attachment: "cross-platform",
+          label: "Thief key",
+          response,
+          step_up: stepUp,
+        }),
       });
 
     const missing = await send();
     expect(missing.status).toBe(400);
-    expect(((await missing.json()) as { code: string }).code).toBe("totp_required");
+    expect(((await missing.json()) as { code: string }).code).toBe(
+      "totp_required",
+    );
 
     const wrong = await send({ code: "not-a-real-code" });
     expect(wrong.status).toBe(401);
-    expect(((await wrong.json()) as { code: string }).code).toBe("invalid_totp");
-    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
+    expect(((await wrong.json()) as { code: string }).code).toBe(
+      "invalid_totp",
+    );
+    expect(
+      await prisma.userMfaMethod.count({
+        where: { user_id: userId, type: "webauthn" },
+      }),
+    ).toBe(1);
 
     // The same ceremony response still works once the proof is right: the challenge was not spent.
     const ok = await send({ code: codes[0]! });
     expect(ok.status).toBe(200);
     await drainAddedNotification();
-    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(2);
+    expect(
+      await prisma.userMfaMethod.count({
+        where: { user_id: userId, type: "webauthn" },
+      }),
+    ).toBe(2);
   });
 
   it("does not burn the recovery code used as the proof when the ceremony fails verification", async () => {
     const first = await registerCredential(userCookie, "platform", "Key 1");
-    const recoveryCode = (first.finishBody as { backupCodes: string[] }).backupCodes[0]!;
+    const recoveryCode = (first.finishBody as { backupCodes: string[] })
+      .backupCodes[0]!;
 
-    const { body: begin } = await beginRegistration(userCookie, "cross-platform");
+    const { body: begin } = await beginRegistration(
+      userCookie,
+      "cross-platform",
+    );
     const badResponse = createVirtualAuthenticator().register({
       challenge: begin.options.challenge,
       rpID: RP_ID,
       origin: "https://evil.example.com",
     });
-    const failed = await app.request("/api/account/mfa/webauthn/register/finish", {
-      method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "cross-platform", response: badResponse, step_up: { code: recoveryCode } }),
-    });
+    const failed = await app.request(
+      "/api/account/mfa/webauthn/register/finish",
+      {
+        method: "POST",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          attachment: "cross-platform",
+          response: badResponse,
+          step_up: { code: recoveryCode },
+        }),
+      },
+    );
     expect(failed.status).toBe(400);
-    expect(((await failed.json()) as { code: string }).code).toBe("verification_failed");
+    expect(((await failed.json()) as { code: string }).code).toBe(
+      "verification_failed",
+    );
 
-    const second = await registerCredential(userCookie, "cross-platform", "Key 2", { code: recoveryCode });
+    const second = await registerCredential(
+      userCookie,
+      "cross-platform",
+      "Key 2",
+      { code: recoveryCode },
+    );
     expect(second.finishRes.status).toBe(200);
   });
 
@@ -411,7 +631,9 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
       method: "POST",
       headers: { Cookie: userCookie, ...sameOrigin },
     });
-    const secret = parseTotpSecretFromOtpauthUri(((await enrollRes.json()) as { otpauthUri: string }).otpauthUri)!;
+    const secret = parseTotpSecretFromOtpauthUri(
+      ((await enrollRes.json()) as { otpauthUri: string }).otpauthUri,
+    )!;
     const { body: begin } = await beginRegistration(userCookie, "platform");
     const response = createVirtualAuthenticator().register({
       challenge: begin.options.challenge,
@@ -422,32 +644,54 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const [totp, passkey] = await Promise.all([
       app.request("/api/account/mfa/totp/confirm", {
         method: "POST",
-        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ code: generateTotpCode(secret) }),
       }),
       app.request("/api/account/mfa/webauthn/register/finish", {
         method: "POST",
-        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ attachment: "platform", response }),
       }),
     ]);
 
     expect([totp.status, passkey.status].sort()).toEqual([200, 400]);
     const refused = totp.status === 400 ? totp : passkey;
-    expect(((await refused.json()) as { code: string }).code).toBe("totp_required");
+    expect(((await refused.json()) as { code: string }).code).toBe(
+      "totp_required",
+    );
     expect(
-      await prisma.userMfaMethod.count({ where: { user_id: userId, type: { in: ["totp", "webauthn"] }, confirmed_at: { not: null } } }),
+      await prisma.userMfaMethod.count({
+        where: {
+          user_id: userId,
+          type: { in: ["totp", "webauthn"] },
+          confirmed_at: { not: null },
+        },
+      }),
     ).toBe(1);
     // A refused passkey request leaves its (unconsumed) challenge behind; the next test must not see it.
     clearWebauthnChallengeCacheForTests();
     await prisma.notification.deleteMany({ where: { user_id: userId } });
-    await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
+    await prisma.notificationThrottle.deleteMany({
+      where: { event_type: "account.auth_factor.changed" },
+    });
   });
 
   it("returns 400 for a malformed JSON body", async () => {
     const res = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: "not json",
     });
     expect(res.status).toBe(400);
@@ -456,7 +700,11 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
   it("returns 400 for a body that fails schema validation", async () => {
     const res = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ attachment: "platform" }), // missing required `response`
     });
     expect(res.status).toBe(400);
@@ -464,14 +712,24 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
 
   it("returns 400 challenge_expired when finish is called without a matching begin", async () => {
     const authenticator = createVirtualAuthenticator();
-    const response = authenticator.register({ challenge: "made-up-challenge", rpID: RP_ID, origin: BASE_URL });
+    const response = authenticator.register({
+      challenge: "made-up-challenge",
+      rpID: RP_ID,
+      origin: BASE_URL,
+    });
     const res = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ attachment: "platform", response }),
     });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { code: string }).code).toBe("challenge_expired");
+    expect(((await res.json()) as { code: string }).code).toBe(
+      "challenge_expired",
+    );
   });
 
   it("returns 400 verification_failed for a response signed against a different origin", async () => {
@@ -484,45 +742,80 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     });
     const res = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ attachment: "platform", response }),
     });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { code: string }).code).toBe("verification_failed");
+    expect(((await res.json()) as { code: string }).code).toBe(
+      "verification_failed",
+    );
   });
 
   it("a challenge can only be used once (replay of the same begin fails)", async () => {
     const authenticator = createVirtualAuthenticator();
     const { body: begin } = await beginRegistration(userCookie, "platform");
-    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
-
-    const first = await app.request("/api/account/mfa/webauthn/register/finish", {
-      method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "platform", response }),
+    const response = authenticator.register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: BASE_URL,
     });
+
+    const first = await app.request(
+      "/api/account/mfa/webauthn/register/finish",
+      {
+        method: "POST",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ attachment: "platform", response }),
+      },
+    );
     expect(first.status).toBe(200);
-    const firstCodes = ((await first.json()) as { backupCodes: string[] }).backupCodes;
+    const firstCodes = ((await first.json()) as { backupCodes: string[] })
+      .backupCodes;
     // This registration succeeded directly against app.request, not through registerCredential -
     // drain its own account.auth_factor.changed notification the same way that helper does (see
     // its own doc comment) so it can't straggle into a later test.
     await drainAddedNotification();
 
-    const replay = await app.request("/api/account/mfa/webauthn/register/finish", {
-      method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      // The account has a credential now, so the replay must carry a step-up proof to get as far
-      // as the (already consumed) challenge.
-      body: JSON.stringify({ attachment: "platform", response, step_up: { code: firstCodes[0] } }),
-    });
+    const replay = await app.request(
+      "/api/account/mfa/webauthn/register/finish",
+      {
+        method: "POST",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        // The account has a credential now, so the replay must carry a step-up proof to get as far
+        // as the (already consumed) challenge.
+        body: JSON.stringify({
+          attachment: "platform",
+          response,
+          step_up: { code: firstCodes[0] },
+        }),
+      },
+    );
     expect(replay.status).toBe(400);
-    expect(((await replay.json()) as { code: string }).code).toBe("challenge_expired");
+    expect(((await replay.json()) as { code: string }).code).toBe(
+      "challenge_expired",
+    );
   });
 
   it("returns 403 webauthn_disabled and clears the challenge, if the instance setting is turned off after begin", async () => {
     const authenticator = createVirtualAuthenticator();
     const { body: begin } = await beginRegistration(userCookie, "platform");
-    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
+    const response = authenticator.register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: BASE_URL,
+    });
 
     await prisma.systemSettings.upsert({
       where: { key: SETTING_WEBAUTHN_ENABLED },
@@ -530,26 +823,46 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
       update: { value_json: "false" },
     });
     try {
-      const res = await app.request("/api/account/mfa/webauthn/register/finish", {
-        method: "POST",
-        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ attachment: "platform", response }),
-      });
+      const res = await app.request(
+        "/api/account/mfa/webauthn/register/finish",
+        {
+          method: "POST",
+          headers: {
+            Cookie: userCookie,
+            ...sameOrigin,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ attachment: "platform", response }),
+        },
+      );
       expect(res.status).toBe(403);
-      expect(((await res.json()) as { code: string }).code).toBe("webauthn_disabled");
+      expect(((await res.json()) as { code: string }).code).toBe(
+        "webauthn_disabled",
+      );
     } finally {
-      await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+      await prisma.systemSettings.deleteMany({
+        where: { key: SETTING_WEBAUTHN_ENABLED },
+      });
     }
 
     // The disabled check clears the stashed challenge - re-enabling and retrying the same
     // response afterwards must not be able to complete registration on a stale challenge.
-    const retry = await app.request("/api/account/mfa/webauthn/register/finish", {
-      method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "platform", response }),
-    });
+    const retry = await app.request(
+      "/api/account/mfa/webauthn/register/finish",
+      {
+        method: "POST",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ attachment: "platform", response }),
+      },
+    );
     expect(retry.status).toBe(400);
-    expect(((await retry.json()) as { code: string }).code).toBe("challenge_expired");
+    expect(((await retry.json()) as { code: string }).code).toBe(
+      "challenge_expired",
+    );
   });
 });
 
@@ -570,21 +883,39 @@ describe("WebAuthn RP origin, an Instance URL with a path", () => {
     });
 
     const authenticator = createVirtualAuthenticator();
-    const beginRes = await pathedApp.request("/api/account/mfa/webauthn/register/begin", {
-      method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "platform" }),
-    });
+    const beginRes = await pathedApp.request(
+      "/api/account/mfa/webauthn/register/begin",
+      {
+        method: "POST",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ attachment: "platform" }),
+      },
+    );
     const begin = (await beginRes.json()) as BeginResponseBody;
     // rpID (hostname only) was already correct before this fix - only origin carried the path.
     expect(begin.options.rp.id).toBe(RP_ID);
 
-    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
-    const finishRes = await pathedApp.request("/api/account/mfa/webauthn/register/finish", {
-      method: "POST",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attachment: "platform", response }),
+    const response = authenticator.register({
+      challenge: begin.options.challenge,
+      rpID: RP_ID,
+      origin: BASE_URL,
     });
+    const finishRes = await pathedApp.request(
+      "/api/account/mfa/webauthn/register/finish",
+      {
+        method: "POST",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ attachment: "platform", response }),
+      },
+    );
     expect(finishRes.status).toBe(200);
     expect(((await finishRes.json()) as { ok: boolean }).ok).toBe(true);
     // Registered directly against pathedApp, not through registerCredential - drain its own
@@ -601,25 +932,45 @@ describe("GET /api/account/mfa/webauthn", () => {
       code: (first.finishBody as { backupCodes: string[] }).backupCodes[0]!,
     });
 
-    const res = await app.request("/api/account/mfa/webauthn", { headers: { Cookie: userCookie } });
+    const res = await app.request("/api/account/mfa/webauthn", {
+      headers: { Cookie: userCookie },
+    });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { credentials: { label: string; attachment: string }[] };
+    const body = (await res.json()) as {
+      credentials: { label: string; attachment: string }[];
+    };
     expect(body.credentials.map((c) => c.label)).toEqual(["First", "Second"]);
-    expect(body.credentials.map((c) => c.attachment)).toEqual(["platform", "cross-platform"]);
+    expect(body.credentials.map((c) => c.attachment)).toEqual([
+      "platform",
+      "cross-platform",
+    ]);
   });
 
   it("reports lastUsedAt as null for a row that predates that column being populated", async () => {
-    const { finishBody } = await registerCredential(userCookie, "platform", "No last-used-at yet");
+    const { finishBody } = await registerCredential(
+      userCookie,
+      "platform",
+      "No last-used-at yet",
+    );
     const credentialId = (finishBody as { id: string }).id;
     // finishWebauthnRegistration always sets last_used_at at creation - this directly clears it to
     // exercise the response mapper's own `?? null` fallback for a case only possible from data
     // that predates that column (or a future code path that doesn't set it), not from anything
     // today's registration flow can produce itself.
-    await prisma.userMfaMethod.update({ where: { id: credentialId }, data: { last_used_at: null } });
+    await prisma.userMfaMethod.update({
+      where: { id: credentialId },
+      data: { last_used_at: null },
+    });
 
-    const res = await app.request("/api/account/mfa/webauthn", { headers: { Cookie: userCookie } });
-    const body = (await res.json()) as { credentials: { id: string; lastUsedAt: string | null }[] };
-    expect(body.credentials.find((c) => c.id === credentialId)?.lastUsedAt).toBeNull();
+    const res = await app.request("/api/account/mfa/webauthn", {
+      headers: { Cookie: userCookie },
+    });
+    const body = (await res.json()) as {
+      credentials: { id: string; lastUsedAt: string | null }[];
+    };
+    expect(
+      body.credentials.find((c) => c.id === credentialId)?.lastUsedAt,
+    ).toBeNull();
   });
 });
 
@@ -633,11 +984,17 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
 
     const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
       method: "DELETE",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(200);
-    expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(0);
+    expect(
+      await prisma.userMfaMethod.count({ where: { id: credentialId } }),
+    ).toBe(0);
 
     await expectAuthFactorChangedNotification(userId, "A passkey was removed");
   });
@@ -648,11 +1005,17 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
 
     const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
       method: "DELETE",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: "not json",
     });
     expect(res.status).toBe(200);
-    expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(0);
+    expect(
+      await prisma.userMfaMethod.count({ where: { id: credentialId } }),
+    ).toBe(0);
   });
 
   it("returns 400 for a body that fails schema validation", async () => {
@@ -661,11 +1024,17 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
 
     const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
       method: "DELETE",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: userCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ code: 123456 }), // must be a string
     });
     expect(res.status).toBe(400);
-    expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(1);
+    expect(
+      await prisma.userMfaMethod.count({ where: { id: credentialId } }),
+    ).toBe(1);
   });
 
   it("returns 404 for another user's credential (no IDOR)", async () => {
@@ -674,53 +1043,97 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
 
     const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
       method: "DELETE",
-      headers: { Cookie: otherCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: {
+        Cookie: otherCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(404);
-    expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(1);
+    expect(
+      await prisma.userMfaMethod.count({ where: { id: credentialId } }),
+    ).toBe(1);
   });
 
   it("forgets every trusted device when a credential is removed", async () => {
     const { credentialRowId } = await seedConfirmedWebauthnCredential(userId);
-    await createTrustedDevice(prisma, { userId, ip: "203.0.113.5", userAgent: "test" });
-
-    const res = await app.request(`/api/account/mfa/webauthn/${credentialRowId}`, {
-      method: "DELETE",
-      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+    await createTrustedDevice(prisma, {
+      userId,
+      ip: "203.0.113.5",
+      userAgent: "test",
     });
+
+    const res = await app.request(
+      `/api/account/mfa/webauthn/${credentialRowId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Cookie: userCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      },
+    );
     expect(res.status).toBe(200);
-    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
+    expect(
+      await prisma.trustedDevice.count({
+        where: { user_id: userId, revoked_at: null },
+      }),
+    ).toBe(0);
   });
 
   it("requires a step-up code for the MFA-required superadmin fixture", async () => {
-    const { credentialRowId } = await seedConfirmedWebauthnCredential(superadminUserId);
+    const { credentialRowId } =
+      await seedConfirmedWebauthnCredential(superadminUserId);
 
-    const res = await app.request(`/api/account/mfa/webauthn/${credentialRowId}`, {
-      method: "DELETE",
-      headers: { Cookie: superadminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const res = await app.request(
+      `/api/account/mfa/webauthn/${credentialRowId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Cookie: superadminCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      },
+    );
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("totp_required");
-    expect(await prisma.userMfaMethod.count({ where: { id: credentialRowId } })).toBe(1);
+    expect(
+      await prisma.userMfaMethod.count({ where: { id: credentialRowId } }),
+    ).toBe(1);
   });
 
   it("removes a credential using a recovery code from its own first-enrollment backup codes (WebAuthn-only step-up)", async () => {
-    const { credentialRowId, backupCodes } = await seedConfirmedWebauthnCredential(superadminUserId);
+    const { credentialRowId, backupCodes } =
+      await seedConfirmedWebauthnCredential(superadminUserId);
     expect(backupCodes.length).toBeGreaterThan(0);
 
-    const res = await app.request(`/api/account/mfa/webauthn/${credentialRowId}`, {
-      method: "DELETE",
-      headers: { Cookie: superadminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ code: backupCodes[0] }),
-    });
+    const res = await app.request(
+      `/api/account/mfa/webauthn/${credentialRowId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Cookie: superadminCookie,
+          ...sameOrigin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code: backupCodes[0] }),
+      },
+    );
     expect(res.status).toBe(200);
-    expect(await prisma.userMfaMethod.count({ where: { id: credentialRowId } })).toBe(0);
+    expect(
+      await prisma.userMfaMethod.count({ where: { id: credentialRowId } }),
+    ).toBe(0);
 
     const audit = await prisma.adminAuditLog.findFirst({
-      where: { organization_id: ORG_WEBAUTHN, action_type: "account_mfa_webauthn_removed" },
+      where: {
+        organization_id: ORG_WEBAUTHN,
+        action_type: "account_mfa_webauthn_removed",
+      },
       orderBy: { created_at: "desc" },
     });
     expect(audit?.actor_user_id).toBe(superadminUserId);

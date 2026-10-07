@@ -1,7 +1,10 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simplewebauthn/server";
+import type {
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+} from "@simplewebauthn/server";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
@@ -56,7 +59,10 @@ import {
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
-import { adminAuditFromContext, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  resolveMailInstanceBaseUrl,
+} from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { notifyAuthFactorChanged } from "./notify-auth-factor-changed.js";
 
@@ -76,18 +82,30 @@ async function verifyCurrentPasswordOrFail(
   userId: string,
   candidatePassword: string,
 ): Promise<Response | null> {
-  const user = await db.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { password_hash: true },
+  });
   if (!user) return c.json({ error: "unauthorized" }, 401);
   if (!hasLocalPassword(user.password_hash)) {
     return c.json({ code: "no_local_password" }, 400);
   }
 
   const passwordCheckIp = resolveMfaClientIp(c);
-  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
+  if (
+    !(await checkAccountPasswordRateLimit(
+      rateLimitStore,
+      userId,
+      passwordCheckIp,
+    ))
+  ) {
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const passwordOk = await verifyPasswordOrDummy(candidatePassword, user.password_hash);
+  const passwordOk = await verifyPasswordOrDummy(
+    candidatePassword,
+    user.password_hash,
+  );
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
   return null;
 }
@@ -108,7 +126,11 @@ async function revokeSessionsExcludingCurrent(
   return revoked.count;
 }
 
-type StepUpFailureReason = "unauthorized" | "totp_required" | "invalid_totp" | "invalid_webauthn";
+type StepUpFailureReason =
+  | "unauthorized"
+  | "totp_required"
+  | "invalid_totp"
+  | "invalid_webauthn";
 
 /** Body-size cap for every WebAuthn register/assert route (account-context and login-time alike -
  * `webauthnAuthenticationResponseSchema` is reused by the login route). Real ceremony responses
@@ -142,7 +164,9 @@ export const webauthnAuthenticationResponseSchema = z.object({
  * WebAuthn assertion response. Spread into a `.strict()` schema next to that action's own fields. */
 export const stepUpProofFields = {
   code: z.string().optional(),
-  webauthn: z.object({ response: webauthnAuthenticationResponseSchema }).optional(),
+  webauthn: z
+    .object({ response: webauthnAuthenticationResponseSchema })
+    .optional(),
 };
 
 const stepUpProofOnlyBodySchema = z.object(stepUpProofFields).strict();
@@ -151,7 +175,9 @@ const stepUpProofOnlyBodySchema = z.object(stepUpProofFields).strict();
  * fields of its own), shared by `handleDeleteAccountWebauthnCredential`, `handleDeleteAccountTotp`,
  * and `handlePostAccountRegenerateBackupCodes`. An empty/unparsable body defaults to `{}` rather
  * than a 400, since most calls won't need step-up at all. */
-async function parseStepUpProofOnlyBody(c: Context): Promise<z.infer<typeof stepUpProofOnlyBodySchema> | Response> {
+async function parseStepUpProofOnlyBody(
+  c: Context,
+): Promise<z.infer<typeof stepUpProofOnlyBodySchema> | Response> {
   let body: unknown = {};
   try {
     body = await c.req.json();
@@ -168,12 +194,19 @@ async function parseStepUpProofOnlyBody(c: Context): Promise<z.infer<typeof step
  * `resolveVerifiedStepUpProof` can verify it without any extra context. */
 export type StepUpProof =
   | { type: "code"; value: string }
-  | { type: "webauthn"; response: AuthenticationResponseJSON; challenge: string; rp: WebauthnRpConfig };
+  | {
+      type: "webauthn";
+      response: AuthenticationResponseJSON;
+      challenge: string;
+      rp: WebauthnRpConfig;
+    };
 
 /** A `StepUpProof` after its WebAuthn variant, if any, has already been cryptographically
  * verified by `resolveVerifiedStepUpProof` - the only shape `checkStepUpInTransaction` and
  * `verifySelfUnlinkProof` ever see, so neither runs `finishWebauthnAssertion` itself. */
-export type VerifiedStepUpProof = { type: "code"; value: string } | { type: "webauthn"; verified: boolean };
+export type VerifiedStepUpProof =
+  | { type: "code"; value: string }
+  | { type: "webauthn"; verified: boolean };
 
 /**
  * Verify a resolved WebAuthn step-up proof (credential-row read + crypto-verify + sign-counter
@@ -189,7 +222,13 @@ async function resolveVerifiedStepUpProof(
   proof: StepUpProof | undefined,
 ): Promise<VerifiedStepUpProof | undefined> {
   if (proof?.type !== "webauthn") return proof;
-  const verified = await finishWebauthnAssertion(db, userId, proof.response, proof.challenge, proof.rp);
+  const verified = await finishWebauthnAssertion(
+    db,
+    userId,
+    proof.response,
+    proof.challenge,
+    proof.rp,
+  );
   return { type: "webauthn", verified: verified !== null };
 }
 
@@ -210,7 +249,8 @@ export async function resolveStepUpProof(
 ): Promise<StepUpProof | undefined | Response> {
   if (body.webauthn) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
-    if (!(await getWebauthnEnabled(db))) return c.json({ code: "webauthn_disabled" }, 403);
+    if (!(await getWebauthnEnabled(db)))
+      return c.json({ code: "webauthn_disabled" }, 403);
     const challenge = consumeWebauthnChallenge("assert", currentSessionId);
     if (!challenge) return c.json({ code: "challenge_expired" }, 400);
     const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
@@ -247,20 +287,34 @@ async function stepUpPreflight(
     forceRequired?: boolean;
   },
 ): Promise<Response | null> {
-  const { userId, currentSessionId, proof, rateLimitAction, forceRequired } = params;
+  const { userId, currentSessionId, proof, rateLimitAction, forceRequired } =
+    params;
   if (forceRequired || (await userRequiresMfaStepUp(db, userId))) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     if (!proof) return c.json({ code: "totp_required" }, 400);
   }
   if (proof && currentSessionId) {
     const ip = resolveMfaClientIp(c);
-    if (!(await checkStepUpTotalRateLimit(rateLimitStore, currentSessionId, ip))) {
+    if (
+      !(await checkStepUpTotalRateLimit(rateLimitStore, currentSessionId, ip))
+    ) {
       return c.json({ error: "too many requests" }, 429);
     }
     const allowed =
       proof.type === "code"
-        ? await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, proof.value, rateLimitAction)
-        : await checkWebauthnStepUpRateLimit(rateLimitStore, currentSessionId, ip, rateLimitAction);
+        ? await checkMfaVerifyRateLimit(
+            rateLimitStore,
+            currentSessionId,
+            ip,
+            proof.value,
+            rateLimitAction,
+          )
+        : await checkWebauthnStepUpRateLimit(
+            rateLimitStore,
+            currentSessionId,
+            ip,
+            rateLimitAction,
+          );
     if (!allowed) return c.json({ error: "too many requests" }, 429);
   }
   return null;
@@ -283,7 +337,8 @@ async function checkStepUpInTransaction(
   proof: VerifiedStepUpProof | undefined,
   forceRequired = false,
 ): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
-  if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
+  if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId)))
+    return { ok: true };
   if (!currentSessionId) return { ok: false, reason: "unauthorized" };
   // Only reachable via the exact role-change race stepUpPreflight's own docstring describes
   // (MFA requirement flips from not-required to required between that pre-check and this
@@ -291,7 +346,9 @@ async function checkStepUpInTransaction(
   /* v8 ignore next */
   if (!proof) return { ok: false, reason: "totp_required" };
   if (proof.type === "webauthn") {
-    return proof.verified ? { ok: true } : { ok: false, reason: "invalid_webauthn" };
+    return proof.verified
+      ? { ok: true }
+      : { ok: false, reason: "invalid_webauthn" };
   }
   if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.value))) {
     return { ok: false, reason: "invalid_totp" };
@@ -299,7 +356,10 @@ async function checkStepUpInTransaction(
   return { ok: true };
 }
 
-function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Response {
+function stepUpFailureResponse(
+  c: Context,
+  reason: StepUpFailureReason,
+): Response {
   switch (reason) {
     case "unauthorized":
       return c.json({ error: "unauthorized" }, 401);
@@ -331,13 +391,20 @@ async function auditStepUpFailure(
   userAgent: string | undefined,
   reason: StepUpFailureReason | UnlinkDenialCode,
 ): Promise<void> {
-  const failureReasonForNonTotp: MfaFailureReason | null = reason === "invalid_webauthn" ? "invalid_webauthn" : null;
+  const failureReasonForNonTotp: MfaFailureReason | null =
+    reason === "invalid_webauthn" ? "invalid_webauthn" : null;
   const failureReason: MfaFailureReason | null =
     reason === "invalid_totp" ? "invalid_code" : failureReasonForNonTotp;
   if (!failureReason) return;
   await logMfaFailure(
     db,
-    { userId, sessionId: audit.sessionId, ip: audit.ip, userAgent, timezone: audit.timezone },
+    {
+      userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      userAgent,
+      timezone: audit.timezone,
+    },
     failureReason,
   );
 }
@@ -368,10 +435,27 @@ export async function withStepUpGate<T>(
     forceRequired?: boolean;
     injectedBaseUrl?: string;
   },
-  body: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
+  body: (
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    audit: OpsAuditContext,
+  ) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { userId, currentSessionId, stepUpBody, rateLimitAction, forceRequired, injectedBaseUrl } = params;
-  const proof = await resolveStepUpProof(c, db, currentSessionId, stepUpBody, injectedBaseUrl);
+  const {
+    userId,
+    currentSessionId,
+    stepUpBody,
+    rateLimitAction,
+    forceRequired,
+    injectedBaseUrl,
+  } = params;
+  const proof = await resolveStepUpProof(
+    c,
+    db,
+    currentSessionId,
+    stepUpBody,
+    injectedBaseUrl,
+  );
   if (proof instanceof Response) return { ok: false, response: proof };
   const preflightDenied = await stepUpPreflight(c, db, rateLimitStore, {
     userId,
@@ -390,13 +474,25 @@ export async function withStepUpGate<T>(
   const audit = adminAuditFromContext(c);
 
   const result = await runInTransaction(db, async (tx) => {
-    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, verifiedProof, forceRequired);
+    const step = await checkStepUpInTransaction(
+      tx,
+      userId,
+      currentSessionId,
+      verifiedProof,
+      forceRequired,
+    );
     if (!step.ok) return step;
     return { ok: true as const, value: await body(tx, orgId, audit) };
   });
 
   if (!result.ok) {
-    await auditStepUpFailure(db, audit, userId, c.req.header("user-agent"), result.reason);
+    await auditStepUpFailure(
+      db,
+      audit,
+      userId,
+      c.req.header("user-agent"),
+      result.reason,
+    );
     return { ok: false, response: stepUpFailureResponse(c, result.reason) };
   }
   return { ok: true, value: result.value };
@@ -439,7 +535,11 @@ async function addMfaMethodWithStepUp<T>(
     rateLimitAction: string;
     injectedBaseUrl?: string;
   },
-  enroll: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
+  enroll: (
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    audit: OpsAuditContext,
+  ) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
   try {
     if (!(await userHasAnyConfirmedMfaMethod(db, params.userId))) {
@@ -452,7 +552,8 @@ async function addMfaMethodWithStepUp<T>(
           // makes them run one after the other, and the re-check, made after the lock, sees the
           // earlier one's commit: the later one is then no longer "first" and must carry a proof.
           await acquireMfaEnrollmentLock(tx, params.userId);
-          if (await userHasAnyConfirmedMfaMethod(tx, params.userId)) throw new MfaEnrollmentRejected("totp_required");
+          if (await userHasAnyConfirmedMfaMethod(tx, params.userId))
+            throw new MfaEnrollmentRejected("totp_required");
           return enroll(tx, orgId, audit);
         }),
       };
@@ -472,17 +573,23 @@ async function addMfaMethodWithStepUp<T>(
       enroll,
     );
   } catch (err) {
-    if (err instanceof MfaEnrollmentRejected) return { ok: false, response: c.json({ code: err.code }, 400) };
+    if (err instanceof MfaEnrollmentRejected)
+      return { ok: false, response: c.json({ code: err.code }, 400) };
     throw err;
   }
 }
 
-const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
+const ROLE_PRIORITY: Record<string, number> = {
+  superadmin: 3,
+  admin: 2,
+  operator: 1,
+};
 
 function highestRole(assignments: { role: string }[]): string {
   if (!assignments.length) return "operator";
   return assignments.reduce(
-    (best, a) => ((ROLE_PRIORITY[a.role] ?? 0) > (ROLE_PRIORITY[best] ?? 0) ? a.role : best),
+    (best, a) =>
+      (ROLE_PRIORITY[a.role] ?? 0) > (ROLE_PRIORITY[best] ?? 0) ? a.role : best,
     "operator",
   );
 }
@@ -529,7 +636,10 @@ function serializeAccountSession(
 }
 
 /** GET /api/account, own profile, roles (read-only), MFA methods. No secrets. */
-export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleGetAccount(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const userId = c.get("auth").userId;
 
   const user = await db.user.findUnique({
@@ -549,7 +659,13 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
   });
   if (!user) return c.json({ error: "unauthorized" }, 401);
 
-  const [assignments, oidcGrants, mfaMethods, externalIdentities, trustedDevicesCount] = await Promise.all([
+  const [
+    assignments,
+    oidcGrants,
+    mfaMethods,
+    externalIdentities,
+    trustedDevicesCount,
+  ] = await Promise.all([
     db.roleAssignment.findMany({
       where: { user_id: userId },
       select: { id: true, role: true, scope_type: true, scope_id: true },
@@ -582,44 +698,72 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     // "Forget all trusted devices" is only ever meaningful (and only enabled in the UI) once
     // there is at least one - same live/not-expired condition validateTrustedDevice checks.
     db.trustedDevice.count({
-      where: { user_id: userId, revoked_at: null, expires_at: { gt: new Date() } },
+      where: {
+        user_id: userId,
+        revoked_at: null,
+        expires_at: { gt: new Date() },
+      },
     }),
   ]);
 
-  const oidcAssignmentIds = new Set(oidcGrants.map((g) => g.role_assignment_id));
+  const oidcAssignmentIds = new Set(
+    oidcGrants.map((g) => g.role_assignment_id),
+  );
 
   // Resolve each assignment's scope_id to the human label shown on the account page (event
   // title / organization name) - only the specific events/organizations this account is already
   // assigned to, never a full list, so this needs no extra permission beyond viewing your own
   // account.
-  const eventScopeIds = assignments.filter((a) => a.scope_type === "event" && a.scope_id).map((a) => a.scope_id!);
-  const orgScopeIds = assignments.filter((a) => a.scope_type === "organization" && a.scope_id).map((a) => a.scope_id!);
+  const eventScopeIds = assignments
+    .filter((a) => a.scope_type === "event" && a.scope_id)
+    .map((a) => a.scope_id!);
+  const orgScopeIds = assignments
+    .filter((a) => a.scope_type === "organization" && a.scope_id)
+    .map((a) => a.scope_id!);
   const [scopedEvents, scopedOrgs] = await Promise.all([
-    eventScopeIds.length ? db.event.findMany({ where: { id: { in: eventScopeIds } }, select: { id: true, title: true } }) : [],
-    orgScopeIds.length ? db.organization.findMany({ where: { id: { in: orgScopeIds } }, select: { id: true, name: true } }) : [],
+    eventScopeIds.length
+      ? db.event.findMany({
+          where: { id: { in: eventScopeIds } },
+          select: { id: true, title: true },
+        })
+      : [],
+    orgScopeIds.length
+      ? db.organization.findMany({
+          where: { id: { in: orgScopeIds } },
+          select: { id: true, name: true },
+        })
+      : [],
   ]);
   const eventTitleById = new Map(scopedEvents.map((e) => [e.id, e.title]));
   const orgNameById = new Map(scopedOrgs.map((o) => [o.id, o.name]));
 
   function scopeLabel(a: (typeof assignments)[number]): string | null {
-    if (a.scope_type === "event") return (a.scope_id && eventTitleById.get(a.scope_id)) ?? null;
-    if (a.scope_type === "organization") return (a.scope_id && orgNameById.get(a.scope_id)) ?? null;
+    if (a.scope_type === "event")
+      return (a.scope_id && eventTitleById.get(a.scope_id)) ?? null;
+    if (a.scope_type === "organization")
+      return (a.scope_id && orgNameById.get(a.scope_id)) ?? null;
     return null;
   }
 
   // Enabled providers not already linked to this account - the "Connect SSO" list. Same source
   // the public login page's own SSO buttons use (loadLoginSsoProviders), just filtered against
   // this account's existing external_identities instead of shown unconditionally.
-  const linkedProviderIds = new Set(externalIdentities.map((ei) => ei.provider_id));
+  const linkedProviderIds = new Set(
+    externalIdentities.map((ei) => ei.provider_id),
+  );
   const enabledProviders = await findEnabledOidcProviders(db);
-  const availableProviders = enabledProviders.filter((p) => !linkedProviderIds.has(p.id));
+  const availableProviders = enabledProviders.filter(
+    (p) => !linkedProviderIds.has(p.id),
+  );
 
   return c.json({
     id: user.id,
     email: user.email,
     display_name: user.display_name,
     preferred_locale: sanitizePreferredLocale(user.preferred_locale),
-    preferred_time_format: sanitizePreferredTimeFormat(user.preferred_time_format),
+    preferred_time_format: sanitizePreferredTimeFormat(
+      user.preferred_time_format,
+    ),
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
@@ -645,7 +789,12 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       // the client's WebAuthn Signal API call, which the browser/authenticator can only match
       // against the credential ID it actually issued, never our internal row id.
       ...(m.type === "webauthn"
-        ? { id: m.id, label: m.label, attachment: m.webauthn_attachment, credential_id: m.webauthn_credential_id }
+        ? {
+            id: m.id,
+            label: m.label,
+            attachment: m.webauthn_attachment,
+            credential_id: m.webauthn_credential_id,
+          }
         : {}),
     })),
     webauthn_enabled: await getWebauthnEnabled(db),
@@ -657,7 +806,10 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       provider_type: ei.provider.provider_type,
       linked_at: ei.linked_at.toISOString(),
     })),
-    available_identity_providers: availableProviders.map((p) => ({ id: p.id, display_name: p.display_name })),
+    available_identity_providers: availableProviders.map((p) => ({
+      id: p.id,
+      display_name: p.display_name,
+    })),
   });
 }
 
@@ -689,7 +841,10 @@ const profileSchema = z
   );
 
 /** PATCH /api/account/profile, update display name, date/time display preferences, and/or phone (no re-auth). */
-export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
+export async function handlePatchAccountProfile(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const userId = c.get("auth").userId;
 
   let body: unknown;
@@ -728,13 +883,21 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const updated = await db.user.update({
     where: { id: userId },
     data,
-    select: { display_name: true, preferred_locale: true, preferred_time_format: true, phone_country_code: true, phone_number: true },
+    select: {
+      display_name: true,
+      preferred_locale: true,
+      preferred_time_format: true,
+      phone_country_code: true,
+      phone_number: true,
+    },
   });
 
   return c.json({
     display_name: updated.display_name,
     preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
-    preferred_time_format: sanitizePreferredTimeFormat(updated.preferred_time_format),
+    preferred_time_format: sanitizePreferredTimeFormat(
+      updated.preferred_time_format,
+    ),
     phone_country_code: updated.phone_country_code,
     phone_number: updated.phone_number,
   });
@@ -783,12 +946,17 @@ async function verifySelfUnlinkProof(
   tx: Prisma.TransactionClient,
   userId: string,
   passwordHash: string | null,
-  proof: { current_password: string | undefined; mfaProof: VerifiedStepUpProof | undefined },
+  proof: {
+    current_password: string | undefined;
+    mfaProof: VerifiedStepUpProof | undefined;
+  },
 ): Promise<{ ok: true } | { ok: false; code: UnlinkDenialCode }> {
   if (await userHasAnyConfirmedMfaMethod(tx, userId)) {
     if (!proof.mfaProof) return { ok: false, code: "totp_required" };
     if (proof.mfaProof.type === "webauthn") {
-      return proof.mfaProof.verified ? { ok: true } : { ok: false, code: "invalid_webauthn" };
+      return proof.mfaProof.verified
+        ? { ok: true }
+        : { ok: false, code: "invalid_webauthn" };
     }
     if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.mfaProof.value))) {
       return { ok: false, code: "invalid_totp" };
@@ -796,7 +964,8 @@ async function verifySelfUnlinkProof(
     return { ok: true };
   }
   if (hasLocalPassword(passwordHash)) {
-    if (!proof.current_password) return { ok: false, code: "current_password_required" };
+    if (!proof.current_password)
+      return { ok: false, code: "current_password_required" };
     if (!(await verifyPasswordOrDummy(proof.current_password, passwordHash))) {
       return { ok: false, code: "wrong_password" };
     }
@@ -846,7 +1015,9 @@ async function unlinkSsoPreflightRateLimit(
   if (mfaProof) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     const ip = resolveMfaClientIp(c);
-    if (!(await checkStepUpTotalRateLimit(rateLimitStore, currentSessionId, ip))) {
+    if (
+      !(await checkStepUpTotalRateLimit(rateLimitStore, currentSessionId, ip))
+    ) {
       return c.json({ error: "too many requests" }, 429);
     }
     const allowed =
@@ -858,7 +1029,12 @@ async function unlinkSsoPreflightRateLimit(
             mfaProof.value,
             "account-external-identity",
           )
-        : await checkWebauthnStepUpRateLimit(rateLimitStore, currentSessionId, ip, "account-external-identity");
+        : await checkWebauthnStepUpRateLimit(
+            rateLimitStore,
+            currentSessionId,
+            ip,
+            "account-external-identity",
+          );
     if (!allowed) return c.json({ error: "too many requests" }, 429);
   }
   if (currentPassword) {
@@ -896,8 +1072,10 @@ export async function handleDeleteAccountExternalIdentity(
   if (linked.length === 0) return c.json({ error: "not_found" }, 404);
 
   const newPassword = parsed.data.new_password;
-  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
-  if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
+  if (newPassword.length < PASSWORD_MIN_LENGTH)
+    return c.json({ error: "invalid_request" }, 400);
+  if (isPasswordTooCommon(newPassword))
+    return c.json(passwordTooCommonJsonBody(), 400);
 
   const mfaProof = await resolveStepUpProof(
     c,
@@ -920,7 +1098,11 @@ export async function handleDeleteAccountExternalIdentity(
 
   // Verified here, after the rate limit above already passed and before any transaction opens -
   // see resolveVerifiedStepUpProof's own docstring.
-  const verifiedMfaProof = await resolveVerifiedStepUpProof(db, userId, mfaProof);
+  const verifiedMfaProof = await resolveVerifiedStepUpProof(
+    db,
+    userId,
+    mfaProof,
+  );
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -928,13 +1110,22 @@ export async function handleDeleteAccountExternalIdentity(
   const result = await runInTransaction(db, async (tx) => {
     // Re-checked fresh inside the transaction (not from the read above) so a grant added by a
     // concurrent group sync between the two can't race past this guard.
-    const managedGrants = await tx.oidcRoleGrant.count({ where: { user_id: userId } });
+    const managedGrants = await tx.oidcRoleGrant.count({
+      where: { user_id: userId },
+    });
     if (managedGrants > 0) {
-      return { ok: false as const, code: "provider_managed_roles_exist" as UnlinkDenialCode };
+      return {
+        ok: false as const,
+        code: "provider_managed_roles_exist" as UnlinkDenialCode,
+      };
     }
 
-    const user = await tx.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
-    if (!user) return { ok: false as const, code: "unauthorized" as UnlinkDenialCode };
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { password_hash: true },
+    });
+    if (!user)
+      return { ok: false as const, code: "unauthorized" as UnlinkDenialCode };
 
     const proof = await verifySelfUnlinkProof(tx, userId, user.password_hash, {
       current_password: parsed.data.current_password,
@@ -948,7 +1139,11 @@ export async function handleDeleteAccountExternalIdentity(
       where: { id: userId },
       data: { password_hash, must_change_password: false },
     });
-    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+    const revokedCount = await revokeSessionsExcludingCurrent(
+      tx,
+      userId,
+      currentSessionId,
+    );
     await revokeAllTrustedDevicesForUser(tx, userId);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
@@ -972,9 +1167,16 @@ export async function handleDeleteAccountExternalIdentity(
   });
 
   if (!result.ok) {
-    await auditStepUpFailure(db, audit, userId, c.req.header("user-agent"), result.code);
+    await auditStepUpFailure(
+      db,
+      audit,
+      userId,
+      c.req.header("user-agent"),
+      result.code,
+    );
     const status = UNLINK_DENIAL_STATUS[result.code];
-    if (result.code === "unauthorized") return c.json({ error: "unauthorized" }, status);
+    if (result.code === "unauthorized")
+      return c.json({ error: "unauthorized" }, status);
     return c.json({ code: result.code }, status);
   }
   void notifyAuthFactorChanged(
@@ -1026,7 +1228,13 @@ export async function handlePatchAccountPassword(
     return c.json({ error: "passwords do not match" }, 400);
   }
 
-  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, current_password);
+  const passwordFailure = await verifyCurrentPasswordOrFail(
+    c,
+    db,
+    rateLimitStore,
+    userId,
+    current_password,
+  );
   if (passwordFailure) return passwordFailure;
 
   if (isPasswordTooCommon(new_password)) {
@@ -1039,14 +1247,24 @@ export async function handlePatchAccountPassword(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "account-password" },
+    {
+      userId,
+      currentSessionId,
+      stepUpBody: parsed.data,
+      injectedBaseUrl,
+      rateLimitAction: "account-password",
+    },
     async (tx, orgId, audit) => {
       const password_hash = await hashPassword(new_password);
       await tx.user.update({
         where: { id: userId },
         data: { password_hash, must_change_password: false },
       });
-      const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+      const revokedCount = await revokeSessionsExcludingCurrent(
+        tx,
+        userId,
+        currentSessionId,
+      );
       // A remembered device skips the MFA step on password login, so one planted before the
       // change would keep working for whoever learns the new password.
       await revokeAllTrustedDevicesForUser(tx, userId);
@@ -1074,7 +1292,10 @@ export async function handlePatchAccountPassword(
 }
 
 /** GET /api/account/sessions, own active sessions only. */
-export async function handleGetAccountSessions(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleGetAccountSessions(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const auth = c.get("auth");
   const rows = await db.session.findMany({
     where: {
@@ -1093,11 +1314,16 @@ export async function handleGetAccountSessions(c: Context, db: PrismaClient): Pr
     },
     orderBy: { last_seen_at: "desc" },
   });
-  return c.json({ sessions: rows.map((s) => serializeAccountSession(s, auth.sessionId)) });
+  return c.json({
+    sessions: rows.map((s) => serializeAccountSession(s, auth.sessionId)),
+  });
 }
 
 /** DELETE /api/account/sessions/:sessionId, revoke own session (not current). */
-export async function handleDeleteAccountSession(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleDeleteAccountSession(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const auth = c.get("auth");
   const sessionId = c.req.param("sessionId") ?? "";
   if (!sessionId) return c.json({ error: "session id required" }, 400);
@@ -1140,7 +1366,10 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
  * remember for two-factor. No step-up gate - unlike every other action on this menu, this only
  * makes two-factor be asked for more often going forward, never less, so there is no weakened
  * state here for a step-up proof to protect against. */
-export async function handleDeleteAccountTrustedDevices(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleDeleteAccountTrustedDevices(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const userId = c.get("auth").userId;
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -1175,7 +1404,10 @@ export async function handleDeleteAccountTrustedDevices(c: Context, db: PrismaCl
 }
 
 /** POST /api/account/mfa/totp/enroll, start or resume TOTP enrollment (local-password accounts only). */
-export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
+export async function handlePostMfaEnroll(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const userId = c.get("auth").userId;
 
   const user = await db.user.findUnique({
@@ -1202,13 +1434,21 @@ export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise
 }
 
 /** DELETE /api/account/mfa/totp/enroll, cancel (abort) pending TOTP enrollment. */
-export async function handleDeleteMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleDeleteMfaEnroll(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
   const userId = c.get("auth").userId;
   await cancelPendingTotpEnrollment(db, userId);
   return c.json({ ok: true });
 }
 
-const confirmSchema = z.object({ code: z.string().min(1), step_up: addMethodStepUpSchema.optional() }).strict();
+const confirmSchema = z
+  .object({
+    code: z.string().min(1),
+    step_up: addMethodStepUpSchema.optional(),
+  })
+  .strict();
 
 /** POST /api/account/mfa/totp/confirm, confirm pending TOTP enrollment. */
 export async function handlePostMfaConfirm(
@@ -1235,7 +1475,15 @@ export async function handlePostMfaConfirm(
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code, "mfa-confirm"))) {
+  if (
+    !(await checkMfaVerifyRateLimit(
+      rateLimitStore,
+      sessionId,
+      ip,
+      code,
+      "mfa-confirm",
+    ))
+  ) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -1253,7 +1501,8 @@ export async function handlePostMfaConfirm(
       injectedBaseUrl,
     },
     async (tx, orgId, audit) => {
-      if (!(await confirmTotpEnrollment(tx, userId, code))) throw new MfaEnrollmentRejected("invalid_code");
+      if (!(await confirmTotpEnrollment(tx, userId, code)))
+        throw new MfaEnrollmentRejected("invalid_code");
 
       // Self-service enroll already returned backup codes to the client (unlike the
       // login-time flow's separate acknowledgment step), mark them acknowledged now so
@@ -1281,7 +1530,9 @@ export async function handlePostMfaConfirm(
   return c.json({ ok: true });
 }
 
-const resetSchema = z.object({ password: z.string(), ...stepUpProofFields }).strict();
+const resetSchema = z
+  .object({ password: z.string(), ...stepUpProofFields })
+  .strict();
 
 /**
  * POST /api/account/mfa/reset, re-auth, remove MFA, revoke other sessions (keeps current).
@@ -1309,7 +1560,13 @@ export async function handlePostMfaReset(
   const parsed = resetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, parsed.data.password);
+  const passwordFailure = await verifyCurrentPasswordOrFail(
+    c,
+    db,
+    rateLimitStore,
+    userId,
+    parsed.data.password,
+  );
   if (passwordFailure) return passwordFailure;
 
   // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
@@ -1319,11 +1576,23 @@ export async function handlePostMfaReset(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "mfa-reset" },
+    {
+      userId,
+      currentSessionId,
+      stepUpBody: parsed.data,
+      injectedBaseUrl,
+      rateLimitAction: "mfa-reset",
+    },
     async (tx, orgId, audit) => {
-      const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
+      const mfaDeleted = await tx.userMfaMethod.deleteMany({
+        where: { user_id: userId },
+      });
       const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
-      const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+      const revokedCount = await revokeSessionsExcludingCurrent(
+        tx,
+        userId,
+        currentSessionId,
+      );
       // Gate on any real effect, not just an MFA method actually being deleted: a
       // no-MFA-enrolled account calling this still revokes trusted devices and other
       // sessions, which is itself security-relevant and must stay audited. This still
@@ -1340,7 +1609,11 @@ export async function handlePostMfaReset(
           metadata: { sessionsRevoked: revokedCount },
         });
       }
-      return { revokedCount, mfaChanged: mfaDeleted.count > 0, devicesChanged: devicesRevoked > 0 };
+      return {
+        revokedCount,
+        mfaChanged: mfaDeleted.count > 0,
+        devicesChanged: devicesRevoked > 0,
+      };
     },
   );
 
@@ -1379,7 +1652,12 @@ export async function resolveWebauthnRp(
   db: PrismaClient,
   injectedBaseUrl?: string,
 ): Promise<{ rpName: string; rpID: string; origin: string } | Response> {
-  const baseUrl = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  const baseUrl = await resolveMailInstanceBaseUrl(
+    c,
+    db,
+    process.env,
+    injectedBaseUrl,
+  );
   if (baseUrl instanceof Response) return baseUrl;
   const url = new URL(baseUrl);
   // .origin, not the raw baseUrl - resolveMailInstanceBaseUrl's callers tolerate a configured
@@ -1390,7 +1668,9 @@ export async function resolveWebauthnRp(
 
 export const webauthnAttachmentSchema = z.enum(["platform", "cross-platform"]);
 
-const webauthnRegisterBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
+const webauthnRegisterBeginSchema = z
+  .object({ attachment: webauthnAttachmentSchema })
+  .strict();
 
 /**
  * POST /api/account/mfa/webauthn/register/begin, start a passkey/security-key registration
@@ -1433,7 +1713,12 @@ export async function handlePostAccountWebauthnRegisterBegin(
   const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
   if (rp instanceof Response) return rp;
 
-  const begin = await beginWebauthnRegistration(db, userId, parsed.data.attachment, rp);
+  const begin = await beginWebauthnRegistration(
+    db,
+    userId,
+    parsed.data.attachment,
+    rp,
+  );
   if (!begin) return c.json({ error: "unauthorized" }, 401);
 
   stashWebauthnChallenge("register", sessionId, begin.challenge);
@@ -1511,7 +1796,9 @@ export async function handlePostAccountWebauthnRegisterFinish(
   // transaction (see addMfaMethodWithStepUp): a missing or wrong proof leaves the challenge alone,
   // so the same ceremony response can be retried with it, and a failed verification rolls the
   // proof's one-time consumption back.
-  let created: NonNullable<Awaited<ReturnType<typeof finishWebauthnRegistration>>> | undefined;
+  let created:
+    | NonNullable<Awaited<ReturnType<typeof finishWebauthnRegistration>>>
+    | undefined;
   const added = await addMfaMethodWithStepUp(
     c,
     db,
@@ -1533,8 +1820,8 @@ export async function handlePostAccountWebauthnRegisterFinish(
         parsed.data.response as RegistrationResponseJSON,
         challenge,
         parsed.data.attachment,
-        parsed.data.label?.trim() || null,
         rp,
+        { label: parsed.data.label?.trim() || null },
       );
       if (!result) throw new MfaEnrollmentRejected("verification_failed");
       created = result;
@@ -1565,7 +1852,11 @@ export async function handlePostAccountWebauthnRegisterFinish(
     "A new passkey was added",
     "A new passkey or security key was added to your account for two-factor sign-in.",
   );
-  return c.json({ ok: true, id: created.credentialRowId, backupCodes: created.backupCodes });
+  return c.json({
+    ok: true,
+    id: created.credentialRowId,
+    backupCodes: created.backupCodes,
+  });
 }
 
 /**
@@ -1646,7 +1937,13 @@ export async function handleDeleteAccountWebauthnCredential(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, stepUpBody: body, injectedBaseUrl, rateLimitAction: "account-webauthn-remove" },
+    {
+      userId,
+      currentSessionId,
+      stepUpBody: body,
+      injectedBaseUrl,
+      rateLimitAction: "account-webauthn-remove",
+    },
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
@@ -1701,7 +1998,13 @@ export async function handleDeleteAccountTotp(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, stepUpBody: body, injectedBaseUrl, rateLimitAction: "account-totp-remove" },
+    {
+      userId,
+      currentSessionId,
+      stepUpBody: body,
+      injectedBaseUrl,
+      rateLimitAction: "account-totp-remove",
+    },
     async (tx, orgId, audit) => {
       const removed = await removeTotpMethod(tx, userId);
       if (removed) {
