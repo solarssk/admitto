@@ -35,8 +35,7 @@ import {
   beginWebauthnAssertion,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
-  createTrustedDevice,
-  isMfaRecentlyVerified,
+  createTrustedDeviceIfMfaRecent,
   logTrustedDeviceCreated,
   beginPasskeyLogin,
   loginWithPasskey,
@@ -681,12 +680,15 @@ export async function handlePostMfaRememberDevice(c: Context, db: PrismaClient):
   if (!auth.sessionId) return c.json({ error: "unauthorized" }, 401);
   const days = await getTrustedDeviceDays(db);
   if (days > 0) {
-    if (!(await isMfaRecentlyVerified(db, auth.sessionId))) {
-      return c.json({ code: "mfa_recent_required" }, 403);
-    }
     const ip = resolveClientIp(c);
     const userAgent = c.req.header("user-agent");
-    const { rawToken } = await createTrustedDevice(db, { userId: auth.userId, ip, userAgent });
+    const created = await createTrustedDeviceIfMfaRecent(db, auth.sessionId, {
+      userId: auth.userId,
+      ip,
+      userAgent,
+    });
+    if (!created) return c.json({ code: "mfa_recent_required" }, 403);
+    const { rawToken } = created;
     await setTrustedDeviceCookie(c, db, rawToken);
     await logTrustedDeviceCreated(db, { userId: auth.userId, sessionId: auth.sessionId, ip, userAgent });
   }
@@ -781,8 +783,8 @@ export async function handlePostMfaWebauthnEnrollFinish(
     parsed.data.response as RegistrationResponseJSON,
     challenge,
     parsed.data.attachment,
-    null,
     rp,
+    { onlyFirstMethod: true },
   );
   if (!created) return c.json({ code: "verification_failed" }, 400);
 
@@ -867,7 +869,7 @@ export async function handleTotpConfirm(
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, partial.userId, code);
+  const ok = await confirmTotpEnrollment(db, partial.userId, code, { onlyFirstMethod: true });
   if (!ok) {
     return c.json(AUTH_ERROR, 401);
   }

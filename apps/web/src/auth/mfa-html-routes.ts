@@ -447,7 +447,7 @@ export async function handlePostMfaEnroll(
     return c.text("Too many requests", 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, partial.userId, code);
+  const ok = await confirmTotpEnrollment(db, partial.userId, code, { onlyFirstMethod: true });
   if (!ok) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
     const scriptNonce = createAuthPageScriptNonce();
