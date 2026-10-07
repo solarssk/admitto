@@ -5,12 +5,9 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
+import { importApiMocks } from "./importApiMock.js";
 
-const fetchEventCustomFields = vi.fn();
-const previewImport = vi.fn();
-const commitImport = vi.fn();
-const fetchImportJobStatus = vi.fn();
-const fetchImportHistory = vi.fn();
+const { fetchEventCustomFields, previewImport, commitImport, fetchImportJobStatus, fetchImportHistory } = importApiMocks;
 
 const waitForImportJobResultHarness = vi.hoisted(() => {
   type WaitFn = (
@@ -40,24 +37,10 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: mockAssignments }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    eventFull?: unknown;
-    constructor(status: number, message: string, code?: string, eventFull?: unknown) {
-      super(message);
-      this.status = status;
-      this.code = code;
-      this.eventFull = eventFull;
-    }
-  },
-  fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
-  previewImport: (...args: unknown[]) => previewImport(...args),
-  fetchImportHistory: (...args: unknown[]) => fetchImportHistory(...args),
-  commitImport: (...args: unknown[]) => commitImport(...args),
-  fetchImportJobStatus: (...args: unknown[]) => fetchImportJobStatus(...args),
-}));
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildImportApiMock } = await import("./importApiMock.js");
+  return buildImportApiMock(await importOriginal<typeof import("../../src/api/client.js")>());
+});
 
 vi.mock("../../src/import/waitForImportJobResult.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/import/waitForImportJobResult.js")>();
@@ -185,7 +168,7 @@ describe("ImportPage upload → preview → commit flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => {
-      expect(previewImport).toHaveBeenCalledWith("evt-1", expect.any(File), true);
+      expect(previewImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, expect.any(AbortSignal));
     });
 
     expect(await screen.findByText("To create")).toBeTruthy();
@@ -944,7 +927,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });
 
-  it("starts a fresh no-flash delay on Retry after a load failure, instead of showing Loading immediately (bot review)", async () => {
+  it("keeps the error on screen with a busy Retry until the answer is in, instead of replacing it with a loading line", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     fetchImportHistory.mockRejectedValueOnce(new Error("boom"));
     renderPage();
@@ -956,30 +939,16 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
       () => new Promise((resolve) => { resolveRetry = resolve; }),
     );
 
-    vi.useFakeTimers();
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-
-      expect(screen.queryByText("Could not load import history.")).toBeNull();
-      expect(screen.queryByText("Loading…")).toBeNull();
-
-      act(() => {
-        vi.advanceTimersByTime(199);
-      });
-      expect(screen.queryByText("Loading…")).toBeNull();
-
-      act(() => {
-        vi.advanceTimersByTime(1);
-      });
-      expect(screen.getByText("Loading…")).toBeTruthy();
-    } finally {
-      vi.useRealTimers();
-    }
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByText("Could not load import history.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText("Loading…")).toBeNull();
 
     await act(async () => {
       resolveRetry([]);
     });
     expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(screen.queryByText("Could not load import history.")).toBeNull();
   });
 
   it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
@@ -1051,7 +1020,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(screen.getByText("Invalid rows (showing first 1 of 5)")).toBeTruthy();
   });
 
-  it("resets to the loading state when navigating directly from one event's import page to another, so the previous event's history can't flash under the new event's timezone (CodeRabbit review)", async () => {
+  it("starts again with the placeholder when navigating directly from one event's import page to another, so the previous event's history can't flash under the new event's timezone (CodeRabbit review)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     fetchImportHistory.mockResolvedValueOnce([
       {
@@ -1079,9 +1048,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
 
     expect(await screen.findByText("evt1.csv")).toBeTruthy();
 
-    // useDelayedLoading only shows the text once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
-    // must be installed before the navigation so the hook's setTimeout is one of ours.
+    // The placeholder is only drawn once the fetch has stayed pending past its 200ms grace window (avoids flashing it
+    // for a near-instant response): fake timers must be installed before the navigation so the gate's timer is one of ours.
     vi.useFakeTimers();
     try {
       await act(async () => {
@@ -1093,7 +1061,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
       act(() => {
         vi.advanceTimersByTime(200);
       });
-      expect(screen.getByText("Loading…")).toBeTruthy();
+      const placeholder = screen.getByRole("status", { name: "Loading import history" });
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(false);
     } finally {
       vi.useRealTimers();
     }

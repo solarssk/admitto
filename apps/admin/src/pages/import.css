@@ -177,11 +177,27 @@ fieldset:disabled .import-dropzone {
 }
 
 /* Import history card */
-.import-history__error {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
+/* A refresh of the history that failed keeps the rows and says so above them; the table is unpadded, so the warning has its own. */
+.import-history__warning {
+  padding: var(--space-3) var(--pad-card) 0;
+}
+
+/* The history's placeholder (ImportHistorySkeleton.tsx): the table's own shape, in a status region. */
+.import-history-skeleton {
+  display: block;
+}
+
+.import-history-skeleton__note {
+  display: block;
+  padding: var(--space-3) var(--pad-card);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* The placeholder of the event's custom columns (CustomColumnsStatus.tsx), under the Required CSV columns table. */
+.import-custom-columns-skeleton {
+  display: block;
+  margin-top: var(--space-2);
 }
 
 .import-history__date {
@@ -212,6 +228,7 @@ fieldset:disabled .import-dropzone {
 }
 
 .import-card {
+  position: relative;
   margin-bottom: var(--space-4);
 }
 
