@@ -145,5 +145,10 @@ describe("rebindSecretContexts", () => {
     expect(status).toBe(2);
     const after = await prisma.mailSettings.findUniqueOrThrow({ where: { id: row.id } });
     expect(JSON.parse(after.smtp_password_enc ?? "").keyVersion).toBe(1);
+
+    const help = execFileSync("npx", ["tsx", "src/scripts/rebind-secret-contexts.ts", "--help"], { cwd: DB_ROOT, env: { ...process.env }, stdio: "pipe" });
+    expect(help.toString()).toContain("Usage:");
+    const stillLegacy = await prisma.mailSettings.findUniqueOrThrow({ where: { id: row.id } });
+    expect(JSON.parse(stillLegacy.smtp_password_enc ?? "").keyVersion).toBe(1);
   });
 });
