@@ -84,6 +84,8 @@ describe("EventsPickerPage: the first read and its limits", () => {
     expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
     expect(loader()).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    // The error that replaces a loader that was on screen fades in, like the events do.
+    expect(document.querySelector(".events-picker-body > .at-fade-in")?.contains(screen.getByRole("button", { name: "Retry" }))).toBe(true);
     // A stalled server is not an API answer: it is not reported as one.
     expect(reportApiError).not.toHaveBeenCalled();
   });
@@ -177,12 +179,17 @@ describe("EventsPickerPage: the Retry of a failed read", () => {
     // A failure that shows with its Retry is not busy: only a click makes it so.
     expect(retry.getAttribute("aria-busy")).toBeNull();
 
+    const fade = retry.closest(".at-fade-in");
+    expect(fade).not.toBeNull();
+
     const answer = deferred<EventDto[]>();
     vi.mocked(fetchAdminEvents).mockReturnValueOnce(answer.promise);
     retry.focus();
     fireEvent.click(retry);
 
-    // The same button, busy, with the focus. Neither the loader nor "No events yet" takes the error's place.
+    // The same button, busy, with the focus, in the same faded-in wrapper (so the fade does not play again). Neither the loader
+    // nor "No events yet" takes the error's place.
+    expect(retry.closest(".at-fade-in")).toBe(fade);
     expect(retry.getAttribute("aria-busy")).toBe("true");
     expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
     expect(document.activeElement).toBe(retry);

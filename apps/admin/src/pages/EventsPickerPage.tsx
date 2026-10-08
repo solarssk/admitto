@@ -110,13 +110,16 @@ export function EventsPickerPage() {
     );
   } else if (failure.error) {
     body = (
-      <RetryEmptyState
-        title="Could not load events"
-        message={failure.error}
-        retrying={failure.retrying}
-        onRetry={failure.retry}
-        landmark=".events-picker-body"
-      />
+      // What replaces the loader fades in; the same wrapper stays through a Retry, so it plays once.
+      <div className="at-fade-in">
+        <RetryEmptyState
+          title="Could not load events"
+          message={failure.error}
+          retrying={failure.retrying}
+          onRetry={failure.retry}
+          landmark=".events-picker-body"
+        />
+      </div>
     );
   } else {
     body = (

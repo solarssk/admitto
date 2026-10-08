@@ -111,6 +111,8 @@ describe("AuthProvider", () => {
     expect(screen.getByText("Could not load session").closest("[role='alert']")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByTestId("child")).toBeNull();
+    // It replaces the boot loader, so it fades in.
+    expect(screen.getByRole("button", { name: "Retry" }).closest(".shell-loading")?.classList.contains("at-fade-in")).toBe(true);
   });
 
   it("retries session load when Retry is clicked", async () => {
@@ -151,10 +153,13 @@ describe("AuthProvider", () => {
     // A failure that shows with its Retry is not busy: only a click makes it so.
     expect(retry.getAttribute("aria-busy")).toBeNull();
 
+    const screenBefore = retry.closest(".shell-loading");
     retry.focus();
     fireEvent.click(retry);
 
-    // The same button, busy, with the focus: the loader has not taken the error's place.
+    // The same button, busy, with the focus, in the same faded-in screen (so the fade does not play again): the loader has not
+    // taken the error's place.
+    expect(retry.closest(".shell-loading")).toBe(screenBefore);
     expect(retry.getAttribute("aria-busy")).toBe("true");
     expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
     expect(document.activeElement).toBe(retry);

@@ -143,7 +143,8 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
 
   if (failure.error) {
     return (
-      <div className="shell-loading" style={{ padding: "2rem" }}>
+      // What replaces the boot loader fades in; the same wrapper stays through a Retry, so it plays once.
+      <div className="shell-loading at-fade-in" style={{ padding: "2rem" }}>
         <RetryEmptyState
           title="Could not load session"
           message={failure.error}
