@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useOutletContext, useParams } from "react-router";
-import { Button, Card, EmptyState, HintLabel, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -11,80 +11,53 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventDto, EventItemDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { RefetchRegion } from "../components/RefetchRegion.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
+import { useListLoad } from "../hooks/useListLoad.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { disambiguatedLabel, findDuplicateLabels } from "../requirements/duplicateLabels.js";
 import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
+import { RequirementsSkeleton } from "../requirements/RequirementsSkeleton.js";
+import { assertPresent } from "../utils/assert-present.js";
 import "../requirements/requirements.css";
 
 const EVENT_ITEMS_HINT =
   "Once an item has been issued to attendees, you can't disable it until its returns are recorded.";
 
-/** Redirect to the login page, preserving the current path to return to after auth. */
-function redirectToLogin(): void {
-  const next = encodeURIComponent(window.location.pathname);
-  window.location.assign(`/login?next=${next}`);
+/** The region that stays whatever the read is doing (the placeholder, the error or the cards), and where the keyboard focus
+ * goes when a Retry that held it works. */
+const REQUIREMENTS_REGION = ".requirements-body";
+
+/** What the page's first read answers: the event's items and its custom fields, together (the edit drawer needs both). */
+interface RequirementsData {
+  readonly items: EventItemDto[];
+  readonly fields: EventCustomFieldDto[];
 }
 
-/** Operator-facing message for a failed requirements load (401 is handled separately by redirect). */
-function loadErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    return err.status === 403 ? "You do not have access to this event." : "Could not load requirements.";
-  }
-  return "Could not load requirements.";
-}
-
-/** Maps a failed requirements load to UI state: reported status code, redirect on 401 (returns
- * true so the caller skips setting an error message), or the access-denied flag for a 403.
- * Extracted from load() so that function's own cognitive complexity stays low. */
-function handleLoadError(
-  err: unknown,
-  reportApiError: (status: number) => void,
-  setAccessDenied: (denied: boolean) => void,
-): boolean {
-  if (!(err instanceof ApiError)) return false;
-  reportApiError(err.status);
-  if (err.status === 401) {
-    redirectToLogin();
-    return true;
-  }
-  if (err.status === 403) setAccessDenied(true);
-  return false;
-}
+const NO_ITEMS: EventItemDto[] = [];
+const NO_FIELDS: EventCustomFieldDto[] = [];
 
 function EventItemsTableBody({
-  loading,
-  showLoading,
   items,
   event,
   togglingIds,
   onToggle,
   onEdit,
 }: {
-  readonly loading: boolean;
-  readonly showLoading: boolean;
   readonly items: EventItemDto[];
   readonly event: EventDto;
   readonly togglingIds: ReadonlySet<string>;
   readonly onToggle: (item: EventItemDto) => void;
   readonly onEdit: (item: EventItemDto) => void;
 }) {
-  if (loading) {
-    if (!showLoading) return null;
-    return (
-      <tr>
-        <td colSpan={4} className="attendees-empty">
-          Loading…
-        </td>
-      </tr>
-    );
-  }
   if (items.length === 0) {
     return (
       <tr>
@@ -228,6 +201,7 @@ function AddItemModal({
                 onChange={(e) => onLabelChange(e.target.value)}
                 placeholder="Gift bag"
                 required
+                readOnly={adding}
                 autoFocus
                 aria-invalid={addNameError ? true : undefined}
                 aria-describedby={addNameError ? "add-item-name-error" : undefined}
@@ -247,13 +221,8 @@ function AddItemModal({
             <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              form="add-item-form"
-              variant="primary"
-              disabled={adding || !addLabel.trim()}
-            >
-              {adding ? "Creating…" : "Create"}
+            <Button type="submit" form="add-item-form" variant="primary" loading={adding} disabled={!addLabel.trim()}>
+              Create
             </Button>
           </div>
         </div>
@@ -262,31 +231,50 @@ function AddItemModal({
   );
 }
 
-/** Admin screen for per-event item configuration and operational behaviour. */
+/** One event, one page: a different `:eventId` is a fresh page (its own read, modals and drawer), never the previous one's. */
 export function RequirementsPage() {
   const { eventId } = useParams();
+  if (!eventId) return <p>Missing event.</p>;
+  return <RequirementsPageBody key={eventId} eventId={eventId} />;
+}
+
+/** Admin screen for per-event item configuration and operational behaviour. */
+function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
-  const listAbortRef = useRef<AbortController | null>(null);
-
-  const [items, setItems] = useState<EventItemDto[]>([]);
-  const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" placeholders on and off faster than they can register as loading — show
-  // them only once the fetch has genuinely taken a moment.
-  const showLoading = useDelayedLoading(loading);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState("");
   const [addNameError, setAddNameError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const addPanelRef = useRef<HTMLDivElement>(null);
+
+  // The first read is one answer for both cards: the edit drawer offers the fields of the event next to its items, so an
+  // answer with one of them missing would be a wrong one. A failure is told to the connection state when the answer is
+  // in, never when a Retry starts, so the wording of the error on screen does not change while a Retry runs; a 401 hands
+  // the browser to the login page instead (`orLoginRedirect`, once the connection state has heard of it), and no error
+  // flashes up first.
+  const fetchRequirements = useMemo(
+    () =>
+      orLoginRedirect(async (signal: AbortSignal): Promise<RequirementsData> => {
+        try {
+          const [items, fields] = await Promise.all([fetchEventItems(eventId, signal), fetchEventCustomFields(eventId, signal)]);
+          return { items, fields };
+        } catch (err) {
+          if (err instanceof ApiError) reportApiError(err.status);
+          setAccessDenied(err instanceof ApiError && err.status === 403);
+          throw err;
+        }
+      }),
+    [eventId, reportApiError],
+  );
+  const list = useListLoad({ fetcher: fetchRequirements, fallback: "Could not load requirements." });
+  const card = useCardLoad(list);
+  const items = list.data?.items ?? NO_ITEMS;
+  const customFields = list.data?.fields ?? NO_FIELDS;
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
@@ -300,65 +288,19 @@ export function RequirementsPage() {
 
   useModalFocusTrap(addPanelRef, addOpen, closeAddModal);
 
-  const hasLoadedRef = useRef(false);
-
-  useEffect(() => {
-    setItems([]);
-    setCustomFields([]);
-    setSelectedItem(null);
-    hasLoadedRef.current = false;
-  }, [eventId]);
-
-  const load = useCallback(async () => {
-    if (!eventId) return;
-
-    listAbortRef.current?.abort();
-    const ac = new AbortController();
-    listAbortRef.current = ac;
-
-    // Only show the Loading… placeholder on the true first load for this
-    // event — a reloadToken-triggered refresh after add/edit/delete already
-    // has valid rows on screen, so blanking them out for the refetch just
-    // reads as a flash/jump instead of a smooth in-place update.
-    if (!hasLoadedRef.current) setLoading(true);
-    setAccessDenied(false);
-    try {
-      const [itemRows, fields] = await Promise.all([
-        fetchEventItems(eventId, ac.signal),
-        fetchEventCustomFields(eventId, ac.signal),
-      ]);
-      if (ac.signal.aborted) return;
-      setItems(itemRows);
-      setCustomFields(fields);
-      setLoadError(null);
-      hasLoadedRef.current = true;
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      // A background refresh (reloadToken) can fail after an earlier load already succeeded -
-      // reset so the next attempt (e.g. clicking Retry below) shows the Loading… state again
-      // instead of silently skipping it forever.
-      hasLoadedRef.current = false;
-      setItems([]);
-      setCustomFields([]);
-      setSelectedItem(null);
-      if (handleLoadError(err, reportApiError, setAccessDenied)) return;
-      setLoadError(loadErrorMessage(err));
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, reportApiError]);
-
-  useEffect(() => {
-    void load();
-    return () => listAbortRef.current?.abort();
-  }, [load, reloadToken]);
+  // An item or a field that was added, changed or deleted is somewhere in the list that the page cannot tell, so a refresh
+  // that fails replaces the cards with the error (they may be wrong), as the page always did; the rows stay on screen,
+  // blocked and dimmed, while it runs.
+  function refreshRequirements() {
+    void list.reload({ keepRowsOnFailure: false });
+  }
 
   async function handleToggleEnabled(item: EventItemDto) {
-    if (!eventId || togglingIds.has(item.id)) return;
+    if (togglingIds.has(item.id)) return;
     startToggling(item.id);
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
-      setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+      list.update((data) => ({ ...data, items: data.items.map((r) => (r.id === updated.id ? updated : r)) }));
       addToast(updated.enabled ? "Item enabled" : "Item disabled", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
@@ -376,7 +318,8 @@ export function RequirementsPage() {
 
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
-    if (!eventId) return;
+    // Enter in the name field submits the form without going through the Create button, which swallows a click while it works.
+    if (adding) return;
     const label = addLabel.trim();
     const key = uniqueItemKey(label, items.map((i) => i.key));
     if (!label || !key) {
@@ -396,7 +339,7 @@ export function RequirementsPage() {
       });
       setAddLabel("");
       setAddOpen(false);
-      setReloadToken((n) => n + 1);
+      refreshRequirements();
       addToast("Item added", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "key_conflict")) {
@@ -409,8 +352,77 @@ export function RequirementsPage() {
     }
   }
 
-  if (!eventId) return <p>Missing event.</p>;
+  let body: ReactNode;
+  if (!card.gate.showContent) {
+    body = <RequirementsSkeleton held={!card.gate.showIndicator} slow={card.slow} />;
+  } else if (card.failure.error) {
+    body = (
+      <RetryEmptyState
+        title={accessDenied ? "You do not have access to this event" : "Could not load requirements"}
+        message={accessDenied ? "You do not have access to this event." : card.failure.error}
+        retrying={card.failure.retrying}
+        onRetry={card.failure.retry}
+        landmark={REQUIREMENTS_REGION}
+      />
+    );
+  } else {
+    assertPresent(list.data);
+    body = (
+      // What replaces the placeholder fades in.
+      <div className="at-fade-in">
+        <RefetchRegion refreshing={list.refreshing} label="Refreshing requirements">
+          <section className="requirements-section">
+            <Card
+              padded={false}
+              title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
+              actions={
+                <ArchivedGuard event={event} reasonId="add-item-reason">
+                  {(guard) => (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<i className="ti ti-plus" />}
+                      {...guard}
+                      onClick={() => {
+                        if (addOpen) closeAddModal();
+                        else setAddOpen(true);
+                      }}
+                    >
+                      Add
+                    </Button>
+                  )}
+                </ArchivedGuard>
+              }
+            >
+              <div className="attendees-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th className="requirements-item-desc-col">Description</th>
+                      <th className="requirements-item-status-col">Active</th>
+                      <th className="requirements-item-actions" aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <EventItemsTableBody
+                      items={items}
+                      event={event}
+                      togglingIds={togglingIds}
+                      onToggle={(item) => void handleToggleEnabled(item)}
+                      onEdit={(item) => setSelectedItem(item)}
+                    />
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </section>
 
+          <EventCustomFieldsCard eventId={eventId} event={event} fields={customFields} onChanged={refreshRequirements} />
+        </RefetchRegion>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -432,78 +444,10 @@ export function RequirementsPage() {
           </a>
         }
       />
-      {loadError && !loading ? (
-        <EmptyState
-          variant="error"
-          title={accessDenied ? "You do not have access to this event" : "Could not load requirements"}
-          description={loadError}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void load()}>
-              Retry
-            </Button>
-          }
-        />
-      ) : (
-        <>
-      <section className="requirements-section">
-        <Card
-          padded={false}
-          title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
-          actions={
-            <ArchivedGuard event={event} reasonId="add-item-reason">
-              {(guard) => (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={<i className="ti ti-plus" />}
-                  {...guard}
-                  onClick={() => {
-                    if (addOpen) closeAddModal();
-                    else setAddOpen(true);
-                  }}
-                >
-                  Add
-                </Button>
-              )}
-            </ArchivedGuard>
-          }
-        >
-          <div className="attendees-table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th className="requirements-item-desc-col">Description</th>
-                  <th className="requirements-item-status-col">Active</th>
-                  <th className="requirements-item-actions" aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                <EventItemsTableBody
-                  loading={loading}
-                  showLoading={showLoading}
-                  items={items}
-                  event={event}
-                  togglingIds={togglingIds}
-                  onToggle={(item) => void handleToggleEnabled(item)}
-                  onEdit={(item) => setSelectedItem(item)}
-                />
-              </tbody>
-            </table>
-          </div>
-        </Card>
+      {/* The part of the page that stays whatever the read is doing, and where the focus goes when a Retry that held it works. */}
+      <section className="requirements-body" aria-label="Requirements">
+        {body}
       </section>
-
-      <EventCustomFieldsCard
-        eventId={eventId}
-        event={event}
-        fields={customFields}
-        loading={loading}
-        showLoading={showLoading}
-        onChanged={() => setReloadToken((n) => n + 1)}
-      />
-        </>
-      )}
 
       {addOpen && (
         <AddItemModal
@@ -529,7 +473,7 @@ export function RequirementsPage() {
           items={items}
           onClose={() => setSelectedItem(null)}
           onUpdated={() => {
-            setReloadToken((n) => n + 1);
+            refreshRequirements();
             setSelectedItem(null);
           }}
         />
