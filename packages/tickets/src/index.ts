@@ -10,6 +10,17 @@ export {
   parseWalletFieldMapping,
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
+export {
+  ERASED_ATTENDEE_NAME,
+  ERASED_EMAIL_DOMAIN,
+  erasedAttendeeEmail,
+  eraseAttendees,
+} from "./erase-attendees.js";
+export type {
+  EraseAttendeesParams,
+  EraseAttendeesResult,
+  EraseWalletTarget,
+} from "./erase-attendees.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
 export { ADMITTABLE_STATUS_LIST } from "./admittable.js";
 export { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";

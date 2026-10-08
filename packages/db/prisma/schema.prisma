@@ -328,6 +328,13 @@ model Attendee {
   // log row menu). Only covers bounces up to this timestamp - a later delivery that bounces
   // again re-surfaces, since that is new information, not the same unresolved bounce.
   email_bounce_dismissed_at DateTime?
+  // Set once, by "Erase personal data" (packages/tickets/src/erase-attendees.ts): the row stays so
+  // Reports and capacity keep their numbers, but it no longer holds anything that identifies the
+  // person. Not a status - `status` drives capacity and ticket issuing, an erased attendee keeps
+  // the status they had. The CHECK constraint that pins the placeholder values for a non-null
+  // erased_at lives in the migration SQL (not expressible in Prisma), same as the partial index on
+  // WalletPass.registration_sync_attempted_at.
+  erased_at                 DateTime?
   created_at                DateTime            @default(now())
   // Acting admin's IANA timezone at the moment this row was created (manual add / import
   // commit) — null for rows predating this column or created outside a browser request.

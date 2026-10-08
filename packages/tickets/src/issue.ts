@@ -8,6 +8,7 @@ import type { IssuedTicketResult, IssueEventSummary } from "./types.js";
 /** Minimal shape shared by the classification helpers below — matches the Prisma Attendee fields they read. */
 type IssuableAttendeeFields = {
   status: string;
+  erased_at: Date | null;
   qr_payload: string | null;
   external_uuid: string | null;
   token_hash: string | null;
@@ -19,6 +20,11 @@ function isNotIssuableStatus(status: string): boolean {
 
 function notIssuableReason(status: string): "cancelled" | "revoked" {
   return status === "cancelled" ? "cancelled" : "revoked";
+}
+
+/** An erased attendee has no credential and must never get one again, whatever status they kept. */
+function erasedResult(attendeeId: string): IssuedTicketResult {
+  return { status: "not_issuable", mode: "internal", attendeeId, reason: "erased" };
 }
 
 function hasAgencyIdentifier(attendee: IssuableAttendeeFields): boolean {
@@ -40,6 +46,7 @@ function classifyAttendeeUpfront(
   attendee: IssuableAttendeeFields,
   attendeeId: string,
 ): IssuedTicketResult | null {
+  if (attendee.erased_at !== null) return erasedResult(attendeeId);
   if (isNotIssuableStatus(attendee.status)) {
     return { status: "not_issuable", mode: "internal", attendeeId, reason: notIssuableReason(attendee.status) };
   }
@@ -63,6 +70,7 @@ function classifyAttendeeAfterCasFailure(
   attendee: IssuableAttendeeFields,
   attendeeId: string,
 ): IssuedTicketResult | null {
+  if (attendee.erased_at !== null) return erasedResult(attendeeId);
   if (hasAgencyIdentifier(attendee)) {
     return { status: "agency", mode: "agency", attendeeId, qrPayload: agencyQrPayload(attendee) };
   }
@@ -109,6 +117,7 @@ export async function issueTicket(
       token_hash: null,
       qr_payload: null,
       external_uuid: null,
+      erased_at: null,
       status: { notIn: ["cancelled", "revoked"] },
     },
     data: { token_hash: tokenHash, token_enc: tokenEnc },
@@ -188,6 +197,7 @@ async function issuePendingTicketInTransaction(
       token_hash: null,
       qr_payload: null,
       external_uuid: null,
+      erased_at: null,
       status: { notIn: ["cancelled", "revoked"] },
     },
     data: { token_hash: tokenHash, token_enc: tokenEnc },
