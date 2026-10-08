@@ -49,6 +49,26 @@ describe("useRetryFocusHandover", () => {
     expect(document.activeElement).toBe(getByRole("button", { name: "Elsewhere" }));
   });
 
+  it("does nothing when it is switched off, even inside a tab panel", async () => {
+    function Off({ withRetry }: Readonly<{ withRetry: boolean }>) {
+      return <div role="tabpanel" aria-label="Logs">{withRetry ? <OffRetry /> : <p>Content</p>}</div>;
+    }
+    function OffRetry() {
+      const ref = useRef<HTMLButtonElement>(null);
+      useRetryFocusHandover(ref, undefined, false);
+      return (
+        <button ref={ref} type="button">
+          Retry
+        </button>
+      );
+    }
+    const { getByRole, rerender } = render(<Off withRetry />);
+    getByRole("button", { name: "Retry" }).focus();
+    rerender(<Off withRetry={false} />);
+    await act(async () => {});
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("does nothing when the Retry is not inside a tab panel", async () => {
     function Bare({ withRetry }: Readonly<{ withRetry: boolean }>) {
       return <div>{withRetry ? <Retry /> : <p>Content</p>}</div>;

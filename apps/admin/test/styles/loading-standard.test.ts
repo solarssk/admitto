@@ -43,13 +43,9 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
 
 const ALLOWED: Record<Rule, Counts> = {
   "hand-rolled-spinner-css": {
-    "apps/admin/src/pages/setup-wizard.css": 1,
     "apps/admin/src/staff.css": 1,
   },
-  "bare-loading-text": {
-    "apps/admin/src/pages/wizard/WizardStep2Mail.tsx": 1,
-    "apps/admin/src/pages/wizard/WizardStep3Branding.tsx": 1,
-  },
+  "bare-loading-text": {},
   "busy-label-swap": {},
   "error-state-not-an-alert": {},
   "retry-outside-an-alert": {},

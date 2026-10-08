@@ -1,18 +1,17 @@
 import {
   forwardRef,
-  useEffect,
   useImperativeHandle,
-  useRef,
   useState,
 } from "react";
-import { Input, useToast } from "@admitto/ui";
+import { Input, Skeleton, useToast } from "@admitto/ui";
 import { LogoUploadZone } from "../../components/LogoUploadZone.js";
 import { fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
+import { panelView, usePanelLoad } from "../../hooks/usePanelLoad.js";
 import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import type { LogoCropMeta } from "../../api/types.js";
 import { useWizard } from "./WizardContext.js";
+import { WizardRetryNotice, WizardStepPlaceholder } from "./WizardStepLoad.js";
 
 export type WizardStep3BrandingHandle = {
   saveAndContinue: () => Promise<boolean>;
@@ -32,38 +31,27 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
     const [logoCrop, setLogoCrop] = useState<LogoCropMeta | null>(null);
     const [committedLogoUrl, setCommittedLogoUrl] = useState<string | null>(null);
     const [committedLogoOriginalUrl, setCommittedLogoOriginalUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const loadAbortRef = useRef<AbortController | null>(null);
 
-    useEffect(() => {
-      loadAbortRef.current?.abort();
-      const ac = new AbortController();
-      loadAbortRef.current = ac;
-      setLoading(true);
-      void (async () => {
-        try {
-          const data = await fetchOrgBranding(ac.signal);
-          if (ac.signal.aborted) return;
-          setOrgName(data.org_name ?? "");
-          setLogoUrl(data.logo_url ?? "");
-          setLogoOriginalUrl(data.logo_original_url ?? "");
-          setLogoCrop(data.logo_crop ?? null);
-          setCommittedLogoUrl(data.logo_url ?? null);
-          setCommittedLogoOriginalUrl(data.logo_original_url ?? null);
-        } catch (err) {
-          if (ac.signal.aborted) return;
-          addToast(
-            operatorApiErrorMessage(err, "Could not load branding."),
-            "error",
-          );
-        } finally {
-          if (!ac.signal.aborted) setLoading(false);
-        }
-      })();
-      return () => ac.abort();
-    }, [addToast]);
+    // The first read of the step: a placeholder of the form's shape after 200ms, and an error with a busy Retry after 30
+    // seconds or when it fails, never a form that looks empty because the read did not work (a save would then overwrite
+    // what is stored), and the form once the answer is in.
+    const panel = usePanelLoad({
+      fetch: fetchOrgBranding,
+      apply: (data) => {
+        setOrgName(data.org_name ?? "");
+        setLogoUrl(data.logo_url ?? "");
+        setLogoOriginalUrl(data.logo_original_url ?? "");
+        setLogoCrop(data.logo_crop ?? null);
+        setCommittedLogoUrl(data.logo_url ?? null);
+        setCommittedLogoOriginalUrl(data.logo_original_url ?? null);
+      },
+      fallback: "Could not load branding.",
+    });
+    const view = panelView(panel);
 
     const saveBranding = async (): Promise<boolean> => {
+      // Nothing to save before the read has answered: the form is not there.
+      if (view !== "ready") return false;
       const name = orgName.trim();
       const logo = logoUrl.trim();
 
@@ -103,21 +91,28 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
       saveAndContinue: saveBranding,
     }));
 
-    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-    // the "Loading…" text on and off faster than it can register as loading - show it only
-    // once the fetch has genuinely taken a moment.
-    const showLoading = useDelayedLoading(loading);
-
     return (
       <>
         <p className="setup-wizard__step-sub">
           Set your organisation name and logo for ticket pages and emails.
         </p>
 
-        {loading && showLoading && <p>Loading branding…</p>}
+        {view === "loading" && (
+          <WizardStepPlaceholder label="Loading branding" held={!panel.gate.showIndicator} slow={panel.slow}>
+            <BrandingStepSkeleton />
+          </WizardStepPlaceholder>
+        )}
 
-        {!loading && (
-          <>
+        {view === "error" && panel.error && (
+          <WizardRetryNotice retrying={panel.retrying} onRetry={panel.retry}>
+            <strong>Could not load branding</strong>
+            <br />
+            {panel.error}
+          </WizardRetryNotice>
+        )}
+
+        {view === "ready" && (
+          <div className="at-fade-in">
             <div className="setup-wizard__field">
               <Input
                 label="Organisation name"
@@ -152,9 +147,39 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 onDirty={() => onDirtyChange?.(true)}
               />
             </div>
-          </>
+          </div>
         )}
       </>
     );
   },
 );
+
+/**
+ * The shape of the form, as tall as the one that replaces it (measured in Chrome at the wizard's own width: 320px against
+ * 327px): the organisation name's label, field and hint, and the logo's label, two lines of intro, drop zone and the link
+ * under it.
+ */
+function BrandingStepSkeleton() {
+  return (
+    <>
+      <div className="setup-wizard__field">
+        <div className="at-field">
+          <Skeleton variant="rect" width={128} height={17} />
+          <Skeleton variant="rect" height={38} />
+        </div>
+        <Skeleton variant="rect" width="70%" height={18} />
+      </div>
+      <div className="setup-wizard__field">
+        <div className="setup-wizard__placeholder-logo">
+          <Skeleton variant="rect" width={120} height={17} />
+          <div className="at-field">
+            <Skeleton variant="rect" height={16} />
+            <Skeleton variant="rect" width="62%" height={16} />
+          </div>
+          <Skeleton variant="rect" height={120} />
+          <Skeleton variant="rect" width={168} height={28} />
+        </div>
+      </div>
+    </>
+  );
+}
