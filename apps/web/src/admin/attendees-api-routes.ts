@@ -64,6 +64,7 @@ import {
   type OpsAuditContext,
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
+  isErasedPlaceholderEmail,
   loadEventTicketTypes,
   parseWalletFieldMapping,
   resolveTicket,
@@ -157,11 +158,20 @@ const RSVP_STATUSES = ATTENDEE_EXPORT_RSVP_STATUSES;
 type RsvpStatus = (typeof RSVP_STATUSES)[number];
 const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
+/** An attendee's email: a valid address that is not in the namespace reserved for the placeholders
+ * of erased attendees (see isErasedPlaceholderEmail). */
+const attendeeEmailSchema = z
+  .string()
+  .trim()
+  .email()
+  .max(254)
+  .refine((value) => !isErasedPlaceholderEmail(value), "reserved address");
+
 const patchAttendeeFieldsSchema = z
   .object({
     first_name: z.string().trim().min(1).max(100).optional(),
     last_name: z.string().trim().min(1).max(100).optional(),
-    email: z.string().trim().email().max(254).optional(),
+    email: attendeeEmailSchema.optional(),
     company: z.string().trim().max(200).optional().nullable(),
     department: z.string().trim().max(200).optional().nullable(),
     ticket_type: z.string().trim().max(100).optional().nullable(),
@@ -240,7 +250,7 @@ const customDataFieldsRecordSchema = z.record(
 
 const createAttendeeSchema = z
   .object({
-    email: z.string().trim().email().max(254),
+    email: attendeeEmailSchema,
     first_name: z.string().trim().min(1).max(100),
     last_name: z.string().trim().min(1).max(100),
     company: z.string().trim().max(200).optional(),
