@@ -627,6 +627,11 @@ html:not(.icons-ready) .ti {
   background: var(--status-error);
 }
 
+/* No verdict yet: neutral, not green. */
+.sys-status__dot--pending {
+  background: var(--text-muted);
+}
+
 .sys-status__label {
   font-size: 13px;
   font-weight: 400;
@@ -703,6 +708,15 @@ html:not(.icons-ready) .ti {
 .sys-status__check--pending {
   /* The kit's Spinner (a 16px ring, the size of the icon it stands in for), dimmed like the row's other secondary text. */
   color: var(--text-muted);
+}
+
+/* The busy "Check again" keeps its focus and does nothing on a click while it works, so it does not light up on hover either. */
+.sys-status__check-again[aria-busy="true"] {
+  cursor: progress;
+}
+
+.sys-status__check-again[aria-busy="true"]:hover {
+  background: none;
 }
 
 .operator-shell__user-link {
@@ -1355,6 +1369,12 @@ html:not(.icons-ready) .ti {
   border-radius: var(--radius);
   font-size: var(--fs-sm);
   margin-bottom: 12px;
+}
+
+/* The 8 second line a placeholder adds under its shapes (SlowNote). */
+.slow-note {
+  display: block;
+  padding-top: var(--space-1);
 }
 
 .sr-only {

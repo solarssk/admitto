@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { getTooltipText, isOff, renderWithToast } from "../test-utils.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
+import { bodyValue, getBodyView, setBodyCursor } from "./codeMirrorTestUtils.js";
 
 const {
   fetchEventTemplates,
@@ -166,20 +167,35 @@ describe("CommunicationPage archived lockdown", () => {
     expect(editorFieldset?.disabled).toBe(true);
     expect(getTooltipText(editorFieldset as HTMLElement)).toBe(ARCHIVED_ACTION_TOOLTIP);
 
-    // Inserting a placeholder or switching MJML/HTML only touches local component
-    // state — no API call — so these stay usable even though Save is blocked.
-    expect(
-      (screen.getByRole("button", { name: "{{first_name}}" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
-    expect((screen.getByRole("radio", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
-      false,
+    // The body is read-only, so inserting a placeholder or switching MJML/HTML would only make
+    // the draft dirty (Templates *, an unsaved-changes prompt) with nothing that can be saved.
+    // The chips stay a reference list: off (aria-disabled), but still reachable by keyboard.
+    const chip = screen.getByRole("button", { name: "{{first_name}}" });
+    expect(isOff(chip)).toBe(true);
+    expect((chip as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("radio", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(screen.getByRole("radiogroup", { name: "Template format" }))).toBe(
+      ARCHIVED_ACTION_TOOLTIP,
     );
-    expect((screen.getByRole("radio", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    // Nothing explains a switch that cannot be used, and the wallet badge advice is about inserting.
+    expect(screen.queryByText(/Switching a non-empty template asks/)).toBeNull();
+    expect(screen.queryByText(/Wallet chips insert/)).toBeNull();
   });
 
-  it("disables the Send button on the Send tab, but not Count recipients", async () => {
+  it("does not insert a placeholder into the read-only body when a chip is clicked", async () => {
+    renderPage();
+    await screen.findByLabelText("HTML body");
+    const view = getBodyView("HTML body");
+    const before = bodyValue(view);
+
+    fireEvent.click(screen.getByRole("button", { name: "{{first_name}}" }));
+
+    expect(bodyValue(view)).toBe(before);
+    expect(screen.getByRole("tab", { name: /^Templates/ }).textContent).not.toContain("*");
+  });
+
+  it("disables the Send button and Count recipients on the Send tab", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: "Email" }));
 
@@ -187,8 +203,62 @@ describe("CommunicationPage archived lockdown", () => {
       expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     });
     expectArchivedLock(screen.getByRole("button", { name: "Send" }));
-    expect(
-      (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+    expectArchivedLock(screen.getByRole("button", { name: "Count recipients" }));
+  });
+});
+
+describe("CommunicationPage archived body editor", () => {
+  async function renderBodyView() {
+    renderPage();
+    await screen.findByLabelText("HTML body");
+    return getBodyView("HTML body");
+  }
+
+  it("keeps the body read-only but focusable, outside any disabled fieldset", async () => {
+    const view = await renderBodyView();
+
+    expect(view.state.readOnly).toBe(true);
+    // `editable={false}` would take the editor out of the page's focus order, so no key (the
+    // editor's own Ctrl/Cmd+F included) would ever reach it.
+    expect(view.contentDOM.getAttribute("contenteditable")).toBe("true");
+    expect(view.contentDOM.closest("fieldset")).toBeNull();
+    // No on-screen keyboard on a phone for text that cannot be typed into.
+    expect(view.contentDOM.getAttribute("inputmode")).toBe("none");
+    view.focus();
+    expect(view.hasFocus).toBe(true);
+  });
+
+  it("anchors the archived hint to the Subject input and the body editor, not to their labels", async () => {
+    const view = await renderBodyView();
+
+    // Tooltip's `anchor` selectors live in TemplateEditorCard; if the markup behind them changes,
+    // the hint would silently go back to floating above the label.
+    const subjectTrigger = screen.getByLabelText("Subject").closest(".at-tooltip-trigger");
+    expect(subjectTrigger?.querySelector(".at-input")).toBe(screen.getByLabelText("Subject"));
+    expect(view.dom.closest(".at-tooltip-trigger")?.querySelector(".cm-editor")).toBe(view.dom);
+  });
+
+  it("does not take a Tab as input, and does not trap the focus either", async () => {
+    const view = await renderBodyView();
+    const before = bodyValue(view);
+    setBodyCursor(view, 0);
+
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    view.contentDOM.dispatchEvent(tab);
+
+    expect(bodyValue(view)).toBe(before);
+    expect(tab.defaultPrevented).toBe(false);
+  });
+
+  it("opens the editor's own search with Ctrl+F, with inputs that can be used", async () => {
+    const view = await renderBodyView();
+
+    fireEvent.keyDown(view.contentDOM, { key: "f", ctrlKey: true });
+
+    // The browser's own find only sees the lines the editor has drawn, so the editor's search is
+    // the one that finds the rest of an archived template's body.
+    const searchField = document.querySelector<HTMLInputElement>(".cm-search input[name=search]");
+    expect(searchField).toBeTruthy();
+    expect(searchField?.matches(":disabled")).toBe(false);
   });
 });

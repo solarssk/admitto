@@ -2075,9 +2075,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
     handlePutEventTemplate(c, db),
   ));
-  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
+  // No guardArchivedEvent on either preview route: a preview renders the draft with sample data and
+  // saves nothing, and the Communication page of an archived event previews its templates as soon
+  // as it opens, so blocking it left that page with an error toast and an empty preview.
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, (c) =>
     handlePreviewEventTemplate(c, db, mailInjectedBaseUrl),
-  ));
+  );
   app.post(
     "/api/admin/events/:eventId/template/test-send",
     jsonPostCsrf,
@@ -2127,7 +2130,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminTemplatePreviewRateLimit,
     templateBodyLimit,
-    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, mailInjectedBaseUrl)),
+    (c) => handlePreviewEventTemplateById(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/admin/events/:eventId/templates/:templateId/test-send",

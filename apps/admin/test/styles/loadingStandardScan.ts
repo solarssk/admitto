@@ -293,7 +293,8 @@ function countRetriesInRawButtons(text: string): number {
 /** Raw `<button>`s whose `disabled` names a busy flag. */
 function countRawButtonsDisabledWhileBusy(text: string): number {
   return openingTags(text, "button").filter((tag) => {
-    const at = tag.search(/\bdisabled=\{/);
+    // `aria-disabled={busy}` is the way a busy button is kept focusable, not the violation.
+    const at = tag.search(/(?<![\w-])disabled=\{/);
     if (at === -1) return false;
     const valueStart = tag.indexOf("{", at);
     return namesABusyFlag(tag.slice(valueStart, propValueEnd(tag, valueStart)));

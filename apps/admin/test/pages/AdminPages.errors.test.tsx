@@ -1655,7 +1655,7 @@ describe("EventsPickerPage archived event navigation", () => {
     expect(screen.getByText("Events you archive will appear here.")).toBeTruthy();
   });
 
-  it("shows an EmptyState with a link back to Archived when every event is archived (superadmin copy)", async () => {
+  it("shows a short restore hint, and no button, when every event is archived (superadmin copy)", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
     renderWithToast(
       <MemoryRouter initialEntries={["/admin"]}>
@@ -1676,16 +1676,11 @@ describe("EventsPickerPage archived event navigation", () => {
     await waitFor(() => {
       expect(screen.getByText("No active events")).toBeTruthy();
     });
-    expect(
-      screen.getByText(
-        "All events are archived. Open the Archived events tab, then restore an event from Organisation settings → Event archiving (or Event settings).",
-      ),
-    ).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "View archived events" }));
-    await waitFor(() => {
-      expect(screen.getByText("Archived Summit")).toBeTruthy();
-    });
+    expect(screen.getByText("Restore an event in Organisation settings → Archiving.")).toBeTruthy();
+    // The Archived events tab sits right above, so the empty state adds neither a second route
+    // to it nor a button for it.
+    expect(screen.queryByRole("button", { name: "View archived events" })).toBeNull();
+    expect(screen.queryByText(/All events are archived/)).toBeNull();
   });
 });
 

@@ -40,6 +40,9 @@ const { MockApiError } = vi.hoisted(() => {
 });
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+// The event id the page last subscribed to the live stream with (undefined = it did not subscribe).
+let streamEventId: string | undefined;
+let mockArchivedAt: string | null = null;
 
 let mockWalletEnabled = true;
 let mockWalletAppleEnabled = true;
@@ -58,6 +61,9 @@ vi.mock("react-router", async (importOriginal) => {
     // a test can flip these mid-run and have the very next render see the new value.
     useOutletContext: () => ({
       event: {
+        get archived_at() {
+          return mockArchivedAt;
+        },
         get wallet_enabled() {
           return mockWalletEnabled;
         },
@@ -76,7 +82,8 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: (_eventId: string, onCheckin: (event: StreamCheckinEvent) => void) => {
+  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void) => {
+    streamEventId = eventId;
     streamHandler = onCheckin;
     return { connected: true, status: "connected" };
   },
@@ -212,6 +219,8 @@ beforeEach(() => {
   mockWalletAppleEnabled = true;
   mockWalletGoogleEnabled = true;
   mockWalletSamsungEnabled = true;
+  mockArchivedAt = null;
+  streamEventId = undefined;
 });
 
 afterEach(() => {
@@ -222,6 +231,27 @@ afterEach(() => {
 });
 
 describe("ReportsPage — live SSE updates (ADR 0014)", () => {
+  it("opens the live check-in stream for an active event, and not for an archived one (it takes no check-ins, and the stream answers it with a retried 403)", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+    await waitFor(() => {
+      expect(streamEventId).toBe("evt-1");
+    });
+
+    expect(await screen.findByLabelText("Live")).toBeTruthy();
+
+    cleanup();
+    streamEventId = "stale";
+    mockArchivedAt = "2026-01-01T00:00:00.000Z";
+    renderPage();
+    await waitFor(() => {
+      expect(streamEventId).toBeUndefined();
+    });
+    // Nothing is live on an archived event, so the hourly chart does not say it is.
+    expect((await screen.findAllByText("Hourly admissions")).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("Live")).toBeNull();
+  });
+
   it("always renders the live indicator next to the hourly chart", async () => {
     fetchEventReports.mockResolvedValue(reportFixture(5));
     renderPage();

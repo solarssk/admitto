@@ -320,5 +320,12 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count("<button type=\"button\" onClick={go}>Go</button>", "raw-button-busy-disabled")).toBe(0);
     expect(count("<ButtonGroup disabled={busy} />", "raw-button-busy-disabled")).toBe(0);
   });
+
+  it("does not take aria-disabled for disabled: that is how a busy raw <button> keeps its focus", () => {
+    expect(count("<button type=\"button\" aria-disabled={busy || undefined} onClick={go}>Go</button>", "raw-button-busy-disabled")).toBe(0);
+    expect(count("<button type=\"button\" aria-busy={saving} aria-disabled={saving} onClick={go}>Go</button>", "raw-button-busy-disabled")).toBe(0);
+    // ... while the same tag with a real `disabled` is still one.
+    expect(count("<button type=\"button\" aria-disabled={saving} disabled={saving} onClick={go}>Go</button>", "raw-button-busy-disabled")).toBe(1);
+  });
 });
 

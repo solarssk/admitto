@@ -16,7 +16,7 @@ const fetchEventDelivery = vi.fn();
 const fetchRenderedDelivery = vi.fn();
 const exportDeliveryLog = vi.fn();
 const outletContext = vi.hoisted(() => ({
-  event: { id: "evt-1", title: "Demo", archived_at: null, timezone: "Europe/Warsaw" },
+  event: { id: "evt-1", title: "Demo", archived_at: null as string | null, timezone: "Europe/Warsaw" },
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -565,6 +565,39 @@ describe("CommunicationPage delivery log - row menu", () => {
       "View sent message",
       "View delivery details",
     ]);
+  });
+
+  it("keeps Resend and Dismiss bounce off, with the archived reason, once the event is archived (the server refuses both)", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [{ ...acceptedRow, status: "bounced" }], total: 1 });
+    outletContext.event.archived_at = "2026-01-01T00:00:00.000Z";
+    try {
+      await openRowActionsMenu("Guest One");
+      for (const name of ["Resend", "Dismiss bounce"]) {
+        const item = screen.getByRole("menuitem", { name }) as HTMLButtonElement;
+        expect(item.disabled).toBe(true);
+        expect(item.title).toBe("This event is archived. Editing is disabled.");
+      }
+    } finally {
+      outletContext.event.archived_at = null;
+    }
+  });
+
+  it("keeps Resend and Dismiss bounce off in the mobile card layout of an archived event too", async () => {
+    mockMatchMedia(false);
+    fetchEventDeliveries.mockResolvedValue({ items: [{ ...acceptedRow, status: "bounced" }], total: 1 });
+    outletContext.event.archived_at = "2026-01-01T00:00:00.000Z";
+    try {
+      renderPage();
+      await goToDeliveryLogTab();
+      await screen.findByText("Guest One");
+      expect(screen.queryByRole("table")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+      for (const name of ["Resend", "Dismiss bounce"]) {
+        expect((screen.getByRole("menuitem", { name }) as HTMLButtonElement).disabled).toBe(true);
+      }
+    } finally {
+      outletContext.event.archived_at = null;
+    }
   });
 
   it("links the recipient name to their attendee profile", async () => {
