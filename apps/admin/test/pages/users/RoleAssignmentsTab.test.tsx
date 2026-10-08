@@ -495,6 +495,67 @@ describe("RoleAssignmentsTab on the loading standard", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
+  it("keeps the error with a busy Retry, whose focus it keeps, while a retry runs, and says it again when the retry fails again", async () => {
+    fetchRoleAssignments.mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(<RoleAssignmentsTab />);
+    const message = await screen.findByText("Could not load role assignments.");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    const second = deferred<ReturnType<typeof answer>>();
+    fetchRoleAssignments.mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    // Not a first load: the same error and button, busy, with the focus. Neither the placeholder nor "No role assignments yet"
+    // takes their place.
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load role assignments.")).toBe(message);
+    expect(screen.queryByLabelText("Loading role assignments")).toBeNull();
+    expect(screen.queryByText("No role assignments yet")).toBeNull();
+
+    await act(async () => second.reject(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+    expect(screen.getByText("Could not load role assignments.")).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("keeps the error on screen through the retry of a failed step back to the page that exists, which is not a wait either", async () => {
+    asSuperadmin();
+    fetchRoleAssignments.mockImplementation(async (params: { page: number }) =>
+      params.page === 1 ? answer([assignment("1", "first-page@example.com")], 26) : answer([assignment("26", "last-page@example.com")], 26),
+    );
+    revokeUserRole.mockResolvedValue(undefined);
+    renderWithToast(<RoleAssignmentsTab />);
+    await screen.findAllByText("first-page@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findAllByText("last-page@example.com");
+
+    fetchRoleAssignments.mockImplementation(async (params: { page: number }) => {
+      if (params.page === 1) throw new Error("network down");
+      return { assignments: [], total: 25, page: params.page, pageSize: 25 };
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke Operator for last-page@example.com" })[0]!);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    // The answer that is on screen is the one that said "the page is gone": it must not make the retry a wait.
+    const second = deferred<ReturnType<typeof answer>>();
+    fetchRoleAssignments.mockReturnValue(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByLabelText("Loading role assignments")).toBeNull();
+    expect(screen.queryByText("No role assignments yet")).toBeNull();
+
+    await act(async () => second.resolve(answer([assignment("1", "first-page@example.com")], 25)));
+    expect((await screen.findAllByText("first-page@example.com")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
   it("steps back to the last page that exists when a revoke takes the only row of the last page, and says nothing false meanwhile", async () => {
     asSuperadmin();
     fetchRoleAssignments.mockImplementation(async (params: { page: number }) =>

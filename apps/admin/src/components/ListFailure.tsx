@@ -1,27 +1,25 @@
-import { Button } from "@admitto/ui";
+import type { RetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { RefreshWarning } from "./RefreshWarning.js";
+import { RetryAlert } from "./RetryAlert.js";
 
 interface ListFailureProps {
-  /** The list could not be loaded: it replaces the list, and its Retry starts a first load again. */
-  error: string | null;
+  /**
+   * The load of the list (`useCardLoad` gives it, `useRetryKeepingError(list.error, list.reload)` is what it is): when it failed
+   * the error replaces the list, and its Retry stays on screen, busy, until the answer is in.
+   */
+  failure: RetryKeepingError;
   /** A refresh of the list on screen failed: the list stays, with this warning. */
   refreshError: string | null;
-  onRetry: () => Promise<void>;
+  /** Reruns the refresh: the warning's Retry. */
+  onRefresh: () => Promise<void>;
   /** The card's own layout class for the error block. */
   className: string;
 }
 
 /** How a list that follows the loading standard (`useListLoad`) says that a load, or a refresh, failed. */
-export function ListFailure({ error, refreshError, onRetry, className }: Readonly<ListFailureProps>) {
-  if (error) {
-    return (
-      <div className={className} role="alert">
-        <p>{error}</p>
-        <Button type="button" variant="secondary" onClick={() => void onRetry()}>
-          Retry
-        </Button>
-      </div>
-    );
+export function ListFailure({ failure, refreshError, onRefresh, className }: Readonly<ListFailureProps>) {
+  if (failure.error) {
+    return <RetryAlert message={failure.error} retrying={failure.retrying} onRetry={failure.retry} className={className} />;
   }
-  return refreshError ? <RefreshWarning message={refreshError} onRetry={onRetry} /> : null;
+  return refreshError ? <RefreshWarning message={refreshError} onRetry={onRefresh} /> : null;
 }

@@ -772,7 +772,10 @@ describe("ActiveSessionsTab on the loading standard", () => {
     expect(screen.getByRole("table")).toBeTruthy();
   });
 
-  it("gives up after 30 seconds with an error and Retry, and a Retry is a first load again", async () => {
+  const TIMED_OUT = "The server did not answer in time. Check your connection and try again.";
+
+  /** A fetcher that never answers, and gives up (rejects) when its signal aborts: what the 30 second limit does. */
+  function hangingSessions() {
     const signals: AbortSignal[] = [];
     vi.mocked(fetchSessions).mockImplementation(
       (_role, signal) =>
@@ -781,17 +784,69 @@ describe("ActiveSessionsTab on the loading standard", () => {
           signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
         }),
     );
+    return signals;
+  }
+
+  it("gives up after 30 seconds with an error and Retry", async () => {
+    const signals = hangingSessions();
     vi.useFakeTimers();
     renderWithToast(<ActiveSessionsTab />);
     await advanceTimers(30_000);
     await advanceTimers(0);
-    expect(screen.getByText("The server did not answer in time. Check your connection and try again.")).toBeTruthy();
+    expect(screen.getByText(TIMED_OUT)).toBeTruthy();
     expect(signals[0]?.aborted).toBe(true);
+    // The error that replaces the placeholder fades in.
+    expect(screen.getByRole("button", { name: "Retry" }).closest(".at-fade-in")).not.toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  it("keeps the error on screen, with a busy Retry that keeps the focus, while a Retry runs: no placeholder takes its place, and a repeat failure is announced again", async () => {
+    const signals = hangingSessions();
+    vi.useFakeTimers();
+    renderWithToast(<ActiveSessionsTab />);
+    await advanceTimers(30_000);
     await advanceTimers(0);
-    expect(region()).not.toBeNull();
+    const message = screen.getByText(TIMED_OUT);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    expect(region()).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText(TIMED_OUT)).toBe(message);
     expect(signals).toHaveLength(2);
+
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(signals[1]?.aborted).toBe(true);
+    expect(screen.getByText(TIMED_OUT)).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("hands the focus to the card that holds the list when the retry works", async () => {
+    vi.mocked(fetchSessions).mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(<ActiveSessionsTab />);
+    expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const card = retry.closest(".at-card");
+    expect(card).not.toBeNull();
+
+    const second = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions).mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText("No active sessions")).toBeNull();
+
+    await act(async () => second.resolve({ sessions: [makeSession()] }));
+    await screen.findByRole("table");
+    expect(screen.queryByText("Could not load sessions.")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(card));
   });
 
   it("keeps the rows while the refresh after a revoke is on its way: blocked, dimmed with a bar once it is noticeable, and no placeholder", async () => {
@@ -869,6 +924,44 @@ describe("ActiveSessionsTab on the loading standard", () => {
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText("one@example.com")).toBeNull();
     expect(screen.queryByText(/may show older details/)).toBeNull();
+  });
+
+  it("does not bring the possibly revoked rows back while the Retry of that error runs: the error stays, busy, until the answer is in", async () => {
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", userEmail: "one@example.com" })] })
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 1 });
+    const onCountChange = vi.fn();
+    renderWithToast(<ActiveSessionsTab onCountChange={onCountChange} />);
+    await screen.findByRole("table");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
+
+    const second = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions).mockReturnValueOnce(second.promise);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The rows on screen before the revoke are older than the server's: they stay away, and so does the empty state.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText("one@example.com")).toBeNull();
+    expect(screen.queryByText("No active sessions")).toBeNull();
+    // And the tab label keeps showing no number.
+    expect(onCountChange).toHaveBeenLastCalledWith(undefined);
+
+    await act(async () => second.resolve({ sessions: [makeSession({ id: "s2", userEmail: "two@example.com" })] }));
+    await screen.findByRole("table");
+    expect(screen.getAllByText("two@example.com").length).toBeGreaterThan(0);
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
   });
 
   it("keeps the rows with a warning when a bulk revoke that revoked nothing is followed by a refresh that fails", async () => {

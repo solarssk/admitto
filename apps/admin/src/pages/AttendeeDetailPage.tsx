@@ -53,9 +53,12 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useRetry } from "../hooks/useRetry.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
+import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import {
   formatAdmissionDisplayParts,
   formatEventDateTime,
@@ -90,6 +93,7 @@ import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { parseUserAgentWithVersion } from "../utils/parseUserAgent.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import {
   ArchivedGuard,
   ARCHIVED_ACTION_TOOLTIP,
@@ -1987,6 +1991,14 @@ export function AttendeeDetailPage() {
     return current.eventId === target.eventId && current.attendeeId === target.attendeeId;
   }
 
+  /** Aborted when the page is left: a read on its way stops, and says nothing. */
+  const lifeRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const life = new AbortController();
+    lifeRef.current = life;
+    return () => life.abort();
+  }, []);
+
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId, notesPage };
@@ -1994,6 +2006,11 @@ export function AttendeeDetailPage() {
     // finish afterwards. Only let the currently selected page update the detail view.
     const isCurrentRequest = () =>
       isStillSelected(target) && notesPageRef.current === target.notesPage;
+    // The 30 second limit (AGENTS.md "Admin SPA loading and busy states"): after it the request is given up, with an error
+    // and a Retry, instead of a skeleton, or a page that never settles, for ever.
+    const limit = loadWithTimeout(lifeRef.current?.signal);
+    // The page was left, not the wait that ran out: nothing to say, nothing to update.
+    const left = () => limit.signal.aborted && !limit.timedOut();
     setLoading(true);
     setError(null);
     setNotFound(false);
@@ -2014,8 +2031,10 @@ export function AttendeeDetailPage() {
     setNoteDeleting(false);
     setNoteDeleteError(null);
     try {
-      const { detail: d, attributeFields: fields, itemsWarning: warn } =
-        await loadAttendeeDetailData(eventId, attendeeId, notesPage);
+      const { detail: d, attributeFields: fields, itemsWarning: warn } = await rejectOnAbort(
+        loadAttendeeDetailData(eventId, attendeeId, notesPage, limit.signal),
+        limit.signal,
+      );
       if (!isCurrentRequest()) return;
       applyDetail(d);
       setAttributeFields(fields);
@@ -2025,14 +2044,17 @@ export function AttendeeDetailPage() {
       setStaleWrite(false);
       setEmailConflict(false);
     } catch (err) {
-      if (!isCurrentRequest()) return;
-      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+      if (!isCurrentRequest() || left()) return;
+      if (limit.timedOut()) {
+        setError(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`);
+      } else if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
         setError(operatorApiErrorMessage(err, "Could not load attendee."));
       }
     } finally {
-      if (isCurrentRequest()) setLoading(false);
+      limit.done();
+      if (isCurrentRequest() && !left()) setLoading(false);
     }
   }, [eventId, attendeeId, notesPage, applyDetail]);
 
@@ -2531,8 +2553,12 @@ export function AttendeeDetailPage() {
   // Only the first load of an attendee has nothing to show yet. A fetch that resolves near-instantly
   // (localhost, a warm cache) shows no skeleton at all; a slower one shows it for at least 400ms so it
   // never flickers, and until its 200ms have passed it is in the page but invisible, so the space is
-  // already reserved and nothing jumps.
-  const { showIndicator: showLoadingSkeleton, showContent } = useLoadingGate(loading && !detail);
+  // already reserved and nothing jumps. After 8 seconds it says that it is taking longer than usual. A Retry of a
+  // failed first load is not a first load: its error stays on screen, with the Retry busy, until the answer is in.
+  const failure = useRetryKeepingError(error, loadDetail);
+  const waiting = loading && !detail && !failure.running;
+  const { showIndicator: showLoadingSkeleton, showContent } = useLoadingGate(waiting);
+  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
 
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
@@ -2556,41 +2582,44 @@ export function AttendeeDetailPage() {
         className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
         aria-busy="true"
       >
-        <output className="sr-only">Loading attendee</output>
         <Skeleton variant="text" lines={2} />
         <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
+        {/* The status region of the placeholder: it names what is loading for assistive tech, and after 8 seconds says, in
+            view and to the same region, that it is taking longer than usual. It has no height until then. */}
+        <output>
+          <span className="sr-only">Loading attendee</span>
+          {slow ? <span className="at-hint attendee-detail-slow-note">{SLOW_NOTICE_TEXT}</span> : null}
+        </output>
       </div>
     );
   }
 
   // The page, the not-found notice and the error all replace the skeleton (same key: none of them
-  // renders next to another), fading in over 150ms.
+  // renders next to another), fading in over 150ms. They are one region, named for the hand-over of the keyboard focus to
+  // it when the Retry of a failed read works and the error that held the focus goes.
   if (notFound) {
     return (
-      <div key="page" className="attendee-detail-page screen at-fade-in">
+      <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
         <PageHeader title="Attendee not found" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         <p>The attendee could not be found or you do not have access.</p>
-      </div>
+      </section>
     );
   }
 
   if (!detail || !form) {
     return (
-      <div key="page" className="attendee-detail-page screen at-fade-in">
+      <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
-        {error && (
-          <EmptyState
-            variant="error"
+        {failure.error && (
+          <RetryEmptyState
             title="Could not load attendee"
-            description={error}
-            action={
-              <Button type="button" variant="secondary" onClick={() => void loadDetail()}>
-                Retry
-              </Button>
-            }
+            message={failure.error}
+            retrying={failure.retrying}
+            onRetry={failure.retry}
+            landmark=".attendee-detail-page"
           />
         )}
-      </div>
+      </section>
     );
   }
 
@@ -2634,7 +2663,7 @@ export function AttendeeDetailPage() {
     : null;
 
   return (
-    <div key="page" className="attendee-detail-page screen at-fade-in">
+    <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
         title={detail.name}
         subtitle="Manage this attendee's profile, ticket, and check-in status."
@@ -3257,6 +3286,6 @@ export function AttendeeDetailPage() {
           <li>Check-in history</li>
         </ul>
       </ConfirmDialog>
-    </div>
+    </section>
   );
 }

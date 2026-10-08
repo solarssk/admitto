@@ -87,6 +87,17 @@ describe("loadAttendeeDetailData", () => {
 
     expect(mockFetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", undefined, 3);
   });
+
+  it("gives its signal to both requests, so the page's 30 second limit ends both", async () => {
+    mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
+    mockFetchAttendeeCustomFields.mockResolvedValueOnce([]);
+    const { signal } = new AbortController();
+
+    await loadAttendeeDetailData("evt-1", "att-1", 2, signal);
+
+    expect(mockFetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", signal, 2);
+    expect(mockFetchAttendeeCustomFields).toHaveBeenCalledWith("evt-1", signal);
+  });
 });
 
 describe("mergeFormAfterReload", () => {
