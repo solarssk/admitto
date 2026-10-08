@@ -50,4 +50,42 @@ describe("RetryHint", () => {
     expect(screen.getByText("Could not load types.")).not.toBe(before);
     expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
   });
+
+  it("hands the focus of a Retry that goes away to the landmark it is given, only when the focus was on it", async () => {
+    const page = (hint: boolean) => (
+      <section className="stays" aria-label="Step">
+        {hint ? <RetryHint message="Could not load types." busy={false} onRetry={() => {}} landmark=".stays" /> : <p>Loaded</p>}
+      </section>
+    );
+    const { rerender } = render(page(true));
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(page(false));
+    await Promise.resolve();
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Step" }));
+
+    // Focus that was somewhere else is left alone.
+    rerender(page(true));
+    const other = document.createElement("button");
+    document.body.appendChild(other);
+    other.focus();
+    rerender(page(false));
+    await Promise.resolve();
+    expect(document.activeElement).toBe(other);
+    other.remove();
+  });
+
+  it("hands the focus nowhere when it has no landmark: a hint in a dialog leaves that to the dialog", async () => {
+    const page = (hint: boolean) => (
+      <section role="tabpanel" aria-label="Panel">
+        {hint ? <RetryHint message="Could not load types." busy={false} onRetry={() => {}} /> : <p>Loaded</p>}
+      </section>
+    );
+    const { rerender } = render(page(true));
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(page(false));
+    await Promise.resolve();
+    expect(document.activeElement).toBe(document.body);
+  });
 });
