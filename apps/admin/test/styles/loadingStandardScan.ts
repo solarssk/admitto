@@ -33,7 +33,7 @@ export const RULE_HINTS: Record<Rule, string> = {
   "retry-in-a-raw-button":
     "Use <Button loading> for a Retry (or Reload), with the hook useRetry for a request that is run again (a <RetryHint> for a one-line hint). A raw <button> cannot show that it is working and keep keyboard focus, so a click on it drops the focus to the page behind.",
   "retry-not-busy":
-    "A <Button> that says Retry (or Reload) needs a `loading` that follows the retry's running state (not missing, not bare, not a constant such as {false}, {true} or {undefined}, and written after any {...spread}, which could override it), so a click shows that the retry ran, a retry that fails again at once is seen to have run, and the button keeps keyboard focus while it works. Use <RetryEmptyState>, <RetryAlert> or <RetryHint> with useRetryKeepingError (useRetry for a request that is run again), or pass `loading` from them to the button of a Notice action (with `actionBusy` on the Notice, so a repeat failure is announced again).",
+    "A <Button> that says Retry (or Reload) needs a `loading` that follows the retry's running state (not missing, not bare, not a constant such as {false}, {true} or {undefined}, not negated ({!retrying}) or forced ({retrying || true}), and written after any {...spread}, which could override it), so a click shows that the retry ran, a retry that fails again at once is seen to have run, and the button keeps keyboard focus while it works. Use <RetryEmptyState>, <RetryAlert> or <RetryHint> with useRetryKeepingError (useRetry for a request that is run again), or pass `loading` from them to the button of a Notice action (with `actionBusy` on the Notice, so a repeat failure is announced again).",
   "raw-button-busy-disabled":
     "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <IconButton loading>, <MoreActionsMenuItem loading>), which stays focusable; a link-style button keeps `disabled` for what cannot change and uses aria-disabled plus an early return in onClick while it works. If the button is only disabled because ANOTHER control is busy (the user pressed a different one), add it to DISABLED_WHILE_ANOTHER_ACTION_RUNS in loading-standard.test.ts with the reason.",
 };
@@ -338,19 +338,70 @@ const ALWAYS_TRUE = /^(?:true|!false|!0|1)$/;
 // A type assertion at the end of an expression (`false as boolean`, `undefined satisfies boolean`) does not change its value.
 const TYPE_ASSERTION = /\s+(?:as|satisfies)\s+[\w.]+(?:<[^<>]*>)?(?:\[\])*$/;
 
+/** `expression` with the parentheses and the type assertions around it taken off. */
+function unwrap(expression: string): string {
+  let current = expression.trim();
+  for (let again = true; again; ) {
+    const next = current.replace(TYPE_ASSERTION, "").replace(/^\(([\s\S]*)\)$/, "$1").trim();
+    again = next !== current;
+    current = next;
+  }
+  return current;
+}
+
+/** `expression` cut at its `operators` that sit at the top level (not inside parentheses, brackets, braces or a string). */
+function splitTopLevel(expression: string, operators: readonly string[]): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let from = 0;
+  for (let i = 0; i < expression.length; i++) {
+    const c = expression[i]!;
+    if (quote) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+    } else if ("([{".includes(c)) {
+      depth++;
+    } else if (")]}".includes(c)) {
+      depth--;
+    } else if (depth === 0) {
+      const operator = operators.find((op) => expression.startsWith(op, i));
+      if (operator) {
+        parts.push(expression.slice(from, i));
+        i += operator.length - 1;
+        from = i + 1;
+      }
+    }
+  }
+  parts.push(expression.slice(from));
+  return parts.map((part) => part.trim());
+}
+
 /**
- * Whether a prop value, as written, is a constant: a bare name (`loading`), a string (`loading="true"`), or an expression that is
- * only a literal (`{false}`, `{true}`, `{(undefined as boolean)}`). A `loading` is the retry's running state, so it is none of them.
+ * Whether an expression is, at rest, the same whatever the retry does: a literal, a flag that is negated (`!retrying` is busy until
+ * the retry runs; `!!retrying` is a plain cast), or one that is forced by an operand (`retrying || true`, `retrying && false`).
+ * It judges the shape of the code, not what a name stands for: an expression it cannot see through passes, and the test of the
+ * screen's busy Retry is what shows that the flag is the retry's running state.
+ */
+function ignoresRunningState(expression: string): boolean {
+  const core = unwrap(expression);
+  if (NEVER_TRUE.test(core) || ALWAYS_TRUE.test(core)) return true;
+  if (/^!(?!!)/.test(core) && splitTopLevel(core, ["||", "??", "&&", "?"]).length === 1) return true;
+  const alternatives = splitTopLevel(core, ["||", "??"]);
+  if (alternatives.length > 1) return alternatives.some((part) => ALWAYS_TRUE.test(unwrap(part)));
+  const factors = splitTopLevel(core, ["&&"]);
+  return factors.length > 1 && factors.some((part) => NEVER_TRUE.test(unwrap(part)));
+}
+
+/**
+ * Whether a prop value, as written, cannot follow the retry's running state: a bare name (`loading`), a string (`loading="true"`),
+ * or an expression that is a constant, a negated flag or a forced one (see `ignoresRunningState`).
  */
 function isConstant(value: string | null): boolean {
   if (value === null || !value.startsWith("{") || !value.endsWith("}")) return true;
-  let expression = value.slice(1, -1).trim();
-  for (let again = true; again; ) {
-    const unwrapped = expression.replace(TYPE_ASSERTION, "").replace(/^\(([\s\S]*)\)$/, "$1").trim();
-    again = unwrapped !== expression;
-    expression = unwrapped;
-  }
-  return NEVER_TRUE.test(expression) || ALWAYS_TRUE.test(expression);
+  return ignoresRunningState(value.slice(1, -1));
 }
 
 /**
@@ -358,7 +409,8 @@ function isConstant(value: string | null): boolean {
  * passes `loading` while it runs, so that the click is seen to have done something (a retry that fails again at once still
  * shows that it ran) and the button keeps keyboard focus instead of going off. That is a `loading` driven by the retry's running
  * state: one that is missing, bare (always busy, and then every click is swallowed), a string, a constant such as `{false}`,
- * `{true}` or `{undefined}`, or followed by a `{...spread}` that may override it, is none. A Retry that is not inside a
+ * `{true}` or `{undefined}`, a negated flag (`{!retrying}`, busy until the retry runs), a forced one (`{retrying || true}`), or
+ * followed by a `{...spread}` that may override it, is none. A Retry that is not inside a
  * `<Button>` is the business of retry-in-a-raw-button.
  */
 function countRetriesNotBusy(text: string): number {
