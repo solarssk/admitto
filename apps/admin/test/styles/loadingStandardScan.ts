@@ -33,7 +33,7 @@ export const RULE_HINTS: Record<Rule, string> = {
   "retry-in-a-raw-button":
     "Use <Button loading> for a Retry (or Reload), with the hook useRetry for a request that is run again (a <RetryHint> for a one-line hint). A raw <button> cannot show that it is working and keep keyboard focus, so a click on it drops the focus to the page behind.",
   "retry-not-busy":
-    "A <Button> that says Retry (or Reload) needs a `loading` that can be true (not missing, not {false}, {undefined} or {null}), so a click shows that the retry ran, a retry that fails again at once is seen to have run, and the button keeps keyboard focus while it works. Use <RetryEmptyState>, <RetryAlert> or <RetryHint> with useRetryKeepingError (useRetry for a request that is run again), or pass `loading` from them to the button of a Notice action (with `actionBusy` on the Notice, so a repeat failure is announced again).",
+    "A <Button> that says Retry (or Reload) needs a `loading` that can be true (not missing, not {false}, {undefined} or {null}, and written after any {...spread}, which could override it), so a click shows that the retry ran, a retry that fails again at once is seen to have run, and the button keeps keyboard focus while it works. Use <RetryEmptyState>, <RetryAlert> or <RetryHint> with useRetryKeepingError (useRetry for a request that is run again), or pass `loading` from them to the button of a Notice action (with `actionBusy` on the Notice, so a repeat failure is announced again).",
   "raw-button-busy-disabled":
     "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <IconButton loading>, <MoreActionsMenuItem loading>), which stays focusable; a link-style button keeps `disabled` for what cannot change and uses aria-disabled plus an early return in onClick while it works. If the button is only disabled because ANOTHER control is busy (the user pressed a different one), add it to DISABLED_WHILE_ANOTHER_ACTION_RUNS in loading-standard.test.ts with the reason.",
 };
@@ -306,7 +306,11 @@ function propValues(tag: string): Map<string, string | null> {
     if (!found || found[3]) break;
     at = next.lastIndex;
     if (found[2]) {
-      at = propValueEnd(tag, at - 1); // a spread, `{...props}`
+      // A spread, `{...props}`, overrides any prop written before it, whatever it holds: none of them can be vouched for any more.
+      props.clear();
+      const end = propValueEnd(tag, at - 1);
+      if (end < at) break; // braces that never close: stop reading rather than go round again
+      at = end;
       continue;
     }
     assign.lastIndex = at;
@@ -314,6 +318,7 @@ function propValues(tag: string): Map<string, string | null> {
       const start = assign.lastIndex;
       const end = propValueEnd(tag, start);
       props.set(found[1]!, tag.slice(start, end));
+      if (end <= start) break; // a value that is neither a string nor a `{...}`
       at = end;
     } else {
       props.set(found[1]!, null);
@@ -322,14 +327,29 @@ function propValues(tag: string): Map<string, string | null> {
   return props;
 }
 
-// A `loading` that is written as a value that can never be true: the button would never be busy. Parentheses around it do not change that.
-const STATICALLY_NOT_BUSY = /^\{\s*\(*\s*(?:false|undefined|null|void 0|0|!true|!1)\s*\)*\s*\}$/;
+// A value that can never be true, as a `loading`: the button would never be busy.
+const NEVER_TRUE = /^(?:false|undefined|null|void 0|0|!true|!1)$/;
+// A type assertion at the end of an expression (`false as boolean`, `undefined satisfies boolean`) does not change its value.
+const TYPE_ASSERTION = /\s+(?:as|satisfies)\s+[\w.]+(?:<[^<>]*>)?(?:\[\])*$/;
+
+/** Whether a prop value, as written (`{false}`, `{(undefined as boolean)}`), is a literal that can never be true. */
+function isStaticallyNotBusy(value: string): boolean {
+  if (!value.startsWith("{") || !value.endsWith("}")) return false;
+  let expression = value.slice(1, -1).trim();
+  for (let again = true; again; ) {
+    const unwrapped = expression.replace(TYPE_ASSERTION, "").replace(/^\(([\s\S]*)\)$/, "$1").trim();
+    again = unwrapped !== expression;
+    expression = unwrapped;
+  }
+  return NEVER_TRUE.test(expression);
+}
 
 /**
  * Retry (or Reload) kit buttons that are never busy. A `<Button>` that offers to run a failed load again passes `loading`
  * while it runs, so that the click is seen to have done something (a retry that fails again at once still shows that it ran)
- * and the button keeps keyboard focus instead of going off: a `loading` that is missing, or written as `{false}`,
- * `{undefined}` or `{null}`, never does. A Retry that is not inside a `<Button>` is the business of retry-in-a-raw-button.
+ * and the button keeps keyboard focus instead of going off: a `loading` that is missing, written as `{false}`, `{undefined}` or
+ * `{null}`, or followed by a `{...spread}` that may override it, never does. A Retry that is not inside a `<Button>` is the
+ * business of retry-in-a-raw-button.
  */
 function countRetriesNotBusy(text: string): number {
   const buttons = tagSpans(text, "Button");
@@ -337,7 +357,7 @@ function countRetriesNotBusy(text: string): number {
     const open = buttons.findLast((span) => span.end <= at && !span.tag.trimEnd().endsWith("/>"));
     if (open === undefined || /<\/Button\s*>/.test(text.slice(open.end, at))) return false;
     const loading = propValues(open.tag).get("loading");
-    return loading === undefined || (loading !== null && STATICALLY_NOT_BUSY.test(loading));
+    return loading === undefined || (loading !== null && isStaticallyNotBusy(loading));
   }).length;
 }
 
