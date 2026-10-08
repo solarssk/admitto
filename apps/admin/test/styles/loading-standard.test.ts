@@ -4,19 +4,14 @@ import { RULES, RULE_HINTS, scanLoadingViolations, type Counts, type Rule } from
 /**
  * Drift guard for the admin SPA's loading, busy and failed-load states (AGENTS.md "Admin SPA loading and busy states").
  *
- * This is a ratchet: the table below is every place that still uses an old idiom when the
- * standard was introduced. A file may not gain a violation, and the count for a file may only go
- * down. When a migration PR removes an old idiom, lower (or delete) its entry in the same PR; this
- * test fails with "lower the allowlist" until you do, so the debt can only shrink. The final
- * migration PR leaves each table empty, and the tables can then be replaced by a plain
- * `expect(found).toEqual({})`.
+ * The admin source has no finding for any rule in `RULES`, and this test keeps it that way: a new violation fails it, with a
+ * hint of what to use instead. The only findings it tolerates are the raw `<button>`s listed below, each with a reason.
  */
 /**
  * Raw `<button>`s that name a busy flag in `disabled` without being the busy control. Each was read and checked:
  * the control the user pressed is a different one (or the menu it sits in has already closed), so it keeps its
- * focus and `disabled` is right for this one. This is not debt that shrinks; a new entry needs a reason a
- * reviewer can check. A button that starts the busy action itself uses `<Button loading>`, `<IconButton loading>`
- * or `<MoreActionsMenuItem loading>` instead.
+ * focus and `disabled` is right for this one. A new entry needs a reason a reviewer can check. A button that starts the
+ * busy action itself uses `<Button loading>`, `<IconButton loading>` or `<MoreActionsMenuItem loading>` instead.
  */
 const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason: string }> = {
   "apps/admin/src/pages/AttendeeDetailPage.tsx": {
@@ -41,36 +36,28 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
   },
 };
 
-const ALLOWED: Record<Rule, Counts> = {
-  "hand-rolled-spinner-css": {},
-  "bare-loading-text": {},
-  "busy-label-swap": {},
-  "error-state-not-an-alert": {},
-  "retry-outside-an-alert": {},
-  // A Retry drawn as a raw <button>, each to move to <Button loading> with the screen that owns it.
-  "retry-in-a-raw-button": {},
-  // Hand-made busy states on a raw <button>, each to move to <Button loading> with the screen that owns it.
-  "raw-button-busy-disabled": Object.fromEntries(
-    Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS).map(([file, { count }]) => [file, count]),
-  ),
-};
+/** The findings a rule may have: none, except for the raw buttons listed above (per file, with their count). */
+function tolerated(rule: Rule): Counts {
+  if (rule !== "raw-button-busy-disabled") return {};
+  return Object.fromEntries(Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS).map(([file, { count }]) => [file, count]));
+}
 
 describe("loading standard drift (apps/admin/src)", () => {
   const found = scanLoadingViolations();
 
-  it.each(RULES)("%s: no new violations, and the allowlist only shrinks", (rule) => {
+  it.each(RULES)("%s: no violation beyond the documented exceptions", (rule) => {
     const actual = found[rule];
-    const allowed = ALLOWED[rule];
+    const allowed = tolerated(rule);
 
-    const grew = Object.entries(actual)
+    const extra = Object.entries(actual)
       .filter(([file, n]) => n > (allowed[file] ?? 0))
       .map(([file, n]) => `${file}: ${n} (allowed ${allowed[file] ?? 0})`);
-    expect(grew, `New "${rule}" violation. ${RULE_HINTS[rule]}`).toEqual([]);
+    expect(extra, `"${rule}" violation. ${RULE_HINTS[rule]}`).toEqual([]);
 
-    const shrank = Object.entries(allowed)
+    const stale = Object.entries(allowed)
       .filter(([file, n]) => (actual[file] ?? 0) < n)
-      .map(([file, n]) => `${file}: ${actual[file] ?? 0} (allowlist says ${n})`);
-    expect(shrank, `Nice: "${rule}" debt went down. Lower or remove these entries in ALLOWED.`).toEqual([]);
+      .map(([file, n]) => `${file}: ${actual[file] ?? 0} (listed ${n})`);
+    expect(stale, "An exception in DISABLED_WHILE_ANOTHER_ACTION_RUNS no longer matches the code. Lower its count or remove it.").toEqual([]);
   });
 });
 
