@@ -2,10 +2,10 @@
 import { Children, isValidElement, type ReactNode } from "react";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CustomFieldsReportsTab } from "../../src/pages/CustomFieldsReportsTab.js";
+import { CustomFieldsReportsTab } from "../../src/reports/ReportsTabs.js";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldReportsResponse } from "../../src/api/types.js";
-import { connectionStateValue, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, connectionStateValue, deferred, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventCustomFieldReports = vi.fn();
 const reportApiError = vi.fn();
@@ -142,30 +142,28 @@ afterEach(() => {
 });
 
 describe("CustomFieldsReportsTab", () => {
-  it("shows the loading state once the delayed-loading threshold elapses", async () => {
+  it("holds its room invisibly for 200ms, then draws its own shape, without claiming that there are no fields, and the report replaces it when the read answers", async () => {
     vi.useFakeTimers();
-    let resolveFetch: (value: EventCustomFieldReportsResponse) => void = () => {};
-    fetchEventCustomFieldReports.mockReturnValue(
-      new Promise<EventCustomFieldReportsResponse>((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
+    const read = deferred<EventCustomFieldReportsResponse>();
+    fetchEventCustomFieldReports.mockReturnValue(read.promise);
     try {
       renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
+      const placeholder = screen.getByRole("status", { name: "Loading the custom field report" });
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(true);
+      expect(screen.queryByText("No custom fields yet")).toBeNull();
 
-      expect(screen.queryByText("Loading custom field report…")).toBeNull();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(200);
-      });
-      expect(screen.getByText("Loading custom field report…")).toBeTruthy();
-
-      await act(async () => {
-        resolveFetch(fixture());
-      });
+      await advanceTimers(200);
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(false);
+      // A field's name is not known before the read: its card is a bar for the title, a line and a ring with its breakdown.
+      expect(placeholder.querySelectorAll(".custom-fields-grid > .at-card")).toHaveLength(2);
+      expect(placeholder.querySelectorAll(".at-card__title .at-skeleton")).toHaveLength(2);
+      expect(placeholder.querySelector(".reports-skeleton")?.getAttribute("aria-hidden")).toBe("true");
+      read.resolve(fixture());
     } finally {
       vi.useRealTimers();
     }
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading the custom field report" })).toBeNull(), { timeout: 3000 });
+    expect(screen.getByText("Dietary requirements")).toBeTruthy();
   });
 
   it("shows an EmptyState with a Retry action on a generic fetch error, and re-fetches on click", async () => {

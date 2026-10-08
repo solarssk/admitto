@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Spinner, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import {
-  ApiError,
   eventCustomFieldReportsPrintUrl,
   eventMailReportsPrintUrl,
   eventReportsPrintUrl,
@@ -29,8 +28,9 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
-import { redirectToLogin } from "../identity/loginRedirect.js";
+import { failReportLoad } from "../hooks/useReportFetch.js";
 import { ReportsEventDaySkeleton } from "../reports/ReportsEventDaySkeleton.js";
+import { CustomFieldsReportsTab, MailReportsTab, WalletsReportsTab } from "../reports/ReportsTabs.js";
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import "./reports-page.css";
@@ -724,29 +724,6 @@ function AdmissionLog({
   );
 }
 
-/** What the first read of Event day does with a failure before it becomes the error on screen: the connection state hears
- * of it, a 401 hands the browser to the login page (the answer never comes, so no error flashes up first), and whether the
- * failure was a 403 is remembered, so that the error says the viewer has no access (the Retry stays, since access can be
- * granted meanwhile). It is set when the answer is in, never when a Retry starts, so the wording of the error on screen does
- * not change while the Retry runs. The failure is rethrown for `usePanelLoad`, which turns it into the message (the server's
- * own operator-safe wording, or the fallback). Extracted from the load so its own cognitive complexity stays low. */
-function failReportLoad(
-  err: unknown,
-  reportApiError: (status: number) => void,
-  setAccessDenied: (denied: boolean) => void,
-): Promise<never> {
-  const status = err instanceof ApiError ? err.status : null;
-  if (status !== null) {
-    reportApiError(status);
-    if (status === 401) {
-      redirectToLogin();
-      return new Promise<never>(() => {});
-    }
-  }
-  setAccessDenied(status === 403);
-  throw err;
-}
-
 /** Applies a resolved reconcile fetch: replaces `data` and folds the optimistic delta back down
  * by only the portion this fetch accounts for (see scheduleReconcile's own comment). Extracted
  * purely to keep the nested useCallback/setTimeout/then chain within Sonar's nesting-depth
@@ -759,27 +736,6 @@ function applyReconcileResult(
 ): void {
   setData(report);
   setOptimisticAdmittedDelta((current) => current - deltaAtFetchStart);
-}
-
-// Wallets and Custom fields both pull in Recharts - code-split so Event day (the default tab,
-// its own hand-rolled CSS bars) doesn't pay for that weight until an operator actually switches
-// tabs. Same route-level lazy() convention as App.tsx.
-const WalletsReportsTab = lazy(() =>
-  import("./WalletsReportsTab.js").then((m) => ({ default: m.WalletsReportsTab })),
-);
-const CustomFieldsReportsTab = lazy(() =>
-  import("./CustomFieldsReportsTab.js").then((m) => ({ default: m.CustomFieldsReportsTab })),
-);
-const MailReportsTab = lazy(() =>
-  import("./MailReportsTab.js").then((m) => ({ default: m.MailReportsTab })),
-);
-
-function ReportsTabFallback() {
-  return (
-    <output className="reports-tab-loading">
-      <Spinner label="Loading report" />
-    </output>
-  );
 }
 
 /** One event, one page: a different `:eventId` is a fresh page (its own read, live feed, tabs and log), never the previous one's. */
@@ -1049,33 +1005,27 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       {customFieldsTabVisited && (
         // Same display:contents reasoning as the Wallets wrapper below.
         <div style={{ display: activeTab === "customfields" ? "contents" : "none" }}>
-          <Suspense fallback={<ReportsTabFallback />}>
-            <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} />
-          </Suspense>
+          <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} />
         </div>
       )}
 
       {walletsTabVisited && (
         // display:contents when visible, not the no-style default - a plain wrapper div is its
-        // own flex item, which took WalletsReportsTab's rows out of .screen's own `gap: 18px`
-        // (shell.css) and left them touching with zero space between (PO report) - contents
-        // removes this element from box generation while it's the active tab, so its children
-        // (the wallets-panels rows) become .screen's direct flex children again for gap purposes,
-        // exactly as they were before this wrapper existed. display:none when hidden still works
-        // the normal way (contents has no "hidden" state of its own to toggle).
+        // own flex item, which took the tab's rows (the wallets-panels rows) out of .screen's own
+        // `gap: 18px` (shell.css) and left them touching with zero space between (PO report) -
+        // contents removes this element from box generation while it's the active tab, so the
+        // tab's section (.reports-tab, one column with the same gap) is .screen's own flex child,
+        // exactly as the rows were before this wrapper existed. display:none when hidden still
+        // works the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
-          <Suspense fallback={<ReportsTabFallback />}>
-            <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} isActive={activeTab === "wallets"} />
-          </Suspense>
+          <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} isActive={activeTab === "wallets"} />
         </div>
       )}
 
       {mailTabVisited && (
         // Same display:contents reasoning as the Wallets/Custom fields wrappers above.
         <div style={{ display: activeTab === "mail" ? "contents" : "none" }}>
-          <Suspense fallback={<ReportsTabFallback />}>
-            <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} />
-          </Suspense>
+          <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} />
         </div>
       )}
 
