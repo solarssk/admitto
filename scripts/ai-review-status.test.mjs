@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
-  CREDENTIAL, STATUS_MARKER, buildFacts, createApi, diffCoverage, diffSections, findComment, githubRequest, renderStatus,
-  reviewTimedOut, runCli, summarizeExecution, upsertComment,
+  CREDENTIAL, STATUS_MARKER, buildFacts, createApi, describeShape, diffCoverage, diffSections, findComment, githubRequest,
+  renderStatus, reviewTimedOut, runCli, summarizeExecution, upsertComment,
 } from './ai-review-status.mjs'
 
 const workspace = '/home/runner/work/project/project'
@@ -25,6 +25,9 @@ const diffText = [
   'diff --git a/img/x.png b/img/x.png', 'UNAVAILABLE: GitHub returned no patch for this file', '',
 ].join('\n')
 // 4 and 42 are the first lines of the two sections: the EXCLUDED line and a blank one come first.
+// A log of the shape summarizeExecution returns, for the tests that build one by hand.
+const logOf = (over = {}) => ({ model: 'm', otherModels: [], offeredExtra: [], turns: 1, durationMs: 1000, opened: [], outside: 0, ranges: [], results: 1,
+  unmatched: 0, unmeasured: 0, tools: [], otherTools: [], unmeasurable: false, ...over })
 const facts = (over = {}) => ({
   state: 'approved', detail: '', timeoutMinutes: 15, now: Date.UTC(2026, 9, 7, 14, 3), trigger: 'pull_request_target',
   server: 'https://github.com', repository: 'maintainer/project', number: '7', head, base, baseRef: 'main',
@@ -54,7 +57,9 @@ test('the execution log gives the model, the turns and what the reviewer read, f
   assert.deepEqual(log.ranges, [[1, 50], [60, 70]], 'adjacent reads merge, a gap stays a gap')
   assert.deepEqual(log.opened, ['AGENTS.md'], 'a base file once; the review inputs and the failed read are not listed')
   assert.equal(log.outside, 1)
-  assert.equal(log.searches, 1)
+  assert.deepEqual(log.tools, [{ name: 'Grep', calls: 1, failed: 0, nested: 0 }, { name: 'Read', calls: 8, failed: 1, nested: 0 }])
+  assert.deepEqual(log.otherTools, [])
+  assert.equal(log.unmeasurable, false)
   assert.equal(log.results, 9, 'every tool result is counted, failed or not')
 })
 
@@ -93,6 +98,212 @@ test('a path that merely starts with two dots is inside the checkout, one that l
 test('the base files that were opened are listed in a fixed order', () => {
   const events = ['b.ts', 'A.ts', 'a.ts', 'c.ts'].flatMap((name, index) => read(String(index), { file_path: `${workspace}/${name}` }, numbered(1, 1)))
   assert.deepEqual(summarizeExecution(events, workspace).opened, ['a.ts', 'A.ts', 'b.ts', 'c.ts'])
+})
+
+// The messages the SDK streams: an assistant message holds the tool call, a user message holds its
+// result and, next to it, the tool's own structured output.
+const sdkCall = (id, name, input, parent = null) => ({ type: 'assistant', parent_tool_use_id: parent,
+  message: { content: [{ type: 'tool_use', id, name, input }] } })
+const sdkResult = (id, content, structured, extra = {}) => ({ type: 'user', parent_tool_use_id: null,
+  message: { content: [{ type: 'tool_result', tool_use_id: id, content, ...extra }] }, tool_use_result: structured })
+const diffFile = `${workspace}/.ai-review/pr.diff`
+
+test('a Read is measured from the tool\'s structured result, even when the text has no line numbers', () => {
+  const events = [sdkCall('a', 'Read', { file_path: diffFile }),
+    sdkResult('a', 'plain text without any numbers', { type: 'text', file: { filePath: diffFile, startLine: 1, numLines: 600, totalLines: 1500, truncatedByTokenCap: true } }),
+    sdkCall('b', 'Read', { file_path: diffFile, offset: 601, limit: 500 }),
+    sdkResult('b', 'still no numbers', { type: 'text', file: { startLine: 601, numLines: 500, totalLines: 1500 } })]
+  const log = summarizeExecution(events, workspace)
+  assert.deepEqual(log.ranges, [[1, 1100]], 'a file cut to its first page is counted as the page it was')
+  assert.equal(log.unmeasured, 0)
+  assert.equal(log.unmeasurable, false)
+  const camel = summarizeExecution([sdkCall('c', 'Read', { file_path: diffFile }),
+    { ...sdkResult('c', 'x', undefined), toolUseResult: { type: 'text', file: { startLine: 5, numLines: 3, totalLines: 9 } } }], workspace)
+  assert.deepEqual(camel.ranges, [[5, 7]], 'the transcript spelling of the field is understood too')
+})
+
+test('a Read that cannot be measured is said to be unmeasurable, never counted as zero lines read', () => {
+  const log = summarizeExecution([sdkCall('a', 'Read', { file_path: diffFile }), sdkResult('a', 'no numbers at all', undefined)], workspace)
+  assert.deepEqual(log.ranges, [])
+  assert.equal(log.unmeasured, 1)
+  assert.equal(log.unmeasurable, true)
+  const two = summarizeExecution([{ type: 'assistant', message: { content: [
+    { type: 'tool_use', id: 'x', name: 'Read', input: { file_path: diffFile } }, { type: 'tool_use', id: 'y', name: 'Read', input: { file_path: diffFile, offset: 50 } }] } },
+  { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x', content: numbered(1, 3) }, { type: 'tool_result', tool_use_id: 'y', content: numbered(50, 52) }] },
+    tool_use_result: { type: 'text', file: { startLine: 999, numLines: 999, totalLines: 999 } } }], workspace)
+  assert.deepEqual(two.ranges, [[1, 3], [50, 52]], 'one structured result for two tool results belongs to neither')
+})
+
+test('lines of the diff that a content search printed are counted, and a search that cannot be measured is flagged', () => {
+  const grep = (id, input, content, structured) => [sdkCall(id, 'Grep', input), sdkResult(id, content, structured)]
+  const single = summarizeExecution(grep('a', { pattern: 'x', path: '.ai-review/pr.diff', output_mode: 'content' }, '7:+a\n8-ctx\n--\n20:+b'), workspace)
+  assert.deepEqual(single.ranges, [[7, 8], [20, 20]])
+  const structured = summarizeExecution(grep('b', { pattern: 'x', path: diffFile, output_mode: 'content' }, 'ignored', { mode: 'content', content: '3:+c' }), workspace)
+  assert.deepEqual(structured.ranges, [[3, 3]])
+  const named = summarizeExecution(grep('c', { pattern: 'x', output_mode: 'content' },
+    `.ai-review/pr.diff:11:+x\n./.ai-review/pr.diff-12-ctx\n${diffFile}:13:+y\nsrc/other.ts:99:+z`), workspace)
+  assert.deepEqual(named.ranges, [[11, 13]], 'only the diff\'s lines count when the search covered more')
+  assert.deepEqual(summarizeExecution(grep('d', { pattern: 'x', path: '.ai-review/pr.diff' }, '.ai-review/pr.diff'), workspace).ranges, [], 'a list of files shows no lines')
+  const blind = summarizeExecution(grep('e', { pattern: 'x', path: '.ai-review/pr.diff', output_mode: 'content', '-n': false }, '+some text\n+more'), workspace)
+  assert.equal(blind.unmeasurable, true)
+  assert.equal(summarizeExecution(grep('f', { pattern: 'x', path: 'src', output_mode: 'content' }, 'a.ts:1:x'), workspace).unmeasurable, false)
+})
+
+test('tools are counted by name, with failures, and calls inside a subagent are kept apart', () => {
+  const events = [sdkCall('r1', 'Read', { file_path: diffFile }), sdkResult('r1', numbered(1, 5), { file: { startLine: 1, numLines: 5, totalLines: 5 } }),
+    sdkCall('r2', 'Read', { file_path: `${workspace}/missing.ts` }), sdkResult('r2', 'does not exist', undefined, { is_error: true }),
+    sdkCall('ag', 'Agent', { prompt: 'look' }),
+    sdkCall('n1', 'Bash', { command: 'cat x' }, 'ag'), { ...sdkResult('n1', 'out', undefined), parent_tool_use_id: 'ag' },
+    sdkCall('n2', 'Read', { file_path: diffFile }, 'ag'), { ...sdkResult('n2', numbered(1, 400), { file: { startLine: 1, numLines: 400, totalLines: 400 } }), parent_tool_use_id: 'ag' },
+    sdkResult('ag', 'the subagent report', undefined),
+    sdkResult('ghost', 'a result nobody asked for', undefined)]
+  const log = summarizeExecution(events, workspace)
+  assert.deepEqual(log.tools.map(({ name, calls, failed, nested }) => [name, calls, failed, nested]),
+    [['Agent', 1, 0, 0], ['Bash', 1, 0, 1], ['Read', 3, 1, 1]])
+  assert.deepEqual(log.otherTools.map((tool) => tool.name), ['Agent', 'Bash'])
+  assert.deepEqual(log.ranges, [[1, 5]], 'what the subagent read is not what the reviewer was shown')
+  assert.equal(log.unmeasurable, true)
+  assert.equal(log.unmatched, 1)
+  const again = summarizeExecution([sdkCall('d', 'Read', { file_path: diffFile }), sdkCall('d', 'Read', { file_path: diffFile })], workspace)
+  assert.equal(again.tools[0].calls, 1, 'the same tool call is not counted twice')
+  assert.equal(summarizeExecution([{ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'z', input: {} }] } }], workspace).tools[0].name, 'unknown')
+})
+
+test('the status says which tools were used and warns when they were not the three on offer', () => {
+  const events = [sdkCall('ag', 'Agent', { prompt: 'look' }), sdkResult('ag', 'report', undefined),
+    sdkCall('r', 'Read', { file_path: `${workspace}/AGENTS.md` }), sdkResult('r', numbered(1, 4), { file: { startLine: 1, numLines: 4, totalLines: 4 } })]
+  const log = summarizeExecution(events, workspace)
+  const coverage = { ...diffCoverage(diffSections(diffText), log.ranges), atLeast: log.unmeasurable }
+  const body = renderStatus(facts({ log, coverage }))
+  assert.match(body, /\| \*\*Tools\*\* \| `Agent` 1, `Read` 1 \|/)
+  assert.match(body, /\| \*\*Coverage\*\* \| saw at least 0 of 102 diff lines \(0%\), 0 of 2 files in full; 1 base-branch file opened \|/)
+  assert.match(body, /⚠️ The reviewer used tools beyond Read, Grep and Glob \(`Agent` 1\)\. The workflow offers only those three/)
+  assert.match(body, /⚠️ The reviewer's own reads cover 0 of 102 diff lines\. The rest may have been seen through the other tools/)
+  assert.match(body, /<summary>2 files not covered by its own reads<\/summary>/)
+  const sub = summarizeExecution([sdkCall('r', 'Read', { file_path: diffFile }, 'ag'), { ...sdkResult('r', numbered(1, 3), undefined), parent_tool_use_id: 'ag' }], workspace)
+  assert.match(renderStatus(facts({ log: sub })), /\| \*\*Tools\*\* \| `Read` 1; 1 call ran inside a subagent \|/)
+  assert.doesNotMatch(renderStatus(facts({ log: logOf() })), /Tools/, 'no tool calls, no row')
+})
+
+test('an approval that rests on a partly seen diff says so, and a complete one does not', () => {
+  const partial = { ...diffCoverage(diffSections(diffText), [[1, 70]]), atLeast: false }
+  const approved = renderStatus(facts({ log: logOf({ ranges: [[1, 70]] }), coverage: partial }))
+  assert.match(approved, /⚠️ The reviewer saw 67 of 102 diff lines \(65%\), so this approval says little about the 1 file it did not read in full\. Review it yourself\./)
+  const none = { ...diffCoverage(diffSections(diffText), []), atLeast: false }
+  assert.match(renderStatus(facts({ log: logOf(), coverage: none })), /saw 0 of 102 diff lines \(0%\), so this approval says little about the 2 files it did not read in full\. Review them yourself\./)
+  const full = { ...diffCoverage(diffSections(diffText), [[1, 200]]), atLeast: false }
+  assert.doesNotMatch(renderStatus(facts({ log: logOf(), coverage: full })), /so this approval says little/)
+  assert.doesNotMatch(renderStatus(facts({ state: 'findings', log: logOf(), coverage: partial })), /so this approval says little/, 'a review that found something needs no such warning')
+  assert.doesNotMatch(renderStatus(facts({ log: logOf(), coverage: 'unknown' })), /so this approval says little/)
+})
+
+test('buildFacts marks a coverage as "at least" when the reviewer used something it cannot be measured through', () => withWorkspace((dir) => {
+  writeFileSync(join(dir, '.ai-review/pr.diff'), diffText)
+  const eventsOf = (name) => [sdkCall('t', name, name === 'Read' ? { file_path: join(dir, '.ai-review/pr.diff') } : {}),
+    sdkResult('t', numbered(1, 10), name === 'Read' ? { file: { startLine: 1, numLines: 10, totalLines: 108 } } : undefined)]
+  for (const [name, atLeast] of [['Read', false], ['Agent', true]]) {
+    writeFileSync(join(dir, 'log.json'), JSON.stringify(eventsOf(name)))
+    const result = buildFacts(runnerEnv(dir, { STATUS_STATE: 'approved', CLAUDE_EXECUTION_FILE: join(dir, 'log.json') }), 0)
+    assert.equal(result.coverage.atLeast, atLeast, name)
+  }
+}))
+
+test('a helper model that billed tokens is named next to the main one', () => {
+  const events = [{ type: 'system', subtype: 'init', model: 'claude-main' },
+    { type: 'result', num_turns: 3, modelUsage: { 'claude-main': { inputTokens: 5 }, 'claude-helper': { inputTokens: 2 }, 'claude-a-helper': {} } }]
+  const log = summarizeExecution(events, workspace)
+  assert.deepEqual(log.otherModels, ['claude-a-helper', 'claude-helper'])
+  assert.match(renderStatus(facts({ log })), /\| \*\*Reviewer\*\* \| Claude, `claude-main`, also `claude-a-helper`, `claude-helper`, 3 turns \|/)
+  const alone = summarizeExecution([events[0], { type: 'result', modelUsage: { 'claude-main': {} } }], workspace)
+  assert.deepEqual(alone.otherModels, [])
+  assert.doesNotMatch(renderStatus(facts({ log: alone })), /also/)
+  assert.deepEqual(summarizeExecution([{ type: 'result', modelUsage: 'odd' }], workspace).otherModels, [])
+})
+
+test('a log whose tool results match no tool call says that instead of claiming there were none', () => {
+  const log = summarizeExecution([sdkResult('x', 'orphan', undefined), sdkResult('y', 'orphan', undefined)], workspace)
+  assert.equal(log.results, 0)
+  assert.equal(log.unmatched, 2)
+  assert.match(renderStatus(facts({ log, coverage: 'unknown' })), /\| \*\*Coverage\*\* \| not available, 2 tool results in the execution log could not be matched to a tool call \|/)
+  assert.match(renderStatus(facts({ log: logOf({ results: 0 }), coverage: 'unknown' })), /not available, the execution log has no tool results/)
+})
+
+test('a result with no call behind it makes the figure a minimum even when other results matched', () => {
+  const events = [sdkCall('a', 'Read', { file_path: diffFile }), sdkResult('a', 'plain', { file: { startLine: 1, numLines: 10, totalLines: 108 } }),
+    sdkResult('ghost', 'a result nobody asked for', undefined)]
+  const log = summarizeExecution(events, workspace)
+  assert.equal(log.results, 1)
+  assert.equal(log.unmatched, 1)
+  assert.equal(log.unmeasurable, true)
+  const coverage = { ...diffCoverage(diffSections(diffText), log.ranges), atLeast: log.unmeasurable }
+  assert.match(renderStatus(facts({ log, coverage })), /saw at least 8 of 102 diff lines/)
+  assert.equal(summarizeExecution(events.slice(0, 2), workspace).unmeasurable, false, 'the same log without the orphan is exact')
+})
+
+test('the tool that carries the structured answer is listed but is not a tool beyond the three', () => {
+  const events = [sdkCall('r', 'Read', { file_path: diffFile }), sdkResult('r', numbered(1, 5), { file: { startLine: 1, numLines: 5, totalLines: 5 } }),
+    sdkCall('s', 'StructuredOutput', { verdict: 'approve' }), sdkResult('s', 'Structured output provided successfully', undefined)]
+  const log = summarizeExecution(events, workspace)
+  assert.deepEqual(log.otherTools, [])
+  assert.equal(log.unmeasurable, false)
+  const body = renderStatus(facts({ log }))
+  assert.match(body, /\| \*\*Tools\*\* \| `Read` 1, `StructuredOutput` 1 \|/)
+  assert.doesNotMatch(body, /beyond Read, Grep and Glob/)
+})
+
+test('a session that was offered more than the three tools is warned about, one that was not is not', () => {
+  const init = (tools) => ({ type: 'system', subtype: 'init', model: 'm', tools })
+  const wide = summarizeExecution([init(['Task', 'Read', 'Bash', 'Grep', 'Glob', 'StructuredOutput', 'Task', 7])], workspace)
+  assert.deepEqual(wide.offeredExtra, ['Bash', 'Task'], 'sorted, once each, only names')
+  assert.match(renderStatus(facts({ log: wide })), /⚠️ The reviewer's session was offered tools beyond Read, Grep and Glob \(`Bash`, `Task`\)\. The workflow is meant to allow only those three, so check the tool flags of the model step in ai-review\.yml\./)
+  const narrow = summarizeExecution([init(['Glob', 'Grep', 'Read', 'StructuredOutput'])], workspace)
+  assert.deepEqual(narrow.offeredExtra, [])
+  assert.doesNotMatch(renderStatus(facts({ log: narrow })), /was offered tools/)
+  assert.deepEqual(summarizeExecution([{ type: 'system', subtype: 'init', model: 'm' }], workspace).offeredExtra, [], 'a log without the list says nothing')
+  const many = summarizeExecution([init(Array.from({ length: 10 }, (_, i) => `Tool${i}`))], workspace)
+  assert.match(renderStatus(facts({ log: many })), /\(`Tool0`, .*`Tool7`, and 2 more\)/)
+  assert.doesNotMatch(renderStatus(facts({ state: 'failed', detail: 'timeout', log: narrow })), /was offered tools/)
+})
+
+test('a session that did not run in dontAsk mode is warned about, one that did is not', () => {
+  const init = (permissionMode) => ({ type: 'system', subtype: 'init', model: 'm', ...(permissionMode ? { permissionMode } : {}) })
+  const loose = summarizeExecution([init('default')], workspace)
+  assert.equal(loose.permissionMode, 'default')
+  assert.match(renderStatus(facts({ log: loose })), /⚠️ The reviewer's session ran in permission mode `default`, not `dontAsk`, so a read outside the checkout was not refused outright\. Check the permission flag of the model step in ai-review\.yml\./)
+  assert.doesNotMatch(renderStatus(facts({ log: summarizeExecution([init('dontAsk')], workspace) })), /permission mode/)
+  assert.doesNotMatch(renderStatus(facts({ log: summarizeExecution([init(null)], workspace) })), /permission mode/, 'a log without the mode says nothing')
+  assert.match(renderStatus(facts({ log: summarizeExecution([init('`x`|y')], workspace) })), /permission mode `x  y`, not/, 'the mode is shown as clean text')
+})
+
+test('the shape of the log is described without any of its content', () => {
+  const secret = 'a-secret-that-must-never-be-printed'
+  const events = [
+    { type: 'system', subtype: 'init', model: 'm', permissionMode: 'dontAsk', tools: ['Read', 'Grep', 'Glob', 'Bash', 'Read', 'mcp__server__tool', `${secret} and spaces`, 7],
+      mcp_servers: [{ name: 'server', status: 'connected' }, { name: `${secret} and spaces`, status: '::error::x' }, null] },
+    { type: 'assistant', message: { content: [{ type: 'text', text: secret }, { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: secret } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a', content: secret }] }, tool_use_result: { file: {} } },
+    { type: 'assistant', parent_tool_use_id: 'ag', message: { content: [{ type: 'tool_use', id: 'b', name: 'Read', input: {} }] } },
+    { type: 'user', parent_tool_use_id: 'ag', message: { content: [{ type: 'tool_result', tool_use_id: 'b', content: 'x' }] } },
+    { type: 'user', message: { content: 'a plain text message' } },
+    { type: 'x'.repeat(60), subtype: '::error::injected', message: { content: [{ type: '::warning::x' }, null] } },
+    { type: 'result', subtype: 'success' }, null, 'odd',
+  ]
+  const lines = describeShape(events)
+  assert.equal(lines[0], 'events: ?/? 1, assistant 2, result/success 1, system/init 1, user 3')
+  assert.equal(lines[1], 'content blocks: ? 2, text 1, tool_result 2, tool_use 2')
+  assert.equal(lines[2], "events with a tool result: 2, of which with the tool's structured answer: 1")
+  assert.equal(lines[3], 'events that belong to a subagent: 2')
+  assert.equal(lines[4], 'tools offered at the start: ?, Bash, Glob, Grep, mcp__server__tool, Read')
+  assert.equal(lines[5], 'permission mode at the start: dontAsk')
+  assert.equal(lines[6], 'mcp servers at the start: ?/?, ?/?, server/connected')
+  assert.doesNotMatch(lines.join('\n'), /secret|::error|::warning|spaces|plain text/)
+  assert.deepEqual(describeShape([]).slice(-3), ['tools offered at the start: not in the log', 'permission mode at the start: not in the log', 'mcp servers at the start: not in the log'])
+  assert.equal(describeShape([{ type: 'system', subtype: 'init', mcp_servers: [] }]).at(-1), 'mcp servers at the start: none')
+  assert.equal(describeShape({ type: 'result' })[0], 'events: result 1')
+  assert.equal(describeShape('odd')[0], 'events: none')
+  const many = describeShape([{ type: 'system', subtype: 'init', tools: Array.from({ length: 45 }, (_, i) => `tool${i}`) }]).at(-3)
+  assert.match(many, /^tools offered at the start: tool0, tool1, .* and 5 more$/)
+  assert.equal(describeShape(Array.from({ length: 30 }, (_, i) => ({ type: `kind${i}` })))[0].split(', ').length, 20, 'at most twenty kinds are listed')
 })
 
 test('the model is taken from an assistant message when the log has no init event', () => {
@@ -160,7 +371,8 @@ test('the table carries commit, size, reviewer, coverage, run and budget', () =>
   assert.match(body, /\| \*\*Commit\*\* \| .* on `main` \(`bbbbbbb`\)/)
   assert.match(body, /\| \*\*Changes\*\* \| 16 files, \+640 -210; lockfiles left out: `package-lock\.json` \|/)
   assert.match(body, /\| \*\*Reviewer\*\* \| Claude, `claude-test-model`, 9 turns, 3 min 12 s \|/)
-  assert.match(body, /\| \*\*Coverage\*\* \| read 67 of 102 diff lines \(65%\), 1 of 2 files in full; 1 base-branch file opened \|/)
+  assert.match(body, /\| \*\*Coverage\*\* \| saw 67 of 102 diff lines \(65%\), 1 of 2 files in full; 1 base-branch file opened \|/)
+  assert.match(body, /\| \*\*Tools\*\* \| `Read` 2 \|/)
   assert.match(body, /\| \*\*Run\*\* \| \[run 123\]\(https:\/\/github\.com\/maintainer\/project\/actions\/runs\/123\), attempt 1 \|/)
   assert.match(body, /\| \*\*Budget\*\* \| earlier attempts: this PR 2 of 6, today 11 of 80 \|/)
   assert.match(body, /<summary>1 file not read in full<\/summary>\n\n- `src\/b\.ts` \(42% read\)/)
@@ -173,7 +385,7 @@ test('a manual re-run is not counted, and a missing log shows no coverage', () =
   assert.match(body, /not counted, this is a manual re-run/)
   assert.doesNotMatch(body, /Coverage/)
   assert.match(body, /Reviewer\*\* \| none, approved by a path rule/)
-  assert.match(renderStatus(facts({ log: { opened: [], outside: 0 }, coverage: 'unknown' })), /not available, the execution log has no tool results/)
+  assert.match(renderStatus(facts({ log: logOf(), coverage: 'unknown' })), /not available, the execution log has no tool results/)
 })
 
 test('every failure says what happened and what to do about it', () => {
@@ -220,7 +432,7 @@ test('a pull request that is reviewed by dispatch is told to dispatch again, not
 })
 
 test('text that came from a tool call is shown only inside a clean code span', () => {
-  const log = { model: 'm|odel`', turns: 1, durationMs: 1000, opened: ['a`b|c\nd.ts', `${'x'.repeat(150)}.ts`], outside: 2, ranges: [], searches: 0, results: 1 }
+  const log = logOf({ model: 'm|odel`', opened: ['a`b|c\nd.ts', `${'x'.repeat(150)}.ts`], outside: 2 })
   const body = renderStatus(facts({ log }))
   assert.match(body, /- `a b c d\.ts`/)
   assert.match(body, /`x{99}…`/)
@@ -234,7 +446,7 @@ test('text that came from a tool call is shown only inside a clean code span', (
 
 test('something that looks like a credential is never posted, and never changes what the review decided', () => {
   const secret = `ghp_${'a'.repeat(30)}`
-  const body = renderStatus(facts({ log: { model: 'm', opened: [secret], outside: 0, ranges: [], searches: 0, results: 1 } }))
+  const body = renderStatus(facts({ log: logOf({ opened: [secret] }) }))
   assert.doesNotMatch(body, /ghp_/)
   assert.match(body, /## ✅ AI review: approved/, 'the review was posted as an approval: the status must not say otherwise')
   assert.match(body, /Some details were left out because they looked like a credential\./)
@@ -382,6 +594,35 @@ test('start writes the start time and posts the reviewing comment; final posts t
   assert.equal(await runCli('final', runnerEnv(dir, { STATUS_STATE: 'approved' }), api, 0), 0)
   assert.match(posted[1][1], /AI review: approved/)
   assert.equal(posted[1][0], '/repos/maintainer/project/issues/7/comments')
+}))
+
+test('the final report prints the shape of the log to the job log, the start report does not, and a credential-like name is held back', () => withWorkspace(async (dir) => {
+  const api = { list: async () => [], post: async () => ({}) }
+  const output = async (mode, events, over = {}) => {
+    if (events) writeFileSync(join(dir, 'log.json'), JSON.stringify(events))
+    const lines = []
+    const original = console.log
+    console.log = (line) => lines.push(line)
+    try {
+      await runCli(mode, runnerEnv(dir, { STATUS_STATE: 'approved', ...(events ? { CLAUDE_EXECUTION_FILE: join(dir, 'log.json') } : {}), ...over }), api, 0)
+    } finally {
+      console.log = original
+    }
+    return lines
+  }
+  const events = [{ type: 'system', subtype: 'init', tools: ['Read'], permissionMode: 'dontAsk', mcp_servers: [] }, { type: 'result', subtype: 'success' }]
+  const final = await output('final', events)
+  assert.equal(final[0], '::group::AI review execution log shape (structure only, no content)')
+  assert.equal(final[1], 'events: result/success 1, system/init 1')
+  assert.equal(final[5], 'tools offered at the start: Read')
+  assert.equal(final[6], 'permission mode at the start: dontAsk')
+  assert.equal(final[7], 'mcp servers at the start: none')
+  assert.equal(final[8], '::endgroup::')
+  assert.match(final[9], /^AI review status comment updated: approved$/)
+  assert.deepEqual(await output('start', events), ['AI review status comment updated: reviewing'], 'the start report has no execution log yet')
+  assert.deepEqual(await output('final', null), ['AI review status comment updated: approved'], 'no log, no shape')
+  const held = await output('final', [{ type: 'sk-ant-api03-must-never-be-printed' }])
+  assert.deepEqual(held, ['The execution log shape looked like it contained a credential, so it was not printed.', 'AI review status comment updated: approved'])
 }))
 
 test('a start time that cannot be recorded is a warning, and the comment is still posted', () => withWorkspace(async (dir) => {

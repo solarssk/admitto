@@ -120,7 +120,11 @@ jobs:
           claude_args: >-
             --model claude-sonnet-5-5
             --max-turns 25
-            --allowedTools "Read,Grep,Glob"
+            --tools "Read,Grep,Glob"
+            --permission-mode dontAsk
+            --allowedTools "Read(./**)"
+            --disallowedTools "mcp__*"
+            --strict-mcp-config
             ${{ steps.cfg.outputs.effort_args }}
             --json-schema '${{ steps.cfg.outputs.schema }}'
 
