@@ -2147,6 +2147,19 @@ describe("EventOverviewPage first read", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
+  it("fades the page in where the placeholder was once the read has answered", async () => {
+    const answer = deferred<ReturnType<typeof overviewFixture>>();
+    fetchEventOverview.mockReturnValueOnce(answer.promise as never);
+    renderPage();
+    await advanceTimers(0);
+    expect((placeholder() as HTMLElement).closest(".at-fade-in")).toBeNull();
+
+    await act(async () => answer.resolve(overviewFixture(5, { attendee_count: 48 })));
+    await advanceTimers(500);
+    expect(placeholder()).toBeNull();
+    expect(within(statsRow()).getByText("48").closest(".overview-stack__page.at-fade-in")).not.toBeNull();
+  });
+
   it("never draws the placeholder for an answer that comes within 200ms", async () => {
     fetchEventOverview.mockResolvedValueOnce(overviewFixture(5, { attendee_count: 48 }));
     renderPage();

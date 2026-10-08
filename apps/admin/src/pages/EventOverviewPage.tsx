@@ -1761,7 +1761,8 @@ function EventOverviewPageBody() {
     assertPresent(overview);
     const emailFailedTotal = overview.email_failed + overview.email_bounced;
     body = (
-      <>
+      // What replaces the placeholder fades in; the wrapper is a column of its own with the stack's rhythm.
+      <div className="overview-stack__page at-fade-in">
         <div className="overview-stats">
           <OverviewKpiTile
             tone="primary"
@@ -1831,7 +1832,7 @@ function EventOverviewPageBody() {
             />
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
