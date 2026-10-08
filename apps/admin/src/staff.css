@@ -7065,8 +7065,10 @@ output.mail-field-hint {
 }
 
 /* Everything below the Overview's header (the page, its placeholder and its error) is one column with the same rhythm as
- * .screen, whose flex gap does not collapse with the KPI row's margin. */
-.overview-stack {
+ * .screen, whose flex gap does not collapse with the KPI row's margin; the page itself sits in a wrapper that fades in and keeps
+ * that rhythm. */
+.overview-stack,
+.overview-stack__page {
   display: flex;
   flex-direction: column;
   gap: 18px;
