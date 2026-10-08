@@ -6337,6 +6337,23 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(200);
   });
 
+  it("rejects an email in the namespace reserved for erased attendees, on edit and on create", async () => {
+    const patch = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "erased-someone@erased.invalid", expected_updated_at: await currentUpdatedAt(ATT_A2) }),
+    });
+    expect(patch.status).toBe(400);
+    expect(await patch.json()).toMatchObject({ error: "validation_failed" });
+
+    const create = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "Erased-X@erased.invalid", first_name: "Re", last_name: "Served" }),
+    });
+    expect(create.status).toBe(400);
+  });
+
   it("rejects custom_data_fields values over 100 characters", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { setMailSettings } from "@admitto/mailer-config";
-import { generateToken } from "@admitto/tickets";
+import { eraseAttendees, generateToken } from "@admitto/tickets";
 import { drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
 
@@ -306,5 +306,37 @@ describe("drainPendingDeliveries", () => {
     expect(sent.status).toBe("accepted");
     const stillFailed = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: rows[0]!.id } });
     expect(stillFailed.status).toBe("failed");
+  });
+});
+
+describe("drainPendingDeliveries: erased attendees", () => {
+  it("does not send mail that was waiting for an attendee who is erased, nor an emptied row that is queued again", async () => {
+    await prisma.attendee.create({
+      data: { id: "att-drain-erased", event_id: EVENT_ID, email: "erased-soon@example.com", name: "Erased Soon", public_ref: generateToken() },
+    });
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+    await enqueueOne("att-drain-erased");
+    const queued = await prisma.emailDelivery.findFirstOrThrow({ where: { attendee_id: "att-drain-erased" } });
+    expect(queued.status).toBe("queued");
+
+    await prisma.$transaction((tx) =>
+      eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ["att-drain-erased"] }),
+    );
+    const exported: unknown[] = [];
+    const drain = () =>
+      drainPendingDeliveries(
+        prisma,
+        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+        { exportSink: (payload) => exported.push(payload) },
+        { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+      );
+
+    // Cancelled by the erasure.
+    expect(await drain()).toMatchObject({ claimed: 0, sent: 0 });
+
+    // Even if something put the emptied row back in the queue, it has nothing left to send.
+    await prisma.emailDelivery.update({ where: { id: queued.id }, data: { status: "queued" } });
+    expect(await drain()).toMatchObject({ claimed: 0, sent: 0 });
+    expect(exported).toHaveLength(0);
   });
 });
