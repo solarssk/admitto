@@ -5,7 +5,7 @@ import { RULES, RULE_HINTS, scanLoadingViolations, type Counts, type Rule } from
  * Drift guard for the admin SPA's loading, busy and failed-load states (AGENTS.md "Admin SPA loading and busy states").
  *
  * The admin source has no finding for any rule in `RULES`, and this test keeps it that way: a new violation fails it, with a
- * hint of what to use instead. The only findings it tolerates are the raw `<button>`s listed below, each with a reason.
+ * hint of what to use instead. The only findings it tolerates are the ones listed below, each with a reason.
  */
 /**
  * Raw `<button>`s that name a busy flag in `disabled` without being the busy control. Each was read and checked:
@@ -36,10 +36,25 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
   },
 };
 
-/** The findings a rule may have: none, except for the raw buttons listed above (per file, with their count). */
+/**
+ * Retry or Reload buttons that are not `loading`, because nothing of the app is running when they are pressed. Each was read and
+ * checked; a button that re-runs a request uses `<Button loading>` with `useRetryKeepingError` or `useRetry` instead.
+ */
+const RETRY_WITHOUT_ANYTHING_TO_SHOW: Record<string, { count: number; reason: string }> = {
+  "apps/admin/src/components/ErrorBoundary.tsx": {
+    count: 1,
+    reason: "Reload page: the browser reloads the whole page, so no request of the app is under way to show as busy (and the app is the thing that crashed).",
+  },
+};
+
+const EXCEPTIONS: Partial<Record<Rule, Record<string, { count: number; reason: string }>>> = {
+  "raw-button-busy-disabled": DISABLED_WHILE_ANOTHER_ACTION_RUNS,
+  "retry-not-busy": RETRY_WITHOUT_ANYTHING_TO_SHOW,
+};
+
+/** The findings a rule may have: none, except for the ones listed above (per file, with their count). */
 function tolerated(rule: Rule): Counts {
-  if (rule !== "raw-button-busy-disabled") return {};
-  return Object.fromEntries(Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS).map(([file, { count }]) => [file, count]));
+  return Object.fromEntries(Object.entries(EXCEPTIONS[rule] ?? {}).map(([file, { count }]) => [file, count]));
 }
 
 describe("loading standard drift (apps/admin/src)", () => {
@@ -57,12 +72,14 @@ describe("loading standard drift (apps/admin/src)", () => {
     const stale = Object.entries(allowed)
       .filter(([file, n]) => (actual[file] ?? 0) < n)
       .map(([file, n]) => `${file}: ${actual[file] ?? 0} (listed ${n})`);
-    expect(stale, "An exception in DISABLED_WHILE_ANOTHER_ACTION_RUNS no longer matches the code. Lower its count or remove it.").toEqual([]);
+    expect(stale, `An exception listed in this file for "${rule}" no longer matches the code. Lower its count or remove it.`).toEqual([]);
   });
 });
 
-describe("raw buttons disabled while another action runs", () => {
-  it.each(Object.entries(DISABLED_WHILE_ANOTHER_ACTION_RUNS))("%s names a reason a reviewer can check", (_file, { count, reason }) => {
+describe("the findings that are tolerated", () => {
+  const listed = Object.entries(EXCEPTIONS).flatMap(([rule, files]) => Object.entries(files ?? {}).map(([file, entry]) => [`${rule}: ${file}`, entry] as const));
+
+  it.each(listed)("%s names a reason a reviewer can check", (_name, { count, reason }) => {
     expect(count).toBeGreaterThan(0);
     expect(reason.length).toBeGreaterThanOrEqual(30);
   });

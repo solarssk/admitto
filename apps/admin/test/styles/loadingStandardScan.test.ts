@@ -279,6 +279,48 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count("<button />\n<Button onClick={retry}>Retry</Button>", "retry-in-a-raw-button")).toBe(0);
   });
 
+  it("counts a Retry or Reload kit Button that has no `loading`, however it is laid out", () => {
+    expect(count('<Button type="button" variant="secondary" onClick={() => void loadAccount()}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button onClick={reload}>\n  Reload page\n</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button onClick={retry}><i className="ti ti-refresh" /> Retry now</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<EmptyState variant="error" title="Could not load" action={<Button onClick={retry}>Retry</Button>} />', "retry-not-busy")).toBe(1);
+    // A label for the busy state is not the busy state: `loadingLabel` only says what to show once `loading` is passed.
+    expect(count('<Button loadingLabel="Retrying…" onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+  });
+
+  it("counts each Retry of a screen that has several, and only the ones that are not busy", () => {
+    const source = [
+      '<div role="alert"><p>{a}</p><Button onClick={retryA}>Retry</Button></div>',
+      '<div role="alert"><p>{b}</p><Button loading={retryingB} onClick={retryB}>Retry</Button></div>',
+      '<div role="alert"><p>{c}</p><Button onClick={retryC}>Retry</Button></div>',
+    ].join("\n");
+    expect(count(source, "retry-not-busy")).toBe(2);
+  });
+
+  it("does not count a Retry that passes `loading`, in any spelling, wherever it sits among the props", () => {
+    expect(count('<Button type="button" variant="secondary" loading={retrying} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading="true" onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button\n  type="button"\n  {...rest}\n  loading={busy}\n>\n  Retry\n</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Notice role="alert" actionBusy={busy} action={<Button size="sm" loading={busy} onClick={retry}>Retry</Button>}>{error}</Notice>', "retry-not-busy")).toBe(0);
+  });
+
+  it("is not fooled by the word loading inside the value of another prop", () => {
+    expect(count('<Button aria-label="Retry loading items" onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button title={loading ? "x" : "y"} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button className="loading" onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+  });
+
+  it("leaves a raw <button>, another component and a Retry outside any Button to the other rules", () => {
+    expect(count("<button onClick={retry}>Retry</button>", "retry-not-busy")).toBe(0);
+    expect(count("<ButtonGroup>Retry</ButtonGroup>", "retry-not-busy")).toBe(0);
+    expect(count("<IconButton aria-label=\"Retry\" onClick={retry}>Retry</IconButton>", "retry-not-busy")).toBe(0);
+    expect(count('<Button onClick={save}>Save</Button>\n<p>Retry</p>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading onClick={save}>Save</Button> Retry', "retry-not-busy")).toBe(0);
+    expect(count('<Button onClick={retry}>Try again later</Button>', "retry-not-busy")).toBe(0);
+    expect(count("// <Button onClick={retry}>Retry</Button>\nconst a = 1;", "retry-not-busy")).toBe(0);
+  });
+
   it("does not look at a command that merely mentions retry, or at comments", () => {
     // A menu item that re-runs a catalog load is a command in a menu, not the failure's own control.
     expect(count('<RetryMenuItem onRetry={retry} label="Retry loading items" />', "retry-outside-an-alert")).toBe(0);

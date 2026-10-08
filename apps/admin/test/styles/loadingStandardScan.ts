@@ -12,6 +12,7 @@ export const RULES = [
   "error-state-not-an-alert",
   "retry-outside-an-alert",
   "retry-in-a-raw-button",
+  "retry-not-busy",
   "raw-button-busy-disabled",
 ] as const;
 export type Rule = (typeof RULES)[number];
@@ -31,6 +32,8 @@ export const RULE_HINTS: Record<Rule, string> = {
     'A Retry (or Reload) for a failed load belongs in the `action` of an <EmptyState variant="error"> or of an element that has role="alert" itself (a <Notice> leaves its role to the caller), or inside an element with role="alert", so the failure is announced.',
   "retry-in-a-raw-button":
     "Use <Button loading> for a Retry (or Reload), with the hook useRetry for a request that is run again (a <RetryHint> for a one-line hint). A raw <button> cannot show that it is working and keep keyboard focus, so a click on it drops the focus to the page behind.",
+  "retry-not-busy":
+    "A <Button> that says Retry (or Reload) needs `loading`, so a click shows that the retry ran, a retry that fails again at once is seen to have run, and the button keeps keyboard focus while it works. Use <RetryEmptyState>, <RetryAlert> or <RetryHint> with useRetryKeepingError (useRetry for a request that is run again), or pass `loading` from them to the button of a Notice action (with `actionBusy` on the Notice, so a repeat failure is announced again).",
   "raw-button-busy-disabled":
     "Do not put disabled={busy} on a raw <button> that starts an action: a browser drops the focus of a button that becomes disabled. Use <Button loading> (or <IconButton loading>, <MoreActionsMenuItem loading>), which stays focusable; a link-style button keeps `disabled` for what cannot change and uses aria-disabled plus an early return in onClick while it works. If the button is only disabled because ANOTHER control is busy (the user pressed a different one), add it to DISABLED_WHILE_ANOTHER_ACTION_RUNS in loading-standard.test.ts with the reason.",
 };
@@ -290,6 +293,41 @@ function countRetriesInRawButtons(text: string): number {
   }).length;
 }
 
+/** The names of the props a JSX opening tag sets (`type`, `loading`, `onClick`...), without what they are set to. */
+function propNames(tag: string): Set<string> {
+  const names = new Set<string>();
+  const next = /\s+([A-Za-z_][\w:-]*)|\s*(\{)|\s*(\/?>)/y;
+  let at = tag.search(/\s/);
+  while (at !== -1 && at < tag.length) {
+    next.lastIndex = at;
+    const found = next.exec(tag);
+    if (!found || found[3]) break;
+    at = next.lastIndex;
+    if (found[2]) {
+      at = propValueEnd(tag, at - 1); // a spread, `{...props}`
+      continue;
+    }
+    names.add(found[1]!);
+    if (tag[at] === "=") at = propValueEnd(tag, at + 1);
+  }
+  return names;
+}
+
+/**
+ * Retry (or Reload) kit buttons that are never busy. A `<Button>` that offers to run a failed load again passes `loading`
+ * while it runs, so that the click is seen to have done something (a retry that fails again at once still shows that it ran)
+ * and the button keeps keyboard focus instead of going off. A Retry that is not inside a `<Button>` is the business of
+ * retry-in-a-raw-button.
+ */
+function countRetriesNotBusy(text: string): number {
+  const buttons = tagSpans(text, "Button");
+  return retryTextOffsets(text).filter((at) => {
+    const open = buttons.findLast((span) => span.end <= at && !span.tag.trimEnd().endsWith("/>"));
+    if (open === undefined || /<\/Button\s*>/.test(text.slice(open.end, at))) return false;
+    return !propNames(open.tag).has("loading");
+  }).length;
+}
+
 /** Raw `<button>`s whose `disabled` names a busy flag. */
 function countRawButtonsDisabledWhileBusy(text: string): number {
   return openingTags(text, "button").filter((tag) => {
@@ -314,6 +352,7 @@ export function countLoadingViolations(source: string, kind: "css" | "code"): Pa
     "error-state-not-an-alert": countErrorEmptyStatesWithoutVariant(text),
     "retry-outside-an-alert": countRetriesOutsideAnAlert(text),
     "retry-in-a-raw-button": countRetriesInRawButtons(text),
+    "retry-not-busy": countRetriesNotBusy(text),
     "raw-button-busy-disabled": countRawButtonsDisabledWhileBusy(text),
   };
 }

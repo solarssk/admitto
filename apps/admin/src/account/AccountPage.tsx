@@ -41,9 +41,12 @@ import type {
 import { roleLabel } from "../auth/role-labels.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
+import { PageRetryPanel } from "../components/PageRetryPanel.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
+import { RetryAlert } from "../components/RetryAlert.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../components/notificationSeverity.js";
@@ -51,7 +54,9 @@ import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useFocusAfterPageRetry } from "../hooks/useFocusAfterPageRetry.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { formatRelativeTime, formatUtcPrimaryTime } from "../utils/event-dates.js";
 import { loadWithTimeout } from "../utils/load-timeout.js";
@@ -486,6 +491,9 @@ function loadFailureMessage(limit: { timedOut: () => boolean }, err: unknown, fa
   return limit.timedOut() ? LOAD_TIMEOUT_MESSAGE : operatorApiErrorMessage(err, fallback);
 }
 
+/** What the focus of a Retry that worked goes to once the page is there: the panel of the tab that is open. */
+const ACCOUNT_RETRY_FOCUS_TARGETS = ['[role="tabpanel"]:not([hidden])'] as const;
+
 /** Every panel stays mounted - AccountPage already loads all of its data up front on mount
  * (loadAccount/loadSessions/loadNotificationPreferences run together, regardless of which tab is
  * active), so there's no per-tab fetch to defer the way EventSettingsPage's tabs do. Only
@@ -699,7 +707,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     } catch (err) {
       if (superseded()) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      // The error replaces the list, so the next try is a first load again: Retry shows the loader.
+      // The error replaces the list, so the next try is a first read again (its Retry keeps the error on screen, busy, until the answer is in).
       sessionsLoadedRef.current = false;
       setSessionsError(loadFailureMessage(limit, err, "Could not load sessions."));
     } finally {
@@ -775,15 +783,26 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
 
   // The first load only: a loader appears after 200ms, stays at least 400ms, and its space is held from the
   // first frame (AGENTS.md "Admin SPA loading and busy states"). A refresh after a save never gets here.
-  const accountGate = useLoadingGate(loading);
-  const accountSlow = useDelayedLoading(loading, SLOW_NOTICE_MS);
+  // A Retry of a failed first read is not a first read: the error stays on screen, with the Retry busy and holding the focus,
+  // until the answer is in, instead of the placeholder taking its place (and the Retry, and its focus, with it).
+  const retryAccount = useCallback(() => loadAccount(), [loadAccount]);
+  const retrySessions = useCallback(() => loadSessions(), [loadSessions]);
+  const retryNotifPrefs = useCallback(() => loadNotificationPreferences(), [loadNotificationPreferences]);
+  const accountFailure = useRetryKeepingError(error, retryAccount);
+  const sessionsFailure = useRetryKeepingError(sessionsError, retrySessions);
+  const notifPrefsFailure = useRetryKeepingError(notifPrefsError, retryNotifPrefs);
+  const accountWaiting = loading && !accountFailure.running;
+  const accountGate = useLoadingGate(accountWaiting);
+  const accountSlow = useDelayedLoading(accountWaiting, SLOW_NOTICE_MS);
   // Gated on `accountGate.showContent` too, not just on `sessionsLoading` on its own, and not on a bare
   // `!loading`: these cards only become visible once the account section's own gate has cleared, which is
   // later than the answer (a placeholder that was drawn stays for 400ms). Their 200ms delay and 400ms
   // minimum must start counting from then. Counted earlier, a placeholder could be shown, and held, behind
   // the account placeholder, and then appear over data that was ready by the time the cards can render.
-  const sessionsGate = useLoadingGate(sessionsLoading && accountGate.showContent);
-  const notifPrefsGate = useLoadingGate(notifPrefsLoading && accountGate.showContent);
+  const sessionsWaiting = sessionsLoading && accountGate.showContent && !sessionsFailure.running;
+  const notifPrefsWaiting = notifPrefsLoading && accountGate.showContent && !notifPrefsFailure.running;
+  const sessionsGate = useLoadingGate(sessionsWaiting);
+  const notifPrefsGate = useLoadingGate(notifPrefsWaiting);
   // The refresh of the sessions list after a revoke: dimmed once it is noticeable, with the thin bar along the card.
   const sessionsRefetch = useLoadingGate(sessionsRefreshing);
   // The same for the account-backed cards (Profile, Password, Two-factor) while the account is refreshed after a change.
@@ -796,30 +815,45 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     setRetryingRefresh(true);
     void loadAccount().finally(() => setRetryingRefresh(false));
   };
-  const sessionsSlow = useDelayedLoading(sessionsLoading && accountGate.showContent, SLOW_NOTICE_MS);
-  const notifPrefsSlow = useDelayedLoading(notifPrefsLoading && accountGate.showContent, SLOW_NOTICE_MS);
+  const sessionsSlow = useDelayedLoading(sessionsWaiting, SLOW_NOTICE_MS);
+  const notifPrefsSlow = useDelayedLoading(notifPrefsWaiting, SLOW_NOTICE_MS);
+  // One element holds the placeholder, the error and the page, so that the focus of a Retry that worked has something to be
+  // handed to: the error of the first read is the only one that goes away with the card it sits in (the others sit in cards that stay).
+  const pageRef = useRef<HTMLDivElement>(null);
+  const errorHadFocusRef = useRef(false);
+  useFocusAfterPageRetry(
+    Boolean(accountFailure.error),
+    accountGate.showContent && account !== null,
+    pageRef,
+    errorHadFocusRef,
+    ACCOUNT_RETRY_FOCUS_TARGETS,
+  );
   // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
   // roles' own Active sessions tab - only one ever renders (not both, CSS-hidden), so a row's
   // content never appears twice in the accessibility tree.
   const isSessionsDesktop = useIsDesktop();
 
   if (!accountGate.showContent) {
-    return <AccountLoadingSkeleton tab={activeTab} held={!accountGate.showIndicator} slow={accountSlow} />;
-  }
-  if (error) {
     return (
-      <Card title="Profile">
-        <EmptyState
-          variant="error"
-          title="Could not load account"
-          description={error}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void loadAccount()}>
-              Retry
-            </Button>
-          }
-        />
-      </Card>
+      <div ref={pageRef}>
+        <AccountLoadingSkeleton tab={activeTab} held={!accountGate.showIndicator} slow={accountSlow} />
+      </div>
+    );
+  }
+  if (accountFailure.error) {
+    return (
+      <div ref={pageRef}>
+        <PageRetryPanel label="My account" errorHadFocusRef={errorHadFocusRef}>
+          <Card title="Profile">
+            <RetryEmptyState
+              title="Could not load account"
+              message={accountFailure.error}
+              retrying={accountFailure.retrying}
+              onRetry={accountFailure.retry}
+            />
+          </Card>
+        </PageRetryPanel>
+      </div>
     );
   }
 
@@ -2205,15 +2239,15 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
               rowHeight={56}
             />
           )}
-          {notifPrefsGate.showContent && notifPrefsError && (
-            <div className="sessions-status" role="alert">
-              <p>{notifPrefsError}</p>
-              <Button type="button" variant="secondary" onClick={() => void loadNotificationPreferences()}>
-                Retry
-              </Button>
-            </div>
+          {notifPrefsGate.showContent && notifPrefsFailure.error && (
+            <RetryAlert
+              message={notifPrefsFailure.error}
+              retrying={notifPrefsFailure.retrying}
+              onRetry={notifPrefsFailure.retry}
+              className="sessions-status"
+            />
           )}
-          {notifPrefsGate.showContent && !notifPrefsError && (
+          {notifPrefsGate.showContent && !notifPrefsFailure.error && (
             <div className="notifications-type-matrix-wrap">
               <table className="table notifications-type-matrix">
                 <thead>
@@ -2276,7 +2310,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card
         title="Active sessions"
-        actions={canRevokeOthers(sessionsGate.showContent, sessionsError, otherSessions.length) ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
+        actions={canRevokeOthers(sessionsGate.showContent, sessionsFailure.error, otherSessions.length) ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
         {...refetchCardProps(sessionsRefreshing, sessionsRefetch.showIndicator)}
       >
         <TopProgressBar active={sessionsRefetch.showIndicator} placement="container" label="Refreshing sessions" />
@@ -2289,15 +2323,20 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             rowHeight={44}
           />
         )}
-        {sessionsGate.showContent && sessionsError && (
-          <div className="sessions-status" role="alert"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
+        {sessionsGate.showContent && sessionsFailure.error && (
+          <RetryAlert
+            message={sessionsFailure.error}
+            retrying={sessionsFailure.retrying}
+            onRetry={sessionsFailure.retry}
+            className="sessions-status"
+          />
         )}
-        {sessionsGate.showContent && !sessionsError && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
+        {sessionsGate.showContent && !sessionsFailure.error && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
         {/* Only Sign-in drops in the 768-1180px tablet range (.sessions-col-tablet-hide) - unlike
             Users & roles' own 8-column table, this one only has 5 content columns to begin with,
             and Device/IP address are both things an admin reviewing their own sessions wants to
             keep seeing (PO review) rather than trimmed down to just Logged in/Last active. */}
-        {sessionsGate.showContent && !sessionsError && sessions.length > 0 && isSessionsDesktop && (
+        {sessionsGate.showContent && !sessionsFailure.error && sessions.length > 0 && isSessionsDesktop && (
           <div className="account-sessions-table-wrap">
             <table className="table">
               <thead>
@@ -2352,7 +2391,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             </table>
           </div>
         )}
-        {sessionsGate.showContent && !sessionsError && sessions.length > 0 && !isSessionsDesktop && (
+        {sessionsGate.showContent && !sessionsFailure.error && sessions.length > 0 && !isSessionsDesktop && (
           <div className="account-sessions-cards">
             {sessionsPageSlice.map((s) => (
               <article key={s.id} className="account-sessions-card">
@@ -2403,7 +2442,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             ))}
           </div>
         )}
-        {sessionsGate.showContent && !sessionsError && sessions.length > 0 && (
+        {sessionsGate.showContent && !sessionsFailure.error && sessions.length > 0 && (
           <PaginationFooter
             idPrefix="account-sessions"
             page={sessionsEffectivePage}
@@ -2425,7 +2464,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   }
 
   return (
-    <>
+    <div ref={pageRef}>
       {/* Outside the cards (which are busy, and one inert): what a screen reader is told about the pause. */}
       <output className="sr-only">{refreshStatusText(accountRefetch.showIndicator, sessionsRefetch.showIndicator)}</output>
       {refreshError && (
@@ -2797,6 +2836,6 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
       {renderAddPasskeyDialog()}
       {renderAddSecurityKeyDialog()}
       {renderRemoveCredentialDialog()}
-    </>
+    </div>
   );
 }

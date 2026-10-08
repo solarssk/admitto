@@ -5,7 +5,7 @@ import { AccountPage } from "../../src/account/AccountPage.js";
 import type { AccountDto, AccountMfaMethodDto, SessionListDto } from "../../src/api/types.js";
 import { PASSWORD_STRENGTH_STRONG } from "@admitto/auth/password-strength-fixtures";
 import { BACKUP_RECOVERY_CODE_COUNT } from "@admitto/auth/constants";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { deferred, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -4935,7 +4935,7 @@ describe("AccountPage on the loading standard", () => {
       expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("Typed meanwhile");
     });
 
-    it("sessions: Retry after a failed refresh shows the loader again, instead of the stale list", async () => {
+    it("sessions: Retry after a failed refresh keeps the error on screen, busy, instead of the stale list or a loader", async () => {
       const { currentSession, otherSession } = makeCurrentAndOtherSessions();
       mockFetchAccount.mockResolvedValue(baseAccount);
       let answerRetry!: (value: { sessions: SessionListDto[] }) => void;
@@ -4957,17 +4957,25 @@ describe("AccountPage on the loading standard", () => {
       // The older snapshot is still held, but nothing in the card acts on it: not the header action either.
       expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
 
-      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      const retry = screen.getByRole("button", { name: "Retry" });
+      retry.focus();
+      fireEvent.click(retry);
       await advance(250);
-      // The stale list (with the session just revoked) is not shown as current while it is asked for again.
+      // The stale list (with the session just revoked) is not shown as current while it is asked for again, and no loader
+      // takes the error's place: the same Retry stays, busy, with its focus.
       expect(screen.queryByText("Other")).toBeNull();
-      expect(screen.getByLabelText("Loading sessions").className).not.toContain("at-loading-hold");
+      expect(screen.queryByLabelText("Loading sessions")).toBeNull();
       expect(screen.queryByRole("button", { name: "Revoke all other sessions" })).toBeNull();
+      expect(screen.getByText("Could not load sessions.")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(retry.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(retry);
 
       await act(async () => answerRetry({ sessions: [currentSession] }));
       await advance(500);
       expect(screen.queryByLabelText("Loading sessions")).toBeNull();
       expect(screen.queryByText("Could not load sessions.")).toBeNull();
+      expect(screen.queryByText("No active sessions.")).toBeNull();
     });
 
     it("sessions: while the list is refreshed after a revoke nothing in the card can be used, and it is dimmed with a bar once the wait is noticeable", async () => {
@@ -5053,7 +5061,7 @@ describe("AccountPage on the loading standard", () => {
   });
 
   describe("more of the first load", () => {
-    it("account: Retry after a failed first load shows the loader again, then the page", async () => {
+    it("account: Retry after a failed first load keeps the error on screen, busy, with no loader, then shows the page", async () => {
       let answerRetry!: (account: AccountDto) => void;
       mockFetchAccount
         .mockRejectedValueOnce(new Error("network down"))
@@ -5065,14 +5073,21 @@ describe("AccountPage on the loading standard", () => {
       await advance(600);
       expect(screen.getByText("Could not load account")).toBeTruthy();
 
-      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      const retry = screen.getByRole("button", { name: "Retry" });
+      retry.focus();
+      fireEvent.click(retry);
       await advance(250);
-      expect(accountLoader()?.closest(".at-card")?.className).not.toContain(HOLD);
-      expect(screen.queryByText("Could not load account")).toBeNull();
+      // A Retry is not a first load: no loader takes the error's place, and the same Retry stays, busy, with the focus.
+      expect(accountLoader()).toBeNull();
+      expect(screen.getByText("Could not load account")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(retry.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(retry);
 
       await act(async () => answerRetry(baseAccount));
       await advance(500);
       expect(accountLoader()).toBeNull();
+      expect(screen.queryByText("Could not load account")).toBeNull();
       expect(screen.getByLabelText("Display name")).toBeTruthy();
     });
 
@@ -5142,6 +5157,161 @@ describe("AccountPage on the loading standard", () => {
       expect(signals.every((signal) => signal.aborted)).toBe(true);
       // Counted straight away, before any of them could have fired: every one was cleared when its request settled.
       expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe("the Retry of a failed read stays on screen", () => {
+    const profilePanel = () => screen.getByRole("tabpanel", { name: "Profile" });
+
+    it("account: says the failure again, on the same Retry, when a retry fails again", async () => {
+      mockFetchAccount.mockRejectedValueOnce(new Error("network down"));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      renderWithToast(<AccountPage />);
+      const message = await screen.findByText("Could not load account.");
+      const retry = screen.getByRole("button", { name: "Retry" });
+      expect(retry.getAttribute("aria-busy")).toBeNull();
+
+      const second = deferred<AccountDto>();
+      mockFetchAccount.mockReturnValueOnce(second.promise);
+      retry.focus();
+      fireEvent.click(retry);
+      await act(async () => second.reject(new Error("still down")));
+      await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+      // The same text again: a new message node (a live region announces it), the same button, still focused.
+      expect(screen.getByText("Could not load account.")).not.toBe(message);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(document.activeElement).toBe(retry);
+    });
+
+    it("account: hands the focus to the open tab's panel when the retry works, and leaves focus that was elsewhere alone", async () => {
+      mockFetchAccount.mockRejectedValueOnce(new Error("network down"));
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      renderWithToast(<AccountPage />);
+      const retry = await screen.findByRole("button", { name: "Retry" });
+      retry.focus();
+      mockFetchAccount.mockResolvedValueOnce(baseAccount);
+      fireEvent.click(retry);
+
+      await screen.findByLabelText("Display name");
+      expect(screen.queryByText("Could not load account")).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(profilePanel()));
+      cleanup();
+
+      // A click does not focus a button in every browser: when the focus was never on the Retry, nobody moves it.
+      mockFetchAccount.mockRejectedValueOnce(new Error("network down"));
+      renderWithToast(<AccountPage />);
+      const clicked = await screen.findByRole("button", { name: "Retry" });
+      (document.activeElement as HTMLElement | null)?.blur();
+      mockFetchAccount.mockResolvedValueOnce(baseAccount);
+      fireEvent.click(clicked);
+      await screen.findByLabelText("Display name");
+      expect(document.activeElement === document.body).toBe(true);
+    });
+
+    it("notifications: keeps the error with a busy Retry and its focus, no loader or grid in its place, and hands the focus to the card when it works", async () => {
+      const typeA = {
+        id: "auth.login.repeated_failures",
+        label: "Repeated failed logins on an admin account",
+        default_severity: "error",
+        available_channels: ["email", "in_app"] as ("email" | "in_app")[],
+        channels: { email: true, in_app: true },
+      };
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchNotificationPreferences.mockRejectedValueOnce(new Error("network down"));
+      renderWithToast(<AccountPage activeTab="notifications" />);
+      const message = await screen.findByText("Could not load notification preferences.");
+      const retry = screen.getByRole("button", { name: "Retry" });
+      const card = retry.closest(".at-card");
+      expect(card).not.toBeNull();
+      expect(retry.getAttribute("aria-busy")).toBeNull();
+      const alert = retry.closest("[role='alert']");
+
+      const second = deferred<{ notification_types: (typeof typeA)[] }>();
+      mockFetchNotificationPreferences.mockReturnValueOnce(second.promise);
+      retry.focus();
+      fireEvent.click(retry);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(retry.closest("[role='alert']")).toBe(alert);
+      expect(retry.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(retry);
+      expect(screen.getByText("Could not load notification preferences.")).toBe(message);
+      expect(screen.queryByLabelText("Loading notification preferences")).toBeNull();
+      expect(screen.queryByRole("table")).toBeNull();
+
+      await act(async () => second.resolve({ notification_types: [typeA] }));
+      await screen.findByText(typeA.label);
+      expect(screen.queryByText("Could not load notification preferences.")).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(card));
+    });
+
+    it("notifications: says the failure again, on the same Retry, when a retry fails again", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockResolvedValue({ sessions: [] });
+      mockFetchNotificationPreferences.mockRejectedValueOnce(new Error("network down"));
+      renderWithToast(<AccountPage activeTab="notifications" />);
+      const message = await screen.findByText("Could not load notification preferences.");
+      const retry = screen.getByRole("button", { name: "Retry" });
+
+      const second = deferred<{ notification_types: never[] }>();
+      mockFetchNotificationPreferences.mockReturnValueOnce(second.promise);
+      retry.focus();
+      fireEvent.click(retry);
+      await act(async () => second.reject(new Error("still down")));
+      await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+      expect(screen.getByText("Could not load notification preferences.")).not.toBe(message);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(document.activeElement).toBe(retry);
+    });
+
+    it("sessions: keeps the error with a busy Retry and its focus on a failed first read, and hands the focus to the card when it works", async () => {
+      const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockRejectedValueOnce(new Error("network down"));
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      const message = await screen.findByText("Could not load sessions.");
+      const retry = screen.getByRole("button", { name: "Retry" });
+      const card = retry.closest(".at-card");
+      expect(card).not.toBeNull();
+      expect(retry.getAttribute("aria-busy")).toBeNull();
+
+      const second = deferred<{ sessions: SessionListDto[] }>();
+      mockFetchSessions.mockReturnValueOnce(second.promise);
+      retry.focus();
+      fireEvent.click(retry);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(retry.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(retry);
+      expect(screen.getByText("Could not load sessions.")).toBe(message);
+      // Neither the loader nor "No active sessions." (an empty list that has not answered) takes the error's place.
+      expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+      expect(screen.queryByText("No active sessions.")).toBeNull();
+
+      await act(async () => second.resolve({ sessions: [currentSession, otherSession] }));
+      await screen.findByText("Other");
+      expect(screen.queryByText("Could not load sessions.")).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(card));
+    });
+
+    it("sessions: says the failure again, on the same Retry, when a retry fails again", async () => {
+      mockFetchAccount.mockResolvedValue(baseAccount);
+      mockFetchSessions.mockRejectedValueOnce(new Error("network down"));
+      renderWithToast(<AccountPage activeTab="sessions" />);
+      const message = await screen.findByText("Could not load sessions.");
+      const retry = screen.getByRole("button", { name: "Retry" });
+
+      const second = deferred<{ sessions: SessionListDto[] }>();
+      mockFetchSessions.mockReturnValueOnce(second.promise);
+      retry.focus();
+      fireEvent.click(retry);
+      await act(async () => second.reject(new Error("still down")));
+      await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+      expect(screen.getByText("Could not load sessions.")).not.toBe(message);
+      expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+      expect(document.activeElement).toBe(retry);
     });
   });
 
