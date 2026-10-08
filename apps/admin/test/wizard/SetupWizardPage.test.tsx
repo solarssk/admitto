@@ -153,6 +153,20 @@ describe("SetupWizardPage session restore", () => {
   });
 });
 
+describe("SetupWizardPage step region", () => {
+  it.each([
+    [1, "System check"],
+    [2, "Mail transport"],
+    [3, "Branding"],
+    [4, "First event"],
+    [5, "Ready"],
+  ])("names the body of step %i %s, so that the focus a Retry hands over is announced", (step, name) => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, String(step));
+    renderWizard();
+    expect(screen.getByRole("region", { name })).toBeTruthy();
+  });
+});
+
 describe("SetupWizardPage back navigation", () => {
   it("confirms before going back with unsaved changes on form steps", async () => {
     sessionStorage.setItem(WIZARD_STEP_KEY, "2");
