@@ -352,7 +352,11 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
           })}
         </nav>
 
-        <div className={`setup-wizard__body${step === TOTAL_STEPS ? " setup-wizard__body--done" : ""}`}>
+        {/* Named after the step: it is where the focus goes when a Retry that held it works, and a screen reader says where that is. */}
+        <section
+          className={`setup-wizard__body${step === TOTAL_STEPS ? " setup-wizard__body--done" : ""}`}
+          aria-label={STEP_LABELS[STEP_NAMES[step - 1]!]}
+        >
           {unsavedRefreshNotice && (
             <Notice variant="info" as="output" className="setup-wizard__refresh-notice">
               Unsaved form changes were lost after refresh. Settings you already saved (mail, branding)
@@ -382,7 +386,7 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
               }}
             />
           )}
-        </div>
+        </section>
 
         <output className="setup-wizard__sr-only">{workStatus(step, continuing, finishing)}</output>
 
