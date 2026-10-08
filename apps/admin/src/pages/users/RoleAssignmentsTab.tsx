@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, EmptyState, HintLabel, IconButton, Tooltip, useToast } from "@admitto/ui";
-import { useDelayedLoading, useLoadingGate } from "../../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../../hooks/useCardLoad.js";
 import { useBusyEndCount } from "../../hooks/useRetry.js";
 import { useEventOptions } from "../../hooks/useEventOptions.js";
 import { useListLoad } from "../../hooks/useListLoad.js";
@@ -14,7 +14,6 @@ import { RefetchRegion } from "../../components/RefetchRegion.js";
 import { ListFailure } from "../../components/ListFailure.js";
 import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
-import { SLOW_NOTICE_MS } from "../../utils/loading-timing.js";
 import { isPastTheEnd, withAssignmentRemoved, type RoleAssignmentsAnswer } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 import { useAuth } from "../../auth/AuthProvider.js";
@@ -227,13 +226,12 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     if (list.data && page > totalPages) setPage(totalPages);
   }, [list.data, page, totalPages]);
   // The first load: a placeholder after 200ms (held before, so its room is in the page), kept at least 400ms,
-  // "Taking longer than usual" after 8 seconds. A refetch never gets here: the rows stay.
+  // "Taking longer than usual" after 8 seconds. A refetch never gets here: the rows stay, and a Retry is not a first load
+  // either: its error stays on screen, busy, until the answer is in (`failure`).
   // The same wait when the answer says the page it was on is gone: it has no rows, but that is not "No role assignments".
   // The effect above steps back to the page that exists, and its answer replaces this one.
-  const waiting = list.loading || (Boolean(list.data?.pastTheEnd) && !list.error);
-  const gate = useLoadingGate(waiting);
-  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
-  const listReady = gate.showContent && !list.error && list.data !== null;
+  const { gate, slow, failure } = useCardLoad(list, { alsoWaiting: Boolean(list.data?.pastTheEnd) && !list.error });
+  const listReady = gate.showContent && !failure.error && list.data !== null;
   const showNoMatch = listReady && rows.length === 0 && Boolean(list.data?.filtersActive);
   const showNone = listReady && rows.length === 0 && !list.data?.filtersActive;
   // An event filter that could not load its options: said out loud when it happens (the hint itself is inside the
@@ -348,7 +346,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
       )}
 
       {gate.showContent && (
-        <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="users-page__status" />
+        <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} className="users-page__status" />
       )}
 
       {listReady && (

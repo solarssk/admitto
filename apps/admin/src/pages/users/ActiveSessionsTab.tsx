@@ -13,12 +13,11 @@ import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../../components/Segmented.js";
 import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
 import { LOGGED_IN_HINT, SessionCard, SessionTableRow } from "./SessionListItem.js";
-import { useDelayedLoading, useLoadingGate } from "../../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../../hooks/useCardLoad.js";
 import { useEventOptions } from "../../hooks/useEventOptions.js";
 import { useIsDesktop } from "../../hooks/useIsDesktop.js";
 import { useListLoad } from "../../hooks/useListLoad.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
-import { SLOW_NOTICE_MS } from "../../utils/loading-timing.js";
 import { withSessionLabel, withSessionRemoved } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 
@@ -86,10 +85,10 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     if (list.error) onCountChange?.(undefined);
   }, [list.error, onCountChange]);
   // The first load: a placeholder after 200ms (held before, so its room is in the page), kept at least 400ms,
-  // "Taking longer than usual" after 8 seconds. A refresh after an action never gets here: the rows stay.
-  const gate = useLoadingGate(list.loading);
-  const slow = useDelayedLoading(list.loading, SLOW_NOTICE_MS);
-  const listReady = gate.showContent && !list.error && list.data !== null;
+  // "Taking longer than usual" after 8 seconds. A refresh after an action never gets here: the rows stay, and a Retry is
+  // not a first load either: its error stays on screen, busy, until the answer is in (`failure`).
+  const { gate, slow, failure } = useCardLoad(list);
+  const listReady = gate.showContent && !failure.error && list.data !== null;
 
   const search = searchInput.trim().toLowerCase();
   const displayed = sessions.filter((s) => {
@@ -264,7 +263,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         )}
 
         {gate.showContent && (
-          <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="sessions-status" />
+          <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} className="sessions-status" />
         )}
 
         {listReady && (

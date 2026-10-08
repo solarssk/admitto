@@ -19,9 +19,8 @@ import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { ListFailure } from "../components/ListFailure.js";
-import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useListLoad } from "../hooks/useListLoad.js";
-import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
 import { UserEditModal } from "./users/UserEditModal.js";
 import {
@@ -171,18 +170,17 @@ export function UsersPage() {
     if (list.data && page > totalPages) setPage(totalPages);
   }, [list.data, page, totalPages]);
   // The first load: a placeholder after 200ms (held invisible before, so its room is in the page), kept for at
-  // least 400ms, and "Taking longer than usual" after 8 seconds. A refetch never gets here: the list stays.
+  // least 400ms, and "Taking longer than usual" after 8 seconds. A refetch never gets here: the list stays, and a
+  // Retry is not a first load either: its error stays on screen, busy, until the answer is in (`failure`).
   // The same wait when the answer says the page it was on is gone: it has no rows, but that is not "No users match".
   // The effect above steps back to the page that exists, and its answer replaces this one.
-  const waiting = list.loading || (Boolean(list.data?.pastTheEnd) && !list.error);
-  const gate = useLoadingGate(waiting);
-  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
-  const listReady = gate.showContent && !list.error && list.data !== null;
+  const { gate, slow, failure } = useCardLoad(list, { alsoWaiting: Boolean(list.data?.pastTheEnd) && !list.error });
+  const listReady = gate.showContent && !failure.error && list.data !== null;
   const showInitialEmpty = listReady && total === 0 && !list.data?.filtersActive;
   const showNoMatch = listReady && users.length === 0 && !showInitialEmpty;
 
   const tabs = [
-    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: list.data && !list.error ? total : undefined }] : []),
+    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: list.data && !failure.error ? total : undefined }] : []),
     { id: "roles" as const, label: "Role assignments", count: rolesCount },
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
@@ -370,7 +368,7 @@ export function UsersPage() {
           )}
 
           {gate.showContent && (
-            <ListFailure error={list.error} refreshError={list.refreshError} onRetry={list.reload} className="users-page__status" />
+            <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} className="users-page__status" />
           )}
 
           {listReady && (

@@ -1,10 +1,21 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError } from "../../src/api/client.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { baseAttendeeDetailEvent, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
+import {
+  advanceTimers,
+  baseAttendeeDetailEvent,
+  deferred,
+  hangUntilAborted,
+  makeSuperadminAssignment,
+  mockMatchMedia,
+  renderWithToast,
+} from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -65,14 +76,22 @@ const detail = {
   event_items: [],
 };
 
-function renderPage() {
-  renderWithToast(
+function renderPage(strict = false) {
+  const page = (
     <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
       <Routes>
         <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  // StrictMode only runs the effects of what it mounts twice when it is outermost: inside the toast provider it would do nothing.
+  return strict
+    ? render(
+        <StrictMode>
+          <ToastProvider>{page}</ToastProvider>
+        </StrictMode>,
+      )
+    : renderWithToast(page);
 }
 
 beforeEach(() => {
@@ -315,5 +334,173 @@ describe("AttendeeDetailPage operator errors", () => {
     await screen.findByRole("heading", { name: "Anna" });
     const notice = await screen.findByText("Attribute fields could not be loaded. Core fields are still editable.");
     expect(notice.closest(".at-notice--warning")).toBeTruthy();
+  });
+});
+
+describe("AttendeeDetailPage first read: the time rules and the Retry", () => {
+  const status = () => screen.queryByText("Loading attendee")?.closest("output") ?? null;
+  const signalOf = (call: number) => loadAttendeeDetailData.mock.calls[call]?.[3] as AbortSignal | undefined;
+
+  it("says that it is taking longer than usual after 8 seconds, in the placeholder's own status region", async () => {
+    loadAttendeeDetailData.mockImplementationOnce(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderPage();
+    await advanceTimers(SLOW_NOTICE_MS - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    // The region is always there (it is what names the wait for assistive tech), with no height of its own until the note.
+    expect(status()).not.toBeNull();
+    await advanceTimers(1);
+
+    const note = screen.getByText(SLOW_NOTICE_TEXT);
+    expect(note.closest("output")).toBe(status());
+    expect(note.className).toContain("attendee-detail-slow-note");
+  });
+
+  it("gives up after 30 seconds with the time limit's own words and a Retry, and cancels the request", async () => {
+    loadAttendeeDetailData.mockImplementationOnce(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderPage();
+    await advanceTimers(LOAD_TIMEOUT_MS - 1);
+    expect(signalOf(0)?.aborted).toBe(false);
+    expect(screen.queryByText("Could not load attendee")).toBeNull();
+    await advanceTimers(1);
+    await advanceTimers(0);
+
+    expect(signalOf(0)?.aborted).toBe(true);
+    expect(screen.getByText("Could not load attendee")).toBeTruthy();
+    expect(screen.getByText(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    // The wait is over: the skeleton and its note are gone.
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    expect(document.querySelector(".attendee-detail-page")?.className).toContain("at-fade-in");
+  });
+
+  it("leaves no timer behind that cancels a request which has already answered", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
+    vi.useFakeTimers();
+    renderPage();
+    await advanceTimers(0);
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    expect(signalOf(0)?.aborted).toBe(false);
+  });
+
+  it("stops waiting for a request that ignores its signal, when its time is up", async () => {
+    // A read that never settles and is not given a way to be cancelled: the limit still ends the wait.
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    await advanceTimers(0);
+    expect(screen.getByText(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`)).toBeTruthy();
+  });
+
+  it("keeps the error with a busy Retry, whose focus it keeps, while a retry runs, with no skeleton or note, and says the failure again when it fails again", async () => {
+    loadAttendeeDetailData.mockImplementationOnce(hangUntilAborted as never);
+    vi.useFakeTimers();
+    renderPage();
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    await advanceTimers(0);
+    const message = screen.getByText(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    const root = document.querySelector(".attendee-detail-page");
+
+    loadAttendeeDetailData.mockImplementationOnce(hangUntilAborted as never);
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(0);
+
+    // A Retry is not a first load: the same error, button and page, busy, with the focus. No skeleton takes their place.
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect(document.querySelector(".attendee-detail-page")).toBe(root);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`)).toBe(message);
+    expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2);
+
+    // Its own 30 seconds, and no "taking longer than usual": that is for a first load.
+    await advanceTimers(SLOW_NOTICE_MS + 1000);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(LOAD_TIMEOUT_MS - SLOW_NOTICE_MS - 1000);
+    await advanceTimers(0);
+    expect(signalOf(1)?.aborted).toBe(true);
+    expect(screen.getByText(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`)).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("hands the focus to the page when the retry works, and shows the attendee in the same page element", async () => {
+    loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const root = screen.getByRole("region", { name: "Attendee" });
+
+    const second = deferred<unknown>();
+    loadAttendeeDetailData.mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => second.resolve({ detail, attributeFields: [], itemsWarning: null }));
+    await screen.findByRole("heading", { name: "Anna" });
+    expect(screen.queryByText("Could not load attendee")).toBeNull();
+    // The element stays (the error and the page share a key), so the 150ms fade does not play again, and it takes the focus.
+    expect(screen.getByRole("region", { name: "Attendee" })).toBe(root);
+    await waitFor(() => expect(document.activeElement).toBe(root));
+  });
+
+  it("turns a retry that finds the attendee gone into the not-found notice", async () => {
+    loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(404, "not_found"));
+    fireEvent.click(retry);
+    expect(await screen.findByText("Attendee not found")).toBeTruthy();
+    expect(screen.queryByText("Could not load attendee")).toBeNull();
+  });
+
+  it("stops the request, and says nothing, when the page is left", async () => {
+    loadAttendeeDetailData.mockImplementationOnce(hangUntilAborted as never);
+    vi.useFakeTimers();
+    const { unmount } = renderPage();
+    await advanceTimers(0);
+    expect(signalOf(0)?.aborted).toBe(false);
+
+    unmount();
+    expect(signalOf(0)?.aborted).toBe(true);
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    expect(screen.queryByText("Could not load attendee")).toBeNull();
+    expect(screen.queryByText(/Could not load attendee/)).toBeNull();
+  });
+
+  it("keeps waiting, with its skeleton, when React runs the page's effects twice and the first request is cancelled", async () => {
+    // StrictMode mounts, unmounts and mounts again: the first request is the page being left, and says nothing and ends nothing.
+    loadAttendeeDetailData.mockImplementationOnce(hangUntilAborted as never);
+    const second = deferred<unknown>();
+    loadAttendeeDetailData.mockReturnValueOnce(second.promise);
+    vi.useFakeTimers();
+    renderPage(true);
+    await advanceTimers(0);
+    expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2);
+    expect(signalOf(0)?.aborted).toBe(true);
+    expect(signalOf(1)?.aborted).toBe(false);
+
+    // Still waiting for the second request: the cancelled one did not end the wait, so no empty page stands in for the skeleton.
+    await advanceTimers(250);
+    expect(document.querySelector(".attendee-detail-skeleton")).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Attendee" })).toBeNull();
+
+    await act(async () => second.resolve({ detail, attributeFields: [], itemsWarning: null }));
+    await advanceTimers(400);
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+    // And the cancelled request left no failure behind on the page that did load.
+    expect(screen.queryByText(/Could not load attendee/)).toBeNull();
   });
 });
