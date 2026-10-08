@@ -68,6 +68,8 @@ export async function checkInScan(
     });
     if (!row?.admitted_at) {
       const card = await getAttendeeCard(eventId, attendee.id, prisma);
+      // No card: the attendee was erased after the ticket was resolved.
+      if (!card) return { status: "INVALID", confirmed: false };
       await prisma.$transaction(async (tx) => {
         await writeActionLog(tx, {
           event_id: eventId,
@@ -79,7 +81,7 @@ export async function checkInScan(
       return {
         status: "PREVIEW",
         confirmed: false,
-        card: card ?? undefined,
+        card,
         attendeeId: attendee.id,
       };
     }

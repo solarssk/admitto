@@ -183,15 +183,26 @@ describe("check-in", () => {
     expect(await prisma.checkIn.count({ where: { attendee_id: a.id } })).toBe(0);
   });
 
-  it("a scan in preview mode that resolved the ticket before the erasure writes no activity entry", async () => {
+  it("a scan in preview mode that resolved the ticket before the erasure gets INVALID, no card and no activity entry", async () => {
     const token = generateToken();
     const a = await createAttendee({ event_id: PREVIEW_EVENT_ID, token_hash: hashToken(token) });
     const held = await holdErasure([a.id], PREVIEW_EVENT_ID);
     const scanning = checkInScan({ scanned: token, eventId: PREVIEW_EVENT_ID, operator: "staff-1", deviceId: "Gate A" }, prisma);
     expect(await staysPending(scanning)).toBe(true);
     await held.commit();
-    await scanning;
+    expect(await scanning).toEqual({ status: "INVALID", confirmed: false });
     expect(await prisma.attendeeActionLog.count({ where: { attendee_id: a.id } })).toBe(0);
+    expect(await prisma.attendeeItemState.count({ where: { attendee_id: a.id } })).toBe(0);
+  });
+
+  it("a card requested while the erasure is open waits, then returns no card and leaves no item rows", async () => {
+    const a = await createAttendee();
+    const held = await holdErasure([a.id]);
+    const requesting = getAttendeeCard(EVENT_ID, a.id, prisma);
+    expect(await staysPending(requesting)).toBe(true);
+    await held.commit();
+    expect(await requesting).toBeNull();
+    expect(await prisma.attendeeItemState.count({ where: { attendee_id: a.id } })).toBe(0);
   });
 
   it("an erased attendee has no card, is not found by the door search and is not in the recent list", async () => {

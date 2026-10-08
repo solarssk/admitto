@@ -3,6 +3,7 @@ import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { parseCustomData } from "./custom-data.js";
 import { buildItemDetail } from "./event-item-contents.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
 import { isAdmittable } from "./admittable.js";
 import type { AttendeeCardDto, EventItemConfig, LookupAttendeeResult } from "./types.js";
@@ -88,9 +89,20 @@ export async function getAttendeeCard(
   attendeeId: string,
   prisma: DbClient,
 ): Promise<AttendeeCardDto | null> {
+  // Built in one transaction under the attendee's row lock: an erasure that is still open makes
+  // this wait and then return no card, and one that starts later waits for the card to be read.
+  // Without it the pending item-state rows below could land on an erased attendee, and the card
+  // could carry a name read before an erasure that has meanwhile completed.
+  // ($connect, unlike $transaction, is absent from an interactive transaction's client.)
+  if ("$connect" in prisma) {
+    return prisma.$transaction((tx) => getAttendeeCard(eventId, attendeeId, tx));
+  }
   // No card for an erased attendee: nothing about them is offered for action any more.
+  const locked = await lockAttendeeRow(prisma, attendeeId, eventId);
+  if (!locked || locked.erased) return null;
+
   const attendee = await prisma.attendee.findFirst({
-    where: { id: attendeeId, event_id: eventId, erased_at: null },
+    where: { id: attendeeId, event_id: eventId },
     select: {
       id: true,
       name: true,
