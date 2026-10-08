@@ -48,7 +48,9 @@ export async function revokeAllCheckInsForEvent(
   params: { eventId: string; audit: OpsAuditContext },
 ): Promise<number> {
   const admitted = await prisma.attendee.findMany({
-    where: { event_id: params.eventId, admitted_at: { not: null } },
+    // Erased attendees stay admitted: their admission is part of the final counts, and they have
+    // no card any more to hand an item back or forth.
+    where: { event_id: params.eventId, admitted_at: { not: null }, erased_at: null },
     select: { id: true },
   });
   if (admitted.length === 0) return 0;
@@ -137,6 +139,7 @@ export async function revokeAllItemsForEvent(
     where: {
       state: { in: REVOCABLE_ITEM_STATES },
       event_item: { event_id: params.eventId },
+      attendee: { erased_at: null },
     },
     select: { attendee_id: true },
   });

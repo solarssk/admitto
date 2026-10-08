@@ -40,6 +40,9 @@ export async function lookupAttendees(
   const rows = await prisma.attendee.findMany({
     where: {
       event_id: eventId,
+      // An erased attendee is named "Erased attendee" with a placeholder address, so a search for
+      // "erased" or "invalid" would otherwise offer every one of them at the door.
+      erased_at: null,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         { email: { contains: q, mode: "insensitive" } },
@@ -85,8 +88,9 @@ export async function getAttendeeCard(
   attendeeId: string,
   prisma: DbClient,
 ): Promise<AttendeeCardDto | null> {
+  // No card for an erased attendee: nothing about them is offered for action any more.
   const attendee = await prisma.attendee.findFirst({
-    where: { id: attendeeId, event_id: eventId },
+    where: { id: attendeeId, event_id: eventId, erased_at: null },
     select: {
       id: true,
       name: true,

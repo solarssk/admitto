@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient, AttendeeStatus } from "@admitto/db";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { ensureBadgeEventItem } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { isAdmittable } from "./admittable.js";
@@ -67,12 +68,14 @@ async function loadAttendeeForItemAction(
   attendeeId: string,
   eventId: string,
 ): Promise<{ id: string; status: AttendeeStatus }> {
-  const attendee = await tx.attendee.findFirst({
-    where: { id: attendeeId, event_id: eventId },
-    select: { id: true, status: true },
-  });
+  // Also the lock that keeps an erasure from starting before the caller's transaction ends:
+  // every item-state change and activity-log entry that follows lands before it.
+  const attendee = await lockAttendeeRow(tx, attendeeId, eventId);
   if (!attendee) {
     throw new IllegalItemTransitionError("Attendee not found for this event");
+  }
+  if (attendee.erased) {
+    throw new IllegalItemTransitionError("Attendee data has been erased");
   }
   return { id: attendee.id, status: attendee.status as AttendeeStatus };
 }

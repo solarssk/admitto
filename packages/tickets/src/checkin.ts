@@ -3,6 +3,7 @@ import { resolveTicket } from "./resolve.js";
 import { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import { isAdmittable } from "./admittable.js";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import type { CheckInScanParams, CheckInScanResult, CheckInHistoryEntry } from "./types.js";
 
@@ -38,7 +39,11 @@ export async function checkInScan(
     const card = await getAttendeeCard(eventId, attendee.id, prisma);
     if (!card) return { status: "INVALID", confirmed: false };
 
-    await prisma.$transaction(async (tx) => {
+    const recorded = await prisma.$transaction(async (tx) => {
+      // The ticket was resolved before this transaction: an erasure in between must not get a
+      // check-in row (with the operator's device) written onto the emptied attendee.
+      const locked = await lockAttendeeRow(tx, attendee.id, eventId);
+      if (!locked || locked.erased) return false;
       await tx.checkIn.create({
         data: {
           attendee_id: attendee.id,
@@ -49,7 +54,9 @@ export async function checkInScan(
           status: "REVOKED",
         },
       });
+      return true;
     });
+    if (!recorded) return { status: "INVALID", confirmed: false };
     return { status: "REVOKED", confirmed: false, card };
   }
 
@@ -93,6 +100,9 @@ export async function getRecentCheckIns(
   return prisma.checkIn.findMany({
     where: {
       event_id: eventId,
+      // An erased attendee's check-ins stay for the counts, but the sidebar is for acting on recent
+      // scans and an erased entry cannot be acted on.
+      attendee: { erased_at: null },
       // scan/manual = admissions; undo/admin_revoke = reversals (#449 review) —
       // without these the sidebar kept showing a reversed admission as a
       // permanently-green "Checked in" row with no indication it was undone.
