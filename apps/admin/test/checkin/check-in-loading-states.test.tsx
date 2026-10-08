@@ -8,6 +8,7 @@ import { CkRecentScans } from "../../src/checkin/CkRecentScans.js";
 import { CkStats } from "../../src/checkin/CkStats.js";
 import { NoteModal } from "../../src/checkin/NoteModal.js";
 import { ScanHistoryError, ScanHistoryList, type ScanHistoryStatus } from "../../src/checkin/ScanHistoryList.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -70,10 +71,65 @@ describe("CkRecentScans while the history is unknown", () => {
   });
 });
 
+describe("CkRecentScans: the history that takes longer than usual", () => {
+  it("names what is loading in one status region and adds the note to it after 8 seconds, to the millisecond", async () => {
+    const { container } = render(<CkRecentScans history={[]} loading />);
+    const region = () => container.querySelector(".ck-recent__loading-status") as HTMLElement;
+    expect(region().tagName).toBe("OUTPUT");
+    expect(region().textContent).toBe("Loading recent scans");
+
+    await advance(SLOW_NOTICE_MS - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advance(1);
+    // The note is in the same region as the label, so assistive tech hears it too.
+    expect(region().textContent).toContain("Loading recent scans");
+    expect(region().textContent).toContain(SLOW_NOTICE_TEXT);
+  });
+
+  it("has no status region, and no note, once the history is in, and counts the 8 seconds again for a later load", async () => {
+    const { container, rerender } = render(<CkRecentScans history={[]} loading />);
+    await advance(SLOW_NOTICE_MS);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+
+    rerender(<CkRecentScans history={[]} />);
+    expect(container.querySelector(".ck-recent__loading-status")).toBeNull();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+
+    rerender(<CkRecentScans history={[]} loading />);
+    await advance(SLOW_NOTICE_MS - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advance(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+  });
+
+  it("is quiet when it is not loading", async () => {
+    const { container } = render(<CkRecentScans history={[]} />);
+    await advance(SLOW_NOTICE_MS * 2);
+    expect(container.querySelector(".ck-recent__loading-status")).toBeNull();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+  });
+});
+
 describe("ScanHistoryList first load", () => {
   const list = (status: ScanHistoryStatus, extra: Partial<Parameters<typeof ScanHistoryList>[0]> = {}) => (
     <ScanHistoryList admittedCount={7} totalCount={20} history={[]} status={status} {...extra} />
   );
+
+  it("says it is taking longer than usual after 8 seconds of the first load, and not for a list that is loaded or failed", async () => {
+    const { rerender } = render(list("loading"));
+    await advance(SLOW_NOTICE_MS - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advance(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+
+    // Once it has answered, with the numbers or with a failure, the note goes with the placeholder.
+    rerender(list("error"));
+    await advance(600);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    rerender(list("ready"));
+    await advance(SLOW_NOTICE_MS * 2);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+  });
 
   it("holds the space for 200ms, draws the placeholder, keeps it for 400ms, then fades the numbers in", async () => {
     const { container, rerender } = render(list("loading"));

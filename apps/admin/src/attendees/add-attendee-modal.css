@@ -148,6 +148,12 @@
   visibility: visible;
 }
 
+/* The placeholder's status region (the label for assistive tech, and the 8 second note under the fields): in the page's flow, so it
+   takes room only while the note is in it. */
+.add-attendee-modal__loading-status {
+  display: block;
+}
+
 .add-attendee-modal__skeleton-field {
   display: flex;
   flex-direction: column;

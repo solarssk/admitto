@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
-import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
+import { deferred } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -60,6 +61,103 @@ describe("AddAttendeeModal delayed loading", () => {
     expect(screen.queryByText(/Loading attribute fields/)).toBeNull();
     expect(screen.queryByText(/Loading ticket types/)).toBeNull();
     expect(screen.queryByRole("status", { name: "Loading fields" })).toBeNull();
+  });
+
+  it("says it is taking longer than usual after 8 seconds, in the placeholder's one status region, between the form and its buttons", () => {
+    renderWithPendingFetches();
+    act(() => {
+      vi.advanceTimersByTime(SLOW_NOTICE_MS - 1);
+    });
+    expect(skeleton()).toBeTruthy();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    const note = screen.getByText(SLOW_NOTICE_TEXT);
+    // The label that names what is loading and the note are one status region, so assistive tech hears both. It follows the fields in
+    // the page's flow (the skeleton over them has exactly their size and cannot make room for a line) and comes before the buttons.
+    const region = note.closest("output") as HTMLElement;
+    expect(region.textContent).toContain("Loading attendee form");
+    expect(fields().contains(region)).toBe(false);
+    expect(fields().compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const actions = document.querySelector(".add-attendee-modal__actions") as HTMLElement;
+    expect(region.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("takes the note away as soon as the catalogs have answered, though the placeholder goes a moment later", async () => {
+    const fieldsAnswer = deferred<never[]>();
+    const typesAnswer = deferred<never[]>();
+    mockFetchEventCustomFields.mockReturnValue(fieldsAnswer.promise);
+    mockFetchTicketTypes.mockReturnValue(typesAnswer.promise);
+    vi.useFakeTimers();
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SLOW_NOTICE_MS + 500);
+    });
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+
+    await act(async () => {
+      fieldsAnswer.resolve([]);
+      typesAnswer.resolve([]);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The note belongs to the wait, which is over; the placeholder itself leaves on the next tick (it has been up for more than 400ms).
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    expect(skeleton()).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(skeleton()).toBeNull();
+    expect(fields().className).toContain("at-fade-in");
+  });
+
+  it("counts the 8 seconds again when the dialog is opened again, also though the close left a read unfinished", () => {
+    mockFetchEventCustomFields.mockImplementation(() => new Promise(() => {}));
+    mockFetchTicketTypes.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    const props = { eventId: "evt-1", onClose: () => {}, onCreated: () => {} };
+    const { rerender } = render(<AddAttendeeModal {...props} open />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    rerender(<AddAttendeeModal {...props} open={false} />);
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    rerender(<AddAttendeeModal {...props} open />);
+
+    // 9 seconds have passed since the first opening, but the wait of this one is what counts.
+    act(() => {
+      vi.advanceTimersByTime(SLOW_NOTICE_MS - 1);
+    });
+    expect(skeleton()).toBeTruthy();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+  });
+
+  it("counts the 8 seconds again for another event that replaces one still on its way", () => {
+    mockFetchEventCustomFields.mockImplementation(() => new Promise(() => {}));
+    mockFetchTicketTypes.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    const props = { onClose: () => {}, onCreated: () => {} };
+    const { rerender } = render(<AddAttendeeModal {...props} eventId="evt-1" open />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    rerender(<AddAttendeeModal {...props} eventId="evt-2" open />);
+
+    act(() => {
+      vi.advanceTimersByTime(SLOW_NOTICE_MS - 1);
+    });
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
   it("shows the whole form at once, fading in, when the catalogs arrive before the 200ms are up", async () => {

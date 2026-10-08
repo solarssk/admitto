@@ -27,6 +27,10 @@ describe("check-in loading states: CSS the tests in jsdom cannot see", () => {
     expect(rule(".ck-overlay__checking .at-spinner")).toMatch(/color:\s*inherit/);
   });
 
+  it("the 8 second note under the recent scans takes the camera overlay's light text, so it can be read on the dark panel", () => {
+    expect(rule(".ck-overlay__aside .slow-note")).toMatch(/color:\s*rgba\(255,\s*255,\s*255,\s*0\.65\)/);
+  });
+
   it("a placeholder row in the recent scans list reserves the height of a real row", () => {
     expect(rule(".ck-recent__row--skeleton")).toMatch(/min-height:\s*58px/);
     expect(rule(".ck-recent__row--skeleton:last-child")).toMatch(/min-height:\s*57px/);

@@ -1767,6 +1767,16 @@ html:not(.icons-ready) .ti {
   color: var(--text-secondary);
 }
 
+/* The status region of the history's placeholder (CkRecentScans): its label for assistive tech and, after 8 seconds, the shared slow
+   note under the rows. On the dark camera overlay the note takes the light text its neighbours use. */
+.ck-recent__loading-status {
+  display: block;
+}
+
+.ck-overlay__aside .slow-note {
+  color: rgba(255, 255, 255, 0.65);
+}
+
 .rec-dot {
   width: 10px;
   height: 10px;
