@@ -90,6 +90,10 @@ export async function writeActionLog(
 ): Promise<void> {
   // See writeActionLogMany: nothing is logged for an erased attendee. A missing attendee falls
   // through to the insert, which fails on the foreign key as before.
+  // This lock comes late in a transaction that has already written something. One that updated or
+  // deleted a row an erasure also writes (wallet pass, check-in, email delivery, note) calls
+  // lockAttendeeRow before that write, or it can deadlock with an erasure that holds the attendee
+  // and waits for that row. (The insert below would take the same lock through its foreign key.)
   if ((await lockAttendeeRow(tx, data.attendee_id))?.erased) return;
   await tx.attendeeActionLog.create({
     data: {

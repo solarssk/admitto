@@ -195,6 +195,23 @@ describe("check-in", () => {
     expect(await prisma.attendeeItemState.count({ where: { attendee_id: a.id } })).toBe(0);
   });
 
+  it("a scan in preview mode builds the card and writes its activity entry in one transaction, so no erasure can start between them", async () => {
+    const token = generateToken();
+    const a = await createAttendee({ event_id: PREVIEW_EVENT_ID, token_hash: hashToken(token) });
+    const transactions = vi.spyOn(prisma, "$transaction");
+    try {
+      const result = await checkInScan(
+        { scanned: token, eventId: PREVIEW_EVENT_ID, operator: "staff-1", deviceId: "Gate A" },
+        prisma,
+      );
+      expect(result).toEqual(expect.objectContaining({ status: "PREVIEW", attendeeId: a.id }));
+      expect(transactions).toHaveBeenCalledTimes(1);
+    } finally {
+      transactions.mockRestore();
+    }
+    expect(await prisma.attendeeActionLog.count({ where: { attendee_id: a.id, action_type: "scan_preview" } })).toBe(1);
+  });
+
   it("a card requested while the erasure is open waits, then returns no card and leaves no item rows", async () => {
     const a = await createAttendee();
     const held = await holdErasure([a.id]);

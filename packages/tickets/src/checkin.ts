@@ -67,17 +67,22 @@ export async function checkInScan(
       select: { admitted_at: true },
     });
     if (!row?.admitted_at) {
-      const card = await getAttendeeCard(eventId, attendee.id, prisma);
-      // No card: the attendee was erased after the ticket was resolved.
-      if (!card) return { status: "INVALID", confirmed: false };
-      await prisma.$transaction(async (tx) => {
+      // The card and its activity entry come from one transaction, so one row lock covers both:
+      // an erasure that starts meanwhile waits, and one that has already committed leaves no card
+      // (the entry would be skipped for it, with the card still on its way to the operator).
+      const card = await prisma.$transaction(async (tx) => {
+        const built = await getAttendeeCard(eventId, attendee.id, tx);
+        if (!built) return null;
         await writeActionLog(tx, {
           event_id: eventId,
           attendee_id: attendee.id,
           action_type: "scan_preview",
           audit,
         });
+        return built;
       });
+      // No card: the attendee was erased after the ticket was resolved.
+      if (!card) return { status: "INVALID", confirmed: false };
       return {
         status: "PREVIEW",
         confirmed: false,
