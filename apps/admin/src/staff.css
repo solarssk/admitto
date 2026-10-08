@@ -1371,6 +1371,12 @@ html:not(.icons-ready) .ti {
   margin-bottom: 12px;
 }
 
+/* The 8 second line a placeholder adds under its shapes (SlowNote). */
+.slow-note {
+  display: block;
+  padding-top: var(--space-1);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
