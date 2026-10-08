@@ -23,7 +23,7 @@ The database enforces the result: `Attendee_erased_carries_no_personal_data` rej
 - **New column or table on an attendee?** `packages/tickets/test/erasure-inventory.test.ts` fails until you decide what erasure does with it (cleared, kept, deleted). Add the behaviour to `eraseAttendees` and its test too.
 - **Never reuse an erased row.** `erased_at` is the marker; `status` is not (it drives capacity and issuing). Code that sends, issues, edits or checks in an attendee must refuse an erased one. `issueTicket` already does.
 - **Never log or audit names or emails** of the people erased. Ids and counts only.
-- **`@erased.invalid` is reserved.** Import, manual add and edit reject such an address, and a second CHECK refuses it on a live row: a live attendee holding `erased-<id>@erased.invalid` would make the erasure of `<id>` fail on the unique (event, email) index.
+- **`@erased.invalid` is reserved.** Import, manual add and edit reject such an address, and a second CHECK refuses it on a live row: a live attendee holding `erased-<id>@erased.invalid` would make the erasure of `<id>` fail on the unique (event, email) index. The migration moves any address already in that namespace to `@legacy.erased.invalid` before the constraint is added, so the upgrade cannot fail on old data.
 
 ## Not done by the function
 

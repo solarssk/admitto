@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -179,5 +180,52 @@ describe("Attendee erased_at DB constraint", () => {
     await expect(
       prisma!.attendee.update({ where: { id }, data: { company: "Acme" } }),
     ).rejects.toThrow(/Attendee_erased_carries_no_personal_data/);
+  });
+});
+
+describe("the migration's handling of addresses already in the reserved namespace", () => {
+  const migration = readFileSync(
+    path.join(DB_ROOT, "prisma/migrations/20261008120000_add_attendee_erased_at/migration.sql"),
+    "utf8",
+  );
+  const remediation = /UPDATE "Attendee"[\s\S]*?;/.exec(migration)?.[0];
+  const constraint = /ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_email_not_erased_placeholder"[\s\S]*?\n\);/.exec(
+    migration,
+  )?.[0];
+
+  it("moves such an address to a domain that is not reserved, so the constraint can be added", async () => {
+    expect(remediation).toBeDefined();
+    expect(constraint).toBeDefined();
+    // Put the database back in the state of an upgrade: rows from before the constraint existed.
+    await prisma!.$executeRawUnsafe('ALTER TABLE "Attendee" DROP CONSTRAINT "Attendee_email_not_erased_placeholder"');
+    try {
+      for (const [id, email] of [
+        ["legacy-reserved-1", "someone@erased.invalid"],
+        ["legacy-reserved-2", "Other.Person@ERASED.INVALID"],
+        ["legacy-fine", "fine@example.com"],
+        ["legacy-similar", "x@erased.invalid.example.com"],
+      ] as const) {
+        await prisma!.attendee.create({ data: { id, event_id: EVENT_ID, email, name: id } });
+      }
+
+      await prisma!.$executeRawUnsafe(remediation!);
+      await prisma!.$executeRawUnsafe(constraint!);
+
+      const emails = Object.fromEntries(
+        (await prisma!.attendee.findMany({ where: { id: { startsWith: "legacy-" } } })).map((a) => [a.id, a.email]),
+      );
+      expect(emails).toEqual({
+        "legacy-reserved-1": "someone@legacy.erased.invalid",
+        "legacy-reserved-2": "Other.Person@legacy.erased.invalid",
+        "legacy-fine": "fine@example.com",
+        "legacy-similar": "x@erased.invalid.example.com",
+      });
+      await expect(
+        prisma!.attendee.create({ data: { event_id: EVENT_ID, email: "again@erased.invalid", name: "Again" } }),
+      ).rejects.toThrow(/Attendee_email_not_erased_placeholder/);
+    } finally {
+      // The constraint is back from the statement above unless that failed; keep the suite's state sane.
+      await prisma!.attendee.deleteMany({ where: { id: { startsWith: "legacy-" } } });
+    }
   });
 });

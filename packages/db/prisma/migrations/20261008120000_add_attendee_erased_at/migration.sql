@@ -26,6 +26,15 @@ ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_erased_carries_no_personal_data"
 -- would collide with the placeholder of the attendee it is named after (unique per event and
 -- email) and make that attendee's erasure fail. Import, manual add and edit reject the address
 -- with a clear message; this closes every other path.
+--
+-- Earlier releases accepted any syntactically valid address, so a row may already hold one in the
+-- reserved namespace (test data, most likely: a .invalid address can never receive mail). Those
+-- rows get the address moved to a neighbouring domain that is not reserved, so the constraint can
+-- be added without failing the deploy and the attendee keeps a recognisable address.
+UPDATE "Attendee"
+SET "email" = regexp_replace("email", '@erased\.invalid$', '@legacy.erased.invalid', 'i')
+WHERE "erased_at" IS NULL AND lower("email") LIKE '%@erased.invalid';
+
 ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_email_not_erased_placeholder" CHECK (
   "erased_at" IS NOT NULL OR lower("email") NOT LIKE '%@erased.invalid'
 );
