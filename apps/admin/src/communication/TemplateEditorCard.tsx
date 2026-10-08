@@ -328,6 +328,7 @@ export function TemplateEditorCard({
   // constantly instead of just applying the controlled `value`. Content edits alone still re-lint
   // live - that's the linter extension's own job (debounced internally), not something this
   // recompute needs to drive.
+  const archived = isEventArchived(event);
   const bodyExtensions = useMemo(
     () => [
       html(),
@@ -360,6 +361,9 @@ export function TemplateEditorCard({
       EditorView.contentAttributes.of({
         id: "communication-body",
         "aria-label": format === "mjml" ? "MJML body" : "HTML body",
+        // A read-only editor is still a contenteditable element, which raises the on-screen keyboard
+        // on a phone, with nothing to type into.
+        ...(archived ? { inputmode: "none" } : {}),
       }),
       // Mirrors the old textarea's Tab handling: plain Tab inserts two spaces (code-editor
       // habit) instead of the browser's default focus-cycling; Shift+Tab is deliberately left
@@ -369,15 +373,18 @@ export function TemplateEditorCard({
       keymap.of([
         {
           key: "Tab",
-          preventDefault: true,
+          // No `preventDefault: true`: it would also swallow the Tab when this returns false, so
+          // a read-only editor (an archived event) would trap the keyboard focus. Returning true
+          // already stops the browser's own Tab handling.
           run: (view) => {
+            if (view.state.readOnly) return false;
             view.dispatch(view.state.replaceSelection("  "));
             return true;
           },
         },
       ]),
     ],
-    [format, knownPlaceholders, placeholderCompletionItems],
+    [format, knownPlaceholders, placeholderCompletionItems, archived],
   );
 
   return (
@@ -410,6 +417,7 @@ export function TemplateEditorCard({
       <Tooltip
         content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
         className="communication-editor-fieldset-wrapper"
+        anchor=".at-input"
       >
         <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
           <Input
@@ -427,14 +435,18 @@ export function TemplateEditorCard({
       <Tooltip
         content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
         className="communication-editor-fieldset-wrapper"
+        anchor=".cm-editor"
       >
-        <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
+        <div className="communication-editor-fieldset">
           <div className="communication-body-field at-field">
-            {/* Fieldset `disabled` only cascades to native form controls (input/textarea/select) -
-                CodeMirror's contenteditable root isn't one, so the archived/missing-snapshot states
-                below are wired explicitly via `editable` instead of relying on that cascade. Native
-                label-click-to-focus doesn't reach a contenteditable div either, hence the explicit
-                onClick. */}
+            {/* No `<fieldset disabled>` around this field: it would only reach native form controls,
+                and CodeMirror's contenteditable root isn't one, so the archived/missing-snapshot
+                states below are wired explicitly instead - while the same fieldset would also
+                disable the inputs of the editor's own search panel. An archived event's body stays
+                focusable and read-only (`readOnly`, not `editable={false}`), so its text can be
+                selected and copied and Ctrl/Cmd+F opens that search - the editor only draws the
+                lines in view, so the browser's find cannot see the rest. Native label-click-to-focus
+                doesn't reach a contenteditable div either, hence the explicit onClick. */}
             <label // NOSONAR - onClick is a mouse-only convenience widening the label's own click-to-focus hit area (see comment above); the editor itself is an independently keyboard-focusable role="textbox" a keyboard user tabs to directly, so nothing here is keyboard-inaccessible
               className="at-label"
               htmlFor="communication-body"
@@ -478,13 +490,14 @@ export function TemplateEditorCard({
               // as its own separate instance, scoped to only ever suggest {{placeholder}} tokens.
               basicSetup={{ autocompletion: false }}
               extensions={bodyExtensions}
-              editable={!isEventArchived(event) && !editorSnapshotMissing}
+              editable={!editorSnapshotMissing}
+              readOnly={isEventArchived(event)}
               indentWithTab={false}
               onChange={setBody}
               onFocus={() => setActiveField("body")}
             />
           </div>
-        </fieldset>
+        </div>
       </Tooltip>
 
       {validationErrors.length === 1 && (

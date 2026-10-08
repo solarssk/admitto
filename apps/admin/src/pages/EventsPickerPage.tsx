@@ -150,13 +150,8 @@ export function EventsPickerPage() {
             title="No active events"
             description={
               showInstanceSettings
-                ? "All events are archived. Open the Archived events tab, then restore an event from Organisation settings → Event archiving (or Event settings)."
-                : "All events are archived. Contact your administrator if you need help."
-            }
-            action={
-              <Button type="button" variant="secondary" onClick={() => setTab("archived")}>
-                View archived events
-              </Button>
+                ? "Restore an event in Organisation settings → Archiving."
+                : "Ask a superadmin to restore an event."
             }
           />
         )}
