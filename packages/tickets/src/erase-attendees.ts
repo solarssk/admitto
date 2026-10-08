@@ -49,6 +49,12 @@ export type EraseAttendeesResult = {
   };
   /** Provider passes of the erased attendees that are not deleted at the provider yet. */
   walletTargets: EraseWalletTarget[];
+  /**
+   * The addresses the erased attendees had, lower-cased, for scrubbing event-level copies of them
+   * that are not keyed by attendee (see scrubImportJobResults). They are personal data: used in
+   * memory by the caller within the same request, never logged, audited or stored.
+   */
+  previousEmails: string[];
 };
 
 /**
@@ -100,6 +106,7 @@ export async function eraseAttendees(
     notFoundIds: requestedIds,
     counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0 },
     walletTargets: [],
+    previousEmails: [],
   };
   if (requestedIds.length === 0) return empty;
 
@@ -113,8 +120,8 @@ export async function eraseAttendees(
 
   // Locks the rows (in id order, so two overlapping erasures cannot deadlock) until commit: a
   // concurrent ticket issue, check-in or edit waits, then sees the erased row.
-  const found = await tx.$queryRaw<{ id: string; erased_at: Date | null }[]>`
-    SELECT "id", "erased_at" FROM "Attendee"
+  const found = await tx.$queryRaw<{ id: string; email: string; erased_at: Date | null }[]>`
+    SELECT "id", "email", "erased_at" FROM "Attendee"
     WHERE "event_id" = ${eventId} AND "id" IN (${Prisma.join(requestedIds)})
     ORDER BY "id"
     FOR UPDATE
@@ -124,6 +131,14 @@ export async function eraseAttendees(
   const alreadyErasedIds = found.filter((row) => row.erased_at !== null).map((row) => row.id);
   const toErase = found.filter((row) => row.erased_at === null).map((row) => row.id);
   if (toErase.length === 0) return { ...empty, alreadyErasedIds, notFoundIds };
+  const previousEmails = [
+    ...new Set(
+      found
+        .filter((row) => row.erased_at === null)
+        .map((row) => row.email.trim().toLowerCase())
+        .filter((email) => email.length > 0),
+    ),
+  ];
 
   const ids = Prisma.join(toErase);
   const erased = await tx.$queryRaw<{ id: string }[]>`
@@ -209,6 +224,29 @@ export async function eraseAttendees(
     },
   });
 
+  // A mail that staff sent to this person's address on behalf of another attendee (the resend
+  // override) sits on that other attendee's delivery: the address goes, the delivery stays, and a
+  // mail still waiting to go out is cancelled.
+  if (previousEmails.length > 0) {
+    await tx.$executeRaw`
+      UPDATE "EmailDelivery" SET
+        "status" = CASE
+          WHEN "status" = 'queued' OR ("status" = 'failed' AND "retryable" IS TRUE) THEN 'cancelled'
+          ELSE "status"
+        END,
+        "retryable" = CASE
+          WHEN "status" = 'queued' OR ("status" = 'failed' AND "retryable" IS TRUE) THEN false
+          ELSE "retryable"
+        END,
+        "recipient_email" = NULL,
+        "provider_message_id" = NULL,
+        "error" = NULL
+      WHERE "event_id" = ${eventId}
+        AND LOWER(TRIM("recipient_email")) IN (${Prisma.join(previousEmails)})
+        AND "attendee_id" NOT IN (${erasedList})
+    `;
+  }
+
   // The central audit log keeps the creation entry of a manually added attendee; only the two
   // identifying values go, the entry itself (who added someone, when) stays.
   await tx.$executeRaw`
@@ -234,5 +272,6 @@ export async function eraseAttendees(
         ? [{ attendeeId: pass.attendee_id, providerPassId: pass.provider_pass_id }]
         : [],
     ),
+    previousEmails,
   };
 }

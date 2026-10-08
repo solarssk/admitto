@@ -20,6 +20,9 @@ export {
   eraseAttendees,
   isErasedPlaceholderEmail,
 } from "./erase-attendees.js";
+export { scrubImportJobResults } from "./erase-job-results.js";
+export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
+export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
 export type {
   EraseAttendeesParams,
   EraseAttendeesResult,

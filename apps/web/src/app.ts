@@ -190,6 +190,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
 import {
   handleGetWalletPushJob,
   handleGetWalletPushHistory,
@@ -1981,6 +1982,25 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteEventAttendee(c, db),
+  );
+  // Erase personal data (anonymise in place, Reports keep their numbers). Not behind
+  // guardArchivedEvent: a privacy request is still valid after the event has ended.
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/erase",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeeBulkMutationRateLimit,
+    (c) => handleEraseEventAttendee(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-erase",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    // The pass of each erased attendee is deleted at the provider after the commit.
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleBulkEraseEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-delete",
