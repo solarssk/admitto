@@ -60,10 +60,12 @@ import {
   deleteAttendeeNote,
   NoteTooLongError,
   NoteNotFoundError,
+  AttendeeNotFoundError,
   NoteForbiddenError,
   type OpsAuditContext,
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
+  lockAttendeeRow,
   isErasedPlaceholderEmail,
   lockAttendeesForUpdate,
   loadEventTicketTypes,
@@ -114,6 +116,7 @@ import { publishActivityChanged } from "./checkin-sse-publish.js";
 
 const ATTENDEE_DETAIL_SELECT = {
   id: true,
+  erased_at: true,
   name: true,
   first_name: true,
   last_name: true,
@@ -298,6 +301,8 @@ async function auditAttendeesExported(
 
 export type AttendeeRowDto = {
   id: string;
+  /** Set once the attendee's personal data has been erased (see AttendeeDetailDto). */
+  erased_at: string | null;
   name: string;
   email: string;
   company: string | null;
@@ -361,6 +366,9 @@ export type AttendeeNoteDto = {
 
 export type AttendeeDetailDto = {
   id: string;
+  /** Set once the attendee's personal data has been erased: the name and email are placeholders and
+   * the page is read-only. */
+  erased_at: string | null;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -526,6 +534,8 @@ async function requireManagedEventAttendee(
 
   const attendee = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!attendee) return c.json({ error: "forbidden" }, 403);
+  // An erased attendee's page is read-only: nothing here edits, sends to, or adds to them.
+  if (attendee.erased_at) return c.json({ error: "attendee_erased" }, 409);
 
   return { attendee, attendeeId, eventId };
 }
@@ -625,6 +635,7 @@ async function parseListQuery(
   rsvp_status: RsvpStatus[];
   mail_status: AttendeeMailStatusFilter[];
   customFields: AttendeeCustomFieldFilter[];
+  includeErased: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
 }> {
@@ -649,7 +660,8 @@ async function parseListQuery(
     : "name";
   const sortDirRaw = c.req.query("sortDir");
   const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
-  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir };
+  const includeErased = ["1", "true"].includes(c.req.query("include_erased") ?? "");
+  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased, sortBy, sortDir };
 }
 
 /** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
@@ -969,6 +981,7 @@ async function loadAttendeeNotes(
 function serializeAttendeeRow(
   row: {
     id: string;
+    erased_at: Date | null;
     name: string;
     email: string;
     company: string | null;
@@ -987,6 +1000,7 @@ function serializeAttendeeRow(
   const { company, department } = resolveCompanyDepartment(row);
   return {
     id: row.id,
+    erased_at: row.erased_at ? row.erased_at.toISOString() : null,
     name: row.name,
     email: row.email,
     company,
@@ -1045,6 +1059,7 @@ async function buildAttendeeDetailDto(
   eventId: string,
   row: {
     id: string;
+    erased_at: Date | null;
     name: string;
     first_name: string | null;
     last_name: string | null;
@@ -1080,6 +1095,7 @@ async function buildAttendeeDetailDto(
 
   return {
     id: row.id,
+    erased_at: row.erased_at ? row.erased_at.toISOString() : null,
     name: row.name,
     first_name: row.first_name,
     last_name: row.last_name,
@@ -1124,14 +1140,28 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir } =
-    await parseListQuery(c, db, eventId);
+  const {
+    page,
+    pageSize,
+    q,
+    status,
+    ticket_type,
+    rsvp_status,
+    mail_status,
+    customFields,
+    includeErased,
+    sortBy,
+    sortDir,
+  } = await parseListQuery(c, db, eventId);
 
-  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased };
 
-  const [total, rows] = await Promise.all([
+  // erased_count is event-wide (not narrowed by the filters): the list shows "N erased people are
+  // hidden" however it is filtered.
+  const [total, rows, erasedCount] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
     findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize, sortBy, sortDir),
+    db.attendee.count({ where: { event_id: eventId, erased_at: { not: null } } }),
   ]);
 
   const attendeeIds = rows.map((r) => r.id);
@@ -1145,6 +1175,7 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   return c.json({
     items: rows.map((r) => serializeAttendeeRow(r, lastMail, issuedItems, walletStatus)),
     total,
+    erased_count: erasedCount,
     page,
     pageSize,
   });
@@ -2158,10 +2189,19 @@ async function syncWalletPassOnStatusChangeBestEffort(
     }),
     db.walletPass.findUnique({
       where: { attendee_id: attendeeId },
-      select: { provider_pass_id: true, status: true, provider_removed_at: true, expires_at: true },
+      select: {
+        provider_pass_id: true,
+        status: true,
+        provider_removed_at: true,
+        expires_at: true,
+        attendee: { select: { erased_at: true } },
+      },
     }),
   ]);
   if (!event || !walletPass?.provider_pass_id) return;
+  // The pass of an erased attendee is deleted at the provider by the erasure, never voided or
+  // restored: a restore would make a pass valid again that is about to go.
+  if (walletPass.attendee.erased_at) return;
   // Nothing left at the provider to void or restore for a removed pass.
   if (walletPass.provider_removed_at) return;
   // Same rule as the Restore route: a pass is never made valid again once the event is over, or
@@ -2531,6 +2571,9 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0, updatedIds: [] };
   }
 
+  // The rows are locked in id order first, like an erasure does: the UPDATE below locks them in
+  // plan order, and two statements locking the same people in different orders can deadlock.
+  await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id).sort());
   const values = Prisma.join(changes.map((x) => Prisma.sql`(${x.id}::text, ${x.oldValue}::text)`));
   // IS NOT DISTINCT FROM (not =) — a null-safe equality that correlates a NULL oldValue
   // correctly (a plain `=` never matches NULL = NULL) and behaves identically to `=` for a
@@ -2540,7 +2583,7 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     UPDATE "Attendee" AS t
     SET ${write.setClause}
     FROM (VALUES ${values}) AS v(id, old_value)
-    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.${write.column} IS NOT DISTINCT FROM v.old_value
+    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.erased_at IS NULL AND t.${write.column} IS NOT DISTINCT FROM v.old_value
     RETURNING t.id
   `;
   const updatedIds = new Set(updated.map((r) => r.id));
@@ -2613,7 +2656,7 @@ export async function handleBulkTicketTypeEventAttendees(
       if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 
       const owned = await tx.attendee.findMany({
-        where: { id: { in: attendeeIds }, event_id: eventId },
+        where: { id: { in: attendeeIds }, event_id: eventId, erased_at: null },
         select: { id: true, ticket_type: true },
       });
       return applyBulkAttendeeChanges(
@@ -2709,7 +2752,7 @@ export async function handleBulkRsvpEventAttendees(
     // ticket_type's bulk sibling below, which does forward it (to enqueue a wallet_push job).
     const { updatedIds: _updatedIds, ...counts } = await db.$transaction(async (tx) => {
       const owned = await tx.attendee.findMany({
-        where: { id: { in: attendeeIds }, event_id: eventId },
+        where: { id: { in: attendeeIds }, event_id: eventId, erased_at: null },
         select: { id: true, rsvp_status: true },
       });
       // Reuses computeRsvpChange - the same "is this actually a change, what's the from/to for
@@ -2852,7 +2895,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
   try {
     const { updatedIds, ...counts } = await db.$transaction(async (tx) => {
       const owned = await tx.attendee.findMany({
-        where: { id: { in: attendeeIds }, event_id: eventId },
+        where: { id: { in: attendeeIds }, event_id: eventId, erased_at: null },
         select: { id: true, company: true, department: true, custom_data: true, updated_at: true },
       });
 
@@ -2873,6 +2916,8 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
       }
 
       const column = bulkSetFieldColumn(field);
+      // Locked in id order first (see applyBulkAttendeeChanges).
+      await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id).sort());
       const values = Prisma.join(
         changes.map(
           (x) =>
@@ -2883,7 +2928,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
         UPDATE "Attendee" AS t
         SET ${column} = v.new_value, custom_data = v.new_custom_data, updated_at = NOW()
         FROM (VALUES ${values}) AS v(id, new_value, new_custom_data, expected_updated_at)
-        WHERE t.id = v.id AND t.event_id = ${eventId} AND t.updated_at = v.expected_updated_at
+        WHERE t.id = v.id AND t.event_id = ${eventId} AND t.erased_at IS NULL AND t.updated_at = v.expected_updated_at
         RETURNING t.id
       `;
       const updatedIdSet = new Set(updated.map((r) => r.id));
@@ -3284,7 +3329,7 @@ async function revokeOneAttendeePass(
 ): Promise<"revoked" | "skipped"> {
   const result = await db.$transaction(async (tx) => {
     const updated = await tx.attendee.updateMany({
-      where: { id: attendeeId, event_id: eventId, status: { in: ADMITTABLE_STATUS_LIST } },
+      where: { id: attendeeId, event_id: eventId, erased_at: null, status: { in: ADMITTABLE_STATUS_LIST } },
       data: { status: "revoked" },
     });
     if (updated.count === 0) return "skipped";
@@ -3438,7 +3483,8 @@ async function loadBulkWalletTargets(
     where: {
       attendee_id: { in: attendeeIds },
       provider_pass_id: { not: null },
-      attendee: { event_id: eventId },
+      // Erased attendees fall into the "skipped" count: their pass is the erasure's to delete.
+      attendee: { event_id: eventId, erased_at: null },
     },
     select: {
       attendee_id: true,
@@ -3644,6 +3690,7 @@ async function deleteOneWalletPass(
     await provider.deletePass(target.providerPassId);
   }
   await db.$transaction(async (tx) => {
+    await lockAttendeeRow(tx, target.attendeeId);
     await tx.walletPass.delete({ where: { attendee_id: target.attendeeId } });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -4033,11 +4080,13 @@ export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient):
   const { attendeeId, eventId } = attendeeContextOrRes;
 
   const dismissedAt = new Date();
-  await db.$transaction(async (tx) => {
-    await tx.attendee.update({
-      where: { id: attendeeId },
+  const dismissed = await db.$transaction(async (tx) => {
+    // erased_at: an attendee erased since the check above is refused, not written to.
+    const { count } = await tx.attendee.updateMany({
+      where: { id: attendeeId, erased_at: null },
       data: { email_bounce_dismissed_at: dismissedAt },
     });
+    if (count === 0) return false;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: attendeeId,
@@ -4045,7 +4094,9 @@ export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient):
       audit: adminAuditFromContext(c),
       metadata: {},
     });
+    return true;
   });
+  if (!dismissed) return c.json({ error: "attendee_erased" }, 409);
 
   return c.json({ email_bounce_dismissed_at: dismissedAt.toISOString() });
 }
@@ -4069,6 +4120,8 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
 
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
+  // An erased attendee's admission is part of the final counts: it is not revoked afterwards.
+  if (existing.erased_at) return c.json({ error: "attendee_erased" }, 409);
 
   try {
     const result = await revokeCheckIn(
@@ -4199,6 +4252,7 @@ async function loadWalletActionContext(
       where: { id: attendeeId },
       select: {
         event_id: true,
+        erased_at: true,
         qr_payload: true,
         external_uuid: true,
         token_enc: true,
@@ -4231,6 +4285,9 @@ async function loadWalletActionContext(
   ]);
   if (attendee?.event_id !== eventId) return c.json({ error: "forbidden" }, 403);
   if (!event) return c.json({ error: "forbidden" }, 403);
+  // An erased attendee's pass is deleted at the provider by the erasure itself, not by an admin
+  // action: voiding, restoring or refreshing it would only touch a pass that is about to go.
+  if (attendee.erased_at) return c.json({ error: "attendee_erased" }, 409);
   if (!attendee.wallet_pass?.provider_pass_id) return c.json({ error: "no_wallet_pass" }, 404);
 
   const providerConfig = {
@@ -4275,6 +4332,10 @@ async function updateWalletPassUnlessRemoved(
   attendeeId: string,
   data: Prisma.WalletPassUpdateManyMutationInput,
 ): Promise<Prisma.WalletPassGetPayload<object> | null> {
+  // Attendee row first, like an erasure (no deadlock over the pass row); an attendee erased since
+  // the route read the pass gets nothing written, reported like a removed pass.
+  const locked = await lockAttendeeRow(tx, attendeeId);
+  if (!locked || locked.erased) return null;
   const { count } = await tx.walletPass.updateMany({
     where: { attendee_id: attendeeId, provider_removed_at: null },
     data,
@@ -4542,6 +4603,7 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
   }
 
   await db.$transaction(async (tx) => {
+    await lockAttendeeRow(tx, ctx.attendeeId);
     await tx.walletPass.delete({ where: { attendee_id: ctx.attendeeId } });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -4630,6 +4692,7 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
 
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
+  if (existing.erased_at) return c.json({ error: "attendee_erased" }, 409);
 
   try {
     await revokeItemState({ attendeeId, eventId, itemKey, audit: adminAuditFromContext(c) }, db);
@@ -4665,6 +4728,8 @@ export async function handleAddAttendeeNote(c: Context, db: PrismaClient): Promi
     );
   } catch (err) {
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
+    // Erased between the check above and the write (the domain function refuses it under a lock).
+    if (err instanceof AttendeeNotFoundError) return c.json({ error: "attendee_erased" }, 409);
     console.error("handleAddAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);
   }

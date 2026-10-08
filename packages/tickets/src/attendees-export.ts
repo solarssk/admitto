@@ -179,7 +179,7 @@ export async function exportAttendeesCsv(
   }
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const total = await countFilteredAttendees(db, eventId, filters);
+  const total = await countFilteredAttendees(db, eventId, { ...filters, includeErased: false });
   if (total > EXPORT_ROW_CAP) {
     throw new AttendeeExportTooLargeError(total);
   }
