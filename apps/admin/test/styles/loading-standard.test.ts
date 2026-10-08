@@ -31,10 +31,6 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
     count: 1,
     reason: "The remove-file chip; the busy control is Validate or Commit, not the chip.",
   },
-  "apps/admin/src/pages/ReportsPage.tsx": {
-    count: 1,
-    reason: "An export row of a menu that closes on click, so the pressed row is gone while it is busy.",
-  },
   "apps/admin/src/pages/users/UserEditModal.tsx": {
     count: 2,
     reason: "The remove chips; the busy control is Save, not the chips.",
@@ -49,14 +45,8 @@ const ALLOWED: Record<Rule, Counts> = {
   "hand-rolled-spinner-css": {
     "apps/admin/src/staff.css": 1,
   },
-  "bare-loading-text": {
-    "apps/admin/src/pages/CustomFieldsReportsTab.tsx": 1,
-    "apps/admin/src/pages/MailReportsTab.tsx": 1,
-    "apps/admin/src/pages/WalletsReportsTab.tsx": 1,
-  },
-  "busy-label-swap": {
-    "apps/admin/src/pages/ReportsPage.tsx": 1,
-  },
+  "bare-loading-text": {},
+  "busy-label-swap": {},
   "error-state-not-an-alert": {},
   "retry-outside-an-alert": {},
   // A Retry drawn as a raw <button>, each to move to <Button loading> with the screen that owns it.
