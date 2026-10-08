@@ -3,11 +3,12 @@
  * the page is read-only (every edit, send and wallet action is refused with 409 attendee_erased),
  * bulk edits skip them, and exports and the PII export leave them out.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { encryptToString } from "@admitto/crypto";
 import { eraseAttendees } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -16,6 +17,7 @@ const ORG_ID = "org-admin-erased";
 const EVENT_ID = "evt-admin-erased";
 const LIVE_ID = "att-admin-erased-live";
 const GONE_ID = "att-admin-erased-gone";
+const RACE_PREFIX = "att-admin-erased-race";
 const GONE_ADMITTED_ID = "att-admin-erased-gone-admitted";
 const GONE_DELETE_ID = "att-admin-erased-gone-delete";
 const GONE_BULK_DELETE_ID = "att-admin-erased-gone-bulk-delete";
@@ -50,6 +52,7 @@ beforeAll(async () => {
       date: new Date("2099-09-01"),
       organization_id: ORG_ID,
       wallet_template_id: "tmpl-admin-erased",
+      wallet_api_key_enc: encryptToString("admin-erased-key"),
     },
   });
   for (const [id, name] of [
@@ -107,6 +110,11 @@ beforeAll(async () => {
     rateLimitStore: createRateLimitStore(),
     skipCheckinBootValidation: true,
   });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 afterAll(async () => {
@@ -314,5 +322,70 @@ describe("removing an erased attendee still works", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ deletedCount: 1 });
     expect(await prisma.attendee.findUnique({ where: { id: GONE_BULK_DELETE_ID } })).toBeNull();
+  });
+});
+
+describe("an erasure that lands between a route's check and its write", () => {
+  let n = 0;
+  const raceAttendee = async () => {
+    const id = `${RACE_PREFIX}-${++n}`;
+    await prisma.attendee.create({ data: { id, event_id: EVENT_ID, email: `${id}@example.com`, name: id } });
+    return id;
+  };
+  /** The next transaction of the request is preceded by the erasure of `ids`. */
+  const eraseBeforeNextTransaction = (ids: string[]) => {
+    const real = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+    return vi.spyOn(prisma, "$transaction").mockImplementationOnce(((...args: unknown[]) =>
+      real((tx: unknown) => eraseAttendees(tx as never, { eventId: EVENT_ID, attendeeIds: ids })).then(() =>
+        real(...args),
+      )) as never);
+  };
+
+  it("dismissing a bounce is refused and writes nothing", async () => {
+    const id = await raceAttendee();
+    eraseBeforeNextTransaction([id]);
+
+    const res = await app.request(`${base}/${id}/dismiss-bounce`, json("POST", {}));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "attendee_erased" });
+  });
+
+  it("adding a note is refused and leaves no note", async () => {
+    const id = await raceAttendee();
+    eraseBeforeNextTransaction([id]);
+
+    const res = await app.request(`${base}/${id}/notes`, json("POST", { body: "late note" }));
+
+    expect(res.status).toBe(409);
+    expect(await prisma.attendeeNote.count({ where: { attendee_id: id } })).toBe(0);
+  });
+
+  it("an edit is answered as a stale write and changes nothing", async () => {
+    const id = await raceAttendee();
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    eraseBeforeNextTransaction([id]);
+
+    const res = await app.request(
+      `${base}/${id}`,
+      json("PATCH", { company: "Late Edit", expected_updated_at: row.updated_at.toISOString() }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id } })).company).toBeNull();
+  });
+
+  it("voiding a wallet pass is refused after the provider call when the attendee was erased meanwhile", async () => {
+    const id = await raceAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: id, status: "active", provider_pass_id: `pc-${id}` } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ success: true }), { status: 200 })));
+    // The pass row is read first; the transaction that records the void is the next one.
+    const spy = eraseBeforeNextTransaction([id]);
+
+    const res = await app.request(`${base}/${id}/wallet/void`, json("POST", {}));
+
+    expect(spy).toHaveBeenCalled();
+    expect(res.status).toBe(409);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).status).toBe("active");
   });
 });
