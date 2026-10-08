@@ -118,12 +118,14 @@ function PlaceholderChip({
   isRequired,
   onInsert,
   sample,
+  disabled,
 }: Readonly<{
   name: string;
   isImage: boolean;
   isRequired: boolean;
   onInsert: (name: string) => void;
   sample?: string;
+  disabled: boolean;
 }>) {
   const [sampleFailed, setSampleFailed] = useState(false);
   useEffect(() => {
@@ -140,7 +142,12 @@ function PlaceholderChip({
       className={["communication-chip", isRequired && "communication-chip--required"]
         .filter(Boolean)
         .join(" ")}
-      onClick={() => onInsert(name)}
+      // aria-disabled, not disabled: an archived event's chips stay a reference list, so they keep
+      // their place in the tab order (and the focus preview of an image chip) while inserting nothing.
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (!disabled) onInsert(name);
+      }}
     >
       {showSample ? (
         <img
@@ -176,12 +183,15 @@ function PlaceholderChips({
   onInsertPlaceholder,
   eventId,
   logoUrl,
+  disabled,
 }: Readonly<{
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
   onInsertPlaceholder: (name: string) => void;
   eventId: string;
+  /** An archived event's template is read-only, so inserting into it is off (the chips stay as a reference). */
+  disabled: boolean;
   /** Resolved real branding (event -> organization -> "") - shown as-is when configured; no
    * preview at all (falls back to the generic photo icon) when neither scope has one set, since
    * there's no further built-in default to show. */
@@ -214,7 +224,7 @@ function PlaceholderChips({
   };
   if (logoUrl) samples.logo_url = logoUrl;
 
-  const showWalletNotice = groups.some((g) => g.label === "Wallet");
+  const showWalletNotice = !disabled && groups.some((g) => g.label === "Wallet");
 
   return (
     <>
@@ -230,6 +240,7 @@ function PlaceholderChips({
                 isRequired={requiredPlaceholders.includes(p)}
                 onInsert={onInsertPlaceholder}
                 sample={samples[p]}
+                disabled={disabled}
               />
             ))}
           </div>
@@ -391,19 +402,24 @@ export function TemplateEditorCard({
     <Card
       title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
       actions={
-        <Segmented
-          ariaLabel="Template format"
-          className="communication-format-toggle"
-          value={format}
-          onChange={onRequestFormat}
-          options={TEMPLATE_FORMAT_OPTIONS}
-        />
+        <Tooltip content={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}>
+          <Segmented
+            ariaLabel="Template format"
+            className="communication-format-toggle"
+            disabled={archived}
+            value={format}
+            onChange={onRequestFormat}
+            options={TEMPLATE_FORMAT_OPTIONS}
+          />
+        </Tooltip>
       }
     >
-      <p className="communication-format-hint muted">
-        Changing format does not convert the template body. Switching a non-empty template asks
-        for confirmation first.
-      </p>
+      {!archived && (
+        <p className="communication-format-hint muted">
+          Changing format does not convert the template body. Switching a non-empty template asks
+          for confirmation first.
+        </p>
+      )}
 
       <PlaceholderChips
         allowedPlaceholders={allowedPlaceholders}
@@ -412,6 +428,7 @@ export function TemplateEditorCard({
         onInsertPlaceholder={onInsertPlaceholder}
         eventId={event.id}
         logoUrl={brandingLogoUrl}
+        disabled={archived}
       />
 
       <Tooltip

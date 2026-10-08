@@ -50,6 +50,7 @@ import {
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
 import { useCardLoad } from "../hooks/useCardLoad.js";
+import { isEventArchived } from "../components/ArchivedGuard.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useListLoad } from "../hooks/useListLoad.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
@@ -554,12 +555,15 @@ function RecentActivityCard({
   liveCheckins,
   ticketTypes,
   timezone,
+  archived,
 }: Readonly<{
   eventId: string;
   activity: EventRecentActivityEntry[];
   liveCheckins: StreamCheckinEvent[];
   ticketTypes: TicketTypeDto[];
   timezone: string;
+  /** An archived event has no live feed, so the card does not claim to be live. */
+  archived: boolean;
 }>) {
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
@@ -601,8 +605,9 @@ function RecentActivityCard({
             className="overview-activity-filter"
           />
           {/* Decorative success Live button (role=status), matching Org Settings Logs —
-           * always rendered as a static design element, not gated on the SSE handshake. */}
-          <LiveStatusIndicator />
+           * a static design element, not gated on the SSE handshake, but not shown for an
+           * archived event, which has no live feed. */}
+          {!archived && <LiveStatusIndicator />}
         </>
       }
     >
@@ -1550,7 +1555,8 @@ function EventOverviewPageBody() {
     [scheduleReconcile],
   );
 
-  useEventStream(event.id, handleLiveCheckin, scheduleReconcile);
+  // An archived event takes no check-ins and the stream answers it with a 403, which the hook would retry before giving up.
+  useEventStream(isEventArchived(event) ? undefined : event.id, handleLiveCheckin, scheduleReconcile);
 
   const handleSaveNote = useCallback(async (note: string | null) => {
     const capturedEventId = event.id;
@@ -1813,6 +1819,7 @@ function EventOverviewPageBody() {
               liveCheckins={recentCheckins}
               ticketTypes={ticketTypes}
               timezone={getBrowserTimeZone()}
+              archived={isEventArchived(event)}
             />
           </div>
           <div className="overview-row overview-row--stretch">

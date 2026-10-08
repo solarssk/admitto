@@ -2131,6 +2131,7 @@ function CommunicationPageBody({
             })
           }
           onBounceHandled={loadEmailBounced}
+          archived={isEventArchived(event)}
         />
       )}
 

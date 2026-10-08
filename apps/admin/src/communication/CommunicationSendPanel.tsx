@@ -597,17 +597,23 @@ export function CommunicationSendPanel({
             )}
             <RecipientCountNotice count={recipientCount} />
             <div className="communication-send-panel__actions">
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<i className="ti ti-calculator" aria-hidden="true" />}
-                loading={counting}
-                loadingLabel="Checking…"
-                disabled={sending || !filterReady}
-                onClick={() => void runDryRun()}
-              >
-                Count recipients
-              </Button>
+              {/* Counting is a dry-run send, which the server refuses once the event is archived (same as
+                  Count recipients on the Wallets tab), so it goes off with Send instead of failing on click. */}
+              <ArchivedGuard event={event} reasonId="count-email-reason" disabled={sending || !filterReady}>
+                {(guard) => (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    icon={<i className="ti ti-calculator" aria-hidden="true" />}
+                    loading={counting}
+                    loadingLabel="Checking…"
+                    onClick={() => void runDryRun()}
+                    {...guard}
+                  >
+                    Count recipients
+                  </Button>
+                )}
+              </ArchivedGuard>
               <ArchivedGuard
                 event={event}
                 reasonId="send-email-reason"

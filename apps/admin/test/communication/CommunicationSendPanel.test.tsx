@@ -75,13 +75,17 @@ describe("CommunicationSendPanel", () => {
     expect((countBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("disables Send but not Count recipients for an archived event", () => {
+  it("disables Send and Count recipients for an archived event (counting is a dry-run send, which the server refuses there)", () => {
     render(<CommunicationSendPanel event={archivedEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
-      false,
+    const count = screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement;
+    expect(count.disabled).toBe(true);
+    expect(document.getElementById(count.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+      "This event is archived. Editing is disabled.",
     );
+    fireEvent.click(count);
+    expect(sendEventBulk).not.toHaveBeenCalled();
   });
 
   it("disables Send but not Count recipients while the template has unsaved changes", () => {

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { getTooltipText, isOff, renderWithToast } from "../test-utils.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
 import { bodyValue, getBodyView, setBodyCursor } from "./codeMirrorTestUtils.js";
 
@@ -167,20 +167,35 @@ describe("CommunicationPage archived lockdown", () => {
     expect(editorFieldset?.disabled).toBe(true);
     expect(getTooltipText(editorFieldset as HTMLElement)).toBe(ARCHIVED_ACTION_TOOLTIP);
 
-    // Inserting a placeholder or switching MJML/HTML only touches local component
-    // state — no API call — so these stay usable even though Save is blocked.
-    expect(
-      (screen.getByRole("button", { name: "{{first_name}}" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
-    expect((screen.getByRole("radio", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
-      false,
+    // The body is read-only, so inserting a placeholder or switching MJML/HTML would only make
+    // the draft dirty (Templates *, an unsaved-changes prompt) with nothing that can be saved.
+    // The chips stay a reference list: off (aria-disabled), but still reachable by keyboard.
+    const chip = screen.getByRole("button", { name: "{{first_name}}" });
+    expect(isOff(chip)).toBe(true);
+    expect((chip as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("radio", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(screen.getByRole("radiogroup", { name: "Template format" }))).toBe(
+      ARCHIVED_ACTION_TOOLTIP,
     );
-    expect((screen.getByRole("radio", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    // Nothing explains a switch that cannot be used, and the wallet badge advice is about inserting.
+    expect(screen.queryByText(/Switching a non-empty template asks/)).toBeNull();
+    expect(screen.queryByText(/Wallet chips insert/)).toBeNull();
   });
 
-  it("disables the Send button on the Send tab, but not Count recipients", async () => {
+  it("does not insert a placeholder into the read-only body when a chip is clicked", async () => {
+    renderPage();
+    await screen.findByLabelText("HTML body");
+    const view = getBodyView("HTML body");
+    const before = bodyValue(view);
+
+    fireEvent.click(screen.getByRole("button", { name: "{{first_name}}" }));
+
+    expect(bodyValue(view)).toBe(before);
+    expect(screen.getByRole("tab", { name: /^Templates/ }).textContent).not.toContain("*");
+  });
+
+  it("disables the Send button and Count recipients on the Send tab", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: "Email" }));
 
@@ -188,9 +203,7 @@ describe("CommunicationPage archived lockdown", () => {
       expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     });
     expectArchivedLock(screen.getByRole("button", { name: "Send" }));
-    expect(
-      (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+    expectArchivedLock(screen.getByRole("button", { name: "Count recipients" }));
   });
 });
 
