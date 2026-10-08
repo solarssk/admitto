@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { Button, EmptyState, Input, ModalBackdrop, Notice, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
@@ -66,13 +66,17 @@ import { useWalletRemoveInactive } from "../attendees/useWalletRemoveInactive.js
 import { useWalletVoidActive } from "../attendees/useWalletVoidActive.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { useRetry } from "../hooks/useRetry.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
+import { loadWithTimeout } from "../utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 import { pluralize } from "../utils/pluralize.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
@@ -994,16 +998,22 @@ interface LoadListErrorContext {
   setTotal: (total: number) => void;
   setLoadError: (message: string | null) => void;
   reportApiError: (status: number) => void;
+  /** The 30 second limit ran out: the request was abandoned, which is a failure to retry, not a page that left. */
+  timedOut: boolean;
 }
 
 /** The catch-block error handling for loadList's fetch — split out to keep that function's
  * cognitive complexity under SonarCloud's threshold (bot review), matching the same extraction
  * pattern as reportBulkActionError/runBulkAction above. */
 function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
-  if (err instanceof DOMException && err.name === "AbortError") return;
-  const { setItems, setTotal, setLoadError, reportApiError } = ctx;
+  const { setItems, setTotal, setLoadError, reportApiError, timedOut } = ctx;
+  if (!timedOut && err instanceof DOMException && err.name === "AbortError") return;
   setItems([]);
   setTotal(0);
+  if (timedOut) {
+    setLoadError(`Could not load attendees. ${LOAD_TIMEOUT_MESSAGE}`);
+    return;
+  }
   if (!(err instanceof ApiError)) {
     setLoadError("Could not load attendees.");
     return;
@@ -1338,6 +1348,10 @@ export function AttendeesPage() {
     listAbortRef.current?.abort();
     const ac = new AbortController();
     listAbortRef.current = ac;
+    // The 30 second limit of AGENTS.md "Admin SPA loading and busy states": a request that never answers ends in an error
+    // with a Retry, not in a skeleton (or a dimmed list) for ever. `ac` stays the page's own signal (a newer request, or
+    // leaving the page, aborts it and stays silent).
+    const limit = loadWithTimeout(ac.signal);
 
     setLoading(true);
     setSelectedIds(new Set());
@@ -1356,15 +1370,16 @@ export function AttendeesPage() {
           sortBy,
           sortDir,
         },
-        ac.signal,
+        limit.signal,
       );
       if (ac.signal.aborted) return;
       setItems(data.items);
       setTotal(data.total);
       setLoadError(null);
     } catch (err) {
-      reportLoadListError(err, { setItems, setTotal, setLoadError, reportApiError });
+      reportLoadListError(err, { setItems, setTotal, setLoadError, reportApiError, timedOut: limit.timedOut() && !ac.signal.aborted });
     } finally {
+      limit.done();
       if (!ac.signal.aborted) {
         setLoading(false);
         setHasLoadedOnce(true);
@@ -1389,6 +1404,11 @@ export function AttendeesPage() {
     void loadList();
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
+
+  // The Retry of a failed list keeps the error and its busy button on screen until the answer is in. Without it the table
+  // takes their place at the click, in "refresh" mode with no rows, and says "No attendees yet" for a list that has not
+  // answered (and the Retry that held the keyboard focus is gone).
+  const listFailure = useRetryKeepingError(loadError, loadList);
 
   // EventLayout stays mounted across in-event navigation and only re-fetches its own event on an
   // eventId change, so its cached active_attendee_count can be wrong by the time this page (re-)
@@ -2225,16 +2245,15 @@ export function AttendeesPage() {
         }
       />
 
-      {loadError && !loading ? (
-        <EmptyState
-          variant="error"
+      {/* One element for the error and the list, so that it stays when a Retry works and can take the keyboard focus. */}
+      <section className="attendees-list-section" aria-label="Attendee list">
+      {listFailure.error ? (
+        <RetryEmptyState
           title="Could not load attendees"
-          description={loadError}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void loadList()}>
-              Retry
-            </Button>
-          }
+          message={listFailure.error}
+          retrying={listFailure.retrying}
+          onRetry={listFailure.retry}
+          landmark=".attendees-list-section"
         />
       ) : (
         <AttendeesTable
@@ -2384,6 +2403,7 @@ export function AttendeesPage() {
         walletConfigured={event.wallet_configured}
       />
       )}
+      </section>
 
       <AddAttendeeModal
         eventId={eventId}
