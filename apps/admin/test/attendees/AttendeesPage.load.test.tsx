@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
+import { advanceTimers, deferred, hangUntilAborted, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { exportAttendees, fetchEventAttendees, fetchEventCustomFields, makeRow, reportApiError } from "./attendeesPageSetup.js";
 
 function AttendeeRouteProbe() {
@@ -247,6 +248,147 @@ describe("AttendeesPage load errors", () => {
     expect(within(panel).getByText("Could not load custom fields.")).not.toBe(hintBefore);
     expect(announcer()).not.toBe(announcerBefore);
     expect(within(panel).getByRole("button", { name: "Retry" })).toBe(retry);
+  });
+});
+
+describe("AttendeesPage: the list's first read, its limits and its Retry", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the skeleton's room for 200ms, says it is taking longer than usual after 8 seconds, and gives up at 30 with an error and a Retry", async () => {
+    vi.useFakeTimers();
+    fetchEventAttendees.mockImplementationOnce(hangUntilAborted as never);
+    renderPage();
+    await advanceTimers(0);
+
+    const skeleton = () => document.querySelector("table[aria-hidden='true']")?.closest("[class*='at-']");
+    expect(skeleton()?.className).toContain("at-loading-hold");
+    await advanceTimers(200);
+    expect(skeleton()?.className).not.toContain("at-loading-hold");
+
+    // The note comes in the status region that names what is loading, at 8 seconds and not a millisecond before.
+    await advanceTimers(SLOW_NOTICE_MS - 200 - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(1);
+    const note = screen.getByText(SLOW_NOTICE_TEXT);
+    expect(screen.getByText("Loading attendees").closest("output")?.contains(note)).toBe(true);
+
+    // At 30 seconds the request is given up: the wait is over, so the note goes and the error with its Retry takes its place.
+    await advanceTimers(LOAD_TIMEOUT_MS - SLOW_NOTICE_MS);
+    await advanceTimers(0);
+    expect(screen.getByText("Could not load attendees")).toBeTruthy();
+    expect(screen.getByText(`Could not load attendees. ${LOAD_TIMEOUT_MESSAGE}`)).toBeTruthy();
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    // A timeout is not an API answer, so it is not reported as one.
+    expect(reportApiError).not.toHaveBeenCalled();
+  });
+
+  it("gives up on a later request too, such as the next page, not only on the first read", async () => {
+    vi.useFakeTimers();
+    fetchEventAttendees.mockResolvedValueOnce({ items: [makeRow("a1", "Ada")], total: 60, page: 1, pageSize: 25 });
+    renderPage();
+    await advanceTimers(0);
+    expect(screen.getByText("Ada")).toBeTruthy();
+
+    fetchEventAttendees.mockImplementationOnce(hangUntilAborted as never);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await advanceTimers(0);
+    expect(fetchEventAttendees).toHaveBeenCalledTimes(2);
+
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    await advanceTimers(0);
+    expect(screen.getByText(`Could not load attendees. ${LOAD_TIMEOUT_MESSAGE}`)).toBeTruthy();
+    expect(screen.queryByText("Ada")).toBeNull();
+  });
+
+  it("stays silent about a request that a newer one replaced, and shows the newer answer", async () => {
+    vi.useFakeTimers();
+    fetchEventAttendees.mockResolvedValueOnce({ items: [makeRow("a1", "Ada")], total: 60, page: 1, pageSize: 25 });
+    renderPage();
+    await advanceTimers(0);
+    expect(screen.getByText("Ada")).toBeTruthy();
+
+    // The next page never answers; a search typed meanwhile replaces that request, which is aborted.
+    fetchEventAttendees.mockImplementationOnce(hangUntilAborted as never);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await advanceTimers(0);
+    expect(fetchEventAttendees).toHaveBeenCalledTimes(2);
+
+    const newer = deferred<{ items: ReturnType<typeof makeRow>[]; total: number; page: number; pageSize: number }>();
+    fetchEventAttendees.mockReturnValueOnce(newer.promise);
+    fireEvent.change(screen.getByLabelText("Search attendees by name, email, or company"), { target: { value: "cora" } });
+    await advanceTimers(400);
+    expect(fetchEventAttendees).toHaveBeenCalledTimes(3);
+    // An aborted request is a page that moved on, not a failure: nothing says so, and the rows stay until the newer answer is in.
+    expect(screen.queryByText("Could not load attendees")).toBeNull();
+    expect(screen.getByText("Ada")).toBeTruthy();
+
+    await act(async () => newer.resolve({ items: [makeRow("c1", "Cora")], total: 1, page: 1, pageSize: 25 }));
+    await advanceTimers(400);
+    expect(screen.getByText("Cora")).toBeTruthy();
+    expect(screen.queryByText("Could not load attendees")).toBeNull();
+  });
+
+  it("treats a DOMException that is not an abort as a failure to load, with a Retry", async () => {
+    fetchEventAttendees.mockRejectedValueOnce(new DOMException("blocked", "SecurityError"));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Could not load attendees.")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("keeps the error with a busy Retry, and its focus, while a retry runs, never says there are no attendees, then hands the focus to the list", async () => {
+    fetchEventAttendees.mockRejectedValueOnce(new TypeError("network unavailable"));
+    renderPage();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    const answer = deferred<{ items: ReturnType<typeof makeRow>[]; total: number; page: number; pageSize: number }>();
+    fetchEventAttendees.mockReturnValueOnce(answer.promise);
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The same button, busy, with the focus. The table has not taken the error's place, so it cannot say "No attendees yet"
+    // (or "No matches") about a list that has not answered.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load attendees")).toBeTruthy();
+    expect(screen.queryByText(/No attendees yet/i)).toBeNull();
+    expect(screen.queryByText("No matches")).toBeNull();
+
+    await act(async () => answer.resolve({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 }));
+    await screen.findByText("Ada");
+    expect(screen.queryByText("Could not load attendees")).toBeNull();
+    // The Retry that held the focus is gone: the focus goes to the list's region, not to the top of the page.
+    const region = document.querySelector(".attendees-list-section");
+    expect(region?.getAttribute("aria-label")).toBe("Attendee list");
+    await waitFor(() => expect(document.activeElement).toBe(region));
+  });
+
+  it("keeps the same Retry, and says the error again, when a retry fails again", async () => {
+    fetchEventAttendees.mockRejectedValueOnce(new TypeError("network unavailable"));
+    renderPage();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const messageBefore = screen.getByText("Could not load attendees.");
+
+    const failure = deferred<never>();
+    fetchEventAttendees.mockReturnValueOnce(failure.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => failure.reject(new TypeError("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    // The same text again: the message is a new node (a live region announces additions), the button is not.
+    expect(screen.getByText("Could not load attendees.")).not.toBe(messageBefore);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(fetchEventAttendees).toHaveBeenCalledTimes(2);
   });
 });
 

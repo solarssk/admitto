@@ -23,7 +23,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { MultiSelect } from "../components/MultiSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
@@ -32,20 +32,32 @@ import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { readRememberedRowCount, rememberRowCount } from "./rememberedRowCount.js";
 import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import "./attendees.css";
 
 /** Rows a skeleton draws when it does not know how many the list will have. */
 const DEFAULT_TABLE_SKELETON_ROWS = 6;
 const DEFAULT_CARDS_SKELETON_ROWS = 4;
 
+/** The status region of a first-load placeholder: it names what is loading for assistive tech, and after 8 seconds (`slow`)
+ * says, in view and to the same region, that it is taking longer than usual. It has no height until then. */
+function AttendeesSkeletonStatus({ slow }: Readonly<{ slow: boolean }>) {
+  return (
+    <output>
+      <span className="sr-only">Loading attendees</span>
+      {slow ? <span className="at-hint attendees-skeleton-note">{SLOW_NOTICE_TEXT}</span> : null}
+    </output>
+  );
+}
+
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
 function AttendeesTableSkeleton({
   walletColumnVisible,
   rows,
-}: Readonly<{ walletColumnVisible: boolean; rows: number }>) {
+  slow,
+}: Readonly<{ walletColumnVisible: boolean; rows: number; slow: boolean }>) {
   return (
     <div className="attendees-table-wrap attendees-list-table-wrap" aria-busy="true">
-      <output className="sr-only">Loading attendees</output>
       <table className="table attendees-table-v2" aria-hidden="true">
         <thead>
           <tr>
@@ -70,20 +82,21 @@ function AttendeesTableSkeleton({
           ))}
         </tbody>
       </table>
+      <AttendeesSkeletonStatus slow={slow} />
     </div>
   );
 }
 
 /** First-load placeholder for the mobile card list (< 768px — mirrors the table skeleton). */
-function AttendeesCardsSkeleton({ rows }: Readonly<{ rows: number }>) {
+function AttendeesCardsSkeleton({ rows, slow }: Readonly<{ rows: number; slow: boolean }>) {
   return (
     <div className="attendees-cards" aria-busy="true">
-      <output className="sr-only">Loading attendees</output>
       {Array.from({ length: rows }, (_, i) => (
         <div className="attendees-card" key={i}>
           <Skeleton variant="rect" height={64} />
         </div>
       ))}
+      <AttendeesSkeletonStatus slow={slow} />
     </div>
   );
 }
@@ -1436,6 +1449,7 @@ type AttendeesListContentProps = Readonly<{
 function AttendeesListContent(props: AttendeesListContentProps): ReactNode {
   const { loading, hasLoadedOnce, isDesktop, walletPlatforms, rememberedRows } = props;
   const firstLoad = useLoadingGate(loading && !hasLoadedOnce);
+  const firstLoadSlow = useDelayedLoading(loading && !hasLoadedOnce, SLOW_NOTICE_MS);
   const refetch = useLoadingGate(loading && hasLoadedOnce);
 
   if (!firstLoad.showContent) {
@@ -1445,9 +1459,10 @@ function AttendeesListContent(props: AttendeesListContentProps): ReactNode {
           <AttendeesTableSkeleton
             walletColumnVisible={hasWalletColumn(walletPlatforms)}
             rows={Math.max(1, rememberedRows ?? DEFAULT_TABLE_SKELETON_ROWS)}
+            slow={firstLoadSlow}
           />
         ) : (
-          <AttendeesCardsSkeleton rows={Math.max(1, rememberedRows ?? DEFAULT_CARDS_SKELETON_ROWS)} />
+          <AttendeesCardsSkeleton rows={Math.max(1, rememberedRows ?? DEFAULT_CARDS_SKELETON_ROWS)} slow={firstLoadSlow} />
         )}
       </div>
     );
