@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Spinner, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Spinner, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
@@ -16,19 +16,21 @@ import {
   fetchEventReports,
   fetchTicketTypes,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
+import { redirectToLogin } from "../identity/loginRedirect.js";
+import { ReportsEventDaySkeleton } from "../reports/ReportsEventDaySkeleton.js";
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import "./reports-page.css";
@@ -36,6 +38,8 @@ import "./reports-page.css";
 const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const LOG_PAGE_SIZE_DEFAULT = 50;
 const REPORT_SUBTITLE = "Admission statistics and event-day analytics";
+/** The region Event day sits in, whatever its read is doing: where the focus goes when a Retry that held it works. */
+const EVENT_DAY_REGION = ".reports-eventday";
 
 type ReportsTab = "eventday" | "wallets" | "customfields" | "mail";
 
@@ -99,10 +103,10 @@ interface ReportsExportMenuProps {
 }
 
 /** Single "Export report" entry point for CSV/PDF, replacing two separate buttons - same
- * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger itself is
- * only gated on `disabled` (loading/error) - CSV's own in-flight state only disables the CSV
- * menuitem, so PDF (a synchronous window.open, no loading state of its own) stays reachable
- * while a CSV export is running, matching the two formats' old independent buttons.
+ * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger is the
+ * button that holds the keyboard focus once the menu has closed on a click, so it is the one
+ * that shows a CSV export at work (`loading`: a spinner, and the menu stays shut until the file
+ * is in, as on Attendees); `disabled` is only for a report that is not there to export.
  * Label shortens to "Export" below desktop (same isDesktop-driven pattern as Attendees'
  * "+ Add attendee"/"Send tickets") so it keeps sitting beside the title instead of forcing the
  * header to stack (reports-pageheader override in reports-page.css). */
@@ -122,36 +126,33 @@ function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Read
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
+        loading={exportingCsv}
         onClick={() => setOpen((current) => !current)}
       >
         {isDesktop ? "Export report" : "Export"}
       </Button>
       {open && (
         <div className="reports-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
-          {EXPORT_FORMATS.map((format) => {
-            const busy = format.key === "csv" && exportingCsv;
-            return (
-              <button
-                key={format.key}
-                type="button"
-                role="menuitem"
-                className="reports-export-menu__item"
-                disabled={busy}
-                onClick={() => {
-                  close();
-                  onExport(format.key);
-                }}
-              >
-                <span className="reports-export-menu__item-icon">
-                  <i className={`ti ti-${format.icon}`} aria-hidden="true" />
-                </span>
-                <span className="reports-export-menu__item-text">
-                  <strong>{busy ? "Exporting…" : format.label}</strong>
-                  <span>{format.hint}</span>
-                </span>
-              </button>
-            );
-          })}
+          {EXPORT_FORMATS.map((format) => (
+            <button
+              key={format.key}
+              type="button"
+              role="menuitem"
+              className="reports-export-menu__item"
+              onClick={() => {
+                close();
+                onExport(format.key);
+              }}
+            >
+              <span className="reports-export-menu__item-icon">
+                <i className={`ti ti-${format.icon}`} aria-hidden="true" />
+              </span>
+              <span className="reports-export-menu__item-text">
+                <strong>{format.label}</strong>
+                <span>{format.hint}</span>
+              </span>
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -723,29 +724,27 @@ function AdmissionLog({
   );
 }
 
-/** Handles a `fetchEventReports` failure for `ReportsPage.loadData`: aborts are ignored, API
- * errors are reported to the connection state and mapped to operator-facing copy (redirecting to
- * login on 401), and anything else falls back to a generic message. Extracted purely to keep
- * `loadData`'s cognitive complexity within the allowed threshold - behavior is unchanged. */
-function handleLoadDataError(
+/** What the first read of Event day does with a failure before it becomes the error on screen: the connection state hears
+ * of it, a 401 hands the browser to the login page (the answer never comes, so no error flashes up first), and whether the
+ * failure was a 403 is remembered, so that the error says the viewer has no access (the Retry stays, since access can be
+ * granted meanwhile). It is set when the answer is in, never when a Retry starts, so the wording of the error on screen does
+ * not change while the Retry runs. The failure is rethrown for `usePanelLoad`, which turns it into the message (the server's
+ * own operator-safe wording, or the fallback). Extracted from the load so its own cognitive complexity stays low. */
+function failReportLoad(
   err: unknown,
   reportApiError: (status: number) => void,
-  setData: (data: EventReportsResponse | null) => void,
-  setError: (message: string | null) => void,
-): void {
-  if (err instanceof DOMException && err.name === "AbortError") return;
-  setData(null);
-  if (!(err instanceof ApiError)) {
-    setError("Could not load report data.");
-    return;
+  setAccessDenied: (denied: boolean) => void,
+): Promise<never> {
+  const status = err instanceof ApiError ? err.status : null;
+  if (status !== null) {
+    reportApiError(status);
+    if (status === 401) {
+      redirectToLogin();
+      return new Promise<never>(() => {});
+    }
   }
-  reportApiError(err.status);
-  if (err.status === 401) {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
-    return;
-  }
-  setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Could not load report data."));
+  setAccessDenied(status === 403);
+  throw err;
 }
 
 /** Applies a resolved reconcile fetch: replaces `data` and folds the optimistic delta back down
@@ -783,8 +782,14 @@ function ReportsTabFallback() {
   );
 }
 
+/** One event, one page: a different `:eventId` is a fresh page (its own read, live feed, tabs and log), never the previous one's. */
 export function ReportsPage() {
   const { eventId } = useParams();
+  if (!eventId) return <p>Missing event.</p>;
+  return <ReportsPageBody key={eventId} eventId={eventId} />;
+}
+
+function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const { event } = useOutletContext<{ event: EventDto }>();
   // Stable across the frequent re-renders this page gets from live check-ins (ADR 0014's SSE
   // feed) - WalletsReportsTab.tsx is wrapped in memo() specifically to survive those, which only
@@ -814,7 +819,6 @@ export function ReportsPage() {
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
   const isDesktop = useIsDesktop();
-  const abortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -858,8 +862,7 @@ export function ReportsPage() {
   }, [searchParams, activeTab, walletsTabAvailable, setSearchParams]);
 
   const [data, setData] = useState<EventReportsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   // Live check-ins (ADR 0014) bump these two counters immediately for visual feedback, then a
@@ -879,12 +882,6 @@ export function ReportsPage() {
   }, [optimisticAdmittedDelta]);
 
   useEffect(() => {
-    if (!eventId) return;
-    // Cleared immediately, not just on settle - otherwise an admission log row whose key exists
-    // in both the old and new event's catalogs could briefly resolve against the previous event's
-    // label/color while this fetch is still in flight (Codex review), same fix already applied to
-    // CommunicationSendDialog/EventSettingsPage for the same stale-catalog-on-switch pattern.
-    setTicketTypes([]);
     let cancelled = false;
     fetchTicketTypes(eventId)
       .then((types) => {
@@ -898,51 +895,45 @@ export function ReportsPage() {
     };
   }, [eventId]);
 
-  const loadData = useCallback(async () => {
-    if (!eventId) return;
-
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    // A pending/in-flight reconcile (ADR 0014) captured its own deltaAtFetchStart snapshot and
-    // would subtract it from optimisticAdmittedDelta whenever it resolves - if that landed after
-    // the reset below, it would subtract from the now-0 delta and drive it negative (CodeRabbit
-    // review). This load is about to replace `data` wholesale anyway, so any reconcile still
-    // outstanding for the pre-load state is moot - cancel it outright.
+  // A reconcile that is pending or on its way (ADR 0014) captured its own `deltaAtFetchStart` snapshot and would subtract it
+  // from optimisticAdmittedDelta whenever it resolves: if that landed after a read has replaced `data` wholesale and reset
+  // the delta, it would subtract from the now-0 delta and drive it negative (CodeRabbit review). A read is about to replace
+  // `data` anyway, so a reconcile still outstanding for the state before it is moot and is cancelled outright.
+  const cancelReconcile = useCallback(() => {
     if (reconcileTimerRef.current != null) {
       window.clearTimeout(reconcileTimerRef.current);
       reconcileTimerRef.current = null;
     }
     reconcileAbortRef.current?.abort();
+  }, []);
 
-    setLoading(true);
-    setError(null);
-    try {
-      const report = await fetchEventReports(eventId, ac.signal);
-      if (ac.signal.aborted) return;
+  // The first read of Event day (and its Retry): nothing is drawn for the first 200ms and a placeholder after that,
+  // "Taking longer than usual" after 8 seconds, an error with a busy Retry after 30 seconds or when it fails. The silent
+  // reconcile below is no part of it: it never touches the placeholder or the error.
+  const panel = usePanelLoad({
+    fetch: async (signal) => {
+      cancelReconcile();
+      try {
+        return await fetchEventReports(eventId, signal);
+      } catch (err) {
+        return await failReportLoad(err, reportApiError, setAccessDenied);
+      }
+    },
+    apply: (report) => {
       setData(report);
       setOptimisticAdmittedDelta(0);
-    } catch (err) {
-      handleLoadDataError(err, reportApiError, setData, setError);
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, reportApiError]);
-
-  useEffect(() => {
-    void loadData();
-    return () => abortRef.current?.abort();
-  }, [loadData]);
+    },
+    fallback: "Could not load report data.",
+  });
+  const view = panelView(panel);
 
   useEffect(() => () => exportAbortRef.current?.abort(), []);
 
-  // Silent background refresh - unlike loadData above, this never toggles `loading`/`error`, so a
-  // live check-in mid-session doesn't flash the whole page back to its skeleton state. Guarded
-  // like loadData against an eventId switch: aborted via reconcileAbortRef (see the cleanup
-  // effect below) and double-checked against ac.signal.aborted before touching state, since an
-  // in-flight fetch that started before the switch can still resolve after it.
+  // Silent background refresh - unlike the first read above, this never touches the placeholder or the error, so a
+  // live check-in mid-session doesn't flash the whole page back to its skeleton state. Guarded against the page going
+  // (and against a read that replaces the data): aborted via reconcileAbortRef (see cancelReconcile) and double-checked
+  // against ac.signal.aborted before touching state, since an in-flight fetch can still resolve after it.
   const scheduleReconcile = useCallback(() => {
-    if (!eventId) return;
     if (reconcileTimerRef.current != null) window.clearTimeout(reconcileTimerRef.current);
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
@@ -976,24 +967,11 @@ export function ReportsPage() {
 
   useEventStream(eventId, handleLiveCheckin);
 
-  // Keyed on [eventId], not []: a pending reconcile timer or in-flight reconcile fetch scheduled
-  // for the previous event must not survive an in-SPA switch to a different event on this same
-  // route (ReportsPage doesn't remount on an eventId-only navigation) - without this, a stale
-  // reconcile could silently overwrite the newly-loaded event's data a few seconds later.
-  useEffect(
-    () => () => {
-      if (reconcileTimerRef.current != null) {
-        window.clearTimeout(reconcileTimerRef.current);
-        reconcileTimerRef.current = null;
-      }
-      reconcileAbortRef.current?.abort();
-    },
-    [eventId],
-  );
+  // A pending reconcile timer or in-flight reconcile fetch must not outlive the page: this page is one event's (an in-SPA
+  // switch to another event renders a new instance), so a stale reconcile can never overwrite the next event's data.
+  useEffect(() => cancelReconcile, [cancelReconcile]);
 
   const handleExportCsv = useCallback(async () => {
-    if (!eventId || exportingCsv) return;
-
     exportAbortRef.current?.abort();
     const ac = new AbortController();
     exportAbortRef.current = ac;
@@ -1010,17 +988,11 @@ export function ReportsPage() {
     } finally {
       if (!ac.signal.aborted) setExportingCsv(false);
     }
-  }, [eventId, exportingCsv, activeTab, addToast, reportApiError]);
+  }, [eventId, activeTab, addToast, reportApiError]);
 
   const handleExportPdf = useCallback(() => {
-    if (!eventId) return;
     window.open(REPORT_PRINT_URL_BY_TAB[activeTab](eventId), "_blank", "noopener,noreferrer");
   }, [eventId, activeTab]);
-
-  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the skeleton on and off faster than it can register as loading — show it only once
-  // the fetch has genuinely taken a moment.
-  const showLoadingSkeleton = useDelayedLoading(loading);
 
   const handleExport = useCallback(
     (format: ExportFormat) => {
@@ -1029,8 +1001,6 @@ export function ReportsPage() {
     },
     [handleExportCsv, handleExportPdf],
   );
-
-  if (!eventId) return <p>Missing event.</p>;
 
   // Optimistic delta from live SSE check-ins (ADR 0014) folded into the two counters it affects,
   // so the KPI row ticks up in real time instead of waiting ~3s for the reconcile fetch. Clamped
@@ -1058,7 +1028,7 @@ export function ReportsPage() {
             // the export side; ReportsPage never sees their loading state), so gating on Event
             // day's state while one of them is active would disable the button for a fetch that
             // has nothing to do with what it's about to export.
-            disabled={activeTab === "eventday" && (loading || !!error)}
+            disabled={activeTab === "eventday" && view !== "ready"}
             isDesktop={isDesktop}
             onExport={handleExport}
           />
@@ -1109,127 +1079,125 @@ export function ReportsPage() {
         </div>
       )}
 
-      {activeTab === "eventday" && loading && showLoadingSkeleton && (
-        <div className="reports-loading">
-          <div className="reports-stats-grid">
-            {[1, 2, 3, 4].map((key) => (
-              <Skeleton key={key} variant="rect" height={100} />
-            ))}
-          </div>
-          <Skeleton variant="rect" height={160} className="reports-loading__chart" />
-        </div>
-      )}
+      {activeTab === "eventday" && (
+        // The part of the page that stays whatever the read is doing, and where the focus goes when a Retry that held it works.
+        <section className="reports-eventday" aria-label="Event day report">
+          {view === "loading" && <ReportsEventDaySkeleton held={!panel.gate.showIndicator} slow={panel.slow} />}
 
-      {activeTab === "eventday" && !loading && error && (
-        <EmptyState
-          variant="error"
-          icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-          title="Could not load report"
-          description={error}
-          action={
-            <Button variant="secondary" onClick={() => void loadData()}>
-              Retry
-            </Button>
-          }
-        />
-      )}
+          {view === "error" && panel.error && (
+            <RetryEmptyState
+              title="Could not load report"
+              message={accessDenied ? "You do not have access to this event." : panel.error}
+              retrying={panel.retrying}
+              onRetry={panel.retry}
+              landmark={EVENT_DAY_REGION}
+            />
+          )}
 
-      {activeTab === "eventday" && !loading && !error && liveAdmitted === 0 && (
-        <EmptyState
-          icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
-          title="No check-ins yet"
-          description="Reports will appear here once attendees start checking in."
-        />
-      )}
+          {view === "ready" && (
+            // What replaces the placeholder fades in; the wrapper is a column of its own with the section's rhythm.
+            <div className="reports-eventday__ready at-fade-in">
+              {liveAdmitted === 0 && (
+                <EmptyState
+                  icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
+                  title="No check-ins yet"
+                  description="Reports will appear here once attendees start checking in."
+                />
+              )}
 
-      {activeTab === "eventday" && !loading && !error && data && liveAdmitted > 0 && (
-        <>
-          <div className="reports-stats-grid">
-            <Card>
-              <ReportStat
-                variant="neutral"
-                icon={<i className="ti ti-users" aria-hidden="true" />}
-                value={data.summary.total_attendees.toString()}
-                label="Total attendees"
-                sub={
-                  data.event.capacity != null
-                    ? `of ${data.event.capacity} capacity`
-                    : "No capacity set"
-                }
-              />
-            </Card>
-            <Card>
-              <ReportStat
-                variant="ok"
-                icon={<i className="ti ti-circle-check" aria-hidden="true" />}
-                value={liveAdmitted.toString()}
-                label="Admitted"
-                sub={`${liveRatePct}% admission rate`}
-              />
-            </Card>
-            <Card>
-              <ReportStat
-                variant="warn"
-                icon={<i className="ti ti-circle-x" aria-hidden="true" />}
-                value={liveNoShows.toString()}
-                label="No-shows"
-                sub={`${liveNoShowRatePct}% of total`}
-              />
-            </Card>
-            <Card>
-              <ReportStat
-                variant="info"
-                icon={<i className="ti ti-clock" aria-hidden="true" />}
-                value={data.summary.peak_hour ?? "-"}
-                label="Peak hour"
-                sub={
-                  data.summary.peak_hour
-                    ? `${data.summary.peak_hour_count} admissions`
-                    : "No check-ins yet"
-                }
-              />
-            </Card>
-          </div>
+              {data && liveAdmitted > 0 && (
+                <>
+                <div className="reports-stats-grid">
+                  <Card>
+                    <ReportStat
+                      variant="neutral"
+                      icon={<i className="ti ti-users" aria-hidden="true" />}
+                      value={data.summary.total_attendees.toString()}
+                      label="Total attendees"
+                      sub={
+                        data.event.capacity != null
+                          ? `of ${data.event.capacity} capacity`
+                          : "No capacity set"
+                      }
+                    />
+                  </Card>
+                  <Card>
+                    <ReportStat
+                      variant="ok"
+                      icon={<i className="ti ti-circle-check" aria-hidden="true" />}
+                      value={liveAdmitted.toString()}
+                      label="Admitted"
+                      sub={`${liveRatePct}% admission rate`}
+                    />
+                  </Card>
+                  <Card>
+                    <ReportStat
+                      variant="warn"
+                      icon={<i className="ti ti-circle-x" aria-hidden="true" />}
+                      value={liveNoShows.toString()}
+                      label="No-shows"
+                      sub={`${liveNoShowRatePct}% of total`}
+                    />
+                  </Card>
+                  <Card>
+                    <ReportStat
+                      variant="info"
+                      icon={<i className="ti ti-clock" aria-hidden="true" />}
+                      value={data.summary.peak_hour ?? "-"}
+                      label="Peak hour"
+                      sub={
+                        data.summary.peak_hour
+                          ? `${data.summary.peak_hour_count} admissions`
+                          : "No check-ins yet"
+                      }
+                    />
+                  </Card>
+                </div>
 
-          <div className="reports-panels">
-            <Card
-              title="Hourly admissions"
-              actions={<LiveStatusIndicator />}
-            >
-              <HourlyChart byHour={data.by_hour} peakHour={data.summary.peak_hour} />
-            </Card>
-            <Card title="By ticket type">
-              <BreakdownRows rows={ticketTypeBreakdownRows(data.by_ticket_type)} />
-            </Card>
-          </div>
+                <div className="reports-panels">
+                  <Card
+                    title="Hourly admissions"
+                    actions={<LiveStatusIndicator />}
+                  >
+                    <HourlyChart byHour={data.by_hour} peakHour={data.summary.peak_hour} />
+                  </Card>
+                  <Card title="By ticket type">
+                    <BreakdownRows rows={ticketTypeBreakdownRows(data.by_ticket_type)} />
+                  </Card>
+                </div>
 
-          <h2 className="reports-section-title">Check-in details</h2>
-          <div className="reports-grid-3">
-            <Card title={<HintLabel hint={ATTENDANCE_CONFIRMATION_HINT}>Attendance confirmation</HintLabel>}>
-              <BreakdownRows rows={rsvpBreakdownRows(data.by_rsvp_status, data.summary.admitted)} />
-            </Card>
-            <Card title="Check-in method">
-              <BreakdownRows
-                rows={checkinMethodBreakdownRows(data.by_checkin_method, data.summary.admitted)}
-              />
-            </Card>
-            <Card title="By operator">
-              <BreakdownRows rows={operatorBreakdownRows(data.by_operator, data.summary.admitted)} />
-            </Card>
-          </div>
+                <h2 className="reports-section-title">Check-in details</h2>
+                <div className="reports-grid-3">
+                  <Card title={<HintLabel hint={ATTENDANCE_CONFIRMATION_HINT}>Attendance confirmation</HintLabel>}>
+                    <BreakdownRows rows={rsvpBreakdownRows(data.by_rsvp_status, data.summary.admitted)} />
+                  </Card>
+                  <Card title="Check-in method">
+                    <BreakdownRows
+                      rows={checkinMethodBreakdownRows(data.by_checkin_method, data.summary.admitted)}
+                    />
+                  </Card>
+                  <Card title="By operator">
+                    <BreakdownRows rows={operatorBreakdownRows(data.by_operator, data.summary.admitted)} />
+                  </Card>
+                </div>
 
-          <AdmissionLog
-            key={data.event.id}
-            eventId={eventId}
-            log={data.admission_log}
-            byTicketType={data.by_ticket_type}
-            byOperator={data.by_operator}
-            ticketTypes={ticketTypes}
-            timeZone={data.timezone}
-            truncated={data.admission_log_truncated}
-            totalAdmitted={data.admission_log_total}
-          />
-        </>
+                <AdmissionLog
+                  key={data.event.id}
+                  eventId={eventId}
+                  log={data.admission_log}
+                  byTicketType={data.by_ticket_type}
+                  byOperator={data.by_operator}
+                  ticketTypes={ticketTypes}
+                  timeZone={data.timezone}
+                  truncated={data.admission_log_truncated}
+                  totalAdmitted={data.admission_log_total}
+                />
+
+                </>
+              )}
+            </div>
+          )}
+        </section>
       )}
     </div>
   );

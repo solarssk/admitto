@@ -201,14 +201,44 @@
   margin-top: 1px;
 }
 
-.reports-loading {
+/* The Event day report below the tabs (the report, its placeholder and its error) is one column with the same rhythm as
+ * .screen, so what a stack of sections looked like as direct children of the screen is kept; the report (or its empty state)
+ * sits in a wrapper that fades in and keeps that rhythm. */
+.reports-eventday,
+.reports-eventday__ready {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 18px;
 }
 
-.reports-loading__chart {
-  margin-top: var(--space-4);
+/* The placeholder is decoration: nothing in it reacts to the pointer. A bar that stands in for a line of text keeps the height
+ * of that line (measured against the real report in Chrome): a chart column's count and hour, the head of a breakdown row, the
+ * two lines of an attendee in the log, and the line of paging controls under it. */
+.reports-skeleton {
+  pointer-events: none;
+}
+
+.reports-skeleton .reports-chart__count {
+  min-height: 15px;
+}
+
+.reports-skeleton .reports-chart__label {
+  min-height: 15px;
+}
+
+.reports-skeleton .reports-breakdown-row__head {
+  min-height: 19.5px;
+}
+
+.reports-skeleton .reports-log-user {
+  min-height: 41px;
+}
+
+.reports-skeleton__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 57px;
 }
 
 .reports-tab-loading {
