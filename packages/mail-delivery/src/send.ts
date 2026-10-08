@@ -365,7 +365,8 @@ async function claimOrResendPending(
   completedBeforeRequest: boolean,
 ): Promise<AttendeeSendOutcome> {
   if (purpose !== "initial" || completedBeforeRequest) {
-    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
+    const pending = await createResendPending(attendeeId, claimInput, links, prisma);
+    return pending ? { kind: "pending", pending } : { kind: "skip", attendeeId, reason: "erased" };
   }
 
   const claim = await claimInitialDelivery(claimInput, prisma);
@@ -392,8 +393,10 @@ async function createResendPending(
   claimInput: ClaimInitialInput,
   links: AttendeeMailLinks,
   prisma: PrismaClient,
-): Promise<PendingSend> {
+): Promise<PendingSend | null> {
   const created = await createResendDelivery(claimInput, prisma);
+  // Null: the attendee was erased after this send began.
+  if (!created) return null;
   return {
     deliveryId: created.deliveryId,
     attendeeId,
@@ -438,8 +441,9 @@ export async function deliverPendingBatch(
         const item = pending.at(index);
         if (!item) return Promise.resolve();
         const update = mapSendResultToDelivery(result);
-        return prisma.emailDelivery.update({
-          where: { id: item.deliveryId },
+        // recipient_email: an erased attendee's delivery is emptied, and stays that way.
+        return prisma.emailDelivery.updateMany({
+          where: { id: item.deliveryId, recipient_email: { not: null } },
           data: {
             ...update,
             provider: result.provider,
@@ -454,8 +458,8 @@ export async function deliverPendingBatch(
     const failureUpdate = deliveryUpdateFromBatchError(err);
     await Promise.all(
       pending.map((item) =>
-        prisma.emailDelivery.update({
-          where: { id: item.deliveryId },
+        prisma.emailDelivery.updateMany({
+          where: { id: item.deliveryId, recipient_email: { not: null } },
           data: {
             ...failureUpdate,
             ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),

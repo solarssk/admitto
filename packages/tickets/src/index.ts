@@ -10,6 +10,8 @@ export {
   parseWalletFieldMapping,
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
+export { lockAttendeeRow, lockAttendeesForUpdate } from "./attendee-lock.js";
+export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
   ERASED_EMAIL_DOMAIN,

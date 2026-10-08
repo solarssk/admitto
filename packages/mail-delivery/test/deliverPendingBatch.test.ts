@@ -30,7 +30,7 @@ function pendingFixture(deliveryId: string) {
 describe("deliverPendingBatch", () => {
   it("returns 0 after marking rows failed when the adapter send throws a soft error", async () => {
     const update = vi.fn(async () => ({}));
-    const prisma = { emailDelivery: { update } } as unknown as PrismaClient;
+    const prisma = { emailDelivery: { updateMany: update } } as unknown as PrismaClient;
     const adapter: MailerAdapter = {
       provider: "smtp",
       send: vi.fn(async (_message: MailMessage): Promise<SendResult> => {
@@ -44,7 +44,7 @@ describe("deliverPendingBatch", () => {
     expect(sent).toBe(0);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "del-soft" },
+        where: { id: "del-soft", recipient_email: { not: null } },
         data: expect.objectContaining({ status: "failed" }),
       }),
     );
@@ -52,7 +52,7 @@ describe("deliverPendingBatch", () => {
 
   it("rethrows MailDestinationError after marking rows failed so API mappers can return 422", async () => {
     const update = vi.fn(async () => ({}));
-    const prisma = { emailDelivery: { update } } as unknown as PrismaClient;
+    const prisma = { emailDelivery: { updateMany: update } } as unknown as PrismaClient;
     const destErr = new MailDestinationError(
       "mail_destination_blocked",
       "hostname must not resolve to a private or link-local address",
@@ -71,7 +71,7 @@ describe("deliverPendingBatch", () => {
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "del-dest" },
+        where: { id: "del-dest", recipient_email: { not: null } },
         data: expect.objectContaining({ status: "failed" }),
       }),
     );
@@ -79,7 +79,7 @@ describe("deliverPendingBatch", () => {
 
   it("rethrows duck-typed destination failures when class identity does not match", async () => {
     const update = vi.fn(async () => ({}));
-    const prisma = { emailDelivery: { update } } as unknown as PrismaClient;
+    const prisma = { emailDelivery: { updateMany: update } } as unknown as PrismaClient;
     const destErr = Object.assign(new Error("hostname could not be resolved"), {
       name: "MailDestinationError",
       code: "mail_destination_unresolved",
@@ -101,7 +101,7 @@ describe("deliverPendingBatch", () => {
 
   it("does not rethrow when name matches but code is not a mail_destination_* string", async () => {
     const update = vi.fn(async () => ({}));
-    const prisma = { emailDelivery: { update } } as unknown as PrismaClient;
+    const prisma = { emailDelivery: { updateMany: update } } as unknown as PrismaClient;
     const weird = Object.assign(new Error("nope"), {
       name: "MailDestinationError",
       code: 535,

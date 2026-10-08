@@ -57,8 +57,8 @@ export async function retryDelivery(
       // Stored secret still can't be decrypted — same failure for every attempt until an
       // admin re-enters it in Mail settings. Record it so the delivery detail view reflects
       // why this retry did nothing, instead of leaving the prior attempt's stale error.
-      await prisma.emailDelivery.update({
-        where: { id: deliveryId },
+      await prisma.emailDelivery.updateMany({
+        where: { id: deliveryId, recipient_email: { not: null } },
         data: {
           error: sanitizeDeliveryError(err.message),
           attempted_at: new Date(),
@@ -79,19 +79,31 @@ export async function retryDelivery(
 
   let result;
   try {
+    // Re-read right before sending: links, config and the mailer took time, and an erasure (which
+    // cancels and empties the row) or a cancelled batch since the first read must stop the send.
+    const fresh = await prisma.emailDelivery.findUnique({
+      where: { id: deliveryId },
+      select: { status: true, recipient_email: true },
+    });
+    if (fresh?.status !== "failed" || !fresh.recipient_email) {
+      return { ok: false, reason: "not_retryable" };
+    }
+
     const summary = await sendBatch(mailer, [message]);
     result = summary.results[0];
     if (!result) {
-      await prisma.emailDelivery.update({
-        where: { id: deliveryId },
+      await prisma.emailDelivery.updateMany({
+        where: { id: deliveryId, recipient_email: { not: null } },
         data: { attempts: { increment: 1 } },
       });
       return { ok: false, reason: "no_result" };
     }
 
     const update = mapSendResultToDelivery(result);
-    await prisma.emailDelivery.update({
-      where: { id: deliveryId },
+    // Written only while the row still has its recipient: an erasure that landed while the mail
+    // was in flight keeps the row emptied and cancelled.
+    await prisma.emailDelivery.updateMany({
+      where: { id: deliveryId, recipient_email: { not: null } },
       data: {
         ...update,
         provider: result.provider,

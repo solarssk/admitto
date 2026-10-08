@@ -36,3 +36,25 @@ export async function lockAttendeeRow(
   const row = rows[0];
   return row ? { id: row.id, status: row.status, erased: row.erased_at !== null } : null;
 }
+
+/**
+ * Locks attendee rows `FOR UPDATE`, in id order, until the transaction ends. For a transaction
+ * that deletes an attendee together with its check-ins, deliveries and wallet pass: it takes the
+ * attendee lock first, the same order as an erasure and as every transaction guarded by
+ * `lockAttendeeRow`. Without it, deleting the children first and the attendee last can deadlock
+ * against a send or a check-in that holds the attendee `FOR KEY SHARE` and then touches a child.
+ * Returns the ids that exist in the event.
+ */
+export async function lockAttendeesForUpdate(
+  db: DbClient,
+  eventId: string,
+  attendeeIds: readonly string[],
+): Promise<string[]> {
+  if (attendeeIds.length === 0) return [];
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Attendee"
+    WHERE "event_id" = ${eventId} AND "id" IN (${Prisma.join([...attendeeIds])})
+    ORDER BY "id" FOR UPDATE
+  `;
+  return rows.map((row) => row.id);
+}

@@ -216,8 +216,11 @@ async function recordSendOutcome(
   // stale result is dropped instead of clobbering the row the operator just re-sent.
   const update = mapSendResultToDelivery(result);
   const failedLike = update.status === "failed" || update.status === "rejected";
+  // recipient_email is emptied by an erasure (which also cancels the row): a result for a row
+  // erased while the mail was in flight is dropped, so the provider message id and error text
+  // are not written back onto it. The mail itself cannot be recalled.
   const applied = await prisma.emailDelivery.updateMany({
-    where: { id: delivery.id, queued_at: delivery.queued_at },
+    where: { id: delivery.id, queued_at: delivery.queued_at, recipient_email: { not: null } },
     data: {
       ...update,
       provider: result.provider,

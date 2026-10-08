@@ -13,6 +13,8 @@ export async function recordTicketViewed(
       event_id: eventId,
       status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] },
       viewed_at: null,
+      // Nothing to record on the mail of an erased attendee.
+      attendee: { erased_at: null },
     },
     orderBy: { created_at: "desc" },
   });

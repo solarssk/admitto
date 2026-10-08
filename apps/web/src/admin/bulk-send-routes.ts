@@ -153,7 +153,11 @@ export async function resolveBulkSendAttendeeIds(
   filter: BulkSendFilter,
   noDeliveryScope?: BulkSendNoDeliveryScope,
 ): Promise<{ ids: string[]; overLimit: boolean }> {
-  const baseWhere: Prisma.AttendeeWhereInput = { event_id: eventId };
+  // Audiences leave erased attendees out: nothing can be sent to them, and an erased person
+  // with no delivery would otherwise match "not yet emailed" and be skipped on every pass. An
+  // explicit selection keeps its ids, so a stale one is reported as skipped.
+  const baseWhere: Prisma.AttendeeWhereInput =
+    filter.type === "attendee_ids" ? { event_id: eventId } : { event_id: eventId, erased_at: null };
 
   let where: Prisma.AttendeeWhereInput = baseWhere;
 
