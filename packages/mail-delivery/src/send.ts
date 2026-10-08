@@ -178,6 +178,8 @@ interface ProcessAttendeeForSendInput {
   baseUrl: string;
   env: NodeJS.ProcessEnv;
   purpose: "initial" | "resend";
+  /** This attendee's initial delivery had already completed when the request began. */
+  completedBeforeRequest: boolean;
   options: SendTicketEmailsOptions;
   batchId: string;
   provider: string;
@@ -219,6 +221,7 @@ async function processAttendeeForSend({
   baseUrl,
   env,
   purpose,
+  completedBeforeRequest,
   options,
   batchId,
   provider,
@@ -317,15 +320,41 @@ async function processAttendeeForSend({
     sessionId: options.sessionId,
   };
 
-  return claimOrResendPending(attendee.id, purpose, claimInput, links, prisma);
+  return claimOrResendPending(attendee.id, purpose, claimInput, links, prisma, completedBeforeRequest);
+}
+
+/**
+ * The attendees (of `attendeeIds`, or of the whole event when omitted) whose initial delivery
+ * is in a success status at the moment this runs. `sendTicketEmails` reads it once, before it
+ * awaits anything else, so "completed before this request began" is a snapshot of the request's
+ * start. Asked again per attendee while the batch is worked through, a delivery that another
+ * request completes in the meantime (a second send finishing, the worker draining a queued row)
+ * would look like an earlier send being repeated on purpose and go out a second time as a
+ * resend, instead of being skipped as the concurrent duplicate it is.
+ */
+async function loadAttendeesWithCompletedInitial(
+  prisma: PrismaClient,
+  eventId: string,
+  attendeeIds: string[] | undefined,
+): Promise<ReadonlySet<string>> {
+  const rows = await prisma.emailDelivery.findMany({
+    where: {
+      event_id: eventId,
+      purpose: "initial",
+      status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] },
+      ...(attendeeIds ? { attendee_id: { in: attendeeIds } } : {}),
+    },
+    select: { attendee_id: true },
+  });
+  return new Set(rows.map((row) => row.attendee_id));
 }
 
 /**
  * purpose:"resend" always creates a new resend row. purpose:"initial" claims the atomic
- * (attendee, event) slot - except when that claim is skipped specifically because the
- * attendee already has a successful ticket: an explicit send action (checkbox selection)
- * against them is an implicit resend, not a silent no-op. A true in-flight duplicate is
- * still skipped.
+ * (attendee, event) slot - except for an attendee whose initial delivery had already completed
+ * before the request began (`completedBeforeRequest`): an explicit send action (checkbox
+ * selection) against them is an implicit resend, not a silent no-op. A true in-flight duplicate,
+ * or one that another request completed after this one began, is still skipped by the claim.
  */
 async function claimOrResendPending(
   attendeeId: string,
@@ -333,28 +362,9 @@ async function claimOrResendPending(
   claimInput: ClaimInitialInput,
   links: AttendeeMailLinks,
   prisma: PrismaClient,
+  completedBeforeRequest: boolean,
 ): Promise<AttendeeSendOutcome> {
-  if (purpose !== "initial") {
-    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
-  }
-
-  // An explicit send for a delivery that had already completed before this request began is a
-  // resend. Check before attempting the atomic initial claim: a P2002 from that claim can also
-  // mean another concurrent request just completed its first send, which must remain a skip.
-  const existingInitial = await prisma.emailDelivery.findFirst({
-    where: {
-      attendee_id: claimInput.attendeeId,
-      event_id: claimInput.eventId,
-      purpose: "initial",
-    },
-    select: { status: true },
-  });
-  if (
-    existingInitial &&
-    EMAIL_DELIVERY_SUCCESS_STATUSES.includes(
-      existingInitial.status as (typeof EMAIL_DELIVERY_SUCCESS_STATUSES)[number],
-    )
-  ) {
+  if (purpose !== "initial" || completedBeforeRequest) {
     return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
   }
 
@@ -468,9 +478,10 @@ export async function deliverPendingBatch(
  * Issue / claim ticket emails for an event (initial or resend).
  * By default only enqueues `EmailDelivery` rows (`queued`); the Admitto worker drains them.
  * Skips individual attendees on not_issuable, token/link build errors, or an in-flight duplicate
- * — does not abort the batch. purpose:"initial" against an attendee who already has a successful
- * ticket falls back to a resend rather than skipping, since that only happens on an explicit send
- * action (e.g. checkbox selection), not an automated sweep.
+ * — does not abort the batch. purpose:"initial" against an attendee who already had a successful
+ * ticket when the request began falls back to a resend rather than skipping, since that only
+ * happens on an explicit send action (e.g. checkbox selection), not an automated sweep. A ticket
+ * that another request completes after this one began is a concurrent duplicate and is skipped.
  */
 export async function sendTicketEmails(
   eventId: string,
@@ -487,6 +498,12 @@ export async function sendTicketEmails(
   if (options.recipientEmail && options.attendeeIds?.length !== 1) {
     throw new Error("recipientEmail requires exactly one attendeeId");
   }
+
+  // The first await on purpose (see loadAttendeesWithCompletedInitial); only an initial send needs it.
+  const completedBeforeRequest =
+    purpose === "initial"
+      ? await loadAttendeesWithCompletedInitial(prisma, eventId, options.attendeeIds)
+      : new Set<string>();
 
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
@@ -533,6 +550,7 @@ export async function sendTicketEmails(
         baseUrl,
         env,
         purpose,
+        completedBeforeRequest: completedBeforeRequest.has(attendee.id),
         options,
         batchId,
         provider: mailer.provider,
