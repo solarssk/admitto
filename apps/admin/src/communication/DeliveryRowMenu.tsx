@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState, type CSSProperties } from "react";
 import type { DeliveryDto } from "../api/types.js";
+import { ARCHIVED_ACTION_TOOLTIP } from "../components/ArchivedGuard.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import "./delivery-row-menu.css";
 
@@ -22,6 +23,9 @@ export interface DeliveryRowMenuProps {
    * `bounceResolved`, so the operator cannot reopen the menu and fire a second attempt before
    * the first response lands. */
   bouncePending?: boolean;
+  /** The event is archived: Resend and Dismiss are writes the server refuses then, so both are
+   * off (with the standard archived reason) instead of failing on click. */
+  archived?: boolean;
 }
 
 const MARGIN = 5;
@@ -51,14 +55,16 @@ export function DeliveryRowMenu({
   onDismiss,
   bounceResolved = false,
   bouncePending = false,
+  archived = false,
 }: Readonly<DeliveryRowMenuProps>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   // A name with no id is a historical snapshot of a template that was deleted. Passing
   // `undefined` to the resend endpoint would select the current default template instead.
   const canResend = row.template_id !== null || row.template_name === null;
-  const bounceActionsLocked = bounceResolved || bouncePending;
+  const bounceActionsLocked = archived || bounceResolved || bouncePending;
   let bounceActionsTitle: string | undefined;
-  if (bounceResolved) bounceActionsTitle = "Already handled";
+  if (archived) bounceActionsTitle = ARCHIVED_ACTION_TOOLTIP;
+  else if (bounceResolved) bounceActionsTitle = "Already handled";
   else if (bouncePending) bounceActionsTitle = "Working…";
   // `position: fixed` from the very first mount (not just once useLayoutEffect below computes
   // real coordinates) - otherwise the panel briefly sits at its CSS default (static, in-flow

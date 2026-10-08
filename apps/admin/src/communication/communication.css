@@ -260,8 +260,13 @@
   border-color: var(--status-warn, #f59f00);
 }
 
-.communication-chip:hover {
+.communication-chip:hover:not([aria-disabled="true"]) {
   background: var(--surface-hover);
+}
+
+/* An archived event's template is read-only: the chips stay as a reference, but do not insert. */
+.communication-chip[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
 /* Always-visible small thumbnail for image placeholders (see IMAGE_PLACEHOLDER_SAMPLES) - a

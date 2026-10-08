@@ -26,6 +26,12 @@ function complete(doc: string, pos = doc.length, explicit = false) {
 }
 
 describe("createPlaceholderCompletionSource", () => {
+  it("offers nothing in a read-only editor (an archived event's body), even when asked explicitly", () => {
+    const state = EditorState.create({ doc: "Hi {{", extensions: [EditorState.readOnly.of(true)] });
+    const context = new CompletionContext(state, "Hi {{".length, true);
+    expect(createPlaceholderCompletionSource(ITEMS)(context)).toBeNull();
+  });
+
   it("offers every known placeholder right after typing an open \"{{\"", () => {
     const result = complete("Hi {{");
     expect(result).not.toBeNull();
