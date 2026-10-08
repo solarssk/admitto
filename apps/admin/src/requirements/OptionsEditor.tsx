@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconButton, Skeleton } from "@admitto/ui";
-import { useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate, type LoadingGate } from "../hooks/useDelayedLoading.js";
 import "./options-editor.css";
 
 export type OptionRow = { key: string; text: string; originalText: string };
@@ -44,6 +44,16 @@ function UsageSkeleton({ held }: Readonly<{ held: boolean }>) {
       <Skeleton variant="rect" width={64} height={18} />
     </span>
   );
+}
+
+/** What a row says about how many attendees use its option. It is gated on the placeholder having had its minimum time
+ * (`showContent`), not only on the counts being in: an answer that comes just after the 200ms would otherwise show its bar for a
+ * few frames and flash. */
+function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): ReactNode {
+  if (!gate.showContent) return <UsageSkeleton held={!gate.showIndicator} />;
+  if (!usageKnown) return "Unknown";
+  if (usage > 0) return `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
+  return "Unused";
 }
 
 /** Structured editor for a select field's option list - replaces the old plain "one per line"
@@ -229,13 +239,6 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
           const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
           const risky = (blanked || renamed) && usage > 0;
           const usageKnown = usageCounts !== null;
-          // What the row says is gated on the placeholder having had its minimum time (`showContent`), not only on the counts
-          // being in: an answer that comes just after the 200ms would otherwise show its bar for a few frames and flash.
-          let usageLabel: ReactNode;
-          if (!usageGate.showContent) usageLabel = <UsageSkeleton held={!usageGate.showIndicator} />;
-          else if (!usageKnown) usageLabel = "Unknown";
-          else if (usage > 0) usageLabel = `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
-          else usageLabel = "Unused";
 
           if (confirmingKey === row.key) {
             return (
@@ -294,7 +297,7 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
                 onChange={(e) => updateRow(row.key, e.target.value)}
               />
               <span className={`options-editor__usage${usage === 0 ? " options-editor__usage--unused" : ""}`}>
-                {usageLabel}
+                {usageLabelFor(usage, usageKnown, usageGate)}
               </span>
               <IconButton
                 label="Remove option"
