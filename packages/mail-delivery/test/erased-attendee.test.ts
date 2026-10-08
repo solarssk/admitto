@@ -5,7 +5,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { eraseAttendees, generateToken, lockAttendeesForUpdate } from "@admitto/tickets";
+import { encryptToString } from "@admitto/crypto";
+import { eraseAttendees, generateToken, hashToken, lockAttendeesForUpdate } from "@admitto/tickets";
 import {
   claimInitialDelivery,
   createResendDelivery,
@@ -182,6 +183,40 @@ describe("a hard delete racing a send", () => {
     expect(error).toBeInstanceOf(Error);
     expect(String(error)).not.toMatch(/deadlock/i);
   });
+});
+
+describe("a send that started before the erasure", () => {
+  const issuedAttendee = async () => {
+    const n = ++seq;
+    const token = generateToken();
+    return prisma.attendee.create({
+      data: {
+        id: `mail-erased-issued-${n}`,
+        event_id: EVENT_ID,
+        email: `issued${n}@example.com`,
+        name: `Issued Person ${n}`,
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+    });
+  };
+
+  it.each([["initial"], ["resend"]] as const)(
+    "queues nothing for an attendee erased while a %s send waits to queue it, and reports it as skipped",
+    async (purpose) => {
+      const a = await issuedAttendee();
+      const held = await holdErasure([a.id]);
+      const sending = sendTicketEmails(EVENT_ID, { attendeeIds: [a.id], purpose }, prisma, ENV, { exportSink: () => undefined });
+      expect(await staysPending(sending)).toBe(true);
+      await held.commit();
+
+      const result = await sending;
+
+      expect(result.queued).toBe(0);
+      expect(result.skipped).toEqual([expect.objectContaining({ attendeeId: a.id, reason: "erased" })]);
+      expect(await deliveriesOf(a.id)).toHaveLength(0);
+    },
+  );
 });
 
 describe("sending to attendees", () => {

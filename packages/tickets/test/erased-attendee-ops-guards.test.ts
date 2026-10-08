@@ -11,7 +11,7 @@ import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { eraseAttendees } from "../src/erase-attendees.js";
-import { lockAttendeeRow } from "../src/attendee-lock.js";
+import { lockAttendeeRow, lockAttendeesForUpdate } from "../src/attendee-lock.js";
 import { admitAttendee } from "../src/admit.js";
 import { checkInScan, getRecentCheckIns } from "../src/checkin.js";
 import { getAttendeeCard, lookupAttendees } from "../src/attendee-card.js";
@@ -134,6 +134,34 @@ describe("lockAttendeeRow", () => {
     expect(await staysPending(locking)).toBe(true);
     await held.commit();
     expect(await locking).toMatchObject({ erased: true });
+  });
+
+  it("lockAttendeesForUpdate returns the ids of the event that exist, in id order, and nothing for an empty list", async () => {
+    const a = await createAttendee();
+    const b = await createAttendee();
+    const ids = await prisma.$transaction((tx) => lockAttendeesForUpdate(tx, EVENT_ID, [b.id, "nobody", a.id]));
+    expect(ids).toEqual([a.id, b.id].sort());
+    expect(await prisma.$transaction((tx) => lockAttendeesForUpdate(tx, EVENT_ID, []))).toEqual([]);
+    expect(await prisma.$transaction((tx) => lockAttendeesForUpdate(tx, PREVIEW_EVENT_ID, [a.id]))).toEqual([]);
+  });
+
+  it("lockAttendeesForUpdate makes an erasure wait for the transaction that holds it", async () => {
+    const a = await createAttendee();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const lockedPromise = new Promise<void>((resolve) => (locked = resolve));
+    const holding = prisma.$transaction(async (tx) => {
+      await lockAttendeesForUpdate(tx, EVENT_ID, [a.id]);
+      locked();
+      await gate;
+    });
+    await lockedPromise;
+    const erasing = erase([a.id]);
+    expect(await staysPending(erasing)).toBe(true);
+    release();
+    await holding;
+    expect((await erasing).erasedIds).toEqual([a.id]);
   });
 
   it("does not block an ordinary update of the attendee", async () => {
