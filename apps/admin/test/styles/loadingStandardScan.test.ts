@@ -327,6 +327,24 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count('<Button loading onClick = {retry}>Retry</Button>', "retry-not-busy")).toBe(0);
   });
 
+  it("sees a Retry or Reload whose label is a string literal in an expression, not only plain JSX text", () => {
+    expect(count("<Button loading={false} onClick={retry}>{'Retry'}</Button>", "retry-not-busy")).toBe(1);
+    expect(count('<Button onClick={retry}>{"Retry now"}</Button>', "retry-not-busy")).toBe(1);
+    expect(count("<Button onClick={retry}>{`Reload page`}</Button>", "retry-not-busy")).toBe(1);
+    expect(count("<Button onClick={retry}>\n  { 'Retry' }\n</Button>", "retry-not-busy")).toBe(1);
+    expect(count('<Button onClick={retry}><i className="ti ti-refresh" />{"Reload"}</Button>', "retry-not-busy")).toBe(1);
+    expect(count("<Button onClick={retry}>{icon}{'Retry'}</Button>", "retry-not-busy")).toBe(1);
+    // The other Retry rules see it as well.
+    expect(count("<div><Button loading={busy} onClick={retry}>{'Retry'}</Button></div>", "retry-outside-an-alert")).toBe(1);
+    expect(count("<div role=\"alert\"><Button loading={busy} onClick={retry}>{'Retry'}</Button></div>", "retry-outside-an-alert")).toBe(0);
+    expect(count("<button onClick={retry}>{'Retry'}</button>", "retry-in-a-raw-button")).toBe(1);
+    // A longer label, a busy button, or another word is none of them.
+    expect(count("<Button onClick={retry}>{'Retry loading items'}</Button>", "retry-not-busy")).toBe(0);
+    expect(count("<Button loading={busy} onClick={retry}>{'Retry'}</Button>", "retry-not-busy")).toBe(0);
+    expect(count("<Button onClick={save}>{'Save'}</Button>", "retry-not-busy")).toBe(0);
+    expect(count("<Button onClick={retry}>{`Retry ${n}`}</Button>", "retry-not-busy")).toBe(0);
+  });
+
   it("does not vouch for a `loading` that a later spread may override, only for one written after the last spread", () => {
     // Props are applied in order, so a `{...rest}` after `loading` can carry `loading: false` and win.
     expect(count('<Button loading={retrying} {...rest}>Retry</Button>', "retry-not-busy")).toBe(1);

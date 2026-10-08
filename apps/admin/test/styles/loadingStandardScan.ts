@@ -199,7 +199,9 @@ const ALERT_ROLE_ATTR = /(?<![\w-])role=(?:"alert"|'alert'|\{\s*(?:"alert"|'aler
 // A button that offers to run a failed load again: "Retry", "Retry now", "Reload" or "Reload page" on its own, at the
 // start of a line or right after a tag or an expression (an icon before it). A longer label such as "Retry loading
 // items" is a menu command, not the failure's own control.
-const RETRY_BUTTON_TEXT = /(?:^\s*|[>}]\s*)(Retry(?: now)?|Reload(?: page)?)(?=\s*(?:<|$))/g;
+// The label is plain JSX text, or a string literal in an expression (`{'Retry'}`, `{"Retry"}`, a template literal without a `${}`).
+const RETRY_BUTTON_TEXT =
+  /(?:^\s*|[>}]\s*)(?:\{\s*(["'`])(Retry(?: now)?|Reload(?: page)?)\1\s*\}|(Retry(?: now)?|Reload(?: page)?))(?=\s*(?:<|$))/g;
 
 /** EmptyStates that show a failed load but lack `variant="error"`. */
 function countErrorEmptyStatesWithoutVariant(text: string): number {
@@ -254,7 +256,10 @@ function retryTextOffsets(text: string): number[] {
   for (const line of text.split("\n")) {
     const offset = lineStart;
     lineStart += line.length + 1;
-    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) offsets.push(offset + found.index + found[0].length - found[1]!.length);
+    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) {
+      const label = found[2] ?? found[3]!;
+      offsets.push(offset + found.index + found[0].lastIndexOf(label));
+    }
   }
   return offsets;
 }
