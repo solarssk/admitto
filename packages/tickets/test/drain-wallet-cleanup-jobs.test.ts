@@ -123,7 +123,7 @@ describe("drainWalletCleanupJobs", () => {
       status: "active",
       provider_pass_id: { not: null },
       provider_removed_at: null,
-      attendee: { event_id: "evt-1" },
+      attendee: { event_id: "evt-1", erased_at: null },
     });
     expect(voidOneWalletPassAtProvider).toHaveBeenCalledTimes(3);
     expect(voidOneWalletPassAtProvider).toHaveBeenCalledWith(

@@ -210,6 +210,14 @@ afterAll(async () => {
   await prisma?.$disconnect();
 });
 
+/** Makes the n-th `prisma.$transaction` of the test reject; every other call is the real one. */
+function failNthTransaction(n: number) {
+  const real = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+  let calls = 0;
+  return vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+    ++calls === n ? Promise.reject(new Error("db down")) : real(...args)) as never);
+}
+
 function makeApp(walletPassProvider: WalletPassProvider) {
   return createApp({
     prisma,
@@ -412,13 +420,15 @@ describe("On-demand wallet routes", () => {
   it("does not fail the redirect when the device-capture write itself throws", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
-    const updateManySpy = vi.spyOn(prisma.walletPass, "updateMany").mockRejectedValueOnce(new Error("db down"));
+    // The device capture runs in its own transaction, after the one that saves the new pass.
+    const transactionSpy = failNthTransaction(2);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
-    updateManySpy.mockRestore();
+    expect(transactionSpy).toHaveBeenCalledTimes(2);
+    transactionSpy.mockRestore();
   });
 
   it("is idempotent on repeat clicks — does not call createPass twice", async () => {
@@ -1392,7 +1402,7 @@ describe("On-demand wallet routes", () => {
       expect.objectContaining({
         level: "error",
         message: "wallet_pass_upsert_failed",
-        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID },
+        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID, providerPassId: `pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}` },
       }),
     );
     errSpy.mockRestore();
@@ -1404,9 +1414,9 @@ describe("On-demand wallet routes", () => {
       new WalletProviderError("wallet_provider_rejected", "boom"),
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    // markFailed's own DB write is a guarded updateMany (not a plain upsert - see its doc
-    // comment), so that's the call this failure-path test needs to fail first.
-    vi.spyOn(prisma.walletPass, "updateMany").mockRejectedValueOnce(new Error("db down"));
+    // markFailed's DB write runs in one transaction (it locks the attendee row first - see its doc
+    // comment), so failing that transaction is the way to make the failure-path save throw.
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db down"));
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
@@ -1440,16 +1450,16 @@ describe("On-demand wallet routes", () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_rejected", "boom again"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const createSpy = vi.spyOn(prisma.walletPass, "create");
+    const before = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
-    expect(createSpy).not.toHaveBeenCalled();
     const rows = await prisma.walletPass.findMany({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(before.id);
     expect(rows[0]?.status).toBe("failed");
     expect(rows[0]?.last_error_code).toBe("wallet_provider_rejected");
     errSpy.mockRestore();
@@ -1462,7 +1472,15 @@ describe("On-demand wallet routes", () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_rejected", "boom"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(prisma.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
+    // The create runs inside markFailed's transaction: fail that one call on the transaction's own client.
+    const realTransaction = prisma.$transaction.bind(prisma) as unknown as (
+      fn: (tx: PrismaClient) => Promise<unknown>,
+    ) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (fn: (tx: PrismaClient) => Promise<unknown>) =>
+      realTransaction(async (tx) => {
+        vi.spyOn(tx.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
+        return fn(tx);
+      })) as never);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });

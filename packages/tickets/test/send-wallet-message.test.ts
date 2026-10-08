@@ -23,7 +23,7 @@ describe("loadWalletMessageTargets", () => {
         attendee_id: { in: ["att-1", "att-2", "att-3"] },
         provider_pass_id: { not: null },
         status: "active",
-        attendee: { event_id: "evt-1" },
+        attendee: { event_id: "evt-1", erased_at: null },
       },
       select: { attendee_id: true, provider_pass_id: true },
     });

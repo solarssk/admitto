@@ -5,6 +5,7 @@ import { WalletProviderError, type WalletPassProvider } from "@admitto/wallet";
 import { resolveTicket } from "./resolve.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 import { resolveWalletCustomFieldPlaceholders } from "./wallet-custom-fields.js";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 /**
@@ -31,9 +32,10 @@ export async function reissueOneWalletPass(
   if (target.providerRemovedAt) return "skipped";
   const attendee = await db.attendee.findUnique({
     where: { id: target.attendeeId },
-    select: { qr_payload: true, external_uuid: true, token_enc: true },
+    select: { qr_payload: true, external_uuid: true, token_enc: true, erased_at: true },
   });
-  if (!attendee) return "skipped";
+  // An erased attendee has no credential left to push, and nothing about them goes to the provider.
+  if (!attendee || attendee.erased_at) return "skipped";
   const scanned =
     attendee.qr_payload ?? attendee.external_uuid ?? (attendee.token_enc ? decryptFromString(attendee.token_enc) : null);
   if (!scanned) return "skipped";
@@ -67,6 +69,11 @@ export async function reissueOneWalletPass(
   }
 
   return db.$transaction(async (tx): Promise<"reissued" | "skipped"> => {
+    // Attendee row first, like an erasure: the pass is written back only for a live attendee, so
+    // links never reappear on a pass an erasure cleared while the provider call was in flight,
+    // and the two cannot deadlock over the pass row and the attendee row.
+    const locked = await lockAttendeeRow(tx, target.attendeeId);
+    if (!locked || locked.erased) return "skipped";
     // updatePass only patches the provider's content, never its voided flag (that's Restore's
     // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
     // an already-voided pass stays voided instead of falsely reporting "active" while the

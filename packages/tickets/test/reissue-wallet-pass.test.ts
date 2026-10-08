@@ -8,6 +8,7 @@ vi.mock("../src/wallet-pass-input.js", () => ({
 }));
 vi.mock("../src/wallet-custom-fields.js", () => ({ resolveWalletCustomFieldPlaceholders: vi.fn() }));
 vi.mock("../src/ops-audit.js", () => ({ writeActionLog: vi.fn() }));
+vi.mock("../src/attendee-lock.js", () => ({ lockAttendeeRow: vi.fn() }));
 
 import { decryptFromString } from "@admitto/crypto";
 import { WalletProviderError } from "@admitto/wallet";
@@ -15,6 +16,7 @@ import { resolveTicket } from "../src/resolve.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "../src/wallet-pass-input.js";
 import { resolveWalletCustomFieldPlaceholders } from "../src/wallet-custom-fields.js";
 import { writeActionLog } from "../src/ops-audit.js";
+import { lockAttendeeRow } from "../src/attendee-lock.js";
 import { reissueOneWalletPass } from "../src/reissue-wallet-pass.js";
 
 const audit = { operator: "user-1", sessionId: "sess-1", timezone: "Europe/Warsaw" };
@@ -47,6 +49,7 @@ describe("reissueOneWalletPass", () => {
     vi.mocked(resolveWalletCustomFieldPlaceholders).mockReset().mockResolvedValue({});
     vi.mocked(buildWalletPassInput).mockReset().mockReturnValue(walletPassInput as never);
     vi.mocked(writeActionLog).mockReset().mockResolvedValue(undefined);
+    vi.mocked(lockAttendeeRow).mockReset().mockResolvedValue({ id: "att-1", status: "registered", erased: false });
     provider.updatePass.mockReset();
   });
 
@@ -58,6 +61,40 @@ describe("reissueOneWalletPass", () => {
 
     expect(result).toBe("skipped");
     expect(resolveTicket).not.toHaveBeenCalled();
+  });
+
+  it("skips an erased attendee without resolving the ticket or calling the provider", async () => {
+    const { db } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({
+      qr_payload: "qr-1",
+      external_uuid: null,
+      token_enc: null,
+      erased_at: new Date(),
+    });
+
+    const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(resolveTicket).not.toHaveBeenCalled();
+    expect(provider.updatePass).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing back, and logs nothing, when the attendee was erased while the provider call was in flight", async () => {
+    const { db, txWalletPassUpdate } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null, erased_at: null });
+    vi.mocked(resolveTicket).mockResolvedValueOnce(resolvedTicket as never);
+    provider.updatePass.mockResolvedValueOnce({
+      downloadUrl: "https://pc/download",
+      appleUrl: "https://pc/apple",
+      androidUrl: "https://pc/android",
+    });
+    vi.mocked(lockAttendeeRow).mockResolvedValueOnce({ id: "att-1", status: "registered", erased: true });
+
+    const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(txWalletPassUpdate).not.toHaveBeenCalled();
+    expect(writeActionLog).not.toHaveBeenCalled();
   });
 
   it("skips when the attendee has no qr_payload, external_uuid, or token to decrypt", async () => {

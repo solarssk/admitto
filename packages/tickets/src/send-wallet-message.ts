@@ -31,7 +31,9 @@ export async function loadWalletMessageTargets(
       attendee_id: { in: attendeeIds },
       provider_pass_id: { not: null },
       status: "active",
-      attendee: { event_id: eventId },
+      // An erased attendee's pass is still active until the erasure has deleted it at the
+      // provider: they are not messaged in the meantime.
+      attendee: { event_id: eventId, erased_at: null },
     },
     select: { attendee_id: true, provider_pass_id: true },
   });
