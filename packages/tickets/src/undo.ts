@@ -9,6 +9,9 @@ import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import type { UndoCheckInResult } from "./types.js";
 
+/** The precision an erasure leaves a check-in time with (see eraseAttendees). */
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
 export class UndoNotAllowedError extends Error {
   constructor(message: string) {
     super(message);
@@ -44,11 +47,29 @@ export async function undoLastCheckIn(
     }
 
     // Refuse rather than skip to an older check-in when the newest one is an erased attendee's.
-    // (Erasure cuts a check-in time to the hour, so this only catches it while it is still the
-    // newest; an undo is meant for the scan just made, which an erasure does not race in practice.)
     // The lock keeps an erasure from starting before this transaction ends.
     const locked = await lockAttendeeRow(tx, lastValid.attendee_id, params.eventId);
     if (locked?.erased) {
+      throw new UndoNotAllowedError("Attendee data has been erased");
+    }
+
+    // Erasure cuts a check-in's time to the start of its hour, so an erased scan can have been
+    // made after the one selected above and still sort before it (a 10:55 scan erased to 10:00
+    // sorts behind a 10:30 one). If an erased scan on this device could be later than the
+    // selected one, which one was the last cannot be known: refuse instead of undoing someone
+    // else's admission.
+    const maybeLater = await tx.checkIn.findFirst({
+      where: {
+        event_id: params.eventId,
+        device_id: params.audit.deviceId,
+        status: "VALID",
+        source: { in: ["scan", "manual"] },
+        attendee: { erased_at: { not: null } },
+        checked_in_at: { gt: new Date(lastValid.checked_in_at.getTime() - ONE_HOUR_MS) },
+      },
+      select: { id: true },
+    });
+    if (maybeLater) {
       throw new UndoNotAllowedError("Attendee data has been erased");
     }
 

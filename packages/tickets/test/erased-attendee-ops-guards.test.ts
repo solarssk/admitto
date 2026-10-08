@@ -232,6 +232,41 @@ describe("undo and revoke of an admission", () => {
     expect((await prisma.attendee.findUniqueOrThrow({ where: { id: a.id } })).admitted_at).not.toBeNull();
   });
 
+  describe("when an erased scan may have been the last one on the device", () => {
+    const scanAt = async (time: string, device: string, overrides: Partial<Prisma.AttendeeUncheckedCreateInput> = {}) => {
+      const a = await createAttendee({ admitted_at: new Date(time), admitted_by: "staff-1", ...overrides });
+      await prisma.checkIn.create({
+        data: { attendee_id: a.id, event_id: EVENT_ID, status: "VALID", source: "scan", device_id: device, checked_in_at: new Date(time) },
+      });
+      return a;
+    };
+    const undo = (device: string) => undoLastCheckIn({ eventId: EVENT_ID, audit: { ...audit, deviceId: device } }, prisma);
+
+    it("refuses instead of undoing the older, live attendee (a 10:55 scan erased to 10:00 sorts behind a 10:30 one)", async () => {
+      const live = await scanAt("2026-09-01T10:30:00Z", "Gate U10");
+      const erased = await scanAt("2026-09-01T10:55:00Z", "Gate U10");
+      await erase([erased.id]);
+
+      await expect(undo("Gate U10")).rejects.toBeInstanceOf(UndoNotAllowedError);
+
+      expect((await prisma.attendee.findUniqueOrThrow({ where: { id: live.id } })).admitted_at).not.toBeNull();
+      expect(await prisma.checkIn.count({ where: { attendee_id: live.id, status: "UNDO" } })).toBe(0);
+    });
+
+    it("still undoes the last scan when the erased one is clearly older or on another device", async () => {
+      const older = await scanAt("2026-09-01T07:10:00Z", "Gate U11");
+      await erase([older.id]);
+      const elsewhere = await scanAt("2026-09-01T11:50:00Z", "Gate U12");
+      await erase([elsewhere.id]);
+      const live = await scanAt("2026-09-01T11:30:00Z", "Gate U11");
+
+      const result = await undo("Gate U11");
+
+      expect(result.card.id).toBe(live.id);
+      expect((await prisma.attendee.findUniqueOrThrow({ where: { id: live.id } })).admitted_at).toBeNull();
+    });
+  });
+
   it("an undo that starts while the erasure is open waits, then refuses and keeps the admission", async () => {
     const { a } = await admittedAttendee({}, "Gate U2");
     const held = await holdErasure([a.id]);

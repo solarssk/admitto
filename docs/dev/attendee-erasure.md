@@ -11,7 +11,7 @@ Run inside the caller's transaction, once per attendee that is not erased yet.
 | Attendee | Name and email become placeholders (`Erased attendee`, `erased-<id>@erased.invalid`). Names, company, department, custom answers, ticket token, QR payload, agency ids and public ref are cleared. `erased_at` is set. Admission time is cut to the hour in the event timezone. |
 | Attendee status | A person not admitted yet, on an event that is not archived, becomes `cancelled`, so their place is free. Otherwise the status stays. |
 | Notes, activity log | Deleted. |
-| Check-ins | Kept without notes, time cut to the hour. |
+| Check-ins | Kept without notes, time cut to the hour. Because of that cut, "undo the last scan on this device" refuses when an erased scan on the device could have been the last one (it cannot tell), instead of undoing an older, live attendee. |
 | Email deliveries | Kept as rows for the Mail report, without recipient, subject, body, provider message id and error text. Mail still waiting to go out is cancelled first. |
 | Wallet pass | Links, device and tokens cleared. Provider ids stay until the pass is deleted at the provider. |
 | Central audit log | The "created manually" entry loses the name and email it recorded. |
