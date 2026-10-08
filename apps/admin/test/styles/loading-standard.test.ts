@@ -46,15 +46,11 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
 };
 
 const ALLOWED: Record<Rule, Counts> = {
-  "hand-rolled-spinner-css": {
-    "apps/admin/src/pages/setup-wizard.css": 1,
-  },
+  "hand-rolled-spinner-css": {},
   "bare-loading-text": {
     "apps/admin/src/pages/CustomFieldsReportsTab.tsx": 1,
     "apps/admin/src/pages/MailReportsTab.tsx": 1,
     "apps/admin/src/pages/WalletsReportsTab.tsx": 1,
-    "apps/admin/src/pages/wizard/WizardStep2Mail.tsx": 1,
-    "apps/admin/src/pages/wizard/WizardStep3Branding.tsx": 1,
   },
   "busy-label-swap": {
     "apps/admin/src/pages/ReportsPage.tsx": 1,
