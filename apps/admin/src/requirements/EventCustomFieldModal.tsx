@@ -1,18 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button, IconButton, ModalBackdrop, Tooltip, useToast } from "@admitto/ui";
-import {
-  createEventCustomField,
-  fetchEventCustomFieldOptionUsage,
-  updateEventCustomField,
-} from "../api/client.js";
+import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { RetryHint } from "../components/RetryHint.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { useOptionUsage } from "./useOptionUsage.js";
 import "./requirements.css";
 
 export interface EventCustomFieldModalProps {
@@ -53,14 +51,10 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
   const [saving, setSaving] = useState(false);
-  // null = usage counts for the current select field are still loading; {} for create mode or a
-  // non-select field, where there's nothing to fetch. Delete/rename-risk checks in OptionsEditor
-  // and below both treat null as "unknown", never as "unused" - see the fetch effect below.
-  const [usageCounts, setUsageCounts] = useState<Record<string, number> | null>(() =>
-    isEdit && field.type === "select" ? null : {},
-  );
-  const [usageError, setUsageError] = useState(false);
-  const [usageRetryToken, setUsageRetryToken] = useState(0);
+  // How many attendees hold each option of a select field being edited (null = still being read, or the read failed): the
+  // delete and rename-risk checks in OptionsEditor and below treat null as "unknown", never as "unused".
+  const usage = useOptionUsage(eventId, field);
+  const usageCounts = usage.counts;
   const [confirmRiskyRenames, setConfirmRiskyRenames] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -72,28 +66,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   useModalFocusTrap(panelRef, !confirmRiskyRenames, onClose);
   useOverscrollBounceGuard(scrollRef);
 
-  useEffect(() => {
-    if (!isEdit || field.type !== "select") return;
-    setUsageError(false);
-    const controller = new AbortController();
-    fetchEventCustomFieldOptionUsage(eventId, field.id, controller.signal)
-      .then((counts) => setUsageCounts(counts))
-      .catch(() => {
-        if (!controller.signal.aborted) setUsageError(true);
-      });
-    return () => controller.abort();
-    // Fetches once for the field this modal was opened with (eventId/field.id/field.type don't
-    // change while it's open), and again each time usageRetryToken changes - a failed fetch
-    // otherwise leaves usageCounts null (Save disabled) for good, with no way to recover short of
-    // closing and reopening the whole modal.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usageRetryToken]);
-
-  const usageLoading = usageCounts === null;
-  let submitLabel = "Create field";
-  if (saving) submitLabel = "Saving…";
-  else if (usageLoading) submitLabel = "Checking usage…";
-  else if (isEdit) submitLabel = "Save";
+  const usageUnknown = usageCounts === null;
 
   const labelTrimmed = form.label.trim();
   const selectOptions = form.options.map((r) => r.text.trim()).filter(Boolean);
@@ -128,7 +101,8 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
 
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || usageLoading) return;
+    // Enter in a field submits the form without going through the Save button, which swallows a click while it works.
+    if (!canSubmit || usageUnknown || saving) return;
     if (riskyRenames.length > 0) {
       setConfirmRiskyRenames(true);
       return;
@@ -226,6 +200,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                   value={form.label}
                   onChange={(e) => updateLabel(e.target.value)}
                   placeholder="Dietary requirements"
+                  readOnly={saving}
                   autoFocus
                 />
                 <div className="contents-row__type-picker">
@@ -259,6 +234,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="Shown to operators on the import reference table"
+                readOnly={saving}
               />
             </div>
             <div className="at-field">
@@ -293,22 +269,18 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               {form.type === "select" && (
                 <>
                   <span className="at-label">Options</span>
-                  {usageError && (
-                    <p className="at-hint at-hint--error custom-field-usage-error" role="alert">
-                      Could not load how many attendees use each option.
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setUsageRetryToken((t) => t + 1)}
-                      >
-                        Retry
-                      </Button>
-                    </p>
+                  {usage.error && (
+                    <RetryHint
+                      message={usage.error}
+                      busy={usage.retrying}
+                      onRetry={usage.retry}
+                      retryLabel="Retry loading option usage"
+                    />
                   )}
                   <OptionsEditor
                     rows={form.options}
                     usageCounts={usageCounts}
+                    usageLoading={usage.loading}
                     disabled={saving}
                     onChange={(rows) => setForm((f) => ({ ...f, options: rows }))}
                   />
@@ -325,9 +297,10 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 type="submit"
                 form="custom-field-form"
                 variant="primary"
-                disabled={!canSubmit || saving || !dirty || usageLoading}
+                loading={saving}
+                disabled={!canSubmit || !dirty || usageUnknown}
               >
-                {submitLabel}
+                {isEdit ? "Save" : "Create field"}
               </Button>
             </div>
           </div>
