@@ -297,6 +297,8 @@ function countRetriesInRawButtons(text: string): number {
 function propValues(tag: string): Map<string, string | null> {
   const props = new Map<string, string | null>();
   const next = /\s+([A-Za-z_][\w:-]*)|\s*(\{)|\s*(\/?>)/y;
+  // JSX allows white space on both sides of the `=` of an attribute: `loading = {false}`.
+  const assign = /\s*=\s*/y;
   let at = tag.search(/\s/);
   while (at !== -1 && at < tag.length) {
     next.lastIndex = at;
@@ -307,9 +309,11 @@ function propValues(tag: string): Map<string, string | null> {
       at = propValueEnd(tag, at - 1); // a spread, `{...props}`
       continue;
     }
-    if (tag[at] === "=") {
-      const end = propValueEnd(tag, at + 1);
-      props.set(found[1]!, tag.slice(at + 1, end));
+    assign.lastIndex = at;
+    if (assign.test(tag)) {
+      const start = assign.lastIndex;
+      const end = propValueEnd(tag, start);
+      props.set(found[1]!, tag.slice(start, end));
       at = end;
     } else {
       props.set(found[1]!, null);
@@ -318,8 +322,8 @@ function propValues(tag: string): Map<string, string | null> {
   return props;
 }
 
-// A `loading` that is written as a value that can never be true: the button would never be busy.
-const STATICALLY_NOT_BUSY = /^\{\s*(?:false|undefined|null|void 0|0)\s*\}$/;
+// A `loading` that is written as a value that can never be true: the button would never be busy. Parentheses around it do not change that.
+const STATICALLY_NOT_BUSY = /^\{\s*\(*\s*(?:false|undefined|null|void 0|0|!true|!1)\s*\)*\s*\}$/;
 
 /**
  * Retry (or Reload) kit buttons that are never busy. A `<Button>` that offers to run a failed load again passes `loading`
