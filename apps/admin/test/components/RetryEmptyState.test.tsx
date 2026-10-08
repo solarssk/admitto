@@ -71,6 +71,21 @@ describe("RetryEmptyState", () => {
     expect(document.activeElement).toBe(document.querySelector(".at-card"));
   });
 
+  it("hands the focus to the landmark it is given when the error is not in a card", async () => {
+    const props = { title: "Could not load", message: "Network down.", onRetry: () => Promise.resolve() };
+    const region = (children: React.ReactNode) => (
+      <section className="stays" aria-label="Report">
+        {children}
+      </section>
+    );
+    const { rerender } = render(region(<RetryEmptyState {...props} retrying={false} landmark=".stays" />));
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(region(<p>Loaded</p>));
+    await Promise.resolve();
+    expect(document.activeElement).toBe(document.querySelector(".stays"));
+  });
+
   it("hands the focus of a Retry that goes away to the tab panel it sat in", async () => {
     const props = { title: "Could not load", message: "Network down.", onRetry: () => Promise.resolve() };
     const { rerender } = render(tabPanel(<RetryEmptyState {...props} retrying={false} />));
