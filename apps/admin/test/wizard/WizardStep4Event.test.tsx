@@ -141,9 +141,10 @@ describe("WizardStep4Event", () => {
     // While the lookup is on its way the page is told nothing: "no events" is only for an answer.
     expect(onHasExistingEventsChange).not.toHaveBeenCalled();
     expect(await screen.findByText("Could not check for existing events.")).toBeTruthy();
-    // The form is there meanwhile, and the step is not told that there are events.
+    // The form is there meanwhile, and the step is not told that there are events. It is told from an effect that
+    // runs after the commit that draws the message, so the message can be found before the call is made.
     expect(screen.getByLabelText(/Event name/)).toBeTruthy();
-    expect(onHasExistingEventsChange).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(onHasExistingEventsChange).toHaveBeenLastCalledWith(false));
     expect(screen.queryByText(/You already have/)).toBeNull();
 
     const retry = screen.getByRole("button", { name: "Retry checking for existing events" });
@@ -190,7 +191,8 @@ describe("WizardStep4Event", () => {
     );
 
     expect(await screen.findByText(/You already have\s+an event/)).toBeTruthy();
-    expect(onHasExistingEventsChange).toHaveBeenCalledWith(true);
+    // The step is told from an effect that runs after the commit that draws this text, so the text can be found first.
+    await waitFor(() => expect(onHasExistingEventsChange).toHaveBeenCalledWith(true));
   });
 
   it("marks the step dirty when the timezone changes", async () => {
