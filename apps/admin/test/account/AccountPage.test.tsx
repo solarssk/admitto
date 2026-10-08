@@ -5206,7 +5206,7 @@ describe("AccountPage on the loading standard", () => {
       mockFetchAccount.mockResolvedValueOnce(baseAccount);
       fireEvent.click(clicked);
       await screen.findByLabelText("Display name");
-      expect(document.activeElement === document.body).toBe(true);
+      expect(document.activeElement).toBe(document.body);
     });
 
     it("notifications: keeps the error with a busy Retry and its focus, no loader or grid in its place, and hands the focus to the card when it works", async () => {

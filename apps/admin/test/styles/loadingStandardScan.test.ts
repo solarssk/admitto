@@ -305,6 +305,26 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count('<Notice role="alert" actionBusy={busy} action={<Button size="sm" loading={busy} onClick={retry}>Retry</Button>}>{error}</Notice>', "retry-not-busy")).toBe(0);
   });
 
+  it("counts a Retry whose `loading` is written as a value that can never be true", () => {
+    expect(count('<Button loading={false} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button loading={undefined} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button loading={null} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button loading={void 0} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button loading={0} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Button\n  loading={ false }\n  onClick={retry}\n>\n  Reload\n</Button>', "retry-not-busy")).toBe(1);
+    expect(count('<Notice role="alert" action={<Button size="sm" loading={false} onClick={retry}>Retry</Button>}>{error}</Notice>', "retry-not-busy")).toBe(1);
+  });
+
+  it("does not count a `loading` that can be true, however it is written", () => {
+    expect(count('<Button loading={true} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading={retrying || false} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading={Boolean(running)} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading={falseAlarm} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading={nullable ?? false} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+    // A keyword inside a larger expression is not the whole value.
+    expect(count('<Button loading={isBusy({ undefined })} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(0);
+  });
+
   it("is not fooled by the word loading inside the value of another prop", () => {
     expect(count('<Button aria-label="Retry loading items" onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
     expect(count('<Button title={loading ? "x" : "y"} onClick={retry}>Retry</Button>', "retry-not-busy")).toBe(1);
