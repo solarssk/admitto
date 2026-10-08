@@ -50,11 +50,13 @@ flowchart TD
 - The workflow definition comes from the base branch (`pull_request_target`), so a pull request
   cannot change the rules that review it. Nothing from it is checked out: the reviewer sees a
   text diff and the base branch.
-- The diff, the description and the file names are untrusted. The prompt says so, the workflow
-  asks for read-only tools (Read, Grep, Glob) and a fixed answer schema, so injected text can at
-  worst skew a verdict.
-- The model's answer is untrusted as well: it is capped and scanned for credential-shaped text
-  before it is posted, and the status comment carries no model text at all.
+- The diff, the description and the file names are untrusted. The prompt says so, the session is
+  limited to the read-only tools Read, Grep and Glob (`--tools`; `--allowedTools` alone would only
+  pre-approve them and leave a subagent, a shell and file writes on offer) and the answer is a
+  fixed schema, so injected text has no tool to act with beyond reading files.
+- Reading is not confined to the checkout, and what the model reads can end up in its answer. So
+  the answer is untrusted as well: it is capped and scanned for credential-shaped text before it
+  is posted (a safety net, not a proof), and the status comment carries no model text at all.
 - Who may command it is decided by the commenter's immutable user id, never by a login.
 - A model review approves only on a valid `approve` with no blocking finding. The other
   approvals say what they rest on: a path rule for documentation-only changes, a policy approval
@@ -71,10 +73,13 @@ itself:
    (`startLine`, `numLines`), so a big file cut to its first page counts as that page. The line
    numbers in the text are the fallback.
 3. A content `Grep` of the diff counts the lines it printed.
-4. Tools beyond Read, Grep and Glob, and anything that ran inside a subagent, are counted as
-   calls, but what they showed cannot be measured. The figure then says "at least".
+4. Tools beyond Read, Grep and Glob, anything that ran inside a subagent and any result with no
+   call behind it are counted, but what they showed cannot be measured. The figure then says
+   "at least".
 5. When no tool result can be matched to a call the row says "not available", not zero.
 
-An approval that rests on a partly seen diff carries a warning. The job log of the submit step
-also prints the shape of the execution log (event kinds, tool names, counts, never content), so
-a change in what the action writes shows up there before it misleads anyone.
+An approval that rests on a partly seen diff carries a warning. So does a session that was
+offered more than the three tools: the first event of the log lists them, which shows on every run
+whether the restriction took effect. The job log of the submit step also prints the shape of the
+execution log (event kinds, tool names, counts, never content), so a change in what the action
+writes shows up there before it misleads anyone.

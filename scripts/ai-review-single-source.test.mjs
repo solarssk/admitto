@@ -29,6 +29,15 @@ test('the live review reads its prompt, schema and diff builder from .github/ai-
   assert.doesNotMatch(live, /--json-schema '\{/, 'the output schema must not be inlined in the workflow')
 })
 
+test('the live review and the backtest limit the session to the same three tools, not only pre-approve them', () => {
+  // --allowedTools only pre-approves tools. --tools is what removes the others (a subagent, a shell,
+  // file writes, web access), so a workflow that claims read-only tools needs both flags.
+  for (const [name, text] of [['live', live], ['backtest', backtest]]) {
+    assert.match(text, /^ +--tools "Read,Grep,Glob"$/m, `${name} must limit the available tools`)
+    assert.match(text, /^ +--allowedTools "Read,Grep,Glob"$/m, `${name} must pre-approve the same tools`)
+  }
+})
+
 test('the backtest can replay exactly the live variant', () => {
   assert.match(backtest, /options:\n\s+- live\n/)
   assert.match(backtest, /default: live/)

@@ -102,8 +102,9 @@ function mergeRanges(ranges) {
   return merged
 }
 
-// The tools the review workflow offers on purpose; a call to anything else is reported.
-const REVIEW_TOOLS = new Set(['Read', 'Grep', 'Glob'])
+// The tools the review workflow offers on purpose; a call to anything else is reported. The last
+// one is no way to look at the diff: it is how the answer is delivered when a JSON schema is given.
+const REVIEW_TOOLS = new Set(['Read', 'Grep', 'Glob', 'StructuredOutput'])
 
 const textOf = (content) => (Array.isArray(content) ? content.map((part) => part?.text ?? '').join('\n') : String(content ?? ''))
 
@@ -155,9 +156,15 @@ function noteTotals(run, entry) {
   if (entry.modelUsage && typeof entry.modelUsage === 'object') run.models = Object.keys(entry.modelUsage)
 }
 
-// The model and the totals, from the events that carry them.
+// The first event of a session names its model and every tool it was offered.
+function noteInit(run, entry) {
+  if (typeof entry.model === 'string') run.model = entry.model
+  if (Array.isArray(entry.tools)) run.offered = entry.tools.filter((name) => typeof name === 'string')
+}
+
+// The model, the tools on offer and the totals, from the events that carry them.
 function noteEvent(run, entry) {
-  if (entry.type === 'system' && entry.subtype === 'init' && typeof entry.model === 'string') run.model = entry.model
+  if (entry.type === 'system' && entry.subtype === 'init') noteInit(run, entry)
   else if (entry.type === 'assistant' && !run.model && typeof entry.message?.model === 'string') run.model = entry.message.model
   else if (entry.type === 'result') noteTotals(run, entry)
 }
@@ -232,8 +239,8 @@ function noteBlocks(run, workspace, calls, event) {
 // object nested in them could otherwise pose as a tool result.
 export function summarizeExecution(events, workspace) {
   const calls = new Map()
-  const run = { model: '', models: [], turns: null, durationMs: null, ranges: [], opened: new Set(), outside: 0, results: 0,
-    unmatched: 0, unmeasured: 0, tools: new Map() }
+  const run = { model: '', models: [], offered: [], turns: null, durationMs: null, ranges: [], opened: new Set(), outside: 0,
+    results: 0, unmatched: 0, unmeasured: 0, tools: new Map() }
   for (const event of Array.isArray(events) ? events : [events]) {
     if (!event || typeof event !== 'object') continue
     noteEvent(run, event)
@@ -241,10 +248,12 @@ export function summarizeExecution(events, workspace) {
   }
   const tools = [...run.tools].map(([name, entry]) => ({ name, ...entry })).sort((a, b) => a.name.localeCompare(b.name, 'en'))
   const otherTools = tools.filter((tool) => !REVIEW_TOOLS.has(tool.name))
-  // What a subagent, Bash or an unreadable result showed the reviewer cannot be counted here.
-  const unmeasurable = otherTools.length > 0 || tools.some((tool) => tool.nested > 0) || run.unmeasured > 0
+  // What a subagent, Bash, an unreadable result or a result with no call behind it showed the
+  // reviewer cannot be counted here.
+  const unmeasurable = otherTools.length > 0 || tools.some((tool) => tool.nested > 0) || run.unmeasured > 0 || run.unmatched > 0
   const otherModels = run.models.filter((model) => model !== run.model).sort((a, b) => a.localeCompare(b, 'en'))
-  return { ...run, tools, otherTools, otherModels, unmeasurable, ranges: mergeRanges(run.ranges),
+  const offeredExtra = [...new Set(run.offered)].filter((name) => !REVIEW_TOOLS.has(name)).sort((a, b) => a.localeCompare(b, 'en'))
+  return { ...run, tools, otherTools, otherModels, offeredExtra, unmeasurable, ranges: mergeRanges(run.ranges),
     opened: [...run.opened].sort((a, b) => a.localeCompare(b, 'en')) }
 }
 
@@ -526,8 +535,16 @@ function coverageWarning(f) {
   return ['', `⚠️ The reviewer saw ${seen} (${percent(c.covered, c.total)}%), so this approval says little about the ${unread} it did not read in full. Review ${unread === '1 file' ? 'it' : 'them'} yourself.`]
 }
 
+// The workflow limits the session to three tools; the log of the session shows whether that held.
+function offeredWarning(f) {
+  const extra = f.log?.offeredExtra ?? []
+  if (extra.length === 0) return []
+  const shown = extra.slice(0, 8).map(code).join(', ') + (extra.length > 8 ? `, and ${extra.length - 8} more` : '')
+  return ['', `⚠️ The reviewer's session was offered tools beyond Read, Grep and Glob (${shown}). The workflow is meant to allow only those three, so check the tool flags of the model step in ai-review.yml.`]
+}
+
 function warningLines(f) {
-  const lines = coverageWarning(f)
+  const lines = [...coverageWarning(f), ...offeredWarning(f)]
   if (f.log?.outside > 0) {
     lines.push('', `⚠️ The reviewer opened ${plural(f.log.outside, 'path')} outside the repository checkout. Check the run log.`)
   }

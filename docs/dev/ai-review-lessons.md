@@ -39,12 +39,15 @@ lesson says where to see it in this repository. How the pieces fit is in
    when nothing matches, and sits next to the raw tool counts so a reader can cross-check it.
    (`summarizeExecution`)
 
-7. **Know the difference between asking and enforcing.** According to the Claude Code CLI,
-   `--allowedTools` pre-approves tools, while `--tools` limits which ones exist. In a headless
-   run a tool that needs approval is refused anyway, but one that needs none, such as a
-   subagent, may still be there. This workflow passes `--allowedTools "Read,Grep,Glob"`, so
-   "read-only" is a request that the Tools row and its warning check after the fact. Find out
-   which one your setup uses, and show the evidence. (`ai-review.yml`, the Tools row)
+7. **Know the difference between asking and enforcing.** In Claude Code, `--allowedTools` only
+   pre-approves tools; it does not take the others away. We found out by listing what the
+   session was offered: with `--allowedTools "Read,Grep,Glob"` alone it was about twenty tools,
+   among them a subagent, a shell, file writes and web access (the permission system refused only
+   the ones that need approval, in a headless run). `--tools "Read,Grep,Glob"` leaves exactly
+   those three, plus the tool that carries the structured answer. It limits built-in tools only:
+   tools from MCP servers need a restriction of their own (this workflow configures none). Check
+   what your setup really offers, restrict it, and make every run show the evidence: the status
+   comment warns if the log shows more was offered. (`ai-review.yml`, the Tools row)
 
 8. **Give people one place to look, made of facts.** One status comment per pull request, edited
    in place and found by a hidden marker and the bot's login, with the commit, the model, the

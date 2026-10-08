@@ -8,10 +8,12 @@ name: AI review
 # pull_request_target (not pull_request): the workflow definition used for a run always comes from
 # the base branch, so a PR cannot edit this file to approve itself. Nothing from the PR is checked
 # out or executed: Claude reads only the PR's diff, copied into a plain text file, plus the base
-# branch. The diff is treated as untrusted data (see the prompt), the tools are read-only, and the
-# verdict is a fixed JSON schema, so injected text in a diff cannot do more than skew the verdict.
-# The review text is also scanned for credential-shaped strings before it is posted, because this
-# repository is public and the model's process holds the Claude subscription credential.
+# branch. The diff is treated as untrusted data (see the prompt), the session is limited to the
+# read-only tools Read, Grep and Glob (--tools; --allowedTools alone only pre-approves tools and
+# leaves the others on offer), and the verdict is a fixed JSON schema, so injected text in a diff has
+# no tool to act with beyond reading files. Read is not confined to the checkout, so the review text
+# is also scanned for credential-shaped strings before it is posted, because this repository is
+# public and the model's process holds the Claude subscription credential.
 #
 # Automatic scope: same-repository PRs opened by the repository owner. The owner can also
 # dispatch a review of a same-repository Dependabot PR from the default branch. Forks remain
@@ -240,9 +242,13 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: ${{ steps.reviewer.outputs.prompt }}
+          # --tools removes every other built-in tool from the session (a subagent, a shell, file writes,
+          # web access); --allowedTools alone only pre-approves the three. The status comment warns if
+          # the execution log shows the session was offered more.
           claude_args: >-
             --model claude-sonnet-5-5
             --max-turns 20
+            --tools "Read,Grep,Glob"
             --allowedTools "Read,Grep,Glob"
             --json-schema '${{ steps.reviewer.outputs.schema }}'
 

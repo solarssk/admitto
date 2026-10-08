@@ -26,7 +26,7 @@ const diffText = [
 ].join('\n')
 // 4 and 42 are the first lines of the two sections: the EXCLUDED line and a blank one come first.
 // A log of the shape summarizeExecution returns, for the tests that build one by hand.
-const logOf = (over = {}) => ({ model: 'm', otherModels: [], turns: 1, durationMs: 1000, opened: [], outside: 0, ranges: [], results: 1,
+const logOf = (over = {}) => ({ model: 'm', otherModels: [], offeredExtra: [], turns: 1, durationMs: 1000, opened: [], outside: 0, ranges: [], results: 1,
   unmatched: 0, unmeasured: 0, tools: [], otherTools: [], unmeasurable: false, ...over })
 const facts = (over = {}) => ({
   state: 'approved', detail: '', timeoutMinutes: 15, now: Date.UTC(2026, 9, 7, 14, 3), trigger: 'pull_request_target',
@@ -226,6 +226,43 @@ test('a log whose tool results match no tool call says that instead of claiming 
   assert.equal(log.unmatched, 2)
   assert.match(renderStatus(facts({ log, coverage: 'unknown' })), /\| \*\*Coverage\*\* \| not available, 2 tool results in the execution log could not be matched to a tool call \|/)
   assert.match(renderStatus(facts({ log: logOf({ results: 0 }), coverage: 'unknown' })), /not available, the execution log has no tool results/)
+})
+
+test('a result with no call behind it makes the figure a minimum even when other results matched', () => {
+  const events = [sdkCall('a', 'Read', { file_path: diffFile }), sdkResult('a', 'plain', { file: { startLine: 1, numLines: 10, totalLines: 108 } }),
+    sdkResult('ghost', 'a result nobody asked for', undefined)]
+  const log = summarizeExecution(events, workspace)
+  assert.equal(log.results, 1)
+  assert.equal(log.unmatched, 1)
+  assert.equal(log.unmeasurable, true)
+  const coverage = { ...diffCoverage(diffSections(diffText), log.ranges), atLeast: log.unmeasurable }
+  assert.match(renderStatus(facts({ log, coverage })), /saw at least 8 of 102 diff lines/)
+  assert.equal(summarizeExecution(events.slice(0, 2), workspace).unmeasurable, false, 'the same log without the orphan is exact')
+})
+
+test('the tool that carries the structured answer is listed but is not a tool beyond the three', () => {
+  const events = [sdkCall('r', 'Read', { file_path: diffFile }), sdkResult('r', numbered(1, 5), { file: { startLine: 1, numLines: 5, totalLines: 5 } }),
+    sdkCall('s', 'StructuredOutput', { verdict: 'approve' }), sdkResult('s', 'Structured output provided successfully', undefined)]
+  const log = summarizeExecution(events, workspace)
+  assert.deepEqual(log.otherTools, [])
+  assert.equal(log.unmeasurable, false)
+  const body = renderStatus(facts({ log }))
+  assert.match(body, /\| \*\*Tools\*\* \| `Read` 1, `StructuredOutput` 1 \|/)
+  assert.doesNotMatch(body, /beyond Read, Grep and Glob/)
+})
+
+test('a session that was offered more than the three tools is warned about, one that was not is not', () => {
+  const init = (tools) => ({ type: 'system', subtype: 'init', model: 'm', tools })
+  const wide = summarizeExecution([init(['Task', 'Read', 'Bash', 'Grep', 'Glob', 'StructuredOutput', 'Task', 7])], workspace)
+  assert.deepEqual(wide.offeredExtra, ['Bash', 'Task'], 'sorted, once each, only names')
+  assert.match(renderStatus(facts({ log: wide })), /⚠️ The reviewer's session was offered tools beyond Read, Grep and Glob \(`Bash`, `Task`\)\. The workflow is meant to allow only those three, so check the tool flags of the model step in ai-review\.yml\./)
+  const narrow = summarizeExecution([init(['Glob', 'Grep', 'Read', 'StructuredOutput'])], workspace)
+  assert.deepEqual(narrow.offeredExtra, [])
+  assert.doesNotMatch(renderStatus(facts({ log: narrow })), /was offered tools/)
+  assert.deepEqual(summarizeExecution([{ type: 'system', subtype: 'init', model: 'm' }], workspace).offeredExtra, [], 'a log without the list says nothing')
+  const many = summarizeExecution([init(Array.from({ length: 10 }, (_, i) => `Tool${i}`))], workspace)
+  assert.match(renderStatus(facts({ log: many })), /\(`Tool0`, .*`Tool7`, and 2 more\)/)
+  assert.doesNotMatch(renderStatus(facts({ state: 'failed', detail: 'timeout', log: narrow })), /was offered tools/)
 })
 
 test('the shape of the log is described without any of its content', () => {
