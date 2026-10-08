@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { Spinner } from "@admitto/ui";
 import { fetchEventMailSettings, fetchSetupChecks } from "../api/client.js";
 import type {
   EventMailSettingsResponse,
@@ -24,11 +25,11 @@ interface StatusRow {
   state: RowState;
 }
 
-const ROW_CHECK_ICON: Record<RowState, string> = {
+/** The icon at the end of a row that has its answer (a row still being checked has the kit's `Spinner` there instead). */
+const ROW_CHECK_ICON: Record<ResolvedRowState, string> = {
   ok: "circle-check",
   degraded: "alert-triangle",
   down: "circle-x",
-  pending: "loader-2",
 };
 
 /** Plain-language only — no product/vendor names (PostgreSQL, Redis, ENCRYPTION_KEY). An
@@ -173,9 +174,16 @@ function triggerLabelClassName(modifier: string, worst: ResolvedRowState): strin
   return worst === "ok" ? base : `${base} sys-status__label--${worst}`;
 }
 
-function checkIconClassName(state: RowState): string {
+function checkIconClassName(state: ResolvedRowState): string {
   const base = `ti ti-${ROW_CHECK_ICON[state]} sys-status__check`;
   return state === "ok" ? base : `${base} sys-status__check--${state}`;
+}
+
+/** The end of a row: the icon of its answer, or, while the row is still being checked, a spinner (decoration: the row's own
+ * text says "Checking…"). */
+function RowCheck({ state }: Readonly<{ state: RowState }>) {
+  if (state === "pending") return <Spinner size="sm" aria-hidden="true" className="sys-status__check sys-status__check--pending" />;
+  return <i className={checkIconClassName(state)} aria-hidden="true" />;
 }
 
 function worstRowState(rows: StatusRow[]): ResolvedRowState {
@@ -367,7 +375,7 @@ export function SystemStatus({
                 <strong>{row.label}</strong>
                 <span>{row.detail}</span>
               </span>
-              <i className={checkIconClassName(row.state)} aria-hidden="true" />
+              <RowCheck state={row.state} />
             </div>
           ))}
           {superadmin && (

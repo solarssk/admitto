@@ -4,6 +4,13 @@
    handle/input/badge/delete stay aligned across every row regardless of label length - a plain
    per-row grid would size each row's "auto" columns independently. */
 
+/* The note the status region above the rows gets after 8 seconds of waiting for the counts (the region is empty, and has no
+   height, otherwise). Padding, not margin: .at-hint sets the margin to 0 and may come later in the cascade. */
+.options-editor__slow-note {
+  display: block;
+  padding: 0 var(--space-1) var(--space-2);
+}
+
 .options-editor__list {
   display: grid;
   grid-template-columns: var(--control-h-sm) 1fr auto auto;
