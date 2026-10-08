@@ -156,9 +156,10 @@ function noteTotals(run, entry) {
   if (entry.modelUsage && typeof entry.modelUsage === 'object') run.models = Object.keys(entry.modelUsage)
 }
 
-// The first event of a session names its model and every tool it was offered.
+// The first event of a session names its model, its permission mode and every tool it was offered.
 function noteInit(run, entry) {
   if (typeof entry.model === 'string') run.model = entry.model
+  if (typeof entry.permissionMode === 'string') run.permissionMode = entry.permissionMode
   if (Array.isArray(entry.tools)) run.offered = entry.tools.filter((name) => typeof name === 'string')
 }
 
@@ -239,8 +240,8 @@ function noteBlocks(run, workspace, calls, event) {
 // object nested in them could otherwise pose as a tool result.
 export function summarizeExecution(events, workspace) {
   const calls = new Map()
-  const run = { model: '', models: [], offered: [], turns: null, durationMs: null, ranges: [], opened: new Set(), outside: 0,
-    results: 0, unmatched: 0, unmeasured: 0, tools: new Map() }
+  const run = { model: '', models: [], offered: [], permissionMode: '', turns: null, durationMs: null, ranges: [], opened: new Set(),
+    outside: 0, results: 0, unmatched: 0, unmeasured: 0, tools: new Map() }
   for (const event of Array.isArray(events) ? events : [events]) {
     if (!event || typeof event !== 'object') continue
     noteEvent(run, event)
@@ -275,10 +276,22 @@ function offeredTools(names) {
   return sorted.length > 40 ? `${shown} and ${sorted.length - 40} more` : shown
 }
 
+function mcpServers(servers) {
+  if (servers === null) return 'not in the log'
+  return servers.length === 0 ? 'none' : [...servers].sort((a, b) => a.localeCompare(b, 'en')).slice(0, 10).join(', ')
+}
+
+// What the first event of a session says about how it was set up.
+function noteInitShape(shape, event) {
+  if (Array.isArray(event.tools)) shape.offered = event.tools.map(identifier)
+  if (typeof event.permissionMode === 'string') shape.mode = identifier(event.permissionMode)
+  if (Array.isArray(event.mcp_servers)) shape.mcp = event.mcp_servers.map((server) => `${identifier(server?.name)}/${identifier(server?.status)}`)
+}
+
 function noteShape(shape, event) {
   tally(shape.kinds, event.subtype ? `${identifier(event.type)}/${identifier(event.subtype)}` : identifier(event.type))
   if (event.parent_tool_use_id) shape.subagent++
-  if (event.type === 'system' && event.subtype === 'init' && Array.isArray(event.tools)) shape.offered = event.tools.map(identifier)
+  if (event.type === 'system' && event.subtype === 'init') noteInitShape(shape, event)
   const blocks = Array.isArray(event.message?.content) ? event.message.content : []
   for (const block of blocks) tally(shape.blocks, identifier(block?.type))
   if (blocks.some((block) => block?.type === 'tool_result')) {
@@ -292,7 +305,7 @@ function noteShape(shape, event) {
 // belong to a subagent and which tools the session offered. The coverage figure is only as good as
 // the reading of this shape, so the job log shows it for the maintainer to check against.
 export function describeShape(events) {
-  const shape = { kinds: new Map(), blocks: new Map(), carriers: 0, structured: 0, subagent: 0, offered: null }
+  const shape = { kinds: new Map(), blocks: new Map(), carriers: 0, structured: 0, subagent: 0, offered: null, mode: null, mcp: null }
   for (const event of Array.isArray(events) ? events : [events]) {
     if (event && typeof event === 'object') noteShape(shape, event)
   }
@@ -302,6 +315,8 @@ export function describeShape(events) {
     `events with a tool result: ${shape.carriers}, of which with the tool's structured answer: ${shape.structured}`,
     `events that belong to a subagent: ${shape.subagent}`,
     `tools offered at the start: ${offeredTools(shape.offered)}`,
+    `permission mode at the start: ${shape.mode ?? 'not in the log'}`,
+    `mcp servers at the start: ${mcpServers(shape.mcp)}`,
   ]
 }
 
@@ -543,8 +558,15 @@ function offeredWarning(f) {
   return ['', `⚠️ The reviewer's session was offered tools beyond Read, Grep and Glob (${shown}). The workflow is meant to allow only those three, so check the tool flags of the model step in ai-review.yml.`]
 }
 
+// The session is meant to run in don't-ask mode, which refuses what is not pre-approved outright.
+function modeWarning(f) {
+  const mode = f.log?.permissionMode
+  if (!mode || mode === 'dontAsk') return []
+  return ['', `⚠️ The reviewer's session ran in permission mode ${code(mode)}, not \`dontAsk\`, so a read outside the checkout was not refused outright. Check the permission flag of the model step in ai-review.yml.`]
+}
+
 function warningLines(f) {
-  const lines = [...coverageWarning(f), ...offeredWarning(f)]
+  const lines = [...coverageWarning(f), ...offeredWarning(f), ...modeWarning(f)]
   if (f.log?.outside > 0) {
     lines.push('', `⚠️ The reviewer opened ${plural(f.log.outside, 'path')} outside the repository checkout. Check the run log.`)
   }

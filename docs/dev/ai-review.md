@@ -40,12 +40,16 @@ returned (taken from the tool's own structured result, so a big file cut to its 
 counts as that page) and the lines a content search printed. A file that was not read in full
 is listed, and an approval that rests on a partly seen diff carries a warning. If the reviewer
 used a tool beyond Read, Grep and Glob, or a subagent, what it saw that way cannot be counted:
-the figure then says "at least" and the comment names the tools. The workflow limits the
-session to those three tools, and the comment warns if the log shows that more were offered.
-The verdict and any findings stay in the GitHub review; the comment carries no model text. When a run does not finish, the
+the figure then says "at least" and the comment names the tools. The workflow confines the
+session to reading the checkout with those three tools (no shell, no writes, no web, no MCP, no
+reads outside the checkout), and the comment warns if the log shows another setup. The verdict
+and any findings stay in the GitHub review; the comment carries no model text. When a run does not finish, the
 comment says why and what to do. The job log of the submit step also prints the shape of the
 execution log (event kinds, tool names and counts, never content) in a group called "AI review
 execution log shape", so the figures can be checked against what the action really writes.
+After bumping `anthropics/claude-code-action`, read that group on the first review: the tools
+offered must be `Glob, Grep, Read, StructuredOutput`, the permission mode `dontAsk` and the MCP
+servers none.
 
 The repository owner can control a review from a comment on the pull request:
 

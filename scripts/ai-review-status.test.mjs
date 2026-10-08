@@ -265,10 +265,21 @@ test('a session that was offered more than the three tools is warned about, one 
   assert.doesNotMatch(renderStatus(facts({ state: 'failed', detail: 'timeout', log: narrow })), /was offered tools/)
 })
 
+test('a session that did not run in dontAsk mode is warned about, one that did is not', () => {
+  const init = (permissionMode) => ({ type: 'system', subtype: 'init', model: 'm', ...(permissionMode ? { permissionMode } : {}) })
+  const loose = summarizeExecution([init('default')], workspace)
+  assert.equal(loose.permissionMode, 'default')
+  assert.match(renderStatus(facts({ log: loose })), /⚠️ The reviewer's session ran in permission mode `default`, not `dontAsk`, so a read outside the checkout was not refused outright\. Check the permission flag of the model step in ai-review\.yml\./)
+  assert.doesNotMatch(renderStatus(facts({ log: summarizeExecution([init('dontAsk')], workspace) })), /permission mode/)
+  assert.doesNotMatch(renderStatus(facts({ log: summarizeExecution([init(null)], workspace) })), /permission mode/, 'a log without the mode says nothing')
+  assert.match(renderStatus(facts({ log: summarizeExecution([init('`x`|y')], workspace) })), /permission mode `x  y`, not/, 'the mode is shown as clean text')
+})
+
 test('the shape of the log is described without any of its content', () => {
   const secret = 'a-secret-that-must-never-be-printed'
   const events = [
-    { type: 'system', subtype: 'init', model: 'm', tools: ['Read', 'Grep', 'Glob', 'Bash', 'Read', 'mcp__server__tool', `${secret} and spaces`, 7] },
+    { type: 'system', subtype: 'init', model: 'm', permissionMode: 'dontAsk', tools: ['Read', 'Grep', 'Glob', 'Bash', 'Read', 'mcp__server__tool', `${secret} and spaces`, 7],
+      mcp_servers: [{ name: 'server', status: 'connected' }, { name: `${secret} and spaces`, status: '::error::x' }, null] },
     { type: 'assistant', message: { content: [{ type: 'text', text: secret }, { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: secret } }] } },
     { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a', content: secret }] }, tool_use_result: { file: {} } },
     { type: 'assistant', parent_tool_use_id: 'ag', message: { content: [{ type: 'tool_use', id: 'b', name: 'Read', input: {} }] } },
@@ -283,11 +294,14 @@ test('the shape of the log is described without any of its content', () => {
   assert.equal(lines[2], "events with a tool result: 2, of which with the tool's structured answer: 1")
   assert.equal(lines[3], 'events that belong to a subagent: 2')
   assert.equal(lines[4], 'tools offered at the start: ?, Bash, Glob, Grep, mcp__server__tool, Read')
+  assert.equal(lines[5], 'permission mode at the start: dontAsk')
+  assert.equal(lines[6], 'mcp servers at the start: ?/?, ?/?, server/connected')
   assert.doesNotMatch(lines.join('\n'), /secret|::error|::warning|spaces|plain text/)
-  assert.equal(describeShape([]).at(-1), 'tools offered at the start: not in the log')
+  assert.deepEqual(describeShape([]).slice(-3), ['tools offered at the start: not in the log', 'permission mode at the start: not in the log', 'mcp servers at the start: not in the log'])
+  assert.equal(describeShape([{ type: 'system', subtype: 'init', mcp_servers: [] }]).at(-1), 'mcp servers at the start: none')
   assert.equal(describeShape({ type: 'result' })[0], 'events: result 1')
   assert.equal(describeShape('odd')[0], 'events: none')
-  const many = describeShape([{ type: 'system', subtype: 'init', tools: Array.from({ length: 45 }, (_, i) => `tool${i}`) }]).at(-1)
+  const many = describeShape([{ type: 'system', subtype: 'init', tools: Array.from({ length: 45 }, (_, i) => `tool${i}`) }]).at(-3)
   assert.match(many, /^tools offered at the start: tool0, tool1, .* and 5 more$/)
   assert.equal(describeShape(Array.from({ length: 30 }, (_, i) => ({ type: `kind${i}` })))[0].split(', ').length, 20, 'at most twenty kinds are listed')
 })
@@ -596,13 +610,15 @@ test('the final report prints the shape of the log to the job log, the start rep
     }
     return lines
   }
-  const events = [{ type: 'system', subtype: 'init', tools: ['Read'] }, { type: 'result', subtype: 'success' }]
+  const events = [{ type: 'system', subtype: 'init', tools: ['Read'], permissionMode: 'dontAsk', mcp_servers: [] }, { type: 'result', subtype: 'success' }]
   const final = await output('final', events)
   assert.equal(final[0], '::group::AI review execution log shape (structure only, no content)')
   assert.equal(final[1], 'events: result/success 1, system/init 1')
   assert.equal(final[5], 'tools offered at the start: Read')
-  assert.equal(final[6], '::endgroup::')
-  assert.match(final[7], /^AI review status comment updated: approved$/)
+  assert.equal(final[6], 'permission mode at the start: dontAsk')
+  assert.equal(final[7], 'mcp servers at the start: none')
+  assert.equal(final[8], '::endgroup::')
+  assert.match(final[9], /^AI review status comment updated: approved$/)
   assert.deepEqual(await output('start', events), ['AI review status comment updated: reviewing'], 'the start report has no execution log yet')
   assert.deepEqual(await output('final', null), ['AI review status comment updated: approved'], 'no log, no shape')
   const held = await output('final', [{ type: 'sk-ant-api03-must-never-be-printed' }])

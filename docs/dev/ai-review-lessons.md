@@ -39,15 +39,18 @@ lesson says where to see it in this repository. How the pieces fit is in
    when nothing matches, and sits next to the raw tool counts so a reader can cross-check it.
    (`summarizeExecution`)
 
-7. **Know the difference between asking and enforcing.** In Claude Code, `--allowedTools` only
-   pre-approves tools; it does not take the others away. We found out by listing what the
-   session was offered: with `--allowedTools "Read,Grep,Glob"` alone it was about twenty tools,
-   among them a subagent, a shell, file writes and web access (the permission system refused only
-   the ones that need approval, in a headless run). `--tools "Read,Grep,Glob"` leaves exactly
-   those three, plus the tool that carries the structured answer. It limits built-in tools only:
-   tools from MCP servers need a restriction of their own (this workflow configures none). Check
-   what your setup really offers, restrict it, and make every run show the evidence: the status
-   comment warns if the log shows more was offered. (`ai-review.yml`, the Tools row)
+7. **Know the difference between asking and enforcing, and test the sandbox.** In Claude Code,
+   `--allowedTools` only pre-approves tools. We found out by running the real CLI against a
+   scripted fake model API (a hundred lines, no credentials, no cost) that replays tool calls a
+   hostile diff could provoke: a shell command, a file write, a read of a file outside the
+   checkout, a subagent, an MCP tool. With `--allowedTools "Read,Grep,Glob"` alone the session was
+   offered 24 tools, and a read anywhere on the machine worked, the process environment with
+   the tokens included. `--tools` now leaves three; `--allowedTools "Read(./**)"` with
+   `--permission-mode dontAsk` refuses every read outside the checkout, Grep and Glob too;
+   `--disallowedTools "mcp__*"` and `--strict-mcp-config` leave no MCP tool, which `--tools` does
+   not cover. Run the same test whenever the action or the CLI is bumped, and make every run show
+   the evidence: the status comment warns if the log shows another setup. (`ai-review.yml`, the
+   Tools row)
 
 8. **Give people one place to look, made of facts.** One status comment per pull request, edited
    in place and found by a hidden marker and the bot's login, with the commit, the model, the

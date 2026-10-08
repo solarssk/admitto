@@ -50,13 +50,18 @@ flowchart TD
 - The workflow definition comes from the base branch (`pull_request_target`), so a pull request
   cannot change the rules that review it. Nothing from it is checked out: the reviewer sees a
   text diff and the base branch.
-- The diff, the description and the file names are untrusted. The prompt says so, the session is
-  limited to the read-only tools Read, Grep and Glob (`--tools`; `--allowedTools` alone would only
-  pre-approve them and leave a subagent, a shell and file writes on offer) and the answer is a
-  fixed schema, so injected text has no tool to act with beyond reading files.
-- Reading is not confined to the checkout, and what the model reads can end up in its answer. So
-  the answer is untrusted as well: it is capped and scanned for credential-shaped text before it
-  is posted (a safety net, not a proof), and the status comment carries no model text at all.
+- The diff, the description and the file names are untrusted. The prompt says so, and the session
+  is confined: only the read-only tools Read, Grep and Glob exist (`--tools`), reads are
+  pre-approved inside the checkout only and anything else is refused outright
+  (`--allowedTools "Read(./**)"` with `--permission-mode dontAsk`), and no MCP tool or server is
+  allowed (`--disallowedTools "mcp__*"`, `--strict-mcp-config`). `--allowedTools` alone would only
+  pre-approve tools and leave a subagent, a shell and file writes on offer. The answer is a fixed
+  schema, so injected text has no tool to act with and nothing outside the checkout to read.
+- The job token and the model login still sit in the environment of the reviewer's process, which
+  is why none of this is left to the prompt. The answer is untrusted as well: it is capped and
+  scanned for credential-shaped text before it is posted, and the status comment carries no model
+  text at all. A separate read-only job for the model would take the token away altogether; that
+  is not done.
 - Who may command it is decided by the commenter's immutable user id, never by a login.
 - A model review approves only on a valid `approve` with no blocking finding. The other
   approvals say what they rest on: a path rule for documentation-only changes, a policy approval
@@ -79,7 +84,7 @@ itself:
 5. When no tool result can be matched to a call the row says "not available", not zero.
 
 An approval that rests on a partly seen diff carries a warning. So does a session that was
-offered more than the three tools: the first event of the log lists them, which shows on every run
-whether the restriction took effect. The job log of the submit step also prints the shape of the
+offered more than the three tools or did not run in `dontAsk` mode: the first event of the log
+lists both, which shows on every run whether the confinement took effect. The job log of the submit step also prints the shape of the
 execution log (event kinds, tool names, counts, never content), so a change in what the action
 writes shows up there before it misleads anyone.

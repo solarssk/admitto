@@ -29,13 +29,18 @@ test('the live review reads its prompt, schema and diff builder from .github/ai-
   assert.doesNotMatch(live, /--json-schema '\{/, 'the output schema must not be inlined in the workflow')
 })
 
-test('the live review and the backtest limit the session to the same three tools, not only pre-approve them', () => {
-  // --allowedTools only pre-approves tools. --tools is what removes the others (a subagent, a shell,
-  // file writes, web access), so a workflow that claims read-only tools needs both flags.
-  for (const [name, text] of [['live', live], ['backtest', backtest]]) {
-    assert.match(text, /^ +--tools "Read,Grep,Glob"$/m, `${name} must limit the available tools`)
-    assert.match(text, /^ +--allowedTools "Read,Grep,Glob"$/m, `${name} must pre-approve the same tools`)
-  }
+test('the live review and the backtest confine the session in the same way, not only pre-approve tools', () => {
+  // --allowedTools only pre-approves; each flag below closes a different way out of the session
+  // (checked against the CLI build the pinned action bundles, see lesson 7 in docs/dev/ai-review-lessons.md).
+  const confinement = (text) => text.match(/^ +--(?:tools|permission-mode|allowedTools|disallowedTools|strict-mcp-config)\b.*$/gm).map((line) => line.trim())
+  assert.deepEqual(confinement(live), [
+    '--tools "Read,Grep,Glob"', // only the three read tools exist: no subagent, shell, file writes or web access
+    '--permission-mode dontAsk', // what is not pre-approved is refused outright, never decided by a classifier
+    '--allowedTools "Read(./**)"', // reads are pre-approved inside the checkout only, so the process environment is out of reach
+    '--disallowedTools "mcp__*"', // no MCP tool, whichever server the action, the repository or the runner would add
+    '--strict-mcp-config', // no MCP server from the repository or the runner is started either
+  ])
+  assert.deepEqual(confinement(backtest), confinement(live), 'the backtest must measure the session that runs live')
 })
 
 test('the backtest can replay exactly the live variant', () => {
