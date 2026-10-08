@@ -157,6 +157,8 @@ interface DeliveryListContentProps {
   /** Delivery ids with an in-flight Resend/Dismiss - greys out both actions until the request
    * settles (then either resolvedBounceRowIds takes over, or this clears on failure). */
   pendingBounceRowIds: Set<string>;
+  /** The event is archived: the row menus keep Resend and Dismiss off (see DeliveryRowMenu). */
+  archived: boolean;
 }
 
 /** Empty states + the responsive desktop-table / mobile-card split - same shape as
@@ -173,6 +175,7 @@ function DeliveryListContent({
   onDismiss,
   resolvedBounceRowIds,
   pendingBounceRowIds,
+  archived,
 }: Readonly<DeliveryListContentProps>) {
   if (deliveries.length === 0) {
     return filtersActive ? (
@@ -210,6 +213,7 @@ function DeliveryListContent({
                 onDismiss={onDismiss}
                 bounceResolved={resolvedBounceRowIds.has(row.id)}
                 bouncePending={pendingBounceRowIds.has(row.id)}
+                archived={archived}
               />
             </div>
             <div className="communication-card__meta">
@@ -290,6 +294,7 @@ function DeliveryListContent({
                 onDismiss={onDismiss}
                 bounceResolved={resolvedBounceRowIds.has(row.id)}
                 bouncePending={pendingBounceRowIds.has(row.id)}
+                archived={archived}
               />
               </td>
             </tr>
@@ -318,6 +323,8 @@ export interface DeliveryLogTabProps {
    * bounce count. The deliveries list itself doesn't need an explicit refetch here; it already
    * polls on its own (Live toggle above). */
   onBounceHandled?: () => void;
+  /** The event is archived: the log stays readable, but Resend and Dismiss bounce stay off. */
+  archived: boolean;
 }
 
 const DELIVERY_LOG_HINT =
@@ -341,6 +348,7 @@ export function DeliveryLogTab({
   pendingBounceRowIds,
   onBounceRowPendingChange,
   onBounceHandled,
+  archived,
 }: Readonly<DeliveryLogTabProps>) {
   const {
     list,
@@ -445,6 +453,7 @@ export function DeliveryLogTab({
           onDismiss={(row) => void handleDismiss(row)}
           resolvedBounceRowIds={resolvedBounceRowIds}
           pendingBounceRowIds={pendingBounceRowIds}
+          archived={archived}
         />
       </RefetchRegion>
     );

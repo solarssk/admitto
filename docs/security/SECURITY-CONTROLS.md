@@ -238,7 +238,7 @@ process.
 ### Check-in live updates (SSE stream)
 
 `GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
-Reports page. Connects and reconnects are limited per operator per event and per operator overall, and
+Reports page (none for an archived event, whose pages do not open it and whose requests are refused). Connects and reconnects are limited per operator per event and per operator overall, and
 the number of simultaneously open streams is capped per application process. The defaults below are read once at startup from
 the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
 whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the

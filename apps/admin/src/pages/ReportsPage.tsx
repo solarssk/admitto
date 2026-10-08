@@ -25,6 +25,7 @@ import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { isEventArchived } from "../components/ArchivedGuard.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
@@ -921,7 +922,8 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     [scheduleReconcile],
   );
 
-  useEventStream(eventId, handleLiveCheckin);
+  // An archived event takes no check-ins and the stream answers it with a 403, which the hook would retry before giving up.
+  useEventStream(isEventArchived(event) ? undefined : eventId, handleLiveCheckin);
 
   // A pending reconcile timer or in-flight reconcile fetch must not outlive the page: this page is one event's (an in-SPA
   // switch to another event renders a new instance), so a stale reconcile can never overwrite the next event's data.
@@ -1107,7 +1109,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                 <div className="reports-panels">
                   <Card
                     title="Hourly admissions"
-                    actions={<LiveStatusIndicator />}
+                    actions={isEventArchived(event) ? undefined : <LiveStatusIndicator />}
                   >
                     <HourlyChart byHour={data.by_hour} peakHour={data.summary.peak_hour} />
                   </Card>

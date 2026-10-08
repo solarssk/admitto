@@ -30,6 +30,8 @@ const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
 let activityChangedHandler: (() => void) | null = null;
+// The event id the page last subscribed to the live stream with (undefined = it did not subscribe).
+let streamEventId: string | undefined;
 // Lets a test simulate the SSE handshake not having completed yet (#C) — defaults to true so
 // every other test keeps its original "always connected" behavior.
 let mockStreamConnected = true;
@@ -42,10 +44,11 @@ const mockUnarchiveEvent = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: (
-    _eventId: string,
+    eventId: string | undefined,
     onCheckin: (event: StreamCheckinEvent) => void,
     onActivityChanged?: () => void,
   ) => {
+    streamEventId = eventId;
     streamHandler = onCheckin;
     activityChangedHandler = onActivityChanged ?? null;
     return { connected: mockStreamConnected, status: mockStreamConnected ? "connected" : "connecting" };
@@ -1923,6 +1926,23 @@ describe("EventOverviewPage archived event", () => {
     mockRefreshEvent.mockResolvedValue(undefined);
     mockEventOverrides = { archived_at: archivedAt, archived_by_timezone: "Asia/Kolkata" };
     mockAssignments = [makeSuperadminAssignment()];
+  });
+
+  it("does not open the live check-in stream for an archived event, and does for an active one", async () => {
+    streamEventId = "stale";
+    renderPage();
+    await screen.findByText("Attendees");
+    // An archived event takes no check-ins, and the stream answers it with a 403 that is retried.
+    expect(streamEventId).toBeUndefined();
+    // Nothing is live there either, so the activity card does not say it is.
+    expect(screen.queryByLabelText("Live")).toBeNull();
+
+    cleanup();
+    mockEventOverrides = {};
+    renderPage();
+    await screen.findByText("Attendees");
+    expect(streamEventId).toBe("evt-1");
+    expect(screen.getByLabelText("Live")).toBeTruthy();
   });
 
   it("shows no archived badge, notice or restore button for an active event", async () => {

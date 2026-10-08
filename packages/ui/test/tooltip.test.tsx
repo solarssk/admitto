@@ -139,6 +139,24 @@ describe("Tooltip", () => {
     expect(wrapper()?.getAttribute("tabindex")).toBe("0");
   });
 
+  it("adds no tab stop of its own around a contenteditable child (a read-only code editor is already one), but does around one that is not editable", () => {
+    function Example({ editable }: Readonly<{ editable: boolean }>) {
+      return (
+        <Tooltip content="This event is archived. Editing is disabled.">
+          <div contentEditable={editable} suppressContentEditableWarning>
+            body
+          </div>
+        </Tooltip>
+      );
+    }
+    const { container, rerender } = render(<Example editable={true} />);
+    const wrapper = () => container.querySelector(".at-tooltip-trigger");
+    expect(wrapper()?.getAttribute("tabindex")).toBeNull();
+
+    rerender(<Example editable={false} />);
+    expect(wrapper()?.getAttribute("tabindex")).toBe("0");
+  });
+
   it("never adds a tab stop when there is no content to show, regardless of the child", () => {
     const { container } = render(
       <Tooltip content={undefined}>
@@ -175,6 +193,49 @@ describe("Tooltip", () => {
     // Grows right (more room there than to the left of a trigger sitting at x=20).
     expect(bubble.style.left).toBe(`${60 + 5}px`);
     expect(bubble.style.top).toBe(`${300 + 40 / 2 - 36 / 2}px`);
+    vi.unstubAllGlobals();
+  });
+
+  it("places the bubble against the anchored control, not the label above it in the same trigger", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    vi.stubGlobal("innerHeight", 720);
+    // The trigger holds a label (y 300-324) above the input (y 324-360): without `anchor` the bubble
+    // would sit above the label, 24px further from the input than from the label.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const rect = this.matches("[role='tooltip']")
+        ? { top: 0, bottom: 36, left: 0, right: 220, width: 220, height: 36 }
+        : this.matches("input")
+          ? { top: 324, bottom: 360, left: 100, right: 500, width: 400, height: 36 }
+          : { top: 300, bottom: 360, left: 100, right: 500, width: 400, height: 60 };
+      return { x: rect.left, y: rect.top, toJSON() {}, ...rect };
+    });
+    render(
+      <Tooltip content="Locked" anchor="input">
+        <label>
+          Subject
+          <input />
+        </label>
+      </Tooltip>,
+    );
+    fireEvent.mouseEnter(screen.getByLabelText("Subject").closest(".at-tooltip-trigger") as HTMLElement);
+    const bubble = screen.getByRole("tooltip");
+    // Above the input (324), 5px clear of it: 324 - 36 - 5.
+    expect(bubble.style.top).toBe(`${324 - 36 - 5}px`);
+    expect(bubble.style.left).toBe(`${500 - 220}px`);
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to the whole trigger when the anchor selector matches nothing", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    vi.stubGlobal("innerHeight", 720);
+    stubRects({ top: 300, bottom: 360, left: 100, right: 500, width: 400, height: 60 }, { width: 220, height: 36 });
+    render(
+      <Tooltip content="Locked" anchor=".not-there">
+        <button>Do thing</button>
+      </Tooltip>,
+    );
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Do thing" }).parentElement as HTMLElement);
+    expect(screen.getByRole("tooltip").style.top).toBe(`${300 - 36 - 5}px`);
     vi.unstubAllGlobals();
   });
 

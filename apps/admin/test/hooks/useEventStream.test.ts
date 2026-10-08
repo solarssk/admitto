@@ -110,6 +110,24 @@ describe("useEventStream", () => {
     expect(instances[0]?.url).toBe("/api/checkin/events/evt-1/stream");
   });
 
+  it("opens no connection and probes nothing without an event id (an archived event's Overview and Reports pass none)", async () => {
+    const fetchFn = vi.fn();
+    vi.stubGlobal("fetch", fetchFn);
+    renderHook(() => useEventStream(undefined, vi.fn()));
+    await vi.advanceTimersByTimeAsync(STREAM_BACKOFF_MS[STREAM_BACKOFF_MS.length - 1] * 2);
+    expect(instances).toHaveLength(0);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("opens the connection once the event id appears (an event that is restored)", () => {
+    const { rerender } = renderHook(({ id }: { id: string | undefined }) => useEventStream(id, vi.fn()), {
+      initialProps: { id: undefined as string | undefined },
+    });
+    expect(instances).toHaveLength(0);
+    rerender({ id: "evt-1" });
+    expect(instances[0]?.url).toBe("/api/checkin/events/evt-1/stream");
+  });
+
   it("dispatches checkin events and ignores ping", () => {
     const onCheckin = vi.fn();
     renderHook(() => useEventStream("evt-1", onCheckin));
