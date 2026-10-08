@@ -393,6 +393,23 @@ describe("error-state scanner: a failed load must be announced", () => {
     expect(count("<Button onClick={retry}>{`Retry ${n}`}</Button>", "retry-not-busy")).toBe(0);
   });
 
+  it("sees such a label when it is spread over lines, as Prettier lays out a long one", () => {
+    expect(count('<Button loading={false} onClick={retry}>{\n"Retry"\n}</Button>', "retry-not-busy")).toBe(1);
+    expect(count("<Button\n  loading={false}\n  onClick={retry}\n>\n  {\n    'Retry now'\n  }\n</Button>", "retry-not-busy")).toBe(1);
+    expect(count("<Button onClick={retry}>{\n  `Reload page`\n}</Button>", "retry-not-busy")).toBe(1);
+    expect(count("<Button onClick={retry}>{ /* why */\n  'Retry'\n}</Button>", "retry-not-busy")).toBe(1);
+    expect(count("<div><Button loading={busy} onClick={retry}>{\n'Retry'\n}</Button></div>", "retry-outside-an-alert")).toBe(1);
+    expect(count("<button onClick={retry}>{\n'Retry'\n}</button>", "retry-in-a-raw-button")).toBe(1);
+    // A longer label, or a busy button, is still none of them.
+    expect(count('<Button onClick={retry}>{\n"Retry later"\n}</Button>', "retry-not-busy")).toBe(0);
+    expect(count('<Button loading={busy} onClick={retry}>{\n"Retry"\n}</Button>', "retry-not-busy")).toBe(0);
+    // And a label that is plain text on its own line is seen as before.
+    expect(count("<Button onClick={retry}>\n  Retry\n</Button>", "retry-not-busy")).toBe(1);
+    expect(count("<Button onClick={retry}>\n\n  Retry now  \n\n</Button>", "retry-not-busy")).toBe(1);
+    // Text on a line of its own counts wherever the line is, also after another line of text.
+    expect(count("<Button onClick={retry}>\n  Something went wrong.\n  Retry\n</Button>", "retry-not-busy")).toBe(1);
+  });
+
   it("does not vouch for a `loading` that a later spread may override, only for one written after the last spread", () => {
     // Props are applied in order, so a `{...rest}` after `loading` can carry `loading: false` and win.
     expect(count('<Button loading={retrying} {...rest}>Retry</Button>', "retry-not-busy")).toBe(1);

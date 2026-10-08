@@ -201,7 +201,7 @@ const ALERT_ROLE_ATTR = /(?<![\w-])role=(?:"alert"|'alert'|\{\s*(?:"alert"|'aler
 // items" is a menu command, not the failure's own control.
 // The label is plain JSX text, or a string literal in an expression (`{'Retry'}`, `{"Retry"}`, a template literal without a `${}`).
 const RETRY_BUTTON_TEXT =
-  /(?:^\s*|[>}]\s*)(?:\{\s*(["'`])(Retry(?: now)?|Reload(?: page)?)\1\s*\}|(Retry(?: now)?|Reload(?: page)?))(?=\s*(?:<|$))/g;
+  /(?:^\s*|[>}]\s*)(?:\{\s*(["'`])(Retry(?: now)?|Reload(?: page)?)\1\s*\}|(Retry(?: now)?|Reload(?: page)?))(?=\s*(?:<|$))/gm;
 
 /** EmptyStates that show a failed load but lack `variant="error"`. */
 function countErrorEmptyStatesWithoutVariant(text: string): number {
@@ -249,19 +249,9 @@ function insideAlertElement(source: string, tags: TagSpan[], at: number): boolea
   });
 }
 
-/** Where each Retry / Reload text (see RETRY_BUTTON_TEXT) starts, as an offset into the source. */
+/** Where each Retry / Reload text (see RETRY_BUTTON_TEXT) starts, as an offset into the source. The text is matched as a whole, so a label in an expression may be spread over lines. */
 function retryTextOffsets(text: string): number[] {
-  const offsets: number[] = [];
-  let lineStart = 0;
-  for (const line of text.split("\n")) {
-    const offset = lineStart;
-    lineStart += line.length + 1;
-    for (const found of line.matchAll(RETRY_BUTTON_TEXT)) {
-      const label = found[2] ?? found[3]!;
-      offsets.push(offset + found.index + found[0].lastIndexOf(label));
-    }
-  }
-  return offsets;
+  return [...text.matchAll(RETRY_BUTTON_TEXT)].map((found) => found.index + found[0].lastIndexOf(found[2] ?? found[3]!));
 }
 
 /**
