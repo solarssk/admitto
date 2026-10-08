@@ -73,6 +73,7 @@ export function useOptionsLoad<T>(load: (signal: AbortSignal) => Promise<T[]>, f
   }, [enabled, token, load, fallback, begin, end]);
 
   const loading = enabled && !loaded && error === null;
-  const slow = useDelayedLoading(loading, SLOW_NOTICE_MS);
+  // Keyed by the request: a new load function replaces a request that is still on its way, and its 8 seconds start over.
+  const slow = useDelayedLoading(loading, SLOW_NOTICE_MS, load);
   return { items, loading, error, retry, retrying: busy, slow };
 }

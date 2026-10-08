@@ -128,6 +128,51 @@ describe("lookupReady", () => {
       expect(result.current).toMatchObject({ loading: false, slow: false });
     });
 
+    it("counts 8 seconds again for a request that replaces one still on its way (a new load function), not what is left of the first one's", async () => {
+      vi.useFakeTimers();
+      const first = deferred<string[]>();
+      const second = deferred<string[]>();
+      const loadA = () => first.promise;
+      const loadB = () => second.promise;
+      const { result, rerender } = renderHook(
+        ({ load }: { load: () => Promise<string[]> }) => useOptionsLoad(load, "Could not load things."),
+        { initialProps: { load: loadA } },
+      );
+      await tick(SLOW_NOTICE_MS - 1000);
+
+      // The lookup is replaced after 7 seconds: its own 8 seconds start now, so it is not slow 1 second later.
+      rerender({ load: loadB });
+      await tick(1000);
+      expect(result.current).toMatchObject({ loading: true, slow: false });
+      await tick(SLOW_NOTICE_MS - 1001);
+      expect(result.current.slow).toBe(false);
+      await tick(1);
+      expect(result.current.slow).toBe(true);
+      await act(async () => second.resolve(["b"]));
+    });
+
+    it("is not slow at all, and counts 8 seconds again, when a lookup that already was slow is replaced", async () => {
+      vi.useFakeTimers();
+      const first = deferred<string[]>();
+      const second = deferred<string[]>();
+      const loadA = () => first.promise;
+      const loadB = () => second.promise;
+      const { result, rerender } = renderHook(
+        ({ load }: { load: () => Promise<string[]> }) => useOptionsLoad(load, "Could not load things."),
+        { initialProps: { load: loadA } },
+      );
+      await tick(SLOW_NOTICE_MS);
+      expect(result.current.slow).toBe(true);
+
+      rerender({ load: loadB });
+      expect(result.current).toMatchObject({ loading: true, slow: false });
+      await tick(SLOW_NOTICE_MS - 1);
+      expect(result.current.slow).toBe(false);
+      await tick(1);
+      expect(result.current.slow).toBe(true);
+      await act(async () => second.resolve(["b"]));
+    });
+
     it("is false again when the request fails, and stays false while a Retry keeps its error on screen", async () => {
       vi.useFakeTimers();
       const first = deferred<string[]>();
