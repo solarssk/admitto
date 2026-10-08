@@ -204,6 +204,11 @@ describe("the migration's handling of addresses already in the reserved namespac
         ["legacy-reserved-2", "Other.Person@ERASED.INVALID"],
         ["legacy-fine", "fine@example.com"],
         ["legacy-similar", "x@erased.invalid.example.com"],
+        // The same local part in the reserved domain and in the domain the old rows move to, and
+        // two spellings of one address: none of them may end up on the same address.
+        ["legacy-collide-1", "alice@erased.invalid"],
+        ["legacy-collide-2", "alice@legacy.erased.invalid"],
+        ["legacy-collide-3", "ALICE@ERASED.INVALID"],
       ] as const) {
         await prisma!.attendee.create({ data: { id, event_id: EVENT_ID, email, name: id } });
       }
@@ -215,10 +220,13 @@ describe("the migration's handling of addresses already in the reserved namespac
         (await prisma!.attendee.findMany({ where: { id: { startsWith: "legacy-" } } })).map((a) => [a.id, a.email]),
       );
       expect(emails).toEqual({
-        "legacy-reserved-1": "someone@legacy.erased.invalid",
-        "legacy-reserved-2": "Other.Person@legacy.erased.invalid",
+        "legacy-reserved-1": "someone+legacy-reserved-1@legacy.erased.invalid",
+        "legacy-reserved-2": "Other.Person+legacy-reserved-2@legacy.erased.invalid",
         "legacy-fine": "fine@example.com",
         "legacy-similar": "x@erased.invalid.example.com",
+        "legacy-collide-1": "alice+legacy-collide-1@legacy.erased.invalid",
+        "legacy-collide-2": "alice@legacy.erased.invalid",
+        "legacy-collide-3": "ALICE+legacy-collide-3@legacy.erased.invalid",
       });
       await expect(
         prisma!.attendee.create({ data: { event_id: EVENT_ID, email: "again@erased.invalid", name: "Again" } }),

@@ -29,10 +29,11 @@ ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_erased_carries_no_personal_data"
 --
 -- Earlier releases accepted any syntactically valid address, so a row may already hold one in the
 -- reserved namespace (test data, most likely: a .invalid address can never receive mail). Those
--- rows get the address moved to a neighbouring domain that is not reserved, so the constraint can
--- be added without failing the deploy and the attendee keeps a recognisable address.
+-- rows get the domain moved to one that is not reserved, with the attendee's id added to the
+-- local part: the new addresses differ from each other by id, and could only meet an address that
+-- is already there if that one contained this very row's id (unique per event and email).
 UPDATE "Attendee"
-SET "email" = regexp_replace("email", '@erased\.invalid$', '@legacy.erased.invalid', 'i')
+SET "email" = left("email", length("email") - length('@erased.invalid')) || '+' || "id" || '@legacy.erased.invalid'
 WHERE "erased_at" IS NULL AND lower("email") LIKE '%@erased.invalid';
 
 ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_email_not_erased_placeholder" CHECK (
