@@ -12,11 +12,12 @@ import {
   type CustomDataFieldDef,
 } from "./customData.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { SlowNote } from "../components/SlowNote.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import { useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
-import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../utils/loading-timing.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import "./add-attendee-modal.css";
 
 type AddAttendeeModalProps = {
@@ -46,7 +47,6 @@ function add409ErrorMessage(err: ApiError): string {
 function FieldsSkeleton() {
   return (
     <div className="add-attendee-modal__fields-skeleton">
-      <output className="sr-only">Loading attendee form</output>
       {Array.from({ length: 6 }, (_, i) => (
         <div className="add-attendee-modal__skeleton-field" key={i}>
           <Skeleton variant="rect" width="28%" height={14} />
@@ -265,10 +265,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   // already has its size), and a skeleton of the same shape is drawn over them after 200ms and kept
   // for at least 400ms. A fetch that answers faster shows nothing at all. A retry does not hold the
   // form back again: it is on screen with what has been typed in it, and stays there.
-  const fieldsGate = useLoadingGate(
-    (attributeFieldsLoading && fieldsRetries === 0) || (ticketTypesLoading && ticketTypesRetries === 0),
-  );
+  const firstLoad = (attributeFieldsLoading && fieldsRetries === 0) || (ticketTypesLoading && ticketTypesRetries === 0);
+  const fieldsGate = useLoadingGate(firstLoad);
   const fieldsHeld = !fieldsGate.showContent;
+  // "Taking longer than usual" after 8 seconds of that first wait. A dialog that is closed and opened again, or opened for another
+  // event, starts counting again (a load that the close left unfinished would otherwise keep the old count running).
+  const slow = useDelayedLoading(open && firstLoad, SLOW_NOTICE_MS, eventId);
   // A Retry is busy at once and for at least 400ms, so one that fails again right away still shows it ran.
   // The same flag tells the notice its Retry stopped while the error is still there: the message is
   // then announced again, because a repeat failure has the same text and would otherwise be silent.
@@ -432,6 +434,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             />
           ))}
         </div>
+        {fieldsGate.showIndicator && (
+          // The one status region of the placeholder: what is loading for assistive tech and, after 8 seconds, the shared note. It sits
+          // between the form and its buttons because the skeleton over the fields has exactly their size and cannot make room for a line.
+          <output className="add-attendee-modal__loading-status">
+            <span className="sr-only">Loading attendee form</span>
+            {slow ? <SlowNote /> : null}
+          </output>
+        )}
         <div className="add-attendee-modal__actions">
           <p className="add-attendee-modal__required-hint">* Required</p>
           <div className="add-attendee-modal__actions-buttons">

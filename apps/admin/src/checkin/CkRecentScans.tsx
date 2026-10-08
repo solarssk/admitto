@@ -1,7 +1,10 @@
 import { Skeleton } from "@admitto/ui";
 import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
+import { SlowNote } from "../components/SlowNote.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatRelativeAdmissionDisplay, getBrowserTimeZone } from "../utils/event-dates.js";
+import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 
 // A CheckIn row with status UNDO is a reversal, not an admission — source
 // tells us whether the operator undid their own scan or an admin revoked the
@@ -82,6 +85,8 @@ export function CkRecentScans({
   skeletonRows,
 }: Readonly<CkRecentScansProps>) {
   const rows = limit != null ? history.slice(0, limit) : history;
+  // "Taking longer than usual" once the first load has been on its way for 8 seconds, in the placeholder's status region below.
+  const slow = useDelayedLoading(loading, SLOW_NOTICE_MS);
   // Matches what's actually rendered below (`rows`), not the raw fetched
   // total — with the overlay's limit=6 slicing an 8-entry fetch, the count
   // badge previously said "8" while only 6 rows were visible, which read as
@@ -103,6 +108,12 @@ export function CkRecentScans({
       </div>
       {loading && (
         <RecentScansSkeleton rows={skeletonRows ?? (limit == null ? SKELETON_ROWS : Math.min(limit, SKELETON_ROWS))} />
+      )}
+      {loading && (
+        <output className="ck-recent__loading-status">
+          <span className="sr-only">Loading recent scans</span>
+          {slow ? <SlowNote /> : null}
+        </output>
       )}
       {!loading && rows.length === 0 && <p className="ck-recent__empty">No scans yet</p>}
       {!loading && rows.length > 0 && (
