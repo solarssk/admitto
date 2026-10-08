@@ -143,11 +143,22 @@ describe("SystemStatus", () => {
     expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
     openMenu();
     expect(screen.getAllByText("Checking…").length).toBeGreaterThan(0);
+    // A row that is still being checked ends in the kit's spinner (decoration, hidden from assistive tech), never a hand-spun
+    // icon glyph.
+    const pendingRows = document.querySelectorAll(".sys-status__row--pending");
+    expect(pendingRows.length).toBeGreaterThan(0);
+    for (const row of pendingRows) {
+      const spinner = row.querySelector(".at-spinner.sys-status__check--pending");
+      expect(spinner?.getAttribute("aria-hidden")).toBe("true");
+      expect(row.querySelector(".ti-loader-2")).toBeNull();
+    }
 
     resolveChecks({ checks: OK_CHECKS, worker: OK_WORKER });
     await waitFor(() => {
       expect(screen.queryByText("Checking…")).toBeNull();
     });
+    expect(document.querySelector(".at-spinner")).toBeNull();
+    expect(document.querySelectorAll(".sys-status__check.ti-circle-check").length).toBeGreaterThan(0);
   });
 
   it("shows 'Action needed' when a check is down", async () => {

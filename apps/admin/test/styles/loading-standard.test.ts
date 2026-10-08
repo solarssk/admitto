@@ -42,9 +42,7 @@ const DISABLED_WHILE_ANOTHER_ACTION_RUNS: Record<string, { count: number; reason
 };
 
 const ALLOWED: Record<Rule, Counts> = {
-  "hand-rolled-spinner-css": {
-    "apps/admin/src/staff.css": 1,
-  },
+  "hand-rolled-spinner-css": {},
   "bare-loading-text": {},
   "busy-label-swap": {},
   "error-state-not-an-alert": {},
