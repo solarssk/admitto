@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { Children, isValidElement, type ReactNode } from "react";
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MailReportsTab } from "../../src/pages/MailReportsTab.js";
+import { MailReportsTab } from "../../src/reports/ReportsTabs.js";
 import { ApiError } from "../../src/api/client.js";
 import type { EventMailReportsResponse } from "../../src/api/types.js";
-import { connectionStateValue, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, connectionStateValue, deferred, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventMailReports = vi.fn();
 const reportApiError = vi.fn();
@@ -167,31 +167,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Waits until the report is on screen. Its placeholder draws the cards' real titles too, so a title alone does not say that the
+ * read has answered. */
+async function reportLoaded(title: string) {
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Loading the mail report" })).toBeNull(), { timeout: 3000 });
+  return screen.getByText(title);
+}
+
 describe("MailReportsTab", () => {
-  it("shows the loading state once the delayed-loading threshold elapses", async () => {
+  it("holds its room invisibly for 200ms, then draws its own shape, and the report replaces it when the read answers", async () => {
     vi.useFakeTimers();
-    let resolveFetch: (value: EventMailReportsResponse) => void = () => {};
-    fetchEventMailReports.mockReturnValue(
-      new Promise<EventMailReportsResponse>((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
+    const read = deferred<EventMailReportsResponse>();
+    fetchEventMailReports.mockReturnValue(read.promise);
     try {
       renderWithToast(<MailReportsTab eventId="evt-1" isActive />);
+      const placeholder = screen.getByRole("status", { name: "Loading the mail report" });
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(true);
+      expect(screen.queryByText("No emails sent yet")).toBeNull();
 
-      expect(screen.queryByText("Loading mail report…")).toBeNull();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(200);
-      });
-      expect(screen.getByText("Loading mail report…")).toBeTruthy();
-
-      await act(async () => {
-        resolveFetch(fixture());
-      });
+      await advanceTimers(200);
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(false);
+      for (const title of ["Email delivery", "Attendee reach", "Initial vs resend", "Delivery by template", "Emails sent over time", "Ticket page opened", "Admission rate by email status", "Event journey"]) {
+        expect(within(placeholder).getByText(title)).toBeTruthy();
+      }
+      // The shapes are decoration for the eyes only.
+      expect(placeholder.querySelector(".reports-skeleton")?.getAttribute("aria-hidden")).toBe("true");
+      read.resolve(fixture());
     } finally {
       vi.useRealTimers();
     }
+    await reportLoaded("Email delivery");
+    expect(screen.queryByRole("status", { name: "Loading the mail report" })).toBeNull();
   });
 
   it("shows an EmptyState with a Retry action on a generic fetch error, and re-fetches on click", async () => {
@@ -209,7 +215,7 @@ describe("MailReportsTab", () => {
     await waitFor(() => {
       expect(fetchEventMailReports).toHaveBeenCalledTimes(2);
     });
-    expect(await screen.findByText("Email delivery")).toBeTruthy();
+    expect(await reportLoaded("Email delivery")).toBeTruthy();
     expect(screen.queryByText("Could not load mail report")).toBeNull();
   });
 
@@ -261,7 +267,7 @@ describe("MailReportsTab", () => {
     );
 
     renderWithToast(<MailReportsTab eventId="evt-1" isActive />);
-    await screen.findByText("Email delivery");
+    await reportLoaded("Email delivery");
 
     const deliveryCard = cardByTitle("Email delivery");
     expect(breakdownRows(deliveryCard)).toEqual([{ name: "unknown_status", meta: "1 · 100%" }]);
@@ -280,7 +286,7 @@ describe("MailReportsTab", () => {
     // The tab-wide guard only fires on zero attempts (already covered above) - this event has
     // attempts, just none successful yet, so the rest of the tab still renders normally and only
     // the "Emails sent over time" card falls back to its own empty state.
-    await screen.findByText("Email delivery");
+    await reportLoaded("Email delivery");
     expect(screen.getByText("Nothing sent successfully yet")).toBeTruthy();
     const chartCard = cardByTitle("Emails sent over time");
     expect(chartCard.querySelector('[data-testid="rc-area"]')).toBeNull();
@@ -290,7 +296,7 @@ describe("MailReportsTab", () => {
     fetchEventMailReports.mockResolvedValue(fixture());
 
     renderWithToast(<MailReportsTab eventId="evt-1" isActive />);
-    await screen.findByText("Email delivery");
+    await reportLoaded("Email delivery");
 
     // Delivery status donut - one slice per status, in the server's own order, plus a matching
     // breakdown row per status with its share of every delivery attempt (not just successes).
@@ -371,7 +377,7 @@ describe("MailReportsTab", () => {
     fetchEventMailReports.mockResolvedValue(fixture());
 
     renderWithToast(<MailReportsTab eventId="evt-1" isActive={false} />);
-    await screen.findByText("Email delivery");
+    await reportLoaded("Email delivery");
 
     // ReportsPage keeps this tab mounted with display:none instead of unmounting it on tab switch
     // (to avoid refetching) - isActive gates only the actual chart mount, since a

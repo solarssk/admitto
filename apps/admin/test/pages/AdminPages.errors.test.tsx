@@ -214,10 +214,12 @@ describe("Admin pages delayed loading", () => {
         </Routes>
       </MemoryRouter>,
     );
+    // In the page from the first frame (its room is held), but not painted before 200ms.
+    expect(screen.getByLabelText("Loading the report").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(document.querySelector(".reports-loading")).toBeTruthy();
+    expect(screen.getByLabelText("Loading the report").className).not.toContain("at-loading-hold");
   });
 
   it("UsersPage shows the loading skeleton once the fetch has genuinely taken a moment", () => {

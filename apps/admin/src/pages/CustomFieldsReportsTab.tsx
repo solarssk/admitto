@@ -1,11 +1,8 @@
-import { memo } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Cell, Pie, PieChart, PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip } from "recharts";
-import { Button, Card, EmptyState } from "@admitto/ui";
+import { Card, EmptyState } from "@admitto/ui";
 import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
-import { fetchEventCustomFieldReports } from "../api/client.js";
 import type { EventCustomFieldReportsResponse } from "../api/types.js";
-import { useReportFetch } from "../hooks/useReportFetch.js";
 import { BreakdownRows, type BreakdownRow } from "./ReportsPage.js";
 import "./reports-page.css";
 
@@ -195,45 +192,9 @@ function CustomFieldCard({
   );
 }
 
-// Memoized and kept mounted once visited, same reasoning as WalletsReportsTab.tsx: ReportsPage
-// re-renders on every live check-in (Event Day's SSE feed), and this tab stays mounted
-// underneath even while Event Day is the visible one. `isActive` (whether this is currently the
-// visible tab) still changes though, and memo's shallow prop comparison re-renders on that -
-// each chart below only mounts its ResponsiveContainer while isActive is true, so its
-// ResizeObserver stops watching once the tab hides instead of observing a box that just
-// collapsed to 0x0 under display:none (see CategoryDonut's own comment).
-export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
-  eventId,
-  isActive,
-}: Readonly<{ eventId: string; isActive: boolean }>) {
-  const { data, loading, error, showLoadingSkeleton, retry } = useReportFetch(
-    fetchEventCustomFieldReports,
-    eventId,
-    "Could not load custom field report.",
-  );
-
-  if (loading && showLoadingSkeleton) {
-    return <p className="wallets-description">Loading custom field report…</p>;
-  }
-
-  if (!loading && error) {
-    return (
-      <EmptyState
-        variant="error"
-        icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-        title="Could not load custom field report"
-        description={error}
-        action={
-          <Button variant="secondary" onClick={retry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (!data) return null;
-
+/** The custom field report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
+ * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
+export function CustomFieldsReport({ data, isActive }: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean }>) {
   if (data.fields.length === 0) {
     return (
       <EmptyState
@@ -251,4 +212,4 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
       ))}
     </div>
   );
-});
+}
