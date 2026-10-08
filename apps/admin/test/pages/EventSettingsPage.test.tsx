@@ -1016,11 +1016,11 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await screen.findByAltText("Event logo preview");
 
-    // The alt-text preview and the Save button's label flip in separate React commits
-    // (the button label only updates once LogoUploadZone's onUploadingChange effect fires
-    // one tick later) — wait for the button itself rather than assuming it's already there.
-    const saveButton = await screen.findByRole("button", { name: "Save" });
-    fireEvent.click(saveButton);
+    // The preview is drawn when the zone's upload ends, but the page hears of that one commit later (the zone's
+    // onUploadingChange effect), and a busy Save swallows the click. Save keeps its label while busy, so finding it by
+    // name waits for nothing: wait until it is no longer off.
+    await waitFor(() => expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", {
