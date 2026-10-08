@@ -137,6 +137,13 @@ describe("eraseAttendees: the attendee row", () => {
     expect(after).toMatchObject({ id: a.id, event_id: WARSAW_EVENT, rsvp_status: "accepted", created_at: a.created_at });
   });
 
+  it("dismisses the bounce notice even when an earlier bounce was dismissed before", async () => {
+    const earlier = new Date("2026-08-01T10:00:00Z");
+    const a = await createAttendee(WARSAW_EVENT, { email_bounce_dismissed_at: earlier });
+    await erase(WARSAW_EVENT, [a.id]);
+    expect((await row(a.id)).email_bounce_dismissed_at!.getTime()).toBeGreaterThan(earlier.getTime());
+  });
+
   it("cancels a person who is not admitted yet on a live event, so the place is free", async () => {
     const registered = await createAttendee(WARSAW_EVENT, { status: "registered" });
     const confirmed = await createAttendee(WARSAW_EVENT, { status: "confirmed" });

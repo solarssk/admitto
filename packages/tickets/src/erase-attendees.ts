@@ -139,14 +139,14 @@ export async function eraseAttendees(
         ELSE "status"
       END,
       "admitted_at" = ${truncatedToLocalHour(Prisma.sql`"admitted_at"`, timeZone)},
-      "email_bounce_dismissed_at" = COALESCE("email_bounce_dismissed_at", NOW() AT TIME ZONE 'UTC'),
+      "email_bounce_dismissed_at" = NOW() AT TIME ZONE 'UTC',
       "erased_at" = NOW() AT TIME ZONE 'UTC',
       "updated_at" = NOW() AT TIME ZONE 'UTC'
     WHERE "event_id" = ${eventId} AND "id" IN (${ids}) AND "erased_at" IS NULL
     RETURNING "id"
   `;
+  // The rows are locked and were just read as not erased, so this is exactly `toErase`.
   const erasedIds = erased.map((row) => row.id);
-  if (erasedIds.length === 0) return { ...empty, alreadyErasedIds, notFoundIds };
   const erasedList = Prisma.join(erasedIds);
 
   const [notes, actionLogs] = await Promise.all([
