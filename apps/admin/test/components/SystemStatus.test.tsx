@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
-import { advanceTimers, makeSuperadminAssignment } from "../test-utils.js";
+import { LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
+import { advanceTimers, deferred, hangUntilAborted, makeSuperadminAssignment } from "../test-utils.js";
 
 const fetchSetupChecks = vi.fn();
 const fetchEventMailSettings = vi.fn();
@@ -545,6 +546,294 @@ describe("SystemStatus", () => {
 
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.activeElement).toBe(userMenuTrigger);
+  });
+});
+
+describe("SystemStatus before an event's own mail transport has answered", () => {
+  // `clearAllMocks` keeps the answers that earlier tests queued or set for good: these tests count on their own.
+  beforeEach(() => {
+    fetchSetupChecks.mockReset();
+    fetchEventMailSettings.mockReset();
+  });
+  afterEach(() => {
+    fetchSetupChecks.mockReset();
+    fetchEventMailSettings.mockReset();
+  });
+  const mailRow = () => screen.getByText("Email sending").closest(".sys-status__row") as HTMLElement;
+  const checksOk = () => fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
+
+  it("does not say 'All systems normal' while the event's own transport is being read, though the organization's status is fine", async () => {
+    vi.useFakeTimers();
+    checksOk();
+    const mail = deferred<ReturnType<typeof eventMailSettings>>();
+    fetchEventMailSettings.mockReturnValueOnce(mail.promise);
+    renderStatus(SUPERADMIN, { configured: true, provider: "smtp" }, "evt-1");
+    await advanceTimers(250);
+
+    // Every setup check has answered, and the organization's transport is configured: neither is this event's answer.
+    expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /All systems normal/ })).toBeNull();
+    openMenu();
+    expect(mailRow().className).toContain("sys-status__row--pending");
+    expect(mailRow().textContent).toContain("Checking…");
+
+    // The event overrides the organization's transport with one that never delivers: that is what the trigger must say.
+    await act(async () => mail.resolve(eventMailSettings("export_only", true)));
+    await advanceTimers(400);
+    expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
+    expect(mailRow().textContent).toContain("Not configured");
+  });
+
+  it("says the Email sending row is being checked on a route where the organization's status never arrived, instead of leaving it out", async () => {
+    checksOk();
+    const mail = deferred<ReturnType<typeof eventMailSettings>>();
+    fetchEventMailSettings.mockReturnValueOnce(mail.promise);
+    renderStatus(SUPERADMIN, null, "evt-1");
+    await act(async () => {});
+
+    openMenu();
+    expect(mailRow().textContent).toContain("Checking…");
+
+    await act(async () => mail.resolve(eventMailSettings("smtp", true)));
+    expect(mailRow().textContent).toContain("Connected · event");
+  });
+
+  it("gives up on the event's transport after 30 seconds and falls back to the organization's status, as a failed read always did", async () => {
+    vi.useFakeTimers();
+    checksOk();
+    fetchEventMailSettings.mockImplementationOnce(hangUntilAborted as never);
+    renderStatus(SUPERADMIN, { configured: true, provider: "smtp" }, "evt-1");
+    await advanceTimers(LOAD_TIMEOUT_MS - 1);
+    expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+
+    await advanceTimers(1);
+    await advanceTimers(0);
+    await advanceTimers(0);
+    expect((fetchEventMailSettings.mock.calls[0]?.[1] as AbortSignal).aborted).toBe(true);
+    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+    openMenu();
+    expect(mailRow().textContent).toContain("Connected");
+    expect(mailRow().textContent).not.toContain("Checking…");
+  });
+
+  it("does not take the answer for another event as this one's while the read for this one is on its way", async () => {
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
+    fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("graph", true));
+    const second = deferred<ReturnType<typeof eventMailSettings>>();
+    fetchEventMailSettings.mockReturnValueOnce(second.promise);
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={null} eventId="evt-1" />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+    openMenu();
+    expect(mailRow().textContent).toContain("Connected · event");
+
+    rerender(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={null} eventId="evt-2" />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+    expect(mailRow().textContent).toContain("Checking…");
+    expect(screen.queryByText("Connected · event")).toBeNull();
+
+    await act(async () => second.resolve(eventMailSettings("smtp", false)));
+    expect(mailRow().textContent).toContain("Connected · organization");
+  });
+
+  it("leaves a superadmin's mail row alone when no event is in view, and a non-superadmin's always", async () => {
+    checksOk();
+    renderStatus(SUPERADMIN, { configured: true, provider: "smtp" });
+    await screen.findByRole("button", { name: /All systems normal/ });
+    openMenu();
+    expect(mailRow().textContent).toContain("Connected");
+    expect(fetchEventMailSettings).not.toHaveBeenCalled();
+    cleanup();
+
+    renderStatus(OPERATOR, { configured: true, provider: "smtp" }, "evt-1");
+    openMenu();
+    expect(mailRow().textContent).toContain("Connected");
+    expect(fetchEventMailSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("SystemStatus when the first read of the checks does not answer", () => {
+  // `clearAllMocks` keeps the answers that earlier tests queued or set for good: these tests count on their own.
+  beforeEach(() => {
+    fetchSetupChecks.mockReset();
+    fetchEventMailSettings.mockReset();
+  });
+  afterEach(() => {
+    fetchSetupChecks.mockReset();
+    fetchEventMailSettings.mockReset();
+  });
+  const trigger = () => document.querySelector(".sys-status__trigger") as HTMLElement;
+  const hang = () => fetchSetupChecks.mockImplementationOnce(hangUntilAborted as never);
+  const signalOf = (call: number) => fetchSetupChecks.mock.calls[call]?.[0] as AbortSignal | undefined;
+  const WARNING = "The system checks did not answer.";
+
+  /**
+   * The first read hangs (call 0). The first poll tick falls due at the very moment its 30 seconds run out (the poll is every 30
+   * seconds as well); it is made to hang too (call 1), so it neither recovers the checks nor fails, and a Retry is call 2.
+   */
+  async function failFirstRead() {
+    vi.useFakeTimers();
+    hang();
+    fetchSetupChecks.mockImplementationOnce(hangUntilAborted as never);
+    renderStatus(SUPERADMIN);
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    await advanceTimers(0);
+    await advanceTimers(0);
+    expect(fetchSetupChecks).toHaveBeenCalledTimes(2);
+  }
+
+  it("keeps saying 'Checking systems…' for 30 seconds, then gives up: every check Unavailable, 'Action needed', and a Retry in the menu", async () => {
+    vi.useFakeTimers();
+    hang();
+    fetchSetupChecks.mockImplementationOnce(hangUntilAborted as never);
+    renderStatus(SUPERADMIN);
+    await advanceTimers(LOAD_TIMEOUT_MS - 1);
+    expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+    expect(signalOf(0)?.aborted).toBe(false);
+
+    await advanceTimers(1);
+    await advanceTimers(0);
+    await advanceTimers(0);
+    expect(signalOf(0)?.aborted).toBe(true);
+    expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
+    expect(document.querySelector(".sys-status__dot--pending")).toBeNull();
+    openMenu();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+    expect(screen.queryByText("Checking…")).toBeNull();
+    expect(screen.getByText(WARNING).closest("[role='alert']")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("stops waiting for a request that ignores its signal, when its time is up", async () => {
+    vi.useFakeTimers();
+    fetchSetupChecks.mockImplementationOnce(() => new Promise(() => {}));
+    fetchSetupChecks.mockImplementationOnce(() => new Promise(() => {}));
+    renderStatus(SUPERADMIN);
+    await advanceTimers(LOAD_TIMEOUT_MS);
+    await advanceTimers(0);
+    await advanceTimers(0);
+    expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
+  });
+
+  it("keeps the failure on screen, with a busy Retry, while a retry runs, and shows the checks when it works", async () => {
+    await failFirstRead();
+    openMenu();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    const second = deferred<{ checks: typeof OK_CHECKS; worker: typeof OK_WORKER }>();
+    fetchSetupChecks.mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    expect(fetchSetupChecks).toHaveBeenCalledTimes(3);
+
+    // Not a first read: the rows stay "Unavailable" and the trigger does not go back to "Checking systems…".
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+    expect(screen.queryByText("Checking…")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Checking systems/ })).toBeNull();
+
+    await act(async () => second.resolve({ checks: OK_CHECKS, worker: OK_WORKER }));
+    await advanceTimers(400);
+    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+    expect(screen.queryByText(WARNING)).toBeNull();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+    // The Retry that held the focus is gone: it stays in the menu, not on <body>.
+    expect(screen.getByRole("menu").contains(document.activeElement)).toBe(true);
+    expect(trigger().className).not.toContain("at-loading-hold");
+  });
+
+  it("gives the retry its own 30 seconds, and announces the failure again when it fails again", async () => {
+    await failFirstRead();
+    openMenu();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const message = screen.getByText(WARNING);
+
+    fetchSetupChecks.mockImplementationOnce(hangUntilAborted as never);
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    expect(fetchSetupChecks).toHaveBeenCalledTimes(3);
+    expect(signalOf(2)?.aborted).toBe(false);
+    await advanceTimers(LOAD_TIMEOUT_MS - 1);
+    expect(signalOf(2)?.aborted).toBe(false);
+    await advanceTimers(1);
+    await advanceTimers(0);
+    expect(signalOf(2)?.aborted).toBe(true);
+
+    // The same words again: a new node, which a live region announces. The button is the same one.
+    expect(screen.getByText(WARNING)).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+  });
+
+  it("recovers by itself when a later poll tick answers, with no click", async () => {
+    await failFirstRead();
+    expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
+
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    await advanceTimers(0);
+    expect(fetchSetupChecks).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+    openMenu();
+    expect(screen.queryByText(WARNING)).toBeNull();
+  });
+
+  it("does not put the 30 second limit on a poll tick: a slow server that does answer is waited for", async () => {
+    vi.useFakeTimers();
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
+    fetchSetupChecks.mockImplementationOnce(hangUntilAborted as never);
+    renderStatus(SUPERADMIN);
+    await advanceTimers(0);
+    await advanceTimers(30_000);
+    expect(fetchSetupChecks).toHaveBeenCalledTimes(2);
+
+    await advanceTimers(LOAD_TIMEOUT_MS + 5_000);
+    expect(signalOf(1)?.aborted).toBe(false);
+    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+  });
+
+  it("does not put the limit on an event-mail poll tick either", async () => {
+    vi.useFakeTimers();
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
+    fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true));
+    fetchEventMailSettings.mockImplementationOnce(hangUntilAborted as never);
+    renderStatus(SUPERADMIN, null, "evt-1");
+    await advanceTimers(0);
+    await advanceTimers(30_000);
+    expect(fetchEventMailSettings).toHaveBeenCalledTimes(2);
+
+    await advanceTimers(LOAD_TIMEOUT_MS + 5_000);
+    expect((fetchEventMailSettings.mock.calls[1]?.[1] as AbortSignal).aborted).toBe(false);
+    openMenu();
+    expect(screen.getByText("Connected · event")).toBeTruthy();
+  });
+
+  it("leaves no timer behind that cancels a request which has already answered", async () => {
+    vi.useFakeTimers();
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS, worker: OK_WORKER });
+    fetchEventMailSettings.mockResolvedValue(eventMailSettings("smtp", true));
+    renderStatus(SUPERADMIN, null, "evt-1");
+    await advanceTimers(0);
+    expect(signalOf(0)?.aborted).toBe(false);
+
+    await advanceTimers(LOAD_TIMEOUT_MS + 1);
+    expect(signalOf(0)?.aborted).toBe(false);
+    expect((fetchEventMailSettings.mock.calls[0]?.[1] as AbortSignal).aborted).toBe(false);
   });
 });
 

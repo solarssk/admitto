@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Spinner } from "@admitto/ui";
 import { fetchEventMailSettings, fetchSetupChecks } from "../api/client.js";
@@ -12,6 +12,8 @@ import type {
 import { isSuperadmin } from "../auth/capabilities.js";
 import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { SETTINGS_INDEX_PATH } from "../settings/settingsTabs.js";
+import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
+import { RefreshWarning } from "./RefreshWarning.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 
 /** The 3 states a resolved (non-pending) row/trigger can be in. */
@@ -65,10 +67,17 @@ let checksCache: { data: SetupChecksResponse; expiresAt: number } | null = null;
 
 type EventMailSummary = { configured: boolean; hasEventOverride: boolean; failedDeliveries: number };
 
+/** What the first read of one event's mail transport has said: its answer, or `null` when the read failed or ran out of time (the row
+ * then falls back to the organization-level status). Keyed by the event, so the answer for another event is never taken for this one's. */
+type EventMailRead = { eventId: string; summary: EventMailSummary | null };
+
 /** Resolved (event → org fallback) mail transport for one event, as seen by a superadmin
  * viewing that event — mirrors `checksCache` above, keyed by `eventId` since it changes as
  * the superadmin navigates between events. */
 let eventMailCache: { eventId: string; data: EventMailSummary; expiresAt: number } | null = null;
+
+/** What a Retry does when no read is owned by the component (a viewer who is not a superadmin has no checks to ask for). */
+const NO_RETRY = () => Promise.resolve();
 
 export function resetSystemStatusCache(): void {
   checksCache = null;
@@ -103,6 +112,11 @@ function summarizeEventMail(data: EventMailSettingsResponse): EventMailSummary {
  * weeks ago rather than something actively failing right now (see `failedDeliveries`'s own
  * doc comment in api/types.ts), so the wording deliberately avoids implying recency.
  *
+ * A superadmin in an event is told the event's own answer or nothing: until that read has
+ * answered (`eventMailPending`) the row is being checked, and the organization-level status
+ * does not stand in for it (an event can override the organization's transport, so "Connected"
+ * there could be false here). It is only the fallback for a read that failed or ran out of time.
+ *
  * Deliberately doesn't name the provider (SMTP/Graph/Power Automate) the old
  * MailerStatusBadge's tooltip did — plain-language scope decision (PO review), the provider
  * name is a Settings → Mail concern, not a topbar-glance one. */
@@ -121,12 +135,14 @@ function eventMailDetail(state: ResolvedRowState, eventMail: EventMailSummary): 
 function mailerRow(
   mailerStatus: MailerStatus | null | undefined,
   eventMail: EventMailSummary | null,
+  eventMailPending: boolean,
 ): StatusRow | null {
   if (eventMail) {
     const state = eventMailState(eventMail);
     const detail = eventMailDetail(state, eventMail);
     return { key: "mailer", icon: "mail", label: "Email sending", state, detail };
   }
+  if (eventMailPending) return { key: "mailer", icon: "mail", label: "Email sending", state: "pending", detail: "Checking…" };
   if (mailerStatus == null) return null;
   const configured = mailerStatus.configured;
   return {
@@ -234,11 +250,14 @@ export function SystemStatus({
     checksCache && checksCache.expiresAt > Date.now() ? checksCache.data : null,
   );
   const [checksFailed, setChecksFailed] = useState(false);
-  const [eventMail, setEventMail] = useState<EventMailSummary | null>(
+  const [eventMailRead, setEventMailRead] = useState<EventMailRead | null>(
     eventId && eventMailCache?.eventId === eventId && eventMailCache.expiresAt > Date.now()
-      ? eventMailCache.data
+      ? { eventId, summary: eventMailCache.data }
       : null,
   );
+  // Asks the checks again, for the Retry of a first read that failed or ran out of time (set by the effect that owns `load`).
+  const retryChecksRef = useRef<() => Promise<void>>(NO_RETRY);
+  const retryChecks = useCallback(() => retryChecksRef.current(), []);
 
   // Re-polls every CHECKS_CACHE_MS instead of only fetching once on mount — otherwise the
   // panel only ever updates on a full page reload or a switch between top-level shells (the
@@ -247,32 +266,43 @@ export function SystemStatus({
   // never re-arms the pending/"Checking…" state or flips to "Unavailable" on its own — only
   // the very first, non-silent fetch does that. One flaky background tick shouldn't blank out
   // a perfectly good last-known reading; the next tick 30s later just tries again.
+  // The first fetch (and a Retry of it) is one the menu waits for, so it has the 30 second
+  // limit (AGENTS.md "Admin SPA loading and busy states"): a server that does not answer ends
+  // in "Unavailable" with a Retry, not in "Checking…" for ever. A tick has no limit of its own.
   useEffect(() => {
     if (!superadmin) return;
     let currentAbort: AbortController | null = null;
 
-    async function load(silent: boolean) {
+    async function load(silent: boolean, byRetry = false) {
       if (!silent && checksCache && checksCache.expiresAt > Date.now()) {
         setChecks(checksCache.data);
+        setChecksFailed(false);
         return;
       }
       const ac = new AbortController();
       currentAbort = ac;
-      if (!silent) setChecksFailed(false);
+      const limit = silent ? null : loadWithTimeout(ac.signal);
+      const signal = limit?.signal ?? ac.signal;
+      // A Retry keeps the failure on screen, with its busy button, until the answer is in.
+      if (!silent && !byRetry) setChecksFailed(false);
       try {
-        const data = await fetchSetupChecks(ac.signal);
+        const data = await rejectOnAbort(fetchSetupChecks(signal), signal);
         if (ac.signal.aborted) return;
         setChecks(data);
         setChecksFailed(false);
         checksCache = { data, expiresAt: Date.now() + CHECKS_CACHE_MS };
       } catch {
         if (!ac.signal.aborted && !silent) setChecksFailed(true);
+      } finally {
+        limit?.done();
       }
     }
 
+    retryChecksRef.current = () => load(false, true);
     void load(false);
     const intervalId = setInterval(() => void load(true), CHECKS_CACHE_MS);
     return () => {
+      retryChecksRef.current = NO_RETRY;
       currentAbort?.abort();
       clearInterval(intervalId);
     };
@@ -280,7 +310,7 @@ export function SystemStatus({
 
   useEffect(() => {
     if (!superadmin || !eventId) {
-      setEventMail(null);
+      setEventMailRead(null);
       return;
     }
     const currentEventId = eventId;
@@ -288,23 +318,29 @@ export function SystemStatus({
 
     async function load(silent: boolean) {
       if (!silent && eventMailCache?.eventId === currentEventId && eventMailCache.expiresAt > Date.now()) {
-        setEventMail(eventMailCache.data);
+        setEventMailRead({ eventId: currentEventId, summary: eventMailCache.data });
         return;
       }
       const ac = new AbortController();
       currentAbort = ac;
+      // The first fetch is one the Email sending row waits for: the 30 second limit. A poll tick has none.
+      const limit = silent ? null : loadWithTimeout(ac.signal);
+      const signal = limit?.signal ?? ac.signal;
       try {
-        const data = await fetchEventMailSettings(currentEventId, ac.signal);
+        const data = await rejectOnAbort(fetchEventMailSettings(currentEventId, signal), signal);
         if (ac.signal.aborted) return;
         const summary = summarizeEventMail(data);
-        setEventMail(summary);
+        setEventMailRead({ eventId: currentEventId, summary });
         eventMailCache = { eventId: currentEventId, data: summary, expiresAt: Date.now() + CHECKS_CACHE_MS };
       } catch {
         // Only the initial (non-silent) fetch fails closed to "no event-level answer" —
         // mailerRow then falls back to the org-level mailerStatus prop, same as before this
-        // row existed. A silent poll tick failing just keeps the last-known value on screen
-        // and retries next tick, rather than flickering back to the org-level fallback.
-        if (!ac.signal.aborted && !silent) setEventMail(null);
+        // row existed (also when it ran out of its 30 seconds). A silent poll tick failing
+        // just keeps the last-known value on screen and retries next tick, rather than
+        // flickering back to the org-level fallback.
+        if (!ac.signal.aborted && !silent) setEventMailRead({ eventId: currentEventId, summary: null });
+      } finally {
+        limit?.done();
       }
     }
 
@@ -316,7 +352,11 @@ export function SystemStatus({
     };
   }, [superadmin, eventId]);
 
-  const mailer = mailerRow(mailerStatus, eventMail);
+  // What was read for another event is not this event's answer. A superadmin in an event has no answer for its Email sending row
+  // until the read of that event has settled (answered, failed or ran out of time).
+  const eventMailAnswer = eventMailRead?.eventId === eventId ? eventMailRead : null;
+  const eventMailPending = superadmin && Boolean(eventId) && eventMailAnswer === null;
+  const mailer = mailerRow(mailerStatus, eventMailAnswer?.summary ?? null, eventMailPending);
   let rows: StatusRow[];
   if (superadmin) {
     rows = [
@@ -389,6 +429,12 @@ export function SystemStatus({
               <RowCheck state={row.state} />
             </div>
           ))}
+          {superadmin && checksFailed && (
+            // The rows above say "Unavailable"; this says why and offers to ask again (the poll does so every 30 seconds by itself).
+            <div className="sys-status__notice">
+              <RefreshWarning message="The system checks did not answer." onRetry={retryChecks} />
+            </div>
+          )}
           {superadmin && (
             <>
               <div className="user-menu__divider" />

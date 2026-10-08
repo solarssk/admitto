@@ -710,6 +710,11 @@ html:not(.icons-ready) .ti {
   color: var(--text-muted);
 }
 
+/* The warning with a Retry under the rows, when the system checks did not answer: in line with the rows' own inset. */
+.sys-status__notice {
+  padding: 4px 10px 0;
+}
+
 .operator-shell__user-link {
   display: inline-flex;
   align-items: center;
