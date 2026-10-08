@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useState,
@@ -9,12 +10,15 @@ import { LOCATION_LIMITS } from "@admitto/location";
 import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { DatePicker } from "../../components/DatePicker.js";
+import { RetryHint } from "../../components/RetryHint.js";
 import { TimezoneSelect } from "../../components/TimezoneSelect.js";
 import { VenueAutocomplete } from "../../components/VenueAutocomplete.js";
 import type { GeocodingResultDto } from "../../api/types.js";
 import { slugFromTitle } from "../../events/slug.js";
+import { useOptionsLoad } from "../../hooks/useOptionsLoad.js";
 import { componentsFromResult } from "../../settings/locationGeocode.js";
 import { useWizard } from "./WizardContext.js";
+import { STEP_BODY } from "./WizardStepLoad.js";
 
 export type WizardStep4EventHandle = {
   createAndContinue: () => Promise<boolean>;
@@ -40,8 +44,6 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     );
     const [location, setLocation] = useState("");
     const [locationGeocode, setLocationGeocode] = useState<GeocodingResultDto | null>(null);
-    const [existingEvents, setExistingEvents] = useState<{ id: string; title: string }[]>([]);
-    const [loadingEvents, setLoadingEvents] = useState(true);
     const [submitting, setSubmitting] = useState(false);
 
     const slug = slugFromTitle(title, 80);
@@ -51,28 +53,23 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
       onCanContinueChange(canSubmit);
     }, [canSubmit, onCanContinueChange]);
 
+    // The events that exist already are a lookup of their own: the form is there from the first frame, and a failure of the
+    // lookup says so, with a Retry that reruns it only, instead of passing for "no events yet".
+    const loadEvents = useCallback(
+      async (signal: AbortSignal) => (await fetchAdminEvents({ signal })).map((e) => ({ id: e.id, title: e.title })),
+      [],
+    );
+    const events = useOptionsLoad(loadEvents, "Could not check for existing events.");
+    const existingEvents = events.items;
+
     useEffect(() => {
-      const ac = new AbortController();
-      setLoadingEvents(true);
-      void (async () => {
-        try {
-          const events = await fetchAdminEvents({ signal: ac.signal });
-          if (ac.signal.aborted) return;
-          const list = events.map((e) => ({ id: e.id, title: e.title }));
-          setExistingEvents(list);
-          onHasExistingEventsChange(list.length > 0);
-          if (list.length === 1) {
-            setSelectedEventId(list[0]!.id);
-            setSummary({ eventTitle: list[0]!.title });
-          }
-        } catch {
-          if (!ac.signal.aborted) onHasExistingEventsChange(false);
-        } finally {
-          if (!ac.signal.aborted) setLoadingEvents(false);
-        }
-      })();
-      return () => ac.abort();
-    }, [onHasExistingEventsChange, setSelectedEventId, setSummary]);
+      if (events.loading) return;
+      onHasExistingEventsChange(existingEvents.length > 0);
+      if (existingEvents.length === 1) {
+        setSelectedEventId(existingEvents[0]!.id);
+        setSummary({ eventTitle: existingEvents[0]!.title });
+      }
+    }, [events.loading, existingEvents, onHasExistingEventsChange, setSelectedEventId, setSummary]);
 
     const createAndContinue = async (): Promise<boolean> => {
       if (!canSubmit || submitting) return false;
@@ -116,7 +113,17 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
           Create your first event so you can start importing attendees and sending tickets.
         </p>
 
-        {!loadingEvents && existingEvents.length > 0 && (
+        {events.error && (
+          <RetryHint
+            message={events.error}
+            busy={events.retrying}
+            onRetry={events.retry}
+            retryLabel="Retry checking for existing events"
+            landmark={STEP_BODY}
+          />
+        )}
+
+        {existingEvents.length > 0 && (
           <Notice variant="info" as="output">
             You already have {existingEvents.length === 1 ? "an event" : `${existingEvents.length} events`}.
             You can skip this step or create another.
