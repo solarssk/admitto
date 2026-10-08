@@ -8845,3 +8845,16 @@ output.mail-field-hint {
   opacity: 0.5;
   transition: opacity var(--dur-fast);
 }
+
+/* The event of the route could not be read before its shell exists (a deep link, a refresh): the error with its Retry and the way back to
+   the picker, centred on the page like the failed start of the app. The empty state brings its own padding; the way back sits close to it. */
+.event-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+}
+
+.event-load-error .at-empty-state {
+  padding-bottom: 1.5rem;
+}
