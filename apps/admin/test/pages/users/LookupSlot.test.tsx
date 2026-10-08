@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LookupSlot } from "../../../src/pages/users/LookupSlot.js";
+import { SLOW_NOTICE_TEXT } from "../../../src/utils/loading-timing.js";
 import { advanceTimers } from "../../test-utils.js";
 
 afterEach(() => {
@@ -9,7 +10,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const idle = { loading: false, error: null, retry: vi.fn(), retrying: false };
+const idle = { loading: false, error: null, retry: vi.fn(), retrying: false, slow: false };
 
 describe("LookupSlot", () => {
   it("shows the field when the lookup has answered", () => {
@@ -44,6 +45,26 @@ describe("LookupSlot", () => {
     await advanceTimers(400);
     expect(place()).toBeNull();
     expect(screen.getByRole("button", { name: "The field" })).toBeTruthy();
+  });
+
+  it("says it is taking longer than usual, in the placeholder's status region, once the lookup is slow", async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <LookupSlot lookup={{ ...idle, loading: true }} label="events">
+        <button type="button">The field</button>
+      </LookupSlot>,
+    );
+    await advanceTimers(200);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+
+    rerender(
+      <LookupSlot lookup={{ ...idle, loading: true, slow: true }} label="events">
+        <button type="button">The field</button>
+      </LookupSlot>,
+    );
+    const note = screen.getByText(SLOW_NOTICE_TEXT);
+    expect(screen.getByLabelText("Loading events").contains(note)).toBe(true);
+    expect(screen.queryByRole("button", { name: "The field" })).toBeNull();
   });
 
   it("shows the field with a one-line alert and a Retry that reruns the lookup when it failed", () => {

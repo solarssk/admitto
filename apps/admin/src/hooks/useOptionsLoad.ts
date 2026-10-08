@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { loadWithTimeout } from "../utils/load-timeout.js";
-import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
+import { useDelayedLoading } from "./useDelayedLoading.js";
 import { useRetry } from "./useRetry.js";
 
 export interface OptionsLoad<T> {
@@ -15,6 +16,8 @@ export interface OptionsLoad<T> {
   retry: () => void;
   /** The Retry's own flag (busy for at least 400ms), for `RetryHint`. */
   retrying: boolean;
+  /** The first request has been on its way for more than 8 seconds: its placeholder says it is taking longer than usual. */
+  slow: boolean;
 }
 
 /** Whether the lookup has answered (it is neither on its way nor failed), so what it holds can be shown by name. */
@@ -26,7 +29,7 @@ export function lookupReady(lookup: Pick<OptionsLoad<unknown>, "loading" | "erro
  * A list of options that a filter or a picker offers (the events, the organizations), read once for as long as
  * `enabled` is true (a dialog that is open). A failure is not an empty list: it says so (`error`, with the 30 second
  * limit's own words for a timeout) and has a Retry (`retry`) that reruns this request only, never what the user has
- * typed. `load` must be stable (module level or `useCallback`): a new function is a new request.
+ * typed. A request that has taken more than 8 seconds is `slow`, which the placeholder says (`SlowNote`). `load` must be stable (module level or `useCallback`): a new function is a new request.
  */
 export function useOptionsLoad<T>(load: (signal: AbortSignal) => Promise<T[]>, fallback: string, enabled = true): OptionsLoad<T> {
   const [items, setItems] = useState<T[]>([]);
@@ -69,5 +72,7 @@ export function useOptionsLoad<T>(load: (signal: AbortSignal) => Promise<T[]>, f
     return () => controller.abort();
   }, [enabled, token, load, fallback, begin, end]);
 
-  return { items, loading: enabled && !loaded && error === null, error, retry, retrying: busy };
+  const loading = enabled && !loaded && error === null;
+  const slow = useDelayedLoading(loading, SLOW_NOTICE_MS);
+  return { items, loading, error, retry, retrying: busy, slow };
 }

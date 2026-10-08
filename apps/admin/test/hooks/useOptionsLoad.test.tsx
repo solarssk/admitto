@@ -2,6 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { lookupReady, useOptionsLoad } from "../../src/hooks/useOptionsLoad.js";
+import { SLOW_NOTICE_MS } from "../../src/utils/loading-timing.js";
 import { deferred } from "../test-utils.js";
 
 afterEach(() => {
@@ -107,6 +108,63 @@ describe("useOptionsLoad", () => {
 });
 
 describe("lookupReady", () => {
+  describe("slow", () => {
+    const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+    it("is true once the first request has been on its way for 8 seconds, to the millisecond, and false again when it answers", async () => {
+      vi.useFakeTimers();
+      const first = deferred<string[]>();
+      const load = () => first.promise;
+      const { result } = renderHook(() => useOptionsLoad(load, "Could not load things."));
+      expect(result.current.slow).toBe(false);
+
+      await tick(SLOW_NOTICE_MS - 1);
+      expect(result.current.slow).toBe(false);
+      await tick(1);
+      expect(result.current.slow).toBe(true);
+      expect(result.current.loading).toBe(true);
+
+      await act(async () => first.resolve(["a"]));
+      expect(result.current).toMatchObject({ loading: false, slow: false });
+    });
+
+    it("is false again when the request fails, and stays false while a Retry keeps its error on screen", async () => {
+      vi.useFakeTimers();
+      const first = deferred<string[]>();
+      const second = deferred<string[]>();
+      const load = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      const { result } = renderHook(() => useOptionsLoad(load, "Could not load things."));
+      await tick(SLOW_NOTICE_MS);
+      expect(result.current.slow).toBe(true);
+
+      await act(async () => first.reject(new Error("down")));
+      expect(result.current).toMatchObject({ loading: false, slow: false });
+      expect(result.current.error).not.toBeNull();
+
+      // A Retry is not a first request: the error and its busy button are the placeholder, so nothing says it is slow.
+      act(() => result.current.retry());
+      await tick(SLOW_NOTICE_MS * 2);
+      expect(result.current.slow).toBe(false);
+      await act(async () => second.resolve(["a"]));
+    });
+
+    it("is never true for an answer that comes before 8 seconds, or while the lookup is not enabled", async () => {
+      vi.useFakeTimers();
+      const first = deferred<string[]>();
+      const load = () => first.promise;
+      const { result } = renderHook(() => useOptionsLoad(load, "Could not load things."));
+      await tick(SLOW_NOTICE_MS - 1000);
+      await act(async () => first.resolve(["a"]));
+      await tick(SLOW_NOTICE_MS * 2);
+      expect(result.current.slow).toBe(false);
+
+      const idleLoad = async () => ["a"];
+      const idle = renderHook(() => useOptionsLoad(idleLoad, "Could not load things.", false));
+      await tick(SLOW_NOTICE_MS * 2);
+      expect(idle.result.current).toMatchObject({ loading: false, slow: false });
+    });
+  });
+
   it("is true only when the lookup is neither on its way nor failed", () => {
     expect(lookupReady({ loading: false, error: null })).toBe(true);
     expect(lookupReady({ loading: true, error: null })).toBe(false);

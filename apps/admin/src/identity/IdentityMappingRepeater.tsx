@@ -18,7 +18,7 @@ interface IdentityMappingRepeaterProps {
   onChange: (rows: MappingRow[]) => void;
 }
 
-type ScopeLookup = Pick<OptionsLoad<unknown>, "loading" | "error" | "retry" | "retrying">;
+type ScopeLookup = Pick<OptionsLoad<unknown>, "loading" | "error" | "retry" | "retrying" | "slow">;
 
 /** The option that keeps a stored scope id visible when the list does not hold it: its name is not known while the
  * lookup is on its way or failed (so it says what kind of scope it is, never "not found"), and only an answer that does

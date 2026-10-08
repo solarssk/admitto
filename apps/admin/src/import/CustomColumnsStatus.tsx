@@ -1,5 +1,6 @@
 import { Skeleton } from "@admitto/ui";
 import { RetryHint } from "../components/RetryHint.js";
+import { SlowNote } from "../components/SlowNote.js";
 import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import type { OptionsLoad } from "../hooks/useOptionsLoad.js";
 import "../pages/import.css";
@@ -10,12 +11,13 @@ import "../pages/import.css";
  * a one-line hint and a Retry that reruns that lookup only, because a table without the event's own columns must not pass for
  * the whole list.
  */
-export function CustomColumnsStatus({ lookup }: Readonly<{ lookup: Pick<OptionsLoad<unknown>, "loading" | "error" | "retry" | "retrying"> }>) {
+export function CustomColumnsStatus({ lookup }: Readonly<{ lookup: Pick<OptionsLoad<unknown>, "loading" | "error" | "retry" | "retrying" | "slow"> }>) {
   const gate = useLoadingGate(lookup.loading);
   if (!gate.showContent) {
     return (
       <output aria-label="Loading custom columns" className={gate.showIndicator ? "import-custom-columns-skeleton" : "import-custom-columns-skeleton at-loading-hold"}>
         <Skeleton variant="rect" height={18} />
+        {lookup.slow ? <SlowNote /> : null}
       </output>
     );
   }
