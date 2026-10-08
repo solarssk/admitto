@@ -8,9 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Button, EmptyState, PageLoader, applyThemeVars, bootHandoverEnabled, firstDrawRemainingMs } from "@admitto/ui";
+import { PageLoader, applyThemeVars, bootHandoverEnabled, firstDrawRemainingMs } from "@admitto/ui";
 import { ApiError, fetchMe, fetchStaffTheme } from "../api/client.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
 import {
@@ -116,6 +118,9 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, [user, assignments, deviceLabel, hasAdmittoSession, setupComplete, loading, authError, refresh]);
 
   const slow = useDelayedLoading(loading, SLOW_NOTICE_MS);
+  // The Retry of a failed start keeps the error and its busy button on screen until the answer is in: a Retry that disappears at the
+  // click (the loader replaces the error) takes the keyboard focus with it, and says nothing about the try that is running.
+  const failure = useRetryKeepingError(authError, refresh);
 
   // App start hands over from the static splash in index.html in two steps, so it never looks like
   // a cut: (1) keep the loader up until the tick has finished drawing in, even when everything
@@ -136,18 +141,14 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     return () => clearTimeout(timer);
   }, [handover]);
 
-  if (!loading && authError) {
+  if (failure.error) {
     return (
       <div className="shell-loading" style={{ padding: "2rem" }}>
-        <EmptyState
-          variant="error"
+        <RetryEmptyState
           title="Could not load session"
-          description={authError}
-          action={
-            <Button type="button" variant="secondary" onClick={() => void refresh()}>
-              Retry
-            </Button>
-          }
+          message={failure.error}
+          retrying={failure.retrying}
+          onRetry={failure.retry}
         />
       </div>
     );

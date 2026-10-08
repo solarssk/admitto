@@ -6918,12 +6918,6 @@ output.mail-field-hint {
   color: var(--text-secondary);
 }
 
-.picker-loading {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-7) var(--space-4);
-}
-
 .overview-stats {
   display: grid;
   /* minmax(0, 1fr), not a bare 1fr (= minmax(auto, 1fr)) — a bare 1fr lets whichever column

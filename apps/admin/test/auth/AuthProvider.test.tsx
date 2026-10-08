@@ -135,6 +135,64 @@ describe("AuthProvider", () => {
     });
     expect(mockFetchMe).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the error with a busy Retry, and its focus, while the retry runs, then starts the app", async () => {
+    let answer: (value: typeof sessionResponse) => void = () => {};
+    mockFetchMe
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+
+    render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The same button, busy, with the focus: the loader has not taken the error's place.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load session")).toBeTruthy();
+    expect(screen.queryByTestId("child")).toBeNull();
+
+    await act(async () => answer(sessionResponse));
+    await waitFor(() => expect(screen.getByTestId("child").textContent).toBe("ok"));
+    expect(screen.queryByText("Could not load session")).toBeNull();
+  });
+
+  it("keeps the same Retry, and says the error again, when the retry fails again", async () => {
+    let fail: (error: Error) => void = () => {};
+    mockFetchMe
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
+      .mockReturnValueOnce(new Promise((_resolve, reject) => (fail = reject)));
+
+    render(
+      <AuthProvider>
+        <div data-testid="child">should not render</div>
+      </AuthProvider>,
+    );
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const messageBefore = screen.getByText("Could not load session.");
+
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => fail(new ApiError(500, "secret_internal")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    // The same text again: the message is a new node (a live region announces additions), the button is not.
+    expect(screen.getByText("Could not load session.")).not.toBe(messageBefore);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.queryByTestId("child")).toBeNull();
+  });
 });
 
 describe("AuthProvider loading experience", () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CheckInEntryPage } from "../../src/pages/CheckInEntryPage.js";
 import {
   LOAD_TIMEOUT_MESSAGE,
@@ -173,7 +173,8 @@ describe("CheckInEntryPage", () => {
     await waitFor(() => {
       expect(fetchCheckInEvents).toHaveBeenCalledTimes(2);
     });
-    expect(screen.queryByText("Could not load check-in events.")).toBeNull();
+    // The error stays, with its busy Retry, until the answer is in.
+    await waitFor(() => expect(screen.queryByText("Could not load check-in events.")).toBeNull());
   });
 });
 
@@ -327,6 +328,78 @@ describe("CheckInEntryPage loading", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByText(LOAD_TIMEOUT_MESSAGE)).toBeTruthy();
+  });
+
+  it("keeps the error with a busy Retry, and its focus, while a retry runs, with no loader and no empty notice, then hands the focus to the region", async () => {
+    vi.mocked(fetchCheckInEvents).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderAt("/operator");
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    let answer: (events: unknown[]) => void = () => {};
+    vi.mocked(fetchCheckInEvents).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never);
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The same button, busy, with the focus. Neither the loader nor the empty notice takes the error's place.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load check-in events.")).toBeTruthy();
+    expect(loader()).toBeNull();
+    expect(screen.queryByText(EMPTY_NOTICE)).toBeNull();
+
+    await act(async () => answer([{ ...soloEvent, id: "evt-a" }, { ...soloEvent, id: "evt-b", title: "Second Event" }]));
+    await screen.findByText("Second Event");
+    expect(screen.queryByText("Could not load check-in events.")).toBeNull();
+    // The Retry that held the focus is gone: the focus goes to the region that stays, not to the top of the page.
+    const region = document.querySelector(".checkin-entry-body");
+    expect(region?.getAttribute("aria-label")).toBe("Check-in events");
+    await waitFor(() => expect(document.activeElement).toBe(region));
+  });
+
+  it("keeps the same Retry, and says the error again, when a retry fails again", async () => {
+    vi.mocked(fetchCheckInEvents).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderAt("/operator");
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const messageBefore = screen.getByText("Could not load check-in events.");
+
+    let fail: (error: Error) => void = () => {};
+    vi.mocked(fetchCheckInEvents).mockReturnValueOnce(new Promise((_resolve, reject) => (fail = reject)) as never);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => fail(new TypeError("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    // The same text again: the message is a new node (a live region announces additions), the button is not.
+    expect(screen.getByText("Could not load check-in events.")).not.toBe(messageBefore);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("ignores a late answer after the page was left: the only event does not pull the operator back to check-in", async () => {
+    let answer: (events: unknown[]) => void = () => {};
+    vi.mocked(fetchCheckInEvents).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never);
+    render(
+      <MemoryRouter initialEntries={["/operator"]}>
+        <Routes>
+          <Route path="/operator" element={<><CheckInEntryPage /><Link to="/elsewhere">Go elsewhere</Link></>} />
+          <Route path="/elsewhere" element={<p>elsewhere</p>} />
+          <Route path="/operator/events/:eventId/checkin" element={<p>checkin-target</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // The operator leaves before the events are in; the request ignores the abort and answers later, with one event.
+    fireEvent.click(screen.getByRole("link", { name: "Go elsewhere" }));
+    expect(screen.getByText("elsewhere")).toBeTruthy();
+    await act(async () => answer([soloEvent]));
+
+    expect(screen.getByText("elsewhere")).toBeTruthy();
+    expect(screen.queryByText("checkin-target")).toBeNull();
   });
 
   it("abandons the request when the page goes away, and leaves no timeout behind", async () => {
