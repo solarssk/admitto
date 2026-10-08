@@ -7,6 +7,13 @@ export const ERASED_ATTENDEE_NAME = "Erased attendee";
 
 export const ERASED_EMAIL_DOMAIN = "erased.invalid";
 
+/** True for an address in the namespace reserved for erased attendees. No attendee can be given
+ * one: it would collide with the placeholder of the attendee it is named after and make that
+ * erasure fail on the unique (event, email) index. Enforced by a CHECK on live rows too. */
+export function isErasedPlaceholderEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(`@${ERASED_EMAIL_DOMAIN}`);
+}
+
 /** Written to `Attendee.email` of an erased attendee: unique per row (the id is), and never
  * deliverable (RFC 6761 reserves `.invalid`). Mirrored by the same CHECK constraint. */
 export function erasedAttendeeEmail(attendeeId: string): string {

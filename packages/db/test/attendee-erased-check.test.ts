@@ -95,6 +95,14 @@ describe("Attendee erased_at DB constraint", () => {
     expect(row.erased_at).not.toBeNull();
   });
 
+  it("does not let a live attendee take an address in the erased namespace", async () => {
+    await expect(
+      prisma!.attendee.create({
+        data: { event_id: EVENT_ID, email: "Erased-someone@Erased.Invalid", name: "Squatter" },
+      }),
+    ).rejects.toThrow(/Attendee_email_not_erased_placeholder/);
+  });
+
   it("does not constrain a row that is not erased", async () => {
     const attendee = await createAttendee("erase-untouched");
     expect(attendee.erased_at).toBeNull();

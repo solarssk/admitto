@@ -15,6 +15,7 @@ export {
   ERASED_EMAIL_DOMAIN,
   erasedAttendeeEmail,
   eraseAttendees,
+  isErasedPlaceholderEmail,
 } from "./erase-attendees.js";
 export type {
   EraseAttendeesParams,

@@ -22,6 +22,14 @@ ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_erased_carries_no_personal_data"
   )
 );
 
+-- The namespace of the placeholder addresses is reserved: a live attendee with such an address
+-- would collide with the placeholder of the attendee it is named after (unique per event and
+-- email) and make that attendee's erasure fail. Import, manual add and edit reject the address
+-- with a clear message; this closes every other path.
+ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_email_not_erased_placeholder" CHECK (
+  "erased_at" IS NOT NULL OR lower("email") NOT LIKE '%@erased.invalid'
+);
+
 -- The CHECK above only applies while erased_at is set, so clearing erased_at (an explicit
 -- UPDATE, or a whole-row upsert) would let personal data back in. Erasure is permanent: once set,
 -- erased_at cannot be changed or cleared. Deleting the row (Remove from event) is unaffected.

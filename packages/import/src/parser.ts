@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { splitCsvLine } from "@admitto/shared";
-import { RESERVED_CUSTOM_DATA_SOURCE_FIELDS } from "@admitto/tickets";
+import { RESERVED_CUSTOM_DATA_SOURCE_FIELDS, isErasedPlaceholderEmail } from "@admitto/tickets";
 import {
   buildAttributeHeaderKeys,
   extractCustomDataFromRow,
@@ -83,7 +83,7 @@ function resolveIdentity(rawFirstName: string, rawLastName: string, email: strin
   if (!email) {
     return { ok: false, reason: "Missing email" };
   }
-  if (!emailSchema.safeParse(email).success) {
+  if (!emailSchema.safeParse(email).success || isErasedPlaceholderEmail(email)) {
     return { ok: false, reason: `Invalid email: "${email}"` };
   }
 

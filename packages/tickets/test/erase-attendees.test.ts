@@ -16,6 +16,7 @@ import {
   ERASED_ATTENDEE_NAME,
   eraseAttendees,
   erasedAttendeeEmail,
+  isErasedPlaceholderEmail,
   type EraseAttendeesResult,
 } from "../src/erase-attendees.js";
 import { issueTicket, issueTicketsForEvent } from "../src/issue.js";
@@ -109,6 +110,15 @@ function erase(eventId: string, attendeeIds: string[]): Promise<EraseAttendeesRe
 }
 
 const row = (id: string) => prisma.attendee.findUniqueOrThrow({ where: { id } });
+
+describe("isErasedPlaceholderEmail", () => {
+  it("matches the reserved domain whatever the case or padding, and nothing else", () => {
+    expect(isErasedPlaceholderEmail(erasedAttendeeEmail("abc"))).toBe(true);
+    expect(isErasedPlaceholderEmail("  Someone@ERASED.invalid ")).toBe(true);
+    expect(isErasedPlaceholderEmail("someone@example.com")).toBe(false);
+    expect(isErasedPlaceholderEmail("someone@mail.erased.invalid.example.com")).toBe(false);
+  });
+});
 
 describe("eraseAttendees: the attendee row", () => {
   it("replaces name and email and clears every identifier, credential and answer", async () => {
