@@ -10,17 +10,15 @@ import type {
   SetupChecksResponse,
 } from "../api/types.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import { useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useBusyEndCount } from "../hooks/useRetry.js";
 import { SETTINGS_INDEX_PATH } from "../settings/settingsTabs.js";
 import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
-import { RefreshWarning } from "./RefreshWarning.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 
 /** The 3 states a resolved (non-pending) row/trigger can be in. */
 type ResolvedRowState = "ok" | "degraded" | "down";
 type RowState = ResolvedRowState | "pending";
-/** What the trigger can say: a verdict, or that no verdict is in yet (no row has failed, and some are still being checked). */
-type TriggerState = RowState;
 
 interface StatusRow {
   key: string;
@@ -49,7 +47,7 @@ const PLAIN_DETAIL: Record<"database" | "redis" | "encryption" | "worker", Recor
   worker: { ok: "Running", degraded: "Needs attention", down: "Not reachable" },
 };
 
-const TRIGGER_META: Record<TriggerState, { dot: string; label: string; shortLabel: string }> = {
+const TRIGGER_META: Record<RowState, { dot: string; label: string; shortLabel: string }> = {
   ok: { dot: "sys-status__dot--ok", label: "All systems normal", shortLabel: "OK" },
   degraded: { dot: "sys-status__dot--warn", label: "Degraded performance", shortLabel: "Degraded" },
   down: { dot: "sys-status__dot--err", label: "Action needed", shortLabel: "Alert" },
@@ -63,6 +61,9 @@ const TRIGGER_META: Record<TriggerState, { dot: string; label: string; shortLabe
  * so it survives the remount; a short TTL keeps it from ever showing very stale data. Use
  * `resetSystemStatusCache()` between tests to avoid leaking state across cases. */
 const CHECKS_CACHE_MS = 30_000;
+
+/** What the menu says (to assistive tech, whether or not it is open) when the checks did not answer. */
+const CHECKS_FAILED_TEXT = "The system checks did not answer.";
 let checksCache: { data: SetupChecksResponse; expiresAt: number } | null = null;
 
 type EventMailSummary = { configured: boolean; hasEventOverride: boolean; failedDeliveries: number };
@@ -82,6 +83,59 @@ const NO_RETRY = () => Promise.resolve();
 export function resetSystemStatusCache(): void {
   checksCache = null;
   eventMailCache = null;
+}
+
+/** What one polled thing (the setup checks, an event's mail settings) remembers between its reads. */
+interface PollState {
+  /** The reads on their way, so that leaving aborts all of them, not only the newest. */
+  inFlight: Set<AbortController>;
+  /** How many reads have started: one that started later is the newer one. */
+  started: number;
+  /** The newest read whose answer has been applied. */
+  answered: number;
+}
+
+function newPollState(): PollState {
+  return { inFlight: new Set(), started: 0, answered: 0 };
+}
+
+/**
+ * One read of something that is polled. A read somebody waits for (`silent` false: the first one, a Retry) has the 30 second
+ * limit (AGENTS.md "Admin SPA loading and busy states"); a tick of the poll has none. Reads can overlap (a tick falls due while
+ * a Retry is on its way), so they are numbered: an answer is applied unless a read that started later has answered already, so
+ * an older snapshot never replaces a newer one, and a failure is reported only for a read somebody waits for and only when no
+ * answer has been applied while it ran (a tick that worked meanwhile is the better news, and it is not turned into a failure).
+ */
+async function pollRead<T>(
+  state: PollState,
+  silent: boolean,
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  onAnswer: (data: T) => void,
+  onFailure: () => void,
+): Promise<void> {
+  const ac = new AbortController();
+  state.inFlight.add(ac);
+  const mine = ++state.started;
+  const answeredWhenStarted = state.answered;
+  const limit = silent ? null : loadWithTimeout(ac.signal);
+  const signal = limit?.signal ?? ac.signal;
+  try {
+    const data = await rejectOnAbort(fetcher(signal), signal);
+    if (ac.signal.aborted || mine < state.answered) return;
+    state.answered = mine;
+    onAnswer(data);
+  } catch {
+    if (!ac.signal.aborted && !silent && state.answered === answeredWhenStarted) onFailure();
+  } finally {
+    limit?.done();
+    state.inFlight.delete(ac);
+  }
+}
+
+/** Leaving: every read still on its way is abandoned, and the poll stops. */
+function stopPolling(state: PollState, intervalId: ReturnType<typeof setInterval>): void {
+  for (const ac of state.inFlight) ac.abort();
+  clearInterval(intervalId);
 }
 
 /** Same "is it actually configured" check as `attendees/useMailConfigured.ts` (kept
@@ -189,7 +243,7 @@ function rowClassName(state: RowState): string {
 
 /** All-clear should recede, not compete for attention — only degraded/down pick up the
  * heavier weight (see the matching `.sys-status__label--{degraded,down}` rule in staff.css). */
-function triggerLabelClassName(modifier: string, worst: TriggerState): string {
+function triggerLabelClassName(modifier: string, worst: RowState): string {
   const base = `sys-status__label ${modifier}`;
   return worst === "ok" || worst === "pending" ? base : `${base} sys-status__label--${worst}`;
 }
@@ -206,12 +260,166 @@ function RowCheck({ state }: Readonly<{ state: RowState }>) {
   return <i className={checkIconClassName(state)} aria-hidden="true" />;
 }
 
-/** A failure is shown as soon as it is known, even while other rows are still being checked; "ok" is only said when every row has answered. */
-function worstRowState(rows: StatusRow[]): TriggerState {
+/** The rows of the menu: the four setup checks (superadmin only), then Email sending when there is something to say about it. */
+function statusRows(
+  superadmin: boolean,
+  checks: SetupChecksResponse | null,
+  checksFailed: boolean,
+  mailer: StatusRow | null,
+): StatusRow[] {
+  const mailerRows = mailer ? [mailer] : [];
+  if (!superadmin) return mailerRows;
+  const loaded = checks !== null;
+  return [
+    setupCheckRow("database", "database", "Database", checks?.checks.database, loaded, checksFailed),
+    setupCheckRow("redis", "server-2", "Session storage", checks?.checks.redis, loaded, checksFailed),
+    setupCheckRow("encryption", "lock", "Data encryption", checks?.checks.encryption, loaded, checksFailed),
+    setupCheckRow("worker", "cpu", "Background worker", checks?.worker, loaded, checksFailed),
+    ...mailerRows,
+  ];
+}
+
+/**
+ * What the trigger says: a verdict, or that no verdict is in yet (`pending`: no row has failed, and some are still being
+ * checked). A failure is shown as soon as it is known, even while other rows are still being checked; "ok" is only said when
+ * every row has answered.
+ */
+function worstRowState(rows: StatusRow[]): RowState {
   if (rows.some((row) => row.state === "down")) return "down";
   if (rows.some((row) => row.state === "degraded")) return "degraded";
   if (rows.some((row) => row.state === "pending")) return "pending";
   return "ok";
+}
+
+/**
+ * The setup checks, read when the component mounts and then every CHECKS_CACHE_MS instead of only once — otherwise the panel only
+ * ever updates on a full page reload or a switch between top-level shells (the only things that remount SystemStatus). A tick
+ * always hits the network (bypassing the cache, which only exists to dedupe *mount*-time reads) and updates silently: it never
+ * re-arms the pending/"Checking…" state or flips to "Unavailable" on its own — only the very first read, or a Retry of it, does
+ * that. One flaky tick shouldn't blank out a perfectly good last-known reading; the next one 30s later just tries again. The first
+ * read and a Retry have the 30 second limit (`pollRead`): a server that does not answer ends in "Unavailable" and an offer to ask
+ * again, not in "Checking…" for ever. `retry` is busy for at least 400ms, so a retry that fails at once still shows that it ran.
+ */
+function useSetupChecks(enabled: boolean) {
+  const [checks, setChecks] = useState<SetupChecksResponse | null>(
+    checksCache && checksCache.expiresAt > Date.now() ? checksCache.data : null,
+  );
+  const [failed, setFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const retryBusy = useMinimumBusy(retrying);
+  // Asks again, for the Retry of a first read that failed or ran out of time (set by the effect that owns the reads).
+  const retryRef = useRef<() => Promise<void>>(NO_RETRY);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const state = newPollState();
+    const read = (silent: boolean, byRetry: boolean): Promise<void> => {
+      // A Retry keeps the failure on screen, with its busy button, until the answer is in.
+      if (!silent && !byRetry) setFailed(false);
+      return pollRead(
+        state,
+        silent,
+        fetchSetupChecks,
+        (data) => {
+          setChecks(data);
+          setFailed(false);
+          checksCache = { data, expiresAt: Date.now() + CHECKS_CACHE_MS };
+        },
+        () => setFailed(true),
+      );
+    };
+    retryRef.current = () => read(false, true);
+    // The mount-time read is served from the cache while it is fresh; a Retry and a tick always ask.
+    if (checksCache && checksCache.expiresAt > Date.now()) setChecks(checksCache.data);
+    else void read(false, false);
+    const intervalId = setInterval(() => void read(true, false), CHECKS_CACHE_MS);
+    return () => {
+      retryRef.current = NO_RETRY;
+      stopPolling(state, intervalId);
+    };
+  }, [enabled]);
+
+  const retry = useCallback(() => {
+    setRetrying(true);
+    return retryRef.current().finally(() => setRetrying(false));
+  }, []);
+  return { checks, failed, retry, retrying: retryBusy };
+}
+
+/**
+ * What the first read of the event's own mail transport has said, read the same way (a superadmin in an event only). `null`
+ * until it has settled, or for another event than the one in view: a read for another event is never taken for this one's.
+ */
+function useEventMailRead(enabled: boolean, eventId: string | undefined): EventMailRead | null {
+  const [read, setRead] = useState<EventMailRead | null>(
+    eventId && eventMailCache?.eventId === eventId && eventMailCache.expiresAt > Date.now()
+      ? { eventId, summary: eventMailCache.data }
+      : null,
+  );
+
+  useEffect(() => {
+    if (!enabled || !eventId) {
+      setRead(null);
+      return;
+    }
+    const currentEventId = eventId;
+    const state = newPollState();
+    const readOnce = (silent: boolean): Promise<void> =>
+      pollRead(
+        state,
+        silent,
+        (signal) => fetchEventMailSettings(currentEventId, signal),
+        (data) => {
+          const summary = summarizeEventMail(data);
+          setRead({ eventId: currentEventId, summary });
+          eventMailCache = { eventId: currentEventId, data: summary, expiresAt: Date.now() + CHECKS_CACHE_MS };
+        },
+        // Only the initial (non-silent) read fails closed to "no event-level answer" — mailerRow then falls back to the
+        // org-level mailerStatus prop, same as before this row existed (also when it ran out of its 30 seconds). A tick
+        // failing just keeps the last-known value on screen and retries next tick, rather than flickering back to the
+        // org-level fallback.
+        () => setRead({ eventId: currentEventId, summary: null }),
+      );
+    // The mount-time read is served from the cache while it is fresh; a tick always asks.
+    if (eventMailCache?.eventId === currentEventId && eventMailCache.expiresAt > Date.now()) {
+      setRead({ eventId: currentEventId, summary: eventMailCache.data });
+    } else {
+      void readOnce(false);
+    }
+    const intervalId = setInterval(() => void readOnce(true), CHECKS_CACHE_MS);
+    return () => stopPolling(state, intervalId);
+  }, [enabled, eventId]);
+
+  return read;
+}
+
+/**
+ * The Retry of the checks, as a row of the menu itself: the menu moves focus over its `menuitem`s with the arrow keys, Home and
+ * End, so a button that is not one would be reached only by going backwards with Shift+Tab. Busy like `<Button loading>`: it is
+ * `aria-disabled` (never `disabled`, which would drop the focus of the button that has just been pressed), swallows the click
+ * while it works, and shows a spinner in place of its icon.
+ */
+function CheckAgainItem({ busy, onCheck }: Readonly<{ busy: boolean; onCheck: () => void }>) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className="user-menu__item sys-status__check-again"
+      aria-busy={busy || undefined}
+      aria-disabled={busy || undefined}
+      onClick={() => {
+        if (!busy) onCheck();
+      }}
+    >
+      <span className="user-menu__item-icon">
+        {busy ? <Spinner size="sm" aria-hidden="true" /> : <i className="ti ti-refresh" aria-hidden="true" />}
+      </span>
+      <span className="user-menu__item-text">
+        <strong>Check again</strong>
+        <span>The system checks did not answer</span>
+      </span>
+    </button>
+  );
 }
 
 /** Topbar system-health dropdown, trimmed to what's actionable day-to-day: Database/Session
@@ -246,143 +454,25 @@ export function SystemStatus({
     gap: 8,
   });
   const superadmin = isSuperadmin(assignments);
-  const [checks, setChecks] = useState<SetupChecksResponse | null>(
-    checksCache && checksCache.expiresAt > Date.now() ? checksCache.data : null,
-  );
-  const [checksFailed, setChecksFailed] = useState(false);
-  const [eventMailRead, setEventMailRead] = useState<EventMailRead | null>(
-    eventId && eventMailCache?.eventId === eventId && eventMailCache.expiresAt > Date.now()
-      ? { eventId, summary: eventMailCache.data }
-      : null,
-  );
-  // Asks the checks again, for the Retry of a first read that failed or ran out of time (set by the effect that owns `load`).
-  const retryChecksRef = useRef<() => Promise<void>>(NO_RETRY);
-  const retryChecks = useCallback(() => retryChecksRef.current(), []);
-
-  // Re-polls every CHECKS_CACHE_MS instead of only fetching once on mount — otherwise the
-  // panel only ever updates on a full page reload or a switch between top-level shells (the
-  // only things that remount SystemStatus). A poll tick always hits the network (bypassing
-  // the cache, which only exists to dedupe *mount*-time fetches) and updates silently: it
-  // never re-arms the pending/"Checking…" state or flips to "Unavailable" on its own — only
-  // the very first, non-silent fetch does that. One flaky background tick shouldn't blank out
-  // a perfectly good last-known reading; the next tick 30s later just tries again.
-  // The first fetch (and a Retry of it) is one the menu waits for, so it has the 30 second
-  // limit (AGENTS.md "Admin SPA loading and busy states"): a server that does not answer ends
-  // in "Unavailable" with a Retry, not in "Checking…" for ever. A tick has no limit of its own.
-  useEffect(() => {
-    if (!superadmin) return;
-    let currentAbort: AbortController | null = null;
-
-    async function load(silent: boolean, byRetry = false) {
-      if (!silent && checksCache && checksCache.expiresAt > Date.now()) {
-        setChecks(checksCache.data);
-        setChecksFailed(false);
-        return;
-      }
-      const ac = new AbortController();
-      currentAbort = ac;
-      const limit = silent ? null : loadWithTimeout(ac.signal);
-      const signal = limit?.signal ?? ac.signal;
-      // A Retry keeps the failure on screen, with its busy button, until the answer is in.
-      if (!silent && !byRetry) setChecksFailed(false);
-      try {
-        const data = await rejectOnAbort(fetchSetupChecks(signal), signal);
-        if (ac.signal.aborted) return;
-        setChecks(data);
-        setChecksFailed(false);
-        checksCache = { data, expiresAt: Date.now() + CHECKS_CACHE_MS };
-      } catch {
-        if (!ac.signal.aborted && !silent) setChecksFailed(true);
-      } finally {
-        limit?.done();
-      }
-    }
-
-    retryChecksRef.current = () => load(false, true);
-    void load(false);
-    const intervalId = setInterval(() => void load(true), CHECKS_CACHE_MS);
-    return () => {
-      retryChecksRef.current = NO_RETRY;
-      currentAbort?.abort();
-      clearInterval(intervalId);
-    };
-  }, [superadmin]);
-
-  useEffect(() => {
-    if (!superadmin || !eventId) {
-      setEventMailRead(null);
-      return;
-    }
-    const currentEventId = eventId;
-    let currentAbort: AbortController | null = null;
-
-    async function load(silent: boolean) {
-      if (!silent && eventMailCache?.eventId === currentEventId && eventMailCache.expiresAt > Date.now()) {
-        setEventMailRead({ eventId: currentEventId, summary: eventMailCache.data });
-        return;
-      }
-      const ac = new AbortController();
-      currentAbort = ac;
-      // The first fetch is one the Email sending row waits for: the 30 second limit. A poll tick has none.
-      const limit = silent ? null : loadWithTimeout(ac.signal);
-      const signal = limit?.signal ?? ac.signal;
-      try {
-        const data = await rejectOnAbort(fetchEventMailSettings(currentEventId, signal), signal);
-        if (ac.signal.aborted) return;
-        const summary = summarizeEventMail(data);
-        setEventMailRead({ eventId: currentEventId, summary });
-        eventMailCache = { eventId: currentEventId, data: summary, expiresAt: Date.now() + CHECKS_CACHE_MS };
-      } catch {
-        // Only the initial (non-silent) fetch fails closed to "no event-level answer" —
-        // mailerRow then falls back to the org-level mailerStatus prop, same as before this
-        // row existed (also when it ran out of its 30 seconds). A silent poll tick failing
-        // just keeps the last-known value on screen and retries next tick, rather than
-        // flickering back to the org-level fallback.
-        if (!ac.signal.aborted && !silent) setEventMailRead({ eventId: currentEventId, summary: null });
-      } finally {
-        limit?.done();
-      }
-    }
-
-    void load(false);
-    const intervalId = setInterval(() => void load(true), CHECKS_CACHE_MS);
-    return () => {
-      currentAbort?.abort();
-      clearInterval(intervalId);
-    };
-  }, [superadmin, eventId]);
+  const { checks, failed: checksFailed, retry: checkAgain, retrying: checkingAgain } = useSetupChecks(superadmin);
+  const eventMailRead = useEventMailRead(superadmin, eventId);
+  // The panel exists only while it is open, so a failure that arises in the background is said by a region that is always there
+  // (and said again, as a new element, when a retry ends with the checks still not answering).
+  const checkAgainEnds = useBusyEndCount(checkingAgain);
 
   // What was read for another event is not this event's answer. A superadmin in an event has no answer for its Email sending row
   // until the read of that event has settled (answered, failed or ran out of time).
   const eventMailAnswer = eventMailRead?.eventId === eventId ? eventMailRead : null;
   const eventMailPending = superadmin && Boolean(eventId) && eventMailAnswer === null;
   const mailer = mailerRow(mailerStatus, eventMailAnswer?.summary ?? null, eventMailPending);
-  let rows: StatusRow[];
-  if (superadmin) {
-    rows = [
-      setupCheckRow("database", "database", "Database", checks?.checks.database, checks !== null, checksFailed),
-      setupCheckRow("redis", "server-2", "Session storage", checks?.checks.redis, checks !== null, checksFailed),
-      setupCheckRow(
-        "encryption",
-        "lock",
-        "Data encryption",
-        checks?.checks.encryption,
-        checks !== null,
-        checksFailed,
-      ),
-      setupCheckRow("worker", "cpu", "Background worker", checks?.worker, checks !== null, checksFailed),
-      ...(mailer ? [mailer] : []),
-    ];
-  } else {
-    rows = mailer ? [mailer] : [];
-  }
+  const rows = statusRows(superadmin, checks, checksFailed, mailer);
 
   const verdict = worstRowState(rows);
   // No verdict yet is not "All systems normal" (a slow or failing backend would keep saying so while it hangs). The trigger holds
   // its room, invisible, for the first 200ms, so a quick answer shows only the verdict; a "Checking systems…" that did appear
   // stays for at least 400ms (AGENTS.md "Admin SPA loading and busy states").
   const gate = useLoadingGate(verdict === "pending");
-  const worst: TriggerState = gate.showContent ? verdict : "pending";
+  const worst: RowState = gate.showContent ? verdict : "pending";
 
   if (rows.length === 0) return null;
 
@@ -409,6 +499,11 @@ export function SystemStatus({
         <span className={triggerLabelClassName("sys-status__label--full", worst)}>{TRIGGER_META[worst].label}</span>
         <i className="ti ti-chevron-down user-menu__chevron" aria-hidden="true" />
       </button>
+      {superadmin && (
+        <div key={checkAgainEnds} className="sr-only" role="alert">
+          {checksFailed ? CHECKS_FAILED_TEXT : ""}
+        </div>
+      )}
       {open && (
         <div
           className="user-menu__panel sys-status__panel"
@@ -429,15 +524,11 @@ export function SystemStatus({
               <RowCheck state={row.state} />
             </div>
           ))}
-          {superadmin && checksFailed && (
-            // The rows above say "Unavailable"; this says why and offers to ask again (the poll does so every 30 seconds by itself).
-            <div className="sys-status__notice">
-              <RefreshWarning message="The system checks did not answer." onRetry={retryChecks} />
-            </div>
-          )}
           {superadmin && (
             <>
               <div className="user-menu__divider" />
+              {/* The rows above say "Unavailable"; this offers to ask again (the poll does so every 30 seconds by itself). */}
+              {checksFailed && <CheckAgainItem busy={checkingAgain} onCheck={() => void checkAgain()} />}
               <button
                 type="button"
                 role="menuitem"
