@@ -5,7 +5,7 @@ import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
 import { EventCustomFieldModal } from "../../src/requirements/EventCustomFieldModal.js";
 import { advanceTimers, deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
-import { LOAD_TIMEOUT_MESSAGE } from "../../src/utils/loading-timing.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -752,6 +752,27 @@ describe("EventCustomFieldModal: the option usage lookup", () => {
 
     expect(usagePlaceholder()).toBeNull();
     expect(screen.getByText("2 attendees")).toBeTruthy();
+  });
+
+  it("says it is taking longer than usual after 8 seconds of waiting for the counts, and gives that up for the error at 30", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockImplementationOnce(hangUntilAborted as never);
+    renderModal(selectField);
+    await advanceTimers(0);
+
+    await advanceTimers(SLOW_NOTICE_MS - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(1);
+    expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+    // Waiting is not a reason to let a save through: the counts are still not known.
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt sizes" } });
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+
+    // The limit gives the request up: the wait is over, so the note goes and the error with its Retry takes its place.
+    await advanceTimers(LOAD_TIMEOUT_MS - SLOW_NOTICE_MS);
+    await advanceTimers(0);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
   });
 
   it("gives up after 30 seconds with an error and a Retry that stays on screen, busy, until the answer is in", async () => {

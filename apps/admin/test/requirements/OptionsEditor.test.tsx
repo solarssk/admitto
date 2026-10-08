@@ -3,6 +3,7 @@ import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { OptionsEditor, optionRowsFromOptions, type OptionRow } from "../../src/requirements/OptionsEditor.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { advanceTimers } from "../test-utils.js";
 
 const ROW_HEIGHT = 40;
@@ -283,6 +284,39 @@ describe("OptionsEditor: counts that are being read, and a save under way", () =
     expect(bars()).toHaveLength(0);
     expect(screen.getByText("2 attendees")).toBeTruthy();
     expect(screen.getByText("Unused")).toBeTruthy();
+  });
+
+  it("says it is taking longer than usual once the counts have been read for 8 seconds, and stops when they are in", async () => {
+    vi.useFakeTimers();
+    const rows = optionRowsFromOptions(["S", "M"]);
+    const { rerender } = render(<OptionsEditor rows={rows} usageCounts={null} usageLoading onChange={vi.fn()} />);
+
+    await advanceTimers(SLOW_NOTICE_MS - 1);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+
+    await advanceTimers(1);
+    // The note is seen, not only heard, and it comes in the status region that already says the counts are being read, so
+    // assistive tech announces it too.
+    const note = screen.getByText(SLOW_NOTICE_TEXT);
+    expect(note.classList.contains("sr-only")).toBe(false);
+    expect(screen.getByRole("status").contains(note)).toBe(true);
+    expect(bars()).toHaveLength(2);
+
+    rerender(<OptionsEditor rows={rows} usageCounts={{ S: 1 }} usageLoading={false} onChange={vi.fn()} />);
+    await advanceTimers(0);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+  });
+
+  it("never says it is taking longer than usual for counts that came, or failed, before 8 seconds", async () => {
+    vi.useFakeTimers();
+    const rows = optionRowsFromOptions(["S"]);
+    const { rerender } = render(<OptionsEditor rows={rows} usageCounts={null} usageLoading onChange={vi.fn()} />);
+    await advanceTimers(SLOW_NOTICE_MS - 1000);
+
+    // The read failed at 7 seconds: its error (the caller's) is the message now, and the wait is over.
+    rerender(<OptionsEditor rows={rows} usageCounts={null} usageLoading={false} onChange={vi.fn()} />);
+    await advanceTimers(SLOW_NOTICE_MS * 2);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
   });
 
   it("keeps an option's field focusable but read-only while a save is under way, and switches the other controls off", () => {

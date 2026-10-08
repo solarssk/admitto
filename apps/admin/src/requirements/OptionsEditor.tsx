@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconButton, Skeleton } from "@admitto/ui";
-import { useLoadingGate, type LoadingGate } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, useLoadingGate, type LoadingGate } from "../hooks/useDelayedLoading.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import "./options-editor.css";
 
 export type OptionRow = { key: string; text: string; originalText: string };
@@ -27,7 +28,8 @@ export interface OptionsEditorProps {
   /** null while the usage-count fetch is still in flight (or failed) - delete stays disabled and rename
    * warnings stay hidden until it resolves, rather than treating "not loaded yet" as "unused". */
   usageCounts: Record<string, number> | null;
-  /** The usage-count fetch is on its way: each row's count is a placeholder (drawn after 200ms), not "Unknown". */
+  /** The usage-count fetch is on its way: each row's count is a placeholder (drawn after 200ms), not "Unknown", and after 8 seconds
+   * the editor says it is taking longer than usual. */
   usageLoading?: boolean;
   /** The row's fields cannot be changed (a save is under way): a field stays focusable, read-only, since a disabled one would
    * drop the focus of an operator who pressed Enter in it. */
@@ -63,6 +65,7 @@ function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): R
  * repo) with an Up/Down-arrow keyboard equivalent on the same handle. */
 export function OptionsEditor({ rows, usageCounts, usageLoading = false, disabled, onChange }: Readonly<OptionsEditorProps>) {
   const usageGate = useLoadingGate(usageLoading);
+  const usageSlow = useDelayedLoading(usageLoading, SLOW_NOTICE_MS);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef(rows);
@@ -226,7 +229,10 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
 
   return (
     <div className="options-editor">
-      <output className="sr-only">{usageLoading && usageGate.showIndicator ? "Checking how many attendees use each option" : ""}</output>
+      <output>
+        {usageLoading && usageGate.showIndicator ? <span className="sr-only">Checking how many attendees use each option</span> : null}
+        {usageSlow ? <span className="at-hint options-editor__slow-note">{SLOW_NOTICE_TEXT}</span> : null}
+      </output>
       <div className="options-editor__list" ref={listRef}>
         {rows.map((row) => {
           const usage = usageOf(usageCounts, row.originalText);
