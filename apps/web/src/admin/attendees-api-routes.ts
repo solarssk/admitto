@@ -2571,9 +2571,10 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0, updatedIds: [] };
   }
 
-  // The rows are locked in id order first, like an erasure does: the UPDATE below locks them in
-  // plan order, and two statements locking the same people in different orders can deadlock.
-  await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id).sort());
+  // The rows are locked in id order first (lockAttendeesForUpdate orders them in SQL), like an
+  // erasure does: the UPDATE below locks them in plan order, and two statements locking the same
+  // people in different orders can deadlock.
+  await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id));
   const values = Prisma.join(changes.map((x) => Prisma.sql`(${x.id}::text, ${x.oldValue}::text)`));
   // IS NOT DISTINCT FROM (not =) — a null-safe equality that correlates a NULL oldValue
   // correctly (a plain `=` never matches NULL = NULL) and behaves identically to `=` for a
@@ -2917,7 +2918,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
 
       const column = bulkSetFieldColumn(field);
       // Locked in id order first (see applyBulkAttendeeChanges).
-      await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id).sort());
+      await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id));
       const values = Prisma.join(
         changes.map(
           (x) =>
