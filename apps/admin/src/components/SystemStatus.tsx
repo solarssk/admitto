@@ -10,12 +10,15 @@ import type {
   SetupChecksResponse,
 } from "../api/types.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { SETTINGS_INDEX_PATH } from "../settings/settingsTabs.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 
 /** The 3 states a resolved (non-pending) row/trigger can be in. */
 type ResolvedRowState = "ok" | "degraded" | "down";
 type RowState = ResolvedRowState | "pending";
+/** What the trigger can say: a verdict, or that no verdict is in yet (no row has failed, and some are still being checked). */
+type TriggerState = RowState;
 
 interface StatusRow {
   key: string;
@@ -44,10 +47,11 @@ const PLAIN_DETAIL: Record<"database" | "redis" | "encryption" | "worker", Recor
   worker: { ok: "Running", degraded: "Needs attention", down: "Not reachable" },
 };
 
-const TRIGGER_META: Record<ResolvedRowState, { dot: string; label: string; shortLabel: string }> = {
+const TRIGGER_META: Record<TriggerState, { dot: string; label: string; shortLabel: string }> = {
   ok: { dot: "sys-status__dot--ok", label: "All systems normal", shortLabel: "OK" },
   degraded: { dot: "sys-status__dot--warn", label: "Degraded performance", shortLabel: "Degraded" },
   down: { dot: "sys-status__dot--err", label: "Action needed", shortLabel: "Alert" },
+  pending: { dot: "sys-status__dot--pending", label: "Checking systems…", shortLabel: "Checking…" },
 };
 
 /** In-memory cache for `GET /api/admin/setup/checks` — StaffShell (and SystemStatus with
@@ -169,9 +173,9 @@ function rowClassName(state: RowState): string {
 
 /** All-clear should recede, not compete for attention — only degraded/down pick up the
  * heavier weight (see the matching `.sys-status__label--{degraded,down}` rule in staff.css). */
-function triggerLabelClassName(modifier: string, worst: ResolvedRowState): string {
+function triggerLabelClassName(modifier: string, worst: TriggerState): string {
   const base = `sys-status__label ${modifier}`;
-  return worst === "ok" ? base : `${base} sys-status__label--${worst}`;
+  return worst === "ok" || worst === "pending" ? base : `${base} sys-status__label--${worst}`;
 }
 
 function checkIconClassName(state: ResolvedRowState): string {
@@ -186,9 +190,11 @@ function RowCheck({ state }: Readonly<{ state: RowState }>) {
   return <i className={checkIconClassName(state)} aria-hidden="true" />;
 }
 
-function worstRowState(rows: StatusRow[]): ResolvedRowState {
+/** A failure is shown as soon as it is known, even while other rows are still being checked; "ok" is only said when every row has answered. */
+function worstRowState(rows: StatusRow[]): TriggerState {
   if (rows.some((row) => row.state === "down")) return "down";
   if (rows.some((row) => row.state === "degraded")) return "degraded";
+  if (rows.some((row) => row.state === "pending")) return "pending";
   return "ok";
 }
 
@@ -331,9 +337,14 @@ export function SystemStatus({
     rows = mailer ? [mailer] : [];
   }
 
-  if (rows.length === 0) return null;
+  const verdict = worstRowState(rows);
+  // No verdict yet is not "All systems normal" (a slow or failing backend would keep saying so while it hangs). The trigger holds
+  // its room, invisible, for the first 200ms, so a quick answer shows only the verdict; a "Checking systems…" that did appear
+  // stays for at least 400ms (AGENTS.md "Admin SPA loading and busy states").
+  const gate = useLoadingGate(verdict === "pending");
+  const worst: TriggerState = gate.showContent ? verdict : "pending";
 
-  const worst = worstRowState(rows);
+  if (rows.length === 0) return null;
 
   // Only the superadmin's "View system logs" row is an actionable menuitem — for every
   // other role the panel is purely informational, so it shouldn't claim ARIA menu
@@ -345,7 +356,7 @@ export function SystemStatus({
     <div className="user-menu" ref={rootRef}>
       <button
         type="button"
-        className="sys-status__trigger"
+        className={worst === "pending" && !gate.showIndicator ? "sys-status__trigger at-loading-hold" : "sys-status__trigger"}
         aria-haspopup={hasMenuItem ? "menu" : undefined}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}

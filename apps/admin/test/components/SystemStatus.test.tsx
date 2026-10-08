@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
-import { makeSuperadminAssignment } from "../test-utils.js";
+import { advanceTimers, makeSuperadminAssignment } from "../test-utils.js";
 
 const fetchSetupChecks = vi.fn();
 const fetchEventMailSettings = vi.fn();
@@ -55,7 +55,7 @@ function renderStatus(
 
 function openMenu() {
   fireEvent.click(
-    screen.getByRole("button", { name: /All systems normal|Degraded performance|Action needed/ }),
+    screen.getByRole("button", { name: /All systems normal|Degraded performance|Action needed|Checking systems/ }),
   );
 }
 
@@ -130,7 +130,7 @@ describe("SystemStatus", () => {
     expect(screen.queryByText("Not reachable")).toBeNull();
   });
 
-  it("does not flash 'Action needed' while checks are still loading", async () => {
+  it("does not flash 'Action needed' while checks are still loading, and does not claim 'All systems normal' either", async () => {
     let resolveChecks!: (value: { checks: typeof OK_CHECKS; worker: typeof OK_WORKER }) => void;
     fetchSetupChecks.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -140,7 +140,8 @@ describe("SystemStatus", () => {
 
     renderStatus(SUPERADMIN);
 
-    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /All systems normal|Action needed/ })).toBeNull();
     openMenu();
     expect(screen.getAllByText("Checking…").length).toBeGreaterThan(0);
     // A row that is still being checked ends in the kit's spinner (decoration, hidden from assistive tech), never a hand-spun
@@ -159,6 +160,65 @@ describe("SystemStatus", () => {
     });
     expect(document.querySelector(".at-spinner")).toBeNull();
     expect(document.querySelectorAll(".sys-status__check.ti-circle-check").length).toBeGreaterThan(0);
+  });
+
+  describe("before the checks have answered", () => {
+    const trigger = () => document.querySelector(".sys-status__trigger") as HTMLElement;
+    const never = () => fetchSetupChecks.mockReturnValueOnce(new Promise(() => {}));
+
+    it("holds the trigger's room invisibly for 200ms, then says 'Checking systems…' with a neutral dot", async () => {
+      vi.useFakeTimers();
+      never();
+      renderStatus(SUPERADMIN);
+      await advanceTimers(0);
+
+      expect(trigger().className).toContain("at-loading-hold");
+      await advanceTimers(199);
+      expect(trigger().className).toContain("at-loading-hold");
+      await advanceTimers(1);
+      expect(trigger().className).not.toContain("at-loading-hold");
+      expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+      expect(document.querySelector(".sys-status__dot--pending")).not.toBeNull();
+      expect(document.querySelector(".sys-status__dot--ok")).toBeNull();
+    });
+
+    it("keeps 'Checking systems…' for at least 400ms once it was drawn, then says the verdict", async () => {
+      vi.useFakeTimers();
+      let resolveChecks!: (value: { checks: typeof OK_CHECKS; worker: typeof OK_WORKER }) => void;
+      fetchSetupChecks.mockReturnValueOnce(new Promise((resolve) => (resolveChecks = resolve)));
+      renderStatus(SUPERADMIN);
+      await advanceTimers(250);
+
+      // The answer comes 50ms after the words were drawn: they stay until 400ms after that.
+      await act(async () => resolveChecks({ checks: OK_CHECKS, worker: OK_WORKER }));
+      await advanceTimers(0);
+      expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+      await advanceTimers(349);
+      expect(screen.getByRole("button", { name: /Checking systems/ })).toBeTruthy();
+      await advanceTimers(1);
+      expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+      expect(document.querySelector(".sys-status__dot--pending")).toBeNull();
+    });
+
+    it("never draws 'Checking systems…' for a verdict that comes within 200ms", async () => {
+      vi.useFakeTimers();
+      fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
+      renderStatus(SUPERADMIN);
+      await advanceTimers(0);
+
+      expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+      expect(trigger().className).not.toContain("at-loading-hold");
+      expect(document.querySelector(".sys-status__dot--pending")).toBeNull();
+    });
+
+    it("shows a failure that is already known without waiting for the rows that are still being checked", async () => {
+      never();
+      renderStatus(SUPERADMIN, { configured: false, provider: null });
+
+      expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
+      expect(trigger().className).not.toContain("at-loading-hold");
+      expect(document.querySelector(".sys-status__dot--pending")).toBeNull();
+    });
   });
 
   it("shows 'Action needed' when a check is down", async () => {

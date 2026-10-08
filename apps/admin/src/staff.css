@@ -627,6 +627,11 @@ html:not(.icons-ready) .ti {
   background: var(--status-error);
 }
 
+/* No verdict yet: neutral, not green. */
+.sys-status__dot--pending {
+  background: var(--text-muted);
+}
+
 .sys-status__label {
   font-size: 13px;
   font-weight: 400;

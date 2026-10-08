@@ -16,7 +16,7 @@ Sign in with your own Superadmin account and complete the security steps shown b
 2. Use **Organisations** for organisation details and limits.
 3. Use **Users & roles** for staff users, role assignments, and **Active sessions** (sessions are no longer under Organisation settings → Security).
 4. Use **Organisation settings** for supported general, branding, mail, security, archiving, identity, log, and **Health check** settings. Health check groups Core infrastructure vs External integrations, can **Run live checks**, and can **Copy for GitHub Issue** / **Export** a sanitized snapshot.
-5. Use the topbar **System status** and **Account** menus for a quick glance at connection/mailer/background-worker state and My account / Sign out. A degraded or down row there points at the same **Health check** tab (step 4) for the full picture and next step.
+5. Use the topbar **System status** and **Account** menus for a quick glance at connection/mailer/background-worker state and My account / Sign out. While the checks are still being read the System status says **Checking systems…**; it only says **All systems normal** once every check has answered. A degraded or down row there points at the same **Health check** tab (step 4) for the full picture and next step.
 6. Use organisation settings for configuration that belongs to one organisation.
 7. Use event settings for event-specific overrides and lifecycle actions, including Event settings → Wallet, a Superadmin-only area for configuring Apple/Google Wallet passes (PassCreator).
 8. Verify every material change with a synthetic account or test event.
