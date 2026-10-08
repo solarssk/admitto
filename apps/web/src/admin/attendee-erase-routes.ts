@@ -60,8 +60,9 @@ async function runErasure(
   eventId: string,
   attendeeIds: string[],
   mode: "single" | "bulk",
-): Promise<{ body: EraseResponseBody; result: EraseAttendeesResult } | Response> {
-  const event = await db.event.findUnique({
+): Promise<{ body: EraseResponseBody; result: EraseAttendeesResult }> {
+  // The caller has just checked access to this event, so it exists.
+  const event = await db.event.findUniqueOrThrow({
     where: { id: eventId },
     select: {
       organization_id: true,
@@ -71,7 +72,6 @@ async function runErasure(
       wallet_field_mapping: true,
     },
   });
-  if (!event) return c.json({ error: "forbidden" }, 403);
 
   const audit = adminAuditFromContext(c);
   const actionType = mode === "single" ? "attendee_erased" : "attendees_bulk_erased";
@@ -164,14 +164,12 @@ export async function handleEraseEventAttendee(c: Context, db: PrismaClient): Pr
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
-  const attendeeId = c.req.param("id");
-  if (!attendeeId) return c.json({ error: "id required" }, 400);
+  const attendeeId = c.req.param("id")!;
 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
   const outcome = await runErasure(c, db, eventId, [attendeeId], "single");
-  if (outcome instanceof Response) return outcome;
   // Not an attendee of this event: the same answer as every other single-attendee route.
   if (outcome.result.notFoundIds.length > 0) return c.json({ error: "forbidden" }, 403);
   return c.json(outcome.body);
@@ -201,6 +199,5 @@ export async function handleBulkEraseEventAttendees(c: Context, db: PrismaClient
   }
 
   const outcome = await runErasure(c, db, eventId, parsed.data.attendeeIds, "bulk");
-  if (outcome instanceof Response) return outcome;
   return c.json(outcome.body);
 }

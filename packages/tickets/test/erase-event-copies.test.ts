@@ -187,6 +187,25 @@ describe("scrubImportJobResults", () => {
     }
   });
 
+  it("copes with results that are not shaped like an import result", async () => {
+    const odd = [
+      await importJob(EVENT_ID, "just a string"),
+      await importJob(EVENT_ID, ["an", "array"]),
+      await importJob(EVENT_ID, { skipped: "not a list", invalidRows: { not: "a list" } }),
+      await importJob(EVENT_ID, { skipped: ["odd.entry@example.com"], invalidRows: ["odd.entry@example.com"] }),
+    ];
+
+    const rewritten = await prisma.$transaction((tx) => scrubImportJobResults(tx, EVENT_ID, ["odd.entry@example.com"]));
+
+    expect(rewritten).toBe(1);
+    expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: odd[0]!.id } })).result_json).toBe("just a string");
+    expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: odd[1]!.id } })).result_json).toEqual(["an", "array"]);
+    expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: odd[3]!.id } })).result_json).toEqual({
+      skipped: [{ email: null, reason: expect.stringContaining("erased") }],
+      invalidRows: [{ rowIndex: null, raw: null, reason: expect.stringContaining("erased") }],
+    });
+  });
+
   it("does nothing for an empty list and tolerates jobs without a result", async () => {
     await prisma.adminJob.create({ data: { type: "import_commit", organization_id: ORG_ID, event_id: EVENT_ID } });
     expect(await prisma.$transaction((tx) => scrubImportJobResults(tx, EVENT_ID, []))).toBe(0);
@@ -273,6 +292,19 @@ describe("deleteErasedWalletPasses", () => {
     const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-code"], failing);
 
     expect(result.failureCodes).toEqual(["wallet_provider_unavailable"]);
+  });
+
+  it("reports a failure that is not an error object as an unknown code", async () => {
+    await attendeeWithPass("copies-wp-string");
+    const failing = stubProvider(
+      vi.fn(async () => {
+        throw "plain string";
+      }),
+    );
+
+    const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-string"], failing);
+
+    expect(result.failureCodes).toEqual(["unknown"]);
   });
 
   it("stops starting batches when the time budget is used up and reports what it did not try", async () => {

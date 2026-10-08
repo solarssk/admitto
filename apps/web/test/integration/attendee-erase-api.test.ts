@@ -4,7 +4,7 @@
  * tried again when the same request is repeated), copies in saved import results are blanked, and
  * it works on an archived event.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
@@ -127,7 +127,18 @@ beforeAll(async () => {
   });
 });
 
+beforeEach(() => {
+  // A fresh rate-limit budget for every test: the bulk limiter would otherwise run out.
+  app = createApp({
+    prisma,
+    baseUrl: "https://tickets.example.com",
+    rateLimitStore: createRateLimitStore(),
+    skipCheckinBootValidation: true,
+  });
+});
+
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -405,6 +416,64 @@ describe("erasing a selection", () => {
     expect(log.metadata).toMatchObject({ count: 2, method: "erase" });
     expect((log.metadata as { attendee_ids: string[] }).attendee_ids.sort()).toEqual([a.id, b.id].sort());
     expect(JSON.stringify(log.metadata).toLowerCase()).not.toContain("example.com");
+  });
+
+  it("answers an invalid body with 400", async () => {
+    const res = await app.request(bulkPath(EVENT_ID), {
+      method: "POST",
+      headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("only unknown ids: nothing is erased, nothing is audited, no provider is called", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const before = await prisma.attendeeActionLog.count({ where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" } });
+
+    const res = await post(bulkPath(EVENT_ID), { attendeeIds: ["nobody-1", "nobody-2"] });
+
+    expect(await res.json()).toEqual({ erased: 0, already_erased: 0, not_found: 2, wallet_pending: 0 });
+    expect(await prisma.attendeeActionLog.count({ where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" } })).toBe(before);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still answers, with the pass pending, when the provider follow-up itself breaks", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    vi.spyOn(prisma.walletPass, "findMany").mockRejectedValueOnce(new Error("db hiccup"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post(erasePath(EVENT_ID, a.id));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1 });
+    expect(errSpy).toHaveBeenCalled();
+  });
+
+  it("runs one provider follow-up at a time per user and event: a second request leaves the pass pending", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => (started = resolve));
+    const fetchMock = vi.fn(async (_url: unknown) => {
+      started();
+      await gate;
+      return new Response(null, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = post(erasePath(EVENT_ID, a.id));
+    await startedPromise;
+    const second = await post(erasePath(EVENT_ID, a.id));
+    expect(await second.json()).toMatchObject({ already_erased: 1, wallet_pending: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    release();
+    expect(await (await first).json()).toMatchObject({ erased: 1, wallet_pending: 0 });
   });
 
   it.each([
