@@ -163,6 +163,43 @@ describe("scrubImportJobResults", () => {
     ]);
   });
 
+  it("blanks an entry that quotes the address at the end of a sentence or a word", async () => {
+    const job = await importJob(EVENT_ID, {
+      skipped: [
+        { email: "other@punct.example.com", reason: "Duplicate of gone@punct.example.com." },
+        { email: "keeps@punct.example.com", reason: "Duplicate email" },
+      ],
+      invalidRows: [{ rowIndex: 7, raw: { note: "see gone@punct.example.com-" }, reason: "Both first_name and last_name are required" }],
+    });
+
+    const rewritten = await prisma.$transaction((tx) => scrubImportJobResults(tx, EVENT_ID, ["gone@punct.example.com"]));
+
+    expect(rewritten).toBe(1);
+    const after = (await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json as Record<string, unknown>;
+    expect(after.skipped).toEqual([
+      { email: null, reason: expect.stringContaining("erased") },
+      { email: "keeps@punct.example.com", reason: "Duplicate email" },
+    ]);
+    expect(after.invalidRows).toEqual([{ rowIndex: 7, raw: null, reason: expect.stringContaining("erased") }]);
+    expect(JSON.stringify(after)).not.toContain("gone@punct.example.com");
+  });
+
+  it("does not blank the entry of another address that only ends with the erased one", async () => {
+    const result = {
+      skipped: [{ email: "o'brien@tail.example.com", reason: "Duplicate email" }],
+      invalidRows: [
+        { rowIndex: 3, raw: { email: "x!brien@tail.example.com" }, reason: 'Invalid email: "x!brien@tail.example.com"' },
+        { rowIndex: 4, raw: { email: "x=brien@tail.example.com" }, reason: 'Invalid email: "x=brien@tail.example.com"' },
+      ],
+    };
+    const job = await importJob(EVENT_ID, result);
+
+    const rewritten = await prisma.$transaction((tx) => scrubImportJobResults(tx, EVENT_ID, ["brien@tail.example.com"]));
+
+    expect(rewritten).toBe(0);
+    expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json).toEqual(result);
+  });
+
   it("does not lose either blanking when two erasures rewrite the same job at once", async () => {
     const job = await importJob(EVENT_ID, {
       skipped: [

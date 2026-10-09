@@ -8,15 +8,38 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const ADDRESS_CHARACTER = /[a-z0-9._%+@-]/;
+/** A letter or a digit, in any script (an address may be an internationalised one). */
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 
-/** True when `text` contains `email` as a whole address: the character before and after must not
- * continue an address, so erasing `a@x.com` does not also match `banana@x.com`. */
-function containsAddress(text: string, email: string): boolean {
+/** What may stand in the local part of an address: letters, digits, the dot, the hyphen and every
+ * other character RFC 5322 allows there (this app's own validator takes the apostrophe, so
+ * `o'brien@x.com` is an address of its own, not `brien@x.com` with a quote before it). */
+const LOCAL_PART_CHARACTER = /[\p{L}\p{N}!#$%&'*+/=?^_`{|}~.-]/u;
+
+/** The text before `from` goes on in the same local part and has a letter or a digit in it: then
+ * `from` is the tail of a longer, different address (`banana@x.com`, `b.a@x.com`, `x!a@x.com`).
+ * Punctuation alone before it ("a@x.com" in quotes, `<a@x.com>`, `=a@x.com`) is not part of it. */
+function localPartContinuesBefore(text: string, from: number): boolean {
+  for (let i = from - 1; i >= 0 && LOCAL_PART_CHARACTER.test(text.charAt(i)); i -= 1) {
+    if (WORD_CHARACTER.test(text.charAt(i))) return true;
+  }
+  return false;
+}
+
+/** The domain goes on after `end`: another letter or digit, or a dot or a hyphen with one behind it
+ * (`a@x.com.au`, `a@x.community`). A dot or a hyphen that ends a sentence or a word ("... for
+ * a@x.com.") does not, and no other character can continue a domain. */
+function domainContinuesAfter(text: string, end: number): boolean {
+  const next = text.charAt(end);
+  if (WORD_CHARACTER.test(next)) return true;
+  return (next === "." || next === "-") && WORD_CHARACTER.test(text.charAt(end + 1));
+}
+
+/** True when `text` contains `email` as a whole address: not as the tail of a longer local part and
+ * not as the start of a longer domain, so erasing `a@x.com` does not also match `banana@x.com`. */
+export function containsAddress(text: string, email: string): boolean {
   for (let from = text.indexOf(email); from !== -1; from = text.indexOf(email, from + 1)) {
-    const before = text.charAt(from - 1);
-    const after = text.charAt(from + email.length);
-    if (!(before && ADDRESS_CHARACTER.test(before)) && !(after && ADDRESS_CHARACTER.test(after))) return true;
+    if (!localPartContinuesBefore(text, from) && !domainContinuesAfter(text, from + email.length)) return true;
   }
   return false;
 }

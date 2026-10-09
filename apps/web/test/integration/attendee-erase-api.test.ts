@@ -240,6 +240,16 @@ describe("erasing one attendee", () => {
     expect((await prisma.attendee.findUniqueOrThrow({ where: { id: a.id } })).erased_at).toBeNull();
   });
 
+  it("answers 403, not a server error, for an event that does not exist (a superadmin passes the access check for it)", async () => {
+    const single = await post(erasePath("evt-erase-api-missing", "erase-api-att-none"));
+    const bulk = await post(bulkPath("evt-erase-api-missing"), { attendeeIds: ["erase-api-att-none"] });
+
+    expect(single.status).toBe(403);
+    expect(await single.json()).toEqual({ error: "forbidden" });
+    expect(bulk.status).toBe(403);
+    expect(await bulk.json()).toEqual({ error: "forbidden" });
+  });
+
   it("is refused for a door operator of the event", async () => {
     const operator = await prisma.user.create({
       data: { email: "erase-api-operator@example.com", password_hash: await hashPassword("erase-api-operator-pass-123") },

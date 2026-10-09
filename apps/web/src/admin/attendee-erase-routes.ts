@@ -97,9 +97,10 @@ async function runErasure(
   eventId: string,
   attendeeIds: string[],
   mode: "single" | "bulk",
-): Promise<{ body: EraseResponseBody; result: EraseAttendeesResult }> {
-  // The caller has just checked access to this event, so it exists.
-  const event = await db.event.findUniqueOrThrow({
+): Promise<{ body: EraseResponseBody; result: EraseAttendeesResult } | null> {
+  // Access to an event that does not exist is granted to a superadmin all the same, so the event
+  // can be missing here: null, and the caller answers like it does for any event the user cannot see.
+  const event = await db.event.findUnique({
     where: { id: eventId },
     select: {
       organization_id: true,
@@ -109,6 +110,7 @@ async function runErasure(
       wallet_field_mapping: true,
     },
   });
+  if (!event) return null;
 
   const audit = adminAuditFromContext(c);
   const actionType = mode === "single" ? "attendee_erased" : "attendees_bulk_erased";
@@ -190,8 +192,9 @@ export async function handleEraseEventAttendee(c: Context, db: PrismaClient): Pr
   if (forbidden) return forbidden;
 
   const outcome = await runErasure(c, db, eventId, [attendeeId], "single");
-  // Not an attendee of this event: the same answer as every other single-attendee route.
-  if (outcome.result.notFoundIds.length > 0) return c.json({ error: "forbidden" }, 403);
+  // An event that is not there, or not an attendee of this event: the same answer as every other
+  // single-attendee route.
+  if (!outcome || outcome.result.notFoundIds.length > 0) return c.json({ error: "forbidden" }, 403);
   return c.json(outcome.body);
 }
 
@@ -219,5 +222,6 @@ export async function handleBulkEraseEventAttendees(c: Context, db: PrismaClient
   }
 
   const outcome = await runErasure(c, db, eventId, parsed.data.attendeeIds, "bulk");
+  if (!outcome) return c.json({ error: "forbidden" }, 403);
   return c.json(outcome.body);
 }
