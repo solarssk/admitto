@@ -21,12 +21,10 @@ import {
   WalletProviderError,
   resolveConfiguredWalletProvider,
   resolveWalletProvider,
-  refreshOneWalletPassStatus,
   WalletStatusCheckInconclusiveError,
   ATTENDEE_FIELD_PLACEHOLDERS,
   isWalletFieldMappingRelevant,
   type WalletPassProvider,
-  type WalletStatusRefreshOutcome,
 } from "@admitto/wallet";
 import {
   loadEventCustomDataFields,
@@ -82,6 +80,7 @@ import {
   type AttendeeSortBy,
   type AttendeeSortDir,
   type ExportAttendeeSqlRow,
+  type LiveWalletStatusRefreshOutcome,
   buildAttendeesExportArtifact,
   resolveTicketPageDisplay,
   buildWalletPassInput,
@@ -90,6 +89,7 @@ import {
   removeOneWalletPassFromProvider,
   type RemoveWalletPassOutcome,
   voidOneWalletPassAtProvider,
+  refreshWalletPassStatusUnlessErased,
   resolveEventWalletProvider,
   issueTicket,
 } from "@admitto/tickets";
@@ -3531,8 +3531,10 @@ async function loadBulkWalletTargets(
  * (pass changed mid-loop) - nothing to report to the operator beyond "already handled". A
  * "suppressed" outcome (the provider reported voided, but the read fell inside the post-command
  * consistency window) still wrote the registration counts and counts as refreshed - only the
- * webhook path needs to treat that one differently (Codex review, 2026-09-27). Read-only at the
- * provider - no writeActionLog entry, matching the single-attendee route's own behavior. */
+ * webhook path needs to treat that one differently (Codex review, 2026-09-27). An attendee who is
+ * erased, or being erased, counts as skipped without a provider read (the last check is the
+ * shared refreshWalletPassStatusUnlessErased). Read-only at the provider - no writeActionLog
+ * entry, matching the single-attendee route's own behavior. */
 async function refreshOneWalletStatusForBulk(
   db: PrismaClient,
   _eventId: string,
@@ -3541,7 +3543,7 @@ async function refreshOneWalletStatusForBulk(
   _audit: OpsAuditContext,
 ): Promise<"refreshed" | "skipped"> {
   if (!target.userProvidedId) return "skipped";
-  const outcome = await refreshOneWalletPassStatus(
+  const outcome = await refreshWalletPassStatusUnlessErased(
     db,
     { attendeeId: target.attendeeId, providerPassId: target.providerPassId, userProvidedId: target.userProvidedId },
     provider,
@@ -3549,7 +3551,7 @@ async function refreshOneWalletStatusForBulk(
   // "suppressed" still wrote the registration counts, exactly like "refreshed" - only the
   // lifecycle transition was held back (a real void inside the post-command consistency window
   // stays retryable for the webhook, but a manual bulk refresh has nothing further to report
-  // here). Only "inactive" and "conflict" are genuinely nothing-to-do.
+  // here). Only "inactive", "conflict" and "erased" are genuinely nothing-to-do.
   return outcome === "refreshed" || outcome === "suppressed" ? "refreshed" : "skipped";
 }
 
@@ -4373,6 +4375,33 @@ async function updateWalletPassUnlessRemoved(
   return tx.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
 }
 
+/** What void, restore and reissue do after the provider has answered: the change to the pass row
+ * (see updateWalletPassUnlessRemoved) and its entry in the attendee's activity log, in one
+ * transaction, so a refused write leaves no entry behind. Returns the updated row, or why nothing
+ * was written (the route answers 409 with that code). */
+async function updateWalletPassAndLog(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  ctx: { attendeeId: string; previousStatus: string },
+  actionType: "wallet_pass_voided" | "wallet_pass_restored" | "wallet_pass_reissued",
+  data: Prisma.WalletPassUpdateManyMutationInput,
+): Promise<Prisma.WalletPassGetPayload<object> | WalletPassWriteRefusal> {
+  return db.$transaction(async (tx) => {
+    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, data);
+    if (typeof row !== "string") {
+      await writeActionLog(tx, {
+        event_id: eventId,
+        attendee_id: ctx.attendeeId,
+        action_type: actionType,
+        audit: adminAuditFromContext(c),
+        metadata: { previous_status: ctx.previousStatus },
+      });
+    }
+    return row;
+  });
+}
+
 /** The last check before a call that changes a pass at the provider (void, restore, push the
  * content, delete): the context the route loaded was read with a plain query, which does not wait
  * for an erasure that is still open. This takes the attendee's row lock in a short transaction, so
@@ -4415,22 +4444,11 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
     return walletProviderErrorResponse(c, err, "handleVoidAttendeeWalletPass");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
-      status: "voided",
-      voided_at: new Date(),
-      provider_commanded_at: new Date(),
-      last_error_code: null,
-    });
-    if (typeof row === "string") return row;
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: ctx.attendeeId,
-      action_type: "wallet_pass_voided",
-      audit: adminAuditFromContext(c),
-      metadata: { previous_status: ctx.previousStatus },
-    });
-    return row;
+  const updated = await updateWalletPassAndLog(db, c, eventId, ctx, "wallet_pass_voided", {
+    status: "voided",
+    voided_at: new Date(),
+    provider_commanded_at: new Date(),
+    last_error_code: null,
   });
   if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
@@ -4466,22 +4484,11 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
     return walletProviderErrorResponse(c, err, "handleRestoreAttendeeWalletPass");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
-      status: "active",
-      voided_at: null,
-      provider_commanded_at: new Date(),
-      last_error_code: null,
-    });
-    if (typeof row === "string") return row;
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: ctx.attendeeId,
-      action_type: "wallet_pass_restored",
-      audit: adminAuditFromContext(c),
-      metadata: { previous_status: ctx.previousStatus },
-    });
-    return row;
+  const updated = await updateWalletPassAndLog(db, c, eventId, ctx, "wallet_pass_restored", {
+    status: "active",
+    voided_at: null,
+    provider_commanded_at: new Date(),
+    last_error_code: null,
   });
   if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
@@ -4548,33 +4555,22 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     return walletProviderErrorResponse(c, err, "handleReissueAttendeeWalletPass");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    // updatePass only patches the provider's content, never its voided flag (that's Restore's
-    // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
-    // an already-voided pass stays voided instead of falsely reporting "active" while the
-    // installed pass is still invalid at the provider, which would also hide the Restore action.
-    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
-      download_url: result.downloadUrl,
-      apple_url: result.appleUrl,
-      android_url: result.androidUrl,
-      last_error_code: null,
-      last_synced_at: new Date(),
-      // Kept in sync with the same expirationDate input just pushed above - see
-      // reissue-wallet-pass.ts's own reissueOneWalletPass (the bulk/background counterpart of this
-      // single-attendee action) for why this doesn't also bump provider_commanded_at (bot review:
-      // this route duplicated that function's provider push but had drifted from its expires_at
-      // write).
-      expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
-    });
-    if (typeof row === "string") return row;
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: ctx.attendeeId,
-      action_type: "wallet_pass_reissued",
-      audit: adminAuditFromContext(c),
-      metadata: { previous_status: ctx.previousStatus },
-    });
-    return row;
+  // updatePass only patches the provider's content, never its voided flag (that's Restore's job, a
+  // separate explicit action) - status/voided_at are deliberately left untouched here so an
+  // already-voided pass stays voided instead of falsely reporting "active" while the installed pass
+  // is still invalid at the provider, which would also hide the Restore action.
+  const updated = await updateWalletPassAndLog(db, c, eventId, ctx, "wallet_pass_reissued", {
+    download_url: result.downloadUrl,
+    apple_url: result.appleUrl,
+    android_url: result.androidUrl,
+    last_error_code: null,
+    last_synced_at: new Date(),
+    // Kept in sync with the same expirationDate input just pushed above - see
+    // reissue-wallet-pass.ts's own reissueOneWalletPass (the bulk/background counterpart of this
+    // single-attendee action) for why this doesn't also bump provider_commanded_at (bot review:
+    // this route duplicated that function's provider push but had drifted from its expires_at
+    // write).
+    expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
   });
   if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
@@ -4600,9 +4596,9 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
   if (ctx instanceof Response) return ctx;
   if (!ctx.userProvidedId) return c.json({ error: "wallet_pass_not_refreshable" }, 409);
 
-  let outcome: WalletStatusRefreshOutcome;
+  let outcome: LiveWalletStatusRefreshOutcome;
   try {
-    outcome = await refreshOneWalletPassStatus(
+    outcome = await refreshWalletPassStatusUnlessErased(
       db,
       { attendeeId: ctx.attendeeId, providerPassId: ctx.providerPassId, userProvidedId: ctx.userProvidedId },
       ctx.provider,
@@ -4617,6 +4613,9 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
     }
     return walletProviderErrorResponse(c, err, "handleRefreshAttendeeWalletStatus");
   }
+  // The context above is a plain read; the last check inside the refresh waited for an erasure that
+  // was still open and nothing was read from the provider.
+  if (outcome === "erased") return c.json({ error: "attendee_erased" }, 409);
   if (outcome === "inactive") return c.json({ error: "wallet_pass_inactive" }, 409);
   if (outcome === "conflict") return c.json({ error: "wallet_pass_changed" }, 409);
 

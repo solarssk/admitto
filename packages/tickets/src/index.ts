@@ -171,6 +171,8 @@ export {
 } from "./drain-wallet-cleanup-jobs.js";
 export type { DrainWalletCleanupJobsResult, WalletCleanupJobType } from "./drain-wallet-cleanup-jobs.js";
 export { voidOneWalletPassAtProvider } from "./void-wallet-pass-at-provider.js";
+export { refreshWalletPassStatusUnlessErased } from "./refresh-wallet-pass-status.js";
+export type { LiveWalletStatusRefreshOutcome } from "./refresh-wallet-pass-status.js";
 export type { VoidWalletPassOutcome } from "./void-wallet-pass-at-provider.js";
 export {
   reclaimStaleExportJobs,
