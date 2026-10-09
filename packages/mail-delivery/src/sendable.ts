@@ -25,11 +25,11 @@ export interface DeliveryBeforeSend {
  * The locks end with the transaction, a moment before the send: a mail that is already in the
  * mailer's hands when an erasure commits still goes out once and cannot be recalled.
  */
-export async function readDeliveriesBeforeSend(
+export function readDeliveriesBeforeSend(
   prisma: PrismaClient,
   deliveries: readonly DeliveryToCheck[],
 ): Promise<Map<string, DeliveryBeforeSend>> {
-  if (deliveries.length === 0) return new Map();
+  if (deliveries.length === 0) return Promise.resolve(new Map<string, DeliveryBeforeSend>());
   return prisma.$transaction(async (tx) => {
     const live = await lockLiveAttendees(
       tx,
