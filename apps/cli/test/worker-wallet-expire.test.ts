@@ -37,6 +37,7 @@ vi.mock("@admitto/import", () => ({
 }));
 vi.mock("@admitto/storage", () => ({ getDefaultStorage: vi.fn(() => ({})) }));
 vi.mock("../src/lib/retention-job-files.js", async () => (await import("./retention-job-files-mock.js")).mock);
+vi.mock("../src/lib/retention-erased-wallet-passes.js", async () => (await import("./retention-job-files-mock.js")).sweepMock());
 vi.mock("../src/lib/sse-publish.js", () => ({
   closeSsePublishClient: vi.fn(),
   publishActivityChanged: vi.fn(async () => undefined),
