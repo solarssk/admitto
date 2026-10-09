@@ -166,7 +166,7 @@ function mapRow(row: {
 
 /** Cheap total-only count for the same filters listDeliveries would apply - lets a caller reject
  * an over-cap request (see handleExportEventDeliveries) before paying for a full items fetch. */
-export async function countDeliveries(params: ListDeliveriesParams, prisma: PrismaClient): Promise<number> {
+export function countDeliveries(params: ListDeliveriesParams, prisma: PrismaClient): Promise<number> {
   return prisma.emailDelivery.count({ where: buildWhere(params) });
 }
 
