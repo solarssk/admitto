@@ -2051,7 +2051,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
  * event - factors out the actor/session/ip/timezone boilerplate shared by every call site below
  * (SonarCloud duplication). See the note on attendee_erased below for why these events need a
  * record outside the attendee's own (deletable) AttendeeActionLog trail. */
-async function writeAttendeeLifecycleAuditLog(
+export async function writeAttendeeLifecycleAuditLog(
   tx: Prisma.TransactionClient,
   c: Context,
   audit: OpsAuditContext,
@@ -3468,7 +3468,7 @@ const bulkWalletAttendeesBodySchema = z
  * the event is confirmed to have wallet configured (own re-audit after PR #1064 round 3, found
  * before any bot flagged it: the round-3 fix capped the 3 dedicated routes but missed that these
  * two share the identical worst case whenever most/all of a large selection has a wallet pass). */
-async function assertWalletBulkSelectionWithinLimit(
+export async function assertWalletBulkSelectionWithinLimit(
   db: PrismaClient,
   eventId: string,
   attendeeIds: readonly string[],

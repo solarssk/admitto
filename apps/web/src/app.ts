@@ -190,6 +190,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
 import {
   handleGetWalletPushJob,
   handleGetWalletPushHistory,
@@ -776,35 +777,42 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
   const adminBulkSendCancelRateLimit = rateLimit(rateLimitStore, "admin:bulk-send-cancel");
   const adminClientErrorRateLimit = rateLimit(rateLimitStore, "admin:client-error");
-  /** Wraps `adminWalletActionBulkRateLimit` so bulk-delete / bulk-revoke-pass only spend that
-   * budget when the event actually has wallet configured - unlike the 3 explicit
-   * bulk-wallet-void/reissue/delete routes (always a wallet action by definition), these two are
-   * general-purpose bulk mutations that only *sometimes* cascade into PassCreator calls
-   * (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort), and were charging the
+  /** Wraps a wallet limiter so a route only spends that budget when the event actually has wallet
+   * configured - unlike the explicit bulk-wallet-void/reissue/delete routes (always a wallet action
+   * by definition), bulk-delete / bulk-revoke-pass / erase are general-purpose mutations that only
+   * *sometimes* cascade into PassCreator calls (deleteWalletPassesBestEffort /
+   * syncWalletPassOnStatusChangeBestEffort / deleteErasedWalletPasses), and were charging the
    * strict wallet budget even for an event with wallet disabled entirely (bot review, PR #1064
    * round 3). Checks only the event's wallet config, not whether the specific selected attendees
    * have a wallet pass - the cheaper of the two checks the finding named, and still closes the
    * common case (wallet not configured for this event at all). */
-  async function walletActionBulkRateLimitIfWalletConfigured(c: Context, next: Next): Promise<Response | void> {
-    const eventId = c.req.param("eventId");
-    const event = eventId
-      ? await db.event.findUnique({
-          where: { id: eventId },
-          select: { wallet_template_id: true, wallet_api_key_enc: true },
-        })
-      : null;
-    // Same "is wallet actually usable for this event" check resolveWalletProvider itself makes
-    // (packages/wallet/src/resolve-provider.ts) - deliberately not also checking the org/event's
-    // own wallet_enabled toggle, since that governs whether *new* passes get issued, not whether
-    // an existing pass can still be voided/restored/deleted (same reasoning already applied to
-    // deleteWalletPassesBestEffort's own erasure path).
-    const walletConfigured = Boolean(event?.wallet_template_id && event?.wallet_api_key_enc);
-    if (!walletConfigured) {
-      await next();
-      return;
-    }
-    return adminWalletActionBulkRateLimit(c, next);
+  function ifWalletConfigured(limiter: (c: Context, next: Next) => Promise<Response | void>) {
+    return async (c: Context, next: Next): Promise<Response | void> => {
+      const eventId = c.req.param("eventId");
+      const event = eventId
+        ? await db.event.findUnique({
+            where: { id: eventId },
+            select: { wallet_template_id: true, wallet_api_key_enc: true },
+          })
+        : null;
+      // Same "is wallet actually usable for this event" check resolveWalletProvider itself makes
+      // (packages/wallet/src/resolve-provider.ts) - deliberately not also checking the org/event's
+      // own wallet_enabled toggle, since that governs whether *new* passes get issued, not whether
+      // an existing pass can still be voided/restored/deleted (same reasoning already applied to
+      // deleteWalletPassesBestEffort's own erasure path).
+      const walletConfigured = Boolean(event?.wallet_template_id && event?.wallet_api_key_enc);
+      if (!walletConfigured) {
+        await next();
+        return;
+      }
+      return limiter(c, next);
+    };
   }
+  /** For a route that can make one provider call per selected attendee (bulk-delete, bulk-revoke-pass,
+   * bulk-erase). */
+  const walletActionBulkRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionBulkRateLimit);
+  /** For a route that can make one provider call for the one attendee it acts on (erase). */
+  const walletActionRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionRateLimit);
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -1981,6 +1989,28 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteEventAttendee(c, db),
+  );
+  // Erase personal data (anonymise in place, Reports keep their numbers). Not behind
+  // guardArchivedEvent: a privacy request is still valid after the event has ended.
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/erase",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeeBulkMutationRateLimit,
+    // The pass of the erased attendee is deleted at the provider after the commit: the same budget
+    // as every other single-attendee wallet action, spent only when the event has wallet configured.
+    walletActionRateLimitIfWalletConfigured,
+    (c) => handleEraseEventAttendee(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-erase",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    // The pass of each erased attendee is deleted at the provider after the commit.
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleBulkEraseEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-delete",
