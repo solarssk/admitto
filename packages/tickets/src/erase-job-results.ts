@@ -22,7 +22,7 @@ function containsAddress(text: string, email: string): boolean {
 }
 
 function mentionsAny(value: unknown, emails: readonly string[]): boolean {
-  const text = JSON.stringify(value ?? null).toLowerCase();
+  const text = JSON.stringify(value).toLowerCase();
   return emails.some((email) => containsAddress(text, email));
 }
 

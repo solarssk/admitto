@@ -10,7 +10,9 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
+import type { Context } from "hono";
 import { createApp } from "../../src/app.js";
+import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../src/admin/attendee-erase-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const ORG_ID = "org-erase-api";
@@ -483,5 +485,17 @@ describe("erasing a selection", () => {
   ])("rejects %s", async (_name, body) => {
     const res = await post(bulkPath(EVENT_ID), body);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("a request without an event id in its path", () => {
+  it("is answered 400 by both handlers before anything is looked up", async () => {
+    const c = {
+      req: { param: () => undefined },
+      json: (body: unknown, status: number) => new Response(JSON.stringify(body), { status }),
+    } as unknown as Context;
+
+    expect((await handleEraseEventAttendee(c, prisma)).status).toBe(400);
+    expect((await handleBulkEraseEventAttendees(c, prisma)).status).toBe(400);
   });
 });

@@ -74,6 +74,15 @@ describe("erasing an attendee: addresses that are not the attendee's own row", (
     expect(result.previousEmails).toEqual(["padded@example.com"]);
   });
 
+  it("erases an attendee whose stored address is empty and has no address to clean up after", async () => {
+    await prisma.attendee.create({ data: { id: "copies-only-empty", event_id: EVENT_ID, email: "", name: "Only Empty" } });
+
+    const result = await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ["copies-only-empty"] }));
+
+    expect(result.erasedIds).toEqual(["copies-only-empty"]);
+    expect(result.previousEmails).toEqual([]);
+  });
+
   it("removes the address from another attendee's delivery that was sent to it as an override, and cancels it if waiting", async () => {
     await prisma.attendee.create({ data: { id: "copies-ovr-erased", event_id: EVENT_ID, email: "ovr.person@example.com", name: "Ovr Erased" } });
     await prisma.attendee.create({ data: { id: "copies-ovr-other", event_id: EVENT_ID, email: "ovr.other@example.com", name: "Ovr Other" } });
@@ -192,7 +201,10 @@ describe("scrubImportJobResults", () => {
       await importJob(EVENT_ID, "just a string"),
       await importJob(EVENT_ID, ["an", "array"]),
       await importJob(EVENT_ID, { skipped: "not a list", invalidRows: { not: "a list" } }),
-      await importJob(EVENT_ID, { skipped: ["odd.entry@example.com"], invalidRows: ["odd.entry@example.com"] }),
+      await importJob(EVENT_ID, {
+        skipped: ["odd.entry@example.com"],
+        invalidRows: ["odd.entry@example.com", { raw: "x,odd.entry@example.com", reason: "bad row" }],
+      }),
     ];
 
     const rewritten = await prisma.$transaction((tx) => scrubImportJobResults(tx, EVENT_ID, ["odd.entry@example.com"]));
@@ -202,7 +214,10 @@ describe("scrubImportJobResults", () => {
     expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: odd[1]!.id } })).result_json).toEqual(["an", "array"]);
     expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: odd[3]!.id } })).result_json).toEqual({
       skipped: [{ email: null, reason: expect.stringContaining("erased") }],
-      invalidRows: [{ rowIndex: null, raw: null, reason: expect.stringContaining("erased") }],
+      invalidRows: [
+        { rowIndex: null, raw: null, reason: expect.stringContaining("erased") },
+        { rowIndex: null, raw: null, reason: expect.stringContaining("erased") },
+      ],
     });
   });
 
