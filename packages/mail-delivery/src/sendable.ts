@@ -29,7 +29,6 @@ export function readDeliveriesBeforeSend(
   prisma: PrismaClient,
   deliveries: readonly DeliveryToCheck[],
 ): Promise<Map<string, DeliveryBeforeSend>> {
-  if (deliveries.length === 0) return Promise.resolve(new Map<string, DeliveryBeforeSend>());
   return prisma.$transaction(async (tx) => {
     const live = await lockLiveAttendees(
       tx,

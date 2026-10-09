@@ -426,6 +426,12 @@ describe("mail already on its way", () => {
     expect((await deliveriesOf(a.id))[0]?.viewed_at).toBeNull();
   });
 
+  it("records nothing, and does not fail, for an attendee with no successful delivery", async () => {
+    const a = await createAttendee();
+    await expect(recordTicketViewed(a.id, EVENT_ID, prisma)).resolves.toBeUndefined();
+    expect(await deliveriesOf(a.id)).toHaveLength(0);
+  });
+
   it("still records a ticket view for a live attendee", async () => {
     const a = await createAttendee();
     await sendTicketEmails(EVENT_ID, { attendeeIds: [a.id] }, prisma, ENV, { exportSink: () => undefined });
