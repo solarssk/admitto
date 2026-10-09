@@ -133,7 +133,7 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
             {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
           </dd>
         </div>
-        <div>
+        <div className="users-page__card-meta-wide">
           <dt>Logged in</dt>
           <dd>
             {formatUtcPrimaryTime(s.loginAt)}

@@ -15,7 +15,16 @@ body {
   background: var(--surface-page);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
+  /* A block of text of up to six lines is wrapped so that its lines come out even, which keeps a lone word off its
+     last line ("connection." alone on the second line of a message); a longer block wraps as it always did, the browser
+     ignores `balance` past six lines. Set here, so that every text inherits it and a new one is covered without anyone
+     having to remember. The shorthand only on the body, where it cannot clash with a `white-space: nowrap` that an element
+     sets itself; `text-wrap: pretty` was tried and does not do this (it leaves "check-in." alone on a second line). */
+  text-wrap: balance;
 }
+
+/* What is typed, or laid out by its author, is wrapped as it is: the longhand, so that a `pre`'s own `white-space` stays. */
+input, textarea, select, pre, code, kbd, samp { text-wrap-style: auto; }
 
 h1, h2, h3, h4 {
   margin: 0;

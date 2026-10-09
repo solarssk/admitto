@@ -623,6 +623,26 @@
 .at-notice--has-action .at-notice__icon {
   margin-top: 0;
 }
+/* On a phone the action goes under the text, lined up with it, instead of beside it: beside the text a long action
+   ("Open Support contact", 173px of a 292px notice) left the message a column of one or two words, 14 lines tall,
+   and pushed the button past the notice's edge. */
+@media (max-width: 640px) {
+  .at-notice--has-action {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .at-notice--has-action .at-notice__icon {
+    margin-top: 3px;
+  }
+  .at-notice--has-action .at-notice__body {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .at-notice--has-action .at-notice__action {
+    flex: 1 0 100%;
+    padding-left: calc(1em + var(--space-2));
+  }
+}
 /* A permanent fact about the surrounding view, not an alert - a neutral "well" reads as
    documentation rather than a warning. */
 .at-notice--info {
