@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { resolveConfiguredWalletProvider } from "@admitto/wallet";
@@ -47,6 +47,43 @@ type EraseResponseBody = {
 };
 
 /**
+ * What an erasure writes besides the erasure itself, inside its transaction: the saved import
+ * results lose the erased addresses, and the event's activity log and the central audit log get an
+ * entry with ids and counts only (the person asked to be forgotten, so the record of who erased
+ * whom must not name them).
+ */
+async function recordErasure(
+  tx: Prisma.TransactionClient,
+  c: Context,
+  context: {
+    eventId: string;
+    event: { organization_id: string; title: string };
+    audit: ReturnType<typeof adminAuditFromContext>;
+    actionType: string;
+    mode: "single" | "bulk";
+    erased: EraseAttendeesResult;
+  },
+): Promise<void> {
+  const { eventId, event, audit, actionType, mode, erased } = context;
+  await scrubImportJobResults(tx, eventId, erased.previousEmails);
+  const metadata =
+    mode === "single"
+      ? { attendee_id: erased.erasedIds[0], method: "erase" }
+      : { attendee_ids: erased.erasedIds, count: erased.erasedIds.length, method: "erase" };
+  await writeBulkActionLog(tx, {
+    event_id: eventId,
+    action_type: actionType,
+    audit,
+    metadata: { ...metadata, removed: erased.counts },
+  });
+  await writeAttendeeLifecycleAuditLog(tx, c, audit, event.organization_id, actionType, {
+    event_id: eventId,
+    event_title: event.title,
+    ...metadata,
+  });
+}
+
+/**
  * Erases the personal data of the given attendees (see eraseAttendees) and then deletes their
  * wallet passes at the provider. Repeating it for attendees that are already erased changes nothing
  * in the database and simply tries the pending wallet deletes again: that is the "try again" of a
@@ -78,26 +115,9 @@ async function runErasure(
   const result = await db.$transaction(
     async (tx) => {
       const erased = await eraseAttendees(tx, { eventId, attendeeIds });
-      if (erased.erasedIds.length === 0) return erased;
-
-      await scrubImportJobResults(tx, eventId, erased.previousEmails);
-      const metadata =
-        mode === "single"
-          ? { attendee_id: erased.erasedIds[0], method: "erase" }
-          : { attendee_ids: erased.erasedIds, count: erased.erasedIds.length, method: "erase" };
-      await writeBulkActionLog(tx, {
-        event_id: eventId,
-        action_type: actionType,
-        audit,
-        metadata: { ...metadata, removed: erased.counts },
-      });
-      // Also in the central admin audit log (Instance Settings → Audit log), with ids and counts
-      // only: the person asked to be forgotten, so the record of who erased whom must not name them.
-      await writeAttendeeLifecycleAuditLog(tx, c, audit, event.organization_id, actionType, {
-        event_id: eventId,
-        event_title: event.title,
-        ...metadata,
-      });
+      if (erased.erasedIds.length > 0) {
+        await recordErasure(tx, c, { eventId, event, audit, actionType, mode, erased });
+      }
       return erased;
     },
     { timeout: ERASE_TX_TIMEOUT_MS },

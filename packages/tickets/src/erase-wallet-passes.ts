@@ -54,10 +54,12 @@ export async function deleteErasedWalletPasses(
 
   const startedAt = Date.now();
   const codes = new Set<string>();
-  for (let i = 0; i < passes.length; i += DELETE_CONCURRENCY) {
+  // One batch after the other, so the budget is checked between them: no loop with an await in it.
+  const runFrom = async (i: number): Promise<void> => {
+    if (i >= passes.length) return;
     if (options.budgetMs !== undefined && Date.now() - startedAt >= options.budgetMs) {
       result.notTried = passes.length - i;
-      break;
+      return;
     }
     const batch = passes.slice(i, i + DELETE_CONCURRENCY);
     const outcomes = await Promise.all(
@@ -82,7 +84,9 @@ export async function deleteErasedWalletPasses(
         codes.add(outcome.code);
       }
     }
-  }
+    await runFrom(i + DELETE_CONCURRENCY);
+  };
+  await runFrom(0);
   result.failureCodes = [...codes];
   return result;
 }

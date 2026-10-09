@@ -54,7 +54,7 @@ export async function scrubImportJobResults(
     FOR UPDATE
   `;
 
-  let rewritten = 0;
+  const rewrites: { id: string; result: JsonRecord }[] = [];
   for (const job of jobs) {
     if (!isRecord(job.result_json)) continue;
     const result: JsonRecord = { ...job.result_json };
@@ -75,10 +75,14 @@ export async function scrubImportJobResults(
       });
     }
 
-    if (changed) {
-      await tx.adminJob.update({ where: { id: job.id }, data: { result_json: result as Prisma.InputJsonValue } });
-      rewritten += 1;
-    }
+    if (changed) rewrites.push({ id: job.id, result });
   }
-  return rewritten;
+  // One connection runs the transaction's statements in the order they are issued, so the jobs
+  // (already locked in id order above) are still written in that order.
+  await Promise.all(
+    rewrites.map((rewrite) =>
+      tx.adminJob.update({ where: { id: rewrite.id }, data: { result_json: rewrite.result as Prisma.InputJsonValue } }),
+    ),
+  );
+  return rewrites.length;
 }
