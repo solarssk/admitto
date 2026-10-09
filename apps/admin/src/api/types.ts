@@ -332,6 +332,10 @@ export interface AttendeeDetailDto {
   id: string;
   /** Set once the attendee's personal data has been erased: the page is read-only. */
   erased_at?: string | null;
+  /** True for an erased attendee whose wallet pass still has to be deleted at the provider;
+   * repeating the erasure is the retry. The server always sends it; optional here so existing
+   * fixtures keep their shape. */
+  wallet_pass_delete_pending?: boolean;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -407,8 +411,22 @@ export interface AttendeesListParams {
    * The caller (AttendeesPage) builds this from the event's own EventCustomField list, so this
    * type doesn't need to know the field-type branching itself. */
   customFieldParams?: Record<string, string[]>;
+  /** Also list the attendees whose personal data has been erased (hidden by default). */
+  includeErased?: boolean;
   sortBy?: AttendeeSortBy;
   sortDir?: AttendeeSortDir;
+}
+
+/** What the erase endpoints answer (counts only): see attendee-erase-routes.ts. */
+export interface EraseAttendeesResponse {
+  /** Erased by this request. */
+  erased: number;
+  /** Already erased before: nothing was touched, but their wallet pass was tried again. */
+  already_erased: number;
+  /** Ids that match no attendee of this event. */
+  not_found: number;
+  /** Erased attendees of this request whose wallet pass is still not deleted at the provider. */
+  wallet_pending: number;
 }
 
 export interface UpdateAttendeePatch {

@@ -156,6 +156,9 @@ const ATTENDEE_DETAIL_SELECT = {
       user_agent: true,
       user_agent_captured_at: true,
       provider_removed_at: true,
+      // Never sent to the client: only tells buildAttendeeDetailDto whether an erased attendee's
+      // pass is still to be deleted at the provider (wallet_pass_delete_pending).
+      provider_pass_id: true,
     },
   },
 } as const;
@@ -389,6 +392,11 @@ export type AttendeeDetailDto = {
   rsvp_updated_at: string | null;
   rsvp_source: string | null;
   wallet_pass: WalletPassActionDto | null;
+  /** True for an erased attendee whose pass still has to be deleted at the wallet provider (the
+   * provider was unreachable, or no connection was set up when the erasure ran): repeating the
+   * erasure request is the retry. False for everyone else, and for a pass that never reached the
+   * provider. */
+  wallet_pass_delete_pending: boolean;
   /** Same on-demand /t/.../wallet/:platform redirect routes the ticket page's own buttons and
    * ticket emails use (create-or-reuse the pass, then 302 to the provider) - null when wallet
    * isn't configured/enabled for this event or platform, or the instance URL isn't set yet. Works
@@ -1115,6 +1123,11 @@ async function buildAttendeeDetailDto(
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
     rsvp_source: row.rsvp_source,
     wallet_pass: row.wallet_pass ? serializeWalletPassAction(row.wallet_pass) : null,
+    wallet_pass_delete_pending:
+      row.erased_at !== null &&
+      row.wallet_pass !== null &&
+      row.wallet_pass.provider_pass_id !== null &&
+      row.wallet_pass.provider_removed_at === null,
     wallet_apple_link: walletLinks.apple,
     wallet_google_link: walletLinks.google,
     wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
@@ -4201,6 +4214,7 @@ type WalletPassRow = {
   user_agent: string | null;
   user_agent_captured_at: Date | null;
   provider_removed_at: Date | null;
+  provider_pass_id: string | null;
 };
 
 function serializeWalletPassAction(pass: WalletPassRow): WalletPassActionDto {

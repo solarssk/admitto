@@ -9,7 +9,10 @@ export const fetchEventAttendees = vi.fn();
 export const fetchEventCustomFields = vi.fn();
 export const fetchEventMailSettings = vi.fn();
 export const exportAttendees = vi.fn();
+export const bulkEraseAttendees = vi.fn();
 export const reportApiError = vi.fn();
+/** Read by the mocked outlet context below: a test archives the event by setting `archived_at`. */
+export const eventState: { archived_at: string | null } = { archived_at: null };
 
 export function makeRow(id: string, name: string): AttendeeRowDto {
   return {
@@ -61,6 +64,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   fetchEventTemplates: vi.fn().mockResolvedValue([]),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
   exportAttendees: (...args: unknown[]) => exportAttendees(...args),
+  bulkEraseAttendees: (...args: unknown[]) => bulkEraseAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
   updateAttendee: vi.fn(),
@@ -78,7 +82,7 @@ vi.mock("react-router", async (importOriginal) => {
         date: "2026-07-01",
         location: null,
         attendee_count: 60,
-        archived_at: null,
+        archived_at: eventState.archived_at,
       },
     }),
   };
@@ -95,6 +99,7 @@ export function renderPage() {
 }
 
 beforeEach(() => {
+  eventState.archived_at = null;
   mockMatchMedia(true);
   fetchEventCustomFields.mockResolvedValue([]);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));

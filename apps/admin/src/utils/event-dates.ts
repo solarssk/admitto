@@ -182,6 +182,16 @@ export function formatEventTime(iso: string, timezone?: string): string {
   return offset ? `${base} ${offset}` : base;
 }
 
+/** Hour and minute in the event's zone with no UTC offset, for a time that is approximate anyway
+ * (an erased attendee's check-in, cut to the hour). Use {@link formatEventTime} for a real instant. */
+export function formatEventClockTime(iso: string, timezone?: string): string {
+  return new Date(iso).toLocaleString(getPreferredLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: timezone ?? "UTC",
+  });
+}
+
 /** Start of a calendar day in UTC as ISO string (for audit log date filters). */
 export function utcDayStartIso(yyyyMmDd: string): string {
   return `${yyyyMmDd}T00:00:00.000Z`;

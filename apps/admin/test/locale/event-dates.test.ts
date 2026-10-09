@@ -6,6 +6,7 @@ import {
   formatWalletDatePreview,
   formatWalletDatePreviewShort,
   formatEventDateTime,
+  formatEventClockTime,
   formatEventTime,
   formatRelativeMagnitude,
   formatRelativeTime,
@@ -123,8 +124,15 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     expect(result).toMatch(/UTC\+2/);
   });
 
+  it("formatEventClockTime shows the time in the event's zone and no UTC offset", () => {
+    setPreferredLocale("en-GB");
+    expect(formatEventClockTime("2026-06-28T13:00:00.000Z", "Europe/Warsaw")).toBe("15:00");
+    expect(formatEventClockTime("2026-06-28T13:00:00.000Z", "America/New_York")).toBe("09:00");
+  });
+
   it("defaults event date and time formatting to UTC when no event timezone is supplied", () => {
     setPreferredLocale("en-GB");
+    expect(formatEventClockTime("2026-06-28T13:00:00.000Z")).toBe("13:00");
     expect(formatEventDateTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
     expect(formatEventTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
   });

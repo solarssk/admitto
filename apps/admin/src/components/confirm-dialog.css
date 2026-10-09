@@ -35,6 +35,10 @@
   gap: var(--space-4);
 }
 
+.confirm-dialog__panel--wide {
+  width: min(520px, 100%);
+}
+
 .confirm-dialog__title {
   margin: 0;
   font-size: var(--fs-h3);

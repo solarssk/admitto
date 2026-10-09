@@ -186,6 +186,35 @@ describe("the attendee list and detail", () => {
     expect(body.erased_at).not.toBeNull();
     expect(body.name).toBe("Erased attendee");
   });
+
+  it("says whether an erased attendee's pass still has to be deleted at the provider", async () => {
+    const ids = { pending: "att-admin-erased-pend", done: "att-admin-erased-done", unissued: "att-admin-erased-unissued" };
+    const passes = {
+      [ids.pending]: { provider_pass_id: "pc-pend" },
+      [ids.done]: { provider_pass_id: "pc-done", provider_removed_at: new Date("2026-10-01T10:00:00Z") },
+      [ids.unissued]: { provider_pass_id: null },
+    };
+    try {
+      for (const [id, pass] of Object.entries(passes)) {
+        await prisma.attendee.create({ data: { id, event_id: EVENT_ID, email: `${id}@example.com`, name: id } });
+        await prisma.walletPass.create({ data: { attendee_id: id, status: "active", user_provided_id: `u-${id}`, ...pass } });
+      }
+      await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: Object.keys(passes) }));
+
+      const pendingOf = async (id: string) =>
+        ((await (await get(`${base}/${id}`)).json()) as { wallet_pass_delete_pending: boolean }).wallet_pass_delete_pending;
+      expect(await pendingOf(ids.pending)).toBe(true);
+      // Already deleted, or never at the provider: nothing left to do.
+      expect(await pendingOf(ids.done)).toBe(false);
+      expect(await pendingOf(ids.unissued)).toBe(false);
+      // A live attendee's pass is never "to delete".
+      expect(await pendingOf(LIVE_ID)).toBe(false);
+    } finally {
+      const created = Object.keys(passes);
+      await prisma.walletPass.deleteMany({ where: { attendee_id: { in: created } } });
+      await prisma.attendee.deleteMany({ where: { id: { in: created } } });
+    }
+  });
 });
 
 describe("the count of hidden attendees", () => {

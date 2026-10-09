@@ -24,6 +24,20 @@ The answer is `{ erased, already_erased, not_found, wallet_pending }`. `wallet_p
 
 The database enforces the result: `Attendee_erased_carries_no_personal_data` rejects any row with `erased_at` set that still holds a name, email, credential or answer, and a trigger refuses to change or clear `erased_at` once it is set (a delete of the row is still allowed).
 
+## The screens
+
+Where an Administrator or Superadmin reaches the erasure (`apps/admin`):
+
+| Screen | What it does |
+|---|---|
+| Attendees list, bulk bar, **More actions** | **Erase personal data** for the selection (`BulkEraseDialog`, `bulkEraseAttendees`). No typed name. |
+| Attendee page, **More actions** | **Erase personal data** for one person (`EraseAttendeeDialog`, `eraseAttendee`). The attendee's name has to be typed. The line "Not checked in yet, so their place becomes free" shows only when the erasure will cancel the attendee (`erasureFreesPlace`, the same rule as the function). |
+| Attendees list, line under the table | Erased entries are left out (`include_erased` is not sent). The line says how many (`erased_count`, event-wide) and **Show erased** lists them: muted rows, "Erased attendee" with a dashed **Erased** mark and "Erased on <date>" in place of the name and address (the placeholders the server sends are never shown), and a checkbox that stays off. **Select all** skips them. |
+| Attendee page of an erased attendee | `ErasedAttendeeView`: read-only, every field that held personal data reads **Erased**, the check-in time reads "Around HH:MM". The Wallet card says what became of the pass: deleted on a date, or still to be deleted (`wallet_pass_delete_pending` in the detail response, true only for an erased attendee whose pass has a provider id and no `provider_removed_at`) with a **Try again** button. |
+| **Personal data erased** dialog | Shown after an erasure when `wallet_pending` is above zero (`useEraseWalletResult`). **Try again** sends the same request again, which for people who are already erased only retries the wallet delete. |
+
+Erase is not behind the archived-event guard, like the API.
+
 ## Rules for code
 
 - **New column or table on an attendee?** `packages/tickets/test/erasure-inventory.test.ts` fails until you decide what erasure does with it (cleared, kept, deleted). Add the behaviour to `eraseAttendees` and its test too.

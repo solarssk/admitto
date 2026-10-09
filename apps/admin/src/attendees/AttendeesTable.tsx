@@ -25,6 +25,9 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { ErasedBadge } from "./ErasedBadge.js";
+import { ErasedEntriesBar } from "./ErasedEntriesBar.js";
+import { rowIdentity, selectRowLabel } from "./erasedAttendee.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
@@ -298,6 +301,12 @@ export interface AttendeesTableProps {
   onBulkRemoveWallet: () => void;
   bulkRemoveWalletBusy: boolean;
   onBulkDelete: () => void;
+  /** Erase the personal data of the selection (a privacy request). */
+  onBulkErase: () => void;
+  /** Erased entries of the event (event-wide count): left out of the list unless `showErased`. */
+  erasedCount: number;
+  showErased: boolean;
+  onShowErasedChange: (show: boolean) => void;
   eventTimezone: string;
   /** Keys what the list remembers about itself between visits (how many rows, for its skeleton). */
   eventId: string;
@@ -352,15 +361,25 @@ function AttendeeCard({
   eventTimezone,
   walletPlatforms,
 }: Readonly<AttendeeCardProps>) {
+  const identity = rowIdentity(row, eventTimezone);
   return (
-    <div className={`attendees-card${selected ? " attendees-card--selected" : ""}`}>
+    <div
+      className={`attendees-card${selected ? " attendees-card--selected" : ""}${
+        identity.erased ? " attendees-card--erased" : ""
+      }`}
+    >
       <div className="attendees-card__top">
         <span className="attendees-card__cb">
-          <Checkbox checked={selected} onChange={onToggle} aria-label={`Select ${row.name}`} />
+          <Checkbox checked={selected} disabled={identity.erased} onChange={onToggle} aria-label={selectRowLabel(row)} />
         </span>
         <button type="button" className="attendees-row-btn attendees-card__identity" onClick={onView}>
-          <span className="attendees-card__name">{row.name}</span>
-          <span className="attendees-card__email">{row.email}</span>
+          <span className="attendees-card__name">
+            {identity.name}
+            {identity.erased && <ErasedBadge />}
+          </span>
+          <span className={`attendees-card__email${identity.erased ? " attendees-card__email--note" : ""}`}>
+            {identity.detail}
+          </span>
         </button>
         <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
       </div>
@@ -701,6 +720,7 @@ function BulkMoreActionsMenu({
   walletPlatforms,
   walletConfigured,
   onDelete,
+  onErase,
 }: Readonly<{
   selectedCount: number;
   archived: boolean;
@@ -727,6 +747,7 @@ function BulkMoreActionsMenu({
   onSetCompany: () => void;
   onSetDepartment: () => void;
   onDelete: () => void;
+  onErase: () => void;
 } & BulkItemPassWalletActions>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -917,8 +938,18 @@ function BulkMoreActionsMenu({
             close={() => setOpen(false)}
           />
           <hr className="more-actions-menu__divider" />
-          {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
-           * ends; the DELETE endpoint doesn't block on archived_at either. */}
+          {/* Neither is ArchivedGuard'd — privacy requests can legally arrive after an event
+           * ends, and neither endpoint blocks on archived_at. */}
+          <MoreActionsMenuItem
+            icon="eraser"
+            variant="danger"
+            label="Erase personal data"
+            hint="For privacy requests. Reports keep their numbers."
+            onClick={() => {
+              setOpen(false);
+              onErase();
+            }}
+          />
           <MoreActionsMenuItem
             icon="trash"
             variant="danger"
@@ -1011,6 +1042,7 @@ function BulkBar({
   walletPlatforms,
   walletConfigured,
   onBulkDelete,
+  onBulkErase,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
   onClearSelection: () => void;
@@ -1039,6 +1071,7 @@ function BulkBar({
   onBulkSetCompany: () => void;
   onBulkSetDepartment: () => void;
   onBulkDelete: () => void;
+  onBulkErase: () => void;
 } & BulkItemPassWalletActions>) {
   const archived = event.archived_at != null;
   const isDesktop = useIsDesktop();
@@ -1156,6 +1189,7 @@ function BulkBar({
           walletPlatforms={walletPlatforms}
           walletConfigured={walletConfigured}
           onDelete={onBulkDelete}
+          onErase={onBulkErase}
         />
       </div>
     </div>
@@ -1416,6 +1450,91 @@ function hasWalletColumn(walletPlatforms: EnabledWalletPlatforms): boolean {
   return walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
 }
 
+type AttendeeTableRowProps = Readonly<{
+  row: AttendeeRowDto;
+  selected: boolean;
+  onToggle: () => void;
+  onView: () => void;
+  ticketTypes: TicketTypeDto[];
+  eventTimezone: string;
+  walletPlatforms: EnabledWalletPlatforms;
+  walletColumnVisible: boolean;
+}>;
+
+/** One attendee as a table row. An erased entry is muted, shows "Erased attendee" and the date in
+ * place of the name and address, and has a checkbox that stays off: no bulk action works on it. */
+function AttendeeTableRow({
+  row,
+  selected,
+  onToggle,
+  onView,
+  ticketTypes,
+  eventTimezone,
+  walletPlatforms,
+  walletColumnVisible,
+}: AttendeeTableRowProps) {
+  const identity = rowIdentity(row, eventTimezone);
+  const className = [
+    "attendees-table-v2__row",
+    selected && "attendees-table-v2__row--selected",
+    identity.erased && "attendees-table-v2__row--erased",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <tr className={className}>
+      <td>
+        <Checkbox
+          checked={selected}
+          disabled={identity.erased}
+          onChange={onToggle}
+          aria-label={selectRowLabel(row)}
+        />
+      </td>
+      <td>
+        <button type="button" className="attendees-row-btn attendees-table-v2__attendee" onClick={onView}>
+          <span className="attendees-table-v2__name" title={identity.name}>
+            {identity.name}
+            {identity.erased && <ErasedBadge />}
+          </span>
+          <span
+            className={`attendees-table-v2__email${identity.erased ? " attendees-table-v2__email--note" : ""}`}
+            title={identity.detail}
+          >
+            {identity.detail}
+          </span>
+        </button>
+      </td>
+      <td>
+        <div className="attendees-table-v2__company">
+          <span>{row.company ?? "-"}</span>
+          {row.department ? <span className="attendees-table-v2__department">{row.department}</span> : null}
+        </div>
+      </td>
+      <td>
+        <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+      </td>
+      <td>
+        <PassStatusBadge status={row.status} />
+      </td>
+      <td>
+        <RsvpStatusBadge status={row.rsvp_status} />
+      </td>
+      <td>
+        <MailStatusBadge status={row.last_mail_status} />
+      </td>
+      <td>
+        <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
+      </td>
+      {walletColumnVisible && (
+        <td>
+          <WalletColumnCell status={row.wallet_status} enabledPlatforms={walletPlatforms} />
+        </td>
+      )}
+    </tr>
+  );
+}
+
 type AttendeesListContentProps = Readonly<{
   /** Rows the list had last time for this event (null if unknown): the skeleton is drawn that size. */
   rememberedRows: number | null;
@@ -1524,13 +1643,16 @@ function AttendeesListRows({
     );
   }
 
-  const allSelected = items.length > 0 && items.every((row) => selectedIds.has(row.id));
+  // An erased entry cannot be selected, so "all" means every row that can be.
+  const selectable = items.filter((row) => !row.erased_at);
+  const allSelected = selectable.length > 0 && selectable.every((row) => selectedIds.has(row.id));
+  const nothingSelectable = selectable.length === 0;
 
   if (!isDesktop) {
     return (
       <div className={`attendees-cards${loadingClass}`} aria-busy={busy}>
         <div className="attendees-cards__selectall">
-          <Checkbox label="Select all" checked={allSelected} onChange={onToggleSelectAll} />
+          <Checkbox label="Select all" checked={allSelected} disabled={nothingSelectable} onChange={onToggleSelectAll} />
         </div>
         {items.map((row) => (
           <AttendeeCard
@@ -1554,7 +1676,7 @@ function AttendeesListRows({
         <thead>
           <tr>
             <th className="attendees-table-v2__checkbox-col">
-              <Checkbox checked={allSelected} onChange={onToggleSelectAll} aria-label="Select all" />
+              <Checkbox checked={allSelected} disabled={nothingSelectable} onChange={onToggleSelectAll} aria-label="Select all" />
             </th>
             {SORTABLE_COLUMNS.map(({ column, label }) => (
               <SortableHeader
@@ -1579,58 +1701,17 @@ function AttendeesListRows({
         </thead>
         <tbody>
           {items.map((row) => (
-            <tr
+            <AttendeeTableRow
               key={row.id}
-              className={`attendees-table-v2__row${
-                selectedIds.has(row.id) ? " attendees-table-v2__row--selected" : ""
-              }`}
-            >
-              <td>
-                <Checkbox
-                  checked={selectedIds.has(row.id)}
-                  onChange={() => onToggleRow(row.id)}
-                  aria-label={`Select ${row.name}`}
-                />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="attendees-row-btn attendees-table-v2__attendee"
-                  onClick={() => onViewAttendee(row.id)}
-                >
-                  <span className="attendees-table-v2__name" title={row.name}>{row.name}</span>
-                  <span className="attendees-table-v2__email" title={row.email}>{row.email}</span>
-                </button>
-              </td>
-              <td>
-                <div className="attendees-table-v2__company">
-                  <span>{row.company ?? "-"}</span>
-                  {row.department ? (
-                    <span className="attendees-table-v2__department">{row.department}</span>
-                  ) : null}
-                </div>
-              </td>
-              <td>
-                <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
-              </td>
-              <td>
-                <PassStatusBadge status={row.status} />
-              </td>
-              <td>
-                <RsvpStatusBadge status={row.rsvp_status} />
-              </td>
-              <td>
-                <MailStatusBadge status={row.last_mail_status} />
-              </td>
-              <td>
-                <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
-              </td>
-              {walletColumnVisible && (
-                <td>
-                  <WalletColumnCell status={row.wallet_status} enabledPlatforms={walletPlatforms} />
-                </td>
-              )}
-            </tr>
+              row={row}
+              selected={selectedIds.has(row.id)}
+              onToggle={() => onToggleRow(row.id)}
+              onView={() => onViewAttendee(row.id)}
+              ticketTypes={ticketTypes}
+              eventTimezone={eventTimezone}
+              walletPlatforms={walletPlatforms}
+              walletColumnVisible={walletColumnVisible}
+            />
           ))}
         </tbody>
       </table>
@@ -1748,6 +1829,10 @@ export function AttendeesTable({
   onBulkRemoveWallet,
   bulkRemoveWalletBusy,
   onBulkDelete,
+  onBulkErase,
+  erasedCount,
+  showErased,
+  onShowErasedChange,
   eventTimezone,
   eventId,
   event,
@@ -1879,6 +1964,7 @@ export function AttendeesTable({
           walletPlatforms={walletPlatforms}
           walletConfigured={walletConfigured}
           onBulkDelete={onBulkDelete}
+          onBulkErase={onBulkErase}
         />
       ) : (
         <FilterToolbar
@@ -1928,6 +2014,7 @@ export function AttendeesTable({
         eventTimezone={eventTimezone}
         walletPlatforms={walletPlatforms}
       />
+      <ErasedEntriesBar count={erasedCount} shown={showErased} onShownChange={onShowErasedChange} />
       <div className="attendees-table-foot">
         <div className="attendees-table-foot__summary">
           <span>{footSummary(isInitialLoad, total, from, to)}</span>

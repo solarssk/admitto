@@ -29,6 +29,7 @@ import {
   bulkRevokeItems,
   deleteAttendee,
   deleteAttendeeNote,
+  eraseAttendee,
   fetchAttendeeDetail,
   fetchTicketTypes,
   reissueWalletPass,
@@ -75,6 +76,16 @@ import {
   formatActivityTimestamp,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
+import { DeleteAttendeeDialog } from "../attendees/DeleteAttendeeDialog.js";
+import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
+import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
+import {
+  ERASED_ATTENDEE_LABEL,
+  erasedCheckInParts,
+  erasedToast,
+  erasedWalletChipLabel,
+  erasureFreesPlace,
+} from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
@@ -91,6 +102,7 @@ import {
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
+import { useEraseWalletResult } from "../attendees/useEraseWalletResult.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { parseUserAgentWithVersion } from "../utils/parseUserAgent.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -160,6 +172,7 @@ function MoreActionsMenu({
   onResend,
   onCopyTicketLink,
   onDelete,
+  onErase,
   mailConfigured,
   showEdit,
   onEdit,
@@ -189,6 +202,7 @@ function MoreActionsMenu({
   onResend: () => void;
   onCopyTicketLink: () => void;
   onDelete: () => void;
+  onErase: () => void;
   mailConfigured: boolean | undefined;
   /** Mobile only (useIsDesktop() in the caller) - narrow viewports fold the standalone Edit
    * button in here instead, the same "own button on desktop, menu item on mobile" move already
@@ -400,9 +414,19 @@ function MoreActionsMenu({
             </>
           )}
           <hr className="more-actions-menu__divider" />
-          {/* Not ArchivedGuard'd, unlike Resend ticket above — GDPR erasure requests can
-           * legally arrive after an event ends, and the DELETE endpoint itself doesn't block
-           * on archived_at (see docs/DSAR-PROCEDURE.md). */}
+          {/* Neither Erase nor Delete is ArchivedGuard'd, unlike Resend ticket above — privacy
+           * requests can legally arrive after an event ends, and neither endpoint blocks on
+           * archived_at (see docs/DSAR-PROCEDURE.md). */}
+          <MoreActionsMenuItem
+            icon="eraser"
+            variant="danger"
+            label="Erase personal data"
+            hint="For a privacy request. Reports keep their numbers."
+            onClick={() => {
+              setOpen(false);
+              onErase();
+            }}
+          />
           <button
             type="button"
             role="menuitem"
@@ -1781,16 +1805,24 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
  * platform check here changes - see AttendeeOverviewTab above for the same reasoning applied to a
  * different part of this same page). Purely presentational - reads props, renders chips, no
  * handlers or local state of its own. */
+/** The day and time of a check-in as the status strip shows them, or nothing for an attendee who has not been admitted. */
+function admissionPartsOf(admittedAt: string | null, timezone: string): AdmissionDisplayParts | null {
+  return admittedAt === null ? null : formatAdmissionDisplayParts(admittedAt, timezone);
+}
+
 function AttendeeStatusStrip({
   detail,
   lastMail,
   admissionParts,
   walletPlatforms,
+  erased = false,
 }: Readonly<{
   detail: AttendeeDetailDto;
   lastMail: string | null;
   admissionParts: AdmissionDisplayParts | null;
   walletPlatforms: EnabledWalletPlatforms;
+  /** An erased attendee: the wallet chip says what became of the pass at the provider. */
+  erased?: boolean;
 }>) {
   return (
     <div className="attendee-status-strip">
@@ -1848,10 +1880,14 @@ function AttendeeStatusStrip({
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <WalletStatusBadge
-              status={detail.wallet_pass?.status ?? null}
-              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
-            />
+            {erased ? (
+              <span>{erasedWalletChipLabel(detail)}</span>
+            ) : (
+              <WalletStatusBadge
+                status={detail.wallet_pass?.status ?? null}
+                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1956,6 +1992,9 @@ export function AttendeeDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [eraseOpen, setEraseOpen] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const [eraseError, setEraseError] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -2063,6 +2102,12 @@ export function AttendeeDetailPage() {
     void loadDetail();
   }, [loadDetail]);
 
+  // The dialog that says a wallet pass is still at the provider after an erasure, and repeats it.
+  const reloadDetail = useCallback(() => {
+    void loadDetail();
+  }, [loadDetail]);
+  const eraseWalletResult = useEraseWalletResult({ scopeKey: `${eventId}/${attendeeId}`, onSettled: reloadDetail });
+
   useEffect(() => {
     setNotesPage(1);
   }, [eventId, attendeeId]);
@@ -2114,6 +2159,39 @@ export function AttendeeDetailPage() {
       setDeleteError(operatorApiErrorMessage(err, "Could not delete attendee. Try again."));
     } finally {
       if (isStillSelected(target)) setDeleting(false);
+    }
+  }
+
+  /** Erases this attendee's personal data. The page then reloads and shows the read-only page of an
+   * erased attendee. If the wallet pass could not be deleted at the provider the data is gone all
+   * the same, and a dialog offers Try again. */
+  async function handleEraseConfirm() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setErasing(true);
+    setEraseError(null);
+    try {
+      const result = await eraseAttendee(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      setEraseOpen(false);
+      if (result.wallet_pending > 0) {
+        eraseWalletResult.open(result.wallet_pending, () => eraseAttendee(eventId, attendeeId));
+      } else {
+        addToast(erasedToast(result), "success");
+      }
+      await loadDetail();
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setEraseError(operatorApiErrorMessage(err, "Could not erase personal data. Try again."));
+    } finally {
+      if (isStillSelected(target)) setErasing(false);
+    }
+  }
+
+  function cancelDelete() {
+    if (!deleting) {
+      setDeleteOpen(false);
+      setDeleteError(null);
     }
   }
 
@@ -2652,9 +2730,46 @@ export function AttendeeDetailPage() {
   // nie widzimy"). Usually short enough to never truncate, but the numeric UTC offset can push a
   // same-day fallback ("28 Jul 2026" / "04:30 PM UTC+5:30") past the chip's width for a
   // half-hour-offset zone like India's - title carries the untruncated text as a hover fallback.
-  const admissionParts = detail.admitted_at
-    ? formatAdmissionDisplayParts(detail.admitted_at, event.timezone)
-    : null;
+  const admissionParts = admissionPartsOf(detail.admitted_at, event.timezone);
+
+  if (detail.erased_at) {
+    return (
+      <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
+        <ErasedAttendeeView
+          detail={detail}
+          erasedAt={detail.erased_at}
+          event={event}
+          ticketTypes={ticketTypes}
+          walletPlatforms={walletPlatforms}
+          statusStrip={
+            <AttendeeStatusStrip
+              detail={detail}
+              lastMail={lastMail}
+              admissionParts={erasedCheckInParts(detail.admitted_at, event.timezone)}
+              walletPlatforms={walletPlatforms}
+              erased
+            />
+          }
+          error={error}
+          onBack={goBack}
+          onDelete={() => {
+            setDeleteError(null);
+            setDeleteOpen(true);
+          }}
+          onWalletTryAgain={() => eraseWalletResult.open(1, () => eraseAttendee(eventId, attendeeId))}
+        />
+        <DeleteAttendeeDialog
+          open={deleteOpen}
+          name={ERASED_ATTENDEE_LABEL}
+          busy={deleting}
+          error={deleteError}
+          onConfirm={() => void handleDeleteConfirm()}
+          onCancel={cancelDelete}
+        />
+        <EraseWalletResultDialog {...eraseWalletResult.dialogProps} />
+      </section>
+    );
+  }
 
   return (
     <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
@@ -2695,6 +2810,10 @@ export function AttendeeDetailPage() {
               onDelete={() => {
                 setDeleteError(null);
                 setDeleteOpen(true);
+              }}
+              onErase={() => {
+                setEraseError(null);
+                setEraseOpen(true);
               }}
               canRevokeCheckIn={canRevokeCheckInForAttendee}
               revokeCheckInTooltip={revokeCheckInMenuTooltip(detail.check_in_status, isRevoked)}
@@ -3255,31 +3374,31 @@ export function AttendeeDetailPage() {
         }}
       />
 
-      <ConfirmDialog
+      <DeleteAttendeeDialog
         open={deleteOpen}
-        title="Permanently delete this attendee?"
-        message={`This cannot be undone. Deleting ${detail.name} permanently removes:`}
-        errorMessage={deleteError}
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        loading={deleting}
-        confirmationValue={detail.name}
-        confirmationLabel={`Type the attendee's name to confirm: "${detail.name}"`}
+        name={detail.name}
+        busy={deleting}
+        error={deleteError}
         onConfirm={() => void handleDeleteConfirm()}
+        onCancel={cancelDelete}
+      />
+
+      <EraseAttendeeDialog
+        open={eraseOpen}
+        name={detail.name}
+        freesPlace={erasureFreesPlace(detail, isEventArchived(event))}
+        busy={erasing}
+        error={eraseError}
+        onConfirm={() => void handleEraseConfirm()}
         onCancel={() => {
-          if (!deleting) {
-            setDeleteOpen(false);
-            setDeleteError(null);
+          if (!erasing) {
+            setEraseOpen(false);
+            setEraseError(null);
           }
         }}
-      >
-        <ul className="confirm-dialog__list">
-          <li>Profile and contact details</li>
-          <li>Ticket deliveries</li>
-          <li>Wallet pass</li>
-          <li>Check-in history</li>
-        </ul>
-      </ConfirmDialog>
+      />
+
+      <EraseWalletResultDialog {...eraseWalletResult.dialogProps} />
     </section>
   );
 }

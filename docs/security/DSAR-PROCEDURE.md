@@ -19,7 +19,7 @@ flowchart TD
     F --> G[Deliver via secure channel]
     E -- Erasure --> H{Legal confirms erasure\nno retention exception?}
     H -- No --> I[Explain retention exception\nDocument decision]
-    H -- Yes --> J[DELETE attendee via admin API\nper DSAR procedure]
+    H -- Yes --> J[Erase personal data via admin UI or API\nper DSAR procedure]
     J --> K([Document completion date\n+ responsible person])
     G --> K
 ```
@@ -46,7 +46,27 @@ flowchart TD
 ## 4. Erasure
 
 - After legal confirms erasure is required and no retention exception applies:
-  1. Delete the attendee record. Both paths below call the same `DELETE`/`bulk-delete`
+  1. **Erase the person's personal data (the recommended path).** It anonymises the attendee in
+     place: the entry stays in Reports as an anonymous attendee, so counts and capacity do not
+     change, and nothing that identifies the person or opens their ticket is left (name, email,
+     company, notes, custom answers, ticket link, copies of the messages sent, the wallet pass at
+     the provider, and the person's address in saved import results). It works when the event is
+     archived. See [attendee-erasure.md](../dev/attendee-erasure.md) for exactly what is erased.
+     - **Single attendee:** **Admin → Attendees → attendee detail → More actions → Erase personal
+       data**, typing the attendee's name to confirm.
+     - **Several attendees:** select the rows on the **Attendees** list, then **More actions →
+       Erase personal data** from the bulk bar (no typed name: there is no single name to type).
+     - **Wallet pass:** if the provider cannot be reached, a dialog says the pass is still there and
+       offers **Try again**, which repeats only the wallet step; the attendee's page keeps a **Try
+       again** button until it has worked. Everything personal inside Admitto is gone either way.
+     - **Audit:** the event action log and the central admin audit log record who erased how many
+       people and which ids, never a name or an address.
+     - **Direct-API fallback:** `POST /api/admin/events/:eventId/attendees/:id/erase`, or
+       `POST /api/admin/events/:eventId/attendees/bulk-erase` with `{ "attendeeIds": [...] }`, with an
+       authenticated staff session and CSRF token. Repeating a request for people who are already
+       erased changes nothing and only tries the pending wallet deletes again.
+  2. Alternatively, **delete the attendee record entirely**. This is for mistakes, duplicates and
+     test people, because Reports change with it. Both paths below call the same `DELETE`/`bulk-delete`
      `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below, and both
      work even when the event is archived.
      - **Single-attendee deletion:** **Admin → Attendees → attendee detail → More actions →
@@ -73,7 +93,7 @@ flowchart TD
        row is gone, Admitto no longer knows which provider pass belonged to the attendee.
      - **Direct-API fallback:** if the SPA is unavailable, call the endpoint directly with an
        authenticated staff session and CSRF token (same session model as other admin mutations).
-  2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
+  3. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 
 ### Manual DB erasure (fallback)

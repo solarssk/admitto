@@ -19,6 +19,7 @@ import type {
   MeResponse,
   ResendTicketBody,
   DismissBounceResponse,
+  EraseAttendeesResponse,
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
@@ -1021,6 +1022,7 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.rsvp_status?.length) q.set("rsvp_status", params.rsvp_status.join(","));
   if (params.mail_status?.length) q.set("mail_status", params.mail_status.join(","));
   appendCustomFieldParams(q, params.customFieldParams);
+  if (params.includeErased) q.set("include_erased", "1");
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
@@ -1127,6 +1129,31 @@ export async function bulkDeleteAttendees(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<{ deletedCount: number }>(res);
+}
+
+/** Erase one attendee's personal data (the privacy-request action): the record stays as an
+ * anonymous entry, so Reports keep their numbers. Irreversible. Repeating it for an attendee that
+ * is already erased changes nothing and simply tries the wallet pass delete again, which is the
+ * "try again" of `wallet_pending`. */
+export async function eraseAttendee(eventId: string, attendeeId: string): Promise<EraseAttendeesResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/erase`,
+    jsonPostInit({}),
+  );
+  return parseJson<EraseAttendeesResponse>(res);
+}
+
+/** Erase the personal data of a selection at once, from the Attendees list's row-selection bar.
+ * Same effect as `eraseAttendee` once per id. */
+export async function bulkEraseAttendees(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<EraseAttendeesResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-erase`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<EraseAttendeesResponse>(res);
 }
 
 export interface BulkTicketTypeResponse {
