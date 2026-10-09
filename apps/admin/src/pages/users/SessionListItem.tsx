@@ -77,7 +77,7 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
         />
       </td>
       <td>{formatRelativeTime(s.lastSeenAt)}</td>
-      <td className="sessions-col-tablet-hide">
+      <td className="sessions-col-tablet-hide sessions-col-laptop-hide">
         <SessionSignIn authMethod={s.authMethod} />
       </td>
       <td>

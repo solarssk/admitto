@@ -41,7 +41,7 @@ const SESSION_COLUMNS: ReadonlyArray<SkeletonColumn> = [
   { id: "ip", label: "IP address", className: "sessions-col-tablet-hide" },
   { id: "logged-in", label: "Logged in" },
   { id: "last-active", label: "Last active" },
-  { id: "sign-in", label: "Sign-in", className: "sessions-col-tablet-hide" },
+  { id: "sign-in", label: "Sign-in", className: "sessions-col-tablet-hide sessions-col-laptop-hide" },
   { id: "action", label: <span className="sr-only">Action</span>, className: "sessions-action-col" },
 ];
 // The sessions are listed whole and filtered and paged here, so one request serves the tab.
@@ -320,7 +320,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                             <HintLabel hint={LOGGED_IN_HINT}>Logged in</HintLabel>
                           </th>
                           <th>Last active</th>
-                          <th className="sessions-col-tablet-hide">Sign-in</th>
+                          <th className="sessions-col-tablet-hide sessions-col-laptop-hide">Sign-in</th>
                           <th className="sessions-action-col"><span className="sr-only">Action</span></th>
                         </tr>
                       </thead>

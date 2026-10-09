@@ -686,6 +686,23 @@ describe("ActiveSessionsTab responsive layout", () => {
     expect(input.value).toBe("Field Tablet");
   });
 
+  it("drops only the Sign-in column on a laptop, keeping Device and IP address, which are what a reviewer of sessions looks at", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [makeSession({ userEmail: "laptop@example.com" })] });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByText("laptop@example.com");
+    const table = screen.getByRole("table");
+    const headers = [...table.querySelectorAll("thead th")];
+    expect(headers.filter((th) => th.classList.contains("sessions-col-laptop-hide")).map((th) => th.textContent)).toEqual(["Sign-in"]);
+    // Its cells carry the class too, so the whole column goes and a row never has a cell more than a heading.
+    const cells = [...table.querySelectorAll("tbody tr:first-child td")];
+    expect(cells).toHaveLength(headers.length);
+    expect(cells.map((td) => td.classList.contains("sessions-col-laptop-hide"))).toEqual(headers.map((th) => th.classList.contains("sessions-col-laptop-hide")));
+    // On a tablet the three supplementary columns still drop together, as before.
+    expect(headers.filter((th) => th.classList.contains("sessions-col-tablet-hide")).map((th) => th.textContent)).toEqual(["Device", "IP address", "Sign-in"]);
+  });
+
   it("falls back to email, parsed user agent, and a dash when a mobile card's optional fields are empty", async () => {
     mockMatchMedia(false);
     vi.mocked(fetchSessions).mockResolvedValue({
@@ -775,6 +792,17 @@ describe("ActiveSessionsTab on the loading standard", () => {
     await advanceTimers(400);
     expect(region()).toBeNull();
     expect(screen.getByRole("table")).toBeTruthy();
+  });
+
+  it("draws the placeholder's Sign-in column with the classes of the real one, so it has the columns the table will have at every width", async () => {
+    vi.mocked(fetchSessions).mockReturnValue(deferred<{ sessions: SessionListDto[] }>().promise);
+    vi.useFakeTimers();
+    renderWithToast(<ActiveSessionsTab />);
+    await advanceTimers(200);
+
+    const headers = [...(region() as HTMLElement).querySelectorAll("th")];
+    expect(headers.find((th) => th.textContent === "Sign-in")?.className).toBe("sessions-col-tablet-hide sessions-col-laptop-hide");
+    expect(headers.filter((th) => th.classList.contains("sessions-col-laptop-hide"))).toHaveLength(1);
   });
 
   const TIMED_OUT = "The server did not answer in time. Check your connection and try again.";
