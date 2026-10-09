@@ -21,7 +21,7 @@ type WalletCleanupResultJson = {
  * construction. Returns its status too: a pending job has not read its targets yet, so it will
  * cover whatever is active when it starts, but a running one works from the snapshot it already
  * took. */
-async function findPendingWalletCleanupJob(
+function findPendingWalletCleanupJob(
   db: PrismaClient,
   eventId: string,
   type: WalletCleanupJobType,

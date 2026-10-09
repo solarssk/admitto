@@ -64,12 +64,12 @@ async function createOperators(
   for (let i = 0; i < count; i++) {
     const email = `load.${kind}.${runTag}.${i}@example.com`;
     const password = randomBytes(18).toString("base64");
-    const user = await createUser(prisma, {
+    const user = await createUser(prisma, { // NOSONAR - sequential on purpose: password hashing per account would otherwise spike CPU and the DB pool
       email,
       password,
       displayName: `Load ${kind} ${i}`,
     });
-    await prisma.roleAssignment.create({
+    await prisma.roleAssignment.create({ // NOSONAR - same sequential seeding as the createUser call above
       data: {
         user_id: user.id,
         role: "operator",

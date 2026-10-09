@@ -113,6 +113,17 @@ describe("CameraOverlay when the first load of the counts and history failed", (
     expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull();
   });
 
+  it("hands the focus to the list when the retry works, instead of letting it fall to the page", async () => {
+    const { rerender } = render(<CameraOverlay {...baseProps} historyError onRetryHistory={vi.fn()} />);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    rerender(<CameraOverlay {...baseProps} />);
+    await advance(0);
+    expect(document.activeElement).toBe(document.querySelector(".ck-overlay__aside"));
+  });
+
   it("shows the count again when the retry succeeds", () => {
     const { rerender } = render(<CameraOverlay {...baseProps} historyError onRetryHistory={vi.fn()} />);
     rerender(<CameraOverlay {...baseProps} />);

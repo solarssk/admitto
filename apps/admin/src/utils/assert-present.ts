@@ -3,4 +3,6 @@
  * exits has its record: a read that did not answer with it is a placeholder, an error or "not found" before this point).
  * It checks nothing at run time, so there is no branch for a state that cannot happen.
  */
-export function assertPresent<T>(_value: T): asserts _value is NonNullable<T> {}
+export function assertPresent<T>(_value: T): asserts _value is NonNullable<T> {
+  // Intentionally empty: the assertion exists only for the type checker.
+}

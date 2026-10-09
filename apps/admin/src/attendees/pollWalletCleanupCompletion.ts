@@ -57,7 +57,7 @@ export async function pollWalletCleanupCompletion(
         addToast(copy.failed, "error");
         return;
       }
-      await sleepWithAbort(intervalMs, signal);
+      await sleepWithAbort(intervalMs, signal); // NOSONAR - polling: each check must wait for the previous one and the interval
     }
     if (signal.aborted) return;
     addToast(copy.stillRunning, "info");
