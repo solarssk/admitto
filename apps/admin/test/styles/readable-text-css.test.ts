@@ -142,6 +142,51 @@ describe("the attendee page", () => {
   });
 });
 
+describe("the attendee page's Activity log, on a phone", () => {
+  const media = "@media (max-width: 560px)";
+
+  it("wraps a row, so that the time and the person can go under the text instead of beside it", () => {
+    expect(sets(bodyOf(attendees, ".at-tl-item", media), "flex-wrap", "wrap")).toBe(true);
+  });
+
+  it("gives the time and the person a line of their own, lined up with the text: beside it they left it a column of 66px at 390px", () => {
+    const meta = bodyOf(attendees, ".at-tl-meta", media);
+    expect(sets(meta, "flex", "0 0 100%")).toBe(true);
+    expect(sets(meta, "flex-direction", "row")).toBe(true);
+    expect(sets(meta, "flex-wrap", "wrap")).toBe(true);
+    expect(sets(meta, "padding-left", String.raw`calc\(28px \+ 12px\)`)).toBe(true);
+    // The indent is the dot and the gap of the row, which are what it lines up with: changing either has to change it too.
+    expect(sets(bodyOf(attendees, ".at-tl-dot"), "width", "28px")).toBe(true);
+    expect(sets(bodyOf(attendees, ".at-tl-item"), "gap", "12px")).toBe(true);
+  });
+
+  it("lets the person's name wrap, where a long address would stick out of the row, and keeps the time on one line", () => {
+    const actor = bodyOf(attendees, ".at-tl-actor", media);
+    expect(sets(actor, "white-space", "normal")).toBe(true);
+    expect(sets(actor, "overflow-wrap", "anywhere")).toBe(true);
+    // A date broken in the middle is worse than a long one.
+    expect(sets(bodyOf(attendees, ".at-tl-time"), "white-space", "nowrap")).toBe(true);
+  });
+});
+
+describe("the attendee page's Notes", () => {
+  it("lets the head of a note wrap, so that the time goes to the next line instead of past the card (it stuck out at 390px)", () => {
+    expect(sets(bodyOf(attendees, ".at-notes-list__head"), "flex-wrap", "wrap")).toBe(true);
+  });
+
+  it("lets the avatar, the name and the role wrap too, and the group shrink below its content, so a long name does not hold the head wide", () => {
+    const group = bodyOf(attendees, ".at-notes-list__author-group");
+    expect(sets(group, "flex-wrap", "wrap")).toBe(true);
+    expect(sets(group, "min-width", "0")).toBe(true);
+  });
+
+  it("breaks a name that does not fit (an address, when that is the name) only where it has to", () => {
+    const author = bodyOf(attendees, ".at-notes-list__author");
+    expect(sets(author, "overflow-wrap", "anywhere")).toBe(true);
+    expect(declares(author, "word-break")).toBe(false);
+  });
+});
+
 describe("the notification settings, on a phone", () => {
   const media = "@media (max-width: 640px)";
 
