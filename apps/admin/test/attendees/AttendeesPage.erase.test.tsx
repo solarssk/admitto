@@ -19,7 +19,7 @@ function erasedRow(id: string): AttendeeRowDto {
   };
 }
 
-const rowA = makeRow("att-1", "Jane Doe");
+const rowA = { ...makeRow("att-1", "Jane Doe"), department: "Platform" };
 const rowB = makeRow("att-2", "John Smith");
 const gone1 = erasedRow("att-e1");
 const gone2 = erasedRow("att-e2");
@@ -71,6 +71,7 @@ describe("AttendeesPage: erased entries", () => {
 
     await screen.findByText("Jane Doe");
     expect(fetchEventAttendees.mock.calls[0]?.[1]).not.toHaveProperty("includeErased", true);
+    expect(screen.getByText("Platform")).toBeTruthy();
     expect(screen.getByText("2 erased entries are hidden. Reports still count them.")).toBeTruthy();
     expect(screen.queryByText("Erased attendee")).toBeNull();
 
@@ -214,6 +215,21 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("keeps the dialog open while the erasure runs: Escape does nothing until it has answered", async () => {
+    let resolveErase!: (value: unknown) => void;
+    fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));
+    bulkEraseAttendees.mockReturnValueOnce(new Promise((resolve) => (resolveErase = resolve)));
+
+    renderListAndPage();
+    confirmErase(await openEraseDialog());
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Erase personal data of 2 people?" })).toBeTruthy();
+
+    resolveErase({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    expect(await screen.findByText("Personal data of 2 people erased")).toBeTruthy();
   });
 
   it("works on an archived event: privacy requests do not expire with it", async () => {

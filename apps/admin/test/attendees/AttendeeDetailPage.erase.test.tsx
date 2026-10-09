@@ -202,6 +202,42 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(await screen.findByText("Could not erase personal data. Try again.")).toBeTruthy();
   });
 
+  it("keeps the dialog open while the erasure runs: Escape does nothing until it has answered", async () => {
+    let resolveErase!: (value: unknown) => void;
+    eraseAttendee.mockReturnValueOnce(new Promise((resolve) => (resolveErase = resolve)));
+    mockLoad(baseDetail());
+    mockLoad(erasedDetail());
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: ERASE_TITLE })).toBeTruthy();
+
+    resolveErase({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+  });
+
+  it("keeps the delete dialog open while the delete runs: Escape does nothing until it has answered", async () => {
+    let resolveDelete!: () => void;
+    deleteAttendee.mockReturnValueOnce(new Promise<void>((resolve) => (resolveDelete = resolve)));
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna Alpha" });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Delete attendee/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Permanently delete this attendee?" });
+    fireEvent.change(within(dialog).getByLabelText(/Type the attendee's name to confirm/), { target: { value: "Anna Alpha" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Permanently delete this attendee?" })).toBeTruthy();
+
+    resolveDelete();
+    await screen.findByText("Attendees list marker");
+  });
+
   it("Cancel closes the dialog without erasing", async () => {
     mockLoad(baseDetail());
     renderPage();
@@ -389,6 +425,13 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
 
     await openErasedPage({ wallet_pass: null });
     expect(within(document.querySelector(".attendee-status-strip") as HTMLElement).getByText("No pass")).toBeTruthy();
+  });
+
+  it("says the ticket email was not sent for an erased entry that never had a delivery", async () => {
+    await openErasedPage({ deliveries: [] });
+
+    const row = screen.getByText("Ticket email").parentElement as HTMLElement;
+    expect(within(row).getByText("Not sent")).toBeTruthy();
   });
 
   it("leaves out the Edit button on a phone, where the page has no room for a disabled one", async () => {

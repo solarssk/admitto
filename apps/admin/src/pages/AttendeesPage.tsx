@@ -1178,7 +1178,7 @@ export function AttendeesPage() {
   const eventWideRefreshStatusConfirm = useEventScopedConfirm(eventId);
   const [reloadToken, setReloadToken] = useState(0);
   const reloadList = useCallback(() => setReloadToken((n) => n + 1), []);
-  const eraseWalletResult = useEraseWalletResult({ scopeKey: eventId ?? "", onSettled: reloadList });
+  const eraseWalletResult = useEraseWalletResult({ scopeKey: eventId, onSettled: reloadList });
   const eventWideVoidActive = useWalletVoidActive({
     eventId,
     addToast,

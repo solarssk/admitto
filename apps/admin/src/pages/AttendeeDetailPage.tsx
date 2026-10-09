@@ -2166,16 +2166,16 @@ export function AttendeeDetailPage() {
    * erased attendee. If the wallet pass could not be deleted at the provider the data is gone all
    * the same, and a dialog offers Try again. */
   async function handleEraseConfirm() {
-    if (!eventId || !attendeeId) return;
-    const target = { eventId, attendeeId };
+    // The dialog exists only on a page that has both ids (the page above returns early without them).
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
     setErasing(true);
     setEraseError(null);
     try {
-      const result = await eraseAttendee(eventId, attendeeId);
+      const result = await eraseAttendee(target.eventId, target.attendeeId);
       if (!isStillSelected(target)) return;
       setEraseOpen(false);
       if (result.wallet_pending > 0) {
-        eraseWalletResult.open(result.wallet_pending, () => eraseAttendee(eventId, attendeeId));
+        eraseWalletResult.open(result.wallet_pending, () => eraseAttendee(target.eventId, target.attendeeId));
       } else {
         addToast(erasedToast(result), "success");
       }

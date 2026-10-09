@@ -12,6 +12,9 @@ import { MailStatusBadge } from "./mailStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import "./attendees.css";
 
+/** The Erase item of an erased attendee's menu is off, so its click never happens. */
+const noop = () => undefined;
+
 /** One line of a card that holds nothing any more. */
 function ErasedRow({ label, children }: Readonly<{ label: string; children?: ReactNode }>) {
   return (
@@ -78,7 +81,7 @@ function ErasedActionsMenu({ erasedOn, onDelete }: Readonly<{ erasedOn: string; 
             label="Erase personal data"
             hint={`Personal data was erased on ${erasedOn}.`}
             disabled
-            onClick={() => undefined}
+            onClick={noop}
           />
           <hr className="more-actions-menu__divider" />
           <MoreActionsMenuItem

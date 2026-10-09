@@ -1949,7 +1949,7 @@
 
 /* The sentence takes the room it needs and the switch goes under it on a narrow screen, never
    split across two lines. */
-.attendees-erased-bar > [role="status"] {
+.attendees-erased-bar > output {
   flex: 1 1 14rem;
 }
 

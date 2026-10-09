@@ -20,12 +20,15 @@ type PendingWallet = {
  * and a retry that was already on its way is dropped, so nothing from the old page reaches the new
  * one. `onSettled` runs after every retry that got an answer, to refresh what the page shows.
  */
-export function useEraseWalletResult({ scopeKey, onSettled }: Readonly<{ scopeKey: string; onSettled: () => void }>) {
+export function useEraseWalletResult({
+  scopeKey,
+  onSettled,
+}: Readonly<{ scopeKey: string | undefined; onSettled: () => void }>) {
   const { addToast } = useToast();
   const [pending, setPending] = useState<PendingWallet | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const scopeRef = useRef(scopeKey);
+  const scopeRef = useRef<string | undefined>(scopeKey);
   scopeRef.current = scopeKey;
 
   useEffect(() => {
