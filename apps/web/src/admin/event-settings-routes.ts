@@ -7,6 +7,7 @@ import { canManageInstance } from "@admitto/auth";
 import {
   ADMITTABLE_STATUS_LIST,
   REVOCABLE_ITEM_STATES,
+  keepLiveRows,
   writeAdminAuditLog,
   parseWalletFieldMapping,
 } from "@admitto/tickets";
@@ -292,13 +293,15 @@ async function loadRevokeCounts(
         event_id: eventId,
         admitted_at: { not: null },
         status: { in: ADMITTABLE_STATUS_LIST },
+        // Erased attendees keep their admission and hand-outs: the bulk actions skip them.
+        erased_at: null,
       },
     }),
     db.attendeeItemState.count({
       where: {
         state: { in: REVOCABLE_ITEM_STATES },
         event_item: { event_id: eventId },
-        attendee: { status: { in: ADMITTABLE_STATUS_LIST } },
+        attendee: { status: { in: ADMITTABLE_STATUS_LIST }, erased_at: null },
       },
     }),
   ]);
@@ -315,7 +318,7 @@ async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): 
   return db.walletPass.count({
     where: {
       status: "active",
-      attendee: { event_id: eventId },
+      attendee: { event_id: eventId, erased_at: null },
       OR: [
         { apple_active_registrations: { gt: 0 } },
         { google_active_registrations: { gt: 0 } },
@@ -338,13 +341,13 @@ async function loadInstalledWalletPassCountByPlatform(
 ): Promise<{ apple: number; google: number; samsung: number }> {
   const [apple, google, samsung] = await Promise.all([
     db.walletPass.count({
-      where: { status: "active", attendee: { event_id: eventId }, apple_active_registrations: { gt: 0 } },
+      where: { status: "active", attendee: { event_id: eventId, erased_at: null }, apple_active_registrations: { gt: 0 } },
     }),
     db.walletPass.count({
-      where: { status: "active", attendee: { event_id: eventId }, google_active_registrations: { gt: 0 } },
+      where: { status: "active", attendee: { event_id: eventId, erased_at: null }, google_active_registrations: { gt: 0 } },
     }),
     db.walletPass.count({
-      where: { status: "active", attendee: { event_id: eventId }, samsung_active_registrations: { gt: 0 } },
+      where: { status: "active", attendee: { event_id: eventId, erased_at: null }, samsung_active_registrations: { gt: 0 } },
     }),
   ]);
   return { apple, google, samsung };
@@ -1447,11 +1450,13 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
   const audit = adminAuditFromContext(c);
   if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
 
-  const totalCount = await db.attendee.count({ where: { event_id: eventId } });
+  // Erased attendees are left out: the file is for data-subject requests and audits of the
+  // personal data held, and an erased row holds none.
+  const totalCount = await db.attendee.count({ where: { event_id: eventId, erased_at: null } });
   const truncated = totalCount > PII_EXPORT_MAX_ROWS;
 
-  const attendees = await db.attendee.findMany({
-    where: { event_id: eventId },
+  const fetched = await db.attendee.findMany({
+    where: { event_id: eventId, erased_at: null },
     take: PII_EXPORT_MAX_ROWS,
     orderBy: { created_at: "asc" },
     select: {
@@ -1465,6 +1470,9 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
       custom_data: true,
     },
   });
+  // The last check before the file is built: `erased_at: null` above is evaluated against the row
+  // as it was before an erasure that is still open began, so such an attendee would be in the file.
+  const attendees = await keepLiveRows(db, fetched);
 
   const columns = [
     "id",

@@ -40,7 +40,10 @@ describe("voidOneWalletPassAtProvider", () => {
   });
 
   it("writes nothing and does not realign when the attendee was erased while the void was in flight", async () => {
-    vi.mocked(lockAttendeeRow).mockResolvedValueOnce({ id: "att-1", status: "registered", erased: true });
+    // The first lock is the last check before the provider call, the second the one of the write.
+    vi.mocked(lockAttendeeRow)
+      .mockResolvedValueOnce({ id: "att-1", status: "registered", erased: false })
+      .mockResolvedValueOnce({ id: "att-1", status: "registered", erased: true });
 
     const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
 
@@ -49,6 +52,36 @@ describe("voidOneWalletPassAtProvider", () => {
     expect(txUpdateMany).not.toHaveBeenCalled();
     expect(writeActionLog).not.toHaveBeenCalled();
     expect(provider.restorePass).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["erased", { id: "att-1", status: "registered", erased: true }],
+    ["gone", null],
+  ])("does not call the provider for an attendee who is %s when the last check is made", async (_label, locked) => {
+    vi.mocked(lockAttendeeRow).mockResolvedValueOnce(locked);
+
+    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(provider.voidPass).not.toHaveBeenCalled();
+    expect(provider.restorePass).not.toHaveBeenCalled();
+    // Only the last check took a transaction; the write was never reached.
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(txUpdateMany).not.toHaveBeenCalled();
+    expect(writeActionLog).not.toHaveBeenCalled();
+  });
+
+  it("makes the last check after the row is read again and before the provider is called", async () => {
+    const order: string[] = [];
+    findFirst.mockImplementation(async () => (order.push("re-read"), ACTIVE_ROW));
+    vi.mocked(lockAttendeeRow).mockImplementationOnce(
+      async () => (order.push("last check"), { id: "att-1", status: "registered", erased: false }),
+    );
+    provider.voidPass.mockImplementation(async () => void order.push("void"));
+
+    await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(order).toEqual(["re-read", "last check", "void"]);
   });
 
   it("voids the pass at the provider, marks the row voided (only while not removed) and logs it", async () => {
@@ -228,6 +261,7 @@ describe("voidOneWalletPassAtProvider", () => {
     await expect(
       voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit),
     ).rejects.toThrow("provider down");
-    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(txUpdateMany).not.toHaveBeenCalled();
+    expect(writeActionLog).not.toHaveBeenCalled();
   });
 });

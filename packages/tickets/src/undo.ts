@@ -179,7 +179,7 @@ export async function revokeCheckInMutation(
   // IllegalItemTransitionError, not UndoNotAllowedError: callers that only clear a stale
   // admission treat the latter as "nothing to do" and carry on with a status change.
   const locked = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
-  if (locked?.erased) throw new IllegalItemTransitionError("Attendee data has been erased");
+  if (locked?.erased) throw new IllegalItemTransitionError("Attendee data has been erased", true);
 
   const lastValid = await tx.checkIn.findFirst({
     where: {

@@ -42,6 +42,9 @@ export async function lockAttendeeRow(
  * returns the ids of those that exist and are not erased. For a reader that must see the result of
  * an erasure that is still open before it acts on what it read (a mail about to leave): it waits
  * for the erasure to commit, where a plain read would show the rows as they were before it began.
+ * The ids travel as one array parameter, not one parameter each: a statement binds at most 65 535
+ * values (past that the server answers with an error about parameter formats), and an export checks
+ * as many rows as its cap allows, 50 000.
  */
 export async function lockLiveAttendees(
   db: DbClient,
@@ -50,7 +53,7 @@ export async function lockLiveAttendees(
   if (attendeeIds.length === 0) return new Set();
   const rows = await db.$queryRaw<{ id: string; erased_at: Date | null }[]>`
     SELECT "id", "erased_at" FROM "Attendee"
-    WHERE "id" IN (${Prisma.join([...new Set(attendeeIds)])})
+    WHERE "id" = ANY(${[...new Set(attendeeIds)]}::text[])
     ORDER BY "id" FOR KEY SHARE
   `;
   return new Set(rows.filter((row) => row.erased_at === null).map((row) => row.id));

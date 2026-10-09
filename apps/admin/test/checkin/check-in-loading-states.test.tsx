@@ -231,6 +231,58 @@ describe("ScanHistoryList without an event id, and the error card without a Retr
   });
 });
 
+describe("ScanHistoryError: where the focus goes when the retry works", () => {
+  it("hands it to the region that stays, which is given a tabindex to hold it, when it has one", async () => {
+    const { container, rerender } = render(
+      <div id="stays">
+        <ScanHistoryError onRetry={vi.fn()} landmark="#stays" />
+      </div>,
+    );
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    // The retry worked: the error and its Retry are gone, and the focus has to go somewhere that is still there.
+    rerender(<div id="stays" />);
+    await advance(0);
+    const region = container.querySelector("#stays");
+    expect(document.activeElement).toBe(region);
+    expect(region?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("leaves it to the page when it is given no region, even inside a tab panel that would take it", async () => {
+    const { rerender } = render(
+      <div role="tabpanel">
+        <ScanHistoryError onRetry={vi.fn()} />
+      </div>,
+    );
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(<div role="tabpanel" />);
+    await advance(0);
+    // The page decides (the scan field): this component must not take the focus to the panel on its own.
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not move a focus that was never on the Retry", async () => {
+    const { rerender } = render(
+      <div id="stays">
+        <button type="button">elsewhere</button>
+        <ScanHistoryError onRetry={vi.fn()} landmark="#stays" />
+      </div>,
+    );
+    screen.getByRole("button", { name: "elsewhere" }).focus();
+
+    rerender(
+      <div id="stays">
+        <button type="button">elsewhere</button>
+      </div>,
+    );
+    await advance(0);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "elsewhere" }));
+  });
+});
+
 describe("ScanHistoryList placeholder rows follow what this event's list had last time", () => {
   const entry = (i: number) => ({
     id: `h${i}`,
