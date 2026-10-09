@@ -22,7 +22,15 @@ function runSmoke(imageRef) {
     copyFileSync(join(root, 'deploy/scripts/smoke-image.sh'), join(deploy, 'scripts/smoke-image.sh'))
 
     const docker = join(bin, 'docker')
-    writeFileSync(docker, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK_DOCKER_LOG"\n')
+    writeFileSync(docker, [
+      '#!/bin/sh',
+      'printf "%s\\n" "$*" >> "$MOCK_DOCKER_LOG"',
+      // The script pipes the bootstrap password into `docker compose exec -T`, which reads it. A mock that
+      // exits without doing so leaves the writer of that pipe to die of SIGPIPE whenever it is the slower
+      // of the two, and the script then ends with status 141 under pipefail.
+      'case " $* " in *" exec "*) cat > /dev/null;; esac',
+      '',
+    ].join('\n'))
     chmodSync(docker, 0o755)
     const sudo = join(bin, 'sudo')
     writeFileSync(sudo, '#!/bin/sh\nexit 0\n')
