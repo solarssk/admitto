@@ -47,8 +47,10 @@ flowchart TD
 
 - After legal confirms erasure is required and no retention exception applies:
   1. **Erase the person's personal data (the recommended path).** It anonymises the attendee in
-     place: the entry stays in Reports as an anonymous attendee, so counts and capacity do not
-     change, and nothing that identifies the person or opens their ticket is left (name, email,
+     place: the entry stays in Reports as an anonymous attendee, so the Reports totals do not
+     change. Capacity does change by one place: a person who had not checked in yet, on an event that
+     is not archived, is marked cancelled, so their place becomes free. Nothing that identifies the
+     person or opens their ticket is left (name, email,
      company, notes, custom answers, ticket link, copies of the messages sent, the wallet pass at
      the provider, and the person's address in saved import results). It works when the event is
      archived. See [attendee-erasure.md](../dev/attendee-erasure.md) for exactly what is erased.

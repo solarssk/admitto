@@ -293,6 +293,35 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     }
   });
 
+  it.each([
+    ["nothing is left to delete at the provider", 0, "Apple Wallet: Was registered"],
+    ["a pass is still at the provider", 1, "Apple Wallet: Registered"],
+  ])("shows the Wallet column of the erased people at once when %s", async (_label, walletPending, label) => {
+    eventState.appleWallet = true;
+    const withPass = (id: string, name: string): AttendeeRowDto => ({
+      ...makeRow(id, name),
+      wallet_status: {
+        apple_active_registrations: 1,
+        apple_inactive_registrations: 0,
+        google_active_registrations: 0,
+        google_inactive_registrations: 0,
+        samsung_active_registrations: 0,
+        samsung_inactive_registrations: 0,
+        provider_removed_at: null,
+      },
+    });
+    fetchEventAttendees.mockResolvedValueOnce(listOf([withPass("att-1", "Jane Doe"), withPass("att-2", "John Smith")], 0));
+    fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: walletPending });
+
+    renderListAndPage();
+    confirmErase(await openEraseDialog());
+    if (walletPending > 0) fireEvent.click(within(await screen.findByRole("dialog", { name: "Personal data erased" })).getByRole("button", { name: "Close" }));
+
+    expect(await screen.findAllByText("Erased attendee")).toHaveLength(2);
+    expect(screen.getAllByLabelText(label)).toHaveLength(2);
+  });
+
   it("steps back to the last page that exists when the erasure emptied the page the list was on", async () => {
     const pageOne = Array.from({ length: 25 }, (_, i) => makeRow(`att-p1-${i}`, `Person ${i}`));
     let erased = false;

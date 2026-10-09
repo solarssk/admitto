@@ -2778,7 +2778,8 @@ export function AttendeeDetailPage() {
               erased
             />
           }
-          error={error}
+          error={failure.error}
+          onRetry={failure.retry}
           onBack={goBack}
           onDelete={() => {
             setDeleteError(null);

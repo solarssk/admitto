@@ -224,9 +224,18 @@ describe("redactedAfterErasure", () => {
     expect(redacted.status).toBe(status);
   });
 
-  it("marks the pass as still at the provider when the answer said so, and not otherwise", () => {
-    expect(redactedAfterErasure(live as never, erasure, true).wallet_pass_delete_pending).toBe(true);
-    expect(redactedAfterErasure(live as never, erasure, false).wallet_pass_delete_pending).toBe(false);
+  it("marks the pass as still at the provider when the answer said so", () => {
+    const redacted = redactedAfterErasure(live as never, erasure, true);
+
+    expect(redacted.wallet_pass_delete_pending).toBe(true);
+    expect(redacted.wallet_pass).toMatchObject({ provider_removed_at: null });
+  });
+
+  it("marks the pass as deleted now when nothing is left to delete at the provider", () => {
+    const redacted = redactedAfterErasure(live as never, erasure, false);
+
+    expect(redacted.wallet_pass_delete_pending).toBe(false);
+    expect(redacted.wallet_pass).toMatchObject({ provider_removed_at: erasure.at });
   });
 });
 
@@ -248,7 +257,7 @@ describe("redactedRowsAfterErasure", () => {
   it("redacts the erased rows in place and leaves the others as they are", () => {
     const items = [row("a"), row("b"), row("c")];
 
-    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), erasure);
+    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), erasure, true);
 
     expect(result).toHaveLength(3);
     expect(result[0]).toMatchObject({ id: "a", erased_at: "2026-10-09T12:00:00.000Z", name: ERASED_ATTENDEE_LABEL, email: "", company: null, department: null, ticket_type: "vip" });
@@ -261,7 +270,7 @@ describe("redactedRowsAfterErasure", () => {
     const items = [row("a")];
     const before = JSON.stringify(items);
 
-    redactedRowsAfterErasure(items as never, new Set(["a"]), erasure);
+    redactedRowsAfterErasure(items as never, new Set(["a"]), erasure, true);
 
     expect(JSON.stringify(items)).toBe(before);
   });
@@ -270,14 +279,39 @@ describe("redactedRowsAfterErasure", () => {
     const admitted = { ...row("a"), admitted_at: "2026-10-09T14:37:21.123Z", check_in_status: "admitted" };
     const waiting = row("b");
 
-    const result = redactedRowsAfterErasure([admitted, waiting, admitted] as never, new Set(["a", "b"]), erasure);
+    const result = redactedRowsAfterErasure([admitted, waiting, admitted] as never, new Set(["a", "b"]), erasure, true);
 
     expect(result[0]).toMatchObject({ admitted_at: "2026-10-09T14:00:00.000Z", status: "registered" });
     expect(result[1]).toMatchObject({ admitted_at: null, status: "cancelled" });
   });
 
+  describe("the wallet pass of an erased row", () => {
+    const withPass = { ...row("a"), wallet_status: { apple_active_registrations: 1, apple_inactive_registrations: 0, provider_removed_at: null } };
+
+    it("is marked removed at the provider when nothing is left to delete there, and only for the erased rows", () => {
+      const other = { ...row("b"), wallet_status: { apple_active_registrations: 1, apple_inactive_registrations: 0, provider_removed_at: null } };
+
+      const result = redactedRowsAfterErasure([withPass, other] as never, new Set(["a"]), erasure, false);
+
+      expect(result[0]?.wallet_status).toMatchObject({ apple_active_registrations: 1, provider_removed_at: erasure.at });
+      expect(result[1]?.wallet_status).toMatchObject({ provider_removed_at: null });
+    });
+
+    it("is left as it is while the answer says passes are still at the provider", () => {
+      const [result] = redactedRowsAfterErasure([withPass] as never, new Set(["a"]), erasure, true);
+
+      expect(result?.wallet_status).toMatchObject({ provider_removed_at: null });
+    });
+
+    it("stays missing for someone who has no pass", () => {
+      const [result] = redactedRowsAfterErasure([{ ...row("a"), wallet_status: null }] as never, new Set(["a"]), erasure, false);
+
+      expect(result?.wallet_status).toBeNull();
+    });
+  });
+
   it("leaves everyone's status alone on an archived event", () => {
-    const [result] = redactedRowsAfterErasure([row("a")] as never, new Set(["a"]), { ...erasure, eventArchived: true });
+    const [result] = redactedRowsAfterErasure([row("a")] as never, new Set(["a"]), { ...erasure, eventArchived: true }, true);
 
     expect(result).toMatchObject({ status: "registered" });
   });

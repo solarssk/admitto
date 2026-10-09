@@ -1976,11 +1976,12 @@ export function AttendeesPage() {
         clearSelection();
         // Nothing of the erased people stays on screen while the list reads the server's version.
         setItems((current) =>
-          redactedRowsAfterErasure(current, new Set(ids), {
-            at: new Date().toISOString(),
-            timezone: event.timezone,
-            eventArchived: isEventArchived(event),
-          }),
+          redactedRowsAfterErasure(
+            current,
+            new Set(ids),
+            { at: new Date().toISOString(), timezone: event.timezone, eventArchived: isEventArchived(event) },
+            result.wallet_pending > 0,
+          ),
         );
         setReloadToken((n) => n + 1);
         if (result.wallet_pending > 0) {

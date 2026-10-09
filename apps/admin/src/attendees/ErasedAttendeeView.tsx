@@ -3,6 +3,7 @@ import { Button, Card, Notice, PageHeader } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { AttendeeDetailDto, EventDto, TicketTypeDto } from "../api/types.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
+import { RefreshWarning } from "../components/RefreshWarning.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatEventDate } from "../utils/event-dates.js";
@@ -102,7 +103,7 @@ function ErasedActionsMenu({ erasedOn, onDelete }: Readonly<{ erasedOn: string; 
 
 /**
  * The page of an attendee whose personal data has been erased: read-only. The entry stays so that
- * counts and capacity do not move, and it says so. Every field that held personal data reads
+ * the Reports totals do not move, and it says so. Every field that held personal data reads
  * "Erased"; what the entry keeps (ticket type, delivery result, check-in time to the hour) is shown
  * as it is.
  */
@@ -114,6 +115,7 @@ export function ErasedAttendeeView({
   walletPlatforms,
   statusStrip,
   error,
+  onRetry,
   onBack,
   onDelete,
   onWalletTryAgain,
@@ -126,8 +128,10 @@ export function ErasedAttendeeView({
   walletPlatforms: EnabledWalletPlatforms;
   /** The row of status chips, built by the page that owns them. */
   statusStrip: ReactNode;
-  /** A read of the page that failed (after an erasure, or a retry), shown above the page. */
+  /** A read of the page that failed (after an erasure, or a retry), shown above the page with a Retry. */
   error: string | null;
+  /** Reads the page again: the Retry of `error`. */
+  onRetry: () => Promise<void>;
   onBack: () => void;
   onDelete: () => void;
   onWalletTryAgain: () => void;
@@ -162,11 +166,7 @@ export function ErasedAttendeeView({
           </>
         }
       />
-      {error && (
-        <Notice variant="error" role="alert">
-          {error}
-        </Notice>
-      )}
+      {error && <RefreshWarning message={error} onRetry={onRetry} landmark=".attendee-detail-page" />}
       <Notice variant="highlight" icon="eraser">
         Personal data erased on {erasedOn}. This entry stays in your counts, with no personal details.
       </Notice>

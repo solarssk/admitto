@@ -312,6 +312,41 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     }
   });
 
+  it("shows the pass as deleted at once when nothing was left to delete at the provider, while the page still waits", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    mockLoad(baseDetail({ wallet_pass: pass() }));
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
+    expect(within(row).getByText(/^Deleted on .*2026/)).toBeTruthy();
+    expect(screen.getByText("Pass removed")).toBeTruthy();
+    expect(screen.queryByText(/Not deleted yet/)).toBeNull();
+  });
+
+  it("offers a Retry when the page cannot read the server's version afterwards, and the Retry reads it again", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    mockLoad(baseDetail());
+    loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    const warning = (await screen.findByText("Could not load attendee.")).closest(".at-notice") as HTMLElement;
+    expect(screen.getByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    mockLoad(erasedDetail());
+    fireEvent.click(within(warning).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(screen.queryByText("Could not load attendee.")).toBeNull());
+    expect(loadAttendeeDetailData).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+  });
+
   it("keeps the Try again for a pass that is still at the provider when the page cannot read the server's version", async () => {
     eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1 });
     mockLoad(baseDetail({ wallet_pass: pass() }));

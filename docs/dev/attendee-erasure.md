@@ -1,6 +1,6 @@
 # Erasing an attendee's personal data
 
-`eraseAttendees` ([`packages/tickets/src/erase-attendees.ts`](../../packages/tickets/src/erase-attendees.ts)) anonymises attendees in place. The row stays, so Reports, capacity and the admission log keep their numbers; nothing that identifies the person or opens their ticket is left. It is a different action from removing an attendee (hard delete, for mistakes), which changes Reports.
+`eraseAttendees` ([`packages/tickets/src/erase-attendees.ts`](../../packages/tickets/src/erase-attendees.ts)) anonymises attendees in place. The row stays, so the Reports totals and the admission log keep their numbers; capacity is the one thing that moves, because a person not admitted yet on an event that is not archived becomes `cancelled` and their place is free again. Nothing that identifies the person or opens their ticket is left. It is a different action from removing an attendee (hard delete, for mistakes), which changes Reports.
 
 ## What happens
 

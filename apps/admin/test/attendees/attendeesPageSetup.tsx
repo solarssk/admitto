@@ -12,7 +12,7 @@ export const exportAttendees = vi.fn();
 export const bulkEraseAttendees = vi.fn();
 export const reportApiError = vi.fn();
 /** Read by the mocked outlet context below: a test archives the event by setting `archived_at`. */
-export const eventState: { archived_at: string | null } = { archived_at: null };
+export const eventState: { archived_at: string | null; appleWallet: boolean } = { archived_at: null, appleWallet: false };
 
 export function makeRow(id: string, name: string): AttendeeRowDto {
   return {
@@ -83,6 +83,8 @@ vi.mock("react-router", async (importOriginal) => {
         location: null,
         attendee_count: 60,
         archived_at: eventState.archived_at,
+        wallet_enabled: eventState.appleWallet,
+        wallet_apple_enabled: eventState.appleWallet,
       },
     }),
   };
@@ -100,6 +102,7 @@ export function renderPage() {
 
 beforeEach(() => {
   eventState.archived_at = null;
+  eventState.appleWallet = false;
   mockMatchMedia(true);
   fetchEventCustomFields.mockResolvedValue([]);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));

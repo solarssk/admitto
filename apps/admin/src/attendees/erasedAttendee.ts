@@ -152,18 +152,19 @@ function admissionAfterErasure(
 
 /**
  * What the attendee page holds right after the server has confirmed an erasure: the detail with
- * everything personal taken out and the erased marker set, the check-in time cut to the hour and the
- * pass marked as still at the provider when the answer said so (`walletPending`). The page then reads
- * the server's version to fill in what the entry keeps; until that answers, or for good if the read
- * fails, nothing of the person stays on screen, the page is the read-only one, and its Try again for
- * a pass that is still at the provider is there.
+ * everything personal taken out and the erased marker set, the check-in time cut to the hour, and the
+ * pass as the answer left it: still at the provider when `walletPending`, deleted now when nothing is
+ * left to delete (a pass that never reached the provider reads as deleted too until the server's
+ * version arrives). The page then reads the server's version to fill in what the entry keeps; until
+ * that answers, or for good if the read fails, nothing of the person stays on screen, the page is the
+ * read-only one, and its Try again for a pass that is still at the provider is there.
  */
 export function redactedAfterErasure(
   detail: AttendeeDetailDto,
   erasure: ConfirmedErasure,
   walletPending: boolean,
 ): AttendeeDetailDto {
-  return {
+  const redacted: AttendeeDetailDto = {
     ...detail,
     ...admissionAfterErasure(detail, erasure),
     erased_at: erasure.at,
@@ -196,19 +197,22 @@ export function redactedAfterErasure(
     notes_total: 0,
     wallet_pass_delete_pending: walletPending,
   };
+  return walletPending ? redacted : walletPassRemoved(redacted, erasure.at);
 }
 
 /**
  * What the Attendees list holds right after the server has confirmed the erasure of `ids`: those
  * rows, redacted in place (the erased marker set, name, address, company and department taken out,
- * the check-in time cut to the hour). The list then reads the server's version, which leaves them
- * out unless erased entries are shown; until that answers, or if it is slow, nothing of those people
- * stays on screen, and the page does not empty out from under the operator.
+ * the check-in time cut to the hour, and the pass marked as removed at the provider when the answer
+ * left nothing to delete: `walletPending` is false). The list then reads the server's version, which
+ * leaves them out unless erased entries are shown; until that answers, or if it is slow, nothing of
+ * those people stays on screen, and the page does not empty out from under the operator.
  */
 export function redactedRowsAfterErasure(
   items: readonly AttendeeRowDto[],
   ids: ReadonlySet<string>,
   erasure: ConfirmedErasure,
+  walletPending: boolean,
 ): AttendeeRowDto[] {
   return items.map((row) =>
     ids.has(row.id)
@@ -220,6 +224,10 @@ export function redactedRowsAfterErasure(
           email: "",
           company: null,
           department: null,
+          wallet_status:
+            walletPending || row.wallet_status === null
+              ? row.wallet_status
+              : { ...row.wallet_status, provider_removed_at: erasure.at },
         }
       : row,
   );
