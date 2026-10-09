@@ -154,7 +154,7 @@ describe("erasing one attendee", () => {
     const res = await post(erasePath(EVENT_ID, a.id));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    expect(await res.json()).toEqual({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: a.id } });
     expect(row).toMatchObject({ name: "Erased attendee", email: `erased-${a.id}@erased.invalid`, company: null });
     expect(row.erased_at).not.toBeNull();
@@ -191,7 +191,7 @@ describe("erasing one attendee", () => {
 
     const again = await post(erasePath(EVENT_ID, a.id));
 
-    expect(await again.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    expect(await again.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     expect(await countAudit()).toEqual(before);
   });
 
@@ -338,7 +338,7 @@ describe("the wallet pass of an erased attendee", () => {
 
     const res = await post(erasePath(EVENT_ID, a.id));
 
-    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0 });
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(`pc-${a.id}`);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } });
@@ -352,13 +352,13 @@ describe("the wallet pass of an erased attendee", () => {
 
     const first = await post(erasePath(EVENT_ID, a.id));
 
-    expect(await first.json()).toMatchObject({ erased: 1, wallet_pending: 1 });
+    expect(await first.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
 
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 200 })));
     const retry = await post(erasePath(EVENT_ID, a.id));
 
-    expect(await retry.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    expect(await retry.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [a.id] });
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).not.toBeNull();
   });
 
@@ -370,7 +370,7 @@ describe("the wallet pass of an erased attendee", () => {
 
     const res = await post(erasePath(WALLET_OFF_EVENT_ID, a.id));
 
-    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0 });
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -382,8 +382,37 @@ describe("the wallet pass of an erased attendee", () => {
 
     const res = await post(erasePath(ARCHIVED_EVENT_ID, a.id));
 
-    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1 });
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not report a pass that never reached the provider as removed now", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: null } });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await post(erasePath(EVENT_ID, a.id));
+
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
+  });
+
+  it("does not report a pass that was removed before as removed now, and keeps the date it was removed", async () => {
+    const a = await createAttendee();
+    const removedBefore = new Date("2026-09-01T10:00:00.000Z");
+    await prisma.walletPass.create({
+      data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, provider_removed_at: removedBefore },
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await post(erasePath(EVENT_ID, a.id));
+
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toEqual(removedBefore);
   });
 });
 
@@ -399,11 +428,11 @@ describe("erasing a selection", () => {
     ));
 
     const first = await post(bulkPath(EVENT_ID), { attendeeIds: [a.id, b.id] });
-    expect(await first.json()).toMatchObject({ erased: 2, wallet_pending: 1 });
+    expect(await first.json()).toMatchObject({ erased: 2, wallet_pending: 1, wallet_removed_ids: [b.id] });
 
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 200 })));
     const retry = await post(bulkPath(EVENT_ID), { attendeeIds: [a.id, b.id] });
-    expect(await retry.json()).toMatchObject({ erased: 0, already_erased: 2, wallet_pending: 0 });
+    expect(await retry.json()).toMatchObject({ erased: 0, already_erased: 2, wallet_pending: 0, wallet_removed_ids: [a.id] });
   });
 
   it("refuses more than 100 attendees at once when the event has wallet credentials", async () => {
@@ -420,7 +449,7 @@ describe("erasing a selection", () => {
 
     const res = await post(bulkPath(EVENT_ID), { attendeeIds: [a.id, b.id, done.id, "nobody"] });
 
-    expect(await res.json()).toEqual({ erased: 2, already_erased: 1, not_found: 1, wallet_pending: 0 });
+    expect(await res.json()).toEqual({ erased: 2, already_erased: 1, not_found: 1, wallet_pending: 0, wallet_removed_ids: [] });
     const log = await prisma.attendeeActionLog.findFirstOrThrow({
       where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" },
       orderBy: { created_at: "desc" },
@@ -446,7 +475,7 @@ describe("erasing a selection", () => {
 
     const res = await post(bulkPath(EVENT_ID), { attendeeIds: ["nobody-1", "nobody-2"] });
 
-    expect(await res.json()).toEqual({ erased: 0, already_erased: 0, not_found: 2, wallet_pending: 0 });
+    expect(await res.json()).toEqual({ erased: 0, already_erased: 0, not_found: 2, wallet_pending: 0, wallet_removed_ids: [] });
     expect(await prisma.attendeeActionLog.count({ where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" } })).toBe(before);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -454,13 +483,19 @@ describe("erasing a selection", () => {
   it("still answers, with the pass pending, when the provider follow-up itself breaks", async () => {
     const a = await createAttendee();
     await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
-    vi.spyOn(prisma.walletPass, "findMany").mockRejectedValueOnce(new Error("db hiccup"));
+    // The first read of the passes is the snapshot taken before the follow-up, the second is the follow-up's own.
+    const realFindMany = prisma.walletPass.findMany.bind(prisma.walletPass);
+    let reads = 0;
+    vi.spyOn(prisma.walletPass, "findMany").mockImplementation(((args: Parameters<typeof realFindMany>[0]) => {
+      reads += 1;
+      return reads === 2 ? Promise.reject(new Error("db hiccup")) : realFindMany(args);
+    }) as never);
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await post(erasePath(EVENT_ID, a.id));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1 });
+    expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
     expect(errSpy).toHaveBeenCalled();
   });
 
@@ -481,11 +516,11 @@ describe("erasing a selection", () => {
     const first = post(erasePath(EVENT_ID, a.id));
     await startedPromise;
     const second = await post(erasePath(EVENT_ID, a.id));
-    expect(await second.json()).toMatchObject({ already_erased: 1, wallet_pending: 1 });
+    expect(await second.json()).toMatchObject({ already_erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     release();
-    expect(await (await first).json()).toMatchObject({ erased: 1, wallet_pending: 0 });
+    expect(await (await first).json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
   });
 
   it.each([

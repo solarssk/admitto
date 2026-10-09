@@ -57,7 +57,7 @@ export default defineConfig({
         test: {
           name: "attendee-detail-page-shared-setup",
           include: [
-            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,erase,revokeCheckIn,copyTicketLink,archived}.test.tsx",
           ],
           setupFiles: ["./test/attendees/attendeeDetailPageSetup.ts"],
         },
@@ -67,7 +67,7 @@ export default defineConfig({
         test: {
           name: "attendees-page-shared-setup",
           include: [
-            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load,erase}.test.tsx",
           ],
           setupFiles: ["./test/attendees/attendeesPageSetup.tsx"],
         },
@@ -86,8 +86,8 @@ export default defineConfig({
           name: "default",
           include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
           exclude: [
-            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
-            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,erase,revokeCheckIn,copyTicketLink,archived}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load,erase}.test.tsx",
             "test/checkin/CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx",
           ],
         },

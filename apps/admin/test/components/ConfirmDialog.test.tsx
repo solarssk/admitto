@@ -379,3 +379,37 @@ describe("ConfirmDialog", () => {
     });
   });
 });
+
+describe("ConfirmDialog: a retry that fails again", () => {
+  const dialog = (loading: boolean, errorMessage: string | null) => (
+    <ConfirmDialog
+      open
+      title="Personal data erased"
+      message="Everything personal is gone."
+      errorMessage={errorMessage}
+      confirmLabel="Try again"
+      loading={loading}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  );
+
+  it("keeps the error on screen while the confirm button works, and mounts it afresh when it fails again", () => {
+    const { rerender } = render(dialog(false, "Could not try again."));
+    const before = screen.getByText("Could not try again.");
+
+    rerender(dialog(true, "Could not try again."));
+    expect(screen.getByText("Could not try again.")).toBe(before);
+
+    rerender(dialog(false, "Could not try again."));
+    expect(screen.getByText("Could not try again.")).not.toBe(before);
+  });
+
+  it("does not mount the error again when the work ends without one", () => {
+    const { rerender } = render(dialog(true, null));
+
+    rerender(dialog(false, null));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

@@ -36,6 +36,8 @@ export type ConfirmDialogProps = {
   children?: ReactNode;
   /** External confirm-disabled condition (e.g. a required field in `children` is still empty), ORed with the built-in checks. */
   disableConfirm?: boolean;
+  /** A wider panel (520px instead of 400px), for a dialog whose children are a table-like list that reads better on one line. */
+  wide?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -56,6 +58,7 @@ export function ConfirmDialog({
   confirmDelaySeconds,
   children,
   disableConfirm = false,
+  wide = false,
   onConfirm,
   onCancel,
 }: Readonly<ConfirmDialogProps>) {
@@ -100,7 +103,7 @@ export function ConfirmDialog({
       aria-describedby={descriptionId}
     >
       <ModalBackdrop onClose={onCancel} />
-      <div ref={panelRef} className="confirm-dialog__panel">
+      <div ref={panelRef} className={`confirm-dialog__panel${wide ? " confirm-dialog__panel--wide" : ""}`}>
         <h3 id={titleId} className="confirm-dialog__title">
           {icon && (
             <span className="confirm-dialog__icon" aria-hidden="true">
@@ -114,7 +117,9 @@ export function ConfirmDialog({
         </p>
         {children}
         {errorMessage && (
-          <Notice variant="error" role="alert">
+          // `actionBusy`: when a retry from this dialog ends with the same error still there, the message is mounted
+          // afresh so that assistive tech announces it again (AGENTS.md, "A Retry that fails again").
+          <Notice variant="error" role="alert" actionBusy={loading}>
             {errorMessage}
           </Notice>
         )}

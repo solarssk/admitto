@@ -70,7 +70,7 @@ function truncatedToLocalHour(column: Prisma.Sql, timeZone: string): Prisma.Sql 
 
 /**
  * Erase personal data of attendees in place (GDPR "Erase personal data"): the row, its id, ticket
- * type, status history, admission and RSVP state stay, so Reports and capacity keep their numbers,
+ * type, status history, admission and RSVP state stay, so the Reports totals keep their numbers,
  * but nothing that identifies the person or opens their ticket is left. Runs inside the caller's
  * transaction so the erasure and its audit entry commit together.
  *

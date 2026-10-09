@@ -347,6 +347,36 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(new Date(item.updated_at).toISOString()).toBe(item.updated_at);
   });
 
+  it("tells whether the last mail of a row failed and is still to be retried", async () => {
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: ATT_A2,
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        recipient_email: "bob@example.com",
+        rendered_subject: "Your ticket",
+        rendered_html: "<p>ticket</p>",
+        failed_at: new Date(),
+      },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, { headers: { Cookie: adminCookie } });
+      const body = (await res.json()) as {
+        items: { id: string; last_mail_status: string | null; last_mail_retryable: boolean | null }[];
+      };
+      const byId = new Map(body.items.map((item) => [item.id, item]));
+      expect(byId.get(ATT_A2)).toMatchObject({ last_mail_status: "failed", last_mail_retryable: true });
+      // A mail that went out has no retry state.
+      expect(byId.get(ATT_A1)).toMatchObject({ last_mail_status: "sent", last_mail_retryable: null });
+    } finally {
+      await prisma.emailDelivery.delete({ where: { id: delivery.id } });
+    }
+  });
+
   it("returns an empty items array (and does not query per-attendee lookups) when nothing matches", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?q=no-such-attendee-zzz`, {
       headers: { Cookie: adminCookie },

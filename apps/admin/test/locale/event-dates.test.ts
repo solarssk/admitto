@@ -6,6 +6,7 @@ import {
   formatWalletDatePreview,
   formatWalletDatePreviewShort,
   formatEventDateTime,
+  formatEventClockTime,
   formatEventTime,
   formatRelativeMagnitude,
   formatRelativeTime,
@@ -21,6 +22,7 @@ import {
   zonedDayStartIso,
   utcOffsetLabel,
   zonedTimeLabel,
+  truncatedToEventHour,
 } from "../../src/utils/event-dates.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
@@ -123,8 +125,15 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     expect(result).toMatch(/UTC\+2/);
   });
 
+  it("formatEventClockTime shows the time in the event's zone and no UTC offset", () => {
+    setPreferredLocale("en-GB");
+    expect(formatEventClockTime("2026-06-28T13:00:00.000Z", "Europe/Warsaw")).toBe("15:00");
+    expect(formatEventClockTime("2026-06-28T13:00:00.000Z", "America/New_York")).toBe("09:00");
+  });
+
   it("defaults event date and time formatting to UTC when no event timezone is supplied", () => {
     setPreferredLocale("en-GB");
+    expect(formatEventClockTime("2026-06-28T13:00:00.000Z")).toBe("13:00");
     expect(formatEventDateTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
     expect(formatEventTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
   });
@@ -439,5 +448,33 @@ describe("formatRelativeAdmissionDisplay (#434 review)", () => {
       "America/New_York",
     );
     expect(out).toMatch(/^Yesterday 11:00/);
+  });
+});
+
+describe("truncatedToEventHour", () => {
+  it("cuts an instant to the start of its hour in the event's zone", () => {
+    expect(truncatedToEventHour("2026-06-28T13:37:21.123Z", "Europe/Warsaw")).toBe("2026-06-28T13:00:00.000Z");
+    expect(truncatedToEventHour("2026-06-28T13:37:21.123Z", "America/New_York")).toBe("2026-06-28T13:00:00.000Z");
+    expect(truncatedToEventHour("2026-06-28T13:37:21.123Z", "UTC")).toBe("2026-06-28T13:00:00.000Z");
+  });
+
+  it("leaves an instant that is on the hour as it is", () => {
+    expect(truncatedToEventHour("2026-06-28T13:00:00.000Z", "Europe/Warsaw")).toBe("2026-06-28T13:00:00.000Z");
+  });
+
+  it("cuts to the zone's own hour when the zone is not on a whole hour from UTC", () => {
+    // 16:07 in India and 16:22 in Nepal: the hour that started at 16:00 on their clocks.
+    expect(truncatedToEventHour("2026-06-28T10:37:21.123Z", "Asia/Kolkata")).toBe("2026-06-28T10:30:00.000Z");
+    expect(truncatedToEventHour("2026-06-28T10:37:21.123Z", "Asia/Kathmandu")).toBe("2026-06-28T10:15:00.000Z");
+  });
+
+  it("keeps the two passes of the repeated hour apart when the clocks go back", () => {
+    // Warsaw, 25 Oct 2026: 02:30 happens twice, at 00:30Z (summer time) and at 01:30Z (winter time).
+    expect(truncatedToEventHour("2026-10-25T00:30:45.000Z", "Europe/Warsaw")).toBe("2026-10-25T00:00:00.000Z");
+    expect(truncatedToEventHour("2026-10-25T01:30:45.000Z", "Europe/Warsaw")).toBe("2026-10-25T01:00:00.000Z");
+  });
+
+  it("works before 1970, where the milliseconds count backwards", () => {
+    expect(truncatedToEventHour("1969-12-31T23:59:59.250Z", "UTC")).toBe("1969-12-31T23:00:00.000Z");
   });
 });

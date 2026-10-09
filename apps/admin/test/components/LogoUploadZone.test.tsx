@@ -533,12 +533,13 @@ describe("LogoUploadZone", () => {
     expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeTruthy();
     expect(screen.queryByText(/drop logo here/i)).toBeNull();
     expect(screen.queryByText("Uploading…")).toBeNull();
-    expect(onUploadingChange).toHaveBeenLastCalledWith(true);
+    // The zone reports the start and the end of an upload from a passive effect, one commit after the DOM changes.
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true));
 
     resolveUpload({ url: "/uploads/default/a-original.png" });
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy());
     expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeNull();
-    expect(onUploadingChange).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false));
   });
 
   it("keeps Replace image and Edit image focusable but off while a file goes up, instead of disabling them", async () => {
