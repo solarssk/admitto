@@ -20,8 +20,8 @@ const LIVE_ID = "att-admin-erased-live";
 const GONE_ID = "att-admin-erased-gone";
 const RACE_PREFIX = "att-admin-erased-race";
 const GONE_ADMITTED_ID = "att-admin-erased-gone-admitted";
-const GONE_DELETE_ID = "att-admin-erased-gone-delete";
-const GONE_BULK_DELETE_ID = "att-admin-erased-gone-bulk-delete";
+const GONE_REMOVE_ID = "att-admin-erased-gone-remove";
+const GONE_BULK_REMOVE_ID = "att-admin-erased-gone-bulk-remove";
 const SUPER_EMAIL = "admin-erased-super@example.com";
 const SUPER_PASSWORD = "admin-erased-super-pass-123";
 const sameOrigin = { Origin: "http://localhost" };
@@ -61,8 +61,8 @@ beforeAll(async () => {
     [LIVE_ID, "Live Person"],
     [GONE_ID, "Gone Person"],
     [GONE_ADMITTED_ID, "Gone Admitted"],
-    [GONE_DELETE_ID, "Gone Delete"],
-    [GONE_BULK_DELETE_ID, "Gone Bulk"],
+    [GONE_REMOVE_ID, "Gone Remove"],
+    [GONE_BULK_REMOVE_ID, "Gone Bulk"],
   ] as const) {
     await prisma.attendee.create({
       data: {
@@ -83,7 +83,7 @@ beforeAll(async () => {
   await prisma.$transaction((tx) =>
     eraseAttendees(tx, {
       eventId: EVENT_ID,
-      attendeeIds: [GONE_ID, GONE_ADMITTED_ID, GONE_DELETE_ID, GONE_BULK_DELETE_ID],
+      attendeeIds: [GONE_ID, GONE_ADMITTED_ID, GONE_REMOVE_ID, GONE_BULK_REMOVE_ID],
     }),
   );
 
@@ -385,17 +385,18 @@ describe("feeds and exports", () => {
 });
 
 describe("removing an erased attendee still works", () => {
-  it("deletes one", async () => {
-    const res = await app.request(`${base}/${GONE_DELETE_ID}`, json("DELETE"));
-    expect(res.status).toBe(204);
-    expect(await prisma.attendee.findUnique({ where: { id: GONE_DELETE_ID } })).toBeNull();
+  it("removes one", async () => {
+    const res = await app.request(`${base}/${GONE_REMOVE_ID}/remove`, json("POST", { reason: "duplicate" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+    expect(await prisma.attendee.findUnique({ where: { id: GONE_REMOVE_ID } })).toBeNull();
   });
 
-  it("deletes several", async () => {
-    const res = await app.request(`${base}/bulk-delete`, json("POST", { attendeeIds: [GONE_BULK_DELETE_ID] }));
+  it("removes several", async () => {
+    const res = await app.request(`${base}/bulk-remove`, json("POST", { attendeeIds: [GONE_BULK_REMOVE_ID], reason: "other" }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deletedCount: 1 });
-    expect(await prisma.attendee.findUnique({ where: { id: GONE_BULK_DELETE_ID } })).toBeNull();
+    expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+    expect(await prisma.attendee.findUnique({ where: { id: GONE_BULK_REMOVE_ID } })).toBeNull();
   });
 });
 

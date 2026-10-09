@@ -4,6 +4,7 @@ import {
   WALLET_RELEVANT_ATTENDEE_FIELDS,
   enabledWalletPlatforms,
   isWalletAddClosed,
+  type AttendeeRemovalReason,
   type EnabledWalletPlatforms,
 } from "@admitto/shared";
 import { ATTENDEE_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
@@ -27,7 +28,6 @@ import {
   addAttendeeNote,
   ApiError,
   bulkRevokeItems,
-  deleteAttendee,
   deleteAttendeeNote,
   eraseAttendee,
   fetchAttendeeDetail,
@@ -35,6 +35,7 @@ import {
   reissueWalletPass,
   refreshWalletPassStatus,
   deleteWalletPass,
+  removeAttendee,
   removeWalletPassFromProvider,
   resendTicket,
   fetchTicketLink,
@@ -76,7 +77,6 @@ import {
   formatActivityTimestamp,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
-import { DeleteAttendeeDialog } from "../attendees/DeleteAttendeeDialog.js";
 import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
 import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
 import {
@@ -90,6 +90,8 @@ import {
   withWalletOutcome,
 } from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
+import { REMOVE_ARCHIVED_TOOLTIP, removedToast } from "../attendees/removeAttendee.js";
+import { RemoveAttendeeDialog } from "../attendees/RemoveDialogs.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { WalletStatusBadge, isWalletPassInstalled } from "../attendees/walletStatusBadge.js";
@@ -174,7 +176,7 @@ function MoreActionsMenu({
   event,
   onResend,
   onCopyTicketLink,
-  onDelete,
+  onRemove,
   onErase,
   mailConfigured,
   showEdit,
@@ -204,7 +206,7 @@ function MoreActionsMenu({
   event: ArchivedGuardEvent;
   onResend: () => void;
   onCopyTicketLink: () => void;
-  onDelete: () => void;
+  onRemove: () => void;
   onErase: () => void;
   mailConfigured: boolean | undefined;
   /** Mobile only (useIsDesktop() in the caller) - narrow viewports fold the standalone Edit
@@ -417,9 +419,10 @@ function MoreActionsMenu({
             </>
           )}
           <hr className="more-actions-menu__divider" />
-          {/* Neither Erase nor Delete is ArchivedGuard'd, unlike Resend ticket above — privacy
-           * requests can legally arrive after an event ends, and neither endpoint blocks on
-           * archived_at (see docs/DSAR-PROCEDURE.md). */}
+          {/* Erase is not ArchivedGuard'd, unlike Resend ticket above: privacy requests can legally arrive
+           * after an event ends, and the endpoint does not block on archived_at (see
+           * docs/security/DSAR-PROCEDURE.md). Remove changes Reports, which are final once the event is
+           * archived, so it is off there with its own tooltip, which names the way to answer a privacy request. */}
           <MoreActionsMenuItem
             icon="eraser"
             variant="danger"
@@ -430,21 +433,18 @@ function MoreActionsMenu({
               onErase();
             }}
           />
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--danger"
+          <MoreActionsMenuItem
+            icon="trash"
+            variant="danger"
+            label="Remove from event"
+            hint="For a mistake, duplicate or test person. Changes Reports."
+            disabled={isEventArchived(event)}
+            tooltip={isEventArchived(event) ? REMOVE_ARCHIVED_TOOLTIP : undefined}
             onClick={() => {
               setOpen(false);
-              onDelete();
+              onRemove();
             }}
-          >
-            <i className="ti ti-trash" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>Delete attendee</span>
-              <span className="more-actions-menu__item-hint">Permanently remove this attendee</span>
-            </span>
-          </button>
+          />
         </div>
       )}
     </div>
@@ -1992,9 +1992,9 @@ export function AttendeeDetailPage() {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [restoreForceCapacity, setRestoreForceCapacity] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [eraseOpen, setEraseOpen] = useState(false);
   const [erasing, setErasing] = useState(false);
   const [eraseError, setEraseError] = useState<string | null>(null);
@@ -2165,21 +2165,23 @@ export function AttendeeDetailPage() {
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty = isAttendeeFormDirty(form, baseline);
 
-  async function handleDeleteConfirm() {
+  /** Removes this attendee from the event for good, with the reason chosen in the dialog. The attendee's page is gone
+   * after that, so the operator goes back to the list. */
+  async function handleRemoveConfirm(reason: AttendeeRemovalReason) {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId };
-    setDeleting(true);
-    setDeleteError(null);
+    setRemoving(true);
+    setRemoveError(null);
     try {
-      await deleteAttendee(eventId, attendeeId);
+      const result = await removeAttendee(eventId, attendeeId, reason);
       if (!isStillSelected(target)) return;
-      addToast("Attendee permanently deleted", "success");
+      addToast(removedToast(result), "success");
       void navigate(`/admin/events/${eventId}/attendees`);
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setDeleteError(operatorApiErrorMessage(err, "Could not delete attendee. Try again."));
+      setRemoveError(operatorApiErrorMessage(err, "Could not remove attendee. Try again."));
     } finally {
-      if (isStillSelected(target)) setDeleting(false);
+      if (isStillSelected(target)) setRemoving(false);
     }
   }
 
@@ -2218,10 +2220,10 @@ export function AttendeeDetailPage() {
     }
   }
 
-  function cancelDelete() {
-    if (!deleting) {
-      setDeleteOpen(false);
-      setDeleteError(null);
+  function cancelRemove() {
+    if (!removing) {
+      setRemoveOpen(false);
+      setRemoveError(null);
     }
   }
 
@@ -2783,19 +2785,22 @@ export function AttendeeDetailPage() {
           error={failure.error}
           onRetry={failure.retry}
           onBack={goBack}
-          onDelete={() => {
-            setDeleteError(null);
-            setDeleteOpen(true);
+          onRemove={() => {
+            setRemoveError(null);
+            setRemoveOpen(true);
           }}
           onWalletTryAgain={() => eraseWalletResult.open(1, () => eraseAttendee(eventId, attendeeId))}
         />
-        <DeleteAttendeeDialog
-          open={deleteOpen}
+        {/* No way across to Erase: this person is erased already. The check-in the entry keeps (to the hour) goes
+            out of Reports with it, so the dialog says so as for anyone else. */}
+        <RemoveAttendeeDialog
+          open={removeOpen}
           name={ERASED_ATTENDEE_LABEL}
-          busy={deleting}
-          error={deleteError}
-          onConfirm={() => void handleDeleteConfirm()}
-          onCancel={cancelDelete}
+          checkedIn={detail.admitted_at !== null}
+          busy={removing}
+          error={removeError}
+          onConfirm={(reason) => void handleRemoveConfirm(reason)}
+          onCancel={cancelRemove}
         />
         <EraseWalletResultDialog {...eraseWalletResult.dialogProps} />
       </section>
@@ -2838,9 +2843,9 @@ export function AttendeeDetailPage() {
               onEdit={() => setEditMode(true)}
               onResend={() => setResendOpen(true)}
               onCopyTicketLink={() => void handleCopyTicketLink()}
-              onDelete={() => {
-                setDeleteError(null);
-                setDeleteOpen(true);
+              onRemove={() => {
+                setRemoveError(null);
+                setRemoveOpen(true);
               }}
               onErase={() => {
                 setEraseError(null);
@@ -3405,13 +3410,20 @@ export function AttendeeDetailPage() {
         }}
       />
 
-      <DeleteAttendeeDialog
-        open={deleteOpen}
+      <RemoveAttendeeDialog
+        open={removeOpen}
         name={detail.name}
-        busy={deleting}
-        error={deleteError}
-        onConfirm={() => void handleDeleteConfirm()}
-        onCancel={cancelDelete}
+        checkedIn={detail.admitted_at !== null}
+        busy={removing}
+        error={removeError}
+        onConfirm={(reason) => void handleRemoveConfirm(reason)}
+        onCancel={cancelRemove}
+        onUseErase={() => {
+          setRemoveOpen(false);
+          setRemoveError(null);
+          setEraseError(null);
+          setEraseOpen(true);
+        }}
       />
 
       <EraseAttendeeDialog
@@ -3426,6 +3438,13 @@ export function AttendeeDetailPage() {
             setEraseOpen(false);
             setEraseError(null);
           }
+        }}
+        eventArchived={isEventArchived(event)}
+        onUseRemove={() => {
+          setEraseOpen(false);
+          setEraseError(null);
+          setRemoveError(null);
+          setRemoveOpen(true);
         }}
       />
 

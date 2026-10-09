@@ -1,5 +1,6 @@
 import { Notice } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { DialogCrossLink } from "./DialogCrossLink.js";
 import { anonymousEntries, freedPlacesLine, peopleCount } from "./erasedAttendee.js";
 import "./erase-dialogs.css";
 
@@ -28,7 +29,24 @@ type EraseDialogBase = Readonly<{
   error: string | null;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Closes this dialog and opens the one that removes people from the event instead. */
+  onUseRemove: () => void;
+  /** The event is archived, and its numbers are final: Remove is off there, so there is no way across to it. */
+  eventArchived: boolean;
 }>;
+
+/** "A duplicate or a mistake? Use Remove from event", for someone who came here without a privacy request. Left out
+ * on an archived event, whose numbers are final: Remove is off there, so there is nowhere to go. */
+function RemoveInstead({ busy, ...link }: Readonly<Pick<EraseDialogBase, "onUseRemove" | "eventArchived"> & { busy: boolean }>) {
+  return (
+    <DialogCrossLink
+      question="A duplicate or a mistake?"
+      action="Use Remove from event"
+      busy={busy}
+      onClick={link.eventArchived ? undefined : link.onUseRemove}
+    />
+  );
+}
 
 /** Confirmation to erase one person's personal data. The name has to be typed: erasing cannot be
  * undone, and the attendee's page is the one place that names who is about to lose their data. */
@@ -56,6 +74,7 @@ export function EraseAttendeeDialog({
         stays="An anonymous entry in Reports"
       />
       {freesPlace && <Notice variant="warning">Not checked in yet, so their place becomes free.</Notice>}
+      <RemoveInstead busy={dialog.busy} onUseRemove={dialog.onUseRemove} eventArchived={dialog.eventArchived} />
     </ConfirmDialog>
   );
 }
@@ -91,7 +110,10 @@ export function BulkEraseDialog({
         stays={`${anonymousEntries(count)} in Reports`}
       />
       {freesPlaceCount > 0 && <Notice variant="warning">{freedPlacesLine(freesPlaceCount)}</Notice>}
-      <p className="erase-dialog__hint">People who are already erased are skipped.</p>
+      <div className="erase-dialog__notes">
+        <p className="erase-dialog__hint">People who are already erased are skipped.</p>
+        <RemoveInstead busy={dialog.busy} onUseRemove={dialog.onUseRemove} eventArchived={dialog.eventArchived} />
+      </div>
     </ConfirmDialog>
   );
 }

@@ -1096,6 +1096,76 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).getByText("Event created").className).toContain("at-badge--neutral");
   });
 
+  it("tells an erasure from a removal by the method in the entry, and an entry from before the split is an erasure", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "a-remove", action_type: "attendee_erased", metadata: { event_id: "evt-1", method: "remove", reason: "duplicate" } }),
+        makeAuditEntry({ id: "a-bulk-remove", action_type: "attendees_bulk_erased", metadata: { event_id: "evt-1", method: "remove", reason: "other" } }),
+        makeAuditEntry({ id: "a-erase", action_type: "attendee_erased", metadata: { event_id: "evt-1", method: "erase" } }),
+        makeAuditEntry({ id: "a-bulk-erase", action_type: "attendees_bulk_erased", metadata: { event_id: "evt-1", method: "erase" } }),
+        makeAuditEntry({ id: "a-old", action_type: "attendee_erased", metadata: { event_id: "evt-1" } }),
+      ],
+      total: 5,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Attendee removed (mistake)").className).toContain("at-badge--error");
+    expect(within(table).getByText("Attendees bulk removed (mistake)").className).toContain("at-badge--error");
+    expect(within(table).getByText("Attendees bulk erased (GDPR)").className).toContain("at-badge--error");
+    // The method-less entry and the explicit erasure read the same.
+    expect(within(table).getAllByText("Attendee erased (GDPR)")).toHaveLength(2);
+  });
+
+  it("offers one filter for every attendee who is gone, whether erased or removed", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({ entries: [makeAuditEntry()], total: 1, page: 1, pageSize: 25 });
+
+    renderAuditPanel();
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+
+    expect(screen.getByRole("button", { name: "Attendee erased or removed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Attendees bulk erased or removed" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /GDPR/ })).toBeNull();
+  });
+
+  it("shows the reason of a removal in words, in Details and in the copied row", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          action_type: "attendee_erased",
+          metadata: { event_id: "evt-1", method: "remove", reason: "wrong_import", attendee_id: "att-1" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderAuditPanel();
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByText("View"));
+      expect(within(table).getByText("Reason")).toBeTruthy();
+      expect(within(table).getByText("Wrong import file")).toBeTruthy();
+      expect(within(table).queryByText("wrong_import")).toBeNull();
+
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toContain("Action: Attendee removed (mistake)");
+      expect(summary).toContain("Reason: Wrong import file");
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
   it("shows the entry's own local time under the viewer's time when actor_timezone is set, and nothing when it isn't", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

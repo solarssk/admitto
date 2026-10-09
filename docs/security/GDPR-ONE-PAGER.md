@@ -56,12 +56,12 @@ Two layers: **product-automated** (Admitto **worker** at boot and about every 24
 | Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery - **worker** (boot + ~24h); delivery log metadata retained |
 | In-app security alert inbox (`Notification`) | Purged automatically after **30 days** by default (`NOTIFICATION_RETENTION_DAYS`), or earlier by the staff member's own Clear all - **worker** (boot + ~24h) |
 | IP in admin audit log | **30 days or operator corporate log retention policy** - not auto-purged by product. (Check-in-time IP only appears in the System logs live tail below, in-memory only - not a persisted, purgeable table.) |
-| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (single or bulk) or the `DELETE` API directly, per DSAR procedure |
+| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (**Erase personal data**, single or bulk) or the erase API directly, per DSAR procedure |
 | Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
 | System logs live tail (in-memory only) | Not persisted by the product - last 1000 entries, emptied on every restart |
 
 Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).
-Per-attendee erasure uses `DELETE /api/admin/events/:eventId/attendees/:id` (v0.4.6+); follow
+Per-attendee erasure uses `POST /api/admin/events/:eventId/attendees/:id/erase`; follow
 [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md). Automated post-event bulk purge is planned for **v1.0**.
 
 ---
@@ -92,7 +92,7 @@ Authorized staff export attendee data through the admin UI; erasure follows a **
 | Works with existing organizer workflows | Manual steps; legal must approve process |
 | No extra public API surface | Less suited to high-volume self-service DSAR |
 
-**Status:** export available in admin UI (v0.4.2+); erasure via the Attendees admin UI (single or bulk, v0.4.13+) or the `DELETE` API directly, per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
+**Status:** export available in admin UI (v0.4.2+); erasure via the Attendees admin UI (**Erase personal data**, single or bulk) or the erase API directly, per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
 
 ---
 

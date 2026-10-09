@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
+import { REMOVE_ARCHIVED_TOOLTIP } from "../../src/attendees/removeAttendee.js";
 import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
@@ -71,7 +72,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   exportAttendees: vi.fn(),
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
-  bulkDeleteAttendees: vi.fn(),
+  bulkRemoveAttendees: vi.fn(),
   bulkCheckInAttendees: vi.fn(),
   bulkRevokeCheckIn: vi.fn(),
   bulkRevokePass: vi.fn(),
@@ -159,7 +160,7 @@ describe("AttendeesPage archived lockdown", () => {
     expect(screen.getByRole("menuitem", { name: /^PDF/ })).toBeTruthy();
   });
 
-  it("locks the bulk bar's Send tickets but leaves Delete reachable (#356 follow-up)", async () => {
+  it("locks the bulk bar's Send tickets and Remove from event but leaves Erase reachable (#356 follow-up)", async () => {
     fetchEventAttendees.mockResolvedValue({
       items: [registeredRow, revokedRow, admittedRow],
       total: 3,
@@ -180,28 +181,50 @@ describe("AttendeesPage archived lockdown", () => {
     const bulkSendButton = within(bar).getByRole("button", { name: "Send tickets" });
     expect((bulkSendButton as HTMLButtonElement).disabled).toBe(true);
     // Manual check-in for an event that's already over doesn't make sense (matches
-    // revoke-checkin/bulk-resend, unlike bulk-delete below).
+    // revoke-checkin/bulk-resend, unlike bulk-erase below).
     const bulkCheckInButton = within(bar).getByRole("button", { name: "Check in" });
     expect((bulkCheckInButton as HTMLButtonElement).disabled).toBe(true);
-    // GDPR erasure requests can legally arrive after an event ends; the bulk-delete endpoint
-    // doesn't block on archived_at either (matches the single-attendee Delete attendee action).
+    // GDPR erasure requests can legally arrive after an event ends; the bulk-erase endpoint
+    // doesn't block on archived_at either (matches the single-attendee Erase personal data action).
     const moreActionsButton = within(bar).getByRole("button", { name: "More actions" });
     expect((moreActionsButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(moreActionsButton);
-    // Not a bare "Delete" prefix - that also matches "Delete wallet pass" below it.
-    const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete(?! wallet)/ });
-    expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
+    const eraseItem = within(bar).getByRole("menuitem", { name: /^Erase personal data/ });
+    expect((eraseItem as HTMLButtonElement).disabled).toBe(false);
+    // Removing someone changes Reports, which are final once the event is archived. The tooltip
+    // names Erase as the way to answer a privacy request instead.
+    const removeItem = within(bar).getByRole("menuitem", { name: /^Remove from event/ });
+    expect((removeItem as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(removeItem)).toBe(REMOVE_ARCHIVED_TOOLTIP);
     // Undoing a check-in on an event that's already over doesn't make sense either (matches
     // bulk check-in above) - disabled even though the selection has someone to revoke.
     const revokeCheckInItem = within(bar).getByRole("menuitem", { name: /Revoke check-in/ });
     expect((revokeCheckInItem as HTMLButtonElement).disabled).toBe(true);
     // Resetting issued items for an event that's already over doesn't make sense (matches
-    // Check in above) - locked on archived events, unlike Delete/Export which stay reachable.
+    // Check in above) - locked on archived events, unlike Erase/Export which stay reachable.
     const revokeItemsItem = within(bar).getByRole("menuitem", { name: /Revoke items/ });
     expect((revokeItemsItem as HTMLButtonElement).disabled).toBe(true);
     // Revoking a pass for an event that's already over doesn't make sense (matches Check in
-    // above) - locked on archived events, unlike Delete/Export which stay reachable.
+    // above) - locked on archived events, unlike Erase/Export which stay reachable.
     const revokePassItem = within(bar).getByRole("menuitem", { name: /Revoke pass/ });
     expect((revokePassItem as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("has no way across to Remove from the bulk Erase dialog, since there is no Remove to go to", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [registeredRow, revokedRow, admittedRow], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    const bar = document.querySelector(".attendees-bulkbar") as HTMLElement;
+
+    fireEvent.click(within(bar).getByRole("button", { name: "More actions" }));
+    fireEvent.click(within(bar).getByRole("menuitem", { name: /^Erase personal data/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Erase personal data of 1 person?" });
+
+    expect(within(dialog).getByText("People who are already erased are skipped.")).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Use Remove from event" })).toBeNull();
+    expect(within(dialog).queryByText("A duplicate or a mistake?")).toBeNull();
   });
 });

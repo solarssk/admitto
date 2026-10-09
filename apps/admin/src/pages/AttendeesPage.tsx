@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, Input, ModalBackdrop, Notice, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
-import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
+import { enabledWalletPlatforms, type AttendeeRemovalReason, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -25,8 +25,8 @@ import {
   bulkRefreshWalletStatus,
   bulkDeleteWalletPass,
   bulkRemoveWalletPass,
-  bulkDeleteAttendees,
   bulkEraseAttendees,
+  bulkRemoveAttendees,
   bulkResendTickets,
   bulkRevokeItems,
   exportAttendees,
@@ -57,6 +57,8 @@ import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { BulkEraseDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
 import { erasedToast, placesFreedBy, redactedRowsAfterErasure, rowsWithPassesRemoved } from "../attendees/erasedAttendee.js";
+import { checkedInAmong, removedToast } from "../attendees/removeAttendee.js";
+import { BulkRemoveDialog } from "../attendees/RemoveDialogs.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { pollWalletRefreshStatusCompletion } from "../attendees/pollWalletRefreshStatusCompletion.js";
@@ -341,7 +343,7 @@ interface RunBulkActionParams<T> extends BulkActionErrorReporters {
   eventId: string | undefined;
   /** Detects the operator navigating to a different event's Attendees list before the request
    * resolves — every bulk action below skips its success/error side effects once this fires,
-   * matching the guard handleBulkDeleteSelected established first (CodeRabbit review). */
+   * matching the guard handleBulkRemoveSelected established first (CodeRabbit review). */
   eventIdRef: RefObject<string | undefined>;
   selectedCount: number;
   setBusy: (busy: boolean) => void;
@@ -1046,7 +1048,7 @@ export function AttendeesPage() {
   const listAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   const bulkExportAbortRef = useRef<AbortController | null>(null);
-  /** Guards handleBulkDeleteSelected against completing after the operator has navigated to a
+  /** Guards handleBulkRemoveSelected against completing after the operator has navigated to a
    * different event's Attendees list while the request was still in flight (CodeRabbit review). */
   const eventIdRef = useRef(eventId);
   eventIdRef.current = eventId;
@@ -1148,9 +1150,9 @@ export function AttendeesPage() {
   const [setDepartmentBusy, setSetDepartmentBusy] = useState(false);
   const [setDepartmentError, setSetDepartmentError] = useState<string | null>(null);
   const [setDepartmentValue, setSetDepartmentValue] = useState("");
-  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
-  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
-  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
+  const [bulkRemoveBusy, setBulkRemoveBusy] = useState(false);
+  const [bulkRemoveConfirmOpen, setBulkRemoveConfirmOpen] = useState(false);
+  const [bulkRemoveError, setBulkRemoveError] = useState<string | null>(null);
   const [bulkEraseBusy, setBulkEraseBusy] = useState(false);
   const [bulkEraseConfirmOpen, setBulkEraseConfirmOpen] = useState(false);
   const [bulkEraseError, setBulkEraseError] = useState<string | null>(null);
@@ -1723,7 +1725,7 @@ export function AttendeesPage() {
    * handleBulkSendSelected, rather than keeping the dialog open for a result like
    * handleBulkRevokeCheckInSelected does — check-in is fast/reversible, not destructive. Guards
    * the completion effect against the operator navigating to a different event's Attendees list
-   * before the request resolves, same pattern as handleBulkDeleteSelected below. */
+   * before the request resolves, same pattern as handleBulkRemoveSelected below. */
   const handleBulkCheckInSelected = () =>
     runBulkAction({
       eventId,
@@ -1938,31 +1940,33 @@ export function AttendeesPage() {
     });
   };
 
-  /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
-   * the attendee detail page's "Delete attendee" once per selected row. Guards every
-   * completion effect against the operator navigating to a different event's Attendees list
-   * before the request resolves (CodeRabbit review); the dialog stays open on failure with an
-   * inline error, matching the project's own ConfirmDialog convention (destructive actions
-   * don't also toast the same message) and the attendee detail page's single-delete flow. */
-  const handleBulkDeleteSelected = () =>
-    runBulkAction({
+  /** Removes the selected attendees from the event for good (mistakes, duplicates, test people), with the reason
+   * chosen in the dialog: the same effect as "Remove from event" on the attendee page once per selected row. Guards
+   * every completion effect against the operator navigating to a different event's Attendees list before the
+   * request resolves (CodeRabbit review); the dialog stays open on failure with an inline error, matching the
+   * project's own ConfirmDialog convention (destructive actions don't also toast the same message) and the
+   * attendee detail page's single remove flow. */
+  const handleBulkRemoveSelected = (reason: AttendeeRemovalReason) => {
+    const ids = [...selectedIds];
+    return runBulkAction({
       eventId,
       eventIdRef,
-      selectedCount: selectedIds.size,
+      selectedCount: ids.length,
       reportApiError,
-      setBusy: setBulkDeleteBusy,
-      setError: setBulkDeleteError,
+      setBusy: setBulkRemoveBusy,
+      setError: setBulkRemoveError,
       addToast,
-      apiErrorFallback: "Delete failed.",
-      genericFallback: "Failed to delete attendees.",
-      action: (id) => bulkDeleteAttendees(id, [...selectedIds]),
-      onSuccess: ({ deletedCount }) => {
-        addToast(`${deletedCount} attendee${deletedCount === 1 ? "" : "s"} permanently deleted`, "success");
-        setBulkDeleteConfirmOpen(false);
+      apiErrorFallback: "Could not remove attendees. Try again.",
+      genericFallback: "Could not remove attendees. Try again.",
+      action: (id) => bulkRemoveAttendees(id, ids, reason),
+      onSuccess: (result) => {
+        addToast(removedToast(result), "success");
+        setBulkRemoveConfirmOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
       },
     });
+  };
 
   /** Erases the personal data of the selected people (a privacy request). The dialog stays open
    * with an inline error on failure, like the bulk delete. If a wallet pass could not be deleted at
@@ -2006,7 +2010,7 @@ export function AttendeesPage() {
   /** Bulk "Revoke items" for an explicit subset of selected attendees — resets every issued
    * item hand-out (badge, wristband, giftbag, …) back to pending for each selected attendee at
    * once, independent of check-in status. Same dialog-stays-open-with-inline-error-on-failure
-   * convention as handleBulkDeleteSelected above; an attendee with a revoked/cancelled pass is
+   * convention as handleBulkRemoveSelected above; an attendee with a revoked/cancelled pass is
    * skipped server-side rather than treated as a failure, so a partial revokedCount below the
    * selection size is still a plain success toast, not an error. */
   const handleBulkRevokeItemsSelected = () =>
@@ -2031,7 +2035,7 @@ export function AttendeesPage() {
 
   /** Bulk "Revoke pass" for an explicit subset of selected attendees — same effect as the
    * attendee detail page's single "Revoke pass" action, run once per selected attendee. Same
-   * dialog-stays-open-with-inline-error-on-failure convention as handleBulkDeleteSelected above
+   * dialog-stays-open-with-inline-error-on-failure convention as handleBulkRemoveSelected above
    * (destructive-ish action, doesn't also toast the same message). An attendee already revoked
    * or cancelled is left untouched server-side and counted separately, not treated as a
    * failure - reported in the success toast rather than surfaced as an error. */
@@ -2471,9 +2475,9 @@ export function AttendeesPage() {
           setBulkRemoveWalletConfirmOpen(true);
         }}
         bulkRemoveWalletBusy={bulkRemoveWalletBusy}
-        onBulkDelete={() => {
-          setBulkDeleteError(null);
-          setBulkDeleteConfirmOpen(true);
+        onBulkRemove={() => {
+          setBulkRemoveError(null);
+          setBulkRemoveConfirmOpen(true);
         }}
         onBulkErase={() => {
           setBulkEraseError(null);
@@ -2676,29 +2680,26 @@ export function AttendeesPage() {
         }}
       />
 
-      <ConfirmDialog
-        open={bulkDeleteConfirmOpen}
-        title={`Permanently delete ${selectedIds.size} attendee${selectedIds.size === 1 ? "" : "s"}?`}
-        message="This cannot be undone. For each selected attendee, this permanently removes:"
-        errorMessage={bulkDeleteError}
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        loading={bulkDeleteBusy}
-        onConfirm={() => void handleBulkDeleteSelected()}
+      <BulkRemoveDialog
+        open={bulkRemoveConfirmOpen}
+        count={selectedIds.size}
+        checkedInCount={checkedInAmong(items, selectedIds)}
+        busy={bulkRemoveBusy}
+        error={bulkRemoveError}
+        onConfirm={(reason) => void handleBulkRemoveSelected(reason)}
         onCancel={() => {
-          if (!bulkDeleteBusy) {
-            setBulkDeleteConfirmOpen(false);
-            setBulkDeleteError(null);
+          if (!bulkRemoveBusy) {
+            setBulkRemoveConfirmOpen(false);
+            setBulkRemoveError(null);
           }
         }}
-      >
-        <ul className="confirm-dialog__list">
-          <li>Profile and contact details</li>
-          <li>Ticket deliveries</li>
-          <li>Wallet pass</li>
-          <li>Check-in history</li>
-        </ul>
-      </ConfirmDialog>
+        onUseErase={() => {
+          setBulkRemoveConfirmOpen(false);
+          setBulkRemoveError(null);
+          setBulkEraseError(null);
+          setBulkEraseConfirmOpen(true);
+        }}
+      />
 
       <BulkEraseDialog
         open={bulkEraseConfirmOpen}
@@ -2712,6 +2713,13 @@ export function AttendeesPage() {
             setBulkEraseConfirmOpen(false);
             setBulkEraseError(null);
           }
+        }}
+        eventArchived={isEventArchived(event)}
+        onUseRemove={() => {
+          setBulkEraseConfirmOpen(false);
+          setBulkEraseError(null);
+          setBulkRemoveError(null);
+          setBulkRemoveConfirmOpen(true);
         }}
       />
 

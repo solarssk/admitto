@@ -9,7 +9,7 @@ import { setPreferredLocale } from "../../src/utils/locale-store.js";
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
 const eraseAttendee = vi.fn();
-const deleteAttendee = vi.fn();
+const removeAttendee = vi.fn();
 const addAttendeeNote = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -26,7 +26,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     }),
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
     eraseAttendee: (...args: unknown[]) => eraseAttendee(...args),
-    deleteAttendee: (...args: unknown[]) => deleteAttendee(...args),
+    removeAttendee: (...args: unknown[]) => removeAttendee(...args),
     addAttendeeNote: (...args: unknown[]) => addAttendeeNote(...args),
   };
 });
@@ -505,22 +505,22 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
   });
 
-  it("keeps the delete dialog open while the delete runs: Escape does nothing until it has answered", async () => {
-    let resolveDelete!: () => void;
-    deleteAttendee.mockReturnValueOnce(new Promise<void>((resolve) => (resolveDelete = resolve)));
+  it("keeps the remove dialog open while the removal runs: Escape does nothing until it has answered", async () => {
+    let resolveRemoval!: (value: unknown) => void;
+    removeAttendee.mockReturnValueOnce(new Promise((resolve) => (resolveRemoval = resolve)));
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna Alpha" });
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: /^Delete attendee/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Permanently delete this attendee?" });
-    fireEvent.change(within(dialog).getByLabelText(/Type the attendee's name to confirm/), { target: { value: "Anna Alpha" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Remove from event/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove this person from the event?" });
+    fireEvent.change(within(dialog).getByLabelText('Type "Anna Alpha" to confirm'), { target: { value: "Anna Alpha" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.getByRole("dialog", { name: "Permanently delete this attendee?" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Remove this person from the event?" })).toBeTruthy();
 
-    resolveDelete();
+    resolveRemoval({ removed: 1, not_found: 0 });
     await screen.findByText("Attendees list marker");
   });
 
@@ -651,7 +651,7 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     expect(screen.getAllByText("Sent")).toHaveLength(2);
   });
 
-  it("has a More actions menu where Erase is off, with the date, and Delete stays", async () => {
+  it("has a More actions menu where Erase is off, with the date, and Remove from event stays", async () => {
     await openErasedPage();
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
@@ -659,16 +659,18 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     expect((erase as HTMLButtonElement).disabled).toBe(true);
     expect(within(erase).getByText(/^Personal data was erased on .*2026\.$/)).toBeTruthy();
 
-    deleteAttendee.mockResolvedValueOnce(undefined);
-    fireEvent.click(screen.getByRole("menuitem", { name: /^Delete attendee/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Permanently delete this attendee?" });
-    fireEvent.change(within(dialog).getByLabelText(/Type the attendee's name to confirm/), {
+    removeAttendee.mockResolvedValueOnce({ removed: 1, not_found: 0 });
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Remove from event/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove this person from the event?" });
+    // There is nothing left to erase, so the dialog has no way across to Erase.
+    expect(within(dialog).queryByRole("button", { name: "Use Erase personal data" })).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText('Type "Erased attendee" to confirm'), {
       target: { value: "Erased attendee" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
     await screen.findByText("Attendees list marker");
-    expect(deleteAttendee).toHaveBeenCalledWith("evt-1", "att-1");
+    expect(removeAttendee).toHaveBeenCalledWith("evt-1", "att-1", "duplicate");
   });
 
   it.each([

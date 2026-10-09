@@ -1350,7 +1350,7 @@ const exportSelectedBodySchema = z
  * a GET here would have quietly reopened that same PII-adjacent leak one layer down. Capped at
  * the same BULK_SEND_LIMIT as every other bulk action now that the ids aren't URL-length
  * constrained. Ids that don't belong to this event are silently ignored (findSelectedAttendeesForExport),
- * same convention as bulk delete/check-in. */
+ * same convention as bulk remove/check-in. */
 export async function handleExportSelectedAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -2391,181 +2391,6 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
   }
 }
 
-/** DELETE /api/admin/events/:eventId/attendees/:id — GDPR erasure path. */
-export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const attendeeIdOrRes = requireAttendeeId(c);
-  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
-  const attendeeId = attendeeIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  await deleteWalletPassesBestEffort(db, eventId, [attendeeId]);
-
-  const result = await db.$transaction(async (tx) => {
-    const existing = await tx.attendee.findUnique({
-      where: { id: attendeeId },
-      select: {
-        event_id: true,
-        name: true,
-        email: true,
-        event: { select: { organization_id: true, title: true } },
-      },
-    });
-    if (!existing || existing.event_id !== eventId) return "forbidden" as const;
-
-    // Attendee row first, like an erasure and the guarded send / check-in transactions: deleting
-    // the children first can deadlock against one of them.
-    await lockAttendeesForUpdate(tx, eventId, [attendeeId]);
-
-    const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
-      tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
-      tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
-      tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
-    ]);
-
-    const attendeeDelete = await tx.attendee.deleteMany({ where: { id: attendeeId, event_id: eventId } });
-    if (attendeeDelete.count === 0) return "gone" as const;
-
-    const audit = adminAuditFromContext(c);
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "attendee_erased",
-      audit,
-      metadata: {
-        attendee_id: attendeeId,
-        removed: {
-          email_deliveries: emailDeliveries.count,
-          wallet_passes: walletPasses.count,
-          check_ins: checkIns.count,
-        },
-      },
-    });
-    // Also written to the central admin audit log (Instance Settings → Audit log) - the
-    // attendee's own AttendeeActionLog trail disappears along with the row it's about (PO
-    // review: no central record of who erased an attendee, unlike event/user/session actions).
-    // Deliberately includes the erased attendee's name/email here, unlike
-    // writeBulkActionLog's own erasure entry above - a superadmin-only security/incident
-    // record needs to answer "who was deleted" (e.g. a compromised admin account mass-erasing
-    // attendees) to meet GDPR Art. 33/34 breach-notification duties, which is impossible if
-    // the identity is gone from every table. Lawful basis: Art. 6(1)(f) legitimate interest
-    // (security monitoring), scoped to this one admin-only log - not the erasure action itself.
-    await writeAttendeeLifecycleAuditLog(tx, c, audit, existing.event.organization_id, "attendee_erased", {
-      event_id: eventId,
-      event_title: existing.event.title,
-      attendee_id: attendeeId,
-      attendee_name: existing.name,
-      attendee_email: existing.email,
-    });
-    return "deleted" as const;
-  });
-
-  if (result === "forbidden") return c.json({ error: "forbidden" }, 403);
-  return c.body(null, 204);
-}
-
-const bulkDeleteAttendeesBodySchema = z
-  .object({
-    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
-  })
-  .strict();
-
-/** POST /api/admin/events/:eventId/attendees/bulk-delete — GDPR erasure for a selection of
- * attendees at once, from the Attendees list's row-selection bulk bar. Same per-attendee
- * cleanup and audit trail as the single-attendee DELETE above, just batched; ids that don't
- * belong to this event are silently ignored rather than failing the whole request (the UI can
- * only ever select rows already scoped to the current event's current page). */
-export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid json" }, 400);
-  }
-  const parsed = bulkDeleteAttendeesBodySchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
-
-  if (!(await assertWalletBulkSelectionWithinLimit(db, eventId, parsed.data.attendeeIds))) {
-    return c.json({ error: "validation_failed" }, 400);
-  }
-
-  await deleteWalletPassesBestEffort(db, eventId, parsed.data.attendeeIds);
-
-  const deletedCount = await db.$transaction(async (tx) => {
-    const owned = await tx.attendee.findMany({
-      where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
-      select: { id: true, name: true, email: true },
-    });
-    if (owned.length === 0) return 0;
-    const ids = owned.map((a) => a.id);
-
-    // Attendee rows first (see handleDeleteEventAttendee).
-    await lockAttendeesForUpdate(tx, eventId, ids);
-
-    const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
-      tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
-      tx.walletPass.deleteMany({ where: { attendee_id: { in: ids } } }),
-      tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
-    ]);
-
-    // Raw DELETE ... RETURNING instead of deleteMany: a concurrent request can erase an
-    // overlapping attendee between the findMany above and this statement, and deleteMany only
-    // reports a count, not which rows it actually removed. RETURNING captures exactly what this
-    // statement deleted, so the audit entries below can't over-report who this request erased
-    // (CodeRabbit review).
-    const deleted = await tx.$queryRaw<{ id: string; name: string; email: string }[]>`
-      DELETE FROM "Attendee" WHERE id IN (${Prisma.join(ids)}) AND event_id = ${eventId}
-      RETURNING id, name, email
-    `;
-    if (deleted.length === 0) return 0;
-
-    const audit = adminAuditFromContext(c);
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "attendees_bulk_erased",
-      audit,
-      metadata: {
-        attendee_ids: deleted.map((a) => a.id),
-        removed: {
-          email_deliveries: emailDeliveries.count,
-          wallet_passes: walletPasses.count,
-          check_ins: checkIns.count,
-        },
-      },
-    });
-    const event = await tx.event.findUnique({ where: { id: eventId }, select: { organization_id: true, title: true } });
-    // See the matching note on attendee_erased above - name/email are deliberately included in
-    // this one central, superadmin-only log (not the erasure action's own AttendeeActionLog
-    // entry) so a security incident affecting multiple attendees at once is investigable.
-    await writeAttendeeLifecycleAuditLog(
-      tx,
-      c,
-      audit,
-      event?.organization_id ?? null,
-      "attendees_bulk_erased",
-      {
-        event_id: eventId,
-        event_title: event?.title,
-        count: deleted.length,
-        attendees: deleted.map((a) => ({ id: a.id, name: a.name, email: a.email })),
-      },
-    );
-    return deleted.length;
-  });
-
-  return c.json({ deletedCount });
-}
-
 /** One row's computed bulk write, shared by every "assign one field to every selected
  * attendee" endpoint below: the value this row held for the field being changed *before* this
  * request — the per-row CAS key `applyBulkAttendeeChanges` re-validates at write time, so a
@@ -2592,7 +2417,7 @@ function computeTicketTypeChange(existingTicketType: string | null, target: stri
  * updateMany: one round trip regardless of selection size (up to BULK_SEND_LIMIT), keyed on
  * each row's own `oldValue` above, so a row a concurrent write changes in the window between
  * the caller's findMany and this statement is left untouched instead of overwritten (code
- * review, PR #569) — mirrors handleBulkDeleteEventAttendees's raw DELETE ... RETURNING above for
+ * review, PR #569) — mirrors removeAttendees's DELETE ... RETURNING (packages/tickets) for
  * the same "report exactly which rows this statement actually touched" reason. Each caller still
  * does its own findMany (own select) and any pre-transaction validation/locking (e.g. the
  * ticket-type catalog lock) before calling this, and supplies the SET clause and target column
@@ -2670,7 +2495,7 @@ const bulkTicketTypeBodySchema = z
  * after the action and re-applying the same type is harmless — but `applyBulkAttendeeChanges`'s
  * write is still a per-row CAS on the exact ticket_type value read below, not a blanket write:
  * see its own doc comment. Ids that don't belong to this event are silently ignored, matching
- * bulk delete/check-in. Catalog membership is validated once inside the transaction, under the
+ * bulk remove/check-in. Catalog membership is validated once inside the transaction, under the
  * same advisory lock ticket-type DELETE takes (TOCTOU — same rationale as the single-attendee
  * PATCH), so the picked type can't be deleted out from under the write between the picker
  * opening and submit. Rows that already have the target type are left untouched (no updated_at
@@ -3126,7 +2951,7 @@ const BULK_CHECKIN_STATUS_COUNTER = {
  * (the same single-use CAS path scan check-in already goes through, ADR 0010 §4) once per
  * selected id rather than a bespoke bulk update, so every existing guarantee — CAS, per-attendee
  * AttendeeActionLog write, badge issuance — applies unchanged; ids that don't belong to this
- * event are silently ignored, same convention as bulk-delete. Attendees are processed in
+ * event are silently ignored, same convention as bulk-remove. Attendees are processed in
  * bounded-concurrency chunks (BULK_CHECKIN_CONCURRENCY) rather than fully serially, for
  * throughput on large selections, while each attendee keeps its own independent CAS transaction —
  * same shape as `revokeAllCheckInsForEvent`. Uses Promise.allSettled (not Promise.all) per chunk:
@@ -3477,7 +3302,7 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
  * before deploy/nginx/default.conf's own proxy_read_timeout bump (defense in depth, not the
  * primary fix - the "Portainer/NAS without compose nginx" topology has no nginx layer to bump at
  * all). An admin selecting more than 100 attendees for one of these actions submits it in more
- * than one batch. bulk-delete and bulk-revoke-pass only call PassCreator per attendee when the
+ * than one batch. bulk-remove, bulk-erase and bulk-revoke-pass only call PassCreator per attendee when the
  * event has wallet configured (see assertWalletBulkSelectionWithinLimit below) - same profile as
  * these 3 routes once that's true, so they're held to the same cap conditionally rather than
  * unconditionally, to avoid capping the common non-wallet case down from 500 for no reason. */
@@ -3489,15 +3314,15 @@ const bulkWalletAttendeesBodySchema = z
   })
   .strict();
 
-/** bulk-delete and bulk-revoke-pass keep the general BULK_SEND_LIMIT (500) in their own body
- * schema, unlike the 3 dedicated wallet-bulk routes above, since both are pure DB operations for
+/** bulk-remove, bulk-erase and bulk-revoke-pass keep the general BULK_SEND_LIMIT (500) in their own body
+ * schema, unlike the 3 dedicated wallet-bulk routes above, since all of them are pure DB operations for
  * the common case of an event with no wallet configured. Once the target event does have wallet
  * configured, deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort call
  * PassCreator once per selected attendee that has a pass - exactly the same fan-out the 3
  * dedicated routes are capped at 100 for - so a selection over that size is only rejected once
  * the event is confirmed to have wallet configured (own re-audit after PR #1064 round 3, found
  * before any bot flagged it: the round-3 fix capped the 3 dedicated routes but missed that these
- * two share the identical worst case whenever most/all of a large selection has a wallet pass). */
+ * share the identical worst case whenever most/all of a large selection has a wallet pass). */
 export async function assertWalletBulkSelectionWithinLimit(
   db: PrismaClient,
   eventId: string,

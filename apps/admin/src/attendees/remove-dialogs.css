@@ -1,0 +1,40 @@
+/* The Remove dialogs: a required reason from a fixed list, and the way across to Erase for a privacy request. */
+.remove-dialog__choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.remove-reasons {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.remove-reasons__legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.remove-reasons__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.remove-reasons__option input {
+  flex: none;
+  margin: 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--primary);
+}

@@ -735,7 +735,7 @@ export const RATE_POLICIES = {
     ],
   },
   // Every bulk route that can cascade to one PassCreator call per selected attendee: the 3
-  // explicit bulk-wallet-* routes always do, and bulk-delete / bulk-revoke-pass do too whenever
+  // explicit bulk-wallet-* routes always do, and bulk-erase / bulk-remove / bulk-revoke-pass do too whenever
   // the selection includes attendees with a wallet pass (deleteWalletPassesBestEffort /
   // syncWalletPassOnStatusChangeBestEffort - bot review, PR #1064 round 2: these two shared only
   // the generic admin:attendee-bulk-mutation budget below, which doesn't account for the
@@ -762,9 +762,9 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  // Bulk-attendee mutation routes (bulk-delete, bulk-checkin, bulk-revoke-checkin,
+  // Bulk-attendee mutation routes (bulk-erase, bulk-remove, bulk-checkin, bulk-revoke-checkin,
   // bulk-revoke-items, bulk-revoke-pass, bulk-ticket-type, bulk-rsvp) - each request can touch up
-  // to BULK_SEND_LIMIT (500) attendees at once, and bulk-delete alone is a hard
+  // to BULK_SEND_LIMIT (500) attendees at once, and bulk-remove is a hard
   // DELETE ... RETURNING with no undo. Same cost class/window as admin:attendee-patch (20/60s),
   // but keyed per user+event rather than per user+attendee: these routes act on many attendees in
   // one call, so there's no single attendee id to scope the bucket to.
