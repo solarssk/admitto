@@ -88,13 +88,43 @@ describe("reissueOneWalletPass", () => {
       appleUrl: "https://pc/apple",
       androidUrl: "https://pc/android",
     });
+    // Live at the last check before the provider call, erased by the time the result is saved.
+    vi.mocked(lockAttendeeRow)
+      .mockResolvedValueOnce({ id: "att-1", status: "registered", erased: false })
+      .mockResolvedValueOnce({ id: "att-1", status: "registered", erased: true });
+
+    const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(provider.updatePass).toHaveBeenCalledTimes(1);
+    expect(txWalletPassUpdate).not.toHaveBeenCalled();
+    expect(writeActionLog).not.toHaveBeenCalled();
+  });
+
+  it("does not send the pass content to the provider when the last check, under the row lock, finds the attendee erased", async () => {
+    const { db, txWalletPassUpdate } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null, erased_at: null });
+    vi.mocked(resolveTicket).mockResolvedValueOnce(resolvedTicket as never);
+    // The plain read above still saw a live attendee: an erasure was open, and the lock waited for it.
     vi.mocked(lockAttendeeRow).mockResolvedValueOnce({ id: "att-1", status: "registered", erased: true });
 
     const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
 
     expect(result).toBe("skipped");
+    expect(lockAttendeeRow).toHaveBeenCalledTimes(1);
+    expect(provider.updatePass).not.toHaveBeenCalled();
     expect(txWalletPassUpdate).not.toHaveBeenCalled();
     expect(writeActionLog).not.toHaveBeenCalled();
+  });
+
+  it("does not send the pass content either when the attendee disappeared before the last check", async () => {
+    const { db } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null, erased_at: null });
+    vi.mocked(resolveTicket).mockResolvedValueOnce(resolvedTicket as never);
+    vi.mocked(lockAttendeeRow).mockResolvedValueOnce(null);
+
+    expect(await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit)).toBe("skipped");
+    expect(provider.updatePass).not.toHaveBeenCalled();
   });
 
   it("skips when the attendee has no qr_payload, external_uuid, or token to decrypt", async () => {

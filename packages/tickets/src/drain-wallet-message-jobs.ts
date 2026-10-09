@@ -11,7 +11,7 @@ import { emitSystemLog } from "@admitto/shared/system-log";
 import { claimNextAdminJob } from "./claim-admin-job.js";
 import { reclaimStaleAdminJobsByType } from "./reclaim-stale-admin-jobs-by-type.js";
 import { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
-import { loadWalletMessageTargets, sendWalletMessage } from "./send-wallet-message.js";
+import { keepLiveWalletMessageTargets, loadWalletMessageTargets, sendWalletMessage } from "./send-wallet-message.js";
 
 /** Same 30-minute budget as wallet_push - a large send is expected to take a while, bounded by
  * PassCreator's own rate limit, not a sign the worker died. */
@@ -113,13 +113,21 @@ async function runOneWalletMessageJob(
     // it throw here would mark the whole job "failed" with no record of which batches already
     // went out, and an operator retrying the same selection would re-message everyone already
     // reached by an earlier, successful batch.
-    const { sent, errored, erroredAttendeeIds } = await sendWalletMessage(
+    const {
+      sent,
+      errored,
+      skipped: erasedMeanwhile,
+      erroredAttendeeIds,
+    } = await sendWalletMessage(
       provider,
       targets,
       request.text,
       async (doneCount) => {
         await db.adminJob.update({ where: { id: job.id }, data: { progress_done: skipped + doneCount } });
       },
+      // Each batch is checked under the attendees' row locks right before it goes out: the targets
+      // were selected earlier, and an attendee erased since must not be messaged.
+      { beforeBatch: (batch) => keepLiveWalletMessageTargets(db, batch) },
     );
 
     await db.adminJob.update({
@@ -131,7 +139,7 @@ async function runOneWalletMessageJob(
         result_json: {
           request: { eventId: request.eventId, attendeeIds: request.attendeeIds, text: request.text },
           sent,
-          skipped,
+          skipped: skipped + erasedMeanwhile,
           errored,
           erroredAttendeeIds,
         },

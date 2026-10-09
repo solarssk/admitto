@@ -5,6 +5,7 @@ vi.mock("../src/claim-admin-job.js", () => ({
   claimNextAdminJob: vi.fn(),
 }));
 vi.mock("../src/send-wallet-message.js", () => ({
+  keepLiveWalletMessageTargets: vi.fn(),
   loadWalletMessageTargets: vi.fn(),
   sendWalletMessage: vi.fn(),
 }));
@@ -13,7 +14,7 @@ vi.mock("@admitto/wallet", () => ({
 }));
 
 import { claimNextAdminJob } from "../src/claim-admin-job.js";
-import { loadWalletMessageTargets, sendWalletMessage } from "../src/send-wallet-message.js";
+import { keepLiveWalletMessageTargets, loadWalletMessageTargets, sendWalletMessage } from "../src/send-wallet-message.js";
 import { resolveWalletProvider } from "@admitto/wallet";
 import {
   drainWalletMessageJobs,
@@ -62,7 +63,7 @@ describe("drainWalletMessageJobs", () => {
       .mockReset()
       .mockImplementation(async (_provider, targets, _text, onProgress) => {
         await onProgress?.(targets.length);
-        return { sent: targets.length, errored: 0, erroredAttendeeIds: [] };
+        return { sent: targets.length, errored: 0, skipped: 0, erroredAttendeeIds: [] };
       });
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
     resetSystemLogBufferForTest();
@@ -126,6 +127,7 @@ describe("drainWalletMessageJobs", () => {
       ],
       "Welcome to the event!",
       expect.any(Function),
+      { beforeBatch: expect.any(Function) },
     );
 
     expect(db.adminJob.update).toHaveBeenCalledWith({
@@ -183,7 +185,7 @@ describe("drainWalletMessageJobs", () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(sendWalletMessage)
       .mockReset()
-      .mockResolvedValueOnce({ sent: 1, errored: 1, erroredAttendeeIds: ["att-2"] });
+      .mockResolvedValueOnce({ sent: 1, errored: 1, skipped: 0, erroredAttendeeIds: ["att-2"] });
 
     const result = await drainWalletMessageJobs(db as never);
 
@@ -199,12 +201,40 @@ describe("drainWalletMessageJobs", () => {
     });
   });
 
+  it("checks each batch under the attendees' row locks: the beforeBatch it passes is keepLiveWalletMessageTargets on the same client", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    const batch = [{ attendeeId: "att-1", providerPassId: "pc-1" }];
+    vi.mocked(keepLiveWalletMessageTargets).mockReset().mockResolvedValueOnce(batch);
+    vi.mocked(sendWalletMessage).mockReset().mockImplementationOnce(async (_p, _t, _x, _progress, options) => {
+      expect(await options?.beforeBatch?.(batch)).toEqual(batch);
+      return { sent: 1, errored: 0, skipped: 0, erroredAttendeeIds: [] };
+    });
+
+    await drainWalletMessageJobs(db as never);
+
+    expect(keepLiveWalletMessageTargets).toHaveBeenCalledWith(db, batch);
+  });
+
+  it("adds the attendees erased while the send was running to the skipped count of the job", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    vi.mocked(sendWalletMessage)
+      .mockReset()
+      .mockResolvedValueOnce({ sent: 1, errored: 0, skipped: 1, erroredAttendeeIds: [] });
+
+    await drainWalletMessageJobs(db as never);
+
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+    );
+    expect(finalCall![0].data.result_json).toMatchObject({ sent: 1, skipped: 1, errored: 0 });
+  });
+
   it("persists progress after each batch via the onProgress callback passed to sendWalletMessage", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(sendWalletMessage).mockReset().mockImplementationOnce(async (_p, _t, _x, onProgress) => {
       await onProgress?.(1);
       await onProgress?.(2);
-      return { sent: 2, errored: 0, erroredAttendeeIds: [] };
+      return { sent: 2, errored: 0, skipped: 0, erroredAttendeeIds: [] };
     });
 
     await drainWalletMessageJobs(db as never);

@@ -6,6 +6,7 @@ import { resolveTicket } from "./resolve.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 import { resolveWalletCustomFieldPlaceholders } from "./wallet-custom-fields.js";
 import { lockAttendeeRow } from "./attendee-lock.js";
+import { attendeeIsLive } from "./lock-check.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 /**
@@ -51,6 +52,12 @@ export async function reissueOneWalletPass(
     display.event.walletFieldMapping,
   );
   const input = buildWalletPassInput(display, scanned, customFieldPlaceholders);
+
+  // The last check before the pass content leaves. Everything above was read with plain queries,
+  // which do not wait for an erasure that is still open and would show the attendee as they were
+  // before it began; this one takes the attendee's row lock first, so that erasure finishes and is
+  // seen. Only the gap between this check and the provider call is left.
+  if (!(await attendeeIsLive(db, target.attendeeId))) return "skipped";
 
   let result;
   try {

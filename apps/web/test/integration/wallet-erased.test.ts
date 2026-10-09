@@ -9,7 +9,7 @@ import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/sy
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { resolveWalletMessageAttendeeIds } from "../../src/admin/wallet-message-routes.js";
-import { loadWalletMessageTargets } from "@admitto/tickets";
+import { keepLiveWalletMessageTargets, loadWalletMessageTargets, reissueOneWalletPass } from "@admitto/tickets";
 
 const ORG_ID = "org-wallet-erased";
 const EVENT_ID = "evt-wallet-erased";
@@ -17,7 +17,11 @@ const EVENT_ID = "evt-wallet-erased";
 let prisma: PrismaClient;
 let seq = 0;
 
-type Stub = WalletPassProvider & { createPass: ReturnType<typeof vi.fn>; deletePass: ReturnType<typeof vi.fn> };
+type Stub = WalletPassProvider & {
+  createPass: ReturnType<typeof vi.fn>;
+  deletePass: ReturnType<typeof vi.fn>;
+  updatePass: ReturnType<typeof vi.fn>;
+};
 
 function stubProvider(): Stub {
   return {
@@ -109,6 +113,17 @@ async function holdErasure(ids: string[]) {
   });
   await writtenPromise;
   return { commit: () => (release(), transaction) };
+}
+
+/** True when the promise is still unsettled after a short wait. */
+async function staysPending(promise: Promise<unknown>, ms = 300): Promise<boolean> {
+  let settled = false;
+  promise.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return !settled;
 }
 
 describe("wallet pass creation racing an erasure", () => {
@@ -333,5 +348,61 @@ describe("wallet message audience", () => {
 
     expect(ids).toContain(live.attendee.id);
     expect(ids).not.toContain(gone.attendee.id);
+  });
+});
+
+describe("the last check before something is sent to the provider", () => {
+  const audit = { operator: "user-1" };
+
+  async function attendeeWithPass(passId: string) {
+    const { attendee } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: passId, apple_url: "https://pc.test/a" },
+    });
+    return attendee;
+  }
+
+  it("a pass update waits for an erasure that is still open and then sends nothing to the provider", async () => {
+    const attendee = await attendeeWithPass("pc-update-open");
+    const provider = stubProvider();
+    const held = await holdErasure([attendee.id]);
+
+    // A plain read still sees the attendee as they were: only the row lock waits for the erasure.
+    const updating = reissueOneWalletPass(prisma, EVENT_ID, { attendeeId: attendee.id, providerPassId: "pc-update-open" }, provider, audit);
+    expect(await staysPending(updating)).toBe(true);
+    await held.commit();
+
+    expect(await updating).toBe("skipped");
+    expect(provider.updatePass).not.toHaveBeenCalled();
+  });
+
+  it("still updates the pass of a live attendee", async () => {
+    const attendee = await attendeeWithPass("pc-update-live");
+    const provider = stubProvider();
+    provider.updatePass.mockResolvedValueOnce({
+      downloadUrl: "https://pc.test/p/y",
+      appleUrl: "https://pc.test/apple/y",
+      androidUrl: "https://pc.test/android/y",
+    });
+
+    const result = await reissueOneWalletPass(prisma, EVENT_ID, { attendeeId: attendee.id, providerPassId: "pc-update-live" }, provider, audit);
+
+    expect(result).toBe("reissued");
+    expect(provider.updatePass).toHaveBeenCalledTimes(1);
+  });
+
+  it("a message batch waits for an erasure that is still open and leaves the erased attendee out", async () => {
+    const gone = await attendeeWithPass("pc-msg-open-gone");
+    const live = await attendeeWithPass("pc-msg-open-live");
+    const held = await holdErasure([gone.id]);
+
+    const checking = keepLiveWalletMessageTargets(prisma, [
+      { attendeeId: gone.id, providerPassId: "pc-msg-open-gone" },
+      { attendeeId: live.id, providerPassId: "pc-msg-open-live" },
+    ]);
+    expect(await staysPending(checking)).toBe(true);
+    await held.commit();
+
+    expect(await checking).toEqual([{ attendeeId: live.id, providerPassId: "pc-msg-open-live" }]);
   });
 });

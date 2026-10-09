@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassProvider } from "@admitto/wallet";
+import { liveAttendeeIds } from "./lock-check.js";
 
 /** No documented cap on PassCreator's bulk `filter.identifiers` size, but a chunk keeps one
  * event's send from hinging on a single unbounded request - conservative default pending live
@@ -7,6 +8,29 @@ import type { WalletPassProvider } from "@admitto/wallet";
 export const WALLET_MESSAGE_BULK_BATCH_SIZE = 500;
 
 export type SendWalletMessageTarget = { attendeeId: string; providerPassId: string };
+
+/**
+ * The targets of one batch whose attendee still exists and is not erased, checked under their row
+ * locks right before the batch goes out. The targets were selected earlier, and a large send spans
+ * several provider calls: an attendee erased in between must not be messaged, and an erasure that
+ * is still open is waited for rather than read as it was before it began.
+ */
+export async function keepLiveWalletMessageTargets(
+  db: PrismaClient,
+  batch: SendWalletMessageTarget[],
+): Promise<SendWalletMessageTarget[]> {
+  const live = await liveAttendeeIds(
+    db,
+    batch.map((target) => target.attendeeId),
+  );
+  return batch.filter((target) => live.has(target.attendeeId));
+}
+
+export type SendWalletMessageOptions = {
+  /** Called with each batch right before it goes out; returns the targets that may still be sent.
+   * Targets it leaves out count as `skipped`; if it throws, the whole batch counts as errored. */
+  beforeBatch?: (batch: SendWalletMessageTarget[]) => Promise<SendWalletMessageTarget[]>;
+};
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -47,6 +71,8 @@ export type SendWalletMessageResult = {
    * the strongest signal available here. */
   sent: number;
   errored: number;
+  /** Targets left out because `beforeBatch` no longer allowed them (erased since the selection). */
+  skipped: number;
   /** attendeeId of every target in a batch that failed - the actual retry set a caller needs to
    * re-message only what didn't go out, not the full original selection (which would duplicate
    * already-successful batches). */
@@ -77,27 +103,74 @@ export async function sendWalletMessage(
   targets: SendWalletMessageTarget[],
   text: string,
   onProgress?: SendWalletMessageProgress,
+  options: SendWalletMessageOptions = {},
 ): Promise<SendWalletMessageResult> {
   let sent = 0;
+  let skipped = 0;
   const erroredAttendeeIds: string[] = [];
-  for (const batch of chunk(targets, WALLET_MESSAGE_BULK_BATCH_SIZE)) {
-    try {
-      await provider.sendPushMessage(
-        batch.map((target) => target.providerPassId),
-        text,
-      );
-      sent += batch.length;
-    } catch {
-      erroredAttendeeIds.push(...batch.map((target) => target.attendeeId));
-    }
+  const batches = chunk(targets, WALLET_MESSAGE_BULK_BATCH_SIZE);
+
+  // One batch after the other, never concurrently: each is checked just before it goes out, so a
+  // later batch sees what changed while the earlier ones were with the provider.
+  const sendFrom = async (index: number): Promise<void> => {
+    const batch = batches.at(index);
+    if (!batch) return;
+    const outcome = await sendOneBatch(provider, batch, text, options.beforeBatch);
+    sent += outcome.sent;
+    skipped += outcome.skipped;
+    erroredAttendeeIds.push(...outcome.erroredAttendeeIds);
     try {
       // Progress is advisory (polling UI only) - a write failure here must not turn a batch the
       // provider already accepted into a reported failure, which would risk an operator retry
       // re-sending a notification that already reached its recipients.
-      await onProgress?.(sent + erroredAttendeeIds.length);
+      await onProgress?.(sent + skipped + erroredAttendeeIds.length);
     } catch (err) {
       console.error("wallet message progress update failed:", err);
     }
+    await sendFrom(index + 1);
+  };
+  await sendFrom(0);
+
+  return { sent, errored: erroredAttendeeIds.length, skipped, erroredAttendeeIds };
+}
+
+type BatchOutcome = { sent: number; skipped: number; erroredAttendeeIds: string[] };
+
+/** One bulk call: the targets the check keeps are sent, the others are skipped, and a failure of
+ * the check or of the call puts the targets it concerned into the retry set. */
+async function sendOneBatch(
+  provider: WalletPassProvider,
+  batch: SendWalletMessageTarget[],
+  text: string,
+  beforeBatch: SendWalletMessageOptions["beforeBatch"],
+): Promise<BatchOutcome> {
+  const sendable = await selectSendable(batch, beforeBatch);
+  // The check itself failed: nothing of this batch went out, so all of it can be retried.
+  if (sendable === null) return { sent: 0, skipped: 0, erroredAttendeeIds: attendeeIdsOf(batch) };
+  const skipped = batch.length - sendable.length;
+  if (sendable.length === 0) return { sent: 0, skipped, erroredAttendeeIds: [] };
+  try {
+    await provider.sendPushMessage(
+      sendable.map((target) => target.providerPassId),
+      text,
+    );
+    return { sent: sendable.length, skipped, erroredAttendeeIds: [] };
+  } catch {
+    return { sent: 0, skipped, erroredAttendeeIds: attendeeIdsOf(sendable) };
   }
-  return { sent, errored: erroredAttendeeIds.length, erroredAttendeeIds };
+}
+
+const attendeeIdsOf = (targets: SendWalletMessageTarget[]): string[] => targets.map((target) => target.attendeeId);
+
+/** The part of a batch that may go out, or null when the check could not be made. */
+async function selectSendable(
+  batch: SendWalletMessageTarget[],
+  beforeBatch: SendWalletMessageOptions["beforeBatch"],
+): Promise<SendWalletMessageTarget[] | null> {
+  if (!beforeBatch) return batch;
+  try {
+    return await beforeBatch(batch);
+  } catch {
+    return null;
+  }
 }
