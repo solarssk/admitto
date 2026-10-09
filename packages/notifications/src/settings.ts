@@ -162,7 +162,12 @@ async function buildNextRecipients(
   // being recognized as the same recipient.
   const currentByEmail = new Map(current.map((r) => [r.email.trim().toLowerCase(), r]));
   const byEmail = new Map<string, NotificationEmailRecipient>();
-  let actorSnapshot: { email: string; display_name: string | null } | null | undefined;
+  // Looked up once, and only when the patch introduces a genuinely new email.
+  const introducesNewEmail = patchEntries.some((entry) => {
+    const email = entry.email.trim().toLowerCase();
+    return email !== "" && !currentByEmail.has(email);
+  });
+  const actorSnapshot = introducesNewEmail ? await resolveActorSnapshot(db, actorUserId) : null;
 
   for (const entry of patchEntries) {
     const email = entry.email.trim().toLowerCase();
@@ -175,7 +180,6 @@ async function buildNextRecipients(
       byEmail.set(email, { ...existing, email, description });
       continue;
     }
-    if (actorSnapshot === undefined) actorSnapshot = await resolveActorSnapshot(db, actorUserId);
     byEmail.set(email, {
       email,
       description,

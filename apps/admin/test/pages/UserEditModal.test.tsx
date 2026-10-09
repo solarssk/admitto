@@ -1707,7 +1707,7 @@ describe("UserEditModal busy buttons and failures inside confirmation dialogs", 
     fireEvent.click(within(dialog).getByRole("button", { name: "Use a passkey or security key" }));
 
     await waitFor(() => expect(within(dialog).getAllByRole("alert").length).toBeGreaterThan(0));
-    expect(within(dialog).queryAllByRole("alert").length).toBe(screen.getAllByRole("alert").length);
+    expect(within(dialog).queryAllByRole("alert")).toHaveLength(screen.getAllByRole("alert").length);
   });
 });
 

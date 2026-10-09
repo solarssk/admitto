@@ -115,7 +115,7 @@ export async function backfillEvent(
       // Both ids are filtered non-null in the query above, but Prisma's own generated type for a
       // `not: null` filter doesn't narrow the selected column - non-null asserted here since the
       // query guarantees it, not because the type system already knows.
-      const snapshot = await client.getPassSnapshot({
+      const snapshot = await client.getPassSnapshot({ // NOSONAR - one provider call at a time on purpose: a backfill must not burst the provider API
         providerPassId: pass.provider_pass_id as string,
         userProvidedId: pass.user_provided_id as string,
       });
