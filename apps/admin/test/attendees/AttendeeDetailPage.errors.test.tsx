@@ -78,9 +78,9 @@ const detail = {
   event_items: [],
 };
 
-function renderPage(strict = false) {
+function renderPage(strict = false, search = "") {
   const page = (
-    <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
+    <MemoryRouter initialEntries={[`/admin/events/evt-1/attendees/att-1${search}`]}>
       <Routes>
         <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
         <Route path="/admin/events/:eventId/attendees" element={<p>the attendee list</p>} />
@@ -171,6 +171,65 @@ describe("AttendeeDetailPage operator errors", () => {
     });
     expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
     expect(chips()).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in", "Wallet"]);
+  });
+
+  describe("the tab that the address asks for", () => {
+    const openTabs = () => [...document.querySelectorAll(".at-tabs .at-tab--active")].map((el) => el.textContent);
+
+    // The placeholder of a read that is on its way, shown (200ms passed), and what it says when the read answers.
+    async function placeholderThenPage(search: string) {
+      let resolveLoad!: (value: unknown) => void;
+      loadAttendeeDetailData.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLoad = resolve;
+          }),
+      );
+      vi.useFakeTimers();
+      renderPage(false, search);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      const whileWaiting = { openTabs: openTabs(), skeleton: document.querySelector(".attendee-detail-skeleton"), hint: document.querySelector(".at-notes-hint")?.textContent };
+      await act(async () => {
+        resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+      });
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      return whileWaiting;
+    }
+
+    it("draws the Activity log's placeholder under an Activity log that is the open tab for ?tab=activity, and the page opens on that tab", async () => {
+      const waiting = await placeholderThenPage("?tab=activity");
+      expect(waiting.openTabs).toEqual(["Activity log"]);
+      expect(waiting.skeleton?.querySelectorAll(".at-tl-item")).toHaveLength(3);
+      expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+      expect(document.querySelector(".attendee-detail-grid")).toBeNull();
+      expect(openTabs()).toEqual(["Activity log"]);
+    });
+
+    it("draws the Notes placeholder for ?tab=notes, with the hint that the page itself then says, word for word", async () => {
+      const waiting = await placeholderThenPage("?tab=notes");
+      expect(waiting.openTabs).toEqual(["Notes"]);
+      expect(waiting.skeleton?.querySelector(".at-notes-form")).not.toBeNull();
+      expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+      expect(openTabs()).toEqual(["Notes"]);
+      // The placeholder says this copy of its own, so the page's text is what keeps the two from drifting apart.
+      expect(waiting.hint).toBeTruthy();
+      expect(document.querySelector(".at-notes-hint")?.textContent).toBe(waiting.hint);
+    });
+
+    it("draws the Overview placeholder for no tab in the address, and for one that the page does not have", async () => {
+      for (const search of ["", "?tab=overview", "?tab=bogus"]) {
+        const waiting = await placeholderThenPage(search);
+        expect(waiting.openTabs, search).toEqual(["Overview"]);
+        expect(waiting.skeleton?.classList.contains("attendee-detail-grid"), search).toBe(true);
+        expect(openTabs(), search).toEqual(["Overview"]);
+        cleanup();
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("draws the page's own frame while the record is on its way, and its Back leaves for the list instead of waiting", () => {

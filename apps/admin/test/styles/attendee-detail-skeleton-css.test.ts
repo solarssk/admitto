@@ -27,4 +27,27 @@ describe("the attendee page's skeleton: CSS that the tests in jsdom cannot see",
     expect(rule(css, ".attendee-detail-skeleton__tabs")).toMatch(/pointer-events:\s*none/);
     expect(rule(css, ".attendee-detail-skeleton__tabs .at-tab")).toMatch(/line-height:\s*normal/);
   });
+
+  it("the columns of the Activity and Notes placeholders that hold bars may shrink, so a bar yields on a phone instead of sticking out of the card", () => {
+    // A flex item does not go below the width of its widest content by default, and a bar has a width of its own.
+    const shrink = /\.attendee-detail-skeleton \.at-tl-body,\s*\.attendee-detail-skeleton \.at-notes-list__author-group\s*\{([^}]*)\}/.exec(css);
+    expect(shrink, "no rule that lets the body of a row and the author of a note shrink").not.toBeNull();
+    expect(shrink![1]).toMatch(/min-width:\s*0\s*;/);
+  });
+
+  it("a line of text drawn as a bar is a flex row that centres the bar in the line's own height", () => {
+    const line = rule(css, ".attendee-detail-skeleton__line");
+    expect(line).toMatch(/display:\s*flex/);
+    expect(line).toMatch(/align-items:\s*center/);
+    // Its bar shrinks with it, instead of holding the line wide.
+    expect(line).toMatch(/min-width:\s*0\s*;/);
+  });
+
+  it("the note field is two rows of the page's textarea, and the taller one that a touch screen has", () => {
+    // Compound, so that it beats the 120px of `.at-skeleton--rect` whatever the order of the stylesheets.
+    expect(rule(css, ".at-skeleton.attendee-detail-skeleton__textarea")).toMatch(/height:\s*57px/);
+    const coarse = /@media \(pointer: coarse\)\s*\{\s*\.at-skeleton\.attendee-detail-skeleton__textarea\s*\{([^}]*)\}\s*\}/.exec(css);
+    expect(coarse, "no touch-screen height for the note field").not.toBeNull();
+    expect(coarse![1]).toMatch(/height:\s*66px/);
+  });
 });

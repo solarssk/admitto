@@ -2583,7 +2583,7 @@ export function AttendeeDetailPage() {
         className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
         aria-busy="true"
       >
-        <AttendeeDetailSkeleton slow={slow} isDesktop={isDesktop} onBack={goBack} walletPlatforms={walletPlatforms} />
+        <AttendeeDetailSkeleton slow={slow} isDesktop={isDesktop} onBack={goBack} walletPlatforms={walletPlatforms} tab={tab} />
       </div>
     );
   }
