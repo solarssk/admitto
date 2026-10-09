@@ -7,6 +7,7 @@ import { canManageInstance } from "@admitto/auth";
 import {
   ADMITTABLE_STATUS_LIST,
   REVOCABLE_ITEM_STATES,
+  keepLiveRows,
   writeAdminAuditLog,
   parseWalletFieldMapping,
 } from "@admitto/tickets";
@@ -1454,7 +1455,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
   const totalCount = await db.attendee.count({ where: { event_id: eventId, erased_at: null } });
   const truncated = totalCount > PII_EXPORT_MAX_ROWS;
 
-  const attendees = await db.attendee.findMany({
+  const fetched = await db.attendee.findMany({
     where: { event_id: eventId, erased_at: null },
     take: PII_EXPORT_MAX_ROWS,
     orderBy: { created_at: "asc" },
@@ -1469,6 +1470,9 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
       custom_data: true,
     },
   });
+  // The last check before the file is built: `erased_at: null` above is evaluated against the row
+  // as it was before an erasure that is still open began, so such an attendee would be in the file.
+  const attendees = await keepLiveRows(db, fetched);
 
   const columns = [
     "id",

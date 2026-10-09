@@ -77,6 +77,7 @@ export type AttendeeSortDir = "asc" | "desc";
 export const EXPORT_ROW_CAP = 50_000;
 
 export const EXPORT_ATTENDEE_SELECT = {
+  id: true,
   name: true,
   email: true,
   company: true,
@@ -102,6 +103,8 @@ export type AttendeeListSqlRow = {
 };
 
 export type ExportAttendeeSqlRow = {
+  /** Not in the file: the export checks each row's attendee under a lock just before building it. */
+  id: string;
   name: string;
   email: string;
   company: string | null;
@@ -362,7 +365,7 @@ export async function findFilteredAttendeesForExport(
     });
   }
   return db.$queryRaw<ExportAttendeeSqlRow[]>`
-    SELECT a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.admitted_at
+    SELECT a.id, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.admitted_at
     FROM "Attendee" a
     WHERE a.event_id = ${eventId}
       ${attendeeErasedSql(false)}

@@ -2,6 +2,7 @@ import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { customDataValue, parseCustomData } from "./custom-data.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
+import { keepLiveRows } from "./lock-check.js";
 import { loadEventTicketTypes, type TicketTypeInfo } from "./ticket-types.js";
 import type { EventItemContent } from "./types.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
@@ -191,7 +192,8 @@ export async function exportAttendeesCsv(
   ]);
 
   const exportColumns = buildExportColumns(attributeFieldsResult);
-  const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);
+  // The last check before the file is built, as in buildAttendeesExportArtifact.
+  const exportRows = buildSanitizedExportRows(await keepLiveRows(db, rows), attributeFieldsResult, timeZone, ticketTypes);
   const csv = buildExportCsv(exportRows, exportColumns);
 
   return {

@@ -2221,19 +2221,7 @@ async function syncWalletPassOnStatusChangeBestEffort(
   if (!provider) return;
 
   try {
-    if (statusChange === "revoked") {
-      await provider.voidPass(walletPass.provider_pass_id);
-      await db.walletPass.updateMany({
-        where: { attendee_id: attendeeId, provider_removed_at: null },
-        data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
-      });
-    } else {
-      await provider.restorePass(walletPass.provider_pass_id);
-      await db.walletPass.updateMany({
-        where: { attendee_id: attendeeId, provider_removed_at: null },
-        data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
-      });
-    }
+    await commandWalletPassStatusCascade(db, attendeeId, walletPass.provider_pass_id, provider, statusChange);
   } catch (err) {
     console.error(`wallet pass ${statusChange} cascade failed:`, err);
     recordSystemLog({
@@ -2243,6 +2231,34 @@ async function syncWalletPassOnStatusChangeBestEffort(
       fields: { eventId, attendeeId, statusChange },
     });
   }
+}
+
+/** The provider command of syncWalletPassOnStatusChangeBestEffort and the write back of its result.
+ * The reads before it were plain queries, which do not wait for an erasure that is still open and
+ * show the attendee as they were before it began, so the last check before the provider is called
+ * takes the attendee's row lock, like the wallet routes do (`requireAttendeeStillLive`). The result
+ * is written back under that lock and only onto a pass that is still there: an erasure that
+ * committed while the provider call was in flight has already cleared the row's links, and the
+ * outcome (attendee erased, pass removed meanwhile) is not an error here. */
+async function commandWalletPassStatusCascade(
+  db: PrismaClient,
+  attendeeId: string,
+  providerPassId: string,
+  provider: WalletPassProvider,
+  statusChange: "revoked" | "registered",
+): Promise<void> {
+  if (!(await attendeeIsLive(db, attendeeId))) return;
+
+  if (statusChange === "revoked") {
+    await provider.voidPass(providerPassId);
+  } else {
+    await provider.restorePass(providerPassId);
+  }
+  const data: Prisma.WalletPassUpdateManyMutationInput =
+    statusChange === "revoked"
+      ? { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null }
+      : { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null };
+  await db.$transaction((tx) => updateWalletPassUnlessRemoved(tx, attendeeId, data));
 }
 
 /** Set form of the shared WALLET_RELEVANT_ATTENDEE_FIELDS list (packages/shared), for the O(1)
@@ -4091,7 +4107,7 @@ export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient):
   const dismissed = await db.$transaction(async (tx) => {
     // erased_at: an attendee erased since the check above is refused, not written to.
     const { count } = await tx.attendee.updateMany({
-      where: { id: attendeeId, erased_at: null },
+      where: { id: attendeeId, event_id: eventId, erased_at: null },
       data: { email_bounce_dismissed_at: dismissedAt },
     });
     if (count === 0) return false;

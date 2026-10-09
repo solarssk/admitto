@@ -1,7 +1,8 @@
 /**
  * Event-day operations refuse an erased attendee (check-in, undo / revoke, item hand-outs, notes,
  * activity log, door lookups), and an erasure that is still open makes them wait instead of
- * writing onto the row it is emptying. Same database setup as erase-attendees.test.ts.
+ * writing onto the row it is emptying. The same goes for the last check before an export file is
+ * built. Same database setup as erase-attendees.test.ts.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
@@ -12,6 +13,10 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "../src/attendee-lock.js";
+import { keepLiveRows } from "../src/lock-check.js";
+import { buildAttendeesExportArtifact } from "../src/attendees-export-artifact.js";
+import { exportAttendeesCsv } from "../src/attendees-export.js";
+import { findFilteredAttendeesForExport, findSelectedAttendeesForExport } from "../src/attendees-list-filters.js";
 import { admitAttendee } from "../src/admit.js";
 import { checkInScan, getRecentCheckIns } from "../src/checkin.js";
 import { getAttendeeCard, lookupAttendees } from "../src/attendee-card.js";
@@ -553,5 +558,95 @@ describe("activity log", () => {
     await held.commit();
     await logging;
     expect(await prisma.attendeeActionLog.count({ where: { attendee_id: a.id } })).toBe(0);
+  });
+});
+
+describe("the last check before an export file is built", () => {
+  const exportEvent = { title: "Ops", date: new Date("2026-09-01T09:00:00Z"), timezone: "UTC" };
+
+  it("keepLiveRows keeps the rows of live attendees in their order and drops erased and missing ones", async () => {
+    const first = await createAttendee();
+    const gone = await createAttendee();
+    const last = await createAttendee();
+    await erase([gone.id]);
+    const rows = [{ id: last.id }, { id: gone.id }, { id: "nobody" }, { id: first.id }];
+    expect(await keepLiveRows(prisma, rows)).toEqual([{ id: last.id }, { id: first.id }]);
+    expect(await keepLiveRows(prisma, [])).toEqual([]);
+  });
+
+  it("keepLiveRows checks a list longer than a statement can bind value by value (65 535)", async () => {
+    const a = await createAttendee();
+    const ghosts = Array.from({ length: 70_000 }, (_, i) => ({ id: `ghost-${i}` }));
+    expect(await keepLiveRows(prisma, [{ id: a.id }, ...ghosts])).toEqual([{ id: a.id }]);
+  });
+
+  it("keepLiveRows waits for an open erasure and then leaves the attendee out", async () => {
+    const a = await createAttendee();
+    const b = await createAttendee();
+    const held = await holdErasure([a.id]);
+    const checking = keepLiveRows(prisma, [{ id: a.id }, { id: b.id }]);
+    expect(await staysPending(checking)).toBe(true);
+    await held.commit();
+    expect(await checking).toEqual([{ id: b.id }]);
+  });
+
+  it("both finders return the id of each row, whichever query they use", async () => {
+    const a = await createAttendee({ name: "Finder Ident Person" });
+    expect((await findSelectedAttendeesForExport(prisma, EVENT_ID, [a.id])).map((r) => r.id)).toEqual([a.id]);
+    const plain = await findFilteredAttendeesForExport(prisma, EVENT_ID, { status: "all" });
+    expect(plain.map((r) => r.id)).toContain(a.id);
+    const searched = await findFilteredAttendeesForExport(prisma, EVENT_ID, { status: "all", q: "Finder Ident" });
+    expect(searched.map((r) => r.id)).toEqual([a.id]);
+  });
+
+  it.each(["csv", "xlsx", "pdf"] as const)(
+    "a %s built from rows read while an erasure was open waits for it and leaves the attendee out",
+    async (format) => {
+      const open = await createAttendee({ name: "Open Erasure Person" });
+      const steady = await createAttendee({ name: "Steady Export Person" });
+      const held = await holdErasure([open.id]);
+      // A plain read does not wait for the erasure and still shows both attendees as they were.
+      const rows = await findSelectedAttendeesForExport(prisma, EVENT_ID, [open.id, steady.id]);
+      expect(rows.map((r) => r.id).sort()).toEqual([open.id, steady.id].sort());
+
+      const building = buildAttendeesExportArtifact(prisma, EVENT_ID, rows, format, exportEvent);
+      expect(await staysPending(building)).toBe(true);
+      await held.commit();
+      const file = await building;
+
+      expect(file.rowCount).toBe(1);
+      if (format === "csv") {
+        const csv = file.bytes.toString("utf8");
+        expect(csv).toContain(steady.email);
+        expect(csv).not.toContain(open.email);
+        expect(csv).not.toContain("Open Erasure Person");
+      }
+    },
+  );
+
+  it("the CSV of the filtered export leaves out an attendee whose erasure is open while it reads", async () => {
+    const open = await createAttendee({ name: "Csv Open Erasure Person" });
+    const held = await holdErasure([open.id]);
+
+    const exporting = exportAttendeesCsv(prisma, EVENT_ID, { status: "all", q: "Csv Open Erasure" });
+    expect(await staysPending(exporting)).toBe(true);
+    await held.commit();
+    const result = await exporting;
+
+    expect(result.rowCount).toBe(0);
+    expect(result.csv).not.toContain(open.email);
+  });
+
+  it("still exports a live attendee", async () => {
+    const a = await createAttendee({ name: "Live Export Person" });
+    const file = await buildAttendeesExportArtifact(
+      prisma,
+      EVENT_ID,
+      await findSelectedAttendeesForExport(prisma, EVENT_ID, [a.id]),
+      "csv",
+      exportEvent,
+    );
+    expect(file.rowCount).toBe(1);
+    expect(file.bytes.toString("utf8")).toContain(a.email);
   });
 });
