@@ -1070,12 +1070,14 @@ export function CheckInPage({
 
   // A Retry that worked takes its button, and the keyboard focus on it, away with the error. The scan field is where the focus belongs at the
   // door (a keyboard-wedge scanner types into whatever holds it), so it goes there, unless the operator has moved on to another control.
+  // Straight away, not through focusScan(), which waits for an animation frame: an operator who tabs or clicks away in that frame would be
+  // pulled back to the field by the queued callback. Under the phone's camera view there is no scan field (focusScan does nothing there either).
   const sidebarPreviousStatusRef = useRef(sidebarStatus);
   useEffect(() => {
     const was = sidebarPreviousStatusRef.current;
     sidebarPreviousStatusRef.current = sidebarStatus;
-    if (was === "error" && sidebarStatus === "ready" && document.activeElement === document.body) focusScan();
-  }, [sidebarStatus, focusScan]);
+    if (was === "error" && sidebarStatus === "ready" && !showMobileOverlay && document.activeElement === document.body) inputRef.current?.focus();
+  }, [sidebarStatus, showMobileOverlay]);
 
   useEffect(() => {
     return () => {
