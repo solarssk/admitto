@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { MAX_ATTENDEE_NOTE_LENGTH } from "@admitto/db/status";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 export { MAX_ATTENDEE_NOTE_LENGTH };
@@ -55,11 +56,10 @@ export async function addAttendeeNote(
   if (body.length > MAX_ATTENDEE_NOTE_LENGTH) throw new NoteTooLongError();
 
   return prisma.$transaction(async (tx) => {
-    const attendee = await tx.attendee.findFirst({
-      where: { id: params.attendeeId, event_id: params.eventId },
-      select: { id: true },
-    });
-    if (!attendee) throw new AttendeeNotFoundError();
+    // An erased attendee has no notes and gets none: the lock keeps an erasure from starting
+    // before this transaction ends, so the note cannot land after the notes were deleted.
+    const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
+    if (!attendee || attendee.erased) throw new AttendeeNotFoundError();
 
     const note = await tx.attendeeNote.create({
       data: {
@@ -105,6 +105,11 @@ export async function updateAttendeeNote(
   if (body.length > MAX_ATTENDEE_NOTE_LENGTH) throw new NoteTooLongError();
 
   return prisma.$transaction(async (tx) => {
+    // Attendee row first, like an erasure (which then deletes the notes): the same order on both
+    // sides rules out a lock cycle. An erased attendee has no notes left to edit.
+    const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
+    if (!attendee || attendee.erased) throw new NoteNotFoundError();
+
     const note = await tx.attendeeNote.findFirst({
       where: { id: params.noteId, attendee_id: params.attendeeId, event_id: params.eventId },
       select: { id: true, author_user_id: true },
@@ -146,6 +151,10 @@ export async function deleteAttendeeNote(
   if (!operator) throw new OperatorRequiredError();
 
   await prisma.$transaction(async (tx) => {
+    // Same lock order and same answer as updateAttendeeNote above.
+    const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
+    if (!attendee || attendee.erased) throw new NoteNotFoundError();
+
     const note = await tx.attendeeNote.findFirst({
       where: { id: params.noteId, attendee_id: params.attendeeId, event_id: params.eventId },
       select: { id: true, author_user_id: true },

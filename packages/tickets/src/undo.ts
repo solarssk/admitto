@@ -1,8 +1,16 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
-import { rollbackBadgeForCheckIn, resetAllItemStatesForRevoke } from "./item-states.js";
+import { lockAttendeeRow } from "./attendee-lock.js";
+import {
+  rollbackBadgeForCheckIn,
+  resetAllItemStatesForRevoke,
+  IllegalItemTransitionError,
+} from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import type { UndoCheckInResult } from "./types.js";
+
+/** The precision an erasure leaves a check-in time with (see eraseAttendees). */
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 export class UndoNotAllowedError extends Error {
   constructor(message: string) {
@@ -36,6 +44,33 @@ export async function undoLastCheckIn(
 
     if (!lastValid) {
       throw new UndoNotAllowedError("No check-in to undo on this device");
+    }
+
+    // Refuse rather than skip to an older check-in when the newest one is an erased attendee's.
+    // The lock keeps an erasure from starting before this transaction ends.
+    const locked = await lockAttendeeRow(tx, lastValid.attendee_id, params.eventId);
+    if (locked?.erased) {
+      throw new UndoNotAllowedError("Attendee data has been erased");
+    }
+
+    // Erasure cuts a check-in's time to the start of its hour, so an erased scan can have been
+    // made after the one selected above and still sort before it (a 10:55 scan erased to 10:00
+    // sorts behind a 10:30 one). If an erased scan on this device could be later than the
+    // selected one, which one was the last cannot be known: refuse instead of undoing someone
+    // else's admission.
+    const maybeLater = await tx.checkIn.findFirst({
+      where: {
+        event_id: params.eventId,
+        device_id: params.audit.deviceId,
+        status: "VALID",
+        source: { in: ["scan", "manual"] },
+        attendee: { erased_at: { not: null } },
+        checked_in_at: { gt: new Date(lastValid.checked_in_at.getTime() - ONE_HOUR_MS) },
+      },
+      select: { id: true },
+    });
+    if (maybeLater) {
+      throw new UndoNotAllowedError("Attendee data has been erased");
     }
 
     const attendee = await tx.attendee.findFirst({
@@ -141,6 +176,11 @@ export async function revokeCheckInMutation(
   params: { eventId: string; attendeeId: string; audit: OpsAuditContext; resetItems?: boolean },
   tx: Prisma.TransactionClient,
 ): Promise<{ undoneCheckInId: string | null }> {
+  // IllegalItemTransitionError, not UndoNotAllowedError: callers that only clear a stale
+  // admission treat the latter as "nothing to do" and carry on with a status change.
+  const locked = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
+  if (locked?.erased) throw new IllegalItemTransitionError("Attendee data has been erased");
+
   const lastValid = await tx.checkIn.findFirst({
     where: {
       event_id: params.eventId,
