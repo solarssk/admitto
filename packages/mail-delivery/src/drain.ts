@@ -16,6 +16,7 @@ import {
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
+import { readDeliveriesBeforeSend } from "./sendable.js";
 import type { MailDeliveryDeps } from "./send.js";
 
 export const DEFAULT_MAIL_DRAIN_LIMIT = 50;
@@ -273,12 +274,12 @@ async function sendOneFromSnapshot(
   // memory via a plain SELECT (claimDrainCandidates), so a batch cancelled after this row was
   // claimed but before it reached the front of the sequential loop still shows "queued" in the
   // in-memory snapshot. This is the last point where skipping is possible - once sendBatch is
-  // called, the email is out and cannot be recalled.
-  const fresh = await prisma.emailDelivery.findUnique({
-    where: { id: delivery.id },
-    select: { status: true },
-  });
-  if (fresh?.status === "cancelled") {
+  // called, the email is out and cannot be recalled. Read under the attendee's row lock, so an
+  // erasure that is still open is waited for; its row is cancelled and emptied (no recipient).
+  const fresh = (
+    await readDeliveriesBeforeSend(prisma, [{ deliveryId: delivery.id, attendeeId: delivery.attendee_id }])
+  ).get(delivery.id);
+  if (!fresh || fresh.status === "cancelled" || !fresh.recipient_email) {
     return "skipped";
   }
 

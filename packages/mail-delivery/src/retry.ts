@@ -5,6 +5,7 @@ import { MailConfigError, resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
+import { readDeliveriesBeforeSend } from "./sendable.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 import type { MailDeliveryDeps } from "./send.js";
 
@@ -81,10 +82,10 @@ export async function retryDelivery(
   try {
     // Re-read right before sending: links, config and the mailer took time, and an erasure (which
     // cancels and empties the row) or a cancelled batch since the first read must stop the send.
-    const fresh = await prisma.emailDelivery.findUnique({
-      where: { id: deliveryId },
-      select: { status: true, recipient_email: true },
-    });
+    // Read under the attendee's row lock, so an erasure that is still open is waited for.
+    const fresh = (
+      await readDeliveriesBeforeSend(prisma, [{ deliveryId, attendeeId: delivery.attendee_id }])
+    ).get(deliveryId);
     if (fresh?.status !== "failed" || !fresh.recipient_email) {
       return { ok: false, reason: "not_retryable" };
     }

@@ -11,7 +11,7 @@ import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { eraseAttendees } from "../src/erase-attendees.js";
-import { lockAttendeeRow, lockAttendeesForUpdate } from "../src/attendee-lock.js";
+import { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "../src/attendee-lock.js";
 import { admitAttendee } from "../src/admit.js";
 import { checkInScan, getRecentCheckIns } from "../src/checkin.js";
 import { getAttendeeCard, lookupAttendees } from "../src/attendee-card.js";
@@ -162,6 +162,24 @@ describe("lockAttendeeRow", () => {
     release();
     await holding;
     expect((await erasing).erasedIds).toEqual([a.id]);
+  });
+
+  it("lockLiveAttendees returns the ids that exist and are not erased, and nothing for an empty list", async () => {
+    const live = await createAttendee();
+    const erased = await createAttendee();
+    await erase([erased.id]);
+    expect(await prisma.$transaction((tx) => lockLiveAttendees(tx, [live.id, erased.id, "nobody", live.id]))).toEqual(new Set([live.id]));
+    expect(await prisma.$transaction((tx) => lockLiveAttendees(tx, []))).toEqual(new Set());
+  });
+
+  it("lockLiveAttendees waits for an open erasure and then leaves the erased attendee out", async () => {
+    const a = await createAttendee();
+    const b = await createAttendee();
+    const held = await holdErasure([a.id]);
+    const locking = prisma.$transaction((tx) => lockLiveAttendees(tx, [a.id, b.id]));
+    expect(await staysPending(locking)).toBe(true);
+    await held.commit();
+    expect(await locking).toEqual(new Set([b.id]));
   });
 
   it("does not block an ordinary update of the attendee", async () => {

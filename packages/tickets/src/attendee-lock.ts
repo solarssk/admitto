@@ -38,6 +38,25 @@ export async function lockAttendeeRow(
 }
 
 /**
+ * Locks attendee rows `FOR KEY SHARE`, in id order (the order an erasure takes them in), and
+ * returns the ids of those that exist and are not erased. For a reader that must see the result of
+ * an erasure that is still open before it acts on what it read (a mail about to leave): it waits
+ * for the erasure to commit, where a plain read would show the rows as they were before it began.
+ */
+export async function lockLiveAttendees(
+  db: DbClient,
+  attendeeIds: readonly string[],
+): Promise<Set<string>> {
+  if (attendeeIds.length === 0) return new Set();
+  const rows = await db.$queryRaw<{ id: string; erased_at: Date | null }[]>`
+    SELECT "id", "erased_at" FROM "Attendee"
+    WHERE "id" IN (${Prisma.join([...new Set(attendeeIds)])})
+    ORDER BY "id" FOR KEY SHARE
+  `;
+  return new Set(rows.filter((row) => row.erased_at === null).map((row) => row.id));
+}
+
+/**
  * Locks attendee rows `FOR UPDATE`, in id order, until the transaction ends. For a transaction
  * that deletes an attendee together with its check-ins, deliveries and wallet pass: it takes the
  * attendee lock first, the same order as an erasure and as every transaction guarded by

@@ -36,6 +36,7 @@ import {
 import { mapSendResultToDelivery, type DeliveryStatusUpdate } from "./mapSendResult.js";
 import { splitDisplayName } from "./name.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
+import { readDeliveriesBeforeSend } from "./sendable.js";
 import type { SendTicketEmailsResult } from "./types.js";
 
 /** Options for `sendTicketEmails()` batch send. */
@@ -430,15 +431,26 @@ export async function deliverPendingBatch(
   pending: PendingSend[],
   prisma: PrismaClient,
 ): Promise<number> {
+  // The messages were frozen when their deliveries were claimed, and every attendee of the request
+  // is processed before the batch goes out: leave out the ones whose delivery was cancelled or
+  // emptied since (what an erasure does). Read under the attendees' row locks, so an erasure that
+  // is still open is waited for.
+  const current = await readDeliveriesBeforeSend(prisma, pending);
+  const toSend = pending.filter((item) => {
+    const row = current.get(item.deliveryId);
+    return row !== undefined && row.status !== "cancelled" && row.recipient_email !== null;
+  });
+  if (toSend.length === 0) return 0;
+
   try {
     const batchResult = await sendBatch(
       mailer,
-      pending.map((item) => materializePendingMessage(item)),
+      toSend.map((item) => materializePendingMessage(item)),
     );
 
     await Promise.all(
       batchResult.results.map((result, index) => {
-        const item = pending.at(index);
+        const item = toSend.at(index);
         if (!item) return Promise.resolve();
         const update = mapSendResultToDelivery(result);
         // recipient_email: an erased attendee's delivery is emptied, and stays that way.
@@ -457,7 +469,7 @@ export async function deliverPendingBatch(
   } catch (err) {
     const failureUpdate = deliveryUpdateFromBatchError(err);
     await Promise.all(
-      pending.map((item) =>
+      toSend.map((item) =>
         prisma.emailDelivery.updateMany({
           where: { id: item.deliveryId, recipient_email: { not: null } },
           data: {

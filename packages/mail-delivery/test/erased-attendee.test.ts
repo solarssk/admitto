@@ -17,6 +17,8 @@ import {
   type ClaimResult,
 } from "../src/index.js";
 import { applyBounceResult } from "../src/bounceIngest/applyBounceResult.js";
+import { deliverPendingBatch } from "../src/send.js";
+import type { MailerAdapter, MailMessage, SendResult } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
 import { seedOrgAndEvent } from "./seedOrgAndEvent.js";
 
@@ -377,6 +379,61 @@ describe("mail already on its way", () => {
     expect((await deliveriesOf(a.id))[0]).toMatchObject({ status: "accepted", error: null });
   });
 
+  it("a retry whose last check starts while the erasure is open waits for it and then does not send", async () => {
+    const a = await createAttendee();
+    await sendTicketEmails(EVENT_ID, { attendeeIds: [a.id] }, prisma, ENV, { exportSink: () => undefined });
+    const [row] = await deliveriesOf(a.id);
+    await prisma.emailDelivery.update({ where: { id: row!.id }, data: { status: "failed", retryable: true } });
+    const held = await holdErasure([a.id]);
+
+    const sent: unknown[] = [];
+    const retrying = retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => sent.push(p) }, { baseUrl: ENV.BASE_URL });
+    // A plain read would still show the failed row with its recipient and send it.
+    expect(await staysPending(retrying)).toBe(true);
+    await held.commit();
+
+    expect(await retrying).toEqual({ ok: false, reason: "not_retryable" });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("the drain's last check starts while the erasure is open: it waits for it and then does not send", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+    const a = await createAttendee();
+    await sendTicketEmails(EVENT_ID, { attendeeIds: [a.id] }, prisma, ENV, { exportSink: () => undefined });
+    const held = await holdErasure([a.id]);
+
+    const sent: unknown[] = [];
+    const draining = drainPendingDeliveries(prisma, ENV, { exportSink: (p) => sent.push(p) }, { eventId: EVENT_ID, baseUrl: ENV.BASE_URL });
+    expect(await staysPending(draining)).toBe(true);
+    await held.commit();
+
+    expect(await draining).toMatchObject({ claimed: 1, sent: 0, skipped: 1 });
+    expect(sent).toHaveLength(0);
+    expect((await deliveriesOf(a.id))[0]).toMatchObject({ status: "cancelled", recipient_email: null });
+  });
+
+  it("a ticket view that starts while the erasure is open waits for it and records nothing", async () => {
+    const a = await createAttendee();
+    await sendTicketEmails(EVENT_ID, { attendeeIds: [a.id] }, prisma, ENV, { exportSink: () => undefined });
+    await prisma.emailDelivery.updateMany({ where: { attendee_id: a.id }, data: { status: "accepted" } });
+    const held = await holdErasure([a.id]);
+
+    const viewing = recordTicketViewed(a.id, EVENT_ID, prisma);
+    expect(await staysPending(viewing)).toBe(true);
+    await held.commit();
+    await viewing;
+
+    expect((await deliveriesOf(a.id))[0]?.viewed_at).toBeNull();
+  });
+
+  it("still records a ticket view for a live attendee", async () => {
+    const a = await createAttendee();
+    await sendTicketEmails(EVENT_ID, { attendeeIds: [a.id] }, prisma, ENV, { exportSink: () => undefined });
+    await prisma.emailDelivery.updateMany({ where: { attendee_id: a.id }, data: { status: "accepted" } });
+    await recordTicketViewed(a.id, EVENT_ID, prisma);
+    expect((await deliveriesOf(a.id))[0]?.viewed_at).toBeInstanceOf(Date);
+  });
+
   it("opening the ticket of an erased attendee records nothing on their delivery", async () => {
     const a = await createAttendee();
     await sendTicketEmails(EVENT_ID, { attendeeIds: [a.id] }, prisma, ENV, { exportSink: () => undefined });
@@ -385,5 +442,42 @@ describe("mail already on its way", () => {
     await prisma.emailDelivery.updateMany({ where: { attendee_id: a.id }, data: { status: "accepted" } });
     await recordTicketViewed(a.id, EVENT_ID, prisma);
     expect((await deliveriesOf(a.id))[0]?.viewed_at).toBeNull();
+  });
+});
+
+describe("a synchronous batch that was claimed earlier", () => {
+  it("does not hand the mailer the message of an attendee erased since its delivery was claimed", async () => {
+    const erased = await createAttendee();
+    const live = await createAttendee();
+    const pending = [];
+    for (const attendee of [erased, live]) {
+      const claim = await claimInitialDelivery(claimInput(attendee.id), prisma);
+      if (claim.action !== "send") throw new Error("expected a claim");
+      pending.push({
+        deliveryId: claim.deliveryId,
+        attendeeId: attendee.id,
+        to: claim.message.to,
+        frozenSubject: claim.message.subject,
+        frozenHtml: claim.message.html,
+        links: { ticket_url: "https://tickets.example.com/t/abc", qr_image_url: "https://tickets.example.com/q/abc.png" },
+        idempotencyKey: `${attendee.id}:initial`,
+      });
+    }
+    await erase([erased.id]);
+
+    const send = vi.fn(async (message: MailMessage): Promise<SendResult> => ({
+      status: "accepted",
+      provider: "smtp",
+      providerMessageId: "msg-1",
+      idempotencyKey: message.idempotencyKey,
+    }));
+    const adapter = { provider: "smtp", send, close: vi.fn(async () => undefined) } as unknown as MailerAdapter;
+
+    expect(await deliverPendingBatch(adapter, pending, prisma)).toBe(1);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: `${live.id}:initial` }));
+    expect((await deliveriesOf(erased.id))[0]).toMatchObject({ status: "cancelled", recipient_email: null });
+    expect((await deliveriesOf(live.id))[0]).toMatchObject({ status: "accepted" });
   });
 });
