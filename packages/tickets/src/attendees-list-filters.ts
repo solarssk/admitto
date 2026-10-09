@@ -55,6 +55,9 @@ export type AttendeeListFilterParams = {
   rsvp_status?: AttendeeExportRsvpStatus[];
   mail_status?: AttendeeMailStatusFilter[];
   customFields?: AttendeeCustomFieldFilter[];
+  /** Include attendees whose personal data was erased (placeholder name and email). Off by
+   * default: the Attendees list hides them behind a toggle, and every export leaves them out. */
+  includeErased?: boolean;
 };
 
 /** Whitelisted sortable columns for the attendee list — Ticket sorts by the catalog's curated
@@ -74,6 +77,7 @@ export type AttendeeSortDir = "asc" | "desc";
 export const EXPORT_ROW_CAP = 50_000;
 
 export const EXPORT_ATTENDEE_SELECT = {
+  id: true,
   name: true,
   email: true,
   company: true,
@@ -85,6 +89,7 @@ export const EXPORT_ATTENDEE_SELECT = {
 
 export type AttendeeListSqlRow = {
   id: string;
+  erased_at: Date | null;
   name: string;
   email: string;
   company: string | null;
@@ -98,6 +103,8 @@ export type AttendeeListSqlRow = {
 };
 
 export type ExportAttendeeSqlRow = {
+  /** Not in the file: the export checks each row's attendee under a lock just before building it. */
+  id: string;
   name: string;
   email: string;
   company: string | null;
@@ -112,9 +119,10 @@ export function buildAttendeeListWhere(
   eventId: string,
   params: AttendeeListFilterParams,
 ): Prisma.AttendeeWhereInput {
-  const { status, ticket_type, rsvp_status } = params;
+  const { status, ticket_type, rsvp_status, includeErased } = params;
   return {
     event_id: eventId,
+    ...(includeErased ? {} : { erased_at: null }),
     ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
     ...(status === "not_admitted" ? { admitted_at: null } : {}),
     ...(ticket_type && ticket_type.length > 0 ? { ticket_type: { in: ticket_type } } : {}),
@@ -158,6 +166,10 @@ function attendeeTicketTypeJoinSql(sortBy: AttendeeSortBy): Prisma.Sql {
   return sortBy === "ticket_type"
     ? Prisma.sql`LEFT JOIN "TicketType" tt ON tt.event_id = a.event_id AND tt.key = a.ticket_type`
     : Prisma.empty;
+}
+
+function attendeeErasedSql(includeErased?: boolean) {
+  return includeErased ? Prisma.empty : Prisma.sql`AND a.erased_at IS NULL`;
 }
 
 function attendeeStatusSql(status: AttendeeListFilterParams["status"]) {
@@ -269,7 +281,7 @@ export async function countFilteredAttendees(
   eventId: string,
   params: AttendeeListFilterParams,
 ): Promise<number> {
-  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = params;
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased } = params;
   // The latest-delivery mail filter and custom-field filters (like search) have no Prisma-where
   // equivalent — any of the three routes the count through the raw-SQL branch so it stays in
   // lockstep with the list query.
@@ -279,6 +291,7 @@ export async function countFilteredAttendees(
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
     SELECT COUNT(*)::bigint AS count FROM "Attendee" a
     WHERE a.event_id = ${eventId}
+      ${attendeeErasedSql(includeErased)}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
@@ -298,13 +311,14 @@ export async function findFilteredAttendeesForList(
   sortBy: AttendeeSortBy = "name",
   sortDir: AttendeeSortDir = "asc",
 ): Promise<AttendeeListSqlRow[]> {
-  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = params;
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased } = params;
   const skip = (page - 1) * pageSize;
   return db.$queryRaw<AttendeeListSqlRow[]>`
-    SELECT a.id, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.status, a.admitted_at, a.updated_at, a.rsvp_status
+    SELECT a.id, a.erased_at, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.status, a.admitted_at, a.updated_at, a.rsvp_status
     FROM "Attendee" a
     ${attendeeTicketTypeJoinSql(sortBy)}
     WHERE a.event_id = ${eventId}
+      ${attendeeErasedSql(includeErased)}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
@@ -326,7 +340,8 @@ export async function findSelectedAttendeesForExport(
 ): Promise<ExportAttendeeSqlRow[]> {
   if (attendeeIds.length === 0) return [];
   return db.attendee.findMany({
-    where: { event_id: eventId, id: { in: attendeeIds } },
+    // Never an erased attendee: there is nothing about them to export.
+    where: { event_id: eventId, id: { in: attendeeIds }, erased_at: null },
     select: EXPORT_ATTENDEE_SELECT,
     orderBy: { name: "asc" },
     take: EXPORT_ROW_CAP,
@@ -336,8 +351,10 @@ export async function findSelectedAttendeesForExport(
 export async function findFilteredAttendeesForExport(
   db: PrismaClient,
   eventId: string,
-  params: AttendeeListFilterParams,
+  filterParams: AttendeeListFilterParams,
 ): Promise<ExportAttendeeSqlRow[]> {
+  // Exports never include an erased attendee, whatever the list was showing.
+  const params = { ...filterParams, includeErased: false };
   const { q, status, ticket_type, rsvp_status, mail_status, customFields } = params;
   if (!q && (!mail_status || mail_status.length === 0) && (!customFields || customFields.length === 0)) {
     return db.attendee.findMany({
@@ -348,9 +365,10 @@ export async function findFilteredAttendeesForExport(
     });
   }
   return db.$queryRaw<ExportAttendeeSqlRow[]>`
-    SELECT a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.admitted_at
+    SELECT a.id, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.admitted_at
     FROM "Attendee" a
     WHERE a.event_id = ${eventId}
+      ${attendeeErasedSql(false)}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}

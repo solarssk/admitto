@@ -2,6 +2,7 @@ import type { PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import type { WalletPassProvider } from "@admitto/wallet";
 import { lockAttendeeRow } from "./attendee-lock.js";
+import { attendeeIsLive } from "./lock-check.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 /** `voided` - this call voided the pass at the provider and recorded it locally. `skipped` - not
@@ -21,6 +22,9 @@ export type VoidWalletPassOutcome = "voided" | "skipped";
  * any Void or Restore since (that stamp is what a void-then-restore leaves behind). The local write
  * then matches that same state (status, command stamp, pass identity, not removed), so a change
  * landing during the provider call is never overwritten with `voided`.
+ *
+ * An attendee who is erased, or being erased, is skipped before the provider is called: their pass
+ * is the erasure's to delete there, and a void is not recalled once it has been sent.
  *
  * If that write finds the pass restored meanwhile (someone's Restore landed between the re-read and
  * the void reaching the provider), the provider may now hold our void over their Restore while
@@ -53,6 +57,11 @@ export async function voidOneWalletPassAtProvider(
     target.providerCommandedAt !== undefined &&
     (target.providerCommandedAt?.getTime() ?? null) !== (current.provider_commanded_at?.getTime() ?? null);
   if (commandedSince) return "skipped";
+
+  // The last check before the void leaves. The target and the re-read above are plain queries,
+  // which do not wait for an erasure that is still open and show the attendee as they were before
+  // it began; this one takes the attendee's row lock first, so that erasure finishes and is seen.
+  if (!(await attendeeIsLive(db, target.attendeeId))) return "skipped";
 
   await provider.voidPass(target.providerPassId);
   const outcome = await db.$transaction(async (tx): Promise<"voided" | "lost" | "erased"> => {

@@ -151,6 +151,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   "assetId required": "Image asset ID is missing from the request.",
   "attendeeId required": "Attendee ID is missing from the request.",
   attendee_not_issued: "This attendee hasn't been issued a ticket yet.",
+  attendee_erased: "This person's data has been erased, so nothing here can be changed.",
   // Shared by save actions (event settings, branding) and destructive ones (archive, unarchive,
   // delete) alike - "save" framing would mislead on the latter, so this stays action-neutral.
   audit_failed: "This action could not be completed. Try again.",

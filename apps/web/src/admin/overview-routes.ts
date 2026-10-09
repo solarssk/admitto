@@ -105,6 +105,7 @@ async function countCurrentlyBouncedAttendees(db: PrismaClient, eventId: string)
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
     SELECT COUNT(*)::bigint AS count FROM "Attendee" a
     WHERE a.event_id = ${eventId}
+      AND a.erased_at IS NULL
       AND (
         SELECT ed.status = 'bounced'
           AND (a.email_bounce_dismissed_at IS NULL OR a.email_bounce_dismissed_at < ed.created_at)
@@ -202,7 +203,9 @@ async function loadWalletInstalledCount(
  * to null (viewer's own browser zone) same as every other source here. */
 async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Promise<EventRecentActivityEntry[]> {
   const rows = await db.checkIn.findMany({
-    where: { event_id: eventId, status: "VALID" },
+    // An erased attendee's check-in stays in the counts but is not a feed entry: its time is cut to
+    // the hour and there is no one left to link to.
+    where: { event_id: eventId, status: "VALID", attendee: { erased_at: null } },
     orderBy: { checked_in_at: "desc" },
     take: RECENT_ACTIVITY_LIMIT,
     select: { id: true, checked_in_at: true, attendee_id: true, attendee: { select: { name: true } } },
@@ -242,7 +245,8 @@ async function loadRecentMailFailureActivity(
   eventId: string,
 ): Promise<EventRecentActivityEntry[]> {
   const rows = await db.emailDelivery.findMany({
-    where: { event_id: eventId, status: { in: ["failed", "bounced", "rejected"] } },
+    // An erased attendee's failed mail is not something anyone can act on (and has no address).
+    where: { event_id: eventId, status: { in: ["failed", "bounced", "rejected"] }, attendee: { erased_at: null } },
     orderBy: { updated_at: "desc" },
     take: RECENT_ACTIVITY_LIMIT,
     select: {

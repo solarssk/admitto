@@ -26,3 +26,19 @@ export function attendeeIsLive(db: PrismaClient, attendeeId: string): Promise<bo
 export function liveAttendeeIds(db: PrismaClient, attendeeIds: readonly string[]): Promise<Set<string>> {
   return db.$transaction((tx) => lockLiveAttendees(tx, attendeeIds), LOCK_CHECK_TX_OPTIONS);
 }
+
+/**
+ * The last check before a file with attendees' data is built (an export): of the rows that were
+ * read, those whose attendee still exists and is not erased, checked under the row locks. The
+ * query that read them leaves erased attendees out with `erased_at IS NULL`, but that is evaluated
+ * against the row as it was before an erasure that is still open began, so such an attendee would
+ * be in the file; this check waits for that erasure and sees its result. The rows keep their order.
+ */
+export async function keepLiveRows<T extends { id: string }>(db: PrismaClient, rows: readonly T[]): Promise<T[]> {
+  if (rows.length === 0) return [];
+  const live = await liveAttendeeIds(
+    db,
+    rows.map((row) => row.id),
+  );
+  return rows.filter((row) => live.has(row.id));
+}

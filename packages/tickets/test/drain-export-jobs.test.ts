@@ -95,6 +95,7 @@ describe("drainExportJobs", () => {
     vi.mocked(countFilteredAttendees).mockResolvedValue(1);
     vi.mocked(findFilteredAttendeesForExport).mockResolvedValue([
       {
+        id: "att-1",
         name: "Guest",
         email: "guest@example.com",
         company: null,

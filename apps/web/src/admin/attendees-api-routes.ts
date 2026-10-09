@@ -21,12 +21,10 @@ import {
   WalletProviderError,
   resolveConfiguredWalletProvider,
   resolveWalletProvider,
-  refreshOneWalletPassStatus,
   WalletStatusCheckInconclusiveError,
   ATTENDEE_FIELD_PLACEHOLDERS,
   isWalletFieldMappingRelevant,
   type WalletPassProvider,
-  type WalletStatusRefreshOutcome,
 } from "@admitto/wallet";
 import {
   loadEventCustomDataFields,
@@ -60,10 +58,13 @@ import {
   deleteAttendeeNote,
   NoteTooLongError,
   NoteNotFoundError,
+  AttendeeNotFoundError,
   NoteForbiddenError,
   type OpsAuditContext,
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
+  attendeeIsLive,
+  lockAttendeeRow,
   isErasedPlaceholderEmail,
   lockAttendeesForUpdate,
   loadEventTicketTypes,
@@ -79,6 +80,7 @@ import {
   type AttendeeSortBy,
   type AttendeeSortDir,
   type ExportAttendeeSqlRow,
+  type LiveWalletStatusRefreshOutcome,
   buildAttendeesExportArtifact,
   resolveTicketPageDisplay,
   buildWalletPassInput,
@@ -87,6 +89,7 @@ import {
   removeOneWalletPassFromProvider,
   type RemoveWalletPassOutcome,
   voidOneWalletPassAtProvider,
+  refreshWalletPassStatusUnlessErased,
   resolveEventWalletProvider,
   issueTicket,
 } from "@admitto/tickets";
@@ -96,6 +99,7 @@ import {
   adminAuditFromContext,
   assertEventManageAccess,
   itemTransitionErrorResponse,
+  logTicketLinkRetrieved,
   positiveIntQuery,
   requireEventId,
   resolveClientTimezone,
@@ -114,6 +118,7 @@ import { publishActivityChanged } from "./checkin-sse-publish.js";
 
 const ATTENDEE_DETAIL_SELECT = {
   id: true,
+  erased_at: true,
   name: true,
   first_name: true,
   last_name: true,
@@ -298,6 +303,8 @@ async function auditAttendeesExported(
 
 export type AttendeeRowDto = {
   id: string;
+  /** Set once the attendee's personal data has been erased (see AttendeeDetailDto). */
+  erased_at: string | null;
   name: string;
   email: string;
   company: string | null;
@@ -361,6 +368,9 @@ export type AttendeeNoteDto = {
 
 export type AttendeeDetailDto = {
   id: string;
+  /** Set once the attendee's personal data has been erased: the name and email are placeholders and
+   * the page is read-only. */
+  erased_at: string | null;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -526,6 +536,8 @@ async function requireManagedEventAttendee(
 
   const attendee = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!attendee) return c.json({ error: "forbidden" }, 403);
+  // An erased attendee's page is read-only: nothing here edits, sends to, or adds to them.
+  if (attendee.erased_at) return c.json({ error: "attendee_erased" }, 409);
 
   return { attendee, attendeeId, eventId };
 }
@@ -625,6 +637,7 @@ async function parseListQuery(
   rsvp_status: RsvpStatus[];
   mail_status: AttendeeMailStatusFilter[];
   customFields: AttendeeCustomFieldFilter[];
+  includeErased: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
 }> {
@@ -649,7 +662,8 @@ async function parseListQuery(
     : "name";
   const sortDirRaw = c.req.query("sortDir");
   const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
-  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir };
+  const includeErased = ["1", "true"].includes(c.req.query("include_erased") ?? "");
+  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased, sortBy, sortDir };
 }
 
 /** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
@@ -969,6 +983,7 @@ async function loadAttendeeNotes(
 function serializeAttendeeRow(
   row: {
     id: string;
+    erased_at: Date | null;
     name: string;
     email: string;
     company: string | null;
@@ -987,6 +1002,7 @@ function serializeAttendeeRow(
   const { company, department } = resolveCompanyDepartment(row);
   return {
     id: row.id,
+    erased_at: row.erased_at ? row.erased_at.toISOString() : null,
     name: row.name,
     email: row.email,
     company,
@@ -1045,6 +1061,7 @@ async function buildAttendeeDetailDto(
   eventId: string,
   row: {
     id: string;
+    erased_at: Date | null;
     name: string;
     first_name: string | null;
     last_name: string | null;
@@ -1080,6 +1097,7 @@ async function buildAttendeeDetailDto(
 
   return {
     id: row.id,
+    erased_at: row.erased_at ? row.erased_at.toISOString() : null,
     name: row.name,
     first_name: row.first_name,
     last_name: row.last_name,
@@ -1124,14 +1142,28 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir } =
-    await parseListQuery(c, db, eventId);
+  const {
+    page,
+    pageSize,
+    q,
+    status,
+    ticket_type,
+    rsvp_status,
+    mail_status,
+    customFields,
+    includeErased,
+    sortBy,
+    sortDir,
+  } = await parseListQuery(c, db, eventId);
 
-  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased };
 
-  const [total, rows] = await Promise.all([
+  // erased_count is event-wide (not narrowed by the filters): the list shows "N erased people are
+  // hidden" however it is filtered.
+  const [total, rows, erasedCount] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
     findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize, sortBy, sortDir),
+    db.attendee.count({ where: { event_id: eventId, erased_at: { not: null } } }),
   ]);
 
   const attendeeIds = rows.map((r) => r.id);
@@ -1145,6 +1177,7 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   return c.json({
     items: rows.map((r) => serializeAttendeeRow(r, lastMail, issuedItems, walletStatus)),
     total,
+    erased_count: erasedCount,
     page,
     pageSize,
   });
@@ -2158,10 +2191,19 @@ async function syncWalletPassOnStatusChangeBestEffort(
     }),
     db.walletPass.findUnique({
       where: { attendee_id: attendeeId },
-      select: { provider_pass_id: true, status: true, provider_removed_at: true, expires_at: true },
+      select: {
+        provider_pass_id: true,
+        status: true,
+        provider_removed_at: true,
+        expires_at: true,
+        attendee: { select: { erased_at: true } },
+      },
     }),
   ]);
   if (!event || !walletPass?.provider_pass_id) return;
+  // The pass of an erased attendee is deleted at the provider by the erasure, never voided or
+  // restored: a restore would make a pass valid again that is about to go.
+  if (walletPass.attendee.erased_at) return;
   // Nothing left at the provider to void or restore for a removed pass.
   if (walletPass.provider_removed_at) return;
   // Same rule as the Restore route: a pass is never made valid again once the event is over, or
@@ -2180,19 +2222,7 @@ async function syncWalletPassOnStatusChangeBestEffort(
   if (!provider) return;
 
   try {
-    if (statusChange === "revoked") {
-      await provider.voidPass(walletPass.provider_pass_id);
-      await db.walletPass.updateMany({
-        where: { attendee_id: attendeeId, provider_removed_at: null },
-        data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
-      });
-    } else {
-      await provider.restorePass(walletPass.provider_pass_id);
-      await db.walletPass.updateMany({
-        where: { attendee_id: attendeeId, provider_removed_at: null },
-        data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
-      });
-    }
+    await commandWalletPassStatusCascade(db, attendeeId, walletPass.provider_pass_id, provider, statusChange);
   } catch (err) {
     console.error(`wallet pass ${statusChange} cascade failed:`, err);
     recordSystemLog({
@@ -2202,6 +2232,34 @@ async function syncWalletPassOnStatusChangeBestEffort(
       fields: { eventId, attendeeId, statusChange },
     });
   }
+}
+
+/** The provider command of syncWalletPassOnStatusChangeBestEffort and the write back of its result.
+ * The reads before it were plain queries, which do not wait for an erasure that is still open and
+ * show the attendee as they were before it began, so the last check before the provider is called
+ * takes the attendee's row lock, like the wallet routes do (`requireAttendeeStillLive`). The result
+ * is written back under that lock and only onto a pass that is still there: an erasure that
+ * committed while the provider call was in flight has already cleared the row's links, and the
+ * outcome (attendee erased, pass removed meanwhile) is not an error here. */
+async function commandWalletPassStatusCascade(
+  db: PrismaClient,
+  attendeeId: string,
+  providerPassId: string,
+  provider: WalletPassProvider,
+  statusChange: "revoked" | "registered",
+): Promise<void> {
+  if (!(await attendeeIsLive(db, attendeeId))) return;
+
+  if (statusChange === "revoked") {
+    await provider.voidPass(providerPassId);
+  } else {
+    await provider.restorePass(providerPassId);
+  }
+  const data: Prisma.WalletPassUpdateManyMutationInput =
+    statusChange === "revoked"
+      ? { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null }
+      : { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null };
+  await db.$transaction((tx) => updateWalletPassUnlessRemoved(tx, attendeeId, data));
 }
 
 /** Set form of the shared WALLET_RELEVANT_ATTENDEE_FIELDS list (packages/shared), for the O(1)
@@ -2531,6 +2589,10 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0, updatedIds: [] };
   }
 
+  // The rows are locked in id order first (lockAttendeesForUpdate orders them in SQL), like an
+  // erasure does: the UPDATE below locks them in plan order, and two statements locking the same
+  // people in different orders can deadlock.
+  await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id));
   const values = Prisma.join(changes.map((x) => Prisma.sql`(${x.id}::text, ${x.oldValue}::text)`));
   // IS NOT DISTINCT FROM (not =) — a null-safe equality that correlates a NULL oldValue
   // correctly (a plain `=` never matches NULL = NULL) and behaves identically to `=` for a
@@ -2540,7 +2602,7 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     UPDATE "Attendee" AS t
     SET ${write.setClause}
     FROM (VALUES ${values}) AS v(id, old_value)
-    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.${write.column} IS NOT DISTINCT FROM v.old_value
+    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.erased_at IS NULL AND t.${write.column} IS NOT DISTINCT FROM v.old_value
     RETURNING t.id
   `;
   const updatedIds = new Set(updated.map((r) => r.id));
@@ -2613,7 +2675,7 @@ export async function handleBulkTicketTypeEventAttendees(
       if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 
       const owned = await tx.attendee.findMany({
-        where: { id: { in: attendeeIds }, event_id: eventId },
+        where: { id: { in: attendeeIds }, event_id: eventId, erased_at: null },
         select: { id: true, ticket_type: true },
       });
       return applyBulkAttendeeChanges(
@@ -2709,7 +2771,7 @@ export async function handleBulkRsvpEventAttendees(
     // ticket_type's bulk sibling below, which does forward it (to enqueue a wallet_push job).
     const { updatedIds: _updatedIds, ...counts } = await db.$transaction(async (tx) => {
       const owned = await tx.attendee.findMany({
-        where: { id: { in: attendeeIds }, event_id: eventId },
+        where: { id: { in: attendeeIds }, event_id: eventId, erased_at: null },
         select: { id: true, rsvp_status: true },
       });
       // Reuses computeRsvpChange - the same "is this actually a change, what's the from/to for
@@ -2852,7 +2914,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
   try {
     const { updatedIds, ...counts } = await db.$transaction(async (tx) => {
       const owned = await tx.attendee.findMany({
-        where: { id: { in: attendeeIds }, event_id: eventId },
+        where: { id: { in: attendeeIds }, event_id: eventId, erased_at: null },
         select: { id: true, company: true, department: true, custom_data: true, updated_at: true },
       });
 
@@ -2873,6 +2935,8 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
       }
 
       const column = bulkSetFieldColumn(field);
+      // Locked in id order first (see applyBulkAttendeeChanges).
+      await lockAttendeesForUpdate(tx, eventId, changes.map((x) => x.id));
       const values = Prisma.join(
         changes.map(
           (x) =>
@@ -2883,7 +2947,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
         UPDATE "Attendee" AS t
         SET ${column} = v.new_value, custom_data = v.new_custom_data, updated_at = NOW()
         FROM (VALUES ${values}) AS v(id, new_value, new_custom_data, expected_updated_at)
-        WHERE t.id = v.id AND t.event_id = ${eventId} AND t.updated_at = v.expected_updated_at
+        WHERE t.id = v.id AND t.event_id = ${eventId} AND t.erased_at IS NULL AND t.updated_at = v.expected_updated_at
         RETURNING t.id
       `;
       const updatedIdSet = new Set(updated.map((r) => r.id));
@@ -3284,7 +3348,7 @@ async function revokeOneAttendeePass(
 ): Promise<"revoked" | "skipped"> {
   const result = await db.$transaction(async (tx) => {
     const updated = await tx.attendee.updateMany({
-      where: { id: attendeeId, event_id: eventId, status: { in: ADMITTABLE_STATUS_LIST } },
+      where: { id: attendeeId, event_id: eventId, erased_at: null, status: { in: ADMITTABLE_STATUS_LIST } },
       data: { status: "revoked" },
     });
     if (updated.count === 0) return "skipped";
@@ -3438,7 +3502,8 @@ async function loadBulkWalletTargets(
     where: {
       attendee_id: { in: attendeeIds },
       provider_pass_id: { not: null },
-      attendee: { event_id: eventId },
+      // Erased attendees fall into the "skipped" count: their pass is the erasure's to delete.
+      attendee: { event_id: eventId, erased_at: null },
     },
     select: {
       attendee_id: true,
@@ -3467,8 +3532,10 @@ async function loadBulkWalletTargets(
  * (pass changed mid-loop) - nothing to report to the operator beyond "already handled". A
  * "suppressed" outcome (the provider reported voided, but the read fell inside the post-command
  * consistency window) still wrote the registration counts and counts as refreshed - only the
- * webhook path needs to treat that one differently (Codex review, 2026-09-27). Read-only at the
- * provider - no writeActionLog entry, matching the single-attendee route's own behavior. */
+ * webhook path needs to treat that one differently (Codex review, 2026-09-27). An attendee who is
+ * erased, or being erased, counts as skipped without a provider read (the last check is the
+ * shared refreshWalletPassStatusUnlessErased). Read-only at the provider - no writeActionLog
+ * entry, matching the single-attendee route's own behavior. */
 async function refreshOneWalletStatusForBulk(
   db: PrismaClient,
   _eventId: string,
@@ -3477,7 +3544,7 @@ async function refreshOneWalletStatusForBulk(
   _audit: OpsAuditContext,
 ): Promise<"refreshed" | "skipped"> {
   if (!target.userProvidedId) return "skipped";
-  const outcome = await refreshOneWalletPassStatus(
+  const outcome = await refreshWalletPassStatusUnlessErased(
     db,
     { attendeeId: target.attendeeId, providerPassId: target.providerPassId, userProvidedId: target.userProvidedId },
     provider,
@@ -3485,7 +3552,7 @@ async function refreshOneWalletStatusForBulk(
   // "suppressed" still wrote the registration counts, exactly like "refreshed" - only the
   // lifecycle transition was held back (a real void inside the post-command consistency window
   // stays retryable for the webhook, but a manual bulk refresh has nothing further to report
-  // here). Only "inactive" and "conflict" are genuinely nothing-to-do.
+  // here). Only "inactive", "conflict" and "erased" are genuinely nothing-to-do.
   return outcome === "refreshed" || outcome === "suppressed" ? "refreshed" : "skipped";
 }
 
@@ -3637,13 +3704,19 @@ async function deleteOneWalletPass(
   target: { attendeeId: string; providerPassId: string; providerRemovedAt: Date | null },
   provider: WalletPassProvider,
   audit: OpsAuditContext,
-): Promise<"deleted"> {
+): Promise<"deleted" | "skipped"> {
+  // The target list was loaded earlier with a plain query: an attendee erased since is left alone,
+  // and the check is repeated under the row lock before the provider is called.
+  if (!(await attendeeIsLive(db, target.attendeeId))) return "skipped";
   // Already removed (PR 3's own "Remove from provider", possibly by another request in this
   // same selection) - nothing left to call deletePass for.
   if (!target.providerRemovedAt) {
     await provider.deletePass(target.providerPassId);
   }
-  await db.$transaction(async (tx) => {
+  const deleted = await db.$transaction(async (tx) => {
+    // An erasure keeps the row (see handleDeleteAttendeeWalletPass).
+    const locked = await lockAttendeeRow(tx, target.attendeeId);
+    if (!locked || locked.erased) return false;
     await tx.walletPass.delete({ where: { attendee_id: target.attendeeId } });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -3652,8 +3725,9 @@ async function deleteOneWalletPass(
       audit,
       metadata: { bulk: true },
     });
+    return true;
   });
-  return "deleted";
+  return deleted ? "deleted" : "skipped";
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-wallet-delete - permanently remove the wallet
@@ -3985,6 +4059,12 @@ export async function handleGetAttendeeTicketLink(
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
 
+  // The attendee above came from a plain read, which does not wait for an erasure that is still
+  // open: an issued ticket would be resolved from the token as it was before. This check takes the
+  // attendee's row lock first, so that erasure finishes and the operator gets attendee_erased.
+  const erased = await requireAttendeeStillLive(c, db, attendeeId);
+  if (erased) return erased;
+
   let ticketUrl: string;
   try {
     // Check status before trusting any pre-existing token: a cancelled/revoked attendee who
@@ -4007,14 +4087,9 @@ export async function handleGetAttendeeTicketLink(
     return c.json({ error: "ticket_not_issued" }, 422);
   }
 
-  await db.$transaction(async (tx) => {
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: attendeeId,
-      action_type: "ticket_link_retrieved",
-      audit: adminAuditFromContext(c),
-    });
-  });
+  // Logged under the attendee's lock: an erasure that committed since the check above is seen here,
+  // and the link, which it has just invalidated, is not handed out.
+  if (!(await logTicketLinkRetrieved(c, db, eventId, attendeeId))) return c.json({ error: "attendee_erased" }, 409);
 
   return c.json({ url: ticketUrl });
 }
@@ -4033,11 +4108,13 @@ export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient):
   const { attendeeId, eventId } = attendeeContextOrRes;
 
   const dismissedAt = new Date();
-  await db.$transaction(async (tx) => {
-    await tx.attendee.update({
-      where: { id: attendeeId },
+  const dismissed = await db.$transaction(async (tx) => {
+    // erased_at: an attendee erased since the check above is refused, not written to.
+    const { count } = await tx.attendee.updateMany({
+      where: { id: attendeeId, event_id: eventId, erased_at: null },
       data: { email_bounce_dismissed_at: dismissedAt },
     });
+    if (count === 0) return false;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: attendeeId,
@@ -4045,7 +4122,9 @@ export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient):
       audit: adminAuditFromContext(c),
       metadata: {},
     });
+    return true;
   });
+  if (!dismissed) return c.json({ error: "attendee_erased" }, 409);
 
   return c.json({ email_bounce_dismissed_at: dismissedAt.toISOString() });
 }
@@ -4069,6 +4148,8 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
 
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
+  // An erased attendee's admission is part of the final counts: it is not revoked afterwards.
+  if (existing.erased_at) return c.json({ error: "attendee_erased" }, 409);
 
   try {
     const result = await revokeCheckIn(
@@ -4083,6 +4164,9 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
       // handleCheckinUndo's err.message passthrough for the same error type.
       return c.json({ error: err.message }, 409);
     }
+    // Erased between the check above and the revoke (the domain function refuses it under a lock).
+    const erased = attendeeErasedAnswer(c, err);
+    if (erased) return erased;
     // revokeCheckIn cascades into the same item-reset path as handleRevokeAttendeeItem
     // (resetItems: true), which can throw IllegalItemTransitionError for a blocked pass —
     // reuse the same 409 mapping instead of falling through to a raw 500.
@@ -4199,6 +4283,7 @@ async function loadWalletActionContext(
       where: { id: attendeeId },
       select: {
         event_id: true,
+        erased_at: true,
         qr_payload: true,
         external_uuid: true,
         token_enc: true,
@@ -4231,6 +4316,9 @@ async function loadWalletActionContext(
   ]);
   if (attendee?.event_id !== eventId) return c.json({ error: "forbidden" }, 403);
   if (!event) return c.json({ error: "forbidden" }, 403);
+  // An erased attendee's pass is deleted at the provider by the erasure itself, not by an admin
+  // action: voiding, restoring or refreshing it would only touch a pass that is about to go.
+  if (attendee.erased_at) return c.json({ error: "attendee_erased" }, 409);
   if (!attendee.wallet_pass?.provider_pass_id) return c.json({ error: "no_wallet_pass" }, 404);
 
   const providerConfig = {
@@ -4265,22 +4353,76 @@ async function loadWalletActionContext(
   };
 }
 
+/** What a write to the WalletPass row can end in besides the updated row: the attendee was erased
+ * (the route then answers 409 `attendee_erased`) or the pass was removed at the provider (409
+ * `wallet_pass_removed`). The strings are the error codes the API answers with. */
+type WalletPassWriteRefusal = "attendee_erased" | "wallet_pass_removed";
+
 /** Applies a validity change to the WalletPass row only while it has not been removed at the
  * provider, in the same statement (`provider_removed_at: null` in the where clause). The routes
  * that call this read the row before their provider call, so a Remove that completed in between
  * would otherwise be overwritten with an `active`/`voided` status on a pass that no longer exists
- * at the provider. Returns the updated row, or null when the pass was removed meanwhile. */
+ * at the provider. Returns the updated row, or why nothing was written. */
 async function updateWalletPassUnlessRemoved(
   tx: Prisma.TransactionClient,
   attendeeId: string,
   data: Prisma.WalletPassUpdateManyMutationInput,
-): Promise<Prisma.WalletPassGetPayload<object> | null> {
+): Promise<Prisma.WalletPassGetPayload<object> | WalletPassWriteRefusal> {
+  // Attendee row first, like an erasure (no deadlock over the pass row); an attendee erased since
+  // the route read the pass gets nothing written.
+  const locked = await lockAttendeeRow(tx, attendeeId);
+  if (!locked || locked.erased) return "attendee_erased";
   const { count } = await tx.walletPass.updateMany({
     where: { attendee_id: attendeeId, provider_removed_at: null },
     data,
   });
-  if (count === 0) return null;
+  if (count === 0) return "wallet_pass_removed";
   return tx.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
+}
+
+/** What void, restore and reissue do after the provider has answered: the change to the pass row
+ * (see updateWalletPassUnlessRemoved) and its entry in the attendee's activity log, in one
+ * transaction, so a refused write leaves no entry behind. Returns the updated row, or why nothing
+ * was written (the route answers 409 with that code). */
+function updateWalletPassAndLog(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  ctx: { attendeeId: string; previousStatus: string },
+  actionType: "wallet_pass_voided" | "wallet_pass_restored" | "wallet_pass_reissued",
+  data: Prisma.WalletPassUpdateManyMutationInput,
+): Promise<Prisma.WalletPassGetPayload<object> | WalletPassWriteRefusal> {
+  return db.$transaction(async (tx) => {
+    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, data);
+    if (typeof row !== "string") {
+      await writeActionLog(tx, {
+        event_id: eventId,
+        attendee_id: ctx.attendeeId,
+        action_type: actionType,
+        audit: adminAuditFromContext(c),
+        metadata: { previous_status: ctx.previousStatus },
+      });
+    }
+    return row;
+  });
+}
+
+/** The last check before a call that changes a pass at the provider (void, restore, push the
+ * content, delete): the context the route loaded was read with a plain query, which does not wait
+ * for an erasure that is still open. This takes the attendee's row lock in a short transaction, so
+ * that erasure finishes first and the route answers 409 `attendee_erased` before the provider is
+ * called, instead of after. */
+async function requireAttendeeStillLive(c: Context, db: PrismaClient, attendeeId: string): Promise<Response | null> {
+  return (await attendeeIsLive(db, attendeeId)) ? null : c.json({ error: "attendee_erased" }, 409);
+}
+
+/** `409 attendee_erased` for a domain error that says the attendee was erased between the route's
+ * plain read and the function's own lock (an item or check-in revoke, a note edit or delete), or
+ * null for any other error. Without it the words of the domain error would reach the client in
+ * place of the code the admin app maps to its own message. */
+function attendeeErasedAnswer(c: Context, err: unknown): Response | null {
+  const erased = (err instanceof IllegalItemTransitionError || err instanceof NoteNotFoundError) && err.erased;
+  return erased ? c.json({ error: "attendee_erased" }, 409) : null;
 }
 
 /** A pass Admitto has removed from the provider (PR 3) can no longer be void/restore/push'd -
@@ -4307,30 +4449,22 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
   const removed = requireNotRemoved(c, ctx);
   if (removed) return removed;
 
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   try {
     await ctx.provider.voidPass(ctx.providerPassId);
   } catch (err) {
     return walletProviderErrorResponse(c, err, "handleVoidAttendeeWalletPass");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
-      status: "voided",
-      voided_at: new Date(),
-      provider_commanded_at: new Date(),
-      last_error_code: null,
-    });
-    if (!row) return null;
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: ctx.attendeeId,
-      action_type: "wallet_pass_voided",
-      audit: adminAuditFromContext(c),
-      metadata: { previous_status: ctx.previousStatus },
-    });
-    return row;
+  const updated = await updateWalletPassAndLog(db, c, eventId, ctx, "wallet_pass_voided", {
+    status: "voided",
+    voided_at: new Date(),
+    provider_commanded_at: new Date(),
+    last_error_code: null,
   });
-  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
+  if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4355,30 +4489,22 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
     return c.json({ error: "wallet_restore_expired" }, 409);
   }
 
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   try {
     await ctx.provider.restorePass(ctx.providerPassId);
   } catch (err) {
     return walletProviderErrorResponse(c, err, "handleRestoreAttendeeWalletPass");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
-      status: "active",
-      voided_at: null,
-      provider_commanded_at: new Date(),
-      last_error_code: null,
-    });
-    if (!row) return null;
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: ctx.attendeeId,
-      action_type: "wallet_pass_restored",
-      audit: adminAuditFromContext(c),
-      metadata: { previous_status: ctx.previousStatus },
-    });
-    return row;
+  const updated = await updateWalletPassAndLog(db, c, eventId, ctx, "wallet_pass_restored", {
+    status: "active",
+    voided_at: null,
+    provider_commanded_at: new Date(),
+    last_error_code: null,
   });
-  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
+  if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4426,6 +4552,10 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
   );
   const input = buildWalletPassInput(display, scanned, customFieldPlaceholders);
 
+  // The content above was read with plain queries: the last check before it leaves.
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   let result;
   try {
     result = await ctx.provider.updatePass(ctx.providerPassId, input);
@@ -4439,35 +4569,24 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     return walletProviderErrorResponse(c, err, "handleReissueAttendeeWalletPass");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    // updatePass only patches the provider's content, never its voided flag (that's Restore's
-    // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
-    // an already-voided pass stays voided instead of falsely reporting "active" while the
-    // installed pass is still invalid at the provider, which would also hide the Restore action.
-    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
-      download_url: result.downloadUrl,
-      apple_url: result.appleUrl,
-      android_url: result.androidUrl,
-      last_error_code: null,
-      last_synced_at: new Date(),
-      // Kept in sync with the same expirationDate input just pushed above - see
-      // reissue-wallet-pass.ts's own reissueOneWalletPass (the bulk/background counterpart of this
-      // single-attendee action) for why this doesn't also bump provider_commanded_at (bot review:
-      // this route duplicated that function's provider push but had drifted from its expires_at
-      // write).
-      expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
-    });
-    if (!row) return null;
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: ctx.attendeeId,
-      action_type: "wallet_pass_reissued",
-      audit: adminAuditFromContext(c),
-      metadata: { previous_status: ctx.previousStatus },
-    });
-    return row;
+  // updatePass only patches the provider's content, never its voided flag (that's Restore's job, a
+  // separate explicit action) - status/voided_at are deliberately left untouched here so an
+  // already-voided pass stays voided instead of falsely reporting "active" while the installed pass
+  // is still invalid at the provider, which would also hide the Restore action.
+  const updated = await updateWalletPassAndLog(db, c, eventId, ctx, "wallet_pass_reissued", {
+    download_url: result.downloadUrl,
+    apple_url: result.appleUrl,
+    android_url: result.androidUrl,
+    last_error_code: null,
+    last_synced_at: new Date(),
+    // Kept in sync with the same expirationDate input just pushed above - see
+    // reissue-wallet-pass.ts's own reissueOneWalletPass (the bulk/background counterpart of this
+    // single-attendee action) for why this doesn't also bump provider_commanded_at (bot review:
+    // this route duplicated that function's provider push but had drifted from its expires_at
+    // write).
+    expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
   });
-  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
+  if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4491,9 +4610,9 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
   if (ctx instanceof Response) return ctx;
   if (!ctx.userProvidedId) return c.json({ error: "wallet_pass_not_refreshable" }, 409);
 
-  let outcome: WalletStatusRefreshOutcome;
+  let outcome: LiveWalletStatusRefreshOutcome;
   try {
-    outcome = await refreshOneWalletPassStatus(
+    outcome = await refreshWalletPassStatusUnlessErased(
       db,
       { attendeeId: ctx.attendeeId, providerPassId: ctx.providerPassId, userProvidedId: ctx.userProvidedId },
       ctx.provider,
@@ -4508,6 +4627,9 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
     }
     return walletProviderErrorResponse(c, err, "handleRefreshAttendeeWalletStatus");
   }
+  // The context above is a plain read; the last check inside the refresh waited for an erasure that
+  // was still open and nothing was read from the provider.
+  if (outcome === "erased") return c.json({ error: "attendee_erased" }, 409);
   if (outcome === "inactive") return c.json({ error: "wallet_pass_inactive" }, 409);
   if (outcome === "conflict") return c.json({ error: "wallet_pass_changed" }, 409);
 
@@ -4533,6 +4655,9 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
   const ctx = await loadWalletActionContext(c, db, eventId, { ignoreWalletEnabled: true });
   if (ctx instanceof Response) return ctx;
 
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   if (!ctx.providerRemovedAt) {
     try {
       await ctx.provider.deletePass(ctx.providerPassId);
@@ -4541,7 +4666,11 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
     }
   }
 
-  await db.$transaction(async (tx) => {
+  const deleted = await db.$transaction(async (tx) => {
+    // An erasure keeps this row on purpose (historical wallet counts, and the provider ids it still
+    // has to delete): an attendee erased since the check above leaves it alone.
+    const locked = await lockAttendeeRow(tx, ctx.attendeeId);
+    if (!locked || locked.erased) return false;
     await tx.walletPass.delete({ where: { attendee_id: ctx.attendeeId } });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -4550,7 +4679,9 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
       audit: adminAuditFromContext(c),
       metadata: { previous_status: ctx.previousStatus },
     });
+    return true;
   });
+  if (!deleted) return c.json({ error: "attendee_erased" }, 409);
   return c.json({ deleted: true });
 }
 
@@ -4630,6 +4761,7 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
 
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
+  if (existing.erased_at) return c.json({ error: "attendee_erased" }, 409);
 
   try {
     await revokeItemState({ attendeeId, eventId, itemKey, audit: adminAuditFromContext(c) }, db);
@@ -4637,6 +4769,9 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ card });
   } catch (err) {
+    // Erased between the check above and the revoke (the domain function refuses it under a lock).
+    const erased = attendeeErasedAnswer(c, err);
+    if (erased) return erased;
     // e.g. unknown/disabled item key, blocked pass — mirrors the operator item-action route.
     return itemTransitionErrorResponse(c, err, "handleRevokeAttendeeItem");
   }
@@ -4665,12 +4800,26 @@ export async function handleAddAttendeeNote(c: Context, db: PrismaClient): Promi
     );
   } catch (err) {
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
+    // Erased between the check above and the write (the domain function refuses it under a lock).
+    if (err instanceof AttendeeNotFoundError) return c.json({ error: "attendee_erased" }, 409);
     console.error("handleAddAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);
   }
 
   const dto = await buildAttendeeDetailDto(db, eventId, existing);
   return c.json(dto);
+}
+
+/** The answer for a failed note edit or delete. The attendee may have been erased between the
+ * route's check and the domain function's lock: an erasure deletes the notes, so the note is gone
+ * for that reason, not because the id is wrong. */
+function noteMutationErrorResponse(c: Context, err: unknown, logLabel: string): Response {
+  const erased = attendeeErasedAnswer(c, err);
+  if (erased) return erased;
+  if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
+  if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
+  console.error(`${logLabel} failed:`, err);
+  return c.json({ error: "server error" }, 500);
 }
 
 /**
@@ -4698,10 +4847,7 @@ export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Pro
     );
   } catch (err) {
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
-    if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
-    if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
-    console.error("handlePatchAttendeeNote failed:", err);
-    return c.json({ error: "server error" }, 500);
+    return noteMutationErrorResponse(c, err, "handlePatchAttendeeNote");
   }
 
   const dto = await buildAttendeeDetailDto(db, eventId, existing);
@@ -4767,10 +4913,7 @@ export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Pr
       db,
     );
   } catch (err) {
-    if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
-    if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
-    console.error("handleDeleteAttendeeNote failed:", err);
-    return c.json({ error: "server error" }, 500);
+    return noteMutationErrorResponse(c, err, "handleDeleteAttendeeNote");
   }
 
   const dto = await buildAttendeeDetailDto(db, eventId, existing);

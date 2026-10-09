@@ -27,7 +27,9 @@ export class AttendeeNotFoundError extends Error {
 }
 
 export class NoteNotFoundError extends Error {
-  constructor() {
+  /** `erased`: there is no note because the attendee has been erased (an erasure deletes their
+   * notes), not because the id is wrong. A staff route answers `attendee_erased` then. */
+  constructor(readonly erased = false) {
     super("Note not found");
     this.name = "NoteNotFoundError";
   }
@@ -108,7 +110,8 @@ export async function updateAttendeeNote(
     // Attendee row first, like an erasure (which then deletes the notes): the same order on both
     // sides rules out a lock cycle. An erased attendee has no notes left to edit.
     const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
-    if (!attendee || attendee.erased) throw new NoteNotFoundError();
+    if (!attendee) throw new NoteNotFoundError();
+    if (attendee.erased) throw new NoteNotFoundError(true);
 
     const note = await tx.attendeeNote.findFirst({
       where: { id: params.noteId, attendee_id: params.attendeeId, event_id: params.eventId },
@@ -153,7 +156,8 @@ export async function deleteAttendeeNote(
   await prisma.$transaction(async (tx) => {
     // Same lock order and same answer as updateAttendeeNote above.
     const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
-    if (!attendee || attendee.erased) throw new NoteNotFoundError();
+    if (!attendee) throw new NoteNotFoundError();
+    if (attendee.erased) throw new NoteNotFoundError(true);
 
     const note = await tx.attendeeNote.findFirst({
       where: { id: params.noteId, attendee_id: params.attendeeId, event_id: params.eventId },
