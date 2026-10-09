@@ -18,6 +18,7 @@ import {
 } from "../src/index.js";
 import { applyBounceResult } from "../src/bounceIngest/applyBounceResult.js";
 import { deliverPendingBatch } from "../src/send.js";
+import { readDeliveriesBeforeSend } from "../src/sendable.js";
 import type { MailerAdapter, MailMessage, SendResult } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
 import { seedOrgAndEvent } from "./seedOrgAndEvent.js";
@@ -59,13 +60,13 @@ async function createAttendee() {
 
 const erase = (ids: string[]) => prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids }));
 
-async function holdErasure(ids: string[]) {
+async function holdErasure(ids: string[], eventId = EVENT_ID) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   let written!: () => void;
   const writtenPromise = new Promise<void>((resolve) => (written = resolve));
   const transaction = prisma.$transaction(async (tx) => {
-    await eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids });
+    await eraseAttendees(tx, { eventId, attendeeIds: ids });
     written();
     await gate;
   });
@@ -96,6 +97,74 @@ const claimInput = (attendeeId: string) => ({
 });
 
 const deliveriesOf = (attendeeId: string) => prisma.emailDelivery.findMany({ where: { attendee_id: attendeeId } });
+
+/** A claimed, queued delivery of `attendee`, addressed to `recipientEmail` (the resend override) when given. */
+async function claimedFor(attendee: { id: string }, recipientEmail?: string) {
+  const claim = await claimInitialDelivery({ ...claimInput(attendee.id), ...(recipientEmail ? { recipientEmail } : {}) }, prisma);
+  if (claim.action !== "send") throw new Error("expected a claim");
+  return claim;
+}
+
+/** What a synchronous batch holds for a claimed delivery: the frozen message and its address. */
+async function pendingFor(attendee: { id: string }, recipientEmail?: string) {
+  const claim = await claimedFor(attendee, recipientEmail);
+  return {
+    deliveryId: claim.deliveryId,
+    attendeeId: attendee.id,
+    to: claim.message.to,
+    frozenSubject: claim.message.subject,
+    frozenHtml: claim.message.html,
+    links: { ticket_url: "https://tickets.example.com/t/abc", qr_image_url: "https://tickets.example.com/q/abc.png" },
+    idempotencyKey: `${attendee.id}:initial`,
+  };
+}
+
+/** True as soon as the promise settles, false if it has not within `ms`. */
+async function finishesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => true, () => true), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A check that an open erasure must hold up can only finish after the commit, so a short watch is enough; one that it must not hold up gets a long one, so that a slow machine cannot fail it. */
+const HELD_UP_MS = 300;
+const NOT_HELD_UP_MS = 5_000;
+
+/**
+ * The last check of `deliveries` while the erasure of `erasedId` is open: whether it was still
+ * waiting after `windowMs`, and what it finds once the erasure has committed. A plain read would
+ * still show every delivery as it was before the erasure began.
+ */
+async function checkWhileErasing(
+  deliveries: { deliveryId: string; attendeeId: string }[],
+  erasedId: string,
+  windowMs: number,
+  eventId = EVENT_ID,
+) {
+  const held = await holdErasure([erasedId], eventId);
+  const checking = readDeliveriesBeforeSend(prisma, deliveries);
+  const waited = !(await finishesWithin(checking, windowMs));
+  await held.commit();
+  return { waited, found: await checking };
+}
+
+/** A mailer that accepts everything, and the spy on what it was handed. */
+function acceptingMailer() {
+  const send = vi.fn(async (message: MailMessage): Promise<SendResult> => ({
+    status: "accepted",
+    provider: "smtp",
+    providerMessageId: "msg-1",
+    idempotencyKey: message.idempotencyKey,
+  }));
+  const adapter = { provider: "smtp", send, close: vi.fn(async () => undefined) } as unknown as MailerAdapter;
+  return { adapter, send };
+}
 
 describe("claiming and creating deliveries", () => {
   it("queues nothing for an erased attendee", async () => {
@@ -455,29 +524,9 @@ describe("a synchronous batch that was claimed earlier", () => {
   it("does not hand the mailer the message of an attendee erased since its delivery was claimed", async () => {
     const erased = await createAttendee();
     const live = await createAttendee();
-    const pending = [];
-    for (const attendee of [erased, live]) {
-      const claim = await claimInitialDelivery(claimInput(attendee.id), prisma);
-      if (claim.action !== "send") throw new Error("expected a claim");
-      pending.push({
-        deliveryId: claim.deliveryId,
-        attendeeId: attendee.id,
-        to: claim.message.to,
-        frozenSubject: claim.message.subject,
-        frozenHtml: claim.message.html,
-        links: { ticket_url: "https://tickets.example.com/t/abc", qr_image_url: "https://tickets.example.com/q/abc.png" },
-        idempotencyKey: `${attendee.id}:initial`,
-      });
-    }
+    const pending = [await pendingFor(erased), await pendingFor(live)];
     await erase([erased.id]);
-
-    const send = vi.fn(async (message: MailMessage): Promise<SendResult> => ({
-      status: "accepted",
-      provider: "smtp",
-      providerMessageId: "msg-1",
-      idempotencyKey: message.idempotencyKey,
-    }));
-    const adapter = { provider: "smtp", send, close: vi.fn(async () => undefined) } as unknown as MailerAdapter;
+    const { adapter, send } = acceptingMailer();
 
     expect(await deliverPendingBatch(adapter, pending, prisma)).toBe(1);
 
@@ -485,5 +534,92 @@ describe("a synchronous batch that was claimed earlier", () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: `${live.id}:initial` }));
     expect((await deliveriesOf(erased.id))[0]).toMatchObject({ status: "cancelled", recipient_email: null });
     expect((await deliveriesOf(live.id))[0]).toMatchObject({ status: "accepted" });
+  });
+
+  it("does not hand the mailer a message to the address of someone being erased, though the delivery is another attendee's", async () => {
+    const erased = await createAttendee();
+    const owner = await createAttendee();
+    const live = await createAttendee();
+    const pending = [await pendingFor(owner, erased.email), await pendingFor(live)];
+    const held = await holdErasure([erased.id]);
+    const { adapter, send } = acceptingMailer();
+
+    const delivering = deliverPendingBatch(adapter, pending, prisma);
+    try {
+      // Its owner is not being erased, so a plain read would still show the message as sendable.
+      expect(await staysPending(delivering)).toBe(true);
+    } finally {
+      await held.commit();
+    }
+
+    expect(await delivering).toBe(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: `${live.id}:initial` }));
+    expect((await deliveriesOf(owner.id))[0]).toMatchObject({ status: "cancelled", recipient_email: null });
+  });
+});
+
+describe("the last check for a delivery sent to another attendee's address (the resend override)", () => {
+  it("waits for the erasure of the person who holds the address, then finds the delivery cancelled and emptied", async () => {
+    const erased = await createAttendee();
+    const owner = await createAttendee();
+    const { deliveryId } = await claimedFor(owner, erased.email);
+
+    const { waited, found } = await checkWhileErasing([{ deliveryId, attendeeId: owner.id }], erased.id, HELD_UP_MS);
+
+    expect(waited).toBe(true);
+    expect(found.get(deliveryId)).toEqual({ status: "cancelled", recipient_email: null });
+  });
+
+  it("finds that person by the address however the delivery writes it", async () => {
+    const erased = await createAttendee();
+    const owner = await createAttendee();
+    const { deliveryId } = await claimedFor(owner, erased.email);
+    await prisma.emailDelivery.update({ where: { id: deliveryId }, data: { recipient_email: `  ${erased.email.toUpperCase()} ` } });
+
+    const { waited, found } = await checkWhileErasing([{ deliveryId, attendeeId: owner.id }], erased.id, HELD_UP_MS);
+
+    expect(waited).toBe(true);
+    expect(found.get(deliveryId)).toEqual({ status: "cancelled", recipient_email: null });
+  });
+
+  it("does not wait for an erasure that does not concern the address", async () => {
+    const erased = await createAttendee();
+    const holder = await createAttendee();
+    const ownerOfLive = await createAttendee();
+    const ownerOfOutside = await createAttendee();
+    const toLive = await claimedFor(ownerOfLive, holder.email);
+    const toOutside = await claimedFor(ownerOfOutside, "outside@example.org");
+
+    const { waited, found } = await checkWhileErasing(
+      [
+        { deliveryId: toLive.deliveryId, attendeeId: ownerOfLive.id },
+        { deliveryId: toOutside.deliveryId, attendeeId: ownerOfOutside.id },
+      ],
+      erased.id,
+      NOT_HELD_UP_MS,
+    );
+
+    expect(waited).toBe(false);
+    expect(found.get(toLive.deliveryId)).toEqual({ status: "queued", recipient_email: holder.email });
+    expect(found.get(toOutside.deliveryId)).toEqual({ status: "queued", recipient_email: "outside@example.org" });
+  });
+
+  it("does not wait for the erasure of a person in another event who has the same address", async () => {
+    const otherEventId = "evt-mail-erased-other";
+    await prisma.event.create({
+      data: { id: otherEventId, organization_id: ORG_ID, title: "Other Event", slug: "mail-erased-other-event", date: new Date("2026-09-02") },
+    });
+    const owner = await createAttendee();
+    const namesake = await prisma.attendee.create({
+      data: { id: "mail-erased-namesake", event_id: otherEventId, email: "namesake@example.com", name: "Namesake", public_ref: generateToken() },
+    });
+    const { deliveryId } = await claimedFor(owner, namesake.email);
+
+    // The erasure cancels only the deliveries of its own event, so this one stays as it is and is not waited for.
+    const { waited, found } = await checkWhileErasing([{ deliveryId, attendeeId: owner.id }], namesake.id, NOT_HELD_UP_MS, otherEventId);
+
+    expect(waited).toBe(false);
+    expect(found.get(deliveryId)).toEqual({ status: "queued", recipient_email: namesake.email });
   });
 });
