@@ -85,6 +85,7 @@ import {
   erasedToast,
   erasedWalletChipLabel,
   erasureFreesPlace,
+  redactedAfterErasure,
 } from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
@@ -2174,6 +2175,10 @@ export function AttendeeDetailPage() {
       const result = await eraseAttendee(target.eventId, target.attendeeId);
       if (!isStillSelected(target)) return;
       setEraseOpen(false);
+      // Nothing of the person stays on screen while the page reads the server's version (or if that read fails).
+      const redacted = redactedAfterErasure(detail!, new Date().toISOString());
+      applyDetail(redacted);
+      setForm(toAttendeeForm(redacted, attributeFields));
       if (result.wallet_pending > 0) {
         eraseWalletResult.open(result.wallet_pending, () => eraseAttendee(target.eventId, target.attendeeId));
       } else {

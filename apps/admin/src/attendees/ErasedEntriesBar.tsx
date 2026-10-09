@@ -14,7 +14,7 @@ export function ErasedEntriesBar({
   if (count === 0) return null;
   return (
     <div className="attendees-erased-bar">
-      <output>{shown ? shownErasedLine(count) : hiddenErasedLine(count)}</output>
+      <output>{shown ? shownErasedLine() : hiddenErasedLine(count)}</output>
       <button type="button" className="link-btn" onClick={() => onShownChange(!shown)}>
         {shown ? "Hide erased" : "Show erased"}
       </button>

@@ -47,11 +47,13 @@ export function hiddenErasedLine(count: number): string {
     : `${count} erased entries are hidden. Reports still count them.`;
 }
 
-/** The line under the Attendees list while erased entries are shown in it. */
-export function shownErasedLine(count: number): string {
-  return count === 1
-    ? "Showing 1 erased entry. Reports count it too."
-    : `Showing ${count} erased entries. Reports count them too.`;
+/**
+ * The line under the Attendees list while erased entries are shown in it. It carries no count: the
+ * count of the hidden line is the event's, but the rows are filtered and paged, so a number here
+ * could say 20 beside a result of three.
+ */
+export function shownErasedLine(): string {
+  return "Erased entries are included. Reports count them too.";
 }
 
 /** The toast after an erasure that left nothing to do at the wallet provider. */
@@ -95,4 +97,44 @@ export function erasedCheckInParts(admittedAt: string | null, timezone: string):
   if (admittedAt === null) return null;
   const clock = formatEventClockTime(admittedAt, timezone);
   return { day: formatAdmissionDisplayParts(admittedAt, timezone).day, time: `Around ${clock}` };
+}
+
+/**
+ * What the attendee page holds right after the server has confirmed an erasure: the detail with
+ * everything personal taken out and the erased marker set. The page then reads the server's version
+ * to fill in what the entry keeps; until that answers, or for good if the read fails, nothing of the
+ * person stays on screen and the page is the read-only one.
+ */
+export function redactedAfterErasure(detail: AttendeeDetailDto, erasedAt: string): AttendeeDetailDto {
+  return {
+    ...detail,
+    erased_at: erasedAt,
+    name: ERASED_ATTENDEE_LABEL,
+    first_name: null,
+    last_name: null,
+    email: "",
+    company: null,
+    department: null,
+    custom_data: null,
+    deliveries: detail.deliveries.map((delivery) => ({
+      ...delivery,
+      attendee_name: ERASED_ATTENDEE_LABEL,
+      recipient_email: null,
+      rendered_subject: null,
+      provider_message_id: null,
+      error: null,
+    })),
+    wallet_apple_link: null,
+    wallet_google_link: null,
+    wallet_pass:
+      detail.wallet_pass === null
+        ? null
+        : { ...detail.wallet_pass, apple_url: null, android_url: null, user_agent: null, user_agent_captured_at: null },
+    action_log: [],
+    action_log_total: 0,
+    action_log_first_action_type: null,
+    action_log_snapshot: null,
+    notes: [],
+    notes_total: 0,
+  };
 }

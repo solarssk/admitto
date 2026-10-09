@@ -77,7 +77,7 @@ describe("AttendeesPage: erased entries", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show erased" }));
 
-    await screen.findByText("Showing 2 erased entries. Reports count them too.");
+    await screen.findByText("Erased entries are included. Reports count them too.");
     expect(fetchEventAttendees).toHaveBeenLastCalledWith(
       "evt-1",
       expect.objectContaining({ includeErased: true, page: 1 }),

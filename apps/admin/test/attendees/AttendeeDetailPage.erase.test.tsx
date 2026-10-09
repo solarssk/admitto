@@ -177,6 +177,37 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(screen.queryByText("Anna Alpha")).toBeNull();
   });
 
+  it("shows nothing of the person at once, while the page still waits for the server's version", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    mockLoad(baseDetail({ notes: [{ id: "n-1", body: "Private note" }], notes_total: 1 }));
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    expect(screen.queryByText("Anna Alpha")).toBeNull();
+    expect(screen.queryByText("anna@example.com")).toBeNull();
+    expect(screen.queryByText("Private note")).toBeNull();
+    expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps the person off the screen when the page cannot read the server's version afterwards", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    mockLoad(baseDetail({ wallet_pass: pass({ apple_url: "https://wallet.example.com/a", android_url: "https://wallet.example.com/g" }) }));
+    loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByText("Could not load attendee.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    expect(screen.queryByText("Anna Alpha")).toBeNull();
+    expect(screen.queryByText("anna@example.com")).toBeNull();
+  });
+
   it("shows an operator-safe error inside the dialog and keeps it open when the erasure fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     eraseAttendee.mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
