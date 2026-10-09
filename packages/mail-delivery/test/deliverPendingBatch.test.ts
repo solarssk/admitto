@@ -35,6 +35,8 @@ const LIVE_ROW: DeliveryRow = { status: "queued", recipient_email: "guest@exampl
  * A prisma stand-in. The last check before sending reads the deliveries through a transaction,
  * after locking their attendees: `rows` is what that read finds (a missing key is a live row, an
  * undefined value is a row that no longer exists), `erasedAttendees` the attendees that are erased.
+ * No delivery is addressed to anyone but its own attendee, so the read for override addresses
+ * (the only raw query that names the deliveries) finds nothing.
  */
 function fakePrisma(
   updateMany: ReturnType<typeof vi.fn>,
@@ -42,10 +44,14 @@ function fakePrisma(
   erasedAttendees: string[] = [],
 ): PrismaClient {
   const tx = {
-    $queryRaw: vi.fn(async () => [
-      { id: "att-1", erased_at: erasedAttendees.includes("att-1") ? new Date() : null },
-      { id: "att-2", erased_at: erasedAttendees.includes("att-2") ? new Date() : null },
-    ]),
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray) =>
+      strings.join("").includes('"EmailDelivery"')
+        ? []
+        : [
+            { id: "att-1", erased_at: erasedAttendees.includes("att-1") ? new Date() : null },
+            { id: "att-2", erased_at: erasedAttendees.includes("att-2") ? new Date() : null },
+          ],
+    ),
     emailDelivery: {
       findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
         where.id.in.flatMap((id) => {

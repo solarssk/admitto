@@ -262,6 +262,9 @@ export type WalletPassActionDto = WalletPassApiFields;
 
 export interface AttendeeRowDto {
   id: string;
+  /** Set once the attendee's personal data has been erased (name and email are placeholders). The
+   * server always sends it; optional here so existing fixtures keep their shape. */
+  erased_at?: string | null;
   name: string;
   email: string;
   company: string | null;
@@ -327,6 +330,8 @@ export interface AttendeeNoteDto {
 
 export interface AttendeeDetailDto {
   id: string;
+  /** Set once the attendee's personal data has been erased: the page is read-only. */
+  erased_at?: string | null;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -373,6 +378,8 @@ export interface AttendeeDetailDto {
 export interface AttendeesListResponse {
   items: AttendeeRowDto[];
   total: number;
+  /** Erased attendees of the event, hidden from the list unless asked for (event-wide). */
+  erased_count?: number;
   page: number;
   pageSize: number;
 }

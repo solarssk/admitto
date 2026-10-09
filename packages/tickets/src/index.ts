@@ -11,6 +11,7 @@ export {
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export { attendeeIsLive, keepLiveRows } from "./lock-check.js";
 export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
@@ -19,6 +20,9 @@ export {
   eraseAttendees,
   isErasedPlaceholderEmail,
 } from "./erase-attendees.js";
+export { scrubImportJobResults } from "./erase-job-results.js";
+export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
+export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
 export type {
   EraseAttendeesParams,
   EraseAttendeesResult,
@@ -170,6 +174,8 @@ export {
 } from "./drain-wallet-cleanup-jobs.js";
 export type { DrainWalletCleanupJobsResult, WalletCleanupJobType } from "./drain-wallet-cleanup-jobs.js";
 export { voidOneWalletPassAtProvider } from "./void-wallet-pass-at-provider.js";
+export { refreshWalletPassStatusUnlessErased } from "./refresh-wallet-pass-status.js";
+export type { LiveWalletStatusRefreshOutcome } from "./refresh-wallet-pass-status.js";
 export type { VoidWalletPassOutcome } from "./void-wallet-pass-at-provider.js";
 export {
   reclaimStaleExportJobs,
