@@ -23,6 +23,7 @@ In production Compose the worker is a separate service (`command: worker`). Loca
 | `worker` | Drain mail queue, import/export jobs, bounce ingest, wallet sync, the event-wide wallet jobs (push, message, refresh status, void and remove clean-up), wallet pass expiry, retention (long-running) |
 | `auth` | Bootstrap superadmin, reset MFA, emergency recovery codes |
 | `checkin` / `attendees` / `mail` / `sessions` | Event-day failover when the UI is unreachable |
+| `attendees erase` | Break-glass privacy request (`attendees erase --event <id> --attendee-ids <id[,id...]> --operator-email <email> [--dry-run] [--yes]`, audit-logged, up to 500 ids): erases the attendees' personal data like the erase API does, deletes the files the event's exports and imports left in storage and the attendees' wallet passes at the provider; exits with 2 when a pass is still there (run it again) |
 | `retention` | Manual retention run (`retention run --operator-email <email> [--dry-run]`, audit-logged): auth sessions and trusted devices, mail delivery snapshots, the security audit log, notifications, the files that export and import jobs leave in storage, and the wallet passes of erased attendees that are still at the provider. The worker runs the same pass on its own schedule (once at boot, then about every 24h) |
 | `storage` | Orphan branding file GC |
 
