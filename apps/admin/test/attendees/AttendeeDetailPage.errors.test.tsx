@@ -18,6 +18,8 @@ import {
 } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
+// The event the layout hands to the page: the base one unless a test sets another.
+const outlet = vi.hoisted(() => ({ event: null as null | Record<string, unknown> }));
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
@@ -36,7 +38,7 @@ vi.mock("react-router", async (importOriginal) => {
   return {
     ...actual,
     useOutletContext: () => ({
-      event: baseAttendeeDetailEvent,
+      event: outlet.event ?? baseAttendeeDetailEvent,
     }),
   };
 });
@@ -76,11 +78,12 @@ const detail = {
   event_items: [],
 };
 
-function renderPage(strict = false) {
+function renderPage(strict = false, search = "") {
   const page = (
-    <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
+    <MemoryRouter initialEntries={[`/admin/events/evt-1/attendees/att-1${search}`]}>
       <Routes>
         <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        <Route path="/admin/events/:eventId/attendees" element={<p>the attendee list</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -100,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  outlet.event = null;
   vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -114,6 +118,155 @@ describe("AttendeeDetailPage operator errors", () => {
       vi.advanceTimersByTime(200);
     });
     expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
+  });
+
+  it("draws the status chips the page will have: no Wallet chip for an event that offers no wallet, so the strip does not change its rows when the record arrives", async () => {
+    outlet.event = { ...baseAttendeeDetailEvent, wallet_enabled: false };
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect([...document.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent)).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in"]);
+
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect([...document.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent)).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in"]);
+  });
+
+  it("draws the Wallet chip, and the page keeps it, for an event that offers Samsung Wallet alone", async () => {
+    outlet.event = { ...baseAttendeeDetailEvent, wallet_enabled: true, wallet_apple_enabled: false, wallet_google_enabled: false, wallet_samsung_enabled: true };
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    const chips = () => [...document.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent);
+    expect(chips()).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in", "Wallet"]);
+
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect(chips()).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in", "Wallet"]);
+  });
+
+  describe("the tab that the address asks for", () => {
+    const openTabs = () => [...document.querySelectorAll(".at-tabs .at-tab--active")].map((el) => el.textContent);
+
+    // The placeholder of a read that is on its way, shown (200ms passed), and what it says when the read answers.
+    async function placeholderThenPage(search: string) {
+      let resolveLoad!: (value: unknown) => void;
+      loadAttendeeDetailData.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLoad = resolve;
+          }),
+      );
+      vi.useFakeTimers();
+      renderPage(false, search);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      const whileWaiting = { openTabs: openTabs(), skeleton: document.querySelector(".attendee-detail-skeleton"), hint: document.querySelector(".at-notes-hint")?.textContent };
+      await act(async () => {
+        resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+      });
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      return whileWaiting;
+    }
+
+    it("draws the Activity log's placeholder under an Activity log that is the open tab for ?tab=activity, and the page opens on that tab", async () => {
+      const waiting = await placeholderThenPage("?tab=activity");
+      expect(waiting.openTabs).toEqual(["Activity log"]);
+      expect(waiting.skeleton?.querySelectorAll(".at-tl-item")).toHaveLength(3);
+      expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+      expect(document.querySelector(".attendee-detail-grid")).toBeNull();
+      expect(openTabs()).toEqual(["Activity log"]);
+    });
+
+    it("draws the Notes placeholder for ?tab=notes, with the hint that the page itself then says, word for word", async () => {
+      const waiting = await placeholderThenPage("?tab=notes");
+      expect(waiting.openTabs).toEqual(["Notes"]);
+      expect(waiting.skeleton?.querySelector(".at-notes-form")).not.toBeNull();
+      expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+      expect(openTabs()).toEqual(["Notes"]);
+      // The placeholder says this copy of its own, so the page's text is what keeps the two from drifting apart.
+      expect(waiting.hint).toBeTruthy();
+      expect(document.querySelector(".at-notes-hint")?.textContent).toBe(waiting.hint);
+    });
+
+    it("draws the Overview placeholder for no tab in the address, and for one that the page does not have", async () => {
+      for (const search of ["", "?tab=overview", "?tab=bogus"]) {
+        const waiting = await placeholderThenPage(search);
+        expect(waiting.openTabs, search).toEqual(["Overview"]);
+        expect(waiting.skeleton?.classList.contains("attendee-detail-grid"), search).toBe(true);
+        expect(openTabs(), search).toEqual(["Overview"]);
+        cleanup();
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  it("draws the page's own frame while the record is on its way, and its Back leaves for the list instead of waiting", () => {
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Attendee" })).toBeTruthy();
+    // The five chips and the cards are there by their real names, as bars where the read fills them in.
+    expect(document.querySelectorAll(".attendee-status-chip")).toHaveLength(5);
+    expect(screen.getByText("Delivery history")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("the attendee list")).toBeTruthy();
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+  });
+
+  it("draws the header's bars for the viewport it is on: Edit and More actions on a desktop, only More actions on a phone", () => {
+    const bars = () => document.querySelectorAll(".attendee-detail-pageheader .at-pageheader__actions .at-skeleton").length;
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(bars()).toBe(2);
+
+    cleanup();
+    mockMatchMedia(false);
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(bars()).toBe(1);
   });
 
   it("holds the skeleton's space invisibly for the first 200ms, then fades it in", () => {
