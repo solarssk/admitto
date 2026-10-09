@@ -374,6 +374,64 @@ describe("CheckInPage door actions: what is busy is what was asked", () => {
 });
 
 describe("CheckInPage sidebar Retry", () => {
+  // The page puts the focus on the scan field when it opens (on the next frame): wait for that, so a test's own focus is not taken from it.
+  const settledOnScanField = () => waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("QR scan or search")));
+
+  it("hands the focus to the scan field when a Retry works, so a keyboard-wedge scanner keeps typing into it", async () => {
+    mockBootstrap();
+    fetchCheckInStats.mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+    await screen.findByText(LOAD_ERROR);
+    await settledOnScanField();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByText(LOAD_ERROR)).toBeNull(), { timeout: 3000 });
+    // The Retry that held the focus is gone with the error: the focus is on the field a scanner types into, not on the page.
+    await settledOnScanField();
+  });
+
+  it("leaves the focus where it is when the operator has moved on before the Retry worked", async () => {
+    mockBootstrap();
+    fetchCheckInStats.mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+    await screen.findByText(LOAD_ERROR);
+    await settledOnScanField();
+    let answer!: (value: unknown) => void;
+    fetchCheckInStats.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+    await waitFor(() => expect(fetchCheckInStats).toHaveBeenCalledTimes(2));
+
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    answer({ admitted_count: 7, total_count: 20 });
+    await waitFor(() => expect(screen.queryByText(LOAD_ERROR)).toBeNull(), { timeout: 3000 });
+    await wait(50);
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+
+  it("does not take the focus after a first load that worked, which had no Retry to lose", async () => {
+    mockBootstrap();
+    let answer!: (value: unknown) => void;
+    fetchCheckInStats.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    renderPage();
+    await settledOnScanField();
+    // Nothing holds the focus (what it was on has gone, as a removed button's would): the page must not grab it for a load that never failed.
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+
+    answer({ admitted_count: 7, total_count: 20 });
+    await waitFor(() => expect(stats()?.textContent).toContain("7"));
+    await wait(50);
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("stops being busy when the retry fails too, and keeps the error", async () => {
     mockBootstrap();
     fetchCheckInStats.mockRejectedValue(new Error("network down"));
@@ -489,6 +547,21 @@ describe("CheckInPage on a phone: the camera overlay shows the same first-load s
     answerHistory([]);
     await waitFor(() => expect(overlayBar()?.textContent).toBe("7 checked in"), { timeout: 3000 });
     expect(overlay().getByText("No scans yet")).toBeTruthy();
+  });
+
+  it("hands the focus to the camera view's list when its Retry works", async () => {
+    viewport.desktop = false;
+    mockBootstrap();
+    fetchCheckInStats.mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+    await screen.findByLabelText("Camera check-in");
+    await waitFor(() => expect(overlayBar()?.textContent).toBe("Count unavailable"));
+    const retry = overlay().getByRole("button", { name: "Retry" });
+    retry.focus();
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(overlayBar()?.textContent).toBe("7 checked in"), { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).toBe(overlayList()));
   });
 
   it("says it could not load, with a Retry that brings the count back", async () => {

@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On the check-in page, when the counts and recent scans could not be loaded and **Retry** worked, the keyboard focus used to fall to the page, so a hardware scanner (it types like a keyboard) had nowhere to type and its next scan went nowhere until the operator clicked the scan field. The focus now goes to the scan field, and in the phone camera view to the list of recent scans.
 - The Communication page of an archived event now shows the preview of its email templates. On both the Email and the Templates tab the preview was refused with the error "This event is archived." and stayed empty. A preview only shows a draft with sample data and saves nothing, so it now works on an archived event, while saving, sending and test emails stay blocked.
 - The MJML or HTML body of an archived event's template can now be searched. You still cannot type into it, but you can click into it, select and copy text, and press Ctrl+F (Cmd+F on a Mac) to open the editor's own search, which also finds text below the part you can see. Before, you could not click into the editor at all, so the shortcut went to the browser's find, which only sees the lines the editor shows on screen.
 - The hint "This event is archived. Editing is disabled." on the Subject and body fields of a template now appears right next to the field, like the one on **Send test**, instead of above the field's label.

@@ -1068,6 +1068,15 @@ export function CheckInPage({
     }
   };
 
+  // A Retry that worked takes its button, and the keyboard focus on it, away with the error. The scan field is where the focus belongs at the
+  // door (a keyboard-wedge scanner types into whatever holds it), so it goes there, unless the operator has moved on to another control.
+  const sidebarPreviousStatusRef = useRef(sidebarStatus);
+  useEffect(() => {
+    const was = sidebarPreviousStatusRef.current;
+    sidebarPreviousStatusRef.current = sidebarStatus;
+    if (was === "error" && sidebarStatus === "ready" && document.activeElement === document.body) focusScan();
+  }, [sidebarStatus, focusScan]);
+
   useEffect(() => {
     return () => {
       if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
