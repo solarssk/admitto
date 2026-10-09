@@ -206,7 +206,7 @@ describe("AttendeesPage: bulk Erase personal data", () => {
 
   it("erases the selection, toasts, clears the selection and reloads the list", async () => {
     fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));
-    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
     renderListAndPage();
     confirmErase(await openEraseDialog());
@@ -250,14 +250,14 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Erase personal data of 2 people?" })).toBeTruthy();
 
-    resolveErase({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    resolveErase({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     expect(await screen.findByText("Personal data of 2 people erased")).toBeTruthy();
   });
 
   it("shows nothing of the erased people at once, while the list still waits for the server's version", async () => {
     fetchEventAttendees.mockResolvedValueOnce(listOf([rowA, rowB], 0));
     fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
-    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
     renderListAndPage();
     confirmErase(await openEraseDialog());
@@ -279,7 +279,7 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     });
     fetchEventAttendees.mockResolvedValueOnce(listOf([admitted("att-1", "Jane Doe"), admitted("att-2", "John Smith")], 0));
     fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
-    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
     renderListAndPage();
     try {
@@ -294,9 +294,10 @@ describe("AttendeesPage: bulk Erase personal data", () => {
   });
 
   it.each([
-    ["nothing is left to delete at the provider", 0, "Apple Wallet: Was registered"],
-    ["a pass is still at the provider", 1, "Apple Wallet: Registered"],
-  ])("shows the Wallet column of the erased people at once when %s", async (_label, walletPending, label) => {
+    ["the answer says both passes were deleted", 0, ["att-1", "att-2"], ["Was registered", "Was registered"]],
+    ["the answer says only the first pass was deleted", 1, ["att-1"], ["Was registered", "Registered"]],
+    ["the answer says no pass was deleted now", 0, [], ["Registered", "Registered"]],
+  ])("shows the Wallet column of the erased people at once: %s", async (_label, walletPending, removedIds, expected) => {
     eventState.appleWallet = true;
     const withPass = (id: string, name: string): AttendeeRowDto => ({
       ...makeRow(id, name),
@@ -312,14 +313,29 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     });
     fetchEventAttendees.mockResolvedValueOnce(listOf([withPass("att-1", "Jane Doe"), withPass("att-2", "John Smith")], 0));
     fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
-    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: walletPending });
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: walletPending, wallet_removed_ids: removedIds });
 
     renderListAndPage();
     confirmErase(await openEraseDialog());
     if (walletPending > 0) fireEvent.click(within(await screen.findByRole("dialog", { name: "Personal data erased" })).getByRole("button", { name: "Close" }));
 
     expect(await screen.findAllByText("Erased attendee")).toHaveLength(2);
-    expect(screen.getAllByLabelText(label)).toHaveLength(2);
+    const labels = screen.getAllByLabelText(/^Apple Wallet: /).map((icon) => icon.getAttribute("aria-label"));
+    expect(labels).toEqual(expected.map((label) => `Apple Wallet: ${label}`));
+  });
+
+  it("cancels the mail that was queued, in the rows, at once", async () => {
+    const queued = (id: string, name: string): AttendeeRowDto => ({ ...makeRow(id, name), last_mail_status: "queued" });
+    fetchEventAttendees.mockResolvedValueOnce(listOf([queued("att-1", "Jane Doe"), queued("att-2", "John Smith")], 0));
+    fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
+
+    renderListAndPage();
+    confirmErase(await openEraseDialog());
+
+    expect(await screen.findAllByText("Erased attendee")).toHaveLength(2);
+    // Each row says Cancelled twice: the pass (nobody was checked in) and the mail.
+    expect(screen.getAllByText("Cancelled")).toHaveLength(4);
   });
 
   it("steps back to the last page that exists when the erasure emptied the page the list was on", async () => {
@@ -333,7 +349,7 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     });
     bulkEraseAttendees.mockImplementation(async () => {
       erased = true;
-      return { erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 };
+      return { erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] };
     });
 
     renderListAndPage();
@@ -357,7 +373,7 @@ describe("AttendeesPage: bulk Erase personal data", () => {
   it("works on an archived event: privacy requests do not expire with it", async () => {
     eventState.archived_at = "2026-08-01T00:00:00.000Z";
     fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));
-    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
     renderListAndPage();
     confirmErase(await openEraseDialog());
@@ -382,7 +398,7 @@ describe("AttendeesPage: bulk Erase personal data", () => {
 
   it("says so when nobody was erased because they already were", async () => {
     fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));
-    bulkEraseAttendees.mockResolvedValue({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 0 });
+    bulkEraseAttendees.mockResolvedValue({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
     renderListAndPage();
     confirmErase(await openEraseDialog());
@@ -392,7 +408,7 @@ describe("AttendeesPage: bulk Erase personal data", () => {
 });
 
 describe("AttendeesPage: a wallet pass that is still at the provider", () => {
-  const PENDING = { erased: 2, already_erased: 0, not_found: 0, wallet_pending: 2 };
+  const PENDING = { erased: 2, already_erased: 0, not_found: 0, wallet_pending: 2, wallet_removed_ids: [] };
 
   async function eraseWithPendingPasses() {
     fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));
@@ -409,7 +425,7 @@ describe("AttendeesPage: a wallet pass that is still at the provider", () => {
     expect(within(result).getByText("Everything personal inside Admitto is gone.")).toBeTruthy();
     expect(screen.queryByText("Personal data of 2 people erased")).toBeNull();
 
-    bulkEraseAttendees.mockResolvedValueOnce({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 0 });
+    bulkEraseAttendees.mockResolvedValueOnce({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("Wallet passes deleted")).toBeTruthy();
@@ -420,7 +436,7 @@ describe("AttendeesPage: a wallet pass that is still at the provider", () => {
   it("keeps the dialog, with the new count, while the provider still fails", async () => {
     const result = await eraseWithPendingPasses();
 
-    bulkEraseAttendees.mockResolvedValueOnce({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 1 });
+    bulkEraseAttendees.mockResolvedValueOnce({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
 
     await within(result).findByText("The wallet pass is still at the provider.");

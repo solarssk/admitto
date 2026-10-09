@@ -427,6 +427,9 @@ export interface EraseAttendeesResponse {
   not_found: number;
   /** Erased attendees of this request whose wallet pass is still not deleted at the provider. */
   wallet_pending: number;
+  /** Attendees whose pass was deleted at the provider by this request (or by one running at the same moment):
+   * a pass that never reached the provider, or was removed before, is not among them. */
+  wallet_removed_ids: string[];
 }
 
 export interface UpdateAttendeePatch {

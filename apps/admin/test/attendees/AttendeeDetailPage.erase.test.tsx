@@ -176,7 +176,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("erases, toasts, and shows the read-only page of an erased attendee", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     mockLoad(baseDetail());
     mockLoad(erasedDetail());
     renderPage();
@@ -192,7 +192,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("shows nothing of the person at once, while the page still waits for the server's version", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     mockLoad(baseDetail({ notes: [{ id: "n-1", body: "Private note" }], notes_total: 1 }));
     loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
     renderPage();
@@ -208,7 +208,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("does not let a read that started before the erasure bring the person back when it answers late", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     mockLoad(baseDetail({ notes_total: 51, notes_page: 1, notes_page_size: 50 }));
     let answerOlderRead!: (value: unknown) => void;
     // The second page of notes: a read that is still on its way when the erasure is confirmed.
@@ -233,7 +233,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("does not let a note saved just before the erasure bring the person back when its answer arrives late", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     mockLoad(baseDetail());
     mockLoad(erasedDetail());
     let answerNote!: (value: unknown) => void;
@@ -273,7 +273,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     // India is half an hour off the UTC hour: 10:37 UTC is 16:07 there, and the hour that began at 16:00 there began at 10:30 UTC.
     baseAttendeeDetailEvent.timezone = "Asia/Kolkata";
     try {
-      eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+      eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
       mockLoad(baseDetail({ admitted_at: "2026-09-01T10:37:21.123Z", check_in_status: "admitted" }));
       loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
       renderPage();
@@ -296,7 +296,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     const { baseAttendeeDetailEvent } = await import("../test-utils.js");
     baseAttendeeDetailEvent.archived_at = archived ? "2026-08-01T00:00:00.000Z" : null;
     try {
-      eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+      eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
       mockLoad(baseDetail());
       loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
       renderPage();
@@ -312,8 +312,8 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     }
   });
 
-  it("shows the pass as deleted at once when nothing was left to delete at the provider, while the page still waits", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+  it("shows the pass as deleted at once when the erasure deleted it at the provider, while the page still waits", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: ["att-1"] });
     mockLoad(baseDetail({ wallet_pass: pass() }));
     loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
     renderPage();
@@ -328,8 +328,60 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(screen.queryByText(/Not deleted yet/)).toBeNull();
   });
 
+  it("does not call a pass deleted that the erasure did not delete: one that never reached the provider, one removed before", async () => {
+    setPreferredLocale("en-GB");
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
+    mockLoad(baseDetail({ wallet_pass: pass({ provider_removed_at: "2026-08-01T09:00:00.000Z" }) }));
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    // The date of the earlier removal stays; it is not overwritten with the time of the erasure.
+    expect(screen.getByText("Deleted on 01 Aug 2026")).toBeTruthy();
+  });
+
+  it("says None for a pass that the erasure did not delete and that was never removed", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
+    mockLoad(baseDetail({ wallet_pass: pass() }));
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
+    expect(within(row).getByText("None")).toBeTruthy();
+    expect(screen.queryByText(/^Deleted on/)).toBeNull();
+  });
+
+  it.each([
+    ["queued", null, "Cancelled"],
+    ["failed", true, "Cancelled"],
+    ["failed", false, "Failed"],
+    ["sent", null, "Sent"],
+  ])("shows mail that was %s (retryable %s) as %s at once, as the server leaves it", async (status, retryable, label) => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
+    mockLoad(baseDetail({ deliveries: [{ id: "d-1", status, retryable, attendee_name: "Anna Alpha", recipient_email: "anna@example.com" }] }));
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    const chip = screen.getByText("Ticket delivery").closest(".attendee-status-chip") as HTMLElement;
+    expect(within(chip).getByText(label)).toBeTruthy();
+    // The Delivery history card says the same about the delivery.
+    const history = screen.getByText("Delivery history").closest(".at-card") as HTMLElement;
+    expect(within(history).getByText(label)).toBeTruthy();
+  });
+
   it("offers a Retry when the page cannot read the server's version afterwards, and the Retry reads it again", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     mockLoad(baseDetail());
     loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderPage();
@@ -348,7 +400,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("keeps the Try again for a pass that is still at the provider when the page cannot read the server's version", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     mockLoad(baseDetail({ wallet_pass: pass() }));
     loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderPage();
@@ -366,7 +418,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("keeps the newest read when an older one answers last: a pass that was deleted stays deleted", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     mockLoad(baseDetail({ wallet_pass: pass() }));
     let answerFirstRead!: (value: unknown) => void;
     // The read right after the erasure is slow, and says the pass is still at the provider.
@@ -378,7 +430,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
 
     const result = await screen.findByRole("dialog", { name: "Personal data erased" });
     // Try again works, and the read it starts answers first: the pass is gone from the provider.
-    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: ["att-1"] });
     mockLoad(erasedDetail({ wallet_pass: pass({ provider_removed_at: "2026-10-08T12:05:00.000Z" }) }));
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(/^Deleted on .*2026/)).toBeTruthy();
@@ -397,7 +449,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("keeps the person off the screen when the page cannot read the server's version afterwards", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     mockLoad(baseDetail({ wallet_pass: pass({ apple_url: "https://wallet.example.com/a", android_url: "https://wallet.example.com/g" }) }));
     loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderPage();
@@ -449,7 +501,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: ERASE_TITLE })).toBeTruthy();
 
-    resolveErase({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    resolveErase({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
   });
 
@@ -484,7 +536,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
   });
 
   it("offers Try again when the wallet pass could not be deleted, instead of a toast", async () => {
-    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     mockLoad(baseDetail());
     mockLoad(erasedDetail({ wallet_pass: pass(), wallet_pass_delete_pending: true }));
     renderPage();
@@ -496,7 +548,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(within(result).getByText("The wallet pass is still at the provider.")).toBeTruthy();
     expect(screen.queryByText("Personal data erased", { selector: "[role=status] *" })).toBeNull();
 
-    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: ["att-1"] });
     mockLoad(erasedDetail({ wallet_pass: pass({ provider_removed_at: "2026-10-08T12:05:00.000Z" }) }));
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
 
@@ -527,7 +579,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     await act(async () => router.navigate("/admin/events/evt-1/attendees/att-2"));
     await screen.findByRole("heading", { name: "Bob Beta" });
     await act(async () => {
-      resolveErase({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+      resolveErase({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
       await Promise.resolve();
     });
 
@@ -640,7 +692,7 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
 
     const result = await screen.findByRole("dialog", { name: "Personal data erased" });
-    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 1 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
 
     await waitFor(() => expect(eraseAttendee).toHaveBeenCalledWith("evt-1", "att-1"));
@@ -652,7 +704,7 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
     const result = await screen.findByRole("dialog", { name: "Personal data erased" });
-    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: ["att-1"] });
     loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
@@ -668,7 +720,7 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
     const result = await screen.findByRole("dialog", { name: "Personal data erased" });
-    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 1 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
@@ -729,7 +781,7 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
     const result = await screen.findByRole("dialog", { name: "Personal data erased" });
 
-    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
     loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
 

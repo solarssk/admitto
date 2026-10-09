@@ -113,16 +113,30 @@ export function erasedCheckInParts(admittedAt: string | null, timezone: string):
 }
 
 /**
- * The erased attendee's detail once a retry has deleted the pass at the provider: no longer to be
- * deleted, and removed now (the server stamps its own time). The page shows this before it reads the
- * server's version, so a read that fails cannot make a deletion that worked look lost.
+ * The erased attendee's detail once the server has said what became of the pass at the provider:
+ * whether it is still to be deleted, and, when this answer deleted it, that it was removed now (the
+ * server stamps its own time). A pass that the answer did not delete (it never reached the provider,
+ * or was removed before) keeps its provider state, so the page never claims a deletion that did not
+ * happen. The page shows this before it reads the server's version, so a read that fails cannot make
+ * a deletion that worked look lost.
  */
-export function walletPassRemoved(detail: AttendeeDetailDto, removedAt: string): AttendeeDetailDto {
+export function withWalletOutcome(
+  detail: AttendeeDetailDto,
+  outcome: Readonly<{ pending: boolean; removedAt: string | null }>,
+): AttendeeDetailDto {
   return {
     ...detail,
-    wallet_pass_delete_pending: false,
-    wallet_pass: detail.wallet_pass === null ? null : { ...detail.wallet_pass, provider_removed_at: removedAt },
+    wallet_pass_delete_pending: outcome.pending,
+    wallet_pass:
+      detail.wallet_pass === null || outcome.removedAt === null
+        ? detail.wallet_pass
+        : { ...detail.wallet_pass, provider_removed_at: outcome.removedAt },
   };
+}
+
+/** Mail that is still waiting to go out when a person is erased: queued, or failed and to be retried. */
+function waitingToGoOut(delivery: { status: string; retryable: boolean | null }): boolean {
+  return delivery.status === "queued" || (delivery.status === "failed" && delivery.retryable === true);
 }
 
 /** What the screen knows when the server has confirmed an erasure, to show what the server now holds. */
@@ -152,17 +166,17 @@ function admissionAfterErasure(
 
 /**
  * What the attendee page holds right after the server has confirmed an erasure: the detail with
- * everything personal taken out and the erased marker set, the check-in time cut to the hour, and the
- * pass as the answer left it: still at the provider when `walletPending`, deleted now when nothing is
- * left to delete (a pass that never reached the provider reads as deleted too until the server's
- * version arrives). The page then reads the server's version to fill in what the entry keeps; until
- * that answers, or for good if the read fails, nothing of the person stays on screen, the page is the
- * read-only one, and its Try again for a pass that is still at the provider is there.
+ * everything personal taken out and the erased marker set, the check-in time cut to the hour, mail that
+ * was waiting to go out cancelled, and the pass as the answer left it (`wallet`: still at the provider,
+ * and whether this answer deleted it). The page then reads the server's version to fill in what the
+ * entry keeps; until that answers, or for good if the read fails, nothing of the person stays on
+ * screen, the page is the read-only one, and its Try again for a pass that is still at the provider is
+ * there.
  */
 export function redactedAfterErasure(
   detail: AttendeeDetailDto,
   erasure: ConfirmedErasure,
-  walletPending: boolean,
+  wallet: Readonly<{ pending: boolean; removed: boolean }>,
 ): AttendeeDetailDto {
   const redacted: AttendeeDetailDto = {
     ...detail,
@@ -177,6 +191,7 @@ export function redactedAfterErasure(
     custom_data: null,
     deliveries: detail.deliveries.map((delivery) => ({
       ...delivery,
+      ...(waitingToGoOut(delivery) ? { status: "cancelled", retryable: false } : {}),
       attendee_name: ERASED_ATTENDEE_LABEL,
       recipient_email: null,
       rendered_subject: null,
@@ -195,24 +210,24 @@ export function redactedAfterErasure(
     action_log_snapshot: null,
     notes: [],
     notes_total: 0,
-    wallet_pass_delete_pending: walletPending,
   };
-  return walletPending ? redacted : walletPassRemoved(redacted, erasure.at);
+  return withWalletOutcome(redacted, { pending: wallet.pending, removedAt: wallet.removed ? erasure.at : null });
 }
 
 /**
  * What the Attendees list holds right after the server has confirmed the erasure of `ids`: those
  * rows, redacted in place (the erased marker set, name, address, company and department taken out,
- * the check-in time cut to the hour, and the pass marked as removed at the provider when the answer
- * left nothing to delete: `walletPending` is false). The list then reads the server's version, which
- * leaves them out unless erased entries are shown; until that answers, or if it is slow, nothing of
- * those people stays on screen, and the page does not empty out from under the operator.
+ * the check-in time cut to the hour, mail that was queued cancelled, and the pass marked as removed at
+ * the provider for the people in `removedIds`, whose pass the answer says it deleted). The list then
+ * reads the server's version, which leaves them out unless erased entries are shown; until that
+ * answers, or if it is slow, nothing of those people stays on screen, and the page does not empty out
+ * from under the operator.
  */
 export function redactedRowsAfterErasure(
   items: readonly AttendeeRowDto[],
   ids: ReadonlySet<string>,
   erasure: ConfirmedErasure,
-  walletPending: boolean,
+  removedIds: ReadonlySet<string>,
 ): AttendeeRowDto[] {
   return items.map((row) =>
     ids.has(row.id)
@@ -224,8 +239,9 @@ export function redactedRowsAfterErasure(
           email: "",
           company: null,
           department: null,
+          last_mail_status: row.last_mail_status === "queued" ? "cancelled" : row.last_mail_status,
           wallet_status:
-            walletPending || row.wallet_status === null
+            row.wallet_status === null || !removedIds.has(row.id)
               ? row.wallet_status
               : { ...row.wallet_status, provider_removed_at: erasure.at },
         }

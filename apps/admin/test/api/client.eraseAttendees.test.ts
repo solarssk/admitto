@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bulkEraseAttendees, eraseAttendee, fetchEventAttendees } from "../../src/api/client.js";
 
-const RESULT = { erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 };
+const RESULT = { erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] };
 
 function stubFetch(body: unknown, init: { ok?: boolean; status?: number } = {}) {
   const fetchMock = vi.fn().mockResolvedValue({
@@ -21,7 +21,7 @@ afterEach(() => {
 
 describe("eraseAttendee (client)", () => {
   it("POSTs the encoded erase endpoint of the attendee and returns the counts", async () => {
-    const fetchMock = stubFetch({ ...RESULT, wallet_pending: 1 });
+    const fetchMock = stubFetch({ ...RESULT, wallet_pending: 1, wallet_removed_ids: [] });
 
     const result = await eraseAttendee("evt with space", "att/1");
 
@@ -29,7 +29,7 @@ describe("eraseAttendee (client)", () => {
       "/api/admin/events/evt%20with%20space/attendees/att%2F1/erase",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
-    expect(result).toEqual({ ...RESULT, wallet_pending: 1 });
+    expect(result).toEqual({ ...RESULT, wallet_pending: 1, wallet_removed_ids: [] });
   });
 
   it("propagates API errors", async () => {
@@ -41,7 +41,7 @@ describe("eraseAttendee (client)", () => {
 
 describe("bulkEraseAttendees (client)", () => {
   it("POSTs the bulk-erase endpoint with the selected ids and returns the counts", async () => {
-    const fetchMock = stubFetch({ erased: 2, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    const fetchMock = stubFetch({ erased: 2, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
     const result = await bulkEraseAttendees("evt with space", ["att-1", "att-2", "att-3"]);
 
@@ -53,7 +53,7 @@ describe("bulkEraseAttendees (client)", () => {
         body: JSON.stringify({ attendeeIds: ["att-1", "att-2", "att-3"] }),
       }),
     );
-    expect(result).toEqual({ erased: 2, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    expect(result).toEqual({ erased: 2, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
   });
 
   it("propagates API errors", async () => {

@@ -1980,7 +1980,7 @@ export function AttendeesPage() {
             current,
             new Set(ids),
             { at: new Date().toISOString(), timezone: event.timezone, eventArchived: isEventArchived(event) },
-            result.wallet_pending > 0,
+            new Set(result.wallet_removed_ids),
           ),
         );
         setReloadToken((n) => n + 1);

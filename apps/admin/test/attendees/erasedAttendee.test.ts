@@ -18,8 +18,13 @@ import {
   rowIdentity,
   selectRowLabel,
   shownErasedLine,
-  walletPassRemoved,
+  withWalletOutcome,
 } from "../../src/attendees/erasedAttendee.js";
+
+/** What the answer of an erasure says about the pass of the person erased. */
+const NOTHING_PENDING = { pending: false, removed: false } as const;
+const STILL_PENDING = { pending: true, removed: false } as const;
+const DELETED_NOW = { pending: false, removed: true } as const;
 
 describe("counts in words", () => {
   it("uses the singular for one and the plural otherwise", () => {
@@ -152,7 +157,7 @@ describe("redactedAfterErasure", () => {
   const erasure = { at: "2026-10-09T12:00:00.000Z", timezone: "Europe/Warsaw", eventArchived: false };
 
   it("takes everything personal out and keeps what the entry keeps", () => {
-    const redacted = redactedAfterErasure(live as never, erasure, false);
+    const redacted = redactedAfterErasure(live as never, erasure, NOTHING_PENDING);
 
     expect(redacted).toMatchObject({
       erased_at: "2026-10-09T12:00:00.000Z",
@@ -188,7 +193,7 @@ describe("redactedAfterErasure", () => {
   });
 
   it("copes with an attendee who has no wallet pass and no deliveries", () => {
-    const redacted = redactedAfterErasure({ ...live, wallet_pass: null, deliveries: [] } as never, erasure, false);
+    const redacted = redactedAfterErasure({ ...live, wallet_pass: null, deliveries: [] } as never, erasure, NOTHING_PENDING);
 
     expect(redacted.wallet_pass).toBeNull();
     expect(redacted.deliveries).toEqual([]);
@@ -197,20 +202,20 @@ describe("redactedAfterErasure", () => {
   it("does not change the detail it was given", () => {
     const before = JSON.stringify(live);
 
-    redactedAfterErasure(live as never, erasure, true);
+    redactedAfterErasure(live as never, erasure, STILL_PENDING);
 
     expect(JSON.stringify(live)).toBe(before);
   });
 
   it("cuts the check-in time to the hour of the event's zone, as the server does", () => {
-    expect(redactedAfterErasure(live as never, erasure, false).admitted_at).toBe("2026-09-01T10:00:00.000Z");
-    expect(redactedAfterErasure(live as never, { ...erasure, timezone: "Asia/Kolkata" }, false).admitted_at).toBe(
+    expect(redactedAfterErasure(live as never, erasure, NOTHING_PENDING).admitted_at).toBe("2026-09-01T10:00:00.000Z");
+    expect(redactedAfterErasure(live as never, { ...erasure, timezone: "Asia/Kolkata" }, NOTHING_PENDING).admitted_at).toBe(
       "2026-09-01T10:30:00.000Z",
     );
   });
 
   it("leaves a check-in time that is not there missing", () => {
-    expect(redactedAfterErasure({ ...live, admitted_at: null, status: "cancelled" } as never, erasure, false).admitted_at).toBeNull();
+    expect(redactedAfterErasure({ ...live, admitted_at: null, status: "cancelled" } as never, erasure, NOTHING_PENDING).admitted_at).toBeNull();
   });
 
   it.each([
@@ -219,23 +224,48 @@ describe("redactedAfterErasure", () => {
     ["someone already checked in", {}, false, "registered"],
     ["someone whose pass is already revoked", { admitted_at: null, status: "revoked" }, false, "revoked"],
   ])("%s: the status becomes %s", (_label, overrides, eventArchived, status) => {
-    const redacted = redactedAfterErasure({ ...live, ...overrides } as never, { ...erasure, eventArchived }, false);
+    const redacted = redactedAfterErasure({ ...live, ...overrides } as never, { ...erasure, eventArchived }, NOTHING_PENDING);
 
     expect(redacted.status).toBe(status);
   });
 
   it("marks the pass as still at the provider when the answer said so", () => {
-    const redacted = redactedAfterErasure(live as never, erasure, true);
+    const redacted = redactedAfterErasure(live as never, erasure, STILL_PENDING);
 
     expect(redacted.wallet_pass_delete_pending).toBe(true);
     expect(redacted.wallet_pass).toMatchObject({ provider_removed_at: null });
   });
 
-  it("marks the pass as deleted now when nothing is left to delete at the provider", () => {
-    const redacted = redactedAfterErasure(live as never, erasure, false);
+  it("marks the pass as deleted now only when the answer said it deleted it", () => {
+    const redacted = redactedAfterErasure(live as never, erasure, DELETED_NOW);
 
     expect(redacted.wallet_pass_delete_pending).toBe(false);
     expect(redacted.wallet_pass).toMatchObject({ provider_removed_at: erasure.at });
+  });
+
+  it("leaves the provider state of a pass alone when the answer did not delete it", () => {
+    const neverRemoved = redactedAfterErasure(live as never, erasure, NOTHING_PENDING);
+    const removedBefore = redactedAfterErasure(
+      { ...live, wallet_pass: { ...live.wallet_pass, provider_removed_at: "2026-08-01T09:00:00.000Z" } } as never,
+      erasure,
+      NOTHING_PENDING,
+    );
+
+    expect(neverRemoved.wallet_pass_delete_pending).toBe(false);
+    expect(neverRemoved.wallet_pass).toMatchObject({ provider_removed_at: null });
+    expect(removedBefore.wallet_pass).toMatchObject({ provider_removed_at: "2026-08-01T09:00:00.000Z" });
+  });
+
+  it.each([
+    ["queued", null, "cancelled", false],
+    ["failed", true, "cancelled", false],
+    ["failed", false, "failed", false],
+    ["failed", null, "failed", null],
+    ["sent", null, "sent", null],
+  ])("mail that was %s (retryable %s) is %s afterwards, as the server leaves it", (status, retryable, expectedStatus, expectedRetryable) => {
+    const redacted = redactedAfterErasure({ ...live, deliveries: [{ ...live.deliveries[0], status, retryable }] } as never, erasure, NOTHING_PENDING);
+
+    expect(redacted.deliveries[0]).toMatchObject({ status: expectedStatus, retryable: expectedRetryable });
   });
 });
 
@@ -257,7 +287,7 @@ describe("redactedRowsAfterErasure", () => {
   it("redacts the erased rows in place and leaves the others as they are", () => {
     const items = [row("a"), row("b"), row("c")];
 
-    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), erasure, true);
+    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), erasure, new Set());
 
     expect(result).toHaveLength(3);
     expect(result[0]).toMatchObject({ id: "a", erased_at: "2026-10-09T12:00:00.000Z", name: ERASED_ATTENDEE_LABEL, email: "", company: null, department: null, ticket_type: "vip" });
@@ -270,7 +300,7 @@ describe("redactedRowsAfterErasure", () => {
     const items = [row("a")];
     const before = JSON.stringify(items);
 
-    redactedRowsAfterErasure(items as never, new Set(["a"]), erasure, true);
+    redactedRowsAfterErasure(items as never, new Set(["a"]), erasure, new Set());
 
     expect(JSON.stringify(items)).toBe(before);
   });
@@ -279,7 +309,7 @@ describe("redactedRowsAfterErasure", () => {
     const admitted = { ...row("a"), admitted_at: "2026-10-09T14:37:21.123Z", check_in_status: "admitted" };
     const waiting = row("b");
 
-    const result = redactedRowsAfterErasure([admitted, waiting, admitted] as never, new Set(["a", "b"]), erasure, true);
+    const result = redactedRowsAfterErasure([admitted, waiting, admitted] as never, new Set(["a", "b"]), erasure, new Set());
 
     expect(result[0]).toMatchObject({ admitted_at: "2026-10-09T14:00:00.000Z", status: "registered" });
     expect(result[1]).toMatchObject({ admitted_at: null, status: "cancelled" });
@@ -288,30 +318,36 @@ describe("redactedRowsAfterErasure", () => {
   describe("the wallet pass of an erased row", () => {
     const withPass = { ...row("a"), wallet_status: { apple_active_registrations: 1, apple_inactive_registrations: 0, provider_removed_at: null } };
 
-    it("is marked removed at the provider when nothing is left to delete there, and only for the erased rows", () => {
+    it("is marked removed at the provider only for the people whose pass the answer says it deleted", () => {
       const other = { ...row("b"), wallet_status: { apple_active_registrations: 1, apple_inactive_registrations: 0, provider_removed_at: null } };
+      const third = { ...row("c"), wallet_status: { apple_active_registrations: 1, apple_inactive_registrations: 0, provider_removed_at: null } };
 
-      const result = redactedRowsAfterErasure([withPass, other] as never, new Set(["a"]), erasure, false);
+      const result = redactedRowsAfterErasure([withPass, other, third] as never, new Set(["a", "b"]), erasure, new Set(["a", "c"]));
 
       expect(result[0]?.wallet_status).toMatchObject({ apple_active_registrations: 1, provider_removed_at: erasure.at });
+      // Erased, but the answer did not delete this pass (still at the provider, or never was there).
       expect(result[1]?.wallet_status).toMatchObject({ provider_removed_at: null });
-    });
-
-    it("is left as it is while the answer says passes are still at the provider", () => {
-      const [result] = redactedRowsAfterErasure([withPass] as never, new Set(["a"]), erasure, true);
-
-      expect(result?.wallet_status).toMatchObject({ provider_removed_at: null });
+      // Not part of this erasure at all.
+      expect(result[2]?.wallet_status).toMatchObject({ provider_removed_at: null });
     });
 
     it("stays missing for someone who has no pass", () => {
-      const [result] = redactedRowsAfterErasure([{ ...row("a"), wallet_status: null }] as never, new Set(["a"]), erasure, false);
+      const [result] = redactedRowsAfterErasure([{ ...row("a"), wallet_status: null }] as never, new Set(["a"]), erasure, new Set(["a"]));
 
       expect(result?.wallet_status).toBeNull();
     });
   });
 
+  it("cancels the mail that was queued, and leaves any other status of the last mail alone", () => {
+    const rows = [{ ...row("a"), last_mail_status: "queued" }, { ...row("b"), last_mail_status: "failed" }, { ...row("c"), last_mail_status: "sent" }, { ...row("d"), last_mail_status: null }];
+
+    const result = redactedRowsAfterErasure(rows as never, new Set(["a", "b", "c", "d"]), erasure, new Set());
+
+    expect(result.map((r) => r.last_mail_status)).toEqual(["cancelled", "failed", "sent", null]);
+  });
+
   it("leaves everyone's status alone on an archived event", () => {
-    const [result] = redactedRowsAfterErasure([row("a")] as never, new Set(["a"]), { ...erasure, eventArchived: true }, true);
+    const [result] = redactedRowsAfterErasure([row("a")] as never, new Set(["a"]), { ...erasure, eventArchived: true }, new Set());
 
     expect(result).toMatchObject({ status: "registered" });
   });
@@ -341,7 +377,7 @@ describe("isOlderThanErasure", () => {
   });
 });
 
-describe("walletPassRemoved", () => {
+describe("withWalletOutcome", () => {
   const erased = {
     id: "att-1",
     erased_at: "2026-10-09T12:00:00.000Z",
@@ -349,22 +385,38 @@ describe("walletPassRemoved", () => {
     wallet_pass: { status: "active", provider_removed_at: null, apple_url: null },
   };
 
-  it("marks the pass as no longer to be deleted and removed now", () => {
-    const result = walletPassRemoved(erased as never, "2026-10-09T12:05:00.000Z");
+  it("marks the pass as no longer to be deleted and removed now when the answer deleted it", () => {
+    const result = withWalletOutcome(erased as never, { pending: false, removedAt: "2026-10-09T12:05:00.000Z" });
 
     expect(result.wallet_pass_delete_pending).toBe(false);
     expect(result.wallet_pass).toMatchObject({ status: "active", provider_removed_at: "2026-10-09T12:05:00.000Z" });
     expect(result.erased_at).toBe("2026-10-09T12:00:00.000Z");
   });
 
+  it("keeps the provider state of a pass that the answer did not delete", () => {
+    const removedBefore = { ...erased, wallet_pass_delete_pending: false, wallet_pass: { ...erased.wallet_pass, provider_removed_at: "2026-08-01T09:00:00.000Z" } };
+
+    expect(withWalletOutcome(erased as never, { pending: false, removedAt: null })).toMatchObject({
+      wallet_pass_delete_pending: false,
+      wallet_pass: { provider_removed_at: null },
+    });
+    expect(withWalletOutcome(removedBefore as never, { pending: false, removedAt: null }).wallet_pass).toMatchObject({
+      provider_removed_at: "2026-08-01T09:00:00.000Z",
+    });
+  });
+
+  it("says the pass is still to be deleted when the answer says so", () => {
+    expect(withWalletOutcome({ ...erased, wallet_pass_delete_pending: false } as never, { pending: true, removedAt: null }).wallet_pass_delete_pending).toBe(true);
+  });
+
   it("copes with an attendee who has no pass", () => {
-    expect(walletPassRemoved({ ...erased, wallet_pass: null } as never, "2026-10-09T12:05:00.000Z").wallet_pass).toBeNull();
+    expect(withWalletOutcome({ ...erased, wallet_pass: null } as never, { pending: false, removedAt: "2026-10-09T12:05:00.000Z" }).wallet_pass).toBeNull();
   });
 
   it("does not change the detail it was given", () => {
     const before = JSON.stringify(erased);
 
-    walletPassRemoved(erased as never, "2026-10-09T12:05:00.000Z");
+    withWalletOutcome(erased as never, { pending: false, removedAt: "2026-10-09T12:05:00.000Z" });
 
     expect(JSON.stringify(erased)).toBe(before);
   });

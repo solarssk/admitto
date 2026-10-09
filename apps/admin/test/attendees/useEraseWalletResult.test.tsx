@@ -17,6 +17,7 @@ const answer = (walletPending: number): EraseAttendeesResponse => ({
   already_erased: 1,
   not_found: 0,
   wallet_pending: walletPending,
+  wallet_removed_ids: [],
 });
 
 function setup(scopeKey = "evt-1") {

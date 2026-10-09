@@ -44,7 +44,31 @@ type EraseResponseBody = {
   not_found: number;
   /** Erased attendees of this request whose wallet pass is still not deleted at the provider. */
   wallet_pending: number;
+  /**
+   * Attendees whose pass was still to be deleted at the provider when the follow-up started and is not any
+   * more (deleted by this request, or by one running at the same moment). A pass that never reached the
+   * provider, or was removed before, is not among them: the erased page says "deleted" only for these.
+   */
+  wallet_removed_ids: string[];
 };
+
+/**
+ * The erased attendees among `attendeeIds` whose wallet pass has a provider id and is not marked removed:
+ * what is still to be deleted at the provider.
+ */
+async function attendeesWithPassToDelete(db: PrismaClient, eventId: string, attendeeIds: string[]): Promise<string[]> {
+  if (attendeeIds.length === 0) return [];
+  const passes = await db.walletPass.findMany({
+    where: {
+      attendee_id: { in: attendeeIds },
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: eventId, erased_at: { not: null } },
+    },
+    select: { attendee_id: true },
+  });
+  return passes.map((pass) => pass.attendee_id);
+}
 
 /**
  * What an erasure writes besides the erasure itself, inside its transaction: the saved import
@@ -128,6 +152,7 @@ async function runErasure(
   // After the commit: a network call has no place inside the transaction. Credentials alone decide
   // whether a provider exists; the event's wallet switch only governs issuing new passes.
   const touchedIds = [...result.erasedIds, ...result.alreadyErasedIds];
+  const toDeleteBefore = await attendeesWithPassToDelete(db, eventId, touchedIds);
   const provider = resolveConfiguredWalletProvider({
     walletTemplateId: event.wallet_template_id,
     walletApiKeyEnc: event.wallet_api_key_enc,
@@ -154,19 +179,11 @@ async function runErasure(
       inFlightWalletFollowUps.delete(slotKey);
     }
   }
-  // Counted from the database rather than from the call above, so it is right whether the pass
+  // Read from the database rather than taken from the call above, so it is right whether the pass
   // could not be deleted, no provider is configured, or the call threw.
-  const walletPending =
-    touchedIds.length === 0
-      ? 0
-      : await db.walletPass.count({
-          where: {
-            attendee_id: { in: touchedIds },
-            provider_pass_id: { not: null },
-            provider_removed_at: null,
-            attendee: { event_id: eventId, erased_at: { not: null } },
-          },
-        });
+  const toDeleteAfter = await attendeesWithPassToDelete(db, eventId, touchedIds);
+  const stillToDelete = new Set(toDeleteAfter);
+  const walletRemovedIds = [...new Set(toDeleteBefore)].filter((id) => !stillToDelete.has(id));
 
   if (result.erasedIds.length > 0) publishActivityChanged(eventId);
   c.header("Cache-Control", "no-store");
@@ -176,7 +193,8 @@ async function runErasure(
       erased: result.erasedIds.length,
       already_erased: result.alreadyErasedIds.length,
       not_found: result.notFoundIds.length,
-      wallet_pending: walletPending,
+      wallet_pending: toDeleteAfter.length,
+      wallet_removed_ids: walletRemovedIds,
     },
   };
 }

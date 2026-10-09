@@ -87,7 +87,7 @@ import {
   erasureFreesPlace,
   isOlderThanErasure,
   redactedAfterErasure,
-  walletPassRemoved,
+  withWalletOutcome,
 } from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
@@ -2116,11 +2116,13 @@ export function AttendeeDetailPage() {
     void loadDetail();
   }, [loadDetail]);
 
-  // The dialog that says a wallet pass is still at the provider after an erasure, and repeats it. A retry that
-  // deleted the pass is shown on the page at once, so a read that fails afterwards cannot make it look lost.
+  // The dialog that says a wallet pass is still at the provider after an erasure, and repeats it. What the retry
+  // did to the pass is shown on the page at once, so a read that fails afterwards cannot make it look lost.
   const afterWalletRetry = useCallback(
     (result: EraseAttendeesResponse) => {
-      if (result.wallet_pending === 0) applyDetail(walletPassRemoved(heldDetailRef.current!, new Date().toISOString()));
+      const held = heldDetailRef.current!;
+      const removedAt = result.wallet_removed_ids.includes(held.id) ? new Date().toISOString() : null;
+      applyDetail(withWalletOutcome(held, { pending: result.wallet_pending > 0, removedAt }));
       void loadDetail();
     },
     [applyDetail, loadDetail],
@@ -2198,7 +2200,7 @@ export function AttendeeDetailPage() {
       const redacted = redactedAfterErasure(
         detail!,
         { at: new Date().toISOString(), timezone: event.timezone, eventArchived: isEventArchived(event) },
-        result.wallet_pending > 0,
+        { pending: result.wallet_pending > 0, removed: result.wallet_removed_ids.includes(target.attendeeId) },
       );
       applyDetail(redacted);
       setForm(toAttendeeForm(redacted, attributeFields));
