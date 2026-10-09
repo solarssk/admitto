@@ -5964,6 +5964,16 @@ output.mail-field-hint {
   }
 }
 
+/* Laptop (1181-1499px): the 8 columns only fit comfortably from 1500px, where a row is one or two lines. At 1280px the Logged in cell (the
+   login time in UTC and the signer's local time under it) and the address cell took four and five lines and a row was 117px tall. Sign-in
+   drops first, as it does in the Account page's own table: Device and IP address stay, because they are what an admin reviewing sessions
+   looks at, and the sign-in method is still on the cards, in the Staff users tab and from 1500px. */
+@media (min-width: 1181px) and (max-width: 1499px) {
+  .sessions-col-laptop-hide {
+    display: none;
+  }
+}
+
 .sessions-row-actions {
   display: flex;
   flex-wrap: nowrap;

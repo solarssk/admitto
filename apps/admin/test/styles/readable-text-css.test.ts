@@ -225,6 +225,18 @@ describe("the Users cards, on a phone", () => {
   });
 });
 
+describe("the sessions table (Users & roles), on a laptop", () => {
+  it("drops its Sign-in column from 1181px to 1499px, right after the tablet range that drops three columns: Device and IP address stay", () => {
+    expect(sets(bodyOf(staff, ".sessions-col-tablet-hide", "@media (min-width: 768px) and (max-width: 1180px)"), "display", "none")).toBe(true);
+    expect(sets(bodyOf(staff, ".sessions-col-laptop-hide", "@media (min-width: 1181px) and (max-width: 1499px)"), "display", "none")).toBe(true);
+  });
+
+  it("hides nothing from 1500px, where the eight columns fit in a line or two a cell, and nothing outside that range", () => {
+    expect(staff.some((r) => r.selector.includes("sessions-col-laptop-hide") && r.media === null)).toBe(false);
+    expect(staff.filter((r) => r.selector.includes("sessions-col-laptop-hide")).map((r) => r.media)).toEqual(["@media (min-width: 1181px) and (max-width: 1499px)"]);
+  });
+});
+
 describe("the sessions table", () => {
   it("breaks the IP cell inside a word only when it does not fit: 'Internal network' under an address was cut to 'Interna' / 'l network'", () => {
     const body = bodyOf(staff, ".sessions-ip-cell");
