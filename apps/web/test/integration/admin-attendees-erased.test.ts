@@ -146,6 +146,15 @@ async function staysPending(promise: Promise<unknown>, ms = 300): Promise<boolea
   await new Promise((resolve) => setTimeout(resolve, ms));
   return !settled;
 }
+/** The `nth` transaction of the request is preceded by the erasure of `ids`. */
+const eraseBeforeTransaction = (nth: number, ids: string[]) => {
+  const real = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+  let calls = 0;
+  return vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+    ++calls === nth
+      ? real((tx: unknown) => eraseAttendees(tx as never, { eventId: EVENT_ID, attendeeIds: ids })).then(() => real(...args))
+      : real(...args)) as never);
+};
 
 describe("the attendee list and detail", () => {
   it("hides erased attendees by default, counts them, and leaves them out of a search for the placeholder", async () => {
@@ -548,15 +557,6 @@ describe("the last check before a wallet pass is changed at the provider", () =>
   }
   const statusFor = (action: Action) => (action === "restore" ? "voided" : "active");
 
-  /** The `nth` transaction of the request is preceded by the erasure of `ids`. */
-  const eraseBeforeTransaction = (nth: number, ids: string[]) => {
-    const real = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
-    let calls = 0;
-    return vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
-      ++calls === nth
-        ? real((tx: unknown) => eraseAttendees(tx as never, { eventId: EVENT_ID, attendeeIds: ids })).then(() => real(...args))
-        : real(...args)) as never);
-  };
 
   /** The erasure of `ids` commits right after the `nth` transaction of the request has committed. */
   const eraseAfterTransaction = (nth: number, ids: string[]) => {
@@ -915,5 +915,125 @@ describe("an export that starts while an erasure is open", () => {
     expect(text).toContain(`${LIVE_ID}@example.com`);
     expect(text).not.toContain(open.email);
     expect(text).not.toContain(open.id);
+  });
+});
+
+describe("a ticket link that an erasure invalidates meanwhile", () => {
+  let n = 0;
+  async function issuedAttendee() {
+    const id = `att-admin-erased-link-${++n}`;
+    const token = generateToken();
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_ID,
+        email: `${id}@example.com`,
+        name: id,
+        public_ref: `ref-${id}`,
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+    });
+    return id;
+  }
+  const linkLogs = (id: string) =>
+    prisma.attendeeActionLog.count({ where: { attendee_id: id, action_type: "ticket_link_retrieved" } });
+
+  it("copying the link waits for an erasure that is open and answers attendee_erased, not a link that no longer works", async () => {
+    const id = await issuedAttendee();
+    const held = await holdErasure([id]);
+
+    // The attendee is read with a plain query and still shows the token as it was.
+    const requesting = Promise.resolve(app.request(`${base}/${id}/ticket-link`, json("POST", {})));
+    expect(await staysPending(requesting)).toBe(true);
+    await held.commit();
+    const res = await requesting;
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "attendee_erased" });
+    expect(await linkLogs(id)).toBe(0);
+  });
+
+  it("an erasure that commits after the check and before the entry is logged is answered the same way", async () => {
+    const id = await issuedAttendee();
+    // 1st transaction: the check; 2nd: the entry, preceded by the erasure.
+    const spy = eraseBeforeTransaction(2, [id]);
+
+    const res = await app.request(`${base}/${id}/ticket-link`, json("POST", {}));
+    spy.mockRestore();
+
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id } })).erased_at).not.toBeNull();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "attendee_erased" });
+    expect(await linkLogs(id)).toBe(0);
+  });
+
+  it("still hands out the link of a live attendee, and logs it once", async () => {
+    const id = await issuedAttendee();
+
+    const res = await app.request(`${base}/${id}/ticket-link`, json("POST", {}));
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { url: string }).url).toMatch(/^https:\/\/tickets\.example\.com\/t\/.+/);
+    expect(await linkLogs(id)).toBe(1);
+  });
+
+  describe("the preview of a sent message, which puts the same link into it", () => {
+    async function deliveryOf(attendeeId: string) {
+      return prisma.emailDelivery.create({
+        data: {
+          organization_id: ORG_ID,
+          event_id: EVENT_ID,
+          attendee_id: attendeeId,
+          provider: "smtp",
+          status: "sent",
+          recipient_email: `${attendeeId}@example.com`,
+          rendered_subject: "Your ticket",
+          rendered_html: '<a href="{{ticket_url}}">Your ticket</a>',
+        },
+      });
+    }
+    const previewPath = (deliveryId: string) => `/api/admin/events/${EVENT_ID}/deliveries/${deliveryId}/rendered`;
+
+    it("waits for an erasure that is open and shows the message as it is once the erasure is done: gone", async () => {
+      const id = await issuedAttendee();
+      const delivery = await deliveryOf(id);
+      const held = await holdErasure([id]);
+
+      const requesting = Promise.resolve(get(previewPath(delivery.id)));
+      expect(await staysPending(requesting)).toBe(true);
+      await held.commit();
+      const res = await requesting;
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ subject: null, html: null });
+      expect(await linkLogs(id)).toBe(0);
+    });
+
+    it("an erasure that commits after the check and before the entry is logged hands out no link either", async () => {
+      const id = await issuedAttendee();
+      const delivery = await deliveryOf(id);
+      // 1st transaction: the check; 2nd: the entry, preceded by the erasure.
+      const spy = eraseBeforeTransaction(2, [id]);
+
+      const res = await get(previewPath(delivery.id));
+      spy.mockRestore();
+
+      expect((await prisma.attendee.findUniqueOrThrow({ where: { id } })).erased_at).not.toBeNull();
+      expect(await res.json()).toEqual({ subject: null, html: null });
+      expect(await linkLogs(id)).toBe(0);
+    });
+
+    it("still puts the real link of a live attendee into the message, and logs it once", async () => {
+      const id = await issuedAttendee();
+      const delivery = await deliveryOf(id);
+
+      const res = await get(previewPath(delivery.id));
+
+      const body = (await res.json()) as { subject: string | null; html: string | null };
+      expect(res.status).toBe(200);
+      expect(body.html).toContain('href="https://tickets.example.com/t/');
+      expect(await linkLogs(id)).toBe(1);
+    });
   });
 });

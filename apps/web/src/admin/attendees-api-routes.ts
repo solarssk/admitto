@@ -99,6 +99,7 @@ import {
   adminAuditFromContext,
   assertEventManageAccess,
   itemTransitionErrorResponse,
+  logTicketLinkRetrieved,
   positiveIntQuery,
   requireEventId,
   resolveClientTimezone,
@@ -4058,6 +4059,12 @@ export async function handleGetAttendeeTicketLink(
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
 
+  // The attendee above came from a plain read, which does not wait for an erasure that is still
+  // open: an issued ticket would be resolved from the token as it was before. This check takes the
+  // attendee's row lock first, so that erasure finishes and the operator gets attendee_erased.
+  const erased = await requireAttendeeStillLive(c, db, attendeeId);
+  if (erased) return erased;
+
   let ticketUrl: string;
   try {
     // Check status before trusting any pre-existing token: a cancelled/revoked attendee who
@@ -4080,14 +4087,9 @@ export async function handleGetAttendeeTicketLink(
     return c.json({ error: "ticket_not_issued" }, 422);
   }
 
-  await db.$transaction(async (tx) => {
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: attendeeId,
-      action_type: "ticket_link_retrieved",
-      audit: adminAuditFromContext(c),
-    });
-  });
+  // Logged under the attendee's lock: an erasure that committed since the check above is seen here,
+  // and the link, which it has just invalidated, is not handed out.
+  if (!(await logTicketLinkRetrieved(c, db, eventId, attendeeId))) return c.json({ error: "attendee_erased" }, 409);
 
   return c.json({ url: ticketUrl });
 }
@@ -4808,6 +4810,18 @@ export async function handleAddAttendeeNote(c: Context, db: PrismaClient): Promi
   return c.json(dto);
 }
 
+/** The answer for a failed note edit or delete. The attendee may have been erased between the
+ * route's check and the domain function's lock: an erasure deletes the notes, so the note is gone
+ * for that reason, not because the id is wrong. */
+function noteMutationErrorResponse(c: Context, err: unknown, logLabel: string): Response {
+  const erased = attendeeErasedAnswer(c, err);
+  if (erased) return erased;
+  if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
+  if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
+  console.error(`${logLabel} failed:`, err);
+  return c.json({ error: "server error" }, 500);
+}
+
 /**
  * PATCH /api/admin/events/:eventId/attendees/:id/notes/:noteId
  * Admin/superadmin only (assertEventManageAccess), and only the note's own author may edit it,
@@ -4833,14 +4847,7 @@ export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Pro
     );
   } catch (err) {
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
-    // Erased between the check above and the edit: an erasure deletes the notes, so the note is
-    // gone for that reason, not because the id is wrong.
-    const erased = attendeeErasedAnswer(c, err);
-    if (erased) return erased;
-    if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
-    if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
-    console.error("handlePatchAttendeeNote failed:", err);
-    return c.json({ error: "server error" }, 500);
+    return noteMutationErrorResponse(c, err, "handlePatchAttendeeNote");
   }
 
   const dto = await buildAttendeeDetailDto(db, eventId, existing);
@@ -4906,13 +4913,7 @@ export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Pr
       db,
     );
   } catch (err) {
-    // Erased between the check above and the delete, as in handlePatchAttendeeNote.
-    const erased = attendeeErasedAnswer(c, err);
-    if (erased) return erased;
-    if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
-    if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
-    console.error("handleDeleteAttendeeNote failed:", err);
-    return c.json({ error: "server error" }, 500);
+    return noteMutationErrorResponse(c, err, "handleDeleteAttendeeNote");
   }
 
   const dto = await buildAttendeeDetailDto(db, eventId, existing);

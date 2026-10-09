@@ -48,12 +48,13 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { isSendSuccess, sanitizeProviderErrorForLog } from "@admitto/mailer";
-import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeActionLog, writeBulkActionLog } from "@admitto/tickets";
+import { EXPORT_ROW_CAP, attendeeIsLive, quoteCsvCell, sanitizeCsvCell, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
   csvExportResponse,
   lockEventForScopedWrite,
+  logTicketLinkRetrieved,
   positiveIntQuery,
   requireEventId,
   resolveMailInstanceBaseUrl,
@@ -769,6 +770,11 @@ export async function handleGetRenderedEventDelivery(
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
 
+  // The stored message above came from a plain read, which does not wait for an erasure that is
+  // still open and would put the recipient's real ticket link into it. Once the erasure has
+  // committed the message is gone (the snapshot is nulled), so that is what is answered here too.
+  if (!(await attendeeIsLive(db, rendered.attendee_id))) return c.json({ subject: null, html: null });
+
   let materialized;
   try {
     const links = await resolveAttendeeMailLinks(rendered.attendee_id, db, baseUrlOrRes);
@@ -788,14 +794,11 @@ export async function handleGetRenderedEventDelivery(
     return c.json({ subject: null, html: null });
   }
 
-  await db.$transaction(async (tx) => {
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: rendered.attendee_id,
-      action_type: "ticket_link_retrieved",
-      audit: adminAuditFromContext(c),
-    });
-  });
+  // Logged under the attendee's lock: an erasure that committed since the check above is seen here,
+  // and the message with the link, which the erasure has just invalidated, is not handed out.
+  if (!(await logTicketLinkRetrieved(c, db, eventId, rendered.attendee_id))) {
+    return c.json({ subject: null, html: null });
+  }
 
   c.header("Cache-Control", "no-store");
   return c.json({

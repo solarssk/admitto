@@ -542,6 +542,22 @@ describe("activity log", () => {
     expect(await prisma.attendeeActionLog.count({ where: { attendee_id: live.id } })).toBe(1);
   });
 
+  it("says whether it wrote an entry: yes for a live attendee, no for an erased one", async () => {
+    const live = await createAttendee();
+    const gone = await createAttendee();
+    await erase([gone.id]);
+    const write = (attendeeId: string) =>
+      prisma.$transaction((tx) =>
+        writeActionLog(tx, { event_id: EVENT_ID, attendee_id: attendeeId, action_type: "ticket_resent", audit }),
+      );
+
+    expect(await write(live.id)).toBe(true);
+    expect(await write(gone.id)).toBe(false);
+
+    expect(await prisma.attendeeActionLog.count({ where: { attendee_id: live.id } })).toBe(1);
+    expect(await prisma.attendeeActionLog.count({ where: { attendee_id: gone.id } })).toBe(0);
+  });
+
   it("still fails on the foreign key for an attendee that does not exist", async () => {
     await expect(
       prisma.$transaction((tx) => writeActionLog(tx, { event_id: EVENT_ID, attendee_id: "nobody", action_type: "ticket_resent", audit })),
@@ -696,6 +712,20 @@ describe("the refusal says that the attendee is erased", () => {
       expect(error).toMatchObject({ erased: true });
     }
     for (const error of [missingEdit, missingDelete]) {
+      expect(error).toBeInstanceOf(NoteNotFoundError);
+      expect(error).toMatchObject({ erased: false });
+    }
+  });
+
+  it("an edit or a delete of a note of an attendee who does not exist is a plain not found", async () => {
+    const editing = await thrownBy(
+      updateAttendeeNote({ attendeeId: "nobody", eventId: EVENT_ID, noteId: "no-such-note", body: "edit", audit }, prisma),
+    );
+    const deleting = await thrownBy(
+      deleteAttendeeNote({ attendeeId: "nobody", eventId: EVENT_ID, noteId: "no-such-note", canDeleteAnyNote: true, audit }, prisma),
+    );
+
+    for (const error of [editing, deleting]) {
       expect(error).toBeInstanceOf(NoteNotFoundError);
       expect(error).toMatchObject({ erased: false });
     }
