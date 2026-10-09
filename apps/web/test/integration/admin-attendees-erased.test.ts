@@ -411,6 +411,80 @@ describe("an erasure that lands between a route's check and its write", () => {
     expect((await prisma.attendee.findUniqueOrThrow({ where: { id } })).company).toBeNull();
   });
 
+  it("revoking a check-in answers attendee_erased, not the words of the domain error", async () => {
+    const id = await raceAttendee();
+    await prisma.attendee.update({ where: { id }, data: { admitted_at: new Date("2026-09-01T10:15:00Z") } });
+    eraseBeforeNextTransaction([id]);
+
+    const res = await app.request(`${base}/${id}/revoke-checkin`, json("POST", {}));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "attendee_erased" });
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id } })).admitted_at).not.toBeNull();
+  });
+
+  it("revoking an item answers attendee_erased, not the words of the domain error", async () => {
+    const id = await raceAttendee();
+    eraseBeforeNextTransaction([id]);
+
+    const res = await app.request(`${base}/${id}/items/badge/revoke`, json("POST", {}));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "attendee_erased" });
+  });
+
+  it("revoking an item that does not exist is still the words of the domain error", async () => {
+    const id = await raceAttendee();
+
+    const res = await app.request(`${base}/${id}/items/no-such-item/revoke`, json("POST", {}));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Item not found or disabled" });
+  });
+
+  describe("a note that an erasure deleted meanwhile", () => {
+    const noteOf = async (attendeeId: string) => {
+      const author = await prisma.user.findUniqueOrThrow({ where: { email: SUPER_EMAIL } });
+      return prisma.attendeeNote.create({
+        data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: author.id, body: "before" },
+      });
+    };
+
+    it("editing it answers attendee_erased, not not found", async () => {
+      const id = await raceAttendee();
+      const note = await noteOf(id);
+      eraseBeforeNextTransaction([id]);
+
+      const res = await app.request(`${base}/${id}/notes/${note.id}`, json("PATCH", { body: "edit" }));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "attendee_erased" });
+    });
+
+    it("deleting it answers attendee_erased, not not found", async () => {
+      const id = await raceAttendee();
+      const note = await noteOf(id);
+      eraseBeforeNextTransaction([id]);
+
+      const res = await app.request(`${base}/${id}/notes/${note.id}`, json("DELETE"));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "attendee_erased" });
+    });
+
+    it("a note that never existed is still not found, for an edit and for a delete", async () => {
+      const id = await raceAttendee();
+
+      const edit = await app.request(`${base}/${id}/notes/no-such-note`, json("PATCH", { body: "edit" }));
+      const remove = await app.request(`${base}/${id}/notes/no-such-note`, json("DELETE"));
+
+      expect(edit.status).toBe(404);
+      expect(await edit.json()).toEqual({ error: "not found" });
+      expect(remove.status).toBe(404);
+      expect(await remove.json()).toEqual({ error: "not found" });
+    });
+  });
+
   it("voiding a wallet pass is refused before the provider is called when the attendee was erased meanwhile", async () => {
     const id = await raceAttendee();
     await prisma.walletPass.create({ data: { attendee_id: id, status: "active", provider_pass_id: `pc-${id}` } });

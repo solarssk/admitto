@@ -650,3 +650,63 @@ describe("the last check before an export file is built", () => {
     expect(file.bytes.toString("utf8")).toContain(a.email);
   });
 });
+
+describe("the refusal says that the attendee is erased", () => {
+  const thrownBy = async (action: Promise<unknown>) => action.then(() => undefined, (error: unknown) => error);
+
+  it("the revoke of a check-in, and of an item, carry erased: true on the error", async () => {
+    const { a } = await admittedAttendee();
+    await erase([a.id]);
+
+    const revoking = await thrownBy(revokeCheckIn({ eventId: EVENT_ID, attendeeId: a.id, audit }, prisma));
+    const reverting = await thrownBy(revokeItemState({ attendeeId: a.id, eventId: EVENT_ID, itemKey: "badge", audit }, prisma));
+    const issuing = await thrownBy(
+      transitionItemState({ attendeeId: a.id, eventId: EVENT_ID, itemKey: "badge", targetState: "issued", audit }, prisma),
+    );
+
+    for (const error of [revoking, reverting, issuing]) {
+      expect(error).toBeInstanceOf(IllegalItemTransitionError);
+      expect(error).toMatchObject({ erased: true });
+    }
+  });
+
+  it("an edit or a delete of a note carries erased: true on the error, a missing note does not", async () => {
+    const erased = await createAttendee();
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: erased.id, event_id: EVENT_ID, author_user_id: "staff-1", body: "before" },
+    });
+    await erase([erased.id]);
+    const live = await createAttendee();
+
+    const editing = await thrownBy(
+      updateAttendeeNote({ attendeeId: erased.id, eventId: EVENT_ID, noteId: note.id, body: "edit", audit }, prisma),
+    );
+    const deleting = await thrownBy(
+      deleteAttendeeNote({ attendeeId: erased.id, eventId: EVENT_ID, noteId: note.id, canDeleteAnyNote: true, audit }, prisma),
+    );
+    const missingEdit = await thrownBy(
+      updateAttendeeNote({ attendeeId: live.id, eventId: EVENT_ID, noteId: "no-such-note", body: "edit", audit }, prisma),
+    );
+    const missingDelete = await thrownBy(
+      deleteAttendeeNote({ attendeeId: live.id, eventId: EVENT_ID, noteId: "no-such-note", canDeleteAnyNote: true, audit }, prisma),
+    );
+
+    for (const error of [editing, deleting]) {
+      expect(error).toBeInstanceOf(NoteNotFoundError);
+      expect(error).toMatchObject({ erased: true });
+    }
+    for (const error of [missingEdit, missingDelete]) {
+      expect(error).toBeInstanceOf(NoteNotFoundError);
+      expect(error).toMatchObject({ erased: false });
+    }
+  });
+
+  it("an item error that has another reason does not say erased", async () => {
+    const a = await createAttendee();
+
+    const error = await thrownBy(revokeItemState({ attendeeId: a.id, eventId: EVENT_ID, itemKey: "no-such-item", audit }, prisma));
+
+    expect(error).toBeInstanceOf(IllegalItemTransitionError);
+    expect(error).toMatchObject({ erased: false });
+  });
+});

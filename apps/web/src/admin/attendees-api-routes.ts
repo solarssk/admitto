@@ -4162,6 +4162,9 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
       // handleCheckinUndo's err.message passthrough for the same error type.
       return c.json({ error: err.message }, 409);
     }
+    // Erased between the check above and the revoke (the domain function refuses it under a lock).
+    const erased = attendeeErasedAnswer(c, err);
+    if (erased) return erased;
     // revokeCheckIn cascades into the same item-reset path as handleRevokeAttendeeItem
     // (resetItems: true), which can throw IllegalItemTransitionError for a blocked pass —
     // reuse the same 409 mapping instead of falling through to a raw 500.
@@ -4379,7 +4382,7 @@ async function updateWalletPassUnlessRemoved(
  * (see updateWalletPassUnlessRemoved) and its entry in the attendee's activity log, in one
  * transaction, so a refused write leaves no entry behind. Returns the updated row, or why nothing
  * was written (the route answers 409 with that code). */
-async function updateWalletPassAndLog(
+function updateWalletPassAndLog(
   db: PrismaClient,
   c: Context,
   eventId: string,
@@ -4409,6 +4412,15 @@ async function updateWalletPassAndLog(
  * called, instead of after. */
 async function requireAttendeeStillLive(c: Context, db: PrismaClient, attendeeId: string): Promise<Response | null> {
   return (await attendeeIsLive(db, attendeeId)) ? null : c.json({ error: "attendee_erased" }, 409);
+}
+
+/** `409 attendee_erased` for a domain error that says the attendee was erased between the route's
+ * plain read and the function's own lock (an item or check-in revoke, a note edit or delete), or
+ * null for any other error. Without it the words of the domain error would reach the client in
+ * place of the code the admin app maps to its own message. */
+function attendeeErasedAnswer(c: Context, err: unknown): Response | null {
+  const erased = (err instanceof IllegalItemTransitionError || err instanceof NoteNotFoundError) && err.erased;
+  return erased ? c.json({ error: "attendee_erased" }, 409) : null;
 }
 
 /** A pass Admitto has removed from the provider (PR 3) can no longer be void/restore/push'd -
@@ -4755,6 +4767,9 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ card });
   } catch (err) {
+    // Erased between the check above and the revoke (the domain function refuses it under a lock).
+    const erased = attendeeErasedAnswer(c, err);
+    if (erased) return erased;
     // e.g. unknown/disabled item key, blocked pass — mirrors the operator item-action route.
     return itemTransitionErrorResponse(c, err, "handleRevokeAttendeeItem");
   }
@@ -4818,6 +4833,10 @@ export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Pro
     );
   } catch (err) {
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
+    // Erased between the check above and the edit: an erasure deletes the notes, so the note is
+    // gone for that reason, not because the id is wrong.
+    const erased = attendeeErasedAnswer(c, err);
+    if (erased) return erased;
     if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
     if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
     console.error("handlePatchAttendeeNote failed:", err);
@@ -4887,6 +4906,9 @@ export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Pr
       db,
     );
   } catch (err) {
+    // Erased between the check above and the delete, as in handlePatchAttendeeNote.
+    const erased = attendeeErasedAnswer(c, err);
+    if (erased) return erased;
     if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
     if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
     console.error("handleDeleteAttendeeNote failed:", err);
