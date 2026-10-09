@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 vi.mock("../src/ops-audit.js", () => ({ writeActionLog: vi.fn() }));
+vi.mock("../src/attendee-lock.js", () => ({ lockAttendeeRow: vi.fn() }));
 
 import { writeActionLog } from "../src/ops-audit.js";
+import { lockAttendeeRow } from "../src/attendee-lock.js";
 import { voidOneWalletPassAtProvider } from "../src/void-wallet-pass-at-provider.js";
 
 const audit = { operator: "user-1", sessionId: "sess-1" };
@@ -34,6 +36,19 @@ describe("voidOneWalletPassAtProvider", () => {
     findFirst.mockReset().mockResolvedValue(ACTIVE_ROW);
     txUpdateMany.mockReset().mockResolvedValue({ count: 1 });
     vi.mocked(writeActionLog).mockReset().mockResolvedValue(undefined);
+    vi.mocked(lockAttendeeRow).mockReset().mockResolvedValue({ id: "att-1", status: "registered", erased: false });
+  });
+
+  it("writes nothing and does not realign when the attendee was erased while the void was in flight", async () => {
+    vi.mocked(lockAttendeeRow).mockResolvedValueOnce({ id: "att-1", status: "registered", erased: true });
+
+    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(provider.voidPass).toHaveBeenCalledWith("pc-1");
+    expect(txUpdateMany).not.toHaveBeenCalled();
+    expect(writeActionLog).not.toHaveBeenCalled();
+    expect(provider.restorePass).not.toHaveBeenCalled();
   });
 
   it("voids the pass at the provider, marks the row voided (only while not removed) and logs it", async () => {

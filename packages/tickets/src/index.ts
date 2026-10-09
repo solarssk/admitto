@@ -156,7 +156,7 @@ export {
 export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 export { drainWalletPushJobs, readWalletPushRequest } from "./drain-wallet-push-jobs.js";
 export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
-export { loadWalletMessageTargets } from "./send-wallet-message.js";
+export { keepLiveWalletMessageTargets, loadWalletMessageTargets } from "./send-wallet-message.js";
 export type { SendWalletMessageTarget } from "./send-wallet-message.js";
 export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
 export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
