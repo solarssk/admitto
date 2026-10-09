@@ -1418,9 +1418,13 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValueOnce(baseAccount);
     mockFetchSessions.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage activeTab="sessions" />);
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load sessions/)).toBeTruthy();
-    });
+    // The title says what failed, in the shared error placeholder (the glyph over it), and the description says why.
+    await waitFor(() => expect(document.querySelector(".at-empty-state--error[role='alert']")).not.toBeNull());
+    const alert = document.querySelector(".at-empty-state--error[role='alert']");
+    expect(alert?.querySelector(".at-empty-state__title")?.textContent).toBe("Could not load sessions");
+    expect(alert?.querySelector(".at-empty-state__desc")?.textContent).toBe("Could not load sessions.");
+    expect(alert?.querySelector(".at-empty-state__icon i.ti-circle-x")).not.toBeNull();
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
   it("shows revoke session failure", async () => {

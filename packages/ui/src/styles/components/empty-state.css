@@ -14,6 +14,11 @@
   line-height: 1;
 }
 
+/* A failed load: the glyph takes the error colour, as in Notice's error. */
+.at-empty-state--error .at-empty-state__icon {
+  color: var(--status-error);
+}
+
 .at-empty-state__title {
   font-size: 1rem;
   font-weight: 500;

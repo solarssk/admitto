@@ -824,6 +824,11 @@ html:not(.icons-ready) .ti {
   font-size: 1.5rem;
 }
 
+.notif-bell__status .failure-icon {
+  margin-right: 0;
+  vertical-align: baseline;
+}
+
 .notif-bell__list {
   display: flex;
   flex-direction: column;
@@ -3192,6 +3197,13 @@ html:not(.icons-ready) .ti {
   text-align: center;
 }
 
+/* The glyph of the application's own error screen: the one of a failed load (EmptyState's error), as large. */
+.error-boundary__icon {
+  font-size: 2.5rem;
+  line-height: 1;
+  color: var(--status-error);
+}
+
 .error-boundary__title {
   margin: 0;
   font-size: var(--fs-h2);
@@ -3575,8 +3587,10 @@ html:not(.icons-ready) .ti {
 .identity-editor__error {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
 }
 
 /* Mapping repeater + editor extras (#266 slice 3b) */
@@ -4531,25 +4545,52 @@ output.mail-field-hint {
   color: var(--status-warn-fg);
 }
 
-/* The Retry in a one-line hint (RetryHint) is a Button, for its busy contract (aria-disabled, keeps keyboard
-   focus), drawn as the underlined text link it replaced. Compound selectors, so they win over .at-btn and its
-   hover rule whatever order the stylesheets load in. */
+/* The glyph of a failed load where the failure is a line of text (FailureIcon: the compact alert, the one-line hint, the identity
+   editor, the log console, the notification bell): the error colour of Notice's error, inline before the message. */
+.failure-icon {
+  margin-right: 0.375em;
+  vertical-align: -0.1em;
+  color: var(--status-error);
+}
+
+/* Over the message, as large as an empty state's, where the failure has a block of its own (the body of a modal, the log
+   console): a line with a small cross beside it and a button under it read as unfinished. */
+.failure-icon--large {
+  display: block;
+  margin: 0 auto var(--space-2);
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+/* A hint that says something could not be loaded (RetryHint): the message in the error colour, like a field's own error, with room above it,
+   where the base hint tucks itself 4px under its field (a failure glued to the control it is about read as a smudge). Compound, to win
+   over .mail-field-hint. */
+.mail-field-hint.retry-hint {
+  margin: var(--space-2) 0;
+  color: var(--status-error-fg);
+}
+
+/* Its Retry is a word at the end of the sentence, not a boxed button: a button takes too much room for a remark under a field. It reads as
+   an action all the same: the link colour, semibold, a refresh glyph before it, a tint when hovered, and no underline, which is a link's.
+   It is a Button for its busy contract (aria-disabled, keeps keyboard focus, a spinner for the glyph), so these compound selectors win
+   over .at-btn, .at-btn--ghost, .at-btn--sm and their hover rule whatever order the stylesheets load in. */
 .retry-hint .at-btn.retry-hint__button {
   display: inline-flex;
   height: auto;
-  padding: 0;
+  gap: var(--space-1);
+  padding: 1px var(--space-1);
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-link, var(--primary));
   font-size: inherit;
-  font-weight: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  font-weight: var(--fw-semibold);
+  vertical-align: baseline;
 }
 
 .retry-hint .at-btn.retry-hint__button:hover:not(:disabled, [aria-disabled="true"]) {
-  background: none;
-  color: var(--text-link, var(--primary));
+  background: var(--primary-tint);
+  color: var(--primary-active);
 }
 
 .mail-transport__desc {
@@ -6691,6 +6732,11 @@ output.mail-field-hint {
 
 .system-log-panel__console-empty--error {
   color: var(--at-red);
+}
+
+/* On the dark console the message and its glyph are the one red. */
+.system-log-panel__console-empty--error .failure-icon {
+  color: inherit;
 }
 
 /* The console's placeholder (ConsoleSkeleton): lines shaped like log lines, light on the dark shell. */

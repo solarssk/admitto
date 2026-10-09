@@ -2,10 +2,13 @@ import { useRef } from "react";
 import { Button } from "@admitto/ui";
 import { useBusyEndCount } from "../hooks/useRetry.js";
 import { useRetryFocusHandover } from "../hooks/useRetryFocusHandover.js";
+import { FailureIcon } from "./FailureIcon.js";
 
 /**
- * The one-line "could not load" hint with its Retry, for a field-sized spot (a filter, a picker) where a Notice
- * would be too heavy. It is an alert, and `busy` (from `useRetry`) is the Retry's own flag: the Retry stays on
+ * The "could not load" hint with its Retry, for a field-sized spot (a filter, a picker) where a Notice
+ * would be too heavy: the message in the error colour with the standard glyph, and the Retry as a word at the end of the sentence
+ * (a boxed button takes too much room for a remark under a field) that reads as an action: link colour, semibold, a refresh glyph,
+ * a tint on hover, and no underline, which is a link's. It is still a `Button`, for its busy contract. It is an alert, and `busy` (from `useRetry`) is the Retry's own flag: the Retry stays on
  * screen and focusable while it works (`Button loading`), and when a retry ends with the error still there the
  * message is mounted afresh, never the button, so the same text is announced again, as `Notice` does with its
  * `actionBusy`. With no `onRetry` there is no button. When the retry works the hint goes away with the Retry that holds
@@ -36,14 +39,24 @@ export function RetryHint({
   useRetryFocusHandover(retryRef, landmark, landmark !== undefined);
   return (
     <p className="mail-field-hint retry-hint" role="alert">
-      <span key={attempts}>{message}</span>
+      <span key={attempts}>
+        <FailureIcon />
+        {message}
+      </span>
       {onRetry && (
-        <>
-          {" "}
-          <Button ref={retryRef} type="button" variant="ghost" size="sm" className="retry-hint__button" aria-label={retryLabel} loading={busy} onClick={onRetry}>
-            Retry
-          </Button>
-        </>
+        <Button
+          ref={retryRef}
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="retry-hint__button"
+          icon={<i className="ti ti-refresh" aria-hidden="true" />}
+          aria-label={retryLabel}
+          loading={busy}
+          onClick={onRetry}
+        >
+          Retry
+        </Button>
       )}
     </p>
   );

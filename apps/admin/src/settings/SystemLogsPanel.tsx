@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { Button, Input, Notice, Skeleton, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
 import type { SystemLogEntryDto, SystemLogResponse } from "../api/types.js";
+import { FailureIcon } from "../components/FailureIcon.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
@@ -148,7 +149,10 @@ function ConsoleError({
   const ends = useBusyEndCount(retrying);
   return (
     <div className="system-log-panel__console-empty system-log-panel__console-empty--error" role="alert">
-      <p key={ends}>{message}</p>
+      <p key={ends}>
+        <FailureIcon className="failure-icon--large" />
+        {message}
+      </p>
       <Button ref={retryRef} type="button" variant="secondary" size="sm" loading={retrying} onClick={() => void onRetry()}>
         Retry
       </Button>

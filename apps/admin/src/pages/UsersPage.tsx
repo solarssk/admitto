@@ -368,7 +368,7 @@ export function UsersPage() {
           )}
 
           {gate.showContent && (
-            <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} className="users-page__status" />
+            <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} title="Could not load users" />
           )}
 
           {listReady && (
