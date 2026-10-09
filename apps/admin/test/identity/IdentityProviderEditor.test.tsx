@@ -270,6 +270,7 @@ describe("IdentityProviderEditor — edit", () => {
       expect(screen.getByText("This provider no longer exists.")).toBeTruthy();
     });
     expect(screen.getByText("This provider no longer exists.").closest("[role='alert']")).not.toBeNull();
+    expect(screen.getByRole("alert").querySelector("p > i.ti-circle-x.failure-icon--large")?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("re-fetches when navigating from one provider edit URL to another (no stale save)", async () => {

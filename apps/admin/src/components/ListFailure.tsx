@@ -1,6 +1,6 @@
 import type { RetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { RefreshWarning } from "./RefreshWarning.js";
-import { RetryAlert } from "./RetryAlert.js";
+import { RetryEmptyState } from "./RetryEmptyState.js";
 
 interface ListFailureProps {
   /**
@@ -12,14 +12,16 @@ interface ListFailureProps {
   refreshError: string | null;
   /** Reruns the refresh: the warning's Retry. */
   onRefresh: () => Promise<void>;
-  /** The card's own layout class for the error block. */
-  className: string;
+  /** What failed, as the title of the error ("Could not load users"). */
+  title: string;
 }
 
 /** How a list that follows the loading standard (`useListLoad`) says that a load, or a refresh, failed. */
-export function ListFailure({ failure, refreshError, onRefresh, className }: Readonly<ListFailureProps>) {
+export function ListFailure({ failure, refreshError, onRefresh, title }: Readonly<ListFailureProps>) {
   if (failure.error) {
-    return <RetryAlert message={failure.error} retrying={failure.retrying} onRetry={failure.retry} className={className} />;
+    // The same placeholder as every other failed load (the glyph over a title, the message and a Retry), which fades in with what it
+    // replaces and stays mounted through a Retry, so that it plays once.
+    return <RetryEmptyState title={title} message={failure.error} retrying={failure.retrying} onRetry={failure.retry} className="at-fade-in" />;
   }
   return refreshError ? <RefreshWarning message={refreshError} onRetry={onRefresh} /> : null;
 }

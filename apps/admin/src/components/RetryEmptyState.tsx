@@ -17,6 +17,7 @@ export function RetryEmptyState({
   onRetry,
   retryLabel,
   landmark = ".at-card",
+  className,
 }: Readonly<{
   title: string;
   message: string;
@@ -25,6 +26,8 @@ export function RetryEmptyState({
   /** The Retry's accessible name when several can be on screen at once ("Retry loading providers"); it starts with "Retry". */
   retryLabel?: string;
   landmark?: string;
+  /** A class for the root: the fade-in (`at-fade-in`) of a list's failure, which stays mounted through a Retry, so it plays once. */
+  className?: string;
 }>) {
   const retryRef = useRef<HTMLButtonElement>(null);
   // The card that holds the list stays when the list arrives: the focus goes there, not to the top of the tab.
@@ -33,6 +36,7 @@ export function RetryEmptyState({
   return (
     <EmptyState
       variant="error"
+      className={className}
       title={title}
       description={<span key={ends}>{message}</span>}
       action={

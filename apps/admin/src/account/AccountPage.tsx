@@ -45,7 +45,6 @@ import { PageRetryPanel } from "../components/PageRetryPanel.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
-import { RetryAlert } from "../components/RetryAlert.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
@@ -2240,11 +2239,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             />
           )}
           {notifPrefsGate.showContent && notifPrefsFailure.error && (
-            <RetryAlert
+            <RetryEmptyState
+              title="Could not load notification preferences"
               message={notifPrefsFailure.error}
               retrying={notifPrefsFailure.retrying}
               onRetry={notifPrefsFailure.retry}
-              className="sessions-status"
+              className="at-fade-in"
             />
           )}
           {notifPrefsGate.showContent && !notifPrefsFailure.error && (
@@ -2324,11 +2324,12 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           />
         )}
         {sessionsGate.showContent && sessionsFailure.error && (
-          <RetryAlert
+          <RetryEmptyState
+            title="Could not load sessions"
             message={sessionsFailure.error}
             retrying={sessionsFailure.retrying}
             onRetry={sessionsFailure.retry}
-            className="sessions-status"
+            className="at-fade-in"
           />
         )}
         {sessionsGate.showContent && !sessionsFailure.error && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}

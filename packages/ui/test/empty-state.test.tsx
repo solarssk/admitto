@@ -45,7 +45,7 @@ describe("EmptyState", () => {
       expect(screen.queryByRole("status")).toBeNull();
     });
 
-    it("looks the same as the default: same class, icon, title, description and action in the same order", () => {
+    it("has the same parts as the default in the same order, and a class of its own on top of the default's", () => {
       render(
         <EmptyState
           variant="error"
@@ -57,7 +57,7 @@ describe("EmptyState", () => {
         />,
       );
       const alert = screen.getByRole("alert");
-      expect(alert.className).toBe("at-empty-state extra");
+      expect(alert.className).toBe("at-empty-state at-empty-state--error extra");
       expect(Array.from(alert.children).map((c) => c.className)).toEqual([
         "at-empty-state__icon",
         "at-empty-state__title",
@@ -65,6 +65,28 @@ describe("EmptyState", () => {
         "at-empty-state__action",
       ]);
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+
+    it("draws the glyph an error has everywhere else (circle-x, as Notice and Toast do) when it is given no icon, hidden from assistive tech", () => {
+      render(<EmptyState variant="error" title="Could not load" />);
+      const holder = screen.getByRole("alert").querySelector(".at-empty-state__icon");
+      expect(holder?.getAttribute("aria-hidden")).toBe("true");
+      expect(holder?.querySelector("i")?.className).toBe("ti ti-circle-x");
+    });
+
+    it("lets an icon that is given win over the standard one, and `null` mean none", () => {
+      const { rerender } = render(<EmptyState variant="error" title="Could not load" icon={<i data-testid="mine" className="ti ti-wifi-off" />} />);
+      expect(screen.getByTestId("mine")).toBeTruthy();
+      expect(screen.getByRole("alert").querySelector(".ti-circle-x")).toBeNull();
+
+      rerender(<EmptyState variant="error" title="Could not load" icon={null} />);
+      expect(screen.getByRole("alert").querySelector(".at-empty-state__icon")).toBeNull();
+    });
+
+    it("is the only variant with an icon of its own: a plain empty list has none unless it is given one", () => {
+      render(<EmptyState title="Nothing yet" />);
+      expect(screen.getByRole("status").querySelector(".at-empty-state__icon")).toBeNull();
+      expect(screen.getByRole("status").className).toBe("at-empty-state");
     });
 
     it("keeps the action button focusable inside the alert", () => {

@@ -428,10 +428,6 @@
   color: var(--at-gray-700);
 }
 
-.users-page__status {
-  margin: var(--space-4) 0;
-}
-
 .users-page__admin-note {
   margin: 0 0 var(--space-4);
   padding: var(--space-3);

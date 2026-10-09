@@ -263,7 +263,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         )}
 
         {gate.showContent && (
-          <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} className="sessions-status" />
+          <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} title="Could not load sessions" />
         )}
 
         {listReady && (

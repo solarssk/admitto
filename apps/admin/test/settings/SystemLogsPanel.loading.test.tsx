@@ -143,6 +143,9 @@ describe("SystemLogsPanel loading", () => {
     const retry = await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByRole("alert").textContent).toContain("Could not load system logs.");
     expect(screen.queryByText("secret_internal")).toBeNull();
+    // The console's failure starts with the glyph a failed load has everywhere, hidden from assistive tech.
+    const failureGlyph = screen.getByRole("alert").querySelector("p > i.ti-circle-x.failure-icon--large");
+    expect(failureGlyph?.getAttribute("aria-hidden")).toBe("true");
     let resolveRetry: (value: SystemLogResponse) => void = () => {};
     mockFetch.mockReturnValueOnce(new Promise((resolve) => (resolveRetry = resolve)));
     fireEvent.click(retry);
