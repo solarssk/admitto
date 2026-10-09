@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient, EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
+import { lockAttendeeRow } from "@admitto/tickets";
 
 export interface FrozenMessage {
   to: string;
@@ -8,7 +9,7 @@ export interface FrozenMessage {
 
 export type ClaimResult =
   | { action: "send"; deliveryId: string; message: FrozenMessage }
-  | { action: "skip"; reason: "already_sent" | "in_flight" }
+  | { action: "skip"; reason: "already_sent" | "in_flight" | "erased" }
   | { action: "retry_existing"; deliveryId: string; message: FrozenMessage };
 
 export interface ClaimInitialInput {
@@ -179,33 +180,35 @@ async function claimReclaimCancelled(
   // original value would let a delivery the attendee received *after* the cancel but *before*
   // this reclaim (a resend, a custom-template send) keep outranking this one even once it's
   // actually completed.
-  const claimed = await prisma.emailDelivery.updateMany({
-    where: {
-      id: existingId,
-      status: "cancelled",
-    },
-    data: {
-      status: "queued",
-      queued_at: now,
-      created_at: now,
-      batch_id: input.batchId,
-      template_id: input.templateId,
-      template_id_snapshot: input.templateId ?? null,
-      template_label_snapshot: input.templateLabel ?? null,
-      had_wallet_cta: input.hasWalletCta,
-      provider: input.provider,
-      recipient_email: input.recipientEmail.toLowerCase(),
-      rendered_subject: input.renderedSubject,
-      rendered_html: input.renderedHtml,
-      attempts: 1,
-      retryable: null,
-      error: null,
-      error_code: null,
-      client_timezone: input.timezone ?? null,
-      actor_user_id: input.actorUserId ?? null,
-      session_id: input.sessionId ?? null,
-    },
+  const data = {
+    status: "queued" as const,
+    queued_at: now,
+    created_at: now,
+    batch_id: input.batchId,
+    template_id: input.templateId,
+    template_id_snapshot: input.templateId ?? null,
+    template_label_snapshot: input.templateLabel ?? null,
+    had_wallet_cta: input.hasWalletCta,
+    provider: input.provider,
+    recipient_email: input.recipientEmail.toLowerCase(),
+    rendered_subject: input.renderedSubject,
+    rendered_html: input.renderedHtml,
+    attempts: 1,
+    retryable: null,
+    error: null,
+    error_code: null,
+    client_timezone: input.timezone ?? null,
+    actor_user_id: input.actorUserId ?? null,
+    session_id: input.sessionId ?? null,
+  };
+  // The attendee row is locked first: this content was rendered from data read before this point,
+  // and an erasure that commits in between must not get it written back onto the emptied delivery.
+  // An erased attendee's cancelled row stays cancelled.
+  const claimed = await prisma.$transaction(async (tx) => {
+    if ((await lockAttendeeRow(tx, input.attendeeId))?.erased) return "erased" as const;
+    return tx.emailDelivery.updateMany({ where: { id: existingId, status: "cancelled" }, data });
   });
+  if (claimed === "erased") return { action: "skip", reason: "erased" };
   if (claimed.count === 0) {
     return resolveLostRace(prisma, existingId, "Reclaim lost but initial delivery row not found");
   }
@@ -230,9 +233,14 @@ export async function claimInitialDelivery(
 ): Promise<ClaimResult> {
   const now = new Date();
   try {
-    const created = await prisma.emailDelivery.create({
-      data: deliveryCreateData(input, "initial", now),
+    // Locked first: the address and the rendered name below were read before this point, and a
+    // delivery inserted after an erasure committed would keep them (an insert only waits for the
+    // erasure, it does not see it). The unique-violation catch stays outside the transaction.
+    const created = await prisma.$transaction(async (tx) => {
+      if ((await lockAttendeeRow(tx, input.attendeeId))?.erased) return null;
+      return tx.emailDelivery.create({ data: deliveryCreateData(input, "initial", now) });
     });
+    if (!created) return { action: "skip", reason: "erased" };
     return {
       action: "send",
       deliveryId: created.id,
@@ -269,15 +277,18 @@ export async function claimInitialDelivery(
   return result;
 }
 
-/** Create a resend delivery row (no partial unique — each resend is a new row). */
+/** Create a resend delivery row (no partial unique — each resend is a new row). Null when the
+ * attendee has been erased: nothing is created (see claimInitialDelivery for why it is locked). */
 export async function createResendDelivery(
   input: ClaimInitialInput,
   prisma: PrismaClient,
-): Promise<{ deliveryId: string; message: FrozenMessage }> {
+): Promise<{ deliveryId: string; message: FrozenMessage } | null> {
   const now = new Date();
-  const created = await prisma.emailDelivery.create({
-    data: deliveryCreateData(input, "resend", now),
+  const created = await prisma.$transaction(async (tx) => {
+    if ((await lockAttendeeRow(tx, input.attendeeId))?.erased) return null;
+    return tx.emailDelivery.create({ data: deliveryCreateData(input, "resend", now) });
   });
+  if (!created) return null;
   return {
     deliveryId: created.id,
     message: {

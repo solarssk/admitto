@@ -48,6 +48,9 @@ export async function applyBounceResult(
     where: {
       id: delivery.id,
       status: { in: [...NON_TERMINAL] },
+      // An erased attendee's delivery is emptied (and cancelled): a late bounce must not move its
+      // status or put the provider's text, which names the address, back on it.
+      recipient_email: { not: null },
     },
     data: {
       status: "bounced",
