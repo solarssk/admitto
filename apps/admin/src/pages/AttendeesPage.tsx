@@ -1975,7 +1975,13 @@ export function AttendeesPage() {
         setBulkEraseConfirmOpen(false);
         clearSelection();
         // Nothing of the erased people stays on screen while the list reads the server's version.
-        setItems((current) => redactedRowsAfterErasure(current, new Set(ids), new Date().toISOString()));
+        setItems((current) =>
+          redactedRowsAfterErasure(current, new Set(ids), {
+            at: new Date().toISOString(),
+            timezone: event.timezone,
+            eventArchived: isEventArchived(event),
+          }),
+        );
         setReloadToken((n) => n + 1);
         if (result.wallet_pending > 0) {
           eraseWalletResult.open(result.wallet_pending, () => bulkEraseAttendees(eventId!, ids));

@@ -192,6 +192,20 @@ export function formatEventClockTime(iso: string, timezone?: string): string {
   });
 }
 
+/**
+ * An instant cut to the start of its hour in the event's zone: what an erasure keeps of a check-in
+ * time. It takes away the minutes and seconds the zone's clock shows past the hour, as the server
+ * does (`truncatedToLocalHour` in packages/tickets), so a zone with a half-hour offset is cut to its
+ * own hour and not to the UTC one, and the repeated hour of a clock change is not mixed up.
+ */
+export function truncatedToEventHour(iso: string, timezone: string): string {
+  const instant = new Date(iso).getTime();
+  const clock = new Intl.DateTimeFormat("en-US", { timeZone: timezone, minute: "numeric", second: "numeric" }).formatToParts(instant);
+  const clockPart = (type: string) => Number(clock.find((part) => part.type === type)!.value);
+  const pastTheHour = (clockPart("minute") * 60 + clockPart("second")) * 1000 + (((instant % 1000) + 1000) % 1000);
+  return new Date(instant - pastTheHour).toISOString();
+}
+
 /** Start of a calendar day in UTC as ISO string (for audit log date filters). */
 export function utcDayStartIso(yyyyMmDd: string): string {
   return `${yyyyMmDd}T00:00:00.000Z`;

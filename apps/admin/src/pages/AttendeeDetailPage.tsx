@@ -2047,13 +2047,18 @@ export function AttendeeDetailPage() {
     return () => life.abort();
   }, []);
 
+  /** Which read of the detail is the newest. A read that answers after a newer one never replaces it, because the
+   * newer one saw the pass, the check-in or the erasure after the older one did. */
+  const loadSeqRef = useRef(0);
+
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId, notesPage };
+    const seq = ++loadSeqRef.current;
     // Changing attendee resets the page to one, but the previous page's request can still
     // finish afterwards. Only let the currently selected page update the detail view.
     const isCurrentRequest = () =>
-      isStillSelected(target) && notesPageRef.current === target.notesPage;
+      isStillSelected(target) && notesPageRef.current === target.notesPage && loadSeqRef.current === seq;
     // The 30 second limit (AGENTS.md "Admin SPA loading and busy states"): after it the request is given up, with an error
     // and a Retry, instead of a skeleton, or a page that never settles, for ever.
     const limit = loadWithTimeout(lifeRef.current?.signal);
@@ -2184,7 +2189,11 @@ export function AttendeeDetailPage() {
       setEraseOpen(false);
       // Nothing of the person stays on screen while the page reads the server's version (or if that read fails), and
       // an answer that was already on its way cannot bring them back (applyDetail refuses it).
-      const redacted = redactedAfterErasure(detail!, new Date().toISOString());
+      const redacted = redactedAfterErasure(
+        detail!,
+        { at: new Date().toISOString(), timezone: event.timezone, eventArchived: isEventArchived(event) },
+        result.wallet_pending > 0,
+      );
       applyDetail(redacted);
       setForm(toAttendeeForm(redacted, attributeFields));
       if (result.wallet_pending > 0) {

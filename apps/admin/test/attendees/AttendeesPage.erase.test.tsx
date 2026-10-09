@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { renderWithToast, mockMatchMedia } from "../test-utils.js";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 import { bulkEraseAttendees, eventState, fetchEventAttendees, makeRow } from "./attendeesPageSetup.js";
 
 /** What the API sends for an erased entry: placeholders the screen must never show. */
@@ -246,6 +247,29 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     expect(screen.queryByText("att-1@example.com")).toBeNull();
     expect(screen.queryByText("Platform")).toBeNull();
     expect(screen.getAllByRole("checkbox", { name: "Erased entries cannot be selected" })).toHaveLength(2);
+  });
+
+  it("shows the check-in time of the erased people only to the hour at once", async () => {
+    setPreferredLocale("en-GB");
+    const admitted = (id: string, name: string): AttendeeRowDto => ({
+      ...makeRow(id, name),
+      check_in_status: "admitted",
+      admitted_at: "2026-10-09T14:37:21.123Z",
+    });
+    fetchEventAttendees.mockResolvedValueOnce(listOf([admitted("att-1", "Jane Doe"), admitted("att-2", "John Smith")], 0));
+    fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+
+    renderListAndPage();
+    try {
+      confirmErase(await openEraseDialog());
+
+      expect(await screen.findAllByText("Erased attendee")).toHaveLength(2);
+      expect(screen.getAllByText(/^14:00/)).toHaveLength(2);
+      expect(screen.queryByText(/14:37/)).toBeNull();
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 
   it("steps back to the last page that exists when the erasure emptied the page the list was on", async () => {

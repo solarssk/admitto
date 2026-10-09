@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
 const eraseAttendee = vi.fn();
@@ -128,6 +129,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  setPreferredLocale(null);
 });
 
 describe("AttendeeDetailPage: Erase personal data", () => {
@@ -263,6 +265,100 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(screen.queryByText("Anna Alpha")).toBeNull();
     expect(screen.queryByText("anna@example.com")).toBeNull();
     expect(screen.queryByText("Private note")).toBeNull();
+  });
+
+  it("shows the check-in time only to the hour of the event's zone at once, while the page still waits", async () => {
+    setPreferredLocale("en-GB");
+    const { baseAttendeeDetailEvent } = await import("../test-utils.js");
+    // India is half an hour off the UTC hour: 10:37 UTC is 16:07 there, and the hour that began at 16:00 there began at 10:30 UTC.
+    baseAttendeeDetailEvent.timezone = "Asia/Kolkata";
+    try {
+      eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+      mockLoad(baseDetail({ admitted_at: "2026-09-01T10:37:21.123Z", check_in_status: "admitted" }));
+      loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+      renderPage();
+      const dialog = await openEraseDialog();
+      typeName(dialog);
+      confirmErase(dialog);
+
+      expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+      expect(screen.getByText("Around 16:00")).toBeTruthy();
+      expect(screen.queryByText(/16:07|15:30/)).toBeNull();
+    } finally {
+      baseAttendeeDetailEvent.timezone = "Europe/Warsaw";
+    }
+  });
+
+  it.each([
+    ["on a live event someone not checked in is cancelled, as the server does", false, "Cancelled"],
+    ["on an archived event nobody is, because the numbers there are final", true, "Active"],
+  ])("shows the pass at once as the server will hold it: %s", async (_label, archived, passStatus) => {
+    const { baseAttendeeDetailEvent } = await import("../test-utils.js");
+    baseAttendeeDetailEvent.archived_at = archived ? "2026-08-01T00:00:00.000Z" : null;
+    try {
+      eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+      mockLoad(baseDetail());
+      loadAttendeeDetailData.mockReturnValueOnce(new Promise(() => undefined));
+      renderPage();
+      const dialog = await openEraseDialog();
+      typeName(dialog);
+      confirmErase(dialog);
+
+      expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+      const strip = document.querySelector(".attendee-status-strip") as HTMLElement;
+      expect(within(strip).getByText(passStatus)).toBeTruthy();
+    } finally {
+      baseAttendeeDetailEvent.archived_at = null;
+    }
+  });
+
+  it("keeps the Try again for a pass that is still at the provider when the page cannot read the server's version", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1 });
+    mockLoad(baseDetail({ wallet_pass: pass() }));
+    loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    // The warning dialog comes first. Closing it leaves the page, which has to go on offering the retry.
+    const warning = await screen.findByRole("dialog", { name: "Personal data erased" });
+    fireEvent.click(within(warning).getByRole("button", { name: "Close" }));
+    expect(await screen.findByText("Could not load attendee.")).toBeTruthy();
+    const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
+    expect(within(row).getByText(/Not deleted yet/)).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("keeps the newest read when an older one answers last: a pass that was deleted stays deleted", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1 });
+    mockLoad(baseDetail({ wallet_pass: pass() }));
+    let answerFirstRead!: (value: unknown) => void;
+    // The read right after the erasure is slow, and says the pass is still at the provider.
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise((resolve) => (answerFirstRead = resolve)));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    const result = await screen.findByRole("dialog", { name: "Personal data erased" });
+    // Try again works, and the read it starts answers first: the pass is gone from the provider.
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    mockLoad(erasedDetail({ wallet_pass: pass({ provider_removed_at: "2026-10-08T12:05:00.000Z" }) }));
+    fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText(/^Deleted on .*2026/)).toBeTruthy();
+
+    await act(async () => {
+      answerFirstRead({
+        detail: erasedDetail({ wallet_pass: pass(), wallet_pass_delete_pending: true }),
+        attributeFields: [],
+        itemsWarning: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/^Deleted on .*2026/)).toBeTruthy();
+    expect(screen.queryByText(/Not deleted yet/)).toBeNull();
   });
 
   it("keeps the person off the screen when the page cannot read the server's version afterwards", async () => {

@@ -121,8 +121,8 @@ describe("redactedAfterErasure", () => {
     department: "Eng",
     ticket_type: "vip",
     status: "registered",
-    check_in_status: "not_admitted",
-    admitted_at: null,
+    check_in_status: "admitted",
+    admitted_at: "2026-09-01T10:37:21.123Z",
     custom_data: { diet: "vegan" },
     deliveries: [
       {
@@ -146,8 +146,10 @@ describe("redactedAfterErasure", () => {
     notes_total: 1,
   };
 
+  const erasure = { at: "2026-10-09T12:00:00.000Z", timezone: "Europe/Warsaw", eventArchived: false };
+
   it("takes everything personal out and keeps what the entry keeps", () => {
-    const redacted = redactedAfterErasure(live as never, "2026-10-09T12:00:00.000Z");
+    const redacted = redactedAfterErasure(live as never, erasure, false);
 
     expect(redacted).toMatchObject({
       erased_at: "2026-10-09T12:00:00.000Z",
@@ -168,6 +170,7 @@ describe("redactedAfterErasure", () => {
       id: "att-1",
       ticket_type: "vip",
       status: "registered",
+      check_in_status: "admitted",
     });
     expect(redacted.deliveries[0]).toMatchObject({
       status: "sent",
@@ -182,7 +185,7 @@ describe("redactedAfterErasure", () => {
   });
 
   it("copes with an attendee who has no wallet pass and no deliveries", () => {
-    const redacted = redactedAfterErasure({ ...live, wallet_pass: null, deliveries: [] } as never, "2026-10-09T12:00:00.000Z");
+    const redacted = redactedAfterErasure({ ...live, wallet_pass: null, deliveries: [] } as never, erasure, false);
 
     expect(redacted.wallet_pass).toBeNull();
     expect(redacted.deliveries).toEqual([]);
@@ -191,9 +194,36 @@ describe("redactedAfterErasure", () => {
   it("does not change the detail it was given", () => {
     const before = JSON.stringify(live);
 
-    redactedAfterErasure(live as never, "2026-10-09T12:00:00.000Z");
+    redactedAfterErasure(live as never, erasure, true);
 
     expect(JSON.stringify(live)).toBe(before);
+  });
+
+  it("cuts the check-in time to the hour of the event's zone, as the server does", () => {
+    expect(redactedAfterErasure(live as never, erasure, false).admitted_at).toBe("2026-09-01T10:00:00.000Z");
+    expect(redactedAfterErasure(live as never, { ...erasure, timezone: "Asia/Kolkata" }, false).admitted_at).toBe(
+      "2026-09-01T10:30:00.000Z",
+    );
+  });
+
+  it("leaves a check-in time that is not there missing", () => {
+    expect(redactedAfterErasure({ ...live, admitted_at: null, status: "cancelled" } as never, erasure, false).admitted_at).toBeNull();
+  });
+
+  it.each([
+    ["someone not checked in yet on a live event", { admitted_at: null }, false, "cancelled"],
+    ["someone not checked in yet on an archived event", { admitted_at: null }, true, "registered"],
+    ["someone already checked in", {}, false, "registered"],
+    ["someone whose pass is already revoked", { admitted_at: null, status: "revoked" }, false, "revoked"],
+  ])("%s: the status becomes %s", (_label, overrides, eventArchived, status) => {
+    const redacted = redactedAfterErasure({ ...live, ...overrides } as never, { ...erasure, eventArchived }, false);
+
+    expect(redacted.status).toBe(status);
+  });
+
+  it("marks the pass as still at the provider when the answer said so, and not otherwise", () => {
+    expect(redactedAfterErasure(live as never, erasure, true).wallet_pass_delete_pending).toBe(true);
+    expect(redactedAfterErasure(live as never, erasure, false).wallet_pass_delete_pending).toBe(false);
   });
 });
 
@@ -207,12 +237,15 @@ describe("redactedRowsAfterErasure", () => {
     department: "Eng",
     ticket_type: "vip",
     status: "registered",
+    admitted_at: null,
   });
+
+  const erasure = { at: "2026-10-09T12:00:00.000Z", timezone: "UTC", eventArchived: false };
 
   it("redacts the erased rows in place and leaves the others as they are", () => {
     const items = [row("a"), row("b"), row("c")];
 
-    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), "2026-10-09T12:00:00.000Z");
+    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), erasure);
 
     expect(result).toHaveLength(3);
     expect(result[0]).toMatchObject({ id: "a", erased_at: "2026-10-09T12:00:00.000Z", name: ERASED_ATTENDEE_LABEL, email: "", company: null, department: null, ticket_type: "vip" });
@@ -225,9 +258,25 @@ describe("redactedRowsAfterErasure", () => {
     const items = [row("a")];
     const before = JSON.stringify(items);
 
-    redactedRowsAfterErasure(items as never, new Set(["a"]), "2026-10-09T12:00:00.000Z");
+    redactedRowsAfterErasure(items as never, new Set(["a"]), erasure);
 
     expect(JSON.stringify(items)).toBe(before);
+  });
+
+  it("cuts the check-in time of an erased row to the hour, and cancels who was not admitted", () => {
+    const admitted = { ...row("a"), admitted_at: "2026-10-09T14:37:21.123Z", check_in_status: "admitted" };
+    const waiting = row("b");
+
+    const result = redactedRowsAfterErasure([admitted, waiting, admitted] as never, new Set(["a", "b"]), erasure);
+
+    expect(result[0]).toMatchObject({ admitted_at: "2026-10-09T14:00:00.000Z", status: "registered" });
+    expect(result[1]).toMatchObject({ admitted_at: null, status: "cancelled" });
+  });
+
+  it("leaves everyone's status alone on an archived event", () => {
+    const [result] = redactedRowsAfterErasure([row("a")] as never, new Set(["a"]), { ...erasure, eventArchived: true });
+
+    expect(result).toMatchObject({ status: "registered" });
   });
 });
 

@@ -4,6 +4,7 @@ import {
   formatAdmissionDisplayParts,
   formatEventClockTime,
   formatEventDate,
+  truncatedToEventHour,
   type AdmissionDisplayParts,
 } from "../utils/event-dates.js";
 
@@ -99,16 +100,48 @@ export function erasedCheckInParts(admittedAt: string | null, timezone: string):
   return { day: formatAdmissionDisplayParts(admittedAt, timezone).day, time: `Around ${clock}` };
 }
 
+/** What the screen knows when the server has confirmed an erasure, to show what the server now holds. */
+export type ConfirmedErasure = {
+  /** When, as far as the screen knows (the server stamps its own time). */
+  at: string;
+  /** The event's zone: a check-in time is cut to the hour in it. */
+  timezone: string;
+  /** On an archived event nobody is cancelled, because the numbers there are final. */
+  eventArchived: boolean;
+};
+
+/**
+ * What an erasure leaves of a row's check-in time and status, as the server does it (`eraseAttendees`
+ * in packages/tickets): the time cut to the hour, and a person who was not admitted cancelled, so
+ * their place is free again. The exact minute must not stay on screen after the server has cut it.
+ */
+function admissionAfterErasure(
+  row: { status: AttendeeStatus; admitted_at: string | null },
+  erasure: ConfirmedErasure,
+): { status: AttendeeStatus; admitted_at: string | null } {
+  return {
+    status: erasureFreesPlace(row, erasure.eventArchived) ? "cancelled" : row.status,
+    admitted_at: row.admitted_at === null ? null : truncatedToEventHour(row.admitted_at, erasure.timezone),
+  };
+}
+
 /**
  * What the attendee page holds right after the server has confirmed an erasure: the detail with
- * everything personal taken out and the erased marker set. The page then reads the server's version
- * to fill in what the entry keeps; until that answers, or for good if the read fails, nothing of the
- * person stays on screen and the page is the read-only one.
+ * everything personal taken out and the erased marker set, the check-in time cut to the hour and the
+ * pass marked as still at the provider when the answer said so (`walletPending`). The page then reads
+ * the server's version to fill in what the entry keeps; until that answers, or for good if the read
+ * fails, nothing of the person stays on screen, the page is the read-only one, and its Try again for
+ * a pass that is still at the provider is there.
  */
-export function redactedAfterErasure(detail: AttendeeDetailDto, erasedAt: string): AttendeeDetailDto {
+export function redactedAfterErasure(
+  detail: AttendeeDetailDto,
+  erasure: ConfirmedErasure,
+  walletPending: boolean,
+): AttendeeDetailDto {
   return {
     ...detail,
-    erased_at: erasedAt,
+    ...admissionAfterErasure(detail, erasure),
+    erased_at: erasure.at,
     name: ERASED_ATTENDEE_LABEL,
     first_name: null,
     last_name: null,
@@ -136,24 +169,33 @@ export function redactedAfterErasure(detail: AttendeeDetailDto, erasedAt: string
     action_log_snapshot: null,
     notes: [],
     notes_total: 0,
+    wallet_pass_delete_pending: walletPending,
   };
 }
 
 /**
  * What the Attendees list holds right after the server has confirmed the erasure of `ids`: those
- * rows, redacted in place (the erased marker set, name, address, company and department taken out).
- * The list then reads the server's version, which leaves them out unless erased entries are shown;
- * until that answers, or if it is slow, nothing of those people stays on screen, and the page does
- * not empty out from under the operator.
+ * rows, redacted in place (the erased marker set, name, address, company and department taken out,
+ * the check-in time cut to the hour). The list then reads the server's version, which leaves them
+ * out unless erased entries are shown; until that answers, or if it is slow, nothing of those people
+ * stays on screen, and the page does not empty out from under the operator.
  */
 export function redactedRowsAfterErasure(
   items: readonly AttendeeRowDto[],
   ids: ReadonlySet<string>,
-  erasedAt: string,
+  erasure: ConfirmedErasure,
 ): AttendeeRowDto[] {
   return items.map((row) =>
     ids.has(row.id)
-      ? { ...row, erased_at: erasedAt, name: ERASED_ATTENDEE_LABEL, email: "", company: null, department: null }
+      ? {
+          ...row,
+          ...admissionAfterErasure(row, erasure),
+          erased_at: erasure.at,
+          name: ERASED_ATTENDEE_LABEL,
+          email: "",
+          company: null,
+          department: null,
+        }
       : row,
   );
 }
