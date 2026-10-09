@@ -157,3 +157,12 @@ export function redactedRowsAfterErasure(
       : row,
   );
 }
+
+/**
+ * Erasure cannot be undone, so an answer that shows the attendee the page already holds as erased
+ * without the erased marker was computed before the erasure and reached the page late (a note saved
+ * a moment before it, say). It is older than what the page shows and must not replace it.
+ */
+export function isOlderThanErasure(held: AttendeeDetailDto | null, answer: AttendeeDetailDto): boolean {
+  return held !== null && Boolean(held.erased_at) && held.id === answer.id && !answer.erased_at;
+}

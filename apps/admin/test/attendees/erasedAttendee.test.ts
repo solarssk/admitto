@@ -9,6 +9,7 @@ import {
   erasedWalletChipLabel,
   erasureFreesPlace,
   hiddenErasedLine,
+  isOlderThanErasure,
   peopleCount,
   redactedAfterErasure,
   redactedRowsAfterErasure,
@@ -227,5 +228,29 @@ describe("redactedRowsAfterErasure", () => {
     redactedRowsAfterErasure(items as never, new Set(["a"]), "2026-10-09T12:00:00.000Z");
 
     expect(JSON.stringify(items)).toBe(before);
+  });
+});
+
+describe("isOlderThanErasure", () => {
+  const erased = { id: "att-1", erased_at: "2026-10-09T12:00:00.000Z" };
+  const live = { id: "att-1", erased_at: null };
+
+  it("is true for an answer that shows the erased attendee as not erased", () => {
+    expect(isOlderThanErasure(erased as never, live as never)).toBe(true);
+    expect(isOlderThanErasure(erased as never, { id: "att-1" } as never)).toBe(true);
+  });
+
+  it("is false for an answer that is erased too", () => {
+    expect(isOlderThanErasure(erased as never, { ...erased, erased_at: "2026-10-09T12:00:05.000Z" } as never)).toBe(false);
+  });
+
+  it("is false while the page holds nothing, or someone who is not erased", () => {
+    expect(isOlderThanErasure(null, live as never)).toBe(false);
+    expect(isOlderThanErasure(live as never, live as never)).toBe(false);
+    expect(isOlderThanErasure(live as never, erased as never)).toBe(false);
+  });
+
+  it("is false for another attendee, so moving to one is not blocked", () => {
+    expect(isOlderThanErasure(erased as never, { id: "att-2", erased_at: null } as never)).toBe(false);
   });
 });

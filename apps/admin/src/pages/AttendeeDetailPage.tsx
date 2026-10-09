@@ -85,6 +85,7 @@ import {
   erasedToast,
   erasedWalletChipLabel,
   erasureFreesPlace,
+  isOlderThanErasure,
   redactedAfterErasure,
 } from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
@@ -2011,10 +2012,16 @@ export function AttendeeDetailPage() {
     onError: (err) => addToast(operatorApiErrorMessage(err, "Could not load activity."), "error"),
   });
   const resetActivity = activity.reset;
+  // The detail on screen, for applyDetail: an answer can come from a request started long ago, in a closure that
+  // rendered before the detail it would replace, so the state it sees would be stale.
+  const heldDetailRef = useRef<AttendeeDetailDto | null>(null);
   // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
-  // which invalidates any page request still in flight.
+  // which invalidates any page request still in flight. The one answer that is refused is an older one
+  // than the erasure (see isOlderThanErasure): nothing of an erased person comes back, by any path.
   const applyDetail = useCallback(
     (next: AttendeeDetailDto) => {
+      if (isOlderThanErasure(heldDetailRef.current, next)) return;
+      heldDetailRef.current = next;
       resetActivity(next);
       setDetail(next);
     },
@@ -2040,18 +2047,13 @@ export function AttendeeDetailPage() {
     return () => life.abort();
   }, []);
 
-  /** Which read of the detail is the newest. A read that was started before a newer one, or before an erasure, never
-   * replaces what the page holds: an older answer must not bring an erased person back. */
-  const loadSeqRef = useRef(0);
-
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId, notesPage };
-    const seq = ++loadSeqRef.current;
     // Changing attendee resets the page to one, but the previous page's request can still
     // finish afterwards. Only let the currently selected page update the detail view.
     const isCurrentRequest = () =>
-      isStillSelected(target) && notesPageRef.current === target.notesPage && loadSeqRef.current === seq;
+      isStillSelected(target) && notesPageRef.current === target.notesPage;
     // The 30 second limit (AGENTS.md "Admin SPA loading and busy states"): after it the request is given up, with an error
     // and a Retry, instead of a skeleton, or a page that never settles, for ever.
     const limit = loadWithTimeout(lifeRef.current?.signal);
@@ -2180,8 +2182,8 @@ export function AttendeeDetailPage() {
       const result = await eraseAttendee(target.eventId, target.attendeeId);
       if (!isStillSelected(target)) return;
       setEraseOpen(false);
-      // Nothing of the person stays on screen while the page reads the server's version (or if that read fails).
-      // The read below is the newest, so one that was already on its way cannot bring them back (loadSeqRef).
+      // Nothing of the person stays on screen while the page reads the server's version (or if that read fails), and
+      // an answer that was already on its way cannot bring them back (applyDetail refuses it).
       const redacted = redactedAfterErasure(detail!, new Date().toISOString());
       applyDetail(redacted);
       setForm(toAttendeeForm(redacted, attributeFields));

@@ -9,6 +9,7 @@ import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
 const eraseAttendee = vi.fn();
 const deleteAttendee = vi.fn();
+const addAttendeeNote = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -25,6 +26,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
     eraseAttendee: (...args: unknown[]) => eraseAttendee(...args),
     deleteAttendee: (...args: unknown[]) => deleteAttendee(...args),
+    addAttendeeNote: (...args: unknown[]) => addAttendeeNote(...args),
   };
 });
 
@@ -87,6 +89,16 @@ function renderPage() {
       <Routes>
         <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
         <Route path="/admin/events/:eventId/attendees" element={<div>Attendees list marker</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function renderNotesTab() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1?tab=notes"]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -200,13 +212,7 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     // The second page of notes: a read that is still on its way when the erasure is confirmed.
     loadAttendeeDetailData.mockReturnValueOnce(new Promise((resolve) => (answerOlderRead = resolve)));
     mockLoad(erasedDetail());
-    renderWithToast(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1?tab=notes"]}>
-        <Routes>
-          <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderNotesTab();
     await screen.findByRole("heading", { name: "Anna Alpha" });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
@@ -222,6 +228,41 @@ describe("AttendeeDetailPage: Erase personal data", () => {
 
     expect(screen.getByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
     expect(screen.queryByText("Anna Alpha")).toBeNull();
+  });
+
+  it("does not let a note saved just before the erasure bring the person back when its answer arrives late", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    mockLoad(baseDetail());
+    mockLoad(erasedDetail());
+    let answerNote!: (value: unknown) => void;
+    addAttendeeNote.mockReturnValueOnce(new Promise((resolve) => (answerNote = resolve)));
+    renderNotesTab();
+    await screen.findByRole("heading", { name: "Anna Alpha" });
+    fireEvent.change(screen.getByPlaceholderText("Add a note about this attendee…"), { target: { value: "Private note" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(addAttendeeNote).toHaveBeenCalledOnce());
+
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+
+    // The server saved the note before it erased the person, so its answer still shows them.
+    await act(async () => {
+      answerNote(
+        baseDetail({
+          notes: [{ id: "n-1", body: "Private note", author_display: "Admin", created_at: "2026-10-09T11:59:00.000Z" }],
+          notes_total: 1,
+          notes_page: 1,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    expect(screen.queryByText("Anna Alpha")).toBeNull();
+    expect(screen.queryByText("anna@example.com")).toBeNull();
+    expect(screen.queryByText("Private note")).toBeNull();
   });
 
   it("keeps the person off the screen when the page cannot read the server's version afterwards", async () => {
