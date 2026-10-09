@@ -68,23 +68,25 @@ async function runRemoval(
   const result = await db.$transaction(
     async (tx) => {
       const removed = await removeAttendees(tx, { eventId, attendeeIds });
-      if (removed.removedIds.length === 0) return removed;
-      await scrubImportJobResults(tx, eventId, removed.previousEmails);
-      const metadata =
-        mode === "single"
-          ? { attendee_id: removed.removedIds[0], method: "remove", reason }
-          : { attendee_ids: removed.removedIds, count: removed.removedIds.length, method: "remove", reason };
-      await writeBulkActionLog(tx, {
-        event_id: eventId,
-        action_type: actionType,
-        audit,
-        metadata: { ...metadata, removed: removed.counts },
-      });
-      await writeAttendeeLifecycleAuditLog(tx, c, audit, event.organization_id, actionType, {
-        event_id: eventId,
-        event_title: event.title,
-        ...metadata,
-      });
+      // Only unknown ids: nothing was removed, so there is nothing to scrub and nothing to audit.
+      if (removed.removedIds.length > 0) {
+        await scrubImportJobResults(tx, eventId, removed.previousEmails);
+        const metadata =
+          mode === "single"
+            ? { attendee_id: removed.removedIds[0], method: "remove", reason }
+            : { attendee_ids: removed.removedIds, count: removed.removedIds.length, method: "remove", reason };
+        await writeBulkActionLog(tx, {
+          event_id: eventId,
+          action_type: actionType,
+          audit,
+          metadata: { ...metadata, removed: removed.counts },
+        });
+        await writeAttendeeLifecycleAuditLog(tx, c, audit, event.organization_id, actionType, {
+          event_id: eventId,
+          event_title: event.title,
+          ...metadata,
+        });
+      }
       return removed;
     },
     { timeout: REMOVE_TX_TIMEOUT_MS },

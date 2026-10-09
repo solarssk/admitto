@@ -17,6 +17,7 @@ import { encryptToString } from "@admitto/crypto";
 import type { Context } from "hono";
 import { createApp } from "../../src/app.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../src/admin/attendee-erase-routes.js";
+import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "../../src/admin/attendee-remove-routes.js";
 import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -569,14 +570,19 @@ describe("the request budget of a single erasure", () => {
 });
 
 describe("a request without an event id in its path", () => {
-  it("is answered 400 by both handlers before anything is looked up", async () => {
-    const c = {
-      req: { param: () => undefined },
-      json: (body: unknown, status: number) => new Response(JSON.stringify(body), { status }),
-    } as unknown as Context;
+  const withoutEventId = {
+    req: { param: () => undefined },
+    json: (body: unknown, status: number) => new Response(JSON.stringify(body), { status }),
+  } as unknown as Context;
 
-    expect((await handleEraseEventAttendee(c, prisma)).status).toBe(400);
-    expect((await handleBulkEraseEventAttendees(c, prisma)).status).toBe(400);
+  it("is answered 400 by both erase handlers before anything is looked up", async () => {
+    expect((await handleEraseEventAttendee(withoutEventId, prisma)).status).toBe(400);
+    expect((await handleBulkEraseEventAttendees(withoutEventId, prisma)).status).toBe(400);
+  });
+
+  it("is answered 400 by both remove handlers before anything is looked up", async () => {
+    expect((await handleRemoveEventAttendee(withoutEventId, prisma)).status).toBe(400);
+    expect((await handleBulkRemoveEventAttendees(withoutEventId, prisma)).status).toBe(400);
   });
 });
 
