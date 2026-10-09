@@ -498,6 +498,36 @@ describe("erasing a selection", () => {
   });
 });
 
+describe("the request budget of a single erasure", () => {
+  // An id that is no attendee of the event: the answer is a 403, and what is counted is the request.
+  const ghost = "erase-api-att-none";
+  const refreshStatus = (eventId: string) => post(`/api/admin/events/${eventId}/attendees/${ghost}/wallet/refresh-status`);
+
+  it("spends the wallet-action budget (10 a minute) when the event has wallet credentials, like every other single-attendee wallet action", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      expect((await post(erasePath(EVENT_ID, ghost))).status).not.toBe(429);
+    }
+
+    expect((await post(erasePath(EVENT_ID, ghost))).status).toBe(429);
+  });
+
+  it("shares that budget with the other single-attendee wallet actions", async () => {
+    for (let i = 0; i < 5; i += 1) await post(erasePath(EVENT_ID, ghost));
+    for (let i = 0; i < 5; i += 1) {
+      expect((await refreshStatus(EVENT_ID)).status).not.toBe(429);
+    }
+
+    expect((await post(erasePath(EVENT_ID, ghost))).status).toBe(429);
+    expect((await refreshStatus(EVENT_ID)).status).toBe(429);
+  });
+
+  it("does not spend it on an event without wallet credentials, where no provider can be called", async () => {
+    for (let i = 0; i < 12; i += 1) {
+      expect((await post(erasePath(ARCHIVED_EVENT_ID, ghost))).status).not.toBe(429);
+    }
+  });
+});
+
 describe("a request without an event id in its path", () => {
   it("is answered 400 by both handlers before anything is looked up", async () => {
     const c = {
