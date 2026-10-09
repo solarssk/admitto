@@ -1404,18 +1404,32 @@ export function createApp(options: CreateAppOptions = {}) {
     // freezes. A pass that was already confirmed before this column existed has no such window
     // left to safely observe, so it never gets a captured device via this path - "unknown" here,
     // not "attribute it to whoever happens to hit the link next."
-    try {
-      await db.$transaction(async (tx) => {
-        // Not for an erased attendee: the erasure clears the device, and this must not bring it back.
-        if ((await lockAttendeeRow(tx, attendee.id))?.erased) return;
-        await tx.walletPass.updateMany({
-          where: { attendee_id: attendee.id, first_confirmed_at: null },
-          data: { user_agent: c.req.header("user-agent") ?? null, user_agent_captured_at: new Date() },
+
+    /** Never throws. "erased" only when the attendee is erased: nothing is recorded then, because
+     * the erasure clears the device and this must not bring it back. */
+    async function captureDeviceUnlessErased(userAgent: string | null): Promise<"recorded" | "erased"> {
+      try {
+        return await db.$transaction(async (tx) => {
+          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return "erased" as const;
+          await tx.walletPass.updateMany({
+            where: { attendee_id: attendee.id, first_confirmed_at: null },
+            data: { user_agent: userAgent, user_agent_captured_at: new Date() },
+          });
+          return "recorded" as const;
         });
-      });
-    } catch (err) {
-      console.error("walletPass update (user_agent) failed:", err);
+      } catch (err) {
+        console.error("walletPass update (user_agent) failed:", err);
+        return "recorded";
+      }
     }
+
+    // This transaction is also the last check before the redirect, whichever way the URL was
+    // obtained (a stored active pass, one created just now, one another request is creating): the
+    // attendee's row lock makes an erasure that is still open finish first, and a visitor whose
+    // attendee has been erased since the request began is sent back instead of to the pass. The
+    // erasure clears the stored links, but this request may already hold them.
+    const outcome = await captureDeviceUnlessErased(c.req.header("user-agent") ?? null);
+    if (outcome === "erased") return c.redirect(backHref, 302);
 
     return c.redirect(url, 302);
   }

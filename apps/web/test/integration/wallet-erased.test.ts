@@ -194,12 +194,13 @@ describe("wallet pass creation racing an erasure", () => {
     expect(res.headers.get("location")).toBe(`/t/${token}`);
   });
 
-  it("does not record the device of a visitor whose attendee was erased just before", async () => {
+  it("sends a visitor whose attendee was erased just before back to the ticket page, not to the stored pass, and records no device", async () => {
     const { attendee, token } = await createAttendee();
     await prisma.walletPass.create({
       data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-x", apple_url: "https://pc.test/apple/x" },
     });
-    // The device capture is the only transaction of this request (the pass already exists).
+    // The last transaction of this request (the pass already exists) is the check before the
+    // redirect; the erasure commits just before it, after the request has read the stored pass.
     const realTransaction = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
     const spy = vi.spyOn(prisma, "$transaction").mockImplementationOnce(((...args: unknown[]) =>
       erase([attendee.id]).then(() => realTransaction(...args))) as never);
@@ -211,9 +212,42 @@ describe("wallet pass creation racing an erasure", () => {
     spy.mockRestore();
 
     expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
     expect(pass.user_agent).toBeNull();
     expect(pass.user_agent_captured_at).toBeNull();
+  });
+
+  it("waits for an erasure that is still open, then sends the visitor back instead of to the stored pass", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-open", apple_url: "https://pc.test/apple/open" },
+    });
+    const held = await holdErasure([attendee.id]);
+
+    const requesting = Promise.resolve(makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, { redirect: "manual" }));
+    expect(await staysPending(requesting)).toBe(true);
+    await held.commit();
+    const res = await requesting;
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+  });
+
+  it("still sends a live attendee to the stored active pass and records the device", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-live", apple_url: "https://pc.test/apple/live" },
+    });
+
+    const res = await makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "TestBrowser/2.0" },
+    });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/live");
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).user_agent).toBe("TestBrowser/2.0");
   });
 
   it("treats a concurrent insert of the failed marker as a no-op (no error log)", async () => {
