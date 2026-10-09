@@ -4217,6 +4217,25 @@ describe("AccountPage: Notifications", () => {
     expect(inAppSwitch.checked).toBe(true);
   });
 
+  it("names each channel cell of the grid, also the one that does not apply, for the phone's stacked layout that shows it above the toggle", async () => {
+    mockLoadedAccount();
+    const TYPE_IN_APP_ONLY = { ...TYPE_A, id: "some.in-app.type", label: "An in-app only type", available_channels: ["in_app"] as ("email" | "in_app")[] };
+    mockFetchNotificationPreferences.mockResolvedValue({
+      notification_types: [{ ...TYPE_A, available_channels: ["email"] as ("email" | "in_app")[] }, TYPE_IN_APP_ONLY],
+    });
+
+    renderWithToast(<AccountPage activeTab="notifications" />);
+
+    const emailSwitch = await screen.findByRole("switch", { name: `${TYPE_A.label} - Email` });
+    expect(emailSwitch.closest("td")?.getAttribute("data-label")).toBe("Email");
+    const inAppSwitch = screen.getByRole("switch", { name: `${TYPE_IN_APP_ONLY.label} - In-app` });
+    expect(inAppSwitch.closest("td")?.getAttribute("data-label")).toBe("In-app");
+    // The cell that does not apply is named too: In-app for the first type, Email for the second.
+    const [notApplicableForFirst, notApplicableForSecond] = screen.getAllByText("Not applicable").map((el) => el.closest("td"));
+    expect(notApplicableForFirst?.getAttribute("data-label")).toBe("In-app");
+    expect(notApplicableForSecond?.getAttribute("data-label")).toBe("Email");
+  });
+
   it("falls back to a generic description for a type not in the known description map", async () => {
     const TYPE_UNMAPPED = { ...TYPE_A, id: "some.future.type", label: "Some future alert type" };
     mockLoadedAccount();

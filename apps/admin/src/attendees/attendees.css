@@ -1229,12 +1229,33 @@
    fold into the More actions menu instead (see MoreActionsMenu's showEdit/RevokeActionMenuItems),
    so no order/flex-basis wrapping trick is needed here, unlike the list pages above. */
 @media (max-width: 767px) {
+  /* The title and the actions share the top row, and the subtitle takes the whole width under them. Beside the two
+     buttons it had 127px and ran to four lines ("check-" / "in status."), so the title's block gives up its box
+     (`display: contents`) and the title, the subtitle and the actions are cells of one grid. */
   .attendee-detail-pageheader .at-pageheader__row {
-    flex-direction: row;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-4);
+    align-items: start;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__row > :first-child {
+    display: contents;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__subtitle {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .attendee-detail-pageheader .at-pageheader__actions {
+    grid-column: 2;
+    grid-row: 1;
     justify-content: flex-end;
     /* Anchors the More-actions menu's panel to this row instead of letting it escape to the
        document root - .more-actions-menu itself switches to position: static below this same
@@ -1475,8 +1496,11 @@
   align-self: stretch;
   display: flex;
   flex-direction: row;
+  /* The time goes under the day when the chip is too narrow for both on one line (a laptop's 1280px: "Tod…" and
+     "09:51 UT…" sat side by side, both cut), as the stacked layout below 900px does; wide enough, it stays one line. */
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px;
+  gap: 0 4px;
   min-width: 0;
   line-height: 1.3;
 }
