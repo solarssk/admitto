@@ -1801,3 +1801,51 @@
   display: block;
   text-align: center;
 }
+
+/* The attendee page's skeleton (AttendeeDetailSkeleton) sits among the page's own rows, a flex column with a gap: its empty status
+   region would add a gap of its own, so it takes the next one back until the note is in it. */
+.attendee-detail-skeleton__status {
+  display: block;
+  margin-bottom: -18px;
+}
+
+.attendee-detail-skeleton__status--note {
+  margin-bottom: 0;
+}
+
+/* The tab strip of the skeleton is drawn, not clickable, and as tall as the real one: its tabs are buttons, whose line height is
+   `normal`, and these are spans, which would take the page's. */
+.attendee-detail-skeleton__tabs {
+  pointer-events: none;
+}
+
+.attendee-detail-skeleton__tabs .at-tab {
+  line-height: normal;
+}
+
+/* The Activity and Notes placeholders draw their text as bars of a fixed width, and a bar has to give way where the text it stands for
+   would wrap: the columns of the page's own rows that hold them (the body of a timeline row, the author of a note) are told that they
+   may shrink, so on a phone the bars yield to the room there is and nothing sticks out of the card. */
+.attendee-detail-skeleton .at-tl-body,
+.attendee-detail-skeleton .at-notes-list__author-group {
+  min-width: 0;
+}
+
+/* A bar in the place of a line of text: the line has the height of the text (set on the element), and the bar sits in the middle of it. */
+.attendee-detail-skeleton__line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The note field of the Notes placeholder: two rows of the page's textarea, which is taller on a touch screen (16px text, so that a
+   phone does not zoom in on it, `.at-textarea` in the UI package). */
+.at-skeleton.attendee-detail-skeleton__textarea {
+  height: 57px;
+}
+
+@media (pointer: coarse) {
+  .at-skeleton.attendee-detail-skeleton__textarea {
+    height: 66px;
+  }
+}
