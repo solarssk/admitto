@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { applyProviderSnapshotToWalletPass, type WalletPassProvider } from "@admitto/wallet";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 /**
@@ -104,6 +105,9 @@ export async function removeOneWalletPassFromProvider(
   await provider.deletePass(target.providerPassId);
 
   return db.$transaction(async (tx): Promise<RemoveWalletPassOutcome> => {
+    // Attendee row first, like an erasure, so the two cannot deadlock over the pass row. The
+    // removal itself is recorded whoever the attendee is: the pass is gone at the provider.
+    await lockAttendeeRow(tx, target.attendeeId);
     const now = new Date();
     const { count } = await tx.walletPass.updateMany({
       where: {

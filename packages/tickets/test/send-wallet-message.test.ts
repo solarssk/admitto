@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  keepLiveWalletMessageTargets,
   loadWalletMessageTargets,
   sendWalletMessage,
   WALLET_MESSAGE_BULK_BATCH_SIZE,
@@ -23,7 +24,7 @@ describe("loadWalletMessageTargets", () => {
         attendee_id: { in: ["att-1", "att-2", "att-3"] },
         provider_pass_id: { not: null },
         status: "active",
-        attendee: { event_id: "evt-1" },
+        attendee: { event_id: "evt-1", erased_at: null },
       },
       select: { attendee_id: true, provider_pass_id: true },
     });
@@ -52,7 +53,7 @@ describe("sendWalletMessage", () => {
 
     expect(provider.sendPushMessage).toHaveBeenCalledTimes(1);
     expect(provider.sendPushMessage).toHaveBeenCalledWith(["pc-1", "pc-2"], "Welcome!");
-    expect(result).toEqual({ sent: 2, errored: 0, erroredAttendeeIds: [] });
+    expect(result).toEqual({ sent: 2, errored: 0, skipped: 0, erroredAttendeeIds: [] });
   });
 
   it("does nothing and reports zero/zero when there are no targets - never calls the provider", async () => {
@@ -61,7 +62,7 @@ describe("sendWalletMessage", () => {
     const result = await sendWalletMessage(provider as never, [], "Welcome!");
 
     expect(provider.sendPushMessage).not.toHaveBeenCalled();
-    expect(result).toEqual({ sent: 0, errored: 0, erroredAttendeeIds: [] });
+    expect(result).toEqual({ sent: 0, errored: 0, skipped: 0, erroredAttendeeIds: [] });
   });
 
   it("splits into multiple sequential bulk calls once past WALLET_MESSAGE_BULK_BATCH_SIZE", async () => {
@@ -84,6 +85,7 @@ describe("sendWalletMessage", () => {
     expect(result).toEqual({
       sent: WALLET_MESSAGE_BULK_BATCH_SIZE + 1,
       errored: 0,
+      skipped: 0,
       erroredAttendeeIds: [],
     });
   });
@@ -150,7 +152,102 @@ describe("sendWalletMessage", () => {
 
     // The provider call succeeded - a progress-write failure must not turn that into a reported
     // failure and risk a retry re-sending a notification that already reached its recipients.
-    expect(result).toEqual({ sent: 2, errored: 0, erroredAttendeeIds: [] });
+    expect(result).toEqual({ sent: 2, errored: 0, skipped: 0, erroredAttendeeIds: [] });
     expect(onProgress).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sendWalletMessage: the check before each batch", () => {
+  const targetsOf = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ attendeeId: `att-${i}`, providerPassId: `pc-${i}` }));
+
+  it("sends only the targets the check keeps, and counts the others as skipped, not errored", async () => {
+    const provider = { sendPushMessage: vi.fn().mockResolvedValue(undefined) };
+    const beforeBatch = vi.fn(async (batch: ReturnType<typeof targetsOf>) => batch.filter((t) => t.attendeeId !== "att-1"));
+
+    const result = await sendWalletMessage(provider as never, targetsOf(3), "Hi", undefined, { beforeBatch });
+
+    expect(provider.sendPushMessage).toHaveBeenCalledWith(["pc-0", "pc-2"], "Hi");
+    expect(result).toEqual({ sent: 2, errored: 0, skipped: 1, erroredAttendeeIds: [] });
+  });
+
+  it("does not call the provider for a batch the check leaves empty, and still reports its progress", async () => {
+    const provider = { sendPushMessage: vi.fn().mockResolvedValue(undefined) };
+    const progress: number[] = [];
+
+    const result = await sendWalletMessage(provider as never, targetsOf(2), "Hi", async (done) => void progress.push(done), {
+      beforeBatch: async () => [],
+    });
+
+    expect(provider.sendPushMessage).not.toHaveBeenCalled();
+    expect(result).toEqual({ sent: 0, errored: 0, skipped: 2, erroredAttendeeIds: [] });
+    expect(progress).toEqual([2]);
+  });
+
+  it("checks every batch just before it goes out, so a later batch sees what changed during the earlier ones", async () => {
+    const targets = targetsOf(WALLET_MESSAGE_BULK_BATCH_SIZE + 1);
+    const erasedMeanwhile = new Set<string>();
+    const provider = {
+      sendPushMessage: vi.fn(async () => {
+        // The last target is erased while the first batch is with the provider.
+        erasedMeanwhile.add(`att-${WALLET_MESSAGE_BULK_BATCH_SIZE}`);
+      }),
+    };
+
+    const result = await sendWalletMessage(provider as never, targets, "Hi", undefined, {
+      beforeBatch: async (batch) => batch.filter((t) => !erasedMeanwhile.has(t.attendeeId)),
+    });
+
+    expect(provider.sendPushMessage).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ sent: WALLET_MESSAGE_BULK_BATCH_SIZE, skipped: 1, errored: 0 });
+  });
+
+  it("counts the whole batch as errored when the check itself fails, and carries on with the next one", async () => {
+    const targets = targetsOf(WALLET_MESSAGE_BULK_BATCH_SIZE + 1);
+    const provider = { sendPushMessage: vi.fn().mockResolvedValue(undefined) };
+    const beforeBatch = vi
+      .fn<(batch: typeof targets) => Promise<typeof targets>>()
+      .mockRejectedValueOnce(new Error("lock wait timed out"))
+      .mockImplementationOnce(async (batch) => batch);
+
+    const result = await sendWalletMessage(provider as never, targets, "Hi", undefined, { beforeBatch });
+
+    expect(provider.sendPushMessage).toHaveBeenCalledTimes(1);
+    expect(result.sent).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(result.errored).toBe(WALLET_MESSAGE_BULK_BATCH_SIZE);
+    expect(result.erroredAttendeeIds).toEqual(targets.slice(0, WALLET_MESSAGE_BULK_BATCH_SIZE).map((t) => t.attendeeId));
+  });
+
+  it("counts the kept targets of a batch as errored when the provider fails, but not the skipped ones", async () => {
+    const provider = { sendPushMessage: vi.fn().mockRejectedValue(new Error("down")) };
+
+    const result = await sendWalletMessage(provider as never, targetsOf(3), "Hi", undefined, {
+      beforeBatch: async (batch) => batch.slice(0, 2),
+    });
+
+    expect(result).toEqual({ sent: 0, errored: 2, skipped: 1, erroredAttendeeIds: ["att-0", "att-1"] });
+  });
+});
+
+describe("keepLiveWalletMessageTargets", () => {
+  it("keeps the targets whose attendee is not erased, locking the attendees in one transaction", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([
+        { id: "att-1", erased_at: null },
+        { id: "att-2", erased_at: new Date() },
+      ]),
+    };
+    const db = { $transaction: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(tx)) };
+    const batch = [
+      { attendeeId: "att-1", providerPassId: "pc-1" },
+      { attendeeId: "att-2", providerPassId: "pc-2" },
+      { attendeeId: "att-3", providerPassId: "pc-3" },
+    ];
+
+    const kept = await keepLiveWalletMessageTargets(db as never, batch);
+
+    expect(kept).toEqual([{ attendeeId: "att-1", providerPassId: "pc-1" }]);
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 });

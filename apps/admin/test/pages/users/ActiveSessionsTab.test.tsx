@@ -231,8 +231,10 @@ describe("ActiveSessionsTab rendering", () => {
     renderWithToast(<ActiveSessionsTab />);
 
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(document.querySelector(".sessions-status p")?.textContent).toMatch(/Could not load sessions/);
-    expect(document.querySelector(".sessions-status[role='alert'] p")?.textContent).toMatch(/Could not load sessions/);
+    // The shared error placeholder: the title says what failed, the description why, and the glyph an error has everywhere is over them.
+    expect(document.querySelector("[role='alert'] .at-empty-state__title")?.textContent).toBe("Could not load sessions");
+    expect(document.querySelector("[role='alert'] .at-empty-state__desc")?.textContent).toMatch(/Could not load sessions/);
+    expect(document.querySelector("[role='alert'] .at-empty-state__icon i.ti-circle-x")).not.toBeNull();
     expect(screen.queryByText("secret_internal")).toBeNull();
     // The alert in the card is the message: it is not said a second time as a toast.
     expect(screen.queryByTestId("at-toast")).toBeNull();
@@ -672,6 +674,9 @@ describe("ActiveSessionsTab responsive layout", () => {
     // by other tests here, but SessionCard is a separate component with its own copies.
     expect(within(card).getByText("Mobile User")).toBeTruthy();
     expect(within(card).getByText("Field Tablet")).toBeTruthy();
+    // The cell of the login time and its local time under it is the wide one (users-page.css), which the card's other cells are not.
+    expect(within(card).getByText("Logged in").closest("div")?.className).toBe("users-page__card-meta-wide");
+    expect(within(card).getByText("Device").closest("div")?.className).toBe("");
     expect(within(card).getByText("-")).toBeTruthy();
     expect(screen.getByRole("button", { name: REVOKE_NAME })).toBeTruthy();
 
@@ -1117,7 +1122,7 @@ describe("ActiveSessionsTab operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    const panel = document.querySelector(".sessions-status p");
+    const panel = document.querySelector("[role='alert'] .at-empty-state__desc");
     expect(panel?.textContent).toMatch(/session has expired/i);
     expect(screen.queryByText("authentication_required")).toBeNull();
   });

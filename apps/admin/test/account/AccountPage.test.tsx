@@ -1418,9 +1418,13 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValueOnce(baseAccount);
     mockFetchSessions.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage activeTab="sessions" />);
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load sessions/)).toBeTruthy();
-    });
+    // The title says what failed, in the shared error placeholder (the glyph over it), and the description says why.
+    await waitFor(() => expect(document.querySelector(".at-empty-state--error[role='alert']")).not.toBeNull());
+    const alert = document.querySelector(".at-empty-state--error[role='alert']");
+    expect(alert?.querySelector(".at-empty-state__title")?.textContent).toBe("Could not load sessions");
+    expect(alert?.querySelector(".at-empty-state__desc")?.textContent).toBe("Could not load sessions.");
+    expect(alert?.querySelector(".at-empty-state__icon i.ti-circle-x")).not.toBeNull();
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
   it("shows revoke session failure", async () => {
@@ -4215,6 +4219,25 @@ describe("AccountPage: Notifications", () => {
     }) as HTMLInputElement;
     expect(emailSwitch.checked).toBe(true);
     expect(inAppSwitch.checked).toBe(true);
+  });
+
+  it("names each channel cell of the grid, also the one that does not apply, for the phone's stacked layout that shows it above the toggle", async () => {
+    mockLoadedAccount();
+    const TYPE_IN_APP_ONLY = { ...TYPE_A, id: "some.in-app.type", label: "An in-app only type", available_channels: ["in_app"] as ("email" | "in_app")[] };
+    mockFetchNotificationPreferences.mockResolvedValue({
+      notification_types: [{ ...TYPE_A, available_channels: ["email"] as ("email" | "in_app")[] }, TYPE_IN_APP_ONLY],
+    });
+
+    renderWithToast(<AccountPage activeTab="notifications" />);
+
+    const emailSwitch = await screen.findByRole("switch", { name: `${TYPE_A.label} - Email` });
+    expect(emailSwitch.closest("td")?.getAttribute("data-label")).toBe("Email");
+    const inAppSwitch = screen.getByRole("switch", { name: `${TYPE_IN_APP_ONLY.label} - In-app` });
+    expect(inAppSwitch.closest("td")?.getAttribute("data-label")).toBe("In-app");
+    // The cell that does not apply is named too: In-app for the first type, Email for the second.
+    const [notApplicableForFirst, notApplicableForSecond] = screen.getAllByText("Not applicable").map((el) => el.closest("td"));
+    expect(notApplicableForFirst?.getAttribute("data-label")).toBe("In-app");
+    expect(notApplicableForSecond?.getAttribute("data-label")).toBe("Email");
   });
 
   it("falls back to a generic description for a type not in the known description map", async () => {

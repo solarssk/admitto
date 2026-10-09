@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import type { WalletPassProvider } from "@admitto/wallet";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 /** `voided` - this call voided the pass at the provider and recorded it locally. `skipped` - not
@@ -54,7 +55,11 @@ export async function voidOneWalletPassAtProvider(
   if (commandedSince) return "skipped";
 
   await provider.voidPass(target.providerPassId);
-  const outcome = await db.$transaction(async (tx): Promise<"voided" | "lost"> => {
+  const outcome = await db.$transaction(async (tx): Promise<"voided" | "lost" | "erased"> => {
+    // Attendee row first, like an erasure (no deadlock over the pass row), and no status change
+    // for an erased attendee: their pass is the erasure's to delete at the provider.
+    const locked = await lockAttendeeRow(tx, target.attendeeId);
+    if (!locked || locked.erased) return "erased";
     const now = new Date();
     const { count } = await tx.walletPass.updateMany({
       // The pass identity and the state that was checked are part of the predicate, like the

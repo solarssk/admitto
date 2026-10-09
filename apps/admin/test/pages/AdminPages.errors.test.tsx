@@ -445,10 +445,9 @@ describe("UsersPage operator errors", () => {
   it("shows load failure", async () => {
     vi.mocked(fetchAdminUsers).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<UsersPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load users/)).toBeTruthy();
-    });
-    expect(screen.getByText(/Could not load users/).closest("[role='alert']")).not.toBeNull();
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector(".at-empty-state__title")?.textContent).toBe("Could not load users");
+    expect(alert.querySelector(".at-empty-state__desc")?.textContent).toMatch(/Could not load users/);
   });
 
 });
@@ -491,10 +490,10 @@ describe("RoleAssignmentsTab operator errors", () => {
   it("shows load failure", async () => {
     vi.mocked(fetchRoleAssignments).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<RoleAssignmentsTab />);
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load role assignments/)).toBeTruthy();
-    });
-    expect(screen.getByText(/Could not load role assignments/).closest("[role='alert']")).not.toBeNull();
+    await waitFor(() => expect(document.querySelector(".at-empty-state--error[role='alert']")).not.toBeNull());
+    const alert = document.querySelector(".at-empty-state--error[role='alert']");
+    expect(alert?.querySelector(".at-empty-state__title")?.textContent).toBe("Could not load role assignments");
+    expect(alert?.querySelector(".at-empty-state__desc")?.textContent).toMatch(/Could not load role assignments/);
   });
 });
 

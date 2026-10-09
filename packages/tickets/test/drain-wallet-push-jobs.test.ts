@@ -396,7 +396,7 @@ describe("drainWalletPushJobs", () => {
           status: "active",
           provider_pass_id: { not: null },
           provider_removed_at: null,
-          attendee: { event_id: "evt-1" },
+          attendee: { event_id: "evt-1", erased_at: null },
         },
         select: { attendee_id: true, provider_pass_id: true },
       });
@@ -446,7 +446,7 @@ describe("drainWalletPushJobs", () => {
           // otherwise reissueOneWalletPass would call the provider against an already-deleted
           // resource and typically 404, counted as an error.
           provider_removed_at: null,
-          attendee: { event_id: "evt-1" },
+          attendee: { event_id: "evt-1", erased_at: null },
         },
         select: { attendee_id: true, provider_pass_id: true },
       });

@@ -19,6 +19,26 @@ describe("RetryEmptyState", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it("draws the standard failure glyph over the title, hidden from assistive tech, so a failure is not taken for an empty list", () => {
+    render(<RetryEmptyState title="Could not load providers" message="Network down." retrying={false} onRetry={() => Promise.resolve()} />);
+    const alert = screen.getByRole("alert");
+    expect(alert.className).toContain("at-empty-state--error");
+    const holder = alert.querySelector(".at-empty-state__icon");
+    expect(holder?.getAttribute("aria-hidden")).toBe("true");
+    expect(holder?.querySelector("i.ti-circle-x")).not.toBeNull();
+    // Over the title, which is the first thing the alert says.
+    expect(holder?.nextElementSibling?.className).toBe("at-empty-state__title");
+  });
+
+  it("takes a class for its root, which stays through a Retry: the fade-in of a list's failure plays once", () => {
+    const props = { title: "Could not load", message: "Network down.", onRetry: () => Promise.resolve() };
+    const { rerender } = render(<RetryEmptyState {...props} retrying={false} className="at-fade-in" />);
+    const alert = screen.getByRole("alert");
+    expect(alert.className).toBe("at-empty-state at-empty-state--error at-fade-in");
+    rerender(<RetryEmptyState {...props} retrying className="at-fade-in" />);
+    expect(screen.getByRole("alert")).toBe(alert);
+  });
+
   it("gives its Retry a name of its own when asked, so two of them on a screen can be told apart", () => {
     render(
       <>

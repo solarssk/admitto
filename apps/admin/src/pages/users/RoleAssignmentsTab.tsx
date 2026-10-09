@@ -138,7 +138,7 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
             <ScopeCell row={row} />
           </dd>
         </div>
-        <div>
+        <div className="users-page__card-meta-wide">
           <dt>Granted</dt>
           <dd>
             {formatUtcDateTime(row.granted_at)}
@@ -346,7 +346,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
       )}
 
       {gate.showContent && (
-        <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} className="users-page__status" />
+        <ListFailure failure={failure} refreshError={list.refreshError} onRefresh={list.reload} title="Could not load role assignments" />
       )}
 
       {listReady && (
