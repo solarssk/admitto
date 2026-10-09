@@ -450,6 +450,11 @@ docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <e
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
 # File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
 
+# Privacy request while the admin UI/API is down: erase attendees' personal data (preview with --dry-run first; ids from checkin lookup)
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com --dry-run
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com
+# Asks you to type yes; exits 2 when a wallet pass is still at the provider (run it again to retry).
+
 # Retry failed mail batch
 docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
 

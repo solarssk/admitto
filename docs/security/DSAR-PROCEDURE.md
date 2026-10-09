@@ -19,7 +19,7 @@ flowchart TD
     F --> G[Deliver via secure channel]
     E -- Erasure --> H{Legal confirms erasure\nno retention exception?}
     H -- No --> I[Explain retention exception\nDocument decision]
-    H -- Yes --> J[Erase personal data via admin UI or API\nper DSAR procedure]
+    H -- Yes --> J[Erase personal data via admin UI, API or CLI\nper DSAR procedure]
     J --> K([Document completion date\n+ responsible person])
     G --> K
 ```
@@ -71,6 +71,7 @@ flowchart TD
        `POST /api/admin/events/:eventId/attendees/bulk-erase` with `{ "attendeeIds": [...] }`, with an
        authenticated staff session and CSRF token. Repeating a request for people who are already
        erased changes nothing and only tries the pending wallet deletes again.
+     - **No admin UI or API at all:** the emergency CLI, see [Erasure without the admin UI](#erasure-without-the-admin-ui-cli-fallback).
   2. For an entry that should never have existed (a duplicate, a test person, a row from the wrong
      import file), use **Remove from event** instead. It deletes the attendee for good, so Reports
      change with it. It is not the way to answer a privacy request, and it is refused on an archived
@@ -111,82 +112,30 @@ flowchart TD
   3. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 
-### Manual DB erasure (fallback)
+### Erasure without the admin UI (CLI fallback)
 
-If the API is unavailable, operators may erase by direct database operation. Dependent rows must be
-removed before the attendee because `EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees
-with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML. A direct database erasure also does not
-contact the wallet provider, so delete any wallet pass of the erased attendee in the provider's own
-console yourself.
+A privacy request does not wait for the admin UI. When the UI and the API cannot be reached, but the database
+can, run the emergency CLI from the same image the app runs from. It does what the erase API does: it anonymises
+the attendees in place, blanks their addresses in saved import results, writes the same audit entries (marked
+`source: "cli"`), deletes the files the event's exports and imports left in storage, and deletes each attendee's wallet pass at the provider.
 
-> **Warning: this bypasses both audit writers the API path uses** (the event-level
-> `AttendeeActionLog` erasure entry and the central `AdminAuditLog` entry - see
-> [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)). A manual
-> erasure with no central audit record is exactly the accountability gap that log exists to close.
-> The `INSERT` below writes the same central record by hand; do not skip it.
+1. Find the attendee ids: `docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "<name or email>"`.
+2. Preview: `docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <id>[,<id>...] --operator-email <your superadmin email> --dry-run`
+   says how many would be erased, how many are erased already and how many ids match nobody, and changes nothing.
+3. Erase: the same command without `--dry-run`. It asks you to type `yes` first (`--yes` skips the question, for a
+   script). Up to 500 ids at a time.
 
-Before you run this:
-
-1. Capture the attendee's name and email, and the event's title, *before* the delete. The `SELECT`
-   in the transaction below does this.
-2. Know your own `user_id` and identity (`SELECT id, email, display_name FROM "User" WHERE email = '...'`).
-   The API path stores your email and display name in the record so it stays readable if your
-   account is deleted later; the `INSERT` below does the same.
-3. Know the event's `organization_id` beforehand.
-
-Run the operation in one transaction and scope it to the event and attendee:
-
-```sql
-BEGIN;
-
--- Replace values before execution.
-\set event_id 'evt_...'
-\set attendee_id 'att_...'
-\set actor_user_id 'usr_...'
-
--- Snapshot identity for the audit record before it's gone.
-SELECT id, name, email FROM "Attendee" WHERE id = :'attendee_id' AND event_id = :'event_id';
-SELECT organization_id, title FROM "Event" WHERE id = :'event_id';
-
-DELETE FROM "EmailDelivery"
-WHERE "event_id" = :'event_id'
-  AND "attendee_id" = :'attendee_id';
-
-DELETE FROM "WalletPass"
-WHERE "attendee_id" = :'attendee_id';
-
-DELETE FROM "CheckIn"
-WHERE "event_id" = :'event_id'
-  AND "attendee_id" = :'attendee_id';
-
-DELETE FROM "Attendee"
-WHERE "event_id" = :'event_id'
-  AND "id" = :'attendee_id';
-
--- Central accountability record - fill in the values from the SELECTs above (`ip` and `session_id` may stay NULL).
-INSERT INTO "AdminAuditLog" (id, organization_id, actor_user_id, actor_email, actor_display_name, action_type, metadata, created_at)
-VALUES (
-  gen_random_uuid()::text,
-  '<organization_id from the Event SELECT>',
-  :'actor_user_id',
-  '<your email>',
-  '<your display name, or NULL>',
-  'attendee_erased',
-  jsonb_build_object(
-    'event_id', :'event_id',
-    'event_title', '<title from the Event SELECT>',
-    'attendee_id', :'attendee_id',
-    'attendee_name', '<name from the Attendee SELECT>',
-    'attendee_email', '<email from the Attendee SELECT>'
-  ),
-  now()
-);
-
-COMMIT;
-```
-
-If the final `DELETE FROM "Attendee"` affects zero rows, roll back and re-check the event/attendee
-ids before recording completion.
+- **Audit:** the event action log and the central admin audit log record who erased how many people and which ids
+  (`method: "erase"`, `source: "cli"`), never a name or an address. `--operator-email` is required for the real run
+  and names the actor.
+- **Wallet pass:** if the provider cannot be reached, or the event's wallet credentials are no longer set, the
+  command prints how many passes are still there and exits with code 2. Run the same command again (people who are
+  already erased are left alone and only their passes are tried again), or let the worker's daily retention run do
+  it. If a pass keeps failing, fix the wallet credentials in Event settings or delete the pass in the provider's own console.
+- **Open admin screens** show the change within 30 seconds (the CLI does not notify them).
+- **Not offered here:** **Remove from event** (a hard delete for mistakes) stays in the admin UI and API: it changes
+  Reports and is not an emergency. The old manual SQL delete is gone: it bypassed both audit writers and the wallet
+  provider, and it removed the entry instead of erasing the personal data.
 
 ## 5. SLA (customer-defined)
 
