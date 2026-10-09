@@ -415,7 +415,7 @@ async function runOneWalletCleanupJob(
     let processed = 0;
 
     for (const batch of chunk(targets, WALLET_CLEANUP_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches are sequential on purpose: WALLET_CLEANUP_CONCURRENCY bounds the provider load
         batch.map((target) => handler.act(db, eventId, target, provider, audit)),
       );
       for (const outcome of settled) {
@@ -424,7 +424,7 @@ async function runOneWalletCleanupJob(
         else skipped += 1;
       }
       processed += batch.length;
-      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: processed } });
+      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: processed } }); // NOSONAR - progress is written after each batch, in order
     }
 
     const pendingGraceCount = handler.countPending
@@ -450,7 +450,7 @@ export async function reclaimStaleWalletCleanupJobs(
 ): Promise<{ reclaimed: number }> {
   let reclaimed = 0;
   for (const type of WALLET_CLEANUP_JOB_TYPES) {
-    const result = await reclaimStaleAdminJobsByType(
+    const result = await reclaimStaleAdminJobsByType( // NOSONAR - one job type at a time, so reclaim counts and errors stay attributable
       db,
       type,
       { running: STALE_WALLET_CLEANUP_JOB_ERROR, pending: STALE_WALLET_CLEANUP_PENDING_ERROR },
@@ -488,7 +488,7 @@ export async function drainWalletCleanupJobs(
       const job = await claimNextAdminJob(db, type);
       if (!job) break;
       claimedForType += 1;
-      const outcome = await runOneWalletCleanupJob(db, job, handler);
+      const outcome = await runOneWalletCleanupJob(db, job, handler); // NOSONAR - jobs of a type must run one after another; each claim depends on the previous finishing
       if (outcome === "succeeded") succeeded += 1;
       else failed += 1;
     }

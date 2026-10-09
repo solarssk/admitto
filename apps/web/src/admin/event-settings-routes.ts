@@ -366,7 +366,7 @@ async function loadIssuedWalletPassCount(
 
 /** Voided or expired passes still present at the provider - archiving an event does not clean
  * these up, so the archive confirm dialog names this count as a reminder. */
-async function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId: string): Promise<number> {
+function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId: string): Promise<number> {
   return db.walletPass.count({
     where: {
       status: { in: ["voided", "expired"] },
