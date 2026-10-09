@@ -1,6 +1,6 @@
 import { Notice } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { anonymousEntries, peopleCount } from "./erasedAttendee.js";
+import { anonymousEntries, freedPlacesLine, peopleCount } from "./erasedAttendee.js";
 import "./erase-dialogs.css";
 
 /** What an erasure takes and what it leaves, one line each: the same answer to "will Reports
@@ -61,8 +61,13 @@ export function EraseAttendeeDialog({
 }
 
 /** Confirmation to erase the personal data of the selected people. No typed name: there is no
- * single name to type, the same as the bulk delete. */
-export function BulkEraseDialog({ count, ...dialog }: EraseDialogBase & Readonly<{ count: number }>) {
+ * single name to type, the same as the bulk delete. `freesPlaceCount` is how many of them the
+ * erasure cancels, so that their places become free: the single dialog says so, and so does this. */
+export function BulkEraseDialog({
+  count,
+  freesPlaceCount,
+  ...dialog
+}: EraseDialogBase & Readonly<{ count: number; freesPlaceCount: number }>) {
   const one = count === 1;
   return (
     <ConfirmDialog
@@ -85,6 +90,7 @@ export function BulkEraseDialog({ count, ...dialog }: EraseDialogBase & Readonly
         }
         stays={`${anonymousEntries(count)} in Reports`}
       />
+      {freesPlaceCount > 0 && <Notice variant="warning">{freedPlacesLine(freesPlaceCount)}</Notice>}
       <p className="erase-dialog__hint">People who are already erased are skipped.</p>
     </ConfirmDialog>
   );

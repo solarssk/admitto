@@ -612,6 +612,37 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     await within(result).findByText("The wallet pass is still at the provider.");
   });
 
+  it("shows the pass as deleted at once when Try again worked, even if the reload that follows fails", async () => {
+    await openErasedPage({ wallet_pass: pass(), wallet_pass_delete_pending: true });
+    const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    const result = await screen.findByRole("dialog", { name: "Personal data erased" });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0 });
+    loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("Wallet pass deleted")).toBeTruthy();
+    expect(await screen.findByText("Could not load attendee.")).toBeTruthy();
+    expect(screen.getByText(/^Deleted on .*2026/)).toBeTruthy();
+    expect(screen.queryByText(/Not deleted yet/)).toBeNull();
+  });
+
+  it("keeps showing the pass as to be deleted when Try again got an answer that says it still is", async () => {
+    await openErasedPage({ wallet_pass: pass(), wallet_pass_delete_pending: true });
+    const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    const result = await screen.findByRole("dialog", { name: "Personal data erased" });
+    eraseAttendee.mockResolvedValueOnce({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 1 });
+    loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("Could not load attendee.")).toBeTruthy();
+    expect(screen.getByText(/Not deleted yet/)).toBeTruthy();
+    expect(screen.queryByText(/^Deleted on/)).toBeNull();
+  });
+
   it("names the pass in the status strip: removed, still to be deleted, or none", async () => {
     await openErasedPage({ wallet_pass: pass({ provider_removed_at: "2026-10-08T12:05:00.000Z" }) });
     const strip = document.querySelector(".attendee-status-strip") as HTMLElement;

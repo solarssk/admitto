@@ -41,6 +41,18 @@ export function erasureFreesPlace(
   return attendee.status === "registered" || attendee.status === "confirmed";
 }
 
+/** How many of the `ids` among `rows` an erasure would cancel, so their places become free. */
+export function placesFreedBy(rows: readonly AttendeeRowDto[], ids: ReadonlySet<string>, eventArchived: boolean): number {
+  return rows.filter((row) => ids.has(row.id) && erasureFreesPlace(row, eventArchived)).length;
+}
+
+/** The warning of the dialog that erases a selection, when some of the people in it are not checked in yet. */
+export function freedPlacesLine(count: number): string {
+  return count === 1
+    ? "1 person is not checked in yet, so their place becomes free."
+    : `${peopleCount(count)} are not checked in yet, so their places become free.`;
+}
+
 /** The line under the Attendees list while erased entries are left out of it. */
 export function hiddenErasedLine(count: number): string {
   return count === 1
@@ -98,6 +110,19 @@ export function erasedCheckInParts(admittedAt: string | null, timezone: string):
   if (admittedAt === null) return null;
   const clock = formatEventClockTime(admittedAt, timezone);
   return { day: formatAdmissionDisplayParts(admittedAt, timezone).day, time: `Around ${clock}` };
+}
+
+/**
+ * The erased attendee's detail once a retry has deleted the pass at the provider: no longer to be
+ * deleted, and removed now (the server stamps its own time). The page shows this before it reads the
+ * server's version, so a read that fails cannot make a deletion that worked look lost.
+ */
+export function walletPassRemoved(detail: AttendeeDetailDto, removedAt: string): AttendeeDetailDto {
+  return {
+    ...detail,
+    wallet_pass_delete_pending: false,
+    wallet_pass: detail.wallet_pass === null ? null : { ...detail.wallet_pass, provider_removed_at: removedAt },
+  };
 }
 
 /** What the screen knows when the server has confirmed an erasure, to show what the server now holds. */

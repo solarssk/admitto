@@ -117,7 +117,9 @@ export function ConfirmDialog({
         </p>
         {children}
         {errorMessage && (
-          <Notice variant="error" role="alert">
+          // `actionBusy`: when a retry from this dialog ends with the same error still there, the message is mounted
+          // afresh so that assistive tech announces it again (AGENTS.md, "A Retry that fails again").
+          <Notice variant="error" role="alert" actionBusy={loading}>
             {errorMessage}
           </Notice>
         )}

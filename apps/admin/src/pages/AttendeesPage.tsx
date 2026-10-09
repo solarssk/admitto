@@ -55,7 +55,7 @@ import type {
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { BulkEraseDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
-import { erasedToast, redactedRowsAfterErasure } from "../attendees/erasedAttendee.js";
+import { erasedToast, placesFreedBy, redactedRowsAfterErasure } from "../attendees/erasedAttendee.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { pollWalletRefreshStatusCompletion } from "../attendees/pollWalletRefreshStatusCompletion.js";
@@ -2692,6 +2692,7 @@ export function AttendeesPage() {
       <BulkEraseDialog
         open={bulkEraseConfirmOpen}
         count={selectedIds.size}
+        freesPlaceCount={placesFreedBy(items, selectedIds, isEventArchived(event))}
         busy={bulkEraseBusy}
         error={bulkEraseError}
         onConfirm={() => void handleBulkEraseSelected()}

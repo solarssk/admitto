@@ -218,6 +218,27 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it.each([
+    ["two people who are not checked in yet", [rowA, rowB], false, "2 people are not checked in yet, so their places become free."],
+    [
+      "one who is checked in and one who is not",
+      [{ ...rowA, admitted_at: "2026-07-01T09:00:00.000Z", check_in_status: "admitted" as const }, rowB],
+      false,
+      "1 person is not checked in yet, so their place becomes free.",
+    ],
+    ["people who are all checked in", [{ ...rowA, admitted_at: "2026-07-01T09:00:00.000Z" }, { ...rowB, admitted_at: "2026-07-01T09:05:00.000Z" }], false, null],
+    ["people not checked in yet on an archived event", [rowA, rowB], true, null],
+  ])("tells whose place becomes free before a bulk erasure: %s", async (_label, rows, archived, line) => {
+    eventState.archived_at = archived ? "2026-08-01T00:00:00.000Z" : null;
+    fetchEventAttendees.mockResolvedValue(listOf(rows as AttendeeRowDto[], 0));
+
+    renderListAndPage();
+    const dialog = await openEraseDialog();
+
+    const warning = within(dialog).queryByText(/not checked in yet, so/);
+    expect(warning?.textContent ?? null).toBe(line);
+  });
+
   it("keeps the dialog open while the erasure runs: Escape does nothing until it has answered", async () => {
     let resolveErase!: (value: unknown) => void;
     fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));
@@ -385,7 +406,10 @@ describe("AttendeesPage: a wallet pass that is still at the provider", () => {
     fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
 
     await within(result).findByText("Could not try again. Try again in a moment.");
-    fireEvent.click(within(result).getByRole("button", { name: "Close" }));
+    // Close waits for the button that has just failed to stop being busy (400ms at least).
+    const close = within(result).getByRole("button", { name: "Close" }) as HTMLButtonElement;
+    await waitFor(() => expect(close.disabled).toBe(false));
+    fireEvent.click(close);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

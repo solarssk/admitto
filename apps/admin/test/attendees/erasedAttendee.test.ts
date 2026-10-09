@@ -8,14 +8,17 @@ import {
   erasedToast,
   erasedWalletChipLabel,
   erasureFreesPlace,
+  freedPlacesLine,
   hiddenErasedLine,
   isOlderThanErasure,
   peopleCount,
+  placesFreedBy,
   redactedAfterErasure,
   redactedRowsAfterErasure,
   rowIdentity,
   selectRowLabel,
   shownErasedLine,
+  walletPassRemoved,
 } from "../../src/attendees/erasedAttendee.js";
 
 describe("counts in words", () => {
@@ -301,5 +304,59 @@ describe("isOlderThanErasure", () => {
 
   it("is false for another attendee, so moving to one is not blocked", () => {
     expect(isOlderThanErasure(erased as never, { id: "att-2", erased_at: null } as never)).toBe(false);
+  });
+});
+
+describe("walletPassRemoved", () => {
+  const erased = {
+    id: "att-1",
+    erased_at: "2026-10-09T12:00:00.000Z",
+    wallet_pass_delete_pending: true,
+    wallet_pass: { status: "active", provider_removed_at: null, apple_url: null },
+  };
+
+  it("marks the pass as no longer to be deleted and removed now", () => {
+    const result = walletPassRemoved(erased as never, "2026-10-09T12:05:00.000Z");
+
+    expect(result.wallet_pass_delete_pending).toBe(false);
+    expect(result.wallet_pass).toMatchObject({ status: "active", provider_removed_at: "2026-10-09T12:05:00.000Z" });
+    expect(result.erased_at).toBe("2026-10-09T12:00:00.000Z");
+  });
+
+  it("copes with an attendee who has no pass", () => {
+    expect(walletPassRemoved({ ...erased, wallet_pass: null } as never, "2026-10-09T12:05:00.000Z").wallet_pass).toBeNull();
+  });
+
+  it("does not change the detail it was given", () => {
+    const before = JSON.stringify(erased);
+
+    walletPassRemoved(erased as never, "2026-10-09T12:05:00.000Z");
+
+    expect(JSON.stringify(erased)).toBe(before);
+  });
+});
+
+describe("places an erasure frees", () => {
+  const row = (id: string, overrides: Record<string, unknown> = {}) => ({ id, status: "registered", admitted_at: null, ...overrides });
+
+  it("counts only the selected people whose erasure cancels them", () => {
+    const rows = [
+      row("a"),
+      row("b", { status: "confirmed" }),
+      row("c", { admitted_at: "2026-10-09T10:00:00.000Z" }),
+      row("d", { status: "cancelled" }),
+      row("e"),
+    ];
+
+    expect(placesFreedBy(rows as never, new Set(["a", "b", "c", "d"]), false)).toBe(2);
+  });
+
+  it("counts nobody on an archived event", () => {
+    expect(placesFreedBy([row("a"), row("b")] as never, new Set(["a", "b"]), true)).toBe(0);
+  });
+
+  it("says it in the singular and the plural", () => {
+    expect(freedPlacesLine(1)).toBe("1 person is not checked in yet, so their place becomes free.");
+    expect(freedPlacesLine(3)).toBe("3 people are not checked in yet, so their places become free.");
   });
 });

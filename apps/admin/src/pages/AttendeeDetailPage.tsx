@@ -46,7 +46,7 @@ import {
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, DeliveryDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch, WalletPassActionDto } from "../api/types.js";
+import type { AttendeeDetailDto, DeliveryDto, EraseAttendeesResponse, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch, WalletPassActionDto } from "../api/types.js";
 import {
   loadAttendeeDetailData,
   mergeFormAfterReload,
@@ -87,6 +87,7 @@ import {
   erasureFreesPlace,
   isOlderThanErasure,
   redactedAfterErasure,
+  walletPassRemoved,
 } from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
@@ -2115,11 +2116,16 @@ export function AttendeeDetailPage() {
     void loadDetail();
   }, [loadDetail]);
 
-  // The dialog that says a wallet pass is still at the provider after an erasure, and repeats it.
-  const reloadDetail = useCallback(() => {
-    void loadDetail();
-  }, [loadDetail]);
-  const eraseWalletResult = useEraseWalletResult({ scopeKey: `${eventId}/${attendeeId}`, onSettled: reloadDetail });
+  // The dialog that says a wallet pass is still at the provider after an erasure, and repeats it. A retry that
+  // deleted the pass is shown on the page at once, so a read that fails afterwards cannot make it look lost.
+  const afterWalletRetry = useCallback(
+    (result: EraseAttendeesResponse) => {
+      if (result.wallet_pending === 0) applyDetail(walletPassRemoved(heldDetailRef.current!, new Date().toISOString()));
+      void loadDetail();
+    },
+    [applyDetail, loadDetail],
+  );
+  const eraseWalletResult = useEraseWalletResult({ scopeKey: `${eventId}/${attendeeId}`, onSettled: afterWalletRetry });
 
   useEffect(() => {
     setNotesPage(1);

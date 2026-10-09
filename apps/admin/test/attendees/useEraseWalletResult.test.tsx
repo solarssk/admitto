@@ -54,6 +54,7 @@ describe("useEraseWalletResult", () => {
     await waitFor(() => expect(result.current.dialogProps.open).toBe(false));
     expect(addToast).toHaveBeenCalledWith("Wallet pass deleted", "success");
     expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(answer(0));
   });
 
   it("says passes in the plural when several were left", async () => {
@@ -73,9 +74,11 @@ describe("useEraseWalletResult", () => {
 
     await waitFor(() => expect(result.current.dialogProps.pending).toBe(2));
     expect(result.current.dialogProps.open).toBe(true);
-    expect(result.current.dialogProps.retrying).toBe(false);
+    // The button stays busy for a moment after the answer (400ms at least).
+    await waitFor(() => expect(result.current.dialogProps.retrying).toBe(false));
     expect(addToast).not.toHaveBeenCalled();
     expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(answer(2));
   });
 
   it("shows an operator-safe error when the retry itself fails, and clears it on Close", async () => {
@@ -89,6 +92,65 @@ describe("useEraseWalletResult", () => {
 
     act(() => result.current.dialogProps.onClose());
     expect(result.current.dialogProps).toMatchObject({ open: false, error: null });
+  });
+
+  it("keeps the failure of the earlier try on screen while the next one runs, and drops it when the answer is in", async () => {
+    const { result } = setup();
+    let finish!: (value: EraseAttendeesResponse) => void;
+    const retry = vi
+      .fn<() => Promise<EraseAttendeesResponse>>()
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
+      .mockImplementationOnce(() => new Promise<EraseAttendeesResponse>((resolve) => (finish = resolve)));
+    act(() => result.current.open(1, retry));
+    act(() => result.current.dialogProps.onTryAgain());
+    await waitFor(() => expect(result.current.dialogProps.error).toBe("Could not try again. Try again in a moment."));
+    await waitFor(() => expect(result.current.dialogProps.retrying).toBe(false));
+
+    act(() => result.current.dialogProps.onTryAgain());
+    await waitFor(() => expect(result.current.dialogProps.retrying).toBe(true));
+    expect(result.current.dialogProps.error).toBe("Could not try again. Try again in a moment.");
+
+    await act(async () => finish(answer(0)));
+    expect(result.current.dialogProps).toMatchObject({ open: false, error: null });
+  });
+
+  it("replaces the failure of the earlier try with the new count when the provider still fails", async () => {
+    const { result } = setup();
+    const retry = vi
+      .fn<() => Promise<EraseAttendeesResponse>>()
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
+      .mockResolvedValueOnce(answer(1));
+    act(() => result.current.open(2, retry));
+    act(() => result.current.dialogProps.onTryAgain());
+    await waitFor(() => expect(result.current.dialogProps.error).not.toBeNull());
+    await waitFor(() => expect(result.current.dialogProps.retrying).toBe(false));
+
+    act(() => result.current.dialogProps.onTryAgain());
+
+    await waitFor(() => expect(result.current.dialogProps).toMatchObject({ open: true, pending: 1, error: null }));
+  });
+
+  it("keeps the button busy for at least 400ms when a retry fails at once", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = setup();
+      act(() => result.current.open(1, async () => Promise.reject(new ApiError(500, "secret_internal"))));
+
+      // The click is committed first, as it is in a browser; then the failure arrives.
+      act(() => result.current.dialogProps.onTryAgain());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(result.current.dialogProps.error).toBe("Could not try again. Try again in a moment.");
+      expect(result.current.dialogProps.retrying).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(result.current.dialogProps.retrying).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ignores Close while a retry is on its way", async () => {
