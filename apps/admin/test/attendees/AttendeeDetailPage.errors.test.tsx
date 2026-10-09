@@ -81,6 +81,7 @@ function renderPage(strict = false) {
     <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
       <Routes>
         <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        <Route path="/admin/events/:eventId/attendees" element={<p>the attendee list</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -114,6 +115,43 @@ describe("AttendeeDetailPage operator errors", () => {
       vi.advanceTimersByTime(200);
     });
     expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
+  });
+
+  it("draws the page's own frame while the record is on its way, and its Back leaves for the list instead of waiting", () => {
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Attendee" })).toBeTruthy();
+    // The five chips and the cards are there by their real names, as bars where the read fills them in.
+    expect(document.querySelectorAll(".attendee-status-chip")).toHaveLength(5);
+    expect(screen.getByText("Delivery history")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("the attendee list")).toBeTruthy();
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+  });
+
+  it("draws the header's bars for the viewport it is on: Edit and More actions on a desktop, only More actions on a phone", () => {
+    const bars = () => document.querySelectorAll(".attendee-detail-pageheader .at-pageheader__actions .at-skeleton").length;
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(bars()).toBe(2);
+
+    cleanup();
+    mockMatchMedia(false);
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(bars()).toBe(1);
   });
 
   it("holds the skeleton's space invisibly for the first 200ms, then fades it in", () => {

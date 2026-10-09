@@ -18,7 +18,6 @@ import {
   Notice,
   PageHeader,
   resolveStatusMeta,
-  Skeleton,
   Tabs,
   Tooltip,
   useToast,
@@ -53,12 +52,13 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
+import { AttendeeDetailSkeleton } from "../attendees/AttendeeDetailSkeleton.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useRetry } from "../hooks/useRetry.js";
 import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
-import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import {
   formatAdmissionDisplayParts,
   formatEventDateTime,
@@ -2582,14 +2582,7 @@ export function AttendeeDetailPage() {
         className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
         aria-busy="true"
       >
-        <Skeleton variant="text" lines={2} />
-        <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
-        {/* The status region of the placeholder: it names what is loading for assistive tech, and after 8 seconds says, in
-            view and to the same region, that it is taking longer than usual. It has no height until then. */}
-        <output>
-          <span className="sr-only">Loading attendee</span>
-          {slow ? <span className="at-hint attendee-detail-slow-note">{SLOW_NOTICE_TEXT}</span> : null}
-        </output>
+        <AttendeeDetailSkeleton slow={slow} isDesktop={isDesktop} onBack={goBack} />
       </div>
     );
   }

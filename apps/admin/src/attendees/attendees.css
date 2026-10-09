@@ -1777,3 +1777,24 @@
   display: block;
   text-align: center;
 }
+
+/* The attendee page's skeleton (AttendeeDetailSkeleton) sits among the page's own rows, a flex column with a gap: its empty status
+   region would add a gap of its own, so it takes the next one back until the note is in it. */
+.attendee-detail-skeleton__status {
+  display: block;
+  margin-bottom: -18px;
+}
+
+.attendee-detail-skeleton__status--note {
+  margin-bottom: 0;
+}
+
+/* The tab strip of the skeleton is drawn, not clickable, and as tall as the real one: its tabs are buttons, whose line height is
+   `normal`, and these are spans, which would take the page's. */
+.attendee-detail-skeleton__tabs {
+  pointer-events: none;
+}
+
+.attendee-detail-skeleton__tabs .at-tab {
+  line-height: normal;
+}
