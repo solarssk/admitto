@@ -1638,6 +1638,31 @@
   font-size: 0.8125rem;
 }
 
+/* On a phone the time and the person go under the text. Beside it they are 173px or more of a row that is 292px wide at 390px, which
+   leaves the text a column of 66px, one or two words a line ("Note" / "added"). The padding lines them up with the text: the dot (28px)
+   and the gap (12px) of the row. The person's name wraps rather than stick out of the row when it is a long address. */
+@media (max-width: 560px) {
+  .at-tl-item {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .at-tl-meta {
+    flex: 0 0 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px var(--space-3);
+    margin-top: 0;
+    padding-left: calc(28px + 12px);
+  }
+
+  .at-tl-actor {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* Send tickets dialog */
 .send-tickets-radio {
   display: flex;
@@ -1732,23 +1757,29 @@
   border-bottom: none;
 }
 
+/* The head of a note wraps: the author's name (an address, when that is the name), the role and the time are 300px of words and a
+   timestamp that does not break, which is more than a phone has, so what does not fit goes to the next line instead of past the card. */
 .at-notes-list__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
   margin-bottom: var(--space-2);
 }
 
 .at-notes-list__author-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
 }
 
 .at-notes-list__author {
   font-size: 0.875rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .at-notes-list__time {
