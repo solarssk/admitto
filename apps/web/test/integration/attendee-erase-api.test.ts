@@ -8,6 +8,9 @@
  * good, with a reason from a fixed list, the audit trail holds the reason, ids and counts only, and
  * it is refused on an archived event.
  */
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
@@ -20,8 +23,9 @@ import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../s
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "../../src/admin/attendee-remove-routes.js";
 import { deleteProviderPassesBestEffort } from "../../src/admin/attendees-api-routes.js";
 import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
-import { querySystemLogs } from "@admitto/shared/system-log";
 
 const ORG_ID = "org-erase-api";
 const EVENT_ID = "evt-erase-api";
@@ -1140,5 +1144,140 @@ describe("the request budget of a single removal", () => {
     for (let i = 0; i < 12; i += 1) {
       expect((await remove(ARCHIVED_EVENT_ID)).status).not.toBe(429);
     }
+  });
+});
+
+describe("export files of the event, after an erasure or a removal", () => {
+  let uploadDir: string;
+  let savedUploadDir: string | undefined;
+  const jobIds: string[] = [];
+
+  beforeAll(() => {
+    savedUploadDir = process.env.UPLOAD_DIR;
+    uploadDir = mkdtempSync(join(tmpdir(), "admitto-erase-exports-"));
+    process.env.UPLOAD_DIR = uploadDir;
+    resetDefaultStorageForTests();
+  });
+
+  afterAll(async () => {
+    await prisma.adminJob.deleteMany({ where: { id: { in: jobIds } } });
+    rmSync(uploadDir, { recursive: true, force: true });
+    if (savedUploadDir === undefined) delete process.env.UPLOAD_DIR;
+    else process.env.UPLOAD_DIR = savedUploadDir;
+    resetDefaultStorageForTests();
+  });
+
+  beforeEach(() => resetSystemLogBufferForTest());
+
+  const removePath = (eventId: string, attendeeId: string) => `/api/admin/events/${eventId}/attendees/${attendeeId}/remove`;
+  const bulkRemovePath = (eventId: string) => `/api/admin/events/${eventId}/attendees/bulk-remove`;
+
+  /** A finished job of `type` whose file is in storage, as an export or an import job leaves it. */
+  async function seedJobFile(eventId: string, type = "export") {
+    const { key } = await getDefaultStorage().put(Buffer.from("name,email\nA B,a@example.com\n"), {
+      orgId: ORG_ID,
+      eventId,
+      scope: "event",
+      ext: ".csv",
+    });
+    const job = await prisma.adminJob.create({
+      data: {
+        type,
+        status: "succeeded",
+        organization_id: ORG_ID,
+        event_id: eventId,
+        storage_key: key,
+        filename: "attendees.csv",
+        finished_at: new Date(),
+      },
+    });
+    jobIds.push(job.id);
+    return { jobId: job.id, key };
+  }
+  const present = (key: string) => existsSync(join(uploadDir, key));
+  const keyOf = async (jobId: string) => (await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).storage_key;
+
+  it("erasing someone deletes the export files of the event and clears their keys, and leaves everything else", async () => {
+    const a = await createAttendee();
+    const first = await seedJobFile(EVENT_ID);
+    const second = await seedJobFile(EVENT_ID);
+    const otherEvent = await seedJobFile(WALLET_OFF_EVENT_ID);
+    const staged = await seedJobFile(EVENT_ID, "import_commit");
+
+    const res = await post(erasePath(EVENT_ID, a.id));
+
+    expect(res.status).toBe(200);
+    expect(present(first.key)).toBe(false);
+    expect(present(second.key)).toBe(false);
+    expect(await keyOf(first.jobId)).toBeNull();
+    expect(await keyOf(second.jobId)).toBeNull();
+    expect(present(otherEvent.key)).toBe(true);
+    expect(await keyOf(otherEvent.jobId)).toBe(otherEvent.key);
+    expect(present(staged.key)).toBe(true);
+  });
+
+  it("removing someone, one or a selection, does the same", async () => {
+    const a = await createAttendee();
+    const b = await createAttendee();
+    const first = await seedJobFile(EVENT_ID);
+    const afterSingle = await post(removePath(EVENT_ID, a.id), { reason: "duplicate" });
+    expect(afterSingle.status).toBe(200);
+    expect(present(first.key)).toBe(false);
+    expect(await keyOf(first.jobId)).toBeNull();
+
+    const second = await seedJobFile(EVENT_ID);
+    const afterBulk = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [b.id], reason: "other" });
+    expect(afterBulk.status).toBe(200);
+    expect(present(second.key)).toBe(false);
+    expect(await keyOf(second.jobId)).toBeNull();
+  });
+
+  it("leaves them alone when nobody was erased or removed by the request", async () => {
+    const a = await createAttendee();
+    await post(erasePath(EVENT_ID, a.id));
+    const file = await seedJobFile(EVENT_ID);
+
+    const again = await post(erasePath(EVENT_ID, a.id));
+    const unknown = await post(bulkRemovePath(EVENT_ID), { attendeeIds: ["nobody"], reason: "duplicate" });
+
+    expect(again.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(present(file.key)).toBe(true);
+    expect(await keyOf(file.jobId)).toBe(file.key);
+  });
+
+  it("reports a file it could not delete in the System logs, keeps its key for the retention run, and still erases", async () => {
+    const a = await createAttendee();
+    const stuck = await seedJobFile(EVENT_ID);
+    const fine = await seedJobFile(EVENT_ID);
+    const realDelete = getDefaultStorage().delete.bind(getDefaultStorage());
+    vi.spyOn(getDefaultStorage(), "delete").mockImplementation(async (key: string) => {
+      if (key === stuck.key) throw new Error("EBUSY");
+      return realDelete(key);
+    });
+
+    const res = await post(erasePath(EVENT_ID, a.id));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ erased: 1 });
+    expect(await keyOf(stuck.jobId)).toBe(stuck.key);
+    expect(present(stuck.key)).toBe(true);
+    expect(await keyOf(fine.jobId)).toBeNull();
+    expect(querySystemLogs({ search: "export_file_purge_incomplete" })).toEqual([
+      expect.objectContaining({ level: "warn", fields: { eventId: EVENT_ID, failed: 1 } }),
+    ]);
+  });
+
+  it("still answers, and logs it, when the purge itself breaks", async () => {
+    const a = await createAttendee();
+    vi.spyOn(prisma.adminJob, "findMany").mockRejectedValueOnce(new Error("db hiccup"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: "duplicate" });
+
+    expect(res.status).toBe(200);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+    expect(errSpy).toHaveBeenCalled();
+    expect(querySystemLogs({ search: "export_file_purge_failed" })).toHaveLength(1);
   });
 });

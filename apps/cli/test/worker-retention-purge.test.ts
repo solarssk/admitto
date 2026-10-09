@@ -23,6 +23,7 @@ const purgeSecurityAuditLog = vi.fn(async () => ({ deleted: 0 }));
 const nullifyDeliverySnapshots = vi.fn();
 const purgeNotifications = vi.fn(async () => ({ deleted: 0 }));
 const resolveNotificationRetentionDays = vi.fn(() => 30);
+const purgeJobFilesForRetention = vi.fn(async () => ({ exportFiles: 0, stagedImportFiles: 0, failures: 0 }));
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},
@@ -56,6 +57,7 @@ vi.mock("@admitto/import", () => ({
   drainImportJobs: vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0, healed: 0, eventIds: [] })),
 }));
 vi.mock("@admitto/storage", () => ({ getDefaultStorage: vi.fn(() => ({})) }));
+vi.mock("../src/lib/retention-job-files.js", () => ({ purgeJobFilesForRetention }));
 vi.mock("../src/lib/sse-publish.js", () => ({
   closeSsePublishClient: vi.fn(),
   publishActivityChanged: vi.fn(async () => undefined),
@@ -81,7 +83,7 @@ vi.mock("../src/commands/wallet-expire.js", () => ({
 }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn(async () => undefined) }));
 
-const { runWorkerTick } = await import("../src/commands/worker.js");
+const { logLevel, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 
 function fakeLocks() {
@@ -96,6 +98,7 @@ function fakeLocks() {
 describe("runWorkerTick — scheduled retention pass", () => {
   beforeEach(() => {
     nullifyDeliverySnapshots.mockClear();
+    purgeJobFilesForRetention.mockClear();
     vi.stubEnv(SNAPSHOT_RETENTION_ENV, undefined);
   });
 
@@ -111,6 +114,30 @@ describe("runWorkerTick — scheduled retention pass", () => {
     expect(nullifyDeliverySnapshots).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 60 });
     expect(purgeSecurityAuditLog).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 30 });
     expect(purgeNotifications).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 30 });
+    expect(purgeJobFilesForRetention).toHaveBeenCalledWith(db, false);
+  });
+
+  it("says how many export files and staged import CSVs it deleted, and warns when one could not be", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 3, stagedImportFiles: 2, failures: 1 });
+
+    await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
+
+    const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
+    expect(line).toContain("export_files=3 staged_import_files=2 failed=1");
+    expect(logLevel(line!)).toBe("warn");
+    log.mockRestore();
+  });
+
+  it("stays quiet about files when there was nothing to delete", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
+
+    const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
+    expect(line).toContain("export_files=0 staged_import_files=0 failed=0");
+    expect(logLevel(line!)).toBe("info");
+    log.mockRestore();
   });
 
   it.each(SNAPSHOT_ENV_CASES)(

@@ -29,6 +29,7 @@ import {
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
+import { purgeJobFilesForRetention } from "../lib/retention-job-files.js";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
@@ -437,9 +438,10 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
       dryRun: false,
       retentionDays: notificationRetentionDays,
     });
+    const jobFilesResult = await purgeJobFilesForRetention(db, false);
     log(
       "retention",
-      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted}`,
+      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted} export_files=${jobFilesResult.exportFiles} staged_import_files=${jobFilesResult.stagedImportFiles} failed=${jobFilesResult.failures}`,
     );
     return true;
   } finally {

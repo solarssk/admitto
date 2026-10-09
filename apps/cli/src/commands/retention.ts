@@ -5,6 +5,7 @@ import { purgeNotifications, resolveNotificationRetentionDays } from "@admitto/n
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { hasFlag } from "../lib/args.js";
 import { requireOperatorUserId } from "../lib/audit.js";
+import { purgeJobFilesForRetention } from "../lib/retention-job-files.js";
 
 export async function runRetention(db: PrismaClient): Promise<void> {
   const dryRun = hasFlag("dry-run");
@@ -24,6 +25,7 @@ export async function runRetention(db: PrismaClient): Promise<void> {
       dryRun: false,
       retentionDays: notificationRetentionDays,
     });
+    const jobFilesResult = await purgeJobFilesForRetention(db, false);
 
     await writeAdminAuditLog(db, {
       actorUserId,
@@ -36,6 +38,8 @@ export async function runRetention(db: PrismaClient): Promise<void> {
         mailDeliveries: mailResult.deliveries,
         securityAuditLogRows: securityAuditResult.deleted,
         notificationRows: notificationsResult.deleted,
+        exportFiles: jobFilesResult.exportFiles,
+        stagedImportFiles: jobFilesResult.stagedImportFiles,
       },
     });
 
@@ -43,7 +47,9 @@ export async function runRetention(db: PrismaClient): Promise<void> {
       `Purged/nullified auth: ${authResult.sessions} sessions, ${authResult.trustedDevices} trusted devices; ` +
         `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
         `security audit log: ${securityAuditResult.deleted} row(s); ` +
-        `notifications: ${notificationsResult.deleted} row(s).`,
+        `notifications: ${notificationsResult.deleted} row(s); ` +
+        `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s)` +
+        `${jobFilesResult.failures > 0 ? ` (${jobFilesResult.failures} could not be deleted)` : ""}.`,
     );
     return;
   }
@@ -58,11 +64,13 @@ export async function runRetention(db: PrismaClient): Promise<void> {
     dryRun: true,
     retentionDays: notificationRetentionDays,
   });
+  const jobFilesResult = await purgeJobFilesForRetention(db, true);
 
   console.log(
     `Would purge/nullify auth: ${authResult.sessions} sessions, ${authResult.trustedDevices} trusted devices; ` +
       `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
       `security audit log: ${securityAuditResult.deleted} row(s); ` +
-      `notifications: ${notificationsResult.deleted} row(s).`,
+      `notifications: ${notificationsResult.deleted} row(s); ` +
+      `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s).`,
   );
 }

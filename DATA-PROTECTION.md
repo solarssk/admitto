@@ -262,6 +262,7 @@ policy). Different retention periods for different categories are intentional - 
 |---|---|---|
 | Login sessions, trusted devices | Product - automatic | Best-effort purge on the worker when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product - automatic | Nullified **60 days** after terminal delivery by default; `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides it for the worker, `admitto retention run` and `nullify-delivery-snapshots` |
+| Files that jobs leave in storage: the file of an attendee export (CSV, XLSX or PDF) and the staged CSV of an import job that failed | Product - automatic | The worker (boot + ~24h) and `admitto retention run` delete an export file **7 days** after the export finished (`EXPORT_FILE_RETENTION_DAYS`) and the staged CSV of a finished import job **7 days** after it finished (`IMPORT_STAGED_FILE_RETENTION_DAYS`); the job's own row (counts, filename) stays. Erasing or removing an attendee also deletes every export file of that event at once, whatever its age (best effort: a file that cannot be deleted is reported in the System logs and left to the retention run) |
 | Durable security audit trail (`SecurityAuditLog` - login/MFA/logout/OIDC/access-denied) | Product - automatic | Best-effort purge on the worker (boot + ~24h); default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
 | In-app security alert inbox (`Notification` - a personal copy of alerts like "your password changed", shown via My Account's own notification bell; the underlying event is separately durable in `SecurityAuditLog` above regardless of this table) | Operator (primary) / Product (fallback) | A staff member can permanently clear their own notification history at any time (My Account's bell → **Clear all**); anything never cleared is auto-purged by the worker (boot + ~24h), default **30 days** (`NOTIFICATION_RETENTION_DAYS`) |
 | IP addresses in admin audit log and the `http_request` access log (every request, staff or anonymous) | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP logged this way is never itself persisted in a purgeable table - it lives in the System logs live tail below (in-memory only) and wherever your container log driver keeps stdout.) |
@@ -282,7 +283,7 @@ framework:
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI - **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
 | Per-attendee erasure | Admin SPA (single and bulk): **Erase personal data** (anonymises the entry, Reports keep their numbers) and **Remove from event** (deletes the entry, for mistakes); each has an API endpoint for one attendee and one for a selection |
-| Automated purge job | Partial - auth-state and email delivery snapshot cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
+| Automated purge job | Partial - auth-state, email delivery snapshot and export/import file cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights
 
