@@ -207,6 +207,10 @@ describe("NotificationBell dropdown", () => {
     openBell();
     expect(await screen.findByText("Could not load notifications.")).toBeTruthy();
     expect(screen.getByText("Could not load notifications.").closest("[role='alert']")).not.toBeNull();
+    // The failure has the glyph a failed load has everywhere, so it is not taken for the empty list's bell-off.
+    const failureGlyph = screen.getByRole("alert").querySelector("i.ti-circle-x");
+    expect(failureGlyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(failureGlyph?.nextElementSibling?.textContent).toBe("Could not load notifications.");
 
     fetchAccountNotifications.mockResolvedValueOnce({ notifications: [], unread_count: 0 });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

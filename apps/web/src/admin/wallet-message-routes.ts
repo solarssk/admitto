@@ -61,6 +61,9 @@ const walletMessageSendBodySchema = z
  * recipients - the picker/filters on the client already narrow to this set, but the server
  * re-applies it rather than trusting client-supplied ids blindly. */
 const HAS_ACTIVE_WALLET_PASS: Prisma.AttendeeWhereInput = {
+  // An erased attendee keeps an active pass until the erasure has deleted it at the provider;
+  // they are neither counted, listed nor messaged.
+  erased_at: null,
   wallet_pass: { status: "active", provider_pass_id: { not: null } },
 };
 

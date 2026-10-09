@@ -10,6 +10,8 @@ export {
   parseWalletFieldMapping,
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
+export { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
   ERASED_EMAIL_DOMAIN,
@@ -154,7 +156,7 @@ export {
 export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 export { drainWalletPushJobs, readWalletPushRequest } from "./drain-wallet-push-jobs.js";
 export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
-export { loadWalletMessageTargets } from "./send-wallet-message.js";
+export { keepLiveWalletMessageTargets, loadWalletMessageTargets } from "./send-wallet-message.js";
 export type { SendWalletMessageTarget } from "./send-wallet-message.js";
 export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
 export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";

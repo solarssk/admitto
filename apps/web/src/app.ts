@@ -26,6 +26,7 @@ import {
   resolveTicketPageDisplay,
   buildWalletPassInput,
   resolveWalletCustomFieldPlaceholders,
+  lockAttendeeRow,
 } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
@@ -533,6 +534,18 @@ async function resolveQrPayloadOrRespond(
  * an error" - a redirect back to the ticket page without the retry notice. */
 const WALLET_PASS_UNAVAILABLE = "unavailable" as const;
 
+/** How long a short transaction of the wallet flow may take when it has to wait for an erasure of
+ * the same attendee. Prisma's default of 5 s is not enough: a statement blocked on the row lock
+ * keeps waiting for the erasure to end (it is not cut off at 5 s), but the transaction has expired
+ * by then and its commit fails, so the work is lost. An erasure's own transaction may take 60 s
+ * (attendee-erase-routes.ts); a single statement is cut by the database's statement timeout. */
+const ERASURE_WAIT_TX_TIMEOUT_MS = 65_000;
+
+/** What the on-demand wallet flow resolves to: the install links, "unavailable" (a quiet redirect
+ * back to the ticket page) or null (a failure, redirected with a retry notice). */
+type WalletPassUrls = { apple_url: string | null; android_url: string | null };
+type WalletPassUrlsOutcome = WalletPassUrls | typeof WALLET_PASS_UNAVAILABLE | null;
+
 /** A pass Admitto will never hand out (again) through the public Add to Wallet tap: voided and
  * expired are not revived from here (Restore is an explicit staff action, expiry is permanent), and
  * a pass removed at the provider no longer exists there. */
@@ -899,10 +912,7 @@ export function createApp(options: CreateAppOptions = {}) {
    * 2026-08-25). One lock per running `app` instance is enough for this app's actual deployment
    * topology (a single `app` container - deploy/README.md), not a distributed one.
    */
-  const walletCreateLocks = new Map<
-    string,
-    Promise<{ apple_url: string | null; android_url: string | null } | typeof WALLET_PASS_UNAVAILABLE | null>
-  >();
+  const walletCreateLocks = new Map<string, Promise<WalletPassUrlsOutcome>>();
 
   /**
    * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
@@ -986,12 +996,21 @@ export function createApp(options: CreateAppOptions = {}) {
       userProvidedId: string,
       result: WalletPassResult,
       expirationDateSent: string | undefined,
-    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+    ): Promise<WalletPassUrlsOutcome> {
       let templateChanged = false;
       let expirationChanged = false;
+      let attendeeErased = false;
       let expiresAt: Date | null = null;
       try {
         await db.$transaction(async (tx) => {
+          // The attendee row first, before the event-wide advisory lock: waiting behind a running
+          // erasure while holding that lock would stall every other first-time pass of the event.
+          // The pass was just created at the provider with this attendee's data. If an erasure
+          // committed meanwhile, no install links are saved (see deleteOrphanPassOfErasedAttendee).
+          if ((await lockAttendeeRow(tx, attendee.id))?.erased) {
+            attendeeErased = true;
+            return;
+          }
           await acquireWalletTemplateLock(tx, event.id);
           const currentEvent = await tx.event.findUnique({
             where: { id: event.id },
@@ -1067,16 +1086,27 @@ export function createApp(options: CreateAppOptions = {}) {
               expires_at: expiresAt,
             },
           });
-        });
+        }, { timeout: ERASURE_WAIT_TX_TIMEOUT_MS });
       } catch (err) {
         console.error("walletPass upsert (active) failed:", err);
         recordSystemLog({
           level: "error",
           source: "api",
           message: "wallet_pass_upsert_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id },
+          fields: { eventId: event.id, attendeeId: attendee.id, providerPassId: result.providerPassId },
         });
+        // The new pass must not stay at the provider with nothing tracking it if the attendee was
+        // erased meanwhile. Whatever made the save fail, the erasure may still be open: the check
+        // takes the attendee's row lock, so it waits for the erasure and sees its result.
+        if (await isAttendeeErasedNow()) {
+          await deleteOrphanPassOfErasedAttendee(userProvidedId, result.providerPassId);
+          return WALLET_PASS_UNAVAILABLE;
+        }
         return null;
+      }
+      if (attendeeErased) {
+        await deleteOrphanPassOfErasedAttendee(userProvidedId, result.providerPassId);
+        return WALLET_PASS_UNAVAILABLE;
       }
       if (templateChanged) {
         recordSystemLog({
@@ -1097,6 +1127,63 @@ export function createApp(options: CreateAppOptions = {}) {
         return markFailed("wallet_expiration_changed");
       }
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
+    }
+
+    /** True when the attendee has been erased, read under their row lock: an erasure that is still
+     * open is waited for, where a plain read would show the attendee as they were before it began.
+     * Best effort: a failed read counts as "not erased". */
+    async function isAttendeeErasedNow(): Promise<boolean> {
+      try {
+        const locked = await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id), {
+          timeout: ERASURE_WAIT_TX_TIMEOUT_MS,
+        });
+        return locked?.erased === true;
+      } catch {
+        return false;
+      }
+    }
+
+    /** For a pass just created at the provider for an attendee who has been erased in the
+     * meantime: records only the provider's ids (no install links), so the pass stays findable as
+     * "still to delete at the provider" (an erased attendee's pass with provider ids and no
+     * provider_removed_at), then deletes it there and stamps it removed. A row that already holds
+     * another pass keeps its ids. Best effort and never throws: a failed delete leaves the row for
+     * the erasure's own retry. */
+    async function deleteOrphanPassOfErasedAttendee(userProvidedId: string, providerPassId: string): Promise<void> {
+      try {
+        try {
+          await db.walletPass.create({
+            data: {
+              attendee_id: attendee.id,
+              provider: "passcreator",
+              provider_pass_id: providerPassId,
+              user_provided_id: userProvidedId,
+              status: "active",
+              issued_at: new Date(),
+            },
+          });
+        } catch (createErr) {
+          if (!(createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002")) throw createErr;
+          // A row exists already (for instance a failed attempt): give it the ids if it has none.
+          await db.walletPass.updateMany({
+            where: { attendee_id: attendee.id, provider_pass_id: null },
+            data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId },
+          });
+        }
+        await provider.deletePass(providerPassId);
+        await db.walletPass.updateMany({
+          where: { attendee_id: attendee.id, provider_pass_id: providerPassId, provider_removed_at: null },
+          data: { provider_removed_at: new Date() },
+        });
+      } catch (err) {
+        console.error("wallet pass delete (erased attendee) failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_erased_delete_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id, providerPassId },
+        });
+      }
     }
 
     /** Marks the pass "failed" after an unrecoverable createPass error - split out of
@@ -1122,32 +1209,34 @@ export function createApp(options: CreateAppOptions = {}) {
       code: WalletProviderErrorCode | "wallet_credential_changed" | "wallet_expiration_changed",
     ): Promise<null> {
       try {
-        const { count } = await db.walletPass.updateMany({
-          where: { attendee_id: attendee.id, status: { not: "active" } },
-          data: { status: "failed", last_error_code: code },
+        await db.$transaction(async (tx) => {
+          // Nothing is recorded for an attendee erased meanwhile.
+          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return;
+          const { count } = await tx.walletPass.updateMany({
+            where: { attendee_id: attendee.id, status: { not: "active" } },
+            data: { status: "failed", last_error_code: code },
+          });
+          // No row matched: either none exists yet (create it), or a concurrent instance's
+          // markActive already holds "active" (the row exists but the guard above correctly
+          // skipped it). The two are told apart by looking for the row, then inserting: a
+          // unique-constraint violation (a concurrent insert) aborts this transaction and is
+          // swallowed below - the same losing-write-becomes-a-no-op pattern already used for
+          // P2002 elsewhere in this file (e.g. wallet-push-routes.ts).
+          if (count === 0 && !(await tx.walletPass.findUnique({ where: { attendee_id: attendee.id }, select: { id: true } }))) {
+            await tx.walletPass.create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: code } });
+          }
         });
-        // No row matched: either none exists yet (create it), or a concurrent instance's
-        // markActive already holds "active" (the row exists but the guard above correctly
-        // skipped it). The two are told apart by attempting the insert and catching the unique
-        // constraint violation the second case throws - the same losing-write-becomes-a-no-op
-        // pattern already used for P2002 elsewhere in this file (e.g. wallet-push-routes.ts).
-        if (count === 0) {
-          await db.walletPass
-            .create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: code } })
-            .catch((createErr) => {
-              if (!(createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002")) {
-                throw createErr;
-              }
-            });
-        }
       } catch (upsertErr) {
-        console.error("walletPass upsert (failed) failed:", upsertErr);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_upsert_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id },
-        });
+        // A unique violation is a concurrent insert that won: nothing to record.
+        if (!(upsertErr instanceof Prisma.PrismaClientKnownRequestError && upsertErr.code === "P2002")) {
+          console.error("walletPass upsert (failed) failed:", upsertErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_pass_upsert_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+        }
       }
       return null;
     }
@@ -1184,7 +1273,7 @@ export function createApp(options: CreateAppOptions = {}) {
      */
     async function createOrRecoverPass(
       input: WalletPassInput,
-    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+    ): Promise<WalletPassUrlsOutcome> {
       try {
         const result = await provider.createPass(input);
         // markActive compares input.expirationDate (exact string, or undefined) against the
@@ -1237,9 +1326,7 @@ export function createApp(options: CreateAppOptions = {}) {
     /** Dispatches on the existing WalletPass row's status - split out of the main handler body to
      * keep its cognitive complexity under the SonarCloud threshold (S3776). Returns null (after
      * the callee's own logging) when none of the three paths could produce a usable URL. */
-    async function resolvePassUrls(): Promise<
-      { apple_url: string | null; android_url: string | null } | typeof WALLET_PASS_UNAVAILABLE | null
-    > {
+    async function resolvePassUrls(): Promise<WalletPassUrlsOutcome> {
       // Voided, expired and removed passes are answered before this point (see the early exit right
       // after the lookup above): a tap never restores or re-creates one. Only an active pass is
       // handed out as is; anything else (no row, pending, failed) creates below.
@@ -1277,6 +1364,14 @@ export function createApp(options: CreateAppOptions = {}) {
         if (latest?.status === "active") {
           return { apple_url: latest.apple_url, android_url: latest.android_url };
         }
+        // The ticket was resolved at the top of the request: an attendee erased since must not
+        // have their data sent to the provider. (markActive's lock is the guard that closes the
+        // race; this keeps the common case from reaching the provider at all.)
+        const stillThere = await db.attendee.findUnique({
+          where: { id: attendee.id },
+          select: { erased_at: true },
+        });
+        if (!stillThere || stillThere.erased_at) return WALLET_PASS_UNAVAILABLE;
         const display = await resolveTicketPageDisplay(db, resolved);
         const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
           db,
@@ -1305,8 +1400,9 @@ export function createApp(options: CreateAppOptions = {}) {
     // Best-effort device capture: this is Admitto's own hop before the attendee's browser ever
     // reaches PassCreator's URL, so it's the only place Admitto can see the real request
     // User-Agent (PassCreator's own "Pass Activity" log isn't exposed via their API - see
-    // WalletPass.user_agent's own doc comment). A DB error here must never block the redirect the
-    // attendee is actually waiting on.
+    // WalletPass.user_agent's own doc comment). A DB error in the write itself must never block
+    // the redirect the attendee is actually waiting on (the write shares a transaction with the
+    // last erased check, see checkAndCaptureDevice below).
     //
     // Only writes while first_confirmed_at is still null - deliberately narrower than "capture
     // until we have something, then freeze" (an earlier version of this used
@@ -1321,14 +1417,53 @@ export function createApp(options: CreateAppOptions = {}) {
     // freezes. A pass that was already confirmed before this column existed has no such window
     // left to safely observe, so it never gets a captured device via this path - "unknown" here,
     // not "attribute it to whoever happens to hit the link next."
-    try {
-      await db.walletPass.updateMany({
-        where: { attendee_id: attendee.id, first_confirmed_at: null },
-        data: { user_agent: c.req.header("user-agent") ?? null, user_agent_captured_at: new Date() },
-      });
-    } catch (err) {
-      console.error("walletPass update (user_agent) failed:", err);
+
+    /** The last step before the redirect, under the attendee's row lock. Returns the response to
+     * send instead of the redirect to the pass, or null to go on:
+     * - the attendee is erased: back to the ticket page, nothing recorded (the erasure clears the
+     *   device and this must not bring it back);
+     * - it could not be established whether they are (the lock gave up waiting behind an
+     *   erasure): the same retry notice as any other failure of this route, because redirecting
+     *   would hand a pass to someone who may have been erased.
+     * The device write failing on its own stays harmless: the visitor still gets the pass. */
+    async function checkAndCaptureDevice(userAgent: string | null): Promise<Response | null> {
+      let erased: boolean;
+      try {
+        erased = await db.$transaction(async (tx) => {
+          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return true;
+          await tx.walletPass.updateMany({
+            where: { attendee_id: attendee.id, first_confirmed_at: null },
+            data: { user_agent: userAgent, user_agent_captured_at: new Date() },
+          });
+          return false;
+        });
+      } catch (err) {
+        console.error("walletPass update (user_agent) failed:", err);
+        // Either the write failed or the wait for the lock gave up, and which is not known: ask
+        // again for the lock alone. That is the answer the redirect needs, and it fails closed.
+        try {
+          erased = (await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id)))?.erased === true;
+        } catch (checkErr) {
+          console.error("wallet redirect erased check failed:", checkErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_redirect_check_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+          return c.redirect(`${backHref}?walletError=1`, 302);
+        }
+      }
+      return erased ? c.redirect(backHref, 302) : null;
     }
+
+    // This transaction is also the last check before the redirect, whichever way the URL was
+    // obtained (a stored active pass, one created just now, one another request is creating): the
+    // attendee's row lock makes an erasure that is still open finish first, and a visitor whose
+    // attendee has been erased since the request began is sent back instead of to the pass. The
+    // erasure clears the stored links, but this request may already hold them.
+    const stop = await checkAndCaptureDevice(c.req.header("user-agent") ?? null);
+    if (stop) return stop;
 
     return c.redirect(url, 302);
   }

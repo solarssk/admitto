@@ -127,7 +127,8 @@ async function loadTargets(
       provider_pass_id: { not: null },
       // A pass removed at the provider has nothing left to update there.
       provider_removed_at: null,
-      attendee: { event_id: eventId },
+      // An erased attendee's pass is being deleted, not updated.
+      attendee: { event_id: eventId, erased_at: null },
     },
     select: { attendee_id: true, provider_pass_id: true },
   });
@@ -157,7 +158,7 @@ async function loadEventWideTargets(
       status: includeVoided ? { in: ["active", "voided"] } : "active",
       provider_pass_id: { not: null },
       provider_removed_at: null,
-      attendee: { event_id: eventId },
+      attendee: { event_id: eventId, erased_at: null },
     },
     select: { attendee_id: true, provider_pass_id: true },
   });

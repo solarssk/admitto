@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@admitto/wallet", () => ({ applyProviderSnapshotToWalletPass: vi.fn() }));
 vi.mock("../src/ops-audit.js", () => ({ writeActionLog: vi.fn() }));
+vi.mock("../src/attendee-lock.js", () => ({ lockAttendeeRow: vi.fn() }));
 
 import { applyProviderSnapshotToWalletPass } from "@admitto/wallet";
 import { writeActionLog } from "../src/ops-audit.js";
+import { lockAttendeeRow } from "../src/attendee-lock.js";
 import { removeOneWalletPassFromProvider } from "../src/remove-wallet-pass-from-provider.js";
 
 const audit = { operator: "user-1", sessionId: "sess-1", timezone: "Europe/Warsaw" };
@@ -55,6 +57,7 @@ describe("removeOneWalletPassFromProvider", () => {
   beforeEach(() => {
     vi.mocked(applyProviderSnapshotToWalletPass).mockReset();
     vi.mocked(writeActionLog).mockReset().mockResolvedValue(undefined);
+    vi.mocked(lockAttendeeRow).mockReset().mockResolvedValue({ id: "att-1", status: "registered", erased: false });
     provider.getPassSnapshot.mockReset();
     provider.deletePass.mockReset().mockResolvedValue(undefined);
   });
@@ -82,6 +85,20 @@ describe("removeOneWalletPassFromProvider", () => {
     expect(provider.deletePass).toHaveBeenCalledWith("pc-1");
     // Conditional on the exact pass and on it not being removed yet - two concurrent removals must
     // not both stamp and log.
+    expect(txUpdateMany).toHaveBeenNthCalledWith(1, {
+      where: { attendee_id: "att-1", provider_pass_id: "pc-1", provider_removed_at: null },
+      data: { provider_removed_at: expect.any(Date) },
+    });
+  });
+
+  it("takes the attendee row first and still records the removal for an erased attendee: the pass is gone at the provider", async () => {
+    const { db, txUpdateMany } = makeDb();
+    vi.mocked(lockAttendeeRow).mockResolvedValue({ id: "att-1", status: "registered", erased: true });
+
+    const result = await removeOneWalletPassFromProvider(db as never, "evt-1", makeTarget(), provider as never, audit);
+
+    expect(result).toBe("removed");
+    expect(lockAttendeeRow).toHaveBeenCalledWith(expect.anything(), "att-1");
     expect(txUpdateMany).toHaveBeenNthCalledWith(1, {
       where: { attendee_id: "att-1", provider_pass_id: "pc-1", provider_removed_at: null },
       data: { provider_removed_at: expect.any(Date) },

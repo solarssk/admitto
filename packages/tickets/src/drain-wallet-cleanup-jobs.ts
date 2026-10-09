@@ -134,7 +134,8 @@ async function loadActivePassTargets(db: PrismaClient, eventId: string): Promise
       status: "active",
       provider_pass_id: { not: null },
       provider_removed_at: null,
-      attendee: { event_id: eventId },
+      // An erased attendee's pass is deleted, not voided: it is the erasure's to remove.
+      attendee: { event_id: eventId, erased_at: null },
     },
     select: WALLET_CLEANUP_TARGET_SELECT,
   });

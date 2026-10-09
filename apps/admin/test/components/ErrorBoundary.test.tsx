@@ -28,6 +28,21 @@ describe("ErrorBoundary", () => {
     expect(reportClientError).not.toHaveBeenCalled();
   });
 
+  it("draws the standard failure glyph above the title of its screen, hidden from assistive tech", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(
+      <ErrorBoundary>
+        <ThrowsOnRender />
+      </ErrorBoundary>,
+    );
+    const panel = screen.getByRole("alert");
+    const icon = panel.firstElementChild;
+    expect(icon?.className).toBe("ti ti-circle-x error-boundary__icon");
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
+    expect(icon?.nextElementSibling?.tagName).toBe("H1");
+    consoleError.mockRestore();
+  });
+
   it("catches a render error, reports it, and shows the recoverable fallback", () => {
     // React logs the caught error to console.error even though this test expects and asserts
     // on it via reportClientError - suppressed here so it doesn't clutter test output.

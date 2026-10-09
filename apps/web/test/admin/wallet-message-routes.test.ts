@@ -30,7 +30,7 @@ import {
   WALLET_MESSAGE_TEXT_MAX_LENGTH,
 } from "../../src/admin/wallet-message-routes.js";
 
-const HAS_WALLET_WHERE = { wallet_pass: { status: "active", provider_pass_id: { not: null } } };
+const HAS_WALLET_WHERE = { erased_at: null, wallet_pass: { status: "active", provider_pass_id: { not: null } } };
 
 function fakeContext(overrides: Record<string, unknown> = {}) {
   return {
