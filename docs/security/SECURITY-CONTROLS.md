@@ -283,9 +283,9 @@ within the limit.
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | admin (operators search through the check-in lookup) |
-| single-attendee wallet actions (void/restore/reissue/refresh status/delete/remove from provider) | user + event | 10 / 60 s | event admin |
-| bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/refresh status/delete/remove from provider for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
+| single-attendee wallet actions (void/restore/reissue/refresh status/delete/remove from provider), plus erase and remove of one attendee whenever the event has wallet configured | user + event | 10 / 60 s | event admin |
+| bulk-attendee mutations (delete, erase, remove, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
+| bulk wallet actions (void/reissue/refresh status/delete/remove from provider for a selection), plus bulk-delete, bulk-erase, bulk-remove and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
 | event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) - one background job per event at a time, no 100-attendee cap | user + event | 10 / 10 min | event admin |
 | polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
 | `PATCH …/attendees/:id` | user + attendee | 20 / 60 s | event admin |

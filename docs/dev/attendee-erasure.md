@@ -38,6 +38,16 @@ Where an Administrator or Superadmin reaches the erasure (`apps/admin`):
 
 Erase is not behind the archived-event guard, like the API.
 
+## Removing an attendee
+
+`removeAttendees` ([`packages/tickets/src/remove-attendees.ts`](../../packages/tickets/src/remove-attendees.ts)) deletes attendees from an event for good: the hard delete, for mistakes (a duplicate, a test person, a wrong import file). Reports change with it. It is a different action from erasing (above), which keeps the entry.
+
+`POST /api/admin/events/:eventId/attendees/:id/remove` and `POST …/attendees/bulk-remove` (Administrator and Superadmin of the event). The body carries a `reason` from a fixed list (`ATTENDEE_REMOVAL_REASONS` in `@admitto/shared`: `duplicate`, `test_person`, `wrong_import`, `added_by_mistake`, `other`) and, for a selection, `attendeeIds` (the same cap as the other bulk wallet routes when the event has wallet credentials). There is no free-text note: it would be personal data in the audit trail. The answer is `{ removed, not_found }`; an id that is not an attendee of the event answers 403 for one attendee, like every single-attendee route. An archived event refuses it (`403 { code: "event_archived" }`): its numbers are final. An erased attendee can be removed.
+
+What happens: the wallet pass of each attendee is deleted at the provider first, best effort (the local row is the only place that knows the provider id; a failure is logged as `wallet_pass_erasure_delete_failed` and the removal goes ahead, so check the System logs). Then, in one transaction, the attendee rows are locked in id order; their deliveries, wallet pass and check-ins are deleted; the attendee rows are deleted (notes, the per-attendee activity log and item hand-outs go by cascade); the copies of the identity elsewhere are scrubbed (`scrubAttendeeTraces`, shared with the erasure: the address on other attendees' deliveries that staff addressed to this person, and the name and address in the creation entry of the central audit log; plus the saved import results, `scrubImportJobResults`); and the audit entries are written, in the event's activity log and in the central admin audit log. They use the action names of an erasure (`attendee_erased`, `attendees_bulk_erased`) and are told apart by `metadata.method` (`"remove"`), with the reason code, the ids and the counts (`removed: { emailDeliveries, walletPasses, checkIns }`), never a name, an address or a note.
+
+The old `DELETE …/attendees/:id` and `POST …/attendees/bulk-delete` still exist until the screens use Remove. They are not behind the archived-event guard, ask for no reason, and keep the name and address in the central audit entry.
+
 ## Rules for code
 
 - **New column or table on an attendee?** `packages/tickets/test/erasure-inventory.test.ts` fails until you decide what erasure does with it (cleared, kept, deleted). Add the behaviour to `eraseAttendees` and its test too.

@@ -3,6 +3,10 @@
  * audit trail holds ids and counts only, a wallet pass is deleted at the provider afterwards (and
  * tried again when the same request is repeated), copies in saved import results are blanked, and
  * it works on an archived event.
+ *
+ * POST …/attendees/:id/remove and …/attendees/bulk-remove (at the end): the person is deleted for
+ * good, with a reason from a fixed list, the audit trail holds the reason, ids and counts only, and
+ * it is refused on an archived event.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
@@ -13,6 +17,7 @@ import { encryptToString } from "@admitto/crypto";
 import type { Context } from "hono";
 import { createApp } from "../../src/app.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../src/admin/attendee-erase-routes.js";
+import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const ORG_ID = "org-erase-api";
@@ -572,5 +577,305 @@ describe("a request without an event id in its path", () => {
 
     expect((await handleEraseEventAttendee(c, prisma)).status).toBe(400);
     expect((await handleBulkEraseEventAttendees(c, prisma)).status).toBe(400);
+  });
+});
+
+describe("removing attendees from an event", () => {
+  const removePath = (eventId: string, attendeeId: string) => `/api/admin/events/${eventId}/attendees/${attendeeId}/remove`;
+  const bulkRemovePath = (eventId: string) => `/api/admin/events/${eventId}/attendees/bulk-remove`;
+  const REASON = "duplicate";
+
+  /** A session of a user created on first use, with the role and MFA a test needs. */
+  async function cookieOf(email: string, password: string, setup: (userId: string) => Promise<void>): Promise<string> {
+    let user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      user = await prisma.user.create({ data: { email, password_hash: await hashPassword(password) } });
+      await setup(user.id);
+    }
+    const session = await createSession(prisma, { userId: user.id, stage: SESSION_STAGE.FULL });
+    return `admitto_session=${session.rawToken}`;
+  }
+  const operatorCookie = () =>
+    cookieOf("erase-api-operator@example.com", "erase-api-operator-pass-123", async (userId) => {
+      await prisma.roleAssignment.create({ data: { user_id: userId, role: "operator", scope_type: "event", scope_id: EVENT_ID } });
+    });
+  const otherAdminCookie = () =>
+    cookieOf(OTHER_ADMIN_EMAIL, "erase-api-other-admin-pass-123", async (userId) => {
+      await prisma.roleAssignment.create({ data: { user_id: userId, role: "admin", scope_type: "organization", scope_id: OTHER_ORG_ID } });
+      await prisma.userMfaMethod.create({
+        data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+      });
+    });
+  const postAs = (as: string, path: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { Cookie: as, ...sameOrigin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  async function withDependents(eventId = EVENT_ID, extra: Record<string, unknown> = {}) {
+    const a = await createAttendee(eventId, extra);
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: eventId,
+        attendee_id: a.id,
+        purpose: "initial",
+        provider: "smtp",
+        status: "sent",
+        recipient_email: a.email,
+        rendered_subject: "Your ticket",
+        rendered_html: "<p>ticket</p>",
+      },
+    });
+    await prisma.checkIn.create({ data: { attendee_id: a.id, event_id: eventId, status: "VALID" } });
+    await prisma.attendeeNote.create({ data: { attendee_id: a.id, event_id: eventId, author_user_id: "staff-1", body: "note" } });
+    return a;
+  }
+  const gone = async (attendeeId: string) =>
+    (await prisma.attendee.count({ where: { id: attendeeId } })) +
+    (await prisma.emailDelivery.count({ where: { attendee_id: attendeeId } })) +
+    (await prisma.checkIn.count({ where: { attendee_id: attendeeId } })) +
+    (await prisma.attendeeNote.count({ where: { attendee_id: attendeeId } })) === 0;
+
+  it("removes the attendee with their deliveries, check-ins and notes, and answers with counts", async () => {
+    const a = await withDependents();
+    const keep = await withDependents();
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+    expect(await gone(a.id)).toBe(true);
+    expect(await gone(keep.id)).toBe(false);
+  });
+
+  it("writes the reason, the id and counts to both audit logs, and no name or address", async () => {
+    const a = await withDependents();
+    await post(removePath(EVENT_ID, a.id), { reason: "test_person" });
+
+    const eventLog = await prisma.attendeeActionLog.findFirstOrThrow({
+      where: { event_id: EVENT_ID, action_type: "attendee_erased", attendee_id: null },
+      orderBy: { created_at: "desc" },
+    });
+    const central = await prisma.adminAuditLog.findFirstOrThrow({
+      where: { action_type: "attendee_erased", organization_id: ORG_ID },
+      orderBy: { created_at: "desc" },
+    });
+    expect(eventLog.metadata).toMatchObject({ attendee_id: a.id, method: "remove", reason: "test_person", removed: { emailDeliveries: 1, checkIns: 1 } });
+    expect(central.metadata).toMatchObject({ attendee_id: a.id, method: "remove", reason: "test_person", event_id: EVENT_ID });
+    for (const metadata of [eventLog.metadata, central.metadata]) {
+      const text = JSON.stringify(metadata).toLowerCase();
+      expect(text).not.toContain(a.name.toLowerCase());
+      expect(text).not.toContain("example.com");
+    }
+  });
+
+  it.each(ATTENDEE_REMOVAL_REASONS)("accepts the reason %s", async (reason) => {
+    const a = await createAttendee();
+    const res = await post(removePath(EVENT_ID, a.id), { reason });
+    expect(res.status).toBe(200);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+  });
+
+  it.each([
+    ["no reason", {}],
+    ["a reason that is not on the list", { reason: "because" }],
+    ["the label instead of the code", { reason: "Duplicate entry" }],
+    ["a free-text note", { reason: REASON, note: "same person as someone else" }],
+    ["a reason that is not a string", { reason: 7 }],
+  ])("rejects %s with 400 and removes nothing", async (_name, body) => {
+    const a = await createAttendee();
+    const single = await post(removePath(EVENT_ID, a.id), body);
+    const bulk = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id], ...body });
+
+    expect(single.status).toBe(400);
+    expect(await single.json()).toEqual({ error: "validation_failed" });
+    expect(bulk.status).toBe(400);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(1);
+  });
+
+  it("rejects a grossly oversized body with 400 before it is read", async () => {
+    const a = await createAttendee();
+    const oversized = { reason: REASON, padding: "x".repeat(600 * 1024) };
+
+    const single = await post(removePath(EVENT_ID, a.id), oversized);
+    const bulk = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id], ...oversized });
+
+    expect(single.status).toBe(400);
+    expect(await single.json()).toEqual({ error: "request too large" });
+    expect(bulk.status).toBe(400);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(1);
+  });
+
+  it("rejects a body that is not JSON with 400", async () => {
+    const a = await createAttendee();
+    const res = await app.request(removePath(EVENT_ID, a.id), {
+      method: "POST",
+      headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(1);
+  });
+
+  it("is refused on an archived event, which is final, and removes nothing", async () => {
+    const a = await withDependents(ARCHIVED_EVENT_ID);
+
+    const single = await post(removePath(ARCHIVED_EVENT_ID, a.id), { reason: REASON });
+    const bulk = await post(bulkRemovePath(ARCHIVED_EVENT_ID), { attendeeIds: [a.id], reason: REASON });
+
+    expect(single.status).toBe(403);
+    expect(await single.json()).toEqual({ code: "event_archived" });
+    expect(bulk.status).toBe(403);
+    expect(await bulk.json()).toEqual({ code: "event_archived" });
+    expect(await gone(a.id)).toBe(false);
+  });
+
+  it("removes someone who was erased before: the anonymous entry goes too", async () => {
+    const a = await withDependents();
+    await post(erasePath(EVENT_ID, a.id));
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: "other" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+  });
+
+  it("blanks the address in a saved import result and in the creation entry of the central audit log", async () => {
+    const a = await createAttendee(EVENT_ID, { email: "  Remove.Copy@Example.COM " });
+    const job = await prisma.adminJob.create({
+      data: {
+        type: "import_commit",
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        result_json: { skipped: [{ email: "remove.copy@example.com", reason: "Duplicate email" }] },
+      },
+    });
+    const created = await prisma.adminAuditLog.create({
+      data: {
+        organization_id: ORG_ID,
+        actor_user_id: "staff-1",
+        action_type: "attendee_created_manual",
+        metadata: { event_id: EVENT_ID, attendee_id: a.id, attendee_name: a.name, attendee_email: a.email },
+      },
+    });
+
+    await post(removePath(EVENT_ID, a.id), { reason: "wrong_import" });
+
+    expect(JSON.stringify((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json).toLowerCase()).not.toContain("remove.copy");
+    expect((await prisma.adminAuditLog.findUniqueOrThrow({ where: { id: created.id } })).metadata).toEqual({ event_id: EVENT_ID, attendee_id: a.id });
+  });
+
+  it("answers 403 for an attendee of another event and leaves them alone", async () => {
+    const a = await createAttendee(WALLET_OFF_EVENT_ID);
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+    expect(res.status).toBe(403);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(1);
+  });
+
+  it("answers 403, not a server error, for an event that does not exist (a superadmin passes the access check for it)", async () => {
+    const single = await post(removePath("evt-erase-api-missing", "erase-api-att-none"), { reason: REASON });
+    const bulk = await post(bulkRemovePath("evt-erase-api-missing"), { attendeeIds: ["erase-api-att-none"], reason: REASON });
+
+    expect(single.status).toBe(403);
+    expect(bulk.status).toBe(403);
+  });
+
+  it("is refused for a door operator, an administrator of another organisation, and without a session", async () => {
+    const a = await createAttendee();
+    const operator = await operatorCookie();
+    const otherAdmin = await otherAdminCookie();
+
+    for (const as of [operator, otherAdmin]) {
+      expect((await postAs(as, removePath(EVENT_ID, a.id), { reason: REASON })).status).toBe(403);
+      expect((await postAs(as, bulkRemovePath(EVENT_ID), { attendeeIds: [a.id], reason: REASON })).status).toBe(403);
+    }
+    const anonymous = await app.request(removePath(EVENT_ID, a.id), {
+      method: "POST",
+      headers: { ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: REASON }),
+    });
+    expect([401, 403]).toContain(anonymous.status);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(1);
+  });
+
+  it("deletes the wallet pass at the provider first", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    const fetchMock = vi.fn(async (_url: unknown) => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(`pc-${a.id}`);
+    expect(await prisma.walletPass.count({ where: { attendee_id: a.id } })).toBe(0);
+  });
+
+  it("removes the attendee although the provider cannot be reached, and says so in the system log", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+    expect(res.status).toBe(200);
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+    expect(errSpy).toHaveBeenCalled();
+  });
+
+  it("removes a selection: the ones that exist, counts the rest, and audits the ids once", async () => {
+    const a = await withDependents();
+    const b = await withDependents();
+    const other = await createAttendee(WALLET_OFF_EVENT_ID);
+
+    const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id, b.id, other.id, "nobody", a.id], reason: "added_by_mistake" });
+
+    expect(await res.json()).toEqual({ removed: 2, not_found: 2 });
+    expect(await gone(a.id)).toBe(true);
+    expect(await gone(b.id)).toBe(true);
+    expect(await prisma.attendee.count({ where: { id: other.id } })).toBe(1);
+    const log = await prisma.attendeeActionLog.findFirstOrThrow({
+      where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log.metadata).toMatchObject({ count: 2, method: "remove", reason: "added_by_mistake", removed: { emailDeliveries: 2, checkIns: 2 } });
+    expect((log.metadata as { attendee_ids: string[] }).attendee_ids.sort()).toEqual([a.id, b.id].sort());
+    const text = JSON.stringify(log.metadata).toLowerCase();
+    expect(text).not.toContain("example.com");
+  });
+
+  it("only unknown ids: nothing is removed, nothing is audited, no provider is called", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const before = await prisma.attendeeActionLog.count({ where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" } });
+
+    const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: ["nobody-1", "nobody-2"], reason: REASON });
+
+    expect(await res.json()).toEqual({ removed: 0, not_found: 2 });
+    expect(await prisma.attendeeActionLog.count({ where: { event_id: EVENT_ID, action_type: "attendees_bulk_erased" } })).toBe(before);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses more than 100 attendees at once when the event has wallet credentials, and an empty or too long list", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `nobody-${i}`);
+    expect((await post(bulkRemovePath(EVENT_ID), { attendeeIds: ids, reason: REASON })).status).toBe(400);
+    expect((await post(bulkRemovePath(EVENT_ID), { attendeeIds: [], reason: REASON })).status).toBe(400);
+    expect((await post(bulkRemovePath(EVENT_ID), { attendeeIds: ["x".repeat(129)], reason: REASON })).status).toBe(400);
+  });
+
+  it("two overlapping requests for the same people remove each of them once", async () => {
+    const a = await createAttendee();
+    const b = await createAttendee();
+
+    const [first, second] = await Promise.all([
+      post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id, b.id], reason: REASON }),
+      post(bulkRemovePath(EVENT_ID), { attendeeIds: [b.id, a.id], reason: REASON }),
+    ]);
+    const bodies = [(await first.json()) as { removed: number; not_found: number }, (await second.json()) as { removed: number; not_found: number }];
+
+    expect(bodies[0]!.removed + bodies[1]!.removed).toBe(2);
+    expect(bodies[0]!.not_found + bodies[1]!.not_found).toBe(2);
   });
 });

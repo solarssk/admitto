@@ -21,6 +21,9 @@ export {
   isErasedPlaceholderEmail,
 } from "./erase-attendees.js";
 export { scrubImportJobResults } from "./erase-job-results.js";
+export { scrubAttendeeTraces } from "./attendee-traces.js";
+export { removeAttendees } from "./remove-attendees.js";
+export type { RemoveAttendeesParams, RemoveAttendeesResult } from "./remove-attendees.js";
 export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
 export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
 export type {

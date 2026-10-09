@@ -2104,7 +2104,7 @@ export async function writeAttendeeLifecycleAuditLog(
  * review - the local WalletPass row's provider_pass_id, the only way to ever reach it again, is
  * gone the moment the caller's own transaction below removes the row). Hence
  * resolveConfiguredWalletProvider, which resolves from the event's credentials alone. */
-async function deleteWalletPassesBestEffort(
+export async function deleteWalletPassesBestEffort(
   db: PrismaClient,
   eventId: string,
   attendeeIds: readonly string[],
