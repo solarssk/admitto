@@ -11,6 +11,7 @@ import {
   hiddenErasedLine,
   peopleCount,
   redactedAfterErasure,
+  redactedRowsAfterErasure,
   rowIdentity,
   selectRowLabel,
   shownErasedLine,
@@ -192,5 +193,39 @@ describe("redactedAfterErasure", () => {
     redactedAfterErasure(live as never, "2026-10-09T12:00:00.000Z");
 
     expect(JSON.stringify(live)).toBe(before);
+  });
+});
+
+describe("redactedRowsAfterErasure", () => {
+  const row = (id: string) => ({
+    id,
+    erased_at: null,
+    name: `Name ${id}`,
+    email: `${id}@example.com`,
+    company: "Acme",
+    department: "Eng",
+    ticket_type: "vip",
+    status: "registered",
+  });
+
+  it("redacts the erased rows in place and leaves the others as they are", () => {
+    const items = [row("a"), row("b"), row("c")];
+
+    const result = redactedRowsAfterErasure(items as never, new Set(["a", "c"]), "2026-10-09T12:00:00.000Z");
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toMatchObject({ id: "a", erased_at: "2026-10-09T12:00:00.000Z", name: ERASED_ATTENDEE_LABEL, email: "", company: null, department: null, ticket_type: "vip" });
+    expect(result[1]).toEqual(items[1]);
+    expect(result[2]).toMatchObject({ id: "c", erased_at: "2026-10-09T12:00:00.000Z", name: ERASED_ATTENDEE_LABEL });
+    expect(JSON.stringify(result[0])).not.toMatch(/Name a|a@example/);
+  });
+
+  it("does not change the rows it was given", () => {
+    const items = [row("a")];
+    const before = JSON.stringify(items);
+
+    redactedRowsAfterErasure(items as never, new Set(["a"]), "2026-10-09T12:00:00.000Z");
+
+    expect(JSON.stringify(items)).toBe(before);
   });
 });

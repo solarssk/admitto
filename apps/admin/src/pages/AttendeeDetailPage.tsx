@@ -2040,13 +2040,18 @@ export function AttendeeDetailPage() {
     return () => life.abort();
   }, []);
 
+  /** Which read of the detail is the newest. A read that was started before a newer one, or before an erasure, never
+   * replaces what the page holds: an older answer must not bring an erased person back. */
+  const loadSeqRef = useRef(0);
+
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId, notesPage };
+    const seq = ++loadSeqRef.current;
     // Changing attendee resets the page to one, but the previous page's request can still
     // finish afterwards. Only let the currently selected page update the detail view.
     const isCurrentRequest = () =>
-      isStillSelected(target) && notesPageRef.current === target.notesPage;
+      isStillSelected(target) && notesPageRef.current === target.notesPage && loadSeqRef.current === seq;
     // The 30 second limit (AGENTS.md "Admin SPA loading and busy states"): after it the request is given up, with an error
     // and a Retry, instead of a skeleton, or a page that never settles, for ever.
     const limit = loadWithTimeout(lifeRef.current?.signal);
@@ -2176,6 +2181,7 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       setEraseOpen(false);
       // Nothing of the person stays on screen while the page reads the server's version (or if that read fails).
+      // The read below is the newest, so one that was already on its way cannot bring them back (loadSeqRef).
       const redacted = redactedAfterErasure(detail!, new Date().toISOString());
       applyDetail(redacted);
       setForm(toAttendeeForm(redacted, attributeFields));

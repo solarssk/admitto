@@ -55,7 +55,7 @@ import type {
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { BulkEraseDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
-import { erasedToast } from "../attendees/erasedAttendee.js";
+import { erasedToast, redactedRowsAfterErasure } from "../attendees/erasedAttendee.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { pollWalletRefreshStatusCompletion } from "../attendees/pollWalletRefreshStatusCompletion.js";
@@ -1392,6 +1392,13 @@ export function AttendeesPage() {
         limit.signal,
       );
       if (ac.signal.aborted) return;
+      const lastPage = Math.max(1, Math.ceil(data.total / pageSize));
+      if (data.items.length === 0 && page > lastPage) {
+        // The page was emptied from under us (an erasure, a delete): step back to the last one that exists
+        // instead of saying "No matches" for a list that has rows.
+        setPage(lastPage);
+        return;
+      }
       setItems(data.items);
       setTotal(data.total);
       setErasedCount(data.erased_count ?? 0);
@@ -1967,6 +1974,8 @@ export function AttendeesPage() {
       onSuccess: (result) => {
         setBulkEraseConfirmOpen(false);
         clearSelection();
+        // Nothing of the erased people stays on screen while the list reads the server's version.
+        setItems((current) => redactedRowsAfterErasure(current, new Set(ids), new Date().toISOString()));
         setReloadToken((n) => n + 1);
         if (result.wallet_pending > 0) {
           eraseWalletResult.open(result.wallet_pending, () => bulkEraseAttendees(eventId!, ids));

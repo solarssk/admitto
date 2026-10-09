@@ -232,6 +232,54 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     expect(await screen.findByText("Personal data of 2 people erased")).toBeTruthy();
   });
 
+  it("shows nothing of the erased people at once, while the list still waits for the server's version", async () => {
+    fetchEventAttendees.mockResolvedValueOnce(listOf([rowA, rowB], 0));
+    fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
+    bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0 });
+
+    renderListAndPage();
+    confirmErase(await openEraseDialog());
+
+    expect(await screen.findAllByText("Erased attendee")).toHaveLength(2);
+    expect(screen.queryByText("Jane Doe")).toBeNull();
+    expect(screen.queryByText("John Smith")).toBeNull();
+    expect(screen.queryByText("att-1@example.com")).toBeNull();
+    expect(screen.queryByText("Platform")).toBeNull();
+    expect(screen.getAllByRole("checkbox", { name: "Erased entries cannot be selected" })).toHaveLength(2);
+  });
+
+  it("steps back to the last page that exists when the erasure emptied the page the list was on", async () => {
+    const pageOne = Array.from({ length: 25 }, (_, i) => makeRow(`att-p1-${i}`, `Person ${i}`));
+    let erased = false;
+    fetchEventAttendees.mockImplementation(async (_eventId: string, params: { page?: number }) => {
+      const page = params.page ?? 1;
+      if (page === 1) return { items: pageOne, total: erased ? 25 : 26, erased_count: erased ? 1 : 0, page, pageSize: 25 };
+      // Page 2 held the one row that was erased: the server now has nothing there.
+      return { items: erased ? [] : [rowB], total: erased ? 25 : 26, erased_count: erased ? 1 : 0, page, pageSize: 25 };
+    });
+    bulkEraseAttendees.mockImplementation(async () => {
+      erased = true;
+      return { erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 };
+    });
+
+    renderListAndPage();
+    await screen.findByText("Person 0");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("John Smith");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("1")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Erase personal data/ }));
+    confirmErase(screen.getByRole("dialog", { name: "Erase personal data of 1 person?" }));
+
+    await waitFor(() =>
+      expect(fetchEventAttendees).toHaveBeenLastCalledWith("evt-1", expect.objectContaining({ page: 1 }), expect.anything()),
+    );
+    expect(await screen.findByText("Person 0")).toBeTruthy();
+    expect(screen.queryByText("No matches")).toBeNull();
+    expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+  });
+
   it("works on an archived event: privacy requests do not expire with it", async () => {
     eventState.archived_at = "2026-08-01T00:00:00.000Z";
     fetchEventAttendees.mockResolvedValue(listOf([rowA, rowB], 0));

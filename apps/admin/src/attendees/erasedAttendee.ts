@@ -138,3 +138,22 @@ export function redactedAfterErasure(detail: AttendeeDetailDto, erasedAt: string
     notes_total: 0,
   };
 }
+
+/**
+ * What the Attendees list holds right after the server has confirmed the erasure of `ids`: those
+ * rows, redacted in place (the erased marker set, name, address, company and department taken out).
+ * The list then reads the server's version, which leaves them out unless erased entries are shown;
+ * until that answers, or if it is slow, nothing of those people stays on screen, and the page does
+ * not empty out from under the operator.
+ */
+export function redactedRowsAfterErasure(
+  items: readonly AttendeeRowDto[],
+  ids: ReadonlySet<string>,
+  erasedAt: string,
+): AttendeeRowDto[] {
+  return items.map((row) =>
+    ids.has(row.id)
+      ? { ...row, erased_at: erasedAt, name: ERASED_ATTENDEE_LABEL, email: "", company: null, department: null }
+      : row,
+  );
+}

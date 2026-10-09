@@ -193,6 +193,37 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("does not let a read that started before the erasure bring the person back when it answers late", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
+    mockLoad(baseDetail({ notes_total: 51, notes_page: 1, notes_page_size: 50 }));
+    let answerOlderRead!: (value: unknown) => void;
+    // The second page of notes: a read that is still on its way when the erasure is confirmed.
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise((resolve) => (answerOlderRead = resolve)));
+    mockLoad(erasedDetail());
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1?tab=notes"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "Anna Alpha" });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+    expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+
+    await act(async () => {
+      answerOlderRead({ detail: baseDetail({ notes_total: 51, notes_page: 2, notes_page_size: 50 }), attributeFields: [], itemsWarning: null });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    expect(screen.queryByText("Anna Alpha")).toBeNull();
+  });
+
   it("keeps the person off the screen when the page cannot read the server's version afterwards", async () => {
     eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0 });
     mockLoad(baseDetail({ wallet_pass: pass({ apple_url: "https://wallet.example.com/a", android_url: "https://wallet.example.com/g" }) }));
