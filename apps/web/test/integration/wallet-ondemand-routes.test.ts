@@ -427,7 +427,8 @@ describe("On-demand wallet routes", () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
-    expect(transactionSpy).toHaveBeenCalledTimes(2);
+    // The save, the failed capture, and the check with the attendee lock alone that follows it.
+    expect(transactionSpy).toHaveBeenCalledTimes(3);
     transactionSpy.mockRestore();
   });
 

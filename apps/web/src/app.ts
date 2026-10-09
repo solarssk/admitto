@@ -534,6 +534,13 @@ async function resolveQrPayloadOrRespond(
  * an error" - a redirect back to the ticket page without the retry notice. */
 const WALLET_PASS_UNAVAILABLE = "unavailable" as const;
 
+/** How long a short transaction of the wallet flow may take when it has to wait for an erasure of
+ * the same attendee. Prisma's default of 5 s is not enough: a statement blocked on the row lock
+ * keeps waiting for the erasure to end (it is not cut off at 5 s), but the transaction has expired
+ * by then and its commit fails, so the work is lost. An erasure's own transaction may take 60 s
+ * (attendee-erase-routes.ts); a single statement is cut by the database's statement timeout. */
+const ERASURE_WAIT_TX_TIMEOUT_MS = 65_000;
+
 /** What the on-demand wallet flow resolves to: the install links, "unavailable" (a quiet redirect
  * back to the ticket page) or null (a failure, redirected with a retry notice). */
 type WalletPassUrls = { apple_url: string | null; android_url: string | null };
@@ -1079,7 +1086,7 @@ export function createApp(options: CreateAppOptions = {}) {
               expires_at: expiresAt,
             },
           });
-        });
+        }, { timeout: ERASURE_WAIT_TX_TIMEOUT_MS });
       } catch (err) {
         console.error("walletPass upsert (active) failed:", err);
         recordSystemLog({
@@ -1088,8 +1095,9 @@ export function createApp(options: CreateAppOptions = {}) {
           message: "wallet_pass_upsert_failed",
           fields: { eventId: event.id, attendeeId: attendee.id, providerPassId: result.providerPassId },
         });
-        // The transaction can also have given up waiting behind an erasure (the default limit is
-        // 5 s): the new pass must not stay at the provider with nothing tracking it.
+        // The new pass must not stay at the provider with nothing tracking it if the attendee was
+        // erased meanwhile. Whatever made the save fail, the erasure may still be open: the check
+        // takes the attendee's row lock, so it waits for the erasure and sees its result.
         if (await isAttendeeErasedNow()) {
           await deleteOrphanPassOfErasedAttendee(userProvidedId, result.providerPassId);
           return WALLET_PASS_UNAVAILABLE;
@@ -1121,11 +1129,15 @@ export function createApp(options: CreateAppOptions = {}) {
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
     }
 
-    /** True when the attendee has been erased. Best effort: a failed read counts as "not erased". */
+    /** True when the attendee has been erased, read under their row lock: an erasure that is still
+     * open is waited for, where a plain read would show the attendee as they were before it began.
+     * Best effort: a failed read counts as "not erased". */
     async function isAttendeeErasedNow(): Promise<boolean> {
       try {
-        const row = await db.attendee.findUnique({ where: { id: attendee.id }, select: { erased_at: true } });
-        return row?.erased_at != null;
+        const locked = await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id), {
+          timeout: ERASURE_WAIT_TX_TIMEOUT_MS,
+        });
+        return locked?.erased === true;
       } catch {
         return false;
       }
@@ -1388,8 +1400,9 @@ export function createApp(options: CreateAppOptions = {}) {
     // Best-effort device capture: this is Admitto's own hop before the attendee's browser ever
     // reaches PassCreator's URL, so it's the only place Admitto can see the real request
     // User-Agent (PassCreator's own "Pass Activity" log isn't exposed via their API - see
-    // WalletPass.user_agent's own doc comment). A DB error here must never block the redirect the
-    // attendee is actually waiting on.
+    // WalletPass.user_agent's own doc comment). A DB error in the write itself must never block
+    // the redirect the attendee is actually waiting on (the write shares a transaction with the
+    // last erased check, see checkAndCaptureDevice below).
     //
     // Only writes while first_confirmed_at is still null - deliberately narrower than "capture
     // until we have something, then freeze" (an earlier version of this used
@@ -1405,22 +1418,43 @@ export function createApp(options: CreateAppOptions = {}) {
     // left to safely observe, so it never gets a captured device via this path - "unknown" here,
     // not "attribute it to whoever happens to hit the link next."
 
-    /** Never throws. "erased" only when the attendee is erased: nothing is recorded then, because
-     * the erasure clears the device and this must not bring it back. */
-    async function captureDeviceUnlessErased(userAgent: string | null): Promise<"recorded" | "erased"> {
+    /** The last step before the redirect, under the attendee's row lock. Returns the response to
+     * send instead of the redirect to the pass, or null to go on:
+     * - the attendee is erased: back to the ticket page, nothing recorded (the erasure clears the
+     *   device and this must not bring it back);
+     * - it could not be established whether they are (the lock gave up waiting behind an
+     *   erasure): the same retry notice as any other failure of this route, because redirecting
+     *   would hand a pass to someone who may have been erased.
+     * The device write failing on its own stays harmless: the visitor still gets the pass. */
+    async function checkAndCaptureDevice(userAgent: string | null): Promise<Response | null> {
+      let erased: boolean;
       try {
-        return await db.$transaction(async (tx) => {
-          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return "erased" as const;
+        erased = await db.$transaction(async (tx) => {
+          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return true;
           await tx.walletPass.updateMany({
             where: { attendee_id: attendee.id, first_confirmed_at: null },
             data: { user_agent: userAgent, user_agent_captured_at: new Date() },
           });
-          return "recorded" as const;
+          return false;
         });
       } catch (err) {
         console.error("walletPass update (user_agent) failed:", err);
-        return "recorded";
+        // Either the write failed or the wait for the lock gave up, and which is not known: ask
+        // again for the lock alone. That is the answer the redirect needs, and it fails closed.
+        try {
+          erased = (await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id)))?.erased === true;
+        } catch (checkErr) {
+          console.error("wallet redirect erased check failed:", checkErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_redirect_check_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+          return c.redirect(`${backHref}?walletError=1`, 302);
+        }
       }
+      return erased ? c.redirect(backHref, 302) : null;
     }
 
     // This transaction is also the last check before the redirect, whichever way the URL was
@@ -1428,8 +1462,8 @@ export function createApp(options: CreateAppOptions = {}) {
     // attendee's row lock makes an erasure that is still open finish first, and a visitor whose
     // attendee has been erased since the request began is sent back instead of to the pass. The
     // erasure clears the stored links, but this request may already hold them.
-    const outcome = await captureDeviceUnlessErased(c.req.header("user-agent") ?? null);
-    if (outcome === "erased") return c.redirect(backHref, 302);
+    const stop = await checkAndCaptureDevice(c.req.header("user-agent") ?? null);
+    if (stop) return stop;
 
     return c.redirect(url, 302);
   }

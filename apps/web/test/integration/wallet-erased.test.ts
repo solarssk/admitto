@@ -100,17 +100,27 @@ afterAll(async () => {
   await prisma?.$disconnect();
 });
 
-/** Starts an erasure and keeps its transaction open after the rows are written. */
-async function holdErasure(ids: string[]) {
+/** Starts an erasure and keeps its transaction open after the rows are written. `timeoutMs` is the
+ * transaction's own limit (Prisma's default is 5 s; the erase API uses 60 s). `commit` ends it with
+ * a commit, or, with `outcome: "rollback"`, with a rollback (the erasure then never happened). */
+async function holdErasure(ids: string[], timeoutMs = 5_000, outcome: "commit" | "rollback" = "commit") {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   let written!: () => void;
   const writtenPromise = new Promise<void>((resolve) => (written = resolve));
-  const transaction = prisma.$transaction(async (tx) => {
-    await eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids });
-    written();
-    await gate;
-  });
+  const transaction = prisma
+    .$transaction(
+      async (tx) => {
+        await eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids });
+        written();
+        await gate;
+        if (outcome === "rollback") throw new Error("erasure rolled back");
+      },
+      { timeout: timeoutMs },
+    )
+    .catch((err: unknown) => {
+      if (outcome !== "rollback") throw err;
+    });
   await writtenPromise;
   return { commit: () => (release(), transaction) };
 }
@@ -150,6 +160,61 @@ describe("wallet pass creation racing an erasure", () => {
     expect(pass.apple_url).toBeNull();
     expect(pass.provider_removed_at).not.toBeNull();
   });
+
+  it("deletes the new pass when the save fails while an erasure is still open, by waiting for that erasure", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      const held = await holdErasure([attendee.id]);
+      setTimeout(() => void held.commit(), 400);
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+    // The erasure above is the first transaction; the save is the second and gives up at once, as
+    // one that failed behind the erasure would. A plain read would still show a live attendee.
+    const realTransaction = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+    let calls = 0;
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+      ++calls === 2 ? Promise.reject(new Error("Transaction API error: timeout")) : realTransaction(...args)) as never);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    spy.mockRestore();
+    errSpy.mockRestore();
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
+    const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
+    expect(pass.apple_url).toBeNull();
+    expect(pass.provider_removed_at).not.toBeNull();
+  });
+
+  it("still saves the new pass when the erasure it waited longer than 5 s for is rolled back", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      const held = await holdErasure([attendee.id], 30_000, "rollback");
+      // Past Prisma's default 5 s: with that limit the save would lose its work at commit.
+      setTimeout(() => void held.commit(), 5_500);
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
+    expect(provider.deletePass).not.toHaveBeenCalled();
+    const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
+    expect(pass).toMatchObject({ status: "active", apple_url: "https://pc.test/apple/x" });
+  }, 30_000);
 
   it("deletes the new pass even when saving it failed after the erasure committed", async () => {
     const { attendee, token } = await createAttendee();
@@ -423,6 +488,61 @@ describe("the last check before something is sent to the provider", () => {
 
     expect(result).toBe("reissued");
     expect(provider.updatePass).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a visitor back with the retry notice, not to the pass, when the check before the redirect cannot be made", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-fail-closed", apple_url: "https://pc.test/apple/closed" },
+    });
+    // The transaction of the check gave up (for instance waiting behind an erasure), and so does
+    // the second try with the lock alone.
+    const spy = vi
+      .spyOn(prisma, "$transaction")
+      .mockRejectedValueOnce(new Error("Transaction API error: timeout"))
+      .mockRejectedValueOnce(new Error("Transaction API error: timeout"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    spy.mockRestore();
+    errSpy.mockRestore();
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${token}?walletError=1`);
+  });
+
+  it("still sends the visitor to the pass when only the device write fails and the attendee is live", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-write-fails", apple_url: "https://pc.test/apple/write" },
+    });
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("write failed"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    spy.mockRestore();
+    errSpy.mockRestore();
+
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/write");
+  });
+
+  it("sends the visitor back to the ticket page when the capture transaction fails and the second check finds the attendee erased", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-write-erased", apple_url: "https://pc.test/apple/we" },
+    });
+    // The erasure commits while the capture transaction fails; the lock-only check that follows sees it.
+    const spy = vi
+      .spyOn(prisma, "$transaction")
+      .mockImplementationOnce((() =>
+        erase([attendee.id]).then(() => Promise.reject(new Error("Transaction API error: timeout")))) as never);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    spy.mockRestore();
+    errSpy.mockRestore();
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
   });
 
   it("a message batch waits for an erasure that is still open and leaves the erased attendee out", async () => {
