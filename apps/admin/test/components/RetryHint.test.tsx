@@ -14,6 +14,22 @@ describe("RetryHint", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it("starts its message with the standard failure glyph, hidden from assistive tech", () => {
+    render(<RetryHint message="Could not load types." busy={false} onRetry={vi.fn()} />);
+    const message = screen.getByText("Could not load types.");
+    const icon = message.firstElementChild;
+    expect(icon?.className).toBe("ti ti-circle-x failure-icon");
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("draws its Retry as a word at the end of the sentence with a refresh glyph before it (retry-hint__button, staff.css), not as a boxed button", () => {
+    render(<RetryHint message="Could not load types." busy={false} onRetry={vi.fn()} />);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry.className).toContain("retry-hint__button");
+    expect(retry.className).not.toContain("at-btn--secondary");
+    expect(retry.querySelector("i.ti-refresh")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("gives its Retry a name of its own when asked, starting with Retry", () => {
     render(<RetryHint message="Could not load events." busy={false} onRetry={vi.fn()} retryLabel="Retry loading events" />);
     expect(screen.getByRole("button", { name: "Retry loading events" })).toBeTruthy();

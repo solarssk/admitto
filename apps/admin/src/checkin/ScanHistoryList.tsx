@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Notice } from "@admitto/ui";
 import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { readRememberedRowCount, rememberRowCount } from "../attendees/rememberedRowCount.js";
 import { useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
+import { useRetryFocusHandover } from "../hooks/useRetryFocusHandover.js";
 import { CkRecentScans } from "./CkRecentScans.js";
 import { CkStats } from "./CkStats.js";
 
@@ -30,13 +31,18 @@ type ScanHistoryListProps = {
 
 /** The first load of the counts and the history failed: says so, with a Retry that stays busy for at
  * least 400ms so a retry that fails again at once still shows it ran. Shared by the sidebar and the
- * phone camera view. */
+ * phone camera view. When the retry works the error and its Retry go, and the keyboard focus on it goes
+ * with them: `landmark` is the region that stays (the camera view's list), which takes the focus. The
+ * sidebar passes none, because there the page puts the focus on the scan field. */
 export function ScanHistoryError({
   retrying = false,
   onRetry,
   className,
-}: Readonly<{ retrying?: boolean; onRetry?: () => void; className?: string }>) {
+  landmark,
+}: Readonly<{ retrying?: boolean; onRetry?: () => void; className?: string; landmark?: string }>) {
   const retryBusy = useMinimumBusy(retrying);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useRetryFocusHandover(retryRef, landmark, landmark !== undefined);
   return (
     <Notice
       variant="error"
@@ -45,7 +51,7 @@ export function ScanHistoryError({
       actionBusy={retryBusy}
       action={
         onRetry && (
-          <Button type="button" variant="secondary" size="sm" loading={retryBusy} onClick={onRetry}>
+          <Button ref={retryRef} type="button" variant="secondary" size="sm" loading={retryBusy} onClick={onRetry}>
             Retry
           </Button>
         )

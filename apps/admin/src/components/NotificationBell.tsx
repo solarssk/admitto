@@ -11,6 +11,7 @@ import type { NotificationDto } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useBusyEndCount, useRetry } from "../hooks/useRetry.js";
 import { formatRelativeTime } from "../utils/event-dates.js";
+import { FailureIcon } from "./FailureIcon.js";
 import { NOTIFICATION_SEVERITY_ICON } from "./notificationSeverity.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
@@ -358,6 +359,7 @@ export function NotificationBell() {
           )}
           {listError && (
             <div className="notif-bell__status" role="alert">
+              <FailureIcon />
               <p key={listErrorAttempts}>{listError}</p>
               <Button type="button" variant="secondary" size="sm" loading={listRetry.busy} onClick={listRetry.retry}>
                 Retry

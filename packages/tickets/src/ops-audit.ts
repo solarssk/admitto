@@ -78,6 +78,9 @@ export async function writeActionLogMany(
   });
 }
 
+/** Appends one per-attendee audit row. Returns whether it did: false, with nothing written, for an
+ * erased attendee, so a caller whose result must not leave for someone being erased (a ticket link)
+ * can tell. The others ignore it. */
 export async function writeActionLog(
   tx: Prisma.TransactionClient,
   data: {
@@ -87,14 +90,14 @@ export async function writeActionLog(
     audit: OpsAuditContext;
     metadata?: Record<string, unknown>;
   },
-): Promise<void> {
+): Promise<boolean> {
   // See writeActionLogMany: nothing is logged for an erased attendee. A missing attendee falls
   // through to the insert, which fails on the foreign key as before.
   // This lock comes late in a transaction that has already written something. One that updated or
   // deleted a row an erasure also writes (wallet pass, check-in, email delivery, note) calls
   // lockAttendeeRow before that write, or it can deadlock with an erasure that holds the attendee
   // and waits for that row. (The insert below would take the same lock through its foreign key.)
-  if ((await lockAttendeeRow(tx, data.attendee_id))?.erased) return;
+  if ((await lockAttendeeRow(tx, data.attendee_id))?.erased) return false;
   await tx.attendeeActionLog.create({
     data: {
       event_id: data.event_id,
@@ -108,4 +111,5 @@ export async function writeActionLog(
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
     },
   });
+  return true;
 }

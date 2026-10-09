@@ -1,7 +1,8 @@
 /**
  * Claim and run pending AdminJob type=wallet_refresh_status - pulls each target attendee's
  * current device-registration status straight from the provider, via the same
- * refreshOneWalletPassStatus used by the single-attendee and bulk "Refresh status" actions.
+ * refreshOneWalletPassStatus used by the single-attendee and bulk "Refresh status" actions (an
+ * attendee who is erased, or being erased, is skipped before the provider is read).
  * Always event-wide (there's no attendee_ids-kind variant - an operator-bounded selection
  * refreshes synchronously instead, see attendees-api-routes.ts's bulk-wallet-refresh-status),
  * unlike its wallet_push sibling. Chunked at the same low concurrency as wallet_push (ADR 0041
@@ -11,9 +12,9 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { refreshOneWalletPassStatus } from "@admitto/wallet";
 import { claimNextAdminJob } from "./claim-admin-job.js";
 import { reclaimStaleAdminJobsByType } from "./reclaim-stale-admin-jobs-by-type.js";
+import { refreshWalletPassStatusUnlessErased } from "./refresh-wallet-pass-status.js";
 import { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 
 /** Same 30-minute budget as wallet_push - a large refresh is expected to take a while, bounded by
@@ -196,7 +197,7 @@ async function runOneWalletRefreshStatusJob(
 
     for (const batch of chunk(targets, WALLET_REFRESH_STATUS_CONCURRENCY)) {
       const settled = await Promise.allSettled(
-        batch.map((target) => refreshOneWalletPassStatus(db, target, provider)),
+        batch.map((target) => refreshWalletPassStatusUnlessErased(db, target, provider)),
       );
       for (const outcome of settled) {
         // "suppressed" still wrote the registration counts, exactly like "refreshed" - only the

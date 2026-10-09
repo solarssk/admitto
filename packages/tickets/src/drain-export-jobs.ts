@@ -98,7 +98,8 @@ async function runOneExportJob(
     const request = readRequest(job);
     if (!request) throw new Error("export_job_bad_request");
 
-    const total = await countFilteredAttendees(db, job.event_id, request.filters);
+    // Exports never include an erased attendee, whatever the stored filters say.
+    const total = await countFilteredAttendees(db, job.event_id, { ...request.filters, includeErased: false });
     if (total > EXPORT_ROW_CAP) throw new Error("export_too_large");
 
     const event = await db.event.findUniqueOrThrow({

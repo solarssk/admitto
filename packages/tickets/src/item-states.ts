@@ -24,7 +24,13 @@ function operatorTransitionsFor(state: string): string[] {
 export const REVOCABLE_ITEM_STATES = ["issued", "returned"];
 
 export class IllegalItemTransitionError extends Error {
-  constructor(message: string) {
+  /** `erased`: the reason is that the attendee's personal data has been erased (see
+   * eraseAttendees). The message is for logs and the door; a staff route answers
+   * `attendee_erased` instead, which the admin app maps to its own words. */
+  constructor(
+    message: string,
+    readonly erased = false,
+  ) {
     super(message);
     this.name = "IllegalItemTransitionError";
   }
@@ -75,7 +81,7 @@ async function loadAttendeeForItemAction(
     throw new IllegalItemTransitionError("Attendee not found for this event");
   }
   if (attendee.erased) {
-    throw new IllegalItemTransitionError("Attendee data has been erased");
+    throw new IllegalItemTransitionError("Attendee data has been erased", true);
   }
   return { id: attendee.id, status: attendee.status as AttendeeStatus };
 }

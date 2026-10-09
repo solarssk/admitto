@@ -12,6 +12,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
+import { FailureIcon } from "../components/FailureIcon.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
@@ -623,7 +624,10 @@ export function IdentityProviderEditor({
 
   const notFoundContent = (
     <div className="identity-editor__error" role="alert">
-      <p>This provider no longer exists.</p>
+      <p>
+        <FailureIcon className="failure-icon--large" />
+        This provider no longer exists.
+      </p>
       <Button variant="secondary" onClick={() => void navigate(IDENTITY_PROVIDERS_ROUTE)}>
         Back to providers
       </Button>

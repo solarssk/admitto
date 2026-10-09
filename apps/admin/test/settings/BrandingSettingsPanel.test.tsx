@@ -531,7 +531,11 @@ describe("BrandingSettingsPanel - organisation fields", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await screen.findByAltText("Organisation logo preview");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    // The zone tells the panel that the upload is over from a passive effect, one commit after the
+    // preview shows, and Save swallows a click until then.
+    const save = await screen.findByRole("button", { name: "Save" });
+    await waitFor(() => expect(isOff(save)).toBe(false));
+    fireEvent.click(save);
     await waitFor(() => {
       expect(mockPatchOrg).toHaveBeenCalledWith(
         expect.objectContaining({
