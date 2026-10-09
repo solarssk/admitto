@@ -12,18 +12,24 @@ function isRecord(value: unknown): value is JsonRecord {
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 
 /** What may stand in the local part of an address: letters, digits, the dot, the hyphen and every
- * other character RFC 5322 allows there (this app's own validator takes the apostrophe, so
- * `o'brien@x.com` is an address of its own, not `brien@x.com` with a quote before it). */
+ * other character RFC 5322 allows there. This app's own validator takes the underscore, the plus,
+ * the hyphen and the apostrophe, so `_a@x.com`, `+a@x.com` and `o'a@x.com` are addresses of their
+ * own and not `a@x.com` with a mark in front of it. */
 const LOCAL_PART_CHARACTER = /[\p{L}\p{N}!#$%&'*+/=?^_`{|}~.-]/u;
 
-/** The text before `from` goes on in the same local part and has a letter or a digit in it: then
- * `from` is the tail of a longer, different address (`banana@x.com`, `b.a@x.com`, `x!a@x.com`).
- * Punctuation alone before it ("a@x.com" in quotes, `<a@x.com>`, `=a@x.com`) is not part of it. */
+/** A quote mark. The apostrophe is valid in a local part, but at the start of one it is a quote
+ * around the value (a cell that reads 'a@x.com') far more often than a part of an address, and an
+ * erased address left behind in quotes would be the worse mistake. */
+const QUOTE_MARK = /['`]/;
+
+/** The character right before `from` goes on in the same local part, so `from` is the tail of a
+ * longer, different address (`banana@x.com`, `_a@x.com`, `x!a@x.com`, `=a@x.com`), unless that
+ * character is a quote mark that opens the value. A mark that is not a local-part character at
+ * all (a bracket, a double quote, a comma, a space) never continues it. */
 function localPartContinuesBefore(text: string, from: number): boolean {
-  for (let i = from - 1; i >= 0 && LOCAL_PART_CHARACTER.test(text.charAt(i)); i -= 1) {
-    if (WORD_CHARACTER.test(text.charAt(i))) return true;
-  }
-  return false;
+  const before = text.charAt(from - 1);
+  if (!LOCAL_PART_CHARACTER.test(before)) return false;
+  return !(QUOTE_MARK.test(before) && !LOCAL_PART_CHARACTER.test(text.charAt(from - 2)));
 }
 
 /** The domain goes on after `end`: another letter or digit, or a dot or a hyphen with one behind it

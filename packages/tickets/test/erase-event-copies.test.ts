@@ -184,12 +184,39 @@ describe("scrubImportJobResults", () => {
     expect(JSON.stringify(after)).not.toContain("gone@punct.example.com");
   });
 
+  it("blanks an entry whose cell holds the address between stray quote marks", async () => {
+    const job = await importJob(EVENT_ID, {
+      invalidRows: [
+        { rowIndex: 9, raw: { email: "'gone@quote.example.com'" }, reason: 'Invalid email: "\'gone@quote.example.com\'"' },
+        { rowIndex: 10, raw: { note: "`gone@quote.example.com`" }, reason: "Missing last_name" },
+        { rowIndex: 11, raw: { email: "keeps@quote.example.com" }, reason: "Missing last_name" },
+      ],
+    });
+
+    const rewritten = await prisma.$transaction((tx) => scrubImportJobResults(tx, EVENT_ID, ["gone@quote.example.com"]));
+
+    expect(rewritten).toBe(1);
+    const after = (await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json as { invalidRows: unknown[] };
+    expect(after.invalidRows).toEqual([
+      { rowIndex: 9, raw: null, reason: expect.stringContaining("erased") },
+      { rowIndex: 10, raw: null, reason: expect.stringContaining("erased") },
+      { rowIndex: 11, raw: { email: "keeps@quote.example.com" }, reason: "Missing last_name" },
+    ]);
+    expect(JSON.stringify(after)).not.toContain("gone@quote.example.com");
+  });
+
   it("does not blank the entry of another address that only ends with the erased one", async () => {
     const result = {
-      skipped: [{ email: "o'brien@tail.example.com", reason: "Duplicate email" }],
+      // Addresses this app's own validator accepts: other people, whatever stands before the name.
+      skipped: [
+        { email: "o'brien@tail.example.com", reason: "Duplicate email" },
+        { email: "_brien@tail.example.com", reason: "Duplicate email" },
+        { email: "+brien@tail.example.com", reason: "Duplicate email" },
+      ],
       invalidRows: [
         { rowIndex: 3, raw: { email: "x!brien@tail.example.com" }, reason: 'Invalid email: "x!brien@tail.example.com"' },
         { rowIndex: 4, raw: { email: "x=brien@tail.example.com" }, reason: 'Invalid email: "x=brien@tail.example.com"' },
+        { rowIndex: 5, raw: { email: "=brien@tail.example.com" }, reason: 'Invalid email: "=brien@tail.example.com"' },
       ],
     };
     const job = await importJob(EVENT_ID, result);
