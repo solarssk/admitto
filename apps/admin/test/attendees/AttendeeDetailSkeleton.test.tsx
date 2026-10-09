@@ -2,15 +2,19 @@
 import type { ComponentProps } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { AttendeeDetailSkeleton } from "../../src/attendees/AttendeeDetailSkeleton.js";
 import { SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
+
+const WALLETS_ON: EnabledWalletPlatforms = { apple: true, google: true, samsung: false, any: true };
+const WALLETS_OFF: EnabledWalletPlatforms = { apple: false, google: false, samsung: false, any: false };
 
 afterEach(cleanup);
 
 function renderSkeleton(props: Partial<ComponentProps<typeof AttendeeDetailSkeleton>> = {}) {
   return render(
     <div className="screen">
-      <AttendeeDetailSkeleton slow={false} isDesktop onBack={() => {}} {...props} />
+      <AttendeeDetailSkeleton slow={false} isDesktop onBack={() => {}} walletPlatforms={WALLETS_ON} {...props} />
     </div>,
   );
 }
@@ -29,6 +33,16 @@ describe("AttendeeDetailSkeleton: the page's own frame while its record is on it
     expect(titles).toEqual(["Profile", "Additional information", "Event items", "Delivery history"]);
     const rows = [...container.querySelectorAll(".attendee-detail-profile .attendee-detail-row > span:first-child")].map((el) => el.textContent);
     expect(rows).toEqual(["Email", "Ticket type", "Company", "Department", "Added via", "Registered on"]);
+  });
+
+  it("draws the Wallet chip only when the event offers a wallet platform, as the page does, so the strip has the rows it will have", () => {
+    const chips = (container: HTMLElement) => [...container.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent);
+    expect(chips(renderSkeleton({ walletPlatforms: WALLETS_OFF }).container)).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in"]);
+    cleanup();
+    // A Samsung-only event has the chip too: the page reads its registration data like Apple's and Google's.
+    expect(chips(renderSkeleton({ walletPlatforms: { apple: false, google: false, samsung: true, any: false } }).container)).toContain("Wallet");
+    cleanup();
+    expect(chips(renderSkeleton({ walletPlatforms: { apple: true, google: false, samsung: false, any: true } }).container)).toContain("Wallet");
   });
 
   it("uses the page's own classes, so the stylesheet lays it out as it lays out the page, and keeps the marker the page's tests look for", () => {
@@ -84,7 +98,7 @@ describe("AttendeeDetailSkeleton: its status region", () => {
     const { rerender } = renderSkeleton();
     rerender(
       <div className="screen">
-        <AttendeeDetailSkeleton slow isDesktop onBack={() => {}} />
+        <AttendeeDetailSkeleton slow isDesktop onBack={() => {}} walletPlatforms={WALLETS_ON} />
       </div>,
     );
     const region = screen.getByRole("status");

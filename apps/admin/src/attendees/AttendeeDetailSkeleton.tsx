@@ -1,14 +1,18 @@
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { Button, Card, PageHeader, Skeleton } from "@admitto/ui";
 import { SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { hasWalletStatusChip } from "./walletStatusChip.js";
 
-/** The five status chips, by their real names and icons; what each one says is what the read fills in. */
+/** The status chips every event has, by their real names and icons; what each one says is what the read fills in. */
 const STATUS_CHIPS = [
   { icon: "user-check", label: "Pass", badgeWidth: 52 },
   { icon: "calendar-question", label: "Attendance", badgeWidth: 76 },
   { icon: "mail", label: "Ticket delivery", badgeWidth: 64 },
   { icon: "qrcode", label: "Check-in", badgeWidth: 96 },
-  { icon: "wallet", label: "Wallet", badgeWidth: 74 },
 ] as const;
+
+/** The fifth chip, which only an event that offers a wallet platform has (`hasWalletStatusChip`). */
+const WALLET_CHIP = { icon: "wallet", label: "Wallet", badgeWidth: 74 } as const;
 
 /** The profile's rows by their real labels, each with a bar the width of a typical value. */
 const PROFILE_ROWS = [
@@ -32,7 +36,8 @@ function BarsRow({ labelWidth, valueWidth }: Readonly<{ labelWidth: number; valu
 
 /**
  * The attendee page while its record is on its way, in the shape of the page: its header (the Back button is real, so a
- * slow read can be left; Edit and More actions need the record, so they are bars), the five status chips and the tabs
+ * slow read can be left; Edit and More actions need the record, so they are bars), the status chips (four, and a fifth, Wallet, when
+ * the event offers a wallet platform, which the event the page already has says, so the strip has the rows it will have) and the tabs
  * with their real names, and the cards of the Overview tab with their real titles over rows of bars. It uses the page's
  * own classes, so the stylesheet lays it out at every width exactly as it lays out the page, and the status region says what
  * is loading (and, after 8 seconds, that it is taking longer than usual) for assistive tech and in view.
@@ -43,7 +48,9 @@ export function AttendeeDetailSkeleton({
   slow,
   isDesktop,
   onBack,
-}: Readonly<{ slow: boolean; isDesktop: boolean; onBack: () => void }>) {
+  walletPlatforms,
+}: Readonly<{ slow: boolean; isDesktop: boolean; onBack: () => void; walletPlatforms: EnabledWalletPlatforms }>) {
+  const chips = hasWalletStatusChip(walletPlatforms) ? [...STATUS_CHIPS, WALLET_CHIP] : STATUS_CHIPS;
   return (
     <>
       <PageHeader
@@ -67,7 +74,7 @@ export function AttendeeDetailSkeleton({
         {slow ? <span className="at-hint attendee-detail-slow-note">{SLOW_NOTICE_TEXT}</span> : null}
       </output>
       <div className="attendee-status-strip" aria-hidden="true">
-        {STATUS_CHIPS.map(({ icon, label, badgeWidth }) => (
+        {chips.map(({ icon, label, badgeWidth }) => (
           <div className="attendee-status-chip" key={label}>
             <span className="attendee-status-chip__icon attendee-status-chip__icon--neutral">
               <i className={`ti ti-${icon}`} aria-hidden="true" />

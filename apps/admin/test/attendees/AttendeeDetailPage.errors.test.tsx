@@ -18,6 +18,8 @@ import {
 } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
+// The event the layout hands to the page: the base one unless a test sets another.
+const outlet = vi.hoisted(() => ({ event: null as null | Record<string, unknown> }));
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
@@ -36,7 +38,7 @@ vi.mock("react-router", async (importOriginal) => {
   return {
     ...actual,
     useOutletContext: () => ({
-      event: baseAttendeeDetailEvent,
+      event: outlet.event ?? baseAttendeeDetailEvent,
     }),
   };
 });
@@ -101,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  outlet.event = null;
   vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -115,6 +118,59 @@ describe("AttendeeDetailPage operator errors", () => {
       vi.advanceTimersByTime(200);
     });
     expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
+  });
+
+  it("draws the status chips the page will have: no Wallet chip for an event that offers no wallet, so the strip does not change its rows when the record arrives", async () => {
+    outlet.event = { ...baseAttendeeDetailEvent, wallet_enabled: false };
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect([...document.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent)).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in"]);
+
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect([...document.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent)).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in"]);
+  });
+
+  it("draws the Wallet chip, and the page keeps it, for an event that offers Samsung Wallet alone", async () => {
+    outlet.event = { ...baseAttendeeDetailEvent, wallet_enabled: true, wallet_apple_enabled: false, wallet_google_enabled: false, wallet_samsung_enabled: true };
+    let resolveLoad!: (value: unknown) => void;
+    loadAttendeeDetailData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    const chips = () => [...document.querySelectorAll(".attendee-status-chip strong")].map((el) => el.textContent);
+    expect(chips()).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in", "Wallet"]);
+
+    await act(async () => {
+      resolveLoad({ detail, attributeFields: [], itemsWarning: null });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeNull();
+    expect(chips()).toEqual(["Pass", "Attendance", "Ticket delivery", "Check-in", "Wallet"]);
   });
 
   it("draws the page's own frame while the record is on its way, and its Back leaves for the list instead of waiting", () => {

@@ -79,6 +79,7 @@ import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { WalletStatusBadge, isWalletPassInstalled } from "../attendees/walletStatusBadge.js";
+import { hasWalletStatusChip } from "../attendees/walletStatusChip.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
@@ -1839,8 +1840,8 @@ function AttendeeStatusStrip({
       {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
        * status chip reads real per-attendee Samsung registration data the same way it already
        * does for Apple/Google (isWalletPassInstalled below), so a Samsung-only event must still
-       * get a chip. */}
-      {(walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung) && (
+       * get a chip. hasWalletStatusChip is the question the placeholder asks too. */}
+      {hasWalletStatusChip(walletPlatforms) && (
         <div className="attendee-status-chip">
           <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
             <i className="ti ti-wallet" aria-hidden="true" />
@@ -2582,7 +2583,7 @@ export function AttendeeDetailPage() {
         className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
         aria-busy="true"
       >
-        <AttendeeDetailSkeleton slow={slow} isDesktop={isDesktop} onBack={goBack} />
+        <AttendeeDetailSkeleton slow={slow} isDesktop={isDesktop} onBack={goBack} walletPlatforms={walletPlatforms} />
       </div>
     );
   }
