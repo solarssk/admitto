@@ -11,6 +11,7 @@ export {
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export { attendeeIsLive } from "./lock-check.js";
 export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,

@@ -65,6 +65,7 @@ import {
   type OpsAuditContext,
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
+  attendeeIsLive,
   lockAttendeeRow,
   isErasedPlaceholderEmail,
   lockAttendeesForUpdate,
@@ -3684,14 +3685,19 @@ async function deleteOneWalletPass(
   target: { attendeeId: string; providerPassId: string; providerRemovedAt: Date | null },
   provider: WalletPassProvider,
   audit: OpsAuditContext,
-): Promise<"deleted"> {
+): Promise<"deleted" | "skipped"> {
+  // The target list was loaded earlier with a plain query: an attendee erased since is left alone,
+  // and the check is repeated under the row lock before the provider is called.
+  if (!(await attendeeIsLive(db, target.attendeeId))) return "skipped";
   // Already removed (PR 3's own "Remove from provider", possibly by another request in this
   // same selection) - nothing left to call deletePass for.
   if (!target.providerRemovedAt) {
     await provider.deletePass(target.providerPassId);
   }
-  await db.$transaction(async (tx) => {
-    await lockAttendeeRow(tx, target.attendeeId);
+  const deleted = await db.$transaction(async (tx) => {
+    // An erasure keeps the row (see handleDeleteAttendeeWalletPass).
+    const locked = await lockAttendeeRow(tx, target.attendeeId);
+    if (!locked || locked.erased) return false;
     await tx.walletPass.delete({ where: { attendee_id: target.attendeeId } });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -3700,8 +3706,9 @@ async function deleteOneWalletPass(
       audit,
       metadata: { bulk: true },
     });
+    return true;
   });
-  return "deleted";
+  return deleted ? "deleted" : "skipped";
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-wallet-delete - permanently remove the wallet
@@ -4323,26 +4330,40 @@ async function loadWalletActionContext(
   };
 }
 
+/** What a write to the WalletPass row can end in besides the updated row: the attendee was erased
+ * (the route then answers 409 `attendee_erased`) or the pass was removed at the provider (409
+ * `wallet_pass_removed`). The strings are the error codes the API answers with. */
+type WalletPassWriteRefusal = "attendee_erased" | "wallet_pass_removed";
+
 /** Applies a validity change to the WalletPass row only while it has not been removed at the
  * provider, in the same statement (`provider_removed_at: null` in the where clause). The routes
  * that call this read the row before their provider call, so a Remove that completed in between
  * would otherwise be overwritten with an `active`/`voided` status on a pass that no longer exists
- * at the provider. Returns the updated row, or null when the pass was removed meanwhile. */
+ * at the provider. Returns the updated row, or why nothing was written. */
 async function updateWalletPassUnlessRemoved(
   tx: Prisma.TransactionClient,
   attendeeId: string,
   data: Prisma.WalletPassUpdateManyMutationInput,
-): Promise<Prisma.WalletPassGetPayload<object> | null> {
+): Promise<Prisma.WalletPassGetPayload<object> | WalletPassWriteRefusal> {
   // Attendee row first, like an erasure (no deadlock over the pass row); an attendee erased since
-  // the route read the pass gets nothing written, reported like a removed pass.
+  // the route read the pass gets nothing written.
   const locked = await lockAttendeeRow(tx, attendeeId);
-  if (!locked || locked.erased) return null;
+  if (!locked || locked.erased) return "attendee_erased";
   const { count } = await tx.walletPass.updateMany({
     where: { attendee_id: attendeeId, provider_removed_at: null },
     data,
   });
-  if (count === 0) return null;
+  if (count === 0) return "wallet_pass_removed";
   return tx.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
+}
+
+/** The last check before a call that changes a pass at the provider (void, restore, push the
+ * content, delete): the context the route loaded was read with a plain query, which does not wait
+ * for an erasure that is still open. This takes the attendee's row lock in a short transaction, so
+ * that erasure finishes first and the route answers 409 `attendee_erased` before the provider is
+ * called, instead of after. */
+async function requireAttendeeStillLive(c: Context, db: PrismaClient, attendeeId: string): Promise<Response | null> {
+  return (await attendeeIsLive(db, attendeeId)) ? null : c.json({ error: "attendee_erased" }, 409);
 }
 
 /** A pass Admitto has removed from the provider (PR 3) can no longer be void/restore/push'd -
@@ -4369,6 +4390,9 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
   const removed = requireNotRemoved(c, ctx);
   if (removed) return removed;
 
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   try {
     await ctx.provider.voidPass(ctx.providerPassId);
   } catch (err) {
@@ -4382,7 +4406,7 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
       provider_commanded_at: new Date(),
       last_error_code: null,
     });
-    if (!row) return null;
+    if (typeof row === "string") return row;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,
@@ -4392,7 +4416,7 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
     });
     return row;
   });
-  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
+  if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4417,6 +4441,9 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
     return c.json({ error: "wallet_restore_expired" }, 409);
   }
 
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   try {
     await ctx.provider.restorePass(ctx.providerPassId);
   } catch (err) {
@@ -4430,7 +4457,7 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
       provider_commanded_at: new Date(),
       last_error_code: null,
     });
-    if (!row) return null;
+    if (typeof row === "string") return row;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,
@@ -4440,7 +4467,7 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
     });
     return row;
   });
-  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
+  if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4488,6 +4515,10 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
   );
   const input = buildWalletPassInput(display, scanned, customFieldPlaceholders);
 
+  // The content above was read with plain queries: the last check before it leaves.
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   let result;
   try {
     result = await ctx.provider.updatePass(ctx.providerPassId, input);
@@ -4519,7 +4550,7 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
       // write).
       expires_at: display.event.walletExpirationMode === "event_end" ? eventEndsAtUtc(display.event) : null,
     });
-    if (!row) return null;
+    if (typeof row === "string") return row;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,
@@ -4529,7 +4560,7 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     });
     return row;
   });
-  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
+  if (typeof updated === "string") return c.json({ error: updated }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 
@@ -4595,6 +4626,9 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
   const ctx = await loadWalletActionContext(c, db, eventId, { ignoreWalletEnabled: true });
   if (ctx instanceof Response) return ctx;
 
+  const erased = await requireAttendeeStillLive(c, db, ctx.attendeeId);
+  if (erased) return erased;
+
   if (!ctx.providerRemovedAt) {
     try {
       await ctx.provider.deletePass(ctx.providerPassId);
@@ -4603,8 +4637,11 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
     }
   }
 
-  await db.$transaction(async (tx) => {
-    await lockAttendeeRow(tx, ctx.attendeeId);
+  const deleted = await db.$transaction(async (tx) => {
+    // An erasure keeps this row on purpose (historical wallet counts, and the provider ids it still
+    // has to delete): an attendee erased since the check above leaves it alone.
+    const locked = await lockAttendeeRow(tx, ctx.attendeeId);
+    if (!locked || locked.erased) return false;
     await tx.walletPass.delete({ where: { attendee_id: ctx.attendeeId } });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -4613,7 +4650,9 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
       audit: adminAuditFromContext(c),
       metadata: { previous_status: ctx.previousStatus },
     });
+    return true;
   });
+  if (!deleted) return c.json({ error: "attendee_erased" }, 409);
   return c.json({ deleted: true });
 }
 

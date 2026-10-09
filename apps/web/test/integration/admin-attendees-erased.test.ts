@@ -3,15 +3,16 @@
  * the page is read-only (every edit, send and wallet action is refused with 409 attendee_erased),
  * bulk edits skip them, and exports and the PII export leave them out.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
-import { eraseAttendees } from "@admitto/tickets";
+import { eraseAttendees, generateToken, hashToken } from "@admitto/tickets";
+import { PassCreatorClient } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const ORG_ID = "org-admin-erased";
 const EVENT_ID = "evt-admin-erased";
@@ -28,6 +29,7 @@ const sameOrigin = { Origin: "http://localhost" };
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let cookie = "";
+const rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore;
 
 const json = (method: string, body?: unknown) => ({
   method,
@@ -107,7 +109,7 @@ beforeAll(async () => {
   app = createApp({
     prisma,
     baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
   });
 });
@@ -375,17 +377,169 @@ describe("an erasure that lands between a route's check and its write", () => {
     expect((await prisma.attendee.findUniqueOrThrow({ where: { id } })).company).toBeNull();
   });
 
-  it("voiding a wallet pass is refused after the provider call when the attendee was erased meanwhile", async () => {
+  it("voiding a wallet pass is refused before the provider is called when the attendee was erased meanwhile", async () => {
     const id = await raceAttendee();
     await prisma.walletPass.create({ data: { attendee_id: id, status: "active", provider_pass_id: `pc-${id}` } });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ success: true }), { status: 200 })));
-    // The pass row is read first; the transaction that records the void is the next one.
+    const fetchStub = vi.fn(async () => new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchStub);
+    // The pass row is read first; the next transaction is the last check before the provider call.
     const spy = eraseBeforeNextTransaction([id]);
 
     const res = await app.request(`${base}/${id}/wallet/void`, json("POST", {}));
 
     expect(spy).toHaveBeenCalled();
     expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "attendee_erased" });
+    expect(fetchStub).not.toHaveBeenCalled();
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).status).toBe("active");
+  });
+});
+
+describe("the last check before a wallet pass is changed at the provider", () => {
+  beforeEach(() => rateLimitStore.reset());
+
+  let n = 0;
+  const spies = () => ({
+    void: vi.spyOn(PassCreatorClient.prototype, "voidPass").mockResolvedValue(undefined),
+    restore: vi.spyOn(PassCreatorClient.prototype, "restorePass").mockResolvedValue(undefined),
+    reissue: vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+      providerPassId: "pc-new",
+      downloadUrl: "https://pc.test/p/new",
+      appleUrl: "https://pc.test/apple/new",
+      androidUrl: "https://pc.test/android/new",
+    }),
+    delete: vi.spyOn(PassCreatorClient.prototype, "deletePass").mockResolvedValue(undefined),
+  });
+  type Action = "void" | "restore" | "reissue" | "delete";
+  const actions: Action[] = ["void", "restore", "reissue", "delete"];
+
+  async function attendeeWithPass(status: "active" | "voided") {
+    const id = `att-admin-erased-last-${++n}`;
+    const token = generateToken();
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_ID,
+        email: `${id}@example.com`,
+        name: id,
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+    });
+    await prisma.walletPass.create({ data: { attendee_id: id, status: status, provider_pass_id: `pc-${id}` } });
+    return id;
+  }
+  const statusFor = (action: Action) => (action === "restore" ? "voided" : "active");
+
+  /** An erasure that is written but not committed, kept open until `commit()`. */
+  async function holdErasure(ids: string[]) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let written!: () => void;
+    const writtenPromise = new Promise<void>((resolve) => (written = resolve));
+    const transaction = prisma.$transaction(async (tx) => {
+      await eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids });
+      written();
+      await gate;
+    });
+    await writtenPromise;
+    return { commit: () => (release(), transaction) };
+  }
+  async function staysPending(promise: Promise<unknown>, ms = 300): Promise<boolean> {
+    let settled = false;
+    promise.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return !settled;
+  }
+  /** The `nth` transaction of the request is preceded by the erasure of `ids`. */
+  const eraseBeforeTransaction = (nth: number, ids: string[]) => {
+    const real = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+    let calls = 0;
+    return vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+      ++calls === nth
+        ? real((tx: unknown) => eraseAttendees(tx as never, { eventId: EVENT_ID, attendeeIds: ids })).then(() => real(...args))
+        : real(...args)) as never);
+  };
+
+  it.each(actions)(
+    "%s: a request that starts while an erasure is open waits for it, answers attendee_erased and does not call the provider",
+    async (action) => {
+      const id = await attendeeWithPass(statusFor(action));
+      const provider = spies();
+      const held = await holdErasure([id]);
+
+      // The context the route loads is read with a plain query and still shows a live attendee.
+      const requesting = Promise.resolve(app.request(`${base}/${id}/wallet/${action}`, json("POST", {})));
+      expect(await staysPending(requesting)).toBe(true);
+      await held.commit();
+      const res = await requesting;
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "attendee_erased" });
+      expect(provider[action]).not.toHaveBeenCalled();
+      const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } });
+      expect(pass.status).toBe(statusFor(action));
+    },
+  );
+
+  it.each(actions)(
+    "%s: an erasure that lands after the provider call is answered attendee_erased, not wallet_pass_removed, and the pass row is left as it was",
+    async (action) => {
+      const id = await attendeeWithPass(statusFor(action));
+      const provider = spies();
+      // 1st transaction: the last check (still live); 2nd: the write, preceded by the erasure.
+      const spy = eraseBeforeTransaction(2, [id]);
+
+      const res = await app.request(`${base}/${id}/wallet/${action}`, json("POST", {}));
+      spy.mockRestore();
+
+      expect(provider[action]).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "attendee_erased" });
+      const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } });
+      expect(pass.status).toBe(statusFor(action));
+      expect(await prisma.attendeeActionLog.count({ where: { attendee_id: id } })).toBe(0);
+    },
+  );
+
+  it("bulk delete: an attendee erased after the targets were loaded is skipped before the provider is called", async () => {
+    const id = await attendeeWithPass("active");
+    const provider = spies();
+    const spy = eraseBeforeTransaction(1, [id]);
+
+    const res = await app.request(`${base}/bulk-wallet-delete`, json("POST", { attendeeIds: [id] }));
+    spy.mockRestore();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: 0, skipped: 1, errored: 0 });
+    expect(provider.delete).not.toHaveBeenCalled();
+    expect(await prisma.walletPass.findUnique({ where: { attendee_id: id } })).not.toBeNull();
+  });
+
+  it("bulk delete: an erasure that lands after the provider call is skipped and the pass row is kept", async () => {
+    const id = await attendeeWithPass("active");
+    const provider = spies();
+    const spy = eraseBeforeTransaction(2, [id]);
+
+    const res = await app.request(`${base}/bulk-wallet-delete`, json("POST", { attendeeIds: [id] }));
+    spy.mockRestore();
+
+    expect(await res.json()).toEqual({ deleted: 0, skipped: 1, errored: 0 });
+    expect(provider.delete).toHaveBeenCalledTimes(1);
+    expect(await prisma.walletPass.findUnique({ where: { attendee_id: id } })).not.toBeNull();
+  });
+
+  it("still changes the pass of a live attendee", async () => {
+    const id = await attendeeWithPass("active");
+    const provider = spies();
+
+    const res = await app.request(`${base}/${id}/wallet/void`, json("POST", {}));
+
+    expect(res.status).toBe(200);
+    expect(provider.void).toHaveBeenCalledTimes(1);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).status).toBe("voided");
   });
 });
