@@ -138,7 +138,7 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
             <ScopeCell row={row} />
           </dd>
         </div>
-        <div>
+        <div className="users-page__card-meta-wide">
           <dt>Granted</dt>
           <dd>
             {formatUtcDateTime(row.granted_at)}

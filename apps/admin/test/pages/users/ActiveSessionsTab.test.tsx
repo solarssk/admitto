@@ -674,6 +674,9 @@ describe("ActiveSessionsTab responsive layout", () => {
     // by other tests here, but SessionCard is a separate component with its own copies.
     expect(within(card).getByText("Mobile User")).toBeTruthy();
     expect(within(card).getByText("Field Tablet")).toBeTruthy();
+    // The cell of the login time and its local time under it is the wide one (users-page.css), which the card's other cells are not.
+    expect(within(card).getByText("Logged in").closest("div")?.className).toBe("users-page__card-meta-wide");
+    expect(within(card).getByText("Device").closest("div")?.className).toBe("");
     expect(within(card).getByText("-")).toBeTruthy();
     expect(screen.getByRole("button", { name: REVOKE_NAME })).toBeTruthy();
 

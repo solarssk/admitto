@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoleAssignmentsTab } from "../../../src/pages/users/RoleAssignmentsTab.js";
 import { formatUtcDateTime } from "../../../src/utils/event-dates.js";
-import { advanceTimers, deferred, renderWithToast } from "../../test-utils.js";
+import { advanceTimers, deferred, mockMatchMedia, renderWithToast } from "../../test-utils.js";
 
 const fetchRoleAssignments = vi.fn();
 const fetchAdminEvents = vi.fn();
@@ -263,6 +263,36 @@ describe("RoleAssignmentsTab", () => {
         expect.anything(),
       );
     });
+  });
+
+  it("gives the grant time, with its local time under it, both columns of a phone's card", async () => {
+    mockMatchMedia(false);
+    fetchRoleAssignments.mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "staff@example.com",
+        user_display_name: null,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T12:00:00.000Z",
+        event: { id: "evt-1", title: "Kickoff", slug: "kickoff", organization_id: "org-1" },
+        organization: null,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<RoleAssignmentsTab />);
+
+    await screen.findAllByText("staff@example.com");
+    const card = document.querySelector(".users-page__card") as HTMLElement;
+    // The cell of the time and its local time is the wide one (users-page.css), which the card's other cells are not.
+    expect(within(card).getByText("Granted").closest("div")?.className).toBe("users-page__card-meta-wide");
+    expect(within(card).getByText("Scope").closest("div")?.className).toBe("");
   });
 
   it("shows the grant time in UTC with an explanatory tooltip on the column header", async () => {

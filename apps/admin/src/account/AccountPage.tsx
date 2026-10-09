@@ -2279,7 +2279,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                       </td>
                       {(["email", "in_app"] as const).map((channel) =>
                         type.available_channels.includes(channel) ? (
-                          <td key={channel}>
+                          <td key={channel} data-label={channel === "email" ? "Email" : "In-app"}>
                             <Switch
                               id={`account-notif-${type.id}-${channel}`}
                               aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
@@ -2289,7 +2289,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                             />
                           </td>
                         ) : (
-                          <td key={channel} className="notifications-type-matrix__na">
+                          <td key={channel} className="notifications-type-matrix__na" data-label={channel === "email" ? "Email" : "In-app"}>
                             <span aria-hidden="true">-</span>
                             <span className="sr-only">Not applicable</span>
                           </td>

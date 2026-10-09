@@ -42,16 +42,24 @@
 }
 
 /* Grid's default align-items: stretch sizes each .at-card to the row's tallest sibling, but
- * .at-card__body only ever takes its own content's height — same fix as .overview-kpi-card. */
+ * .at-card__body only ever takes its own content's height — same fix as .overview-kpi-card, which also
+ * centres the tile in the body, so a tile that is taller than its siblings keeps the others' text in the middle. */
 .users-page__stat-card > .at-card__body {
   height: 100%;
+  display: flex;
+  align-items: center;
 }
 
+/* At least 76px, never a hard height (same as .overview-kpi): "Via identity provider" and "Two-factor
+ * coverage" do not fit one line in a quarter of the page, and "1 of 2 local accounts enrolled" under them
+ * was cut off at the bottom; they wrap now and the tile, and the row with it, is as tall as they need. */
 .users-page__stat {
   display: flex;
   align-items: center;
   gap: 13px;
-  height: 76px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 76px;
   overflow: hidden;
 }
 
@@ -91,7 +99,7 @@
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-secondary);
-  white-space: nowrap;
+  /* Wraps instead of an ellipsis that hides the word; overflow hidden + ellipsis stay only for a single word that does not fit. */
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -107,8 +115,24 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* The same room for the text as .overview-kpi's phone rule: less padding at the sides, a smaller icon and gap. */
+  .users-page__stat-card > .at-card__body {
+    padding-inline: 10px;
+  }
+
+  .users-page__stat {
+    gap: 8px;
+  }
+
+  .users-page__stat-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    font-size: 14px;
+  }
+
   .users-page__stat-value {
-    font-size: 22px;
+    font-size: 20px;
   }
 }
 
@@ -307,9 +331,22 @@
 
 .users-page__card-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The name and the badge with its icons wrap onto two lines when they do not fit side by side, with the badge and the icons at the right:
+ * beside them a session's name had 100px on a phone and was broken into "e2e.ad" / "min@e" / "xample." / "com". The name asks for
+ * 13rem, room for an address on one line next to its avatar. */
+.users-page__card-head > :first-child {
+  flex: 1 1 13rem;
+  min-width: 0;
+}
+
+.users-page__card-head > .sessions-card-head-end {
+  margin-left: auto;
 }
 
 .users-page__card-meta {
@@ -321,6 +358,12 @@
 
 .users-page__card-meta > div {
   min-width: 0;
+}
+
+/* A cell that holds a time with its local time under it ("09:51 (Europe/Warsaw, UTC+2)", 28 characters) takes both columns of the card:
+ * in one of two it had 135px on a phone, and the local time ran to three lines of one or two words. */
+.users-page__card-meta > .users-page__card-meta-wide {
+  grid-column: 1 / -1;
 }
 
 .users-page__card-meta dt {
@@ -449,6 +492,15 @@
 
   .users-page__cards--mobile {
     display: flex;
+  }
+
+  /* A card names its user whole, wrapped (the e-mail where it must break), never "e2e.admin@ex…": a table cell can
+   * truncate (it is wider and has its title tooltip), a card is read on a phone, where there is no hover and the name
+   * and the address are what tells two people apart. */
+  .users-page__card .users-page__user-name,
+  .users-page__card .users-page__user-email {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
