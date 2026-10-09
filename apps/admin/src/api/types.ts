@@ -275,6 +275,8 @@ export interface AttendeeRowDto {
   admitted_at: string | null;
   updated_at: string;
   last_mail_status: string | null;
+  /** Whether that last mail, when it failed, is still to be retried. */
+  last_mail_retryable: boolean | null;
   rsvp_status: RsvpStatus;
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * bulk "Revoke items" action report how many of the selection it would actually affect. */

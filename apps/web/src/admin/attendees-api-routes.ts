@@ -318,6 +318,9 @@ export type AttendeeRowDto = {
   admitted_at: string | null;
   updated_at: string;
   last_mail_status: string | null;
+  /** Whether that last mail, when it failed, is still to be retried (an erasure cancels such a mail, so the
+   * list can show that at once). Null when there is no mail or the column was never set. */
+  last_mail_retryable: boolean | null;
   rsvp_status: RsvpStatus;
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * Attendees list's bulk "Revoke items" action report how many of the selection it would
@@ -674,29 +677,32 @@ async function parseListQuery(
   return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, includeErased, sortBy, sortDir };
 }
 
-/** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
+type LastMail = { status: string; retryable: boolean | null };
+
+/** Latest email delivery per attendee id (one entry per id): its status, and whether a failed one is still to
+ * be retried. Tiebreak on `id` desc
  * after `created_at` desc, not just created_at — two deliveries for the same attendee can
  * share a millisecond timestamp (e.g. a resend queued in the same request), and without a
  * deterministic tiebreak here this could disagree with attendeeMailStatusSql's `mail_status`
  * filter (packages/tickets/attendees-list-filters.ts), which already tiebreaks the same way
  * specifically so the Mail column badge and the filter always agree on "latest" (code
  * review). */
-async function lastMailStatusByAttendee(
+async function lastMailByAttendee(
   db: PrismaClient,
   attendeeIds: string[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, LastMail>> {
   if (attendeeIds.length === 0) return new Map();
 
   const deliveries = await db.emailDelivery.findMany({
     where: { attendee_id: { in: attendeeIds } },
-    select: { attendee_id: true, status: true },
+    select: { attendee_id: true, status: true, retryable: true },
     orderBy: [{ created_at: "desc" }, { id: "desc" }],
   });
 
-  const map = new Map<string, string>();
+  const map = new Map<string, LastMail>();
   for (const row of deliveries) {
     if (!map.has(row.attendee_id)) {
-      map.set(row.attendee_id, row.status);
+      map.set(row.attendee_id, { status: row.status, retryable: row.retryable });
     }
   }
   return map;
@@ -1003,7 +1009,7 @@ function serializeAttendeeRow(
     updated_at: Date;
     rsvp_status: string;
   },
-  lastMail: Map<string, string>,
+  lastMail: Map<string, LastMail>,
   issuedItems: Set<string>,
   walletStatus: Map<string, AttendeeWalletStatus>,
 ): AttendeeRowDto {
@@ -1020,7 +1026,8 @@ function serializeAttendeeRow(
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     updated_at: row.updated_at.toISOString(),
-    last_mail_status: lastMail.get(row.id) ?? null,
+    last_mail_status: lastMail.get(row.id)?.status ?? null,
+    last_mail_retryable: lastMail.get(row.id)?.retryable ?? null,
     rsvp_status: row.rsvp_status as RsvpStatus,
     has_issued_items: issuedItems.has(row.id),
     wallet_status: walletStatus.get(row.id) ?? null,
@@ -1181,7 +1188,7 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
 
   const attendeeIds = rows.map((r) => r.id);
   const [lastMail, issuedItems, walletStatus] = await Promise.all([
-    lastMailStatusByAttendee(db, attendeeIds),
+    lastMailByAttendee(db, attendeeIds),
     issuedItemsAttendeeIds(db, attendeeIds),
     walletStatusByAttendee(db, attendeeIds),
   ]);

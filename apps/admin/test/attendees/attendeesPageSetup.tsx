@@ -27,6 +27,7 @@ export function makeRow(id: string, name: string): AttendeeRowDto {
     admitted_at: null,
     updated_at: "2026-06-01T10:00:00.000Z",
     last_mail_status: "sent",
+    last_mail_retryable: null,
     rsvp_status: "confirmed",
     has_issued_items: false,
     wallet_status: null,

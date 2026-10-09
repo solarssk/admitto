@@ -135,8 +135,8 @@ export function withWalletOutcome(
 }
 
 /** Mail that is still waiting to go out when a person is erased: queued, or failed and to be retried. */
-function waitingToGoOut(delivery: { status: string; retryable: boolean | null }): boolean {
-  return delivery.status === "queued" || (delivery.status === "failed" && delivery.retryable === true);
+function waitingToGoOut(status: string | null, retryable: boolean | null): boolean {
+  return status === "queued" || (status === "failed" && retryable === true);
 }
 
 /** What the screen knows when the server has confirmed an erasure, to show what the server now holds. */
@@ -191,7 +191,7 @@ export function redactedAfterErasure(
     custom_data: null,
     deliveries: detail.deliveries.map((delivery) => ({
       ...delivery,
-      ...(waitingToGoOut(delivery) ? { status: "cancelled", retryable: false } : {}),
+      ...(waitingToGoOut(delivery.status, delivery.retryable) ? { status: "cancelled", retryable: false } : {}),
       attendee_name: ERASED_ATTENDEE_LABEL,
       recipient_email: null,
       rendered_subject: null,
@@ -214,10 +214,36 @@ export function redactedAfterErasure(
   return withWalletOutcome(redacted, { pending: wallet.pending, removedAt: wallet.removed ? erasure.at : null });
 }
 
+/** A row whose pass the server has just deleted at the provider, shown as removed there. */
+function walletStatusAfterRemoval(
+  row: Pick<AttendeeRowDto, "id" | "wallet_status">,
+  removedIds: ReadonlySet<string>,
+  removedAt: string,
+): AttendeeRowDto["wallet_status"] {
+  return row.wallet_status === null || !removedIds.has(row.id)
+    ? row.wallet_status
+    : { ...row.wallet_status, provider_removed_at: removedAt };
+}
+
+/**
+ * The Attendees list once a Try again has deleted passes at the provider: the rows of the people in
+ * `removedIds` show their pass as removed there, before the list reads the server's version, so a
+ * read that fails or times out cannot make a deletion that worked look lost. Other rows stay as they are.
+ */
+export function rowsWithPassesRemoved(
+  items: readonly AttendeeRowDto[],
+  removedIds: ReadonlySet<string>,
+  removedAt: string,
+): AttendeeRowDto[] {
+  return items.map((row) =>
+    removedIds.has(row.id) ? { ...row, wallet_status: walletStatusAfterRemoval(row, removedIds, removedAt) } : row,
+  );
+}
+
 /**
  * What the Attendees list holds right after the server has confirmed the erasure of `ids`: those
  * rows, redacted in place (the erased marker set, name, address, company and department taken out,
- * the check-in time cut to the hour, mail that was queued cancelled, and the pass marked as removed at
+ * the check-in time cut to the hour, mail that was waiting to go out cancelled, and the pass marked as removed at
  * the provider for the people in `removedIds`, whose pass the answer says it deleted). The list then
  * reads the server's version, which leaves them out unless erased entries are shown; until that
  * answers, or if it is slow, nothing of those people stays on screen, and the page does not empty out
@@ -239,11 +265,10 @@ export function redactedRowsAfterErasure(
           email: "",
           company: null,
           department: null,
-          last_mail_status: row.last_mail_status === "queued" ? "cancelled" : row.last_mail_status,
-          wallet_status:
-            row.wallet_status === null || !removedIds.has(row.id)
-              ? row.wallet_status
-              : { ...row.wallet_status, provider_removed_at: erasure.at },
+          ...(waitingToGoOut(row.last_mail_status, row.last_mail_retryable)
+            ? { last_mail_status: "cancelled", last_mail_retryable: false }
+            : {}),
+          wallet_status: walletStatusAfterRemoval(row, removedIds, erasure.at),
         }
       : row,
   );

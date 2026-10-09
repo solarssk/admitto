@@ -47,6 +47,7 @@ import type {
   AttendeeSortDir,
   AttendeeMailStatusFilter,
   BulkWalletRemoveResponse,
+  EraseAttendeesResponse,
   EventCustomFieldDto,
   EventDto,
   RsvpStatus,
@@ -55,7 +56,7 @@ import type {
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { BulkEraseDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
-import { erasedToast, placesFreedBy, redactedRowsAfterErasure } from "../attendees/erasedAttendee.js";
+import { erasedToast, placesFreedBy, redactedRowsAfterErasure, rowsWithPassesRemoved } from "../attendees/erasedAttendee.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { pollWalletRefreshStatusCompletion } from "../attendees/pollWalletRefreshStatusCompletion.js";
@@ -1178,7 +1179,16 @@ export function AttendeesPage() {
   const eventWideRefreshStatusConfirm = useEventScopedConfirm(eventId);
   const [reloadToken, setReloadToken] = useState(0);
   const reloadList = useCallback(() => setReloadToken((n) => n + 1), []);
-  const eraseWalletResult = useEraseWalletResult({ scopeKey: eventId, onSettled: reloadList });
+  // What a Try again deleted at the provider is shown in the rows at once, so a read that fails afterwards cannot make
+  // it look lost.
+  const afterWalletRetry = useCallback(
+    (result: EraseAttendeesResponse) => {
+      setItems((current) => rowsWithPassesRemoved(current, new Set(result.wallet_removed_ids), new Date().toISOString()));
+      reloadList();
+    },
+    [reloadList],
+  );
+  const eraseWalletResult = useEraseWalletResult({ scopeKey: eventId, onSettled: afterWalletRetry });
   const eventWideVoidActive = useWalletVoidActive({
     eventId,
     addToast,

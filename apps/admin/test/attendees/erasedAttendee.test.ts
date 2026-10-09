@@ -16,6 +16,7 @@ import {
   redactedAfterErasure,
   redactedRowsAfterErasure,
   rowIdentity,
+  rowsWithPassesRemoved,
   selectRowLabel,
   shownErasedLine,
   withWalletOutcome,
@@ -338,12 +339,33 @@ describe("redactedRowsAfterErasure", () => {
     });
   });
 
-  it("cancels the mail that was queued, and leaves any other status of the last mail alone", () => {
-    const rows = [{ ...row("a"), last_mail_status: "queued" }, { ...row("b"), last_mail_status: "failed" }, { ...row("c"), last_mail_status: "sent" }, { ...row("d"), last_mail_status: null }];
+  it.each([
+    ["queued", null, "cancelled", false],
+    ["failed", true, "cancelled", false],
+    ["failed", false, "failed", false],
+    ["failed", null, "failed", null],
+    ["sent", null, "sent", null],
+    [null, null, null, null],
+  ])("the last mail of a row that was %s (retryable %s) is %s afterwards, as the server leaves it", (status, retryable, expectedStatus, expectedRetryable) => {
+    const [result] = redactedRowsAfterErasure(
+      [{ ...row("a"), last_mail_status: status, last_mail_retryable: retryable }] as never,
+      new Set(["a"]),
+      erasure,
+      new Set(),
+    );
 
-    const result = redactedRowsAfterErasure(rows as never, new Set(["a", "b", "c", "d"]), erasure, new Set());
+    expect(result).toMatchObject({ last_mail_status: expectedStatus, last_mail_retryable: expectedRetryable });
+  });
 
-    expect(result.map((r) => r.last_mail_status)).toEqual(["cancelled", "failed", "sent", null]);
+  it("leaves the last mail of a row that is not erased alone", () => {
+    const [result] = redactedRowsAfterErasure(
+      [{ ...row("a"), last_mail_status: "queued", last_mail_retryable: null }] as never,
+      new Set(["b"]),
+      erasure,
+      new Set(),
+    );
+
+    expect(result).toMatchObject({ last_mail_status: "queued" });
   });
 
   it("leaves everyone's status alone on an archived event", () => {
@@ -444,5 +466,30 @@ describe("places an erasure frees", () => {
   it("says it in the singular and the plural", () => {
     expect(freedPlacesLine(1)).toBe("1 person is not checked in yet, so their place becomes free.");
     expect(freedPlacesLine(3)).toBe("3 people are not checked in yet, so their places become free.");
+  });
+});
+
+describe("rowsWithPassesRemoved", () => {
+  const status = { apple_active_registrations: 1, apple_inactive_registrations: 0, provider_removed_at: null };
+  const row = (id: string, wallet_status: unknown = status) => ({ id, wallet_status });
+
+  it("marks the pass removed for the people the answer lists, and leaves the other rows as they are", () => {
+    const rows = [row("a"), row("b"), row("c", null)];
+
+    const result = rowsWithPassesRemoved(rows as never, new Set(["a", "c"]), "2026-10-09T12:05:00.000Z");
+
+    expect(result[0]?.wallet_status).toMatchObject({ apple_active_registrations: 1, provider_removed_at: "2026-10-09T12:05:00.000Z" });
+    expect(result[1]).toBe(rows[1]);
+    // Listed, but without a pass in the row: nothing to mark.
+    expect(result[2]?.wallet_status).toBeNull();
+  });
+
+  it("does not change the rows it was given", () => {
+    const rows = [row("a")];
+    const before = JSON.stringify(rows);
+
+    rowsWithPassesRemoved(rows as never, new Set(["a"]), "2026-10-09T12:05:00.000Z");
+
+    expect(JSON.stringify(rows)).toBe(before);
   });
 });

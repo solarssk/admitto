@@ -324,9 +324,13 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     expect(labels).toEqual(expected.map((label) => `Apple Wallet: ${label}`));
   });
 
-  it("cancels the mail that was queued, in the rows, at once", async () => {
-    const queued = (id: string, name: string): AttendeeRowDto => ({ ...makeRow(id, name), last_mail_status: "queued" });
-    fetchEventAttendees.mockResolvedValueOnce(listOf([queued("att-1", "Jane Doe"), queued("att-2", "John Smith")], 0));
+  it.each([
+    ["queued", null, "Cancelled"],
+    ["failed", true, "Cancelled"],
+    ["failed", false, "Failed"],
+  ])("shows the last mail of the erased rows at once as the server leaves it: %s (retryable %s) reads %s", async (status, retryable, label) => {
+    const withMail = (id: string, name: string): AttendeeRowDto => ({ ...makeRow(id, name), last_mail_status: status, last_mail_retryable: retryable });
+    fetchEventAttendees.mockResolvedValueOnce(listOf([withMail("att-1", "Jane Doe"), withMail("att-2", "John Smith")], 0));
     fetchEventAttendees.mockReturnValueOnce(new Promise(() => undefined));
     bulkEraseAttendees.mockResolvedValue({ erased: 2, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
 
@@ -334,8 +338,10 @@ describe("AttendeesPage: bulk Erase personal data", () => {
     confirmErase(await openEraseDialog());
 
     expect(await screen.findAllByText("Erased attendee")).toHaveLength(2);
-    // Each row says Cancelled twice: the pass (nobody was checked in) and the mail.
-    expect(screen.getAllByText("Cancelled")).toHaveLength(4);
+    // Each row says Cancelled for the pass (nobody was checked in), and the mail says its own label.
+    expect(screen.getAllByText("Cancelled")).toHaveLength(label === "Cancelled" ? 4 : 2);
+    expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(2);
+    if (label === "Failed") expect(screen.getAllByText("Failed")).toHaveLength(2);
   });
 
   it("steps back to the last page that exists when the erasure emptied the page the list was on", async () => {
@@ -441,6 +447,45 @@ describe("AttendeesPage: a wallet pass that is still at the provider", () => {
 
     await within(result).findByText("The wallet pass is still at the provider.");
     expect(screen.queryByText("Wallet passes deleted")).toBeNull();
+  });
+
+  it.each([
+    ["every pass the retry deleted", ["att-1", "att-2"], ["Was registered", "Was registered"]],
+    ["only the first pass, in a partial retry", ["att-1"], ["Was registered", "Registered"]],
+  ])("shows %s as removed in the rows at once, although the list cannot read again", async (_label, removedIds, expected) => {
+    eventState.appleWallet = true;
+    const withPass = (id: string, name: string): AttendeeRowDto => ({
+      ...makeRow(id, name),
+      wallet_status: {
+        apple_active_registrations: 1,
+        apple_inactive_registrations: 0,
+        google_active_registrations: 0,
+        google_inactive_registrations: 0,
+        samsung_active_registrations: 0,
+        samsung_inactive_registrations: 0,
+        provider_removed_at: null,
+      },
+    });
+    fetchEventAttendees.mockResolvedValueOnce(listOf([withPass("att-1", "Jane Doe"), withPass("att-2", "John Smith")], 0));
+    // The reads after the erasure and after the retry never answer.
+    fetchEventAttendees.mockReturnValue(new Promise(() => undefined));
+    bulkEraseAttendees.mockResolvedValueOnce(PENDING);
+    renderListAndPage();
+    confirmErase(await openEraseDialog());
+    const result = await screen.findByRole("dialog", { name: "Personal data erased" });
+    expect(screen.getAllByLabelText(/^Apple Wallet: /).map((icon) => icon.getAttribute("aria-label"))).toEqual([
+      "Apple Wallet: Registered",
+      "Apple Wallet: Registered",
+    ]);
+
+    bulkEraseAttendees.mockResolvedValueOnce({ erased: 0, already_erased: 2, not_found: 0, wallet_pending: 2 - removedIds.length, wallet_removed_ids: removedIds });
+    fireEvent.click(within(result).getByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(screen.getAllByLabelText(/^Apple Wallet: /).map((icon) => icon.getAttribute("aria-label"))).toEqual(
+        expected.map((label) => `Apple Wallet: ${label}`),
+      ),
+    );
   });
 
   it("shows an error inside the dialog when Try again itself fails, and Close ends it", async () => {
