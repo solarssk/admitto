@@ -36,6 +36,7 @@ import {
 import { mapSendResultToDelivery, type DeliveryStatusUpdate } from "./mapSendResult.js";
 import { splitDisplayName } from "./name.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
+import { readDeliveriesBeforeSend } from "./sendable.js";
 import type { SendTicketEmailsResult } from "./types.js";
 
 /** Options for `sendTicketEmails()` batch send. */
@@ -365,7 +366,8 @@ async function claimOrResendPending(
   completedBeforeRequest: boolean,
 ): Promise<AttendeeSendOutcome> {
   if (purpose !== "initial" || completedBeforeRequest) {
-    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
+    const pending = await createResendPending(attendeeId, claimInput, links, prisma);
+    return pending ? { kind: "pending", pending } : { kind: "skip", attendeeId, reason: "erased" };
   }
 
   const claim = await claimInitialDelivery(claimInput, prisma);
@@ -392,8 +394,10 @@ async function createResendPending(
   claimInput: ClaimInitialInput,
   links: AttendeeMailLinks,
   prisma: PrismaClient,
-): Promise<PendingSend> {
+): Promise<PendingSend | null> {
   const created = await createResendDelivery(claimInput, prisma);
+  // Null: the attendee was erased after this send began.
+  if (!created) return null;
   return {
     deliveryId: created.deliveryId,
     attendeeId,
@@ -427,19 +431,31 @@ export async function deliverPendingBatch(
   pending: PendingSend[],
   prisma: PrismaClient,
 ): Promise<number> {
+  // The messages were frozen when their deliveries were claimed, and every attendee of the request
+  // is processed before the batch goes out: leave out the ones whose delivery was cancelled or
+  // emptied since (what an erasure does). Read under the attendees' row locks, so an erasure that
+  // is still open is waited for.
+  const current = await readDeliveriesBeforeSend(prisma, pending);
+  const toSend = pending.filter((item) => {
+    const row = current.get(item.deliveryId);
+    return row !== undefined && row.status !== "cancelled" && row.recipient_email !== null;
+  });
+  if (toSend.length === 0) return 0;
+
   try {
     const batchResult = await sendBatch(
       mailer,
-      pending.map((item) => materializePendingMessage(item)),
+      toSend.map((item) => materializePendingMessage(item)),
     );
 
     await Promise.all(
       batchResult.results.map((result, index) => {
-        const item = pending.at(index);
+        const item = toSend.at(index);
         if (!item) return Promise.resolve();
         const update = mapSendResultToDelivery(result);
-        return prisma.emailDelivery.update({
-          where: { id: item.deliveryId },
+        // recipient_email: an erased attendee's delivery is emptied, and stays that way.
+        return prisma.emailDelivery.updateMany({
+          where: { id: item.deliveryId, recipient_email: { not: null } },
           data: {
             ...update,
             provider: result.provider,
@@ -453,9 +469,9 @@ export async function deliverPendingBatch(
   } catch (err) {
     const failureUpdate = deliveryUpdateFromBatchError(err);
     await Promise.all(
-      pending.map((item) =>
-        prisma.emailDelivery.update({
-          where: { id: item.deliveryId },
+      toSend.map((item) =>
+        prisma.emailDelivery.updateMany({
+          where: { id: item.deliveryId, recipient_email: { not: null } },
           data: {
             ...failureUpdate,
             ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),

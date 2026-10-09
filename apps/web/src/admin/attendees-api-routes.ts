@@ -65,6 +65,7 @@ import {
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
   isErasedPlaceholderEmail,
+  lockAttendeesForUpdate,
   loadEventTicketTypes,
   parseWalletFieldMapping,
   resolveTicket,
@@ -2328,6 +2329,10 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
     });
     if (!existing || existing.event_id !== eventId) return "forbidden" as const;
 
+    // Attendee row first, like an erasure and the guarded send / check-in transactions: deleting
+    // the children first can deadlock against one of them.
+    await lockAttendeesForUpdate(tx, eventId, [attendeeId]);
+
     const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
       tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
       tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
@@ -2415,6 +2420,9 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
     });
     if (owned.length === 0) return 0;
     const ids = owned.map((a) => a.id);
+
+    // Attendee rows first (see handleDeleteEventAttendee).
+    await lockAttendeesForUpdate(tx, eventId, ids);
 
     const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
       tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
