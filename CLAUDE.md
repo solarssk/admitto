@@ -60,4 +60,4 @@ Do **not** split when sub-tasks are tightly coupled.
 
 ## 5. Compounding engineering
 
-When Claude makes a mistake in this repo: **update `AGENTS.md`** (project-wide) or this file (Claude-only workflow). Prefer `AGENTS.md` for gotchas that any agent should follow.
+When Claude makes a mistake in this repo, add the rule where [standards/README.md](standards/README.md) says ("Where a new rule goes"): a line in `AGENTS.md` only for security or silent-failure rules, otherwise the `standards/` file of that area. Claude-only workflow goes in this file. Keep `AGENTS.md` under its budget; `npm run docs:check` enforces it.

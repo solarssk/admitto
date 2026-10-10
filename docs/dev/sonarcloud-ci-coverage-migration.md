@@ -68,7 +68,7 @@ top of it.
   - The same `sonar.tests` classification as `.sonarcloud.properties`. It's a literal list, not a
     glob: `sonar.tests` never accepts wildcards, under either analysis mode, per SonarSource's
     ["Setting initial scope"](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/setting-analysis-scope/setting-initial-scope)
-    docs. See that file's own comment and the `AGENTS.md` Compounding rules entry for the full
+    docs. See that file's own comment and the Sonar entry in `standards/ci-and-tooling.md` for the full
     reasoning.
   - A matching `sonar.exclusions`. `sonar.sources` defaults to `.` when unset, which would
     otherwise re-include every `sonar.tests` path as source too and fail the scan on that overlap,
@@ -177,7 +177,7 @@ Notes on this shape:
 
 ## Verification after the follow-up PR merges
 
-Same empirical approach as the existing `sonar.tests` fix (see `AGENTS.md` Compounding rules) -
+Same empirical approach as the existing `sonar.tests` fix (see `standards/ci-and-tooling.md`) -
 verify against the live dashboard, not assumptions:
 
 ```bash
