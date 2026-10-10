@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 export const BUDGETS = {
-  root: 90_000, // AGENTS.md. Temporary: 20_000 once the loading standard has moved to standards/. With one nested file in the chain it must stay under Codex's 32 KiB.
+  root: 20_000, // AGENTS.md. With one nested file in the chain it must stay under Codex's 32 KiB. With one nested file in the chain it must stay under Codex's 32 KiB.
   nested: 10_000, // apps/*/AGENTS.md, packages/*/AGENTS.md
   claude: 4_000, // every CLAUDE.md
   standard: 24_000, // each file under standards/

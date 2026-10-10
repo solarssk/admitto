@@ -38,7 +38,7 @@ Do not put `ApiError.message` into a toast or an inline string. Use `operatorApi
 - A failed load is an error state with Retry, never an empty state. A Retry keeps the error and its busy button on screen until the answer is in.
 - A busy button keeps keyboard focus: use `loading` (it sets `aria-disabled`), never `disabled={busy}` on a button that starts the work. One busy flag per action. A `loadingLabel` is never longer than the label at rest.
 - Never write your own spinner, shimmer, `Loading…` text or `saving ? "Saving…" : "Save"`.
-- Detail and the recipe for each screen: the section "Admin SPA loading and busy states" in [AGENTS.md](../../AGENTS.md#admin-spa-loading-and-busy-states).
+- Detail and the recipe for each screen: [loading.md](../../standards/admin-spa/loading.md), and the three `loading-*` files it links.
 
 ## Gotchas that pass tests and break later
 

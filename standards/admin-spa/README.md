@@ -5,7 +5,10 @@ Rules for the staff app in `apps/admin`. [apps/admin/AGENTS.md](../../apps/admin
 | You are about to | Read |
 |---|---|
 | Show a success, error, warning or confirmation | [feedback-and-errors.md](feedback-and-errors.md) |
-| Add or change any wait: spinner, placeholder, busy button, Retry, failed load, or the loading recipe of a screen | the section "Admin SPA loading and busy states" in [AGENTS.md](../../AGENTS.md#admin-spa-loading-and-busy-states) (moves here in the next step) |
+| Add or change any wait: spinner, placeholder, busy button, Retry, failed load | [loading.md](loading.md) |
+| ...on a settings panel, a modal editor, Event settings, Communication, Overview, Requirements, Account, the event deep link | [loading-settings-and-pages.md](loading-settings-and-pages.md) |
+| ...on a card list, the delivery log, a record modal, a Reports tab, the Attendees list, the events picker, the attendee page | [loading-lists-and-reports.md](loading-lists-and-reports.md) |
+| ...on the send panels, Add attendee, Import, the setup wizard, the custom field editor, a lookup of options | [loading-flows-and-dialogs.md](loading-flows-and-dialogs.md) |
 | Change what a screen shows, in any state (placeholder, error, empty, loaded) | [readability.md](readability.md) |
 | Add a component, dropdown, modal, CSS file, font, or an import from a workspace package | [ui-gotchas.md](ui-gotchas.md) |
 | Write the words of an error or a notice | [docs/dev/error-and-notice-copy.md](../../docs/dev/error-and-notice-copy.md) |
