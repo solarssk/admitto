@@ -12,7 +12,7 @@ import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { eraseAttendees } from "../src/erase-attendees.js";
-import { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "../src/attendee-lock.js";
+import { isAttendeeGone, lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "../src/attendee-lock.js";
 import { keepLiveRows } from "../src/lock-check.js";
 import { buildAttendeesExportArtifact } from "../src/attendees-export-artifact.js";
 import { exportAttendeesCsv } from "../src/attendees-export.js";
@@ -130,6 +130,15 @@ describe("lockAttendeeRow", () => {
     expect(await lockAttendeeRow(prisma, gone.id)).toMatchObject({ erased: true });
     expect(await lockAttendeeRow(prisma, "nobody")).toBeNull();
     expect(await lockAttendeeRow(prisma, live.id, PREVIEW_EVENT_ID)).toBeNull();
+  });
+
+  it("isAttendeeGone is true for an erased attendee and for a row that is not there (removed), false for a live one", async () => {
+    const live = await createAttendee();
+    const erased = await createAttendee();
+    await erase([erased.id]);
+    expect(isAttendeeGone(await lockAttendeeRow(prisma, live.id))).toBe(false);
+    expect(isAttendeeGone(await lockAttendeeRow(prisma, erased.id))).toBe(true);
+    expect(isAttendeeGone(await lockAttendeeRow(prisma, "nobody"))).toBe(true);
   });
 
   it("waits for an open erasure and then reports the row as erased", async () => {

@@ -26,6 +26,7 @@ import {
   resolveTicketPageDisplay,
   buildWalletPassInput,
   resolveWalletCustomFieldPlaceholders,
+  isAttendeeGone,
   lockAttendeeRow,
 } from "@admitto/tickets";
 import {
@@ -191,6 +192,7 @@ import {
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
+import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "./admin/attendee-remove-routes.js";
 import {
   handleGetWalletPushJob,
   handleGetWalletPushHistory,
@@ -779,7 +781,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminClientErrorRateLimit = rateLimit(rateLimitStore, "admin:client-error");
   /** Wraps a wallet limiter so a route only spends that budget when the event actually has wallet
    * configured - unlike the explicit bulk-wallet-void/reissue/delete routes (always a wallet action
-   * by definition), bulk-delete / bulk-revoke-pass / erase are general-purpose mutations that only
+   * by definition), bulk-delete / bulk-revoke-pass / erase / remove are general-purpose mutations that only
    * *sometimes* cascade into PassCreator calls (deleteWalletPassesBestEffort /
    * syncWalletPassOnStatusChangeBestEffort / deleteErasedWalletPasses), and were charging the
    * strict wallet budget even for an event with wallet disabled entirely (bot review, PR #1064
@@ -809,9 +811,9 @@ export function createApp(options: CreateAppOptions = {}) {
     };
   }
   /** For a route that can make one provider call per selected attendee (bulk-delete, bulk-revoke-pass,
-   * bulk-erase). */
+   * bulk-erase, bulk-remove). */
   const walletActionBulkRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionBulkRateLimit);
-  /** For a route that can make one provider call for the one attendee it acts on (erase). */
+  /** For a route that can make one provider call for the one attendee it acts on (erase, remove). */
   const walletActionRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionRateLimit);
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -1007,16 +1009,17 @@ export function createApp(options: CreateAppOptions = {}) {
     ): Promise<WalletPassUrlsOutcome> {
       let templateChanged = false;
       let expirationChanged = false;
-      let attendeeErased = false;
+      let attendeeGone = false;
       let expiresAt: Date | null = null;
       try {
         await db.$transaction(async (tx) => {
           // The attendee row first, before the event-wide advisory lock: waiting behind a running
           // erasure while holding that lock would stall every other first-time pass of the event.
           // The pass was just created at the provider with this attendee's data. If an erasure
-          // committed meanwhile, no install links are saved (see deleteOrphanPassOfErasedAttendee).
-          if ((await lockAttendeeRow(tx, attendee.id))?.erased) {
-            attendeeErased = true;
+          // committed meanwhile, or the attendee was removed (no row left), no install links are
+          // saved (see deleteOrphanPassOfGoneAttendee).
+          if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) {
+            attendeeGone = true;
             return;
           }
           await acquireWalletTemplateLock(tx, event.id);
@@ -1104,16 +1107,17 @@ export function createApp(options: CreateAppOptions = {}) {
           fields: { eventId: event.id, attendeeId: attendee.id, providerPassId: result.providerPassId },
         });
         // The new pass must not stay at the provider with nothing tracking it if the attendee was
-        // erased meanwhile. Whatever made the save fail, the erasure may still be open: the check
-        // takes the attendee's row lock, so it waits for the erasure and sees its result.
-        if (await isAttendeeErasedNow()) {
-          await deleteOrphanPassOfErasedAttendee(userProvidedId, result.providerPassId);
+        // erased or removed meanwhile. Whatever made the save fail, the erasure or removal may
+        // still be open: the check takes the attendee's row lock, so it waits for it and sees its
+        // result.
+        if (await isAttendeeGoneNow()) {
+          await deleteOrphanPassOfGoneAttendee(userProvidedId, result.providerPassId);
           return WALLET_PASS_UNAVAILABLE;
         }
         return null;
       }
-      if (attendeeErased) {
-        await deleteOrphanPassOfErasedAttendee(userProvidedId, result.providerPassId);
+      if (attendeeGone) {
+        await deleteOrphanPassOfGoneAttendee(userProvidedId, result.providerPassId);
         return WALLET_PASS_UNAVAILABLE;
       }
       if (templateChanged) {
@@ -1137,27 +1141,29 @@ export function createApp(options: CreateAppOptions = {}) {
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
     }
 
-    /** True when the attendee has been erased, read under their row lock: an erasure that is still
-     * open is waited for, where a plain read would show the attendee as they were before it began.
-     * Best effort: a failed read counts as "not erased". */
-    async function isAttendeeErasedNow(): Promise<boolean> {
+    /** True when the attendee has been erased or removed, read under their row lock: an erasure or
+     * removal that is still open is waited for, where a plain read would show the attendee as they
+     * were before it began. Best effort: a failed read counts as "still there". */
+    async function isAttendeeGoneNow(): Promise<boolean> {
       try {
         const locked = await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id), {
           timeout: ERASURE_WAIT_TX_TIMEOUT_MS,
         });
-        return locked?.erased === true;
+        return isAttendeeGone(locked);
       } catch {
         return false;
       }
     }
 
-    /** For a pass just created at the provider for an attendee who has been erased in the
-     * meantime: records only the provider's ids (no install links), so the pass stays findable as
-     * "still to delete at the provider" (an erased attendee's pass with provider ids and no
+    /** For a pass just created at the provider for an attendee who has been erased or removed in
+     * the meantime: records only the provider's ids (no install links), so the pass stays findable
+     * as "still to delete at the provider" (an erased attendee's pass with provider ids and no
      * provider_removed_at), then deletes it there and stamps it removed. A row that already holds
-     * another pass keeps its ids. Best effort and never throws: a failed delete leaves the row for
-     * the erasure's own retry. */
-    async function deleteOrphanPassOfErasedAttendee(userProvidedId: string, providerPassId: string): Promise<void> {
+     * another pass keeps its ids. A removed attendee has no row to keep the ids on (the insert
+     * fails on its foreign key, P2003) and nobody to look for them later: the pass is only
+     * deleted at the provider. Best effort and never throws: a failed delete leaves an erased
+     * attendee's row for the erasure's own retry, and a removed one's pass at the provider. */
+    async function deleteOrphanPassOfGoneAttendee(userProvidedId: string, providerPassId: string): Promise<void> {
       try {
         try {
           await db.walletPass.create({
@@ -1171,12 +1177,16 @@ export function createApp(options: CreateAppOptions = {}) {
             },
           });
         } catch (createErr) {
-          if (!(createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002")) throw createErr;
-          // A row exists already (for instance a failed attempt): give it the ids if it has none.
-          await db.walletPass.updateMany({
-            where: { attendee_id: attendee.id, provider_pass_id: null },
-            data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId },
-          });
+          const code = createErr instanceof Prisma.PrismaClientKnownRequestError ? createErr.code : null;
+          if (code === "P2002") {
+            // A row exists already (for instance a failed attempt): give it the ids if it has none.
+            await db.walletPass.updateMany({
+              where: { attendee_id: attendee.id, provider_pass_id: null },
+              data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId },
+            });
+          } else if (code !== "P2003") {
+            throw createErr;
+          }
         }
         await provider.deletePass(providerPassId);
         await db.walletPass.updateMany({
@@ -1218,8 +1228,8 @@ export function createApp(options: CreateAppOptions = {}) {
     ): Promise<null> {
       try {
         await db.$transaction(async (tx) => {
-          // Nothing is recorded for an attendee erased meanwhile.
-          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return;
+          // Nothing is recorded for an attendee erased or removed meanwhile.
+          if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return;
           const { count } = await tx.walletPass.updateMany({
             where: { attendee_id: attendee.id, status: { not: "active" } },
             data: { status: "failed", last_error_code: code },
@@ -1428,8 +1438,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
     /** The last step before the redirect, under the attendee's row lock. Returns the response to
      * send instead of the redirect to the pass, or null to go on:
-     * - the attendee is erased: back to the ticket page, nothing recorded (the erasure clears the
-     *   device and this must not bring it back);
+     * - the attendee is erased or removed: back to the ticket page, nothing recorded (the erasure
+     *   clears the device and this must not bring it back);
      * - it could not be established whether they are (the lock gave up waiting behind an
      *   erasure): the same retry notice as any other failure of this route, because redirecting
      *   would hand a pass to someone who may have been erased.
@@ -1438,7 +1448,7 @@ export function createApp(options: CreateAppOptions = {}) {
       let erased: boolean;
       try {
         erased = await db.$transaction(async (tx) => {
-          if ((await lockAttendeeRow(tx, attendee.id))?.erased) return true;
+          if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return true;
           await tx.walletPass.updateMany({
             where: { attendee_id: attendee.id, first_confirmed_at: null },
             data: { user_agent: userAgent, user_agent_captured_at: new Date() },
@@ -1450,7 +1460,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Either the write failed or the wait for the lock gave up, and which is not known: ask
         // again for the lock alone. That is the answer the redirect needs, and it fails closed.
         try {
-          erased = (await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id)))?.erased === true;
+          erased = isAttendeeGone(await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id)));
         } catch (checkErr) {
           console.error("wallet redirect erased check failed:", checkErr);
           recordSystemLog({
@@ -2011,6 +2021,28 @@ export function createApp(options: CreateAppOptions = {}) {
     // The pass of each erased attendee is deleted at the provider after the commit.
     walletActionBulkRateLimitIfWalletConfigured,
     (c) => handleBulkEraseEventAttendees(c, db),
+  );
+  // Remove from event (the hard delete, for mistakes, with a reason from a fixed list). Behind
+  // guardArchivedEvent: the numbers of an archived event are final. The pass of each removed attendee
+  // is deleted at the provider before the rows go.
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    // This route reads a body (the reason), unlike erase: the same cap as the bulk routes.
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionRateLimitIfWalletConfigured,
+    guardArchivedEvent((c) => handleRemoveEventAttendee(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    guardArchivedEvent((c) => handleBulkRemoveEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-delete",

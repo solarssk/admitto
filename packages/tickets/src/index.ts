@@ -10,7 +10,7 @@ export {
   parseWalletFieldMapping,
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
-export { lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export { isAttendeeGone, lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
 export { attendeeIsLive, keepLiveRows } from "./lock-check.js";
 export type { LockedAttendee } from "./attendee-lock.js";
 export {
@@ -21,6 +21,9 @@ export {
   isErasedPlaceholderEmail,
 } from "./erase-attendees.js";
 export { scrubImportJobResults } from "./erase-job-results.js";
+export { scrubAttendeeTraces } from "./attendee-traces.js";
+export { removeAttendees } from "./remove-attendees.js";
+export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
 export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
 export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
 export type {

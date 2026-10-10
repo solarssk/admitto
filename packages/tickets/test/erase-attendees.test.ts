@@ -351,6 +351,31 @@ describe("eraseAttendees: what hangs off the attendee", () => {
       expect(after.get(sent.id)?.sent_at?.toISOString()).toBe("2026-08-30T10:00:00.000Z");
     });
 
+    it("also scrubs the address their first ticket mail went to when it was edited since, but not one that staff typed into a resend", async () => {
+      const a = await createAttendee(WARSAW_EVENT, { email: "right.address@example.com" });
+      const other = await createAttendee(WARSAW_EVENT);
+      const another = await createAttendee(WARSAW_EVENT);
+      await delivery(a.id, { purpose: "initial", status: "sent", recipient_email: "Typo.Address@example.com" });
+      await delivery(a.id, { purpose: "resend", status: "failed", retryable: false, recipient_email: "manager.mailbox@example.com" });
+      const resentToTypo = await delivery(other.id, { purpose: "resend", status: "queued", recipient_email: "typo.address@example.com" });
+      const resentToManager = await delivery(another.id, { purpose: "resend", status: "queued", recipient_email: "manager.mailbox@example.com" });
+
+      const result = await erase(WARSAW_EVENT, [a.id]);
+
+      expect([...result.previousEmails].sort((x, y) => x.localeCompare(y))).toEqual([
+        "right.address@example.com",
+        "typo.address@example.com",
+      ]);
+      expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resentToTypo.id } })).toMatchObject({
+        recipient_email: null,
+        status: "cancelled",
+      });
+      expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resentToManager.id } })).toMatchObject({
+        recipient_email: "manager.mailbox@example.com",
+        status: "queued",
+      });
+    });
+
     it("leaves other attendees' mail alone", async () => {
       const a = await createAttendee(WARSAW_EVENT);
       const other = await createAttendee(WARSAW_EVENT);

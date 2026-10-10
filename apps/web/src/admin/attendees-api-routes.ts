@@ -2090,79 +2090,89 @@ export async function writeAttendeeLifecycleAuditLog(
   });
 }
 
-/** Best-effort GDPR erasure of the given attendees' wallet passes at the provider (e.g.
- * PassCreator). Runs ahead of the DB transaction below - an external network call has no place
- * inside a Prisma transaction - and never blocks attendee erasure: a provider failure here is
- * logged and local erasure proceeds regardless, same posture as the other best-effort external
- * calls in this file. The `attendee: { event_id: eventId }` relation filter keeps this correctly
- * scoped even before the caller's own event-ownership check has run - an id belonging to a
- * different event simply matches no row. No-op when the event's credentials are unconfigured or
- * none of the given attendees has a WalletPass row with a known provider_pass_id yet - but NOT
- * gated on the event's wallet_enabled toggle, unlike every other resolveWalletProvider call site:
- * that flag only governs whether new passes get issued, and erasure must still delete whatever
- * already exists at the provider even after issuance has since been turned off (CodeRabbit
- * review - the local WalletPass row's provider_pass_id, the only way to ever reach it again, is
- * gone the moment the caller's own transaction below removes the row). Hence
- * resolveConfiguredWalletProvider, which resolves from the event's credentials alone. */
-async function deleteWalletPassesBestEffort(
+/** A wallet pass at the provider: whose it is and the provider's id for it. */
+export type ProviderPassTarget = { attendeeId: string; providerPassId: string };
+
+/** Deletes the given passes at the event's wallet provider (e.g. PassCreator), best effort, and
+ * returns the provider ids it deleted. An external network call has no place inside a Prisma
+ * transaction, so callers run it before or after theirs; a provider failure here is logged (ids
+ * only) and never thrown, same posture as the other best-effort external calls in this file.
+ * No-op when the event's credentials are unconfigured - but NOT gated on the event's
+ * wallet_enabled toggle, unlike every other resolveWalletProvider call site: that flag only
+ * governs whether new passes get issued, and erasure must still delete whatever already exists at
+ * the provider even after issuance has since been turned off (CodeRabbit review - the local
+ * WalletPass row's provider_pass_id, the only way to ever reach it again, is gone the moment the
+ * caller's own transaction removes the row, permanently orphaning attendee PII there, GDPR).
+ * Hence resolveConfiguredWalletProvider, which resolves from the event's credentials alone. */
+export async function deleteProviderPassesBestEffort(
   db: PrismaClient,
   eventId: string,
-  attendeeIds: readonly string[],
-): Promise<void> {
-  const [event, passes] = await Promise.all([
-    db.event.findUnique({
-      where: { id: eventId },
-      select: {
-        wallet_template_id: true,
-        wallet_api_key_enc: true,
-        wallet_field_mapping: true,
-      },
-    }),
-    db.walletPass.findMany({
-      where: {
-        attendee_id: { in: attendeeIds as string[] },
-        provider_pass_id: { not: null },
-        attendee: { event_id: eventId },
-      },
-      select: { attendee_id: true, provider_pass_id: true, provider_removed_at: true },
-    }),
-  ]);
-  if (!event || passes.length === 0) return;
-
-  // A pass PR 3's "Remove from provider" already removed has nothing left to delete at the
-  // provider - deletePass is idempotent there too, but skipping avoids a wasted call for a
-  // selection that includes an already-removed pass.
-  const remaining = passes.filter((pass) => !pass.provider_removed_at);
-  if (remaining.length === 0) return;
-
-  // Ignores the event's own current wallet_enabled toggle - that flag governs whether NEW passes
-  // get issued, not whether erasure may clean up passes that already exist at the provider. An
-  // event with wallet issuance since turned off (but still holding a valid API key/template) must
-  // still delete the provider's copy here, or these WalletPass rows' provider_pass_id - the only
-  // way to ever delete them at PassCreator - is gone the moment the caller's own transaction
-  // below removes the local row, permanently orphaning attendee PII there (CodeRabbit review,
-  // GDPR).
+  targets: readonly ProviderPassTarget[],
+): Promise<Set<string>> {
+  const deleted = new Set<string>();
+  if (targets.length === 0) return deleted;
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: {
+      wallet_template_id: true,
+      wallet_api_key_enc: true,
+      wallet_field_mapping: true,
+    },
+  });
+  if (!event) return deleted;
   const provider = resolveConfiguredWalletProvider({
     walletTemplateId: event.wallet_template_id,
     walletApiKeyEnc: event.wallet_api_key_enc,
     walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
   });
-  if (!provider) return;
+  if (!provider) return deleted;
 
-  for (const batch of chunk(remaining, BULK_CHECKIN_CONCURRENCY)) {
-    const settled = await Promise.allSettled(batch.map((pass) => provider.deletePass(pass.provider_pass_id!)));
+  for (const batch of chunk([...targets], BULK_CHECKIN_CONCURRENCY)) {
+    const settled = await Promise.allSettled(batch.map((pass) => provider.deletePass(pass.providerPassId)));
     for (const [index, outcome] of settled.entries()) {
-      if (outcome.status === "rejected") {
-        console.error("wallet pass delete (erasure) failed:", outcome.reason);
-        recordSystemLog({
-          level: "error",
-          source: "admin",
-          message: "wallet_pass_erasure_delete_failed",
-          fields: { eventId, attendeeId: batch[index]!.attendee_id },
-        });
+      if (outcome.status === "fulfilled") {
+        deleted.add(batch[index]!.providerPassId);
+        continue;
       }
+      console.error("wallet pass delete (erasure) failed:", outcome.reason);
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_pass_erasure_delete_failed",
+        fields: { eventId, attendeeId: batch[index]!.attendeeId },
+      });
     }
   }
+  return deleted;
+}
+
+/** Best-effort GDPR erasure of the given attendees' wallet passes at the provider. Runs ahead of
+ * the DB transaction below - an external network call has no place inside a Prisma transaction -
+ * and never blocks attendee erasure: a provider failure here is logged and local erasure
+ * proceeds regardless (see deleteProviderPassesBestEffort). The `attendee: { event_id: eventId }`
+ * relation filter keeps this correctly scoped even before the caller's own event-ownership check
+ * has run - an id belonging to a different event simply matches no row. A pass PR 3's "Remove
+ * from provider" already removed has nothing left to delete at the provider and is left out, as
+ * is a row with no provider_pass_id yet. Returns the provider ids it deleted. */
+export async function deleteWalletPassesBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: readonly string[],
+): Promise<Set<string>> {
+  const passes = await db.walletPass.findMany({
+    where: {
+      attendee_id: { in: attendeeIds as string[] },
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: eventId },
+    },
+    select: { attendee_id: true, provider_pass_id: true },
+  });
+  return deleteProviderPassesBestEffort(
+    db,
+    eventId,
+    passes.map((pass) => ({ attendeeId: pass.attendee_id, providerPassId: pass.provider_pass_id! })),
+  );
 }
 
 /** isWalletAddClosed for an event row as Prisma returns it. */

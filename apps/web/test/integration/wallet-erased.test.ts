@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { encryptToString } from "@admitto/crypto";
-import { eraseAttendees, generateToken, hashToken } from "@admitto/tickets";
+import { eraseAttendees, generateToken, hashToken, removeAttendees } from "@admitto/tickets";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
 import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, WalletProviderError } from "@admitto/wallet";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -72,6 +72,7 @@ async function createAttendee() {
 }
 
 const erase = (ids: string[]) => prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids }));
+const remove = (ids: string[]) => prisma.$transaction((tx) => removeAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids }));
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
@@ -121,6 +122,24 @@ async function holdErasure(ids: string[], timeoutMs = 5_000, outcome: "commit" |
     .catch((err: unknown) => {
       if (outcome !== "rollback") throw err;
     });
+  await writtenPromise;
+  return { commit: () => (release(), transaction) };
+}
+
+/** Starts a removal and keeps its transaction open after the rows are deleted (`commit` ends it). */
+async function holdRemoval(ids: string[]) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let written!: () => void;
+  const writtenPromise = new Promise<void>((resolve) => (written = resolve));
+  const transaction = prisma.$transaction(
+    async (tx) => {
+      await removeAttendees(tx, { eventId: EVENT_ID, attendeeIds: ids });
+      written();
+      await gate;
+    },
+    { timeout: 5_000 },
+  );
   await writtenPromise;
   return { commit: () => (release(), transaction) };
 }
@@ -238,6 +257,28 @@ describe("wallet pass creation racing an erasure", () => {
     expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
     expect(pass).toMatchObject({ apple_url: null, provider_pass_id: `pc-admitto:${EVENT_ID}:${attendee.id}` });
+    expect(pass.provider_removed_at).not.toBeNull();
+  });
+
+  it("gives the provider ids to a pass row that exists already (a failed attempt), then deletes the new pass", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: "wallet_provider_rejected" } });
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await erase([attendee.id]);
+      return { providerPassId: `pc-${input.userProvidedId}`, downloadUrl: null, appleUrl: "https://pc.test/a", androidUrl: null };
+    });
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
+    const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
+    expect(pass).toMatchObject({
+      apple_url: null,
+      provider_pass_id: `pc-admitto:${EVENT_ID}:${attendee.id}`,
+      user_provided_id: `admitto:${EVENT_ID}:${attendee.id}`,
+    });
     expect(pass.provider_removed_at).not.toBeNull();
   });
 
@@ -414,6 +455,179 @@ describe("wallet pass creation racing an erasure", () => {
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).apple_url).toBe(
       "https://pc.test/apple/x",
     );
+  });
+});
+
+describe("wallet pass creation racing a removal", () => {
+  const providerPass = (input: WalletPassInput) => ({
+    providerPassId: `pc-${input.userProvidedId}`,
+    downloadUrl: "https://pc.test/p/x",
+    appleUrl: "https://pc.test/apple/x",
+    androidUrl: "https://pc.test/android/x",
+  });
+  const noError = (attendeeId: string) =>
+    expect(querySystemLogs({ source: "api" })).not.toContainEqual(
+      expect.objectContaining({ message: "wallet_pass_upsert_failed", fields: expect.objectContaining({ attendeeId }) }),
+    );
+
+  it("deletes the new pass at the provider, keeps no row and sends the visitor back when the attendee is removed while the provider creates it", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await remove([attendee.id]);
+      return providerPass(input);
+    });
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(provider.deletePass).toHaveBeenCalledTimes(1);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
+    expect(await prisma.walletPass.count({ where: { attendee_id: attendee.id } })).toBe(0);
+    noError(attendee.id);
+  });
+
+  it("waits for a removal that is still open before saving, then deletes the new pass", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      const held = await holdRemoval([attendee.id]);
+      setTimeout(() => void held.commit(), 300);
+      return providerPass(input);
+    });
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
+    expect(await prisma.walletPass.count({ where: { attendee_id: attendee.id } })).toBe(0);
+  });
+
+  it("still sends the visitor back, and logs the failure by ids, when the new pass of a removed attendee cannot be deleted", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await remove([attendee.id]);
+      return providerPass(input);
+    });
+    provider.deletePass.mockRejectedValueOnce(new Error("provider down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    errSpy.mockRestore();
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        message: "wallet_pass_erased_delete_failed",
+        fields: expect.objectContaining({ attendeeId: attendee.id }),
+      }),
+    );
+    expect(await prisma.walletPass.count({ where: { attendee_id: attendee.id } })).toBe(0);
+  });
+
+  it("does not hide another failure to track the pass: the insert failing for any other reason is logged", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await remove([attendee.id]);
+      return providerPass(input);
+    });
+    vi.spyOn(prisma.walletPass, "create").mockRejectedValueOnce(new Error("db hiccup"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    errSpy.mockRestore();
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        message: "wallet_pass_erased_delete_failed",
+        fields: expect.objectContaining({ attendeeId: attendee.id }),
+      }),
+    );
+  });
+
+  it("deletes the new pass even when saving it failed after the removal committed", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await remove([attendee.id]);
+      return providerPass(input);
+    });
+    // The removal above is the first transaction; the second is the one that would save the pass.
+    const realTransaction = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+    let calls = 0;
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+      ++calls === 2 ? Promise.reject(new Error("transaction timed out")) : realTransaction(...args)) as never);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    spy.mockRestore();
+    errSpy.mockRestore();
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(provider.deletePass).toHaveBeenCalledTimes(1);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
+    expect(await prisma.walletPass.count({ where: { attendee_id: attendee.id } })).toBe(0);
+  });
+
+  it("records no failed pass, and logs no error of its own, for an attendee removed while the provider call was failing", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async () => {
+      await remove([attendee.id]);
+      throw new WalletProviderError("wallet_provider_rejected", "rejected");
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    errSpy.mockRestore();
+
+    expect(res.status).toBe(302);
+    expect(await prisma.walletPass.count({ where: { attendee_id: attendee.id } })).toBe(0);
+    noError(attendee.id);
+  });
+
+  it("sends a visitor whose attendee was removed just before back to the ticket page, not to the stored pass", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-removed", apple_url: "https://pc.test/apple/removed" },
+    });
+    // The last transaction of this request (the pass already exists) is the check before the
+    // redirect; the removal commits just before it, after the request has read the stored pass.
+    const realTransaction = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementationOnce(((...args: unknown[]) =>
+      remove([attendee.id]).then(() => realTransaction(...args))) as never);
+
+    const res = await makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "TestBrowser/1.0" },
+    });
+    spy.mockRestore();
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+  });
+
+  it("sends the visitor back, not to the stored pass, when the capture transaction fails and the second check finds the attendee removed", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: attendee.id, status: "active", provider_pass_id: "pc-removed-2", apple_url: "https://pc.test/apple/removed-2" },
+    });
+    // The removal commits while the capture transaction fails; the lock-only check that follows sees it.
+    const spy = vi
+      .spyOn(prisma, "$transaction")
+      .mockImplementationOnce((() =>
+        remove([attendee.id]).then(() => Promise.reject(new Error("Transaction API error: timeout")))) as never);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await makeApp(stubProvider()).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    spy.mockRestore();
+    errSpy.mockRestore();
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
   });
 });
 

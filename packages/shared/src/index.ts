@@ -1,4 +1,9 @@
 export { splitCsvLine } from "./csvUtils.js";
+export {
+  ATTENDEE_REMOVAL_REASONS,
+  ATTENDEE_REMOVAL_REASON_LABELS,
+  type AttendeeRemovalReason,
+} from "./attendeeRemovalReasons.js";
 export { redactEmail } from "./redact.js";
 export { CONTACT_EMAIL_MAX_LENGTH } from "./contactEmail.js";
 export {

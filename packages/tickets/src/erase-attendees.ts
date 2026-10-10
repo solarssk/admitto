@@ -1,5 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
+import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
 
 /** Written to `Attendee.name` of an erased attendee. Mirrored by the CHECK constraint in migration
  * 20261008120000_add_attendee_erased_at - change both together. */
@@ -50,7 +51,8 @@ export type EraseAttendeesResult = {
   /** Provider passes of the erased attendees that are not deleted at the provider yet. */
   walletTargets: EraseWalletTarget[];
   /**
-   * The addresses the erased attendees had, lower-cased, for scrubbing event-level copies of them
+   * The addresses the erased attendees had, lower-cased: the current one and the one their first
+   * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
    * that are not keyed by attendee (see scrubImportJobResults). They are personal data: used in
    * memory by the caller within the same request, never logged, audited or stored.
    */
@@ -131,14 +133,11 @@ export async function eraseAttendees(
   const alreadyErasedIds = found.filter((row) => row.erased_at !== null).map((row) => row.id);
   const toErase = found.filter((row) => row.erased_at === null).map((row) => row.id);
   if (toErase.length === 0) return { ...empty, alreadyErasedIds, notFoundIds };
-  const previousEmails = [
-    ...new Set(
-      found
-        .filter((row) => row.erased_at === null)
-        .map((row) => row.email.trim().toLowerCase())
-        .filter((email) => email.length > 0),
-    ),
-  ];
+  // Before the deliveries are emptied: an address the person had before an edit is only in their history.
+  const previousEmails = await collectAttendeeAddresses(tx, {
+    eventId,
+    attendees: found.filter((row) => row.erased_at === null),
+  });
 
   const ids = Prisma.join(toErase);
   const erased = await tx.$queryRaw<{ id: string }[]>`
@@ -224,37 +223,7 @@ export async function eraseAttendees(
     },
   });
 
-  // A mail that staff sent to this person's address on behalf of another attendee (the resend
-  // override) sits on that other attendee's delivery: the address goes, the delivery stays, and a
-  // mail still waiting to go out is cancelled.
-  if (previousEmails.length > 0) {
-    await tx.$executeRaw`
-      UPDATE "EmailDelivery" SET
-        "status" = CASE
-          WHEN "status" = 'queued' OR ("status" = 'failed' AND "retryable" IS TRUE) THEN 'cancelled'
-          ELSE "status"
-        END,
-        "retryable" = CASE
-          WHEN "status" = 'queued' OR ("status" = 'failed' AND "retryable" IS TRUE) THEN false
-          ELSE "retryable"
-        END,
-        "recipient_email" = NULL,
-        "provider_message_id" = NULL,
-        "error" = NULL
-      WHERE "event_id" = ${eventId}
-        AND LOWER(TRIM("recipient_email")) IN (${Prisma.join(previousEmails)})
-        AND "attendee_id" NOT IN (${erasedList})
-    `;
-  }
-
-  // The central audit log keeps the creation entry of a manually added attendee; only the two
-  // identifying values go, the entry itself (who added someone, when) stays.
-  await tx.$executeRaw`
-    UPDATE "AdminAuditLog" SET "metadata" = "metadata" - 'attendee_name' - 'attendee_email'
-    WHERE "action_type" = 'attendee_created_manual'
-      AND "metadata"->>'event_id' = ${eventId}
-      AND "metadata"->>'attendee_id' IN (${erasedList})
-  `;
+  await scrubAttendeeTraces(tx, { eventId, attendeeIds: erasedIds, emails: previousEmails });
 
   return {
     erasedIds,
