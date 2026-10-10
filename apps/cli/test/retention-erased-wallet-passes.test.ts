@@ -189,7 +189,7 @@ describe("sweepErasedWalletPasses", () => {
     expect(passes.some((pass) => pass.removed)).toBe(false);
   });
 
-  it("counts the passes the provider could not delete, and logs each by attendee id with the failure codes", async () => {
+  it("counts the passes the provider could not delete, and says in one line per event how many, why and which", async () => {
     passes.push(...passesOf("evt-1", 3));
     deletePasses.mockResolvedValueOnce({
       deleted: 1,
@@ -207,14 +207,54 @@ describe("sweepErasedWalletPasses", () => {
       {
         level: "error",
         source: "wallet",
-        fields: { eventId: "evt-1", attendeeId: "evt-1-att-0001", codes: "wallet_unauthorized,unknown" },
-      },
-      {
-        level: "error",
-        source: "wallet",
-        fields: { eventId: "evt-1", attendeeId: "evt-1-att-0002", codes: "wallet_unauthorized,unknown" },
+        fields: { eventId: "evt-1", failed: 2, codes: "wallet_unauthorized,unknown", attendeeIds: "evt-1-att-0001,evt-1-att-0002" },
       },
     ]);
+  });
+
+  it("writes one line for hundreds of failures, naming the first ones, so that the lines after it are not pushed out", async () => {
+    passes.push(...passesOf("evt-1", 250));
+    // A revoked key: every delete is refused, page after page.
+    deletePasses.mockImplementation(async (_db: unknown, _eventId: string, attendeeIds: string[]) => ({
+      deleted: 0,
+      failedAttendeeIds: attendeeIds,
+      failureCodes: ["wallet_unauthorized"],
+      notTried: 0,
+    }));
+
+    const result = await sweepErasedWalletPasses(fakeDb([eventRow("evt-1")], passes), { dryRun: false }, deps);
+
+    expect(result.failed).toBe(250);
+    const logged = querySystemLogs({ search: "wallet_pass_erasure_delete_failed" });
+    expect(logged).toHaveLength(1);
+    expect(logged[0]!.fields).toMatchObject({ eventId: "evt-1", failed: 250, codes: "wallet_unauthorized", more: 235 });
+    expect(String(logged[0]!.fields?.attendeeIds).split(",")).toEqual(
+      Array.from({ length: 15 }, (_, i) => `evt-1-att-${String(i).padStart(4, "0")}`),
+    );
+  });
+
+  it("writes a line for each event that had failures, and none for one that had none", async () => {
+    passes.push(...passesOf("evt-1", 2), ...passesOf("evt-2", 2), ...passesOf("evt-3", 1));
+    deletePasses.mockImplementation(async (_db: unknown, eventId: string, attendeeIds: string[]) =>
+      eventId === "evt-2"
+        ? { deleted: attendeeIds.length, failedAttendeeIds: [], failureCodes: [], notTried: 0 }
+        : { deleted: 0, failedAttendeeIds: attendeeIds, failureCodes: ["unknown"], notTried: 0 },
+    );
+
+    await sweepErasedWalletPasses(fakeDb([eventRow("evt-1"), eventRow("evt-2"), eventRow("evt-3")], passes), { dryRun: false }, deps);
+
+    expect(querySystemLogs({ search: "wallet_pass_erasure_delete_failed" }).map((entry) => entry.fields?.eventId)).toEqual(["evt-1", "evt-3"]);
+  });
+
+  it("still says which passes failed when a later page ends the walk with an error", async () => {
+    passes.push(...passesOf("evt-1", 150));
+    deletePasses
+      .mockResolvedValueOnce({ deleted: 0, failedAttendeeIds: ["evt-1-att-0000", "evt-1-att-0001"], failureCodes: ["unknown"], notTried: 0 })
+      .mockRejectedValueOnce(new Error("db down"));
+
+    await expect(sweepErasedWalletPasses(fakeDb([eventRow("evt-1")], passes), { dryRun: false }, deps)).rejects.toThrow("db down");
+
+    expect(querySystemLogs({ search: "wallet_pass_erasure_delete_failed" }).map((entry) => entry.fields?.failed)).toEqual([2]);
   });
 
   it("reads the passes a page at a time, in attendee id order, and moves past passes that stay", async () => {

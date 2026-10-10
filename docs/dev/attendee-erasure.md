@@ -99,7 +99,7 @@ What this does not cover: the gap above; and a file that exists in storage with 
 | Count | Meaning |
 |---|---|
 | `deleted` | Deleted at the provider (or already gone) and marked as removed. |
-| `failed` | The provider refused or could not be reached. Each one is logged as `wallet_pass_erasure_delete_failed` with the event id, the attendee id (a pseudonym once the person is erased) and the failure codes. |
+| `failed` | The provider refused or could not be reached. One line per event and run is logged as `wallet_pass_erasure_delete_failed`, with the event id, how many failed (`failed`), the failure codes and the first 15 attendee ids (`attendeeIds`, pseudonyms once the person is erased; `more` says how many are not named), not one line per pass: the worker relays every line to the app in a request of its own, and that endpoint takes 120 a minute, so a revoked key with hundreds of passes would push the later lines and the summary of the run out. |
 | `noProvider` | The event has no usable wallet credentials (none, or the key cannot be read), so nothing was tried. Each such event is logged as `wallet_pass_erasure_no_provider` with its id and the number of passes that wait, which is how an operator finds the event whose credentials need fixing. |
 | `notTried` | The time budget ran out first. |
 

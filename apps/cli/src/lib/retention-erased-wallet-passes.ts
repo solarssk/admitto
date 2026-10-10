@@ -6,6 +6,9 @@ import { resolveConfiguredWalletProvider, type WalletPassProvider } from "@admit
 /** How long one sweep may spend at the provider. The worker's retention job holds up the next drain while it runs. */
 const DEFAULT_BUDGET_MS = 60_000;
 const PAGE_SIZE = 100;
+/** How many attendee ids one log line of failures names. The worker relays each line to the app in a request of its own,
+ * and that endpoint takes 120 a minute, so a run with hundreds of failures must not write a line for each. */
+const MAX_FAILED_IDS_LOGGED = 15;
 /** Where the last sweep that ran out of time stopped (a SystemSettings row), so that the next one goes on from there. */
 export const SWEEP_CURSOR_KEY = "retention.erased_wallet_sweep_cursor";
 
@@ -99,11 +102,31 @@ async function writeCursor(db: PrismaClient, cursor: Cursor | null): Promise<voi
   }
 }
 
+/** The passes of one event that the provider refused in one walk, for the one line that says so. */
+type Failures = { attendeeIds: string[]; codes: Set<string> };
+
+/**
+ * One line for the whole walk of an event, however many passes failed (the worker relays every line to the app in
+ * a request of its own, and that endpoint takes 120 a minute, so a line for each of hundreds of failing passes would
+ * push the later lines, and the summary of the run, out): how many, the failure codes, and the first attendee ids.
+ * The ids are pseudonyms once the person is erased, never a name or an address.
+ */
+function reportFailures(eventId: string, failures: Failures): void {
+  if (failures.attendeeIds.length === 0) return;
+  const more = failures.attendeeIds.length - MAX_FAILED_IDS_LOGGED;
+  emitSystemLog("wallet", "error", "wallet_pass_erasure_delete_failed", {
+    eventId,
+    failed: failures.attendeeIds.length,
+    codes: [...failures.codes].join(","),
+    attendeeIds: failures.attendeeIds.slice(0, MAX_FAILED_IDS_LOGGED).join(","),
+    ...(more > 0 ? { more } : {}),
+  });
+}
+
 /**
  * Deletes the pending passes of one event in `range`, a page at a time (by attendee id, so a page of passes that
- * stay cannot be read again), until none are left or the budget is gone. Failures are logged by attendee id,
- * which is a pseudonym once the person is erased, never by name or address. The last pass tried goes into
- * `tally.last`, which is what lets the next sweep go on after it.
+ * stay cannot be read again), until none are left or the budget is gone, and says in one line which failed. The
+ * last pass tried goes into `tally.last`, which is what lets the next sweep go on after it.
  */
 async function sweepEvent(
   db: PrismaClient,
@@ -113,6 +136,25 @@ async function sweepEvent(
   deps: ErasedWalletSweepDeps,
   tally: Tally,
   range: Range = {},
+): Promise<void> {
+  const failures: Failures = { attendeeIds: [], codes: new Set() };
+  try {
+    await walkEvent(db, eventId, provider, budget, deps, tally, range, failures);
+  } finally {
+    // Also when the walk stops on an error: what failed before it is still worth a line.
+    reportFailures(eventId, failures);
+  }
+}
+
+async function walkEvent(
+  db: PrismaClient,
+  eventId: string,
+  provider: WalletPassProvider,
+  budget: { startedAt: number; ms: number },
+  deps: ErasedWalletSweepDeps,
+  tally: Tally,
+  range: Range,
+  failures: Failures,
 ): Promise<void> {
   let cursor = range.after;
   for (;;) {
@@ -135,13 +177,8 @@ async function sweepEvent(
     const run = await deps.deletePasses(db, eventId, attendeeIds, provider, { budgetMs: remainingMs });
     tally.deleted += run.deleted;
     tally.failed += run.failedAttendeeIds.length;
-    for (const attendeeId of run.failedAttendeeIds) {
-      emitSystemLog("wallet", "error", "wallet_pass_erasure_delete_failed", {
-        eventId,
-        attendeeId,
-        codes: run.failureCodes.join(","),
-      });
-    }
+    failures.attendeeIds.push(...run.failedAttendeeIds);
+    for (const code of run.failureCodes) failures.codes.add(code);
     // deleteErasedWalletPasses goes by attendee id too, so what it did not try is the end of the page.
     const tried = attendeeIds.length - run.notTried;
     if (tried > 0) tally.last = { eventId, attendeeId: attendeeIds[tried - 1]! };
