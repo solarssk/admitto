@@ -23,12 +23,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    */
   loading?: boolean;
   /**
-   * Label shown while `loading` ("Sending…", "Testing…"): the verb of this action, never a generic
-   * "Working…". Optional. The button keeps the width of the longer of the two labels, so switching
-   * never shifts the layout next to it, which also means a busy label LONGER than the label at rest
-   * ("Save" → "Saving…") makes the button that much wider all the time. Pass one only when it is
-   * not longer; otherwise leave it out: the spinner replaces the icon, or covers the label when
-   * there is no icon, and the button stays as wide as it is at rest.
+   * Label for the busy state ("Sending…", "Testing…"): the verb of this action, never a generic
+   * "Working…". Optional. On a button with an icon it is shown in place of the label, and the button
+   * keeps the width of the longer of the two, so a busy label LONGER than the label at rest
+   * ("Save" → "Saving…") makes the button that much wider all the time: pass one only when it is
+   * not longer. On a button without an icon the spinner covers the label and the busy label is only
+   * what assistive tech hears, so it never changes the width.
    */
   loadingLabel?: ReactNode;
 }
@@ -61,8 +61,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   // out of `rest` so that spreading it last can never replace the attribute a busy button has just been given.
   const inert = loading || ariaDisabled === true || ariaDisabled === "true";
   const hasLoadingLabel = Boolean(children) && loadingLabel !== undefined && loadingLabel !== null;
-  // No icon slot to swap and no second label to show: the spinner overlays the (hidden) label.
-  const overlaySpinner = loading && !icon && !hasLoadingLabel;
+  // No icon slot to swap: the spinner overlays the hidden label. A `loadingLabel` of such a button is only what assistive tech
+  // hears: showing it beside a spinner would have to reserve room for both all the time, and "Export log" was a third wider
+  // than its text for that.
+  const overlaySpinner = loading && !icon;
   const cls = [
     "at-btn",
     `at-btn--${variant}`,
@@ -95,12 +97,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     // Both labels stay in the layout (stacked in one grid cell) so the width is the wider one;
     // only the active one is exposed to assistive tech.
     label = (
-      <span className="at-btn__label">
+      <span className={icon ? "at-btn__label" : "at-btn__label at-btn__label--text"}>
         <span className="at-btn__label-idle" aria-hidden={loading}>
           {children}
         </span>
         <span className="at-btn__label-busy" aria-hidden={!loading}>
-          {icon ? null : spinner}
           {loadingLabel}
         </span>
       </span>

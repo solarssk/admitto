@@ -67,9 +67,17 @@ const reports = parse(read("apps/admin/src/pages/reports-page.css"));
 const attendees = parse(read("apps/admin/src/attendees/attendees.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
 
-describe("the baseline: every text is wrapped with even lines", () => {
-  it("is set on the body, so that every text inherits it", () => {
-    expect(sets(bodyOf(base, "body"), "text-wrap", "balance")).toBe(true);
+describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
+  it("is pretty on the body, so that every description, hint and paragraph inherits it and none is a narrow block with an empty strip beside it", () => {
+    expect(sets(bodyOf(base, "body"), "text-wrap", "pretty")).toBe(true);
+  });
+
+  it("balances the texts that stand alone: headings, titles, an empty state, a notice, a toast and a tooltip", () => {
+    const selector = base.find((r) => r.media === null && r.selector.startsWith("h1, h2, h3, h4, h5, h6,"))?.selector ?? "";
+    for (const part of ["h1", "h6", ".at-card__title", ".at-pageheader__title", ".at-empty-state__title", ".at-empty-state__desc", ".at-notice__body", ".at-toast", '[role="tooltip"]']) {
+      expect(selector, part).toContain(part);
+    }
+    expect(sets(bodyOf(base, selector), "text-wrap", "balance")).toBe(true);
   });
 
   it("leaves what is typed, or laid out by its author, as it is (the longhand, which keeps a pre's own white-space)", () => {
