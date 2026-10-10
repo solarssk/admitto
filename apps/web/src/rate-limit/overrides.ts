@@ -63,35 +63,50 @@ export function applyRateLimitOverrides(
   const raw = env[RATE_LIMIT_OVERRIDES_ENV];
   if (raw === undefined || raw.trim() === "") return;
 
+  const overrides = parseOverrides(raw);
+  if (!overrides) return;
+
+  for (const [name, value] of Object.entries(overrides)) {
+    applyNamedOverride(policies, inline, name, value);
+  }
+}
+
+/** The variable's JSON as an object keyed by limit name, or `undefined` (with a warning) when it
+ * is not valid JSON or not an object. */
+function parseOverrides(raw: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     console.warn(`${RATE_LIMIT_OVERRIDES_ENV} is not valid JSON; no override applied.`);
-    return;
+    return undefined;
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     console.warn(`${RATE_LIMIT_OVERRIDES_ENV} must be a JSON object keyed by policy name; no override applied.`);
+    return undefined;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/** Route one `name: value` entry to the policy or inline limit it names. */
+function applyNamedOverride(policies: PolicyTable, inline: InlineTable, name: string, value: unknown): void {
+  const ownVariables = Object.hasOwn(OWN_VARIABLES, name) ? OWN_VARIABLES[name] : undefined;
+  if (ownVariables) {
+    console.warn(`${RATE_LIMIT_OVERRIDES_ENV}: "${name}" is set with ${ownVariables}; entry ignored.`);
     return;
   }
 
-  for (const [name, value] of Object.entries(parsed)) {
-    const ownVariables = Object.hasOwn(OWN_VARIABLES, name) ? OWN_VARIABLES[name] : undefined;
-    if (ownVariables) {
-      console.warn(`${RATE_LIMIT_OVERRIDES_ENV}: "${name}" is set with ${ownVariables}; entry ignored.`);
-      continue;
-    }
-
-    const policy = Object.hasOwn(policies, name) ? policies[name] : undefined;
-    const inlineLimit = Object.hasOwn(inline, name) ? inline[name] : undefined;
-    if (policy) {
-      applyToPolicy(policy.checks, value, name);
-    } else if (inlineLimit) {
-      applyEntry(inlineLimit, value, name);
-    } else {
-      console.warn(`${RATE_LIMIT_OVERRIDES_ENV}: unknown limit "${name}"; entry ignored.`);
-    }
+  const policy = Object.hasOwn(policies, name) ? policies[name] : undefined;
+  if (policy) {
+    applyToPolicy(policy.checks, value, name);
+    return;
   }
+  const inlineLimit = Object.hasOwn(inline, name) ? inline[name] : undefined;
+  if (inlineLimit) {
+    applyEntry(inlineLimit, value, name);
+    return;
+  }
+  console.warn(`${RATE_LIMIT_OVERRIDES_ENV}: unknown limit "${name}"; entry ignored.`);
 }
 
 function applyToPolicy(checks: Tunable[], value: unknown, name: string): void {
