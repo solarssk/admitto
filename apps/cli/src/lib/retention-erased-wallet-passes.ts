@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { deleteErasedWalletPasses, parseWalletFieldMapping } from "@admitto/tickets";
+import { deleteErasedWalletPasses, parseWalletFieldMapping, type EraseWalletPassesResult } from "@admitto/tickets";
 import { resolveConfiguredWalletProvider, type WalletPassProvider } from "@admitto/wallet";
 
 /** How long one sweep may spend at the provider. The worker's retention job holds up the next drain while it runs. */
@@ -123,71 +123,68 @@ function reportFailures(eventId: string, failures: Failures): void {
   });
 }
 
+/** What the walk of an event needs, so that the functions below take few parameters. */
+type Walk = {
+  db: PrismaClient;
+  provider: WalletPassProvider;
+  budget: { startedAt: number; ms: number };
+  deps: ErasedWalletSweepDeps;
+  tally: Tally;
+};
+
+/** The ids of the next page of an event's pending passes, in attendee id order, after `after` and up to `upTo`. */
+async function readPage(db: PrismaClient, eventId: string, after: string | undefined, upTo: string | undefined): Promise<string[]> {
+  const idRange = after || upTo ? { attendee_id: { ...(after ? { gt: after } : {}), ...(upTo ? { lte: upTo } : {}) } } : {};
+  const page = await db.walletPass.findMany({
+    where: { ...passToDelete(eventId), ...idRange },
+    select: { attendee_id: true },
+    orderBy: { attendee_id: "asc" },
+    take: PAGE_SIZE,
+  });
+  return page.map((pass) => pass.attendee_id);
+}
+
+/**
+ * Puts what one page of deletions did into the books, and says whether the walk has to stop: it does when the page
+ * was not all tried (the budget ran out). The last pass tried goes into `tally.last`, which is what lets the next
+ * sweep go on after it; deleteErasedWalletPasses goes by attendee id too, so what it did not try is the end of the page.
+ */
+function recordRun(walk: Walk, eventId: string, attendeeIds: string[], run: EraseWalletPassesResult, failures: Failures): boolean {
+  const { tally } = walk;
+  tally.deleted += run.deleted;
+  tally.failed += run.failedAttendeeIds.length;
+  failures.attendeeIds.push(...run.failedAttendeeIds);
+  for (const code of run.failureCodes) failures.codes.add(code);
+  const tried = attendeeIds.length - run.notTried;
+  if (tried > 0) tally.last = { eventId, attendeeId: attendeeIds[tried - 1]! };
+  if (run.notTried === 0) return false;
+  tally.exhausted = true;
+  return true;
+}
+
 /**
  * Deletes the pending passes of one event in `range`, a page at a time (by attendee id, so a page of passes that
- * stay cannot be read again), until none are left or the budget is gone, and says in one line which failed. The
- * last pass tried goes into `tally.last`, which is what lets the next sweep go on after it.
+ * stay cannot be read again), until none are left or the budget is gone, and says in one line which failed.
  */
-async function sweepEvent(
-  db: PrismaClient,
-  eventId: string,
-  provider: WalletPassProvider,
-  budget: { startedAt: number; ms: number },
-  deps: ErasedWalletSweepDeps,
-  tally: Tally,
-  range: Range = {},
-): Promise<void> {
+async function sweepEvent(walk: Walk, eventId: string, range: Range = {}): Promise<void> {
   const failures: Failures = { attendeeIds: [], codes: new Set() };
   try {
-    await walkEvent(db, eventId, provider, budget, deps, tally, range, failures);
+    let cursor = range.after;
+    for (;;) {
+      const remainingMs = walk.budget.ms - (walk.deps.nowMs() - walk.budget.startedAt);
+      if (remainingMs <= 0) {
+        walk.tally.exhausted = true;
+        return;
+      }
+      const attendeeIds = await readPage(walk.db, eventId, cursor, range.upTo);
+      if (attendeeIds.length === 0) return;
+      const run = await walk.deps.deletePasses(walk.db, eventId, attendeeIds, walk.provider, { budgetMs: remainingMs });
+      if (recordRun(walk, eventId, attendeeIds, run, failures) || attendeeIds.length < PAGE_SIZE) return;
+      cursor = attendeeIds[attendeeIds.length - 1];
+    }
   } finally {
     // Also when the walk stops on an error: what failed before it is still worth a line.
     reportFailures(eventId, failures);
-  }
-}
-
-async function walkEvent(
-  db: PrismaClient,
-  eventId: string,
-  provider: WalletPassProvider,
-  budget: { startedAt: number; ms: number },
-  deps: ErasedWalletSweepDeps,
-  tally: Tally,
-  range: Range,
-  failures: Failures,
-): Promise<void> {
-  let cursor = range.after;
-  for (;;) {
-    const remainingMs = budget.ms - (deps.nowMs() - budget.startedAt);
-    if (remainingMs <= 0) {
-      tally.exhausted = true;
-      return;
-    }
-    const page = await db.walletPass.findMany({
-      where: {
-        ...passToDelete(eventId),
-        ...(cursor || range.upTo ? { attendee_id: { ...(cursor ? { gt: cursor } : {}), ...(range.upTo ? { lte: range.upTo } : {}) } } : {}),
-      },
-      select: { attendee_id: true },
-      orderBy: { attendee_id: "asc" },
-      take: PAGE_SIZE,
-    });
-    if (page.length === 0) return;
-    const attendeeIds = page.map((pass) => pass.attendee_id);
-    const run = await deps.deletePasses(db, eventId, attendeeIds, provider, { budgetMs: remainingMs });
-    tally.deleted += run.deleted;
-    tally.failed += run.failedAttendeeIds.length;
-    failures.attendeeIds.push(...run.failedAttendeeIds);
-    for (const code of run.failureCodes) failures.codes.add(code);
-    // deleteErasedWalletPasses goes by attendee id too, so what it did not try is the end of the page.
-    const tried = attendeeIds.length - run.notTried;
-    if (tried > 0) tally.last = { eventId, attendeeId: attendeeIds[tried - 1]! };
-    if (run.notTried > 0) {
-      tally.exhausted = true;
-      return;
-    }
-    if (page.length < PAGE_SIZE) return;
-    cursor = attendeeIds[attendeeIds.length - 1];
   }
 }
 
@@ -209,6 +206,42 @@ function inSweepOrder(items: Sweepable[], cursor: Cursor | null): Array<Sweepabl
     ...items.filter((item) => item.event.id < cursor.eventId).map(whole),
     ...(own ? [{ ...own, range: { upTo: cursor.attendeeId } }] : []),
   ];
+}
+
+/** Counts what is pending in each event and picks the ones the sweep can try (a dry run counts only). */
+async function surveyEvents(
+  db: PrismaClient,
+  events: EventToSweep[],
+  options: { dryRun: boolean },
+  deps: ErasedWalletSweepDeps,
+  result: ErasedWalletSweepResult,
+): Promise<{ sweepable: Sweepable[]; tryable: number }> {
+  const sweepable: Sweepable[] = [];
+  let tryable = 0;
+  for (const event of events) {
+    const pending = await db.walletPass.count({ where: passToDelete(event.id) }); // NOSONAR - one event at a time on purpose: the events share one time budget and the provider must not be burst
+    result.pending += pending;
+    if (options.dryRun || pending === 0) continue;
+    const provider = deps.resolveProvider(event);
+    if (!provider) {
+      result.noProvider += pending;
+      // The summary only counts, so this is where an operator finds out which event needs its credentials.
+      emitSystemLog("wallet", "warn", "wallet_pass_erasure_no_provider", { eventId: event.id, pending });
+      continue;
+    }
+    tryable += pending;
+    sweepable.push({ event, provider });
+  }
+  return { sweepable, tryable };
+}
+
+/** Keeps the place where the sweep ran out of time, or forgets it when the sweep got through everything. */
+async function keepPlace(db: PrismaClient, tally: Tally, before: Cursor | null): Promise<void> {
+  if (tally.exhausted) {
+    if (tally.last) await writeCursor(db, tally.last);
+  } else if (before) {
+    await writeCursor(db, null);
+  }
 }
 
 /**
@@ -245,36 +278,15 @@ export async function sweepErasedWalletPasses(
 
   const result: ErasedWalletSweepResult = { pending: 0, deleted: 0, failed: 0, noProvider: 0, notTried: 0 };
   const tally: Tally = { deleted: 0, failed: 0, exhausted: false, last: null };
-  const sweepable: Sweepable[] = [];
-  let tryable = 0;
-  for (const event of events) {
-    const pending = await db.walletPass.count({ where: passToDelete(event.id) }); // NOSONAR - one event at a time on purpose: the events share one time budget and the provider must not be burst
-    result.pending += pending;
-    if (options.dryRun || pending === 0) continue;
-    const provider = deps.resolveProvider(event);
-    if (!provider) {
-      result.noProvider += pending;
-      // The summary only counts, so this is where an operator finds out which event needs its credentials.
-      emitSystemLog("wallet", "warn", "wallet_pass_erasure_no_provider", { eventId: event.id, pending });
-      continue;
-    }
-    tryable += pending;
-    sweepable.push({ event, provider });
-  }
+  const { sweepable, tryable } = await surveyEvents(db, events, options, deps, result);
 
-  const cursor = options.dryRun ? null : await readCursor(db);
-  for (const { event, provider, range } of inSweepOrder(sweepable, cursor)) {
+  const before = options.dryRun ? null : await readCursor(db);
+  for (const { event, provider, range } of inSweepOrder(sweepable, before)) {
     // Once the budget is gone the remaining events are not tried either.
     if (tally.exhausted) break;
-    await sweepEvent(db, event.id, provider, budget, deps, tally, range); // NOSONAR - one event at a time on purpose, see above
+    await sweepEvent({ db, provider, budget, deps, tally }, event.id, range); // NOSONAR - one event at a time on purpose, see surveyEvents
   }
-  if (!options.dryRun) {
-    if (tally.exhausted) {
-      if (tally.last) await writeCursor(db, tally.last);
-    } else if (cursor) {
-      await writeCursor(db, null);
-    }
-  }
+  if (!options.dryRun) await keepPlace(db, tally, before);
   result.deleted = tally.deleted;
   result.failed = tally.failed;
   result.notTried = tally.exhausted ? Math.max(0, tryable - tally.deleted - tally.failed) : 0;
