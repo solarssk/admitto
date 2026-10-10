@@ -508,6 +508,37 @@ describe("useDropdownMenu", () => {
     vi.unstubAllGlobals();
   });
 
+  it("also caps a CSS min-width that is wider than the padded viewport", () => {
+    // `min-width` beats `max-width`, so capping only the max left a panel with a 300px minimum
+    // overflowing the right edge of a 280px viewport.
+    const style = document.createElement("style");
+    style.textContent = '[role="menu"] { min-width: 300px; }';
+    document.head.append(style);
+    vi.stubGlobal("innerWidth", 280);
+    vi.stubGlobal("innerHeight", 600);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.getAttribute("role") === "menu") {
+        const min = Number.parseFloat(getComputedStyle(this).minWidth);
+        const width = Math.max(min, Math.min(400, Number.parseFloat(this.style.maxWidth)));
+        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width, height: 100, toJSON() {} };
+      }
+      return { left: 230, right: 258, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
+    });
+
+    render(<EndAlignedMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu.style.minWidth).toBe("264px"); // 280 - 2 * 8
+    expect(menu.style.left).toBe("8px");
+
+    style.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
     render(<TestMenu />);
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));

@@ -148,6 +148,11 @@ export function useDropdownMenu<
       const maxWidth = Math.max(0, viewport.width - 2 * VIEWPORT_PAD_PX);
       panel.style.left = `${viewport.left + VIEWPORT_PAD_PX}px`;
       panel.style.maxWidth = `${maxWidth}px`;
+      // A CSS `min-width` wins over `max-width`, so a panel whose minimum is wider than the padded
+      // viewport (pinch-zoomed or very narrow phone) would still overflow: cap that too.
+      panel.style.minWidth = "";
+      const cssMinWidth = Number.parseFloat(getComputedStyle(panel).minWidth);
+      if (cssMinWidth > maxWidth) panel.style.minWidth = `${maxWidth}px`;
       const triggerRect = trigger.getBoundingClientRect();
       // A panel that follows the trigger's width is measured at that width: at the full padded
       // width its height is too short, which could settle the open-below decision on a size the
