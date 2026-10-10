@@ -41,7 +41,9 @@ emergency-exports/
 !.cursor/rules/**
 CLAUDE.local.md
 graphify-out/
-.claude/
+.claude/*
+!.claude/rules/
+!.claude/settings.json
 *.rdb
 admitto-ux-review-screenshots/
 # Playwright E2E — local seed fixture output + run artifacts (apps/admin/e2e).

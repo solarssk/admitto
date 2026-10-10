@@ -48,7 +48,7 @@ before opening a PR.
 
 3. Run the full test suite for every workspace you touched (`npm test -w @admitto/<pkg>`),
    plus `npm run build` / typecheck where applicable. A partial `vitest` run isn't enough
-   to catch everything CI does; details are in [AGENTS.md](../AGENTS.md#compounding-rules).
+   to catch everything CI does; details are in [standards/ci-and-tooling.md](../standards/ci-and-tooling.md).
    Don't open a PR on a red suite; if you must, say so explicitly and why.
 
 4. Match the style already used in the file or package you're editing. ESLint and

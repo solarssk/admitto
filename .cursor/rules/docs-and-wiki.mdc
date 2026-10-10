@@ -1,0 +1,7 @@
+---
+description: Documents, Wiki and PR body rules
+globs: docs/**,standards/**,CHANGELOG.md
+alwaysApply: false
+---
+
+Before adding or editing a document, the Wiki or a PR body, read [standards/docs-and-wiki.md](../../standards/docs-and-wiki.md).
