@@ -292,6 +292,23 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
     expect((screen.getByRole("checkbox", { name: "Select Jane Doe" }) as HTMLInputElement).checked).toBe(false);
   });
 
+  it("closes the Send tickets confirmation on a click outside, since it only asks for a choice", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(bulkBar().getByText("1")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    expect(screen.getByRole("dialog", { name: "Send tickets?" })).toBeTruthy();
+    fireEvent.click(document.querySelector(".at-modal-backdrop") as HTMLElement);
+
+    expect(screen.queryByRole("dialog", { name: "Send tickets?" })).toBeNull();
+    expect(sendEventBulk).not.toHaveBeenCalled();
+  });
+
   it("sends tickets to the selected attendees via sendEventBulk, toasts, and clears the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
@@ -525,7 +542,8 @@ describe("AttendeesPage bulk remove from event", () => {
 
     const dialog = openAndArmRemoveDialog();
     expect(within(dialog).getByText("Remove 2 people from the event?")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("radio", { name: "Wrong import file" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Reason,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Wrong import file" }));
     const readsBefore = fetchEventAttendees.mock.calls.length;
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
@@ -578,7 +596,7 @@ describe("AttendeesPage bulk remove from event", () => {
     await selectOnly("Jane Doe");
 
     const dialog = openAndArmRemoveDialog();
-    expect((within(dialog).getByRole("radio", { name: "Duplicate entry" }) as HTMLInputElement).checked).toBe(true);
+    expect(within(dialog).getByRole("button", { name: "Reason, Duplicate entry" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
     await waitFor(() => {

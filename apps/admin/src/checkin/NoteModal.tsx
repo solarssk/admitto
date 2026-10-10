@@ -37,7 +37,7 @@ export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>)
 
   return (
     <dialog open className="note-modal" aria-modal="true" aria-label="Add note">
-      <ModalBackdrop onClose={handleClose} />
+      <ModalBackdrop />
       <div ref={panelRef} className="note-modal__panel">
         <p id="note-modal-hint" className="note-modal__hint">
           Do not record medical, dietary, or other sensitive personal data.

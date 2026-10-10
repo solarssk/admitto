@@ -725,7 +725,7 @@ function OverviewModal({
 
   return (
     <dialog open className="overview-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={onClose} />
+      <ModalBackdrop />
       <div ref={panelRef} className="overview-modal__panel">
         <h2 id={titleId} className="overview-modal__title">
           <i className={`ti ${iconClass}`} aria-hidden="true" />

@@ -302,7 +302,7 @@ function CropImageModalView({
 }: Readonly<CropImageModalViewProps>) {
   return (
     <dialog open className="crop-image-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={applying ? undefined : onCancel} />
+      <ModalBackdrop />
       <div
         ref={panelRef}
         className="crop-image-modal__panel"

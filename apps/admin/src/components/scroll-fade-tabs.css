@@ -9,6 +9,11 @@
 
 .scroll-fade-tabs__scroll {
   overflow-x: auto;
+  /* overflow-x: auto also clips vertically, which cut the top (and the ends) of the focus ring of
+     a tab. The padding gives the ring room inside the scroll box; the negative margin gives the
+     same room back so the strip does not move. */
+  padding: 4px 4px 0;
+  margin: -4px -4px 0;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
