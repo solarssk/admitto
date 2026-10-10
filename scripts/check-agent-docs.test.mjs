@@ -85,3 +85,15 @@ test('the editor rule files are checked too', () => {
   })
   assert.deepEqual(problems, ['.cursor/rules/x.mdc: link to ../../standards/gone.md does not resolve.'])
 })
+
+test('a sub-index that the main index does not link is reported, and so are its pages', () => {
+  const problems = check({
+    ...good,
+    'standards/new-area/README.md': '# New area\n\n- [a](a.md)\n',
+    'standards/new-area/a.md': '# A\n',
+  })
+  assert.deepEqual(problems, [
+    'standards/new-area/README.md is not listed in standards/README.md.',
+    'standards/new-area/a.md is not listed in standards/README.md.',
+  ])
+})

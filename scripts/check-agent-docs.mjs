@@ -133,7 +133,7 @@ function checkIndex(root, steering) {
     return sub.get(subIndex).has(f);
   };
   return pages
-    .filter((f) => f !== "standards/README.md" && !f.endsWith("/README.md") && !top.has(f) && !listedBySubIndex(f))
+    .filter((f) => f !== "standards/README.md" && !top.has(f) && !listedBySubIndex(f))
     .map((f) => `${f} is not listed in standards/README.md.`);
 }
 
