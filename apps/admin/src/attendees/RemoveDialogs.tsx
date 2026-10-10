@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { ATTENDEE_REMOVAL_REASONS, ATTENDEE_REMOVAL_REASON_LABELS, type AttendeeRemovalReason } from "@admitto/shared";
 import { Notice } from "@admitto/ui";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { DialogCrossLink } from "./DialogCrossLink.js";
 import { peopleCount } from "./erasedAttendee.js";
@@ -19,6 +20,15 @@ function useRemovalReason(open: boolean) {
   return [reason, setReason] as const;
 }
 
+/** One Tabler icon for each reason, so the choice can be told apart at a glance in the picker. */
+const REMOVAL_REASON_ICONS: Record<AttendeeRemovalReason, string> = {
+  duplicate: "copy",
+  test_person: "flask",
+  wrong_import: "file-import",
+  added_by_mistake: "alert-circle",
+  other: "dots",
+};
+
 /** The fixed list of reasons: one is required, and none is free text, so that the audit log never holds anything a
  * person typed. */
 function RemovalReasons({
@@ -26,25 +36,25 @@ function RemovalReasons({
   busy,
   onChange,
 }: Readonly<{ reason: AttendeeRemovalReason; busy: boolean; onChange: (reason: AttendeeRemovalReason) => void }>) {
-  const group = useId();
+  const id = useId();
+  const options = ATTENDEE_REMOVAL_REASONS.map((value) => ({
+    id: value,
+    label: ATTENDEE_REMOVAL_REASON_LABELS[value],
+    icon: REMOVAL_REASON_ICONS[value],
+  }));
   return (
-    <fieldset className="remove-reasons">
-      <legend className="remove-reasons__legend">Reason</legend>
-      {ATTENDEE_REMOVAL_REASONS.map((value) => (
-        <label key={value} className="remove-reasons__option">
-          <input
-            type="radio"
-            name={group}
-            value={value}
-            checked={reason === value}
-            // Off while the request runs, like the typed name: the button that started it is the busy control.
-            disabled={busy}
-            onChange={() => onChange(value)}
-          />
-          <span>{ATTENDEE_REMOVAL_REASON_LABELS[value]}</span>
-        </label>
-      ))}
-    </fieldset>
+    <SearchableSelect
+      id={id}
+      label="Reason"
+      placeholder="Choose a reason"
+      searchPlaceholder="Search reasons…"
+      emptyLabel="No reasons found"
+      value={reason}
+      options={options}
+      // Off while the request runs, like the typed name: the button that started it is the busy control.
+      disabled={busy}
+      onChange={(chosen) => onChange(chosen as AttendeeRemovalReason)}
+    />
   );
 }
 

@@ -72,9 +72,9 @@ describe("the baseline: running text runs to the edge of its column, short stand
     expect(sets(bodyOf(base, "body"), "text-wrap", "pretty")).toBe(true);
   });
 
-  it("balances the texts that stand alone: headings, titles, an empty state, a notice, a toast and a tooltip", () => {
+  it("balances the texts that stand alone: headings, titles, an empty state, a toast and a tooltip", () => {
     const selector = base.find((r) => r.media === null && r.selector.startsWith("h1, h2, h3, h4, h5, h6,"))?.selector ?? "";
-    for (const part of ["h1", "h6", ".at-card__title", ".at-pageheader__title", ".at-empty-state__title", ".at-empty-state__desc", ".at-notice__body", ".at-toast", '[role="tooltip"]']) {
+    for (const part of ["h1", "h6", ".at-card__title", ".at-pageheader__title", ".at-empty-state__title", ".at-empty-state__desc", ".at-toast", '[role="tooltip"]']) {
       expect(selector, part).toContain(part);
     }
     expect(sets(bodyOf(base, selector), "text-wrap", "balance")).toBe(true);
@@ -250,5 +250,40 @@ describe("the sessions table", () => {
     const body = bodyOf(staff, ".sessions-ip-cell");
     expect(sets(body, "overflow-wrap", "anywhere")).toBe(true);
     expect(declares(body, "word-break")).toBe(false);
+  });
+});
+
+describe("the pieces of the second review round (Reports chart, Danger zone, tabs, dialogs)", () => {
+  const settings = parse(read("apps/admin/src/pages/event-settings-page.css"));
+  const tabs = parse(read("apps/admin/src/components/scroll-fade-tabs.css"));
+  const loader = parse(read("packages/ui/src/styles/components/loader.css"));
+  const preview = parse(read("apps/admin/src/communication/wallet-message-preview.css"));
+
+  it("grows the hourly chart into the height of the card beside it, so no empty strip is left under the hour labels", () => {
+    expect(sets(bodyOf(reports, ".reports-panels > .at-card"), "display", "flex")).toBe(true);
+    expect(sets(bodyOf(reports, ".reports-panels > .at-card > .at-card__body"), "flex", "1")).toBe(true);
+    expect(sets(bodyOf(reports, ".reports-chart"), "flex", "1")).toBe(true);
+    expect(sets(bodyOf(reports, ".reports-chart__track"), "flex", "1")).toBe(true);
+    // The bar's percentage height has to resolve against a track whose height is not a fixed number.
+    expect(sets(bodyOf(reports, ".reports-chart__bar"), "position", "absolute")).toBe(true);
+  });
+
+  it("lets a Danger zone description run to the button instead of stopping at 640px", () => {
+    expect(declares(bodyOf(settings, ".danger-zone__desc"), "max-width")).toBe(false);
+  });
+
+  it("gives the focus ring of a tab room inside the scroll box, and takes the room back so the strip does not move", () => {
+    const body = bodyOf(tabs, ".scroll-fade-tabs__scroll");
+    expect(body).toMatch(/padding:\s*4px 4px 0/);
+    expect(body).toMatch(/margin:\s*-4px -4px 0/);
+  });
+
+  it("brings a notice into a dialog with the dialog, without a slide of its own, and not at all for reduced motion", () => {
+    expect(bodyOf(loader, "dialog[open] .at-notice")).toMatch(/animation:\s*at-fade-in 0\.15s/);
+    expect(bodyOf(loader, ".at-fade-in, .content > *, dialog[open], dialog[open] .at-notice, dialog[open] > :not(.at-modal-backdrop, [class*=\"backdrop\"])", "@media (prefers-reduced-motion: reduce)")).toMatch(/animation:\s*none/);
+  });
+
+  it("keeps the text under the wallet preview clear of the stacked layers that peek out under the card", () => {
+    expect(sets(bodyOf(preview, ".wallet-message-preview"), "gap", "var\\(--space-4\\)")).toBe(true);
   });
 });

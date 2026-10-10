@@ -1,7 +1,9 @@
 .wallet-message-preview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  /* The stacked layers peek out up to 5px under the card, so the hint needs more than the
+     stack's own padding to not look glued to them. */
+  gap: var(--space-4);
 }
 
 /* Wraps .__card so its ::before/::after can sit behind it as a stack of notifications peeking

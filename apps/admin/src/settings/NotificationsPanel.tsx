@@ -278,7 +278,7 @@ function EditRecipientModal({
 
   return (
     <dialog open className="event-item-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={onCancel} />
+      <ModalBackdrop />
       <div ref={panelRef} className="event-item-modal__panel">
         <div className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">

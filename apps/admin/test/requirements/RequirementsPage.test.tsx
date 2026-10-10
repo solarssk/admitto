@@ -397,15 +397,17 @@ describe("RequirementsPage — Add item and Edit item", () => {
     });
   });
 
-  it("closes the Add item modal via the backdrop and via Cancel, without creating", async () => {
+  it("keeps the Add item modal open on a click outside, and closes it via Cancel, without creating", async () => {
     fetchEventItems.mockResolvedValue([]);
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Lanyard" } });
-    const backdrop = screen.getByRole("button", { name: "Close add item dialog" });
-    expect(backdrop).toHaveProperty("type", "button");
+    // A form: a stray click outside must not throw away what was typed.
+    const backdrop = document.querySelector(".at-modal-backdrop") as HTMLElement;
     fireEvent.click(backdrop);
+    expect(screen.getByLabelText("Item name")).toHaveProperty("value", "Lanyard");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Item name")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));

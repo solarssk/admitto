@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A dialog that closes now fades away over 120ms instead of vanishing, and a notice that is in a dialog when it opens (the check-in notice of Remove from event) comes in with the dialog instead of sliding in by itself.
+- Clicking outside a dialog that has fields to fill in (Add attendee, Create event, a template, an item, a note, an edit) no longer closes it and loses what was typed: Cancel or Escape close it. Confirmations and read-only views still close on a click outside, but not while their request runs.
+- The reason in Remove from event is now a select like the other fields instead of five radio buttons, and the list of what Erase personal data takes and what stays says Erased and Stays once each instead of on every line.
+- In Reports, the hourly chart grows to the height of the By ticket type list beside it instead of leaving an empty strip under the hour labels.
+- The descriptions in the Danger zone are no longer cut at 640px, so they stay on one line where there is room, and the focus ring of a tab is no longer cut at the top. The text under the wallet preview has more space above it, and notices wrap like other running text.
 - Descriptions and hints no longer wrap into short, even lines with a wide empty strip beside them (the "Remove this person from the event?" dialog, the Add item and Add custom field dialogs, the item drawer and the Danger zone): running text now runs to the edge of its column like ordinary text, and only headings, card titles, empty states, notices, toasts and tooltips keep even lines. "check-in" is also broken at its hyphen less often.
 - Pages and dialogs now enter the same way everywhere: every page fades in over 150 milliseconds (Communication, Check-in, Reports and Event settings used to appear at once, unlike Overview, Attendees and Requirements), and a dialog fades in with its dimmed backdrop and its panel rises a few pixels instead of appearing in one frame.
 - Buttons with a short name no longer reserve room for a busy text and a spinner: "Export log" was a third wider than its text. While such a button works the spinner covers its label, and the busy text is only read out to assistive technology.

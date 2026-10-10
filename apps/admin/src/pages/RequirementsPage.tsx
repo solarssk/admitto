@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useOutletContext, useParams } from "react-router";
-import { Button, Card, HintLabel, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, IconButton, ModalBackdrop, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -155,12 +155,7 @@ function AddItemModal({
   useOverscrollBounceGuard(scrollRef);
   return (
     <dialog className="event-item-modal" open aria-modal="true" aria-label="Add item">
-      <button
-        type="button"
-        className="event-item-modal__backdrop"
-        aria-label="Close add item dialog"
-        onClick={onClose}
-      />
+      <ModalBackdrop />
       <div ref={addPanelRef} className="event-item-modal__panel">
         <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">

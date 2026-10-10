@@ -106,6 +106,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Opens the Reason picker and takes one of its options. */
+function chooseReason(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^Reason,/ }));
+  fireEvent.click(screen.getByRole("button", { name: label }));
+}
+
 describe("AttendeeDetailPage: Remove from event", () => {
   it("keeps the confirm button disabled until the attendee's exact name is typed", async () => {
     mockLoad(baseDetail());
@@ -126,16 +132,16 @@ describe("AttendeeDetailPage: Remove from event", () => {
     renderPage();
     const dialog = await openRemoveDialog();
 
-    const group = within(dialog).getByRole("group", { name: "Reason" });
-    const radios = within(group).getAllByRole("radio") as HTMLInputElement[];
-    expect(radios.map((radio) => radio.labels?.[0]?.textContent)).toEqual([
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Reason,/ }));
+    const options = within(dialog).getAllByRole("listitem").map((item) => item.textContent);
+    expect(options).toEqual([
       "Duplicate entry",
       "Test person",
       "Wrong import file",
       "Added by mistake",
       "Other",
     ]);
-    expect(radios.map((radio) => radio.checked)).toEqual([true, false, false, false, false]);
+    expect(within(dialog).getByRole("button", { name: "Reason, Duplicate entry" })).toBeTruthy();
   });
 
   it("removes with the chosen reason, toasts and returns to the attendees list", async () => {
@@ -144,7 +150,7 @@ describe("AttendeeDetailPage: Remove from event", () => {
     renderPage();
     await openRemoveDialog();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Test person" }));
+    chooseReason("Test person");
     typeName();
     fireEvent.click(confirmButton());
 
@@ -171,14 +177,13 @@ describe("AttendeeDetailPage: Remove from event", () => {
     renderPage();
     await openRemoveDialog();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Other" }));
-    expect((screen.getByRole("radio", { name: "Other" }) as HTMLInputElement).checked).toBe(true);
+    chooseReason("Other");
+    expect(screen.getByRole("button", { name: "Reason, Other" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull();
 
     await openRemoveDialog();
-    expect((screen.getByRole("radio", { name: "Duplicate entry" }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("radio", { name: "Other" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("button", { name: "Reason, Duplicate entry" })).toBeTruthy();
   });
 
   it("shows an inline error and keeps the dialog open when the removal fails", async () => {
@@ -266,9 +271,7 @@ describe("AttendeeDetailPage: Remove from event", () => {
     typeName();
     fireEvent.click(confirmButton());
 
-    const radios = within(dialog).getAllByRole("radio") as HTMLInputElement[];
-    expect(radios).toHaveLength(5);
-    expect(radios.every((radio) => radio.disabled)).toBe(true);
+    expect((within(dialog).getByRole("button", { name: /^Reason,/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("ignores a stale removal completion after navigating to a different attendee mid-request (CodeRabbit review)", async () => {

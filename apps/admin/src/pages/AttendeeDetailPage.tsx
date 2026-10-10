@@ -3000,7 +3000,7 @@ export function AttendeeDetailPage() {
 
       {editMode && (
         <dialog className="attendee-edit-modal" open aria-modal="true" aria-labelledby={editTitleId}>
-          <ModalBackdrop onClose={handleCancelEdit} />
+          <ModalBackdrop />
           <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={(e) => void handleSave(e)}>
             <h2 id={editTitleId} className="attendee-edit-modal__title">
               <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
