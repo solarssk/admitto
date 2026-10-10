@@ -43,7 +43,7 @@ test('slug follows GitHub heading anchors', () => {
 test('an oversized root file is reported', () => {
   const problems = check({ ...good, 'AGENTS.md': good['AGENTS.md'] + 'x'.repeat(BUDGETS.root) })
   assert.equal(problems.length, 1)
-  assert.match(problems[0], /AGENTS\.md is \d+ bytes, over its 20000 byte budget/)
+  assert.match(problems[0], new RegExp(`AGENTS\\.md is \\d+ bytes, over its ${BUDGETS.root} byte budget`))
 })
 
 test('a nested AGENTS.md has the smaller budget', () => {
