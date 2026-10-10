@@ -25,9 +25,7 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { ErasedBadge } from "./ErasedBadge.js";
-import { ErasedEntriesBar } from "./ErasedEntriesBar.js";
-import { rowIdentity, selectRowLabel } from "./erasedAttendee.js";
+import { erasedFilterHint, rowIdentity, selectRowLabel } from "./erasedAttendee.js";
 import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
@@ -375,10 +373,7 @@ function AttendeeCard({
           <Checkbox checked={selected} disabled={identity.erased} onChange={onToggle} aria-label={selectRowLabel(row)} />
         </span>
         <button type="button" className="attendees-row-btn attendees-card__identity" onClick={onView}>
-          <span className="attendees-card__name">
-            {identity.name}
-            {identity.erased && <ErasedBadge />}
-          </span>
+          <span className="attendees-card__name">{identity.name}</span>
           <span className={`attendees-card__email${identity.erased ? " attendees-card__email--note" : ""}`}>
             {identity.detail}
           </span>
@@ -1201,6 +1196,12 @@ function BulkBar({
   );
 }
 
+/** Erased entries are left out of the list unless asked for. */
+const ERASED_FILTER_OPTIONS: ReadonlyArray<SegmentedOption<"hide" | "show">> = [
+  { value: "hide", label: "Hide" },
+  { value: "show", label: "Show" },
+];
+
 const CUSTOM_FIELD_BOOLEAN_OPTIONS: ReadonlyArray<SegmentedOption<"any" | "true" | "false">> = [
   { value: "any", label: "Any" },
   { value: "true", label: "Yes" },
@@ -1247,6 +1248,9 @@ function FilterToolbar({
   onCustomFieldSelectChange,
   customFieldTextInputs,
   onCustomFieldTextInputChange,
+  erasedCount,
+  showErased,
+  onShowErasedChange,
   isDesktop,
   sortBy,
   sortDir,
@@ -1274,6 +1278,10 @@ function FilterToolbar({
   onCustomFieldSelectChange: (sourceField: string, values: string[]) => void;
   customFieldTextInputs: Readonly<Record<string, string>>;
   onCustomFieldTextInputChange: (sourceField: string, value: string) => void;
+  /** Erased entries of the event (event-wide): left out of the list unless `showErased`. */
+  erasedCount: number;
+  showErased: boolean;
+  onShowErasedChange: (show: boolean) => void;
   isDesktop: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
@@ -1290,6 +1298,7 @@ function FilterToolbar({
     (rsvpStatusFilter.length > 0 ? 1 : 0) +
     (ticketTypeFilter.length > 0 ? 1 : 0) +
     (mailStatusFilter.length > 0 ? 1 : 0) +
+    (showErased ? 1 : 0) +
     activeCustomFieldCount;
 
   return (
@@ -1389,6 +1398,18 @@ function FilterToolbar({
             panelMode="inline"
           />
         </div>
+        {(erasedCount > 0 || showErased) && (
+          <div className="attendees-toolbar__filter">
+            <span className="at-label">Erased entries</span>
+            <Segmented
+              ariaLabel="Erased entries"
+              value={showErased ? "show" : "hide"}
+              options={ERASED_FILTER_OPTIONS}
+              onChange={(value) => onShowErasedChange(value === "show")}
+            />
+            <span className="at-hint">{erasedFilterHint(erasedCount)}</span>
+          </div>
+        )}
         {customFields.length > 0 && (
           <p className="attendees-filters-menu__section-label">Custom fields</p>
         )}
@@ -1498,10 +1519,7 @@ function AttendeeTableRow({
       </td>
       <td>
         <button type="button" className="attendees-row-btn attendees-table-v2__attendee" onClick={onView}>
-          <span className="attendees-table-v2__name" title={identity.name}>
-            {identity.name}
-            {identity.erased && <ErasedBadge />}
-          </span>
+          <span className="attendees-table-v2__name" title={identity.name}>{identity.name}</span>
           <span
             className={`attendees-table-v2__email${identity.erased ? " attendees-table-v2__email--note" : ""}`}
             title={identity.detail}
@@ -1995,6 +2013,9 @@ export function AttendeesTable({
           onCustomFieldSelectChange={onCustomFieldSelectChange}
           customFieldTextInputs={customFieldTextInputs}
           onCustomFieldTextInputChange={onCustomFieldTextInputChange}
+          erasedCount={erasedCount}
+          showErased={showErased}
+          onShowErasedChange={onShowErasedChange}
           isDesktop={isDesktop}
           sortBy={sortBy}
           sortDir={sortDir}
@@ -2019,7 +2040,6 @@ export function AttendeesTable({
         eventTimezone={eventTimezone}
         walletPlatforms={walletPlatforms}
       />
-      <ErasedEntriesBar count={erasedCount} shown={showErased} onShownChange={onShowErasedChange} />
       <div className="attendees-table-foot">
         <div className="attendees-table-foot__summary">
           <span>{footSummary(isInitialLoad, total, from, to)}</span>

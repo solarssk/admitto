@@ -1881,25 +1881,8 @@
   }
 }
 
-/* Erased entries (the privacy-request action keeps the record, drops the person). Muted rows with
-   a dashed mark, no checkbox that can be ticked, and a line under the list that says how many are
-   left out of it and offers to show them. */
-.erased-badge {
-  display: inline-block;
-  margin-left: var(--space-2);
-  padding: 0 var(--space-2);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-pill);
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-style: normal;
-  font-weight: 500;
-  line-height: 1.5;
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
+/* Erased entries (the privacy-request action keeps the record, drops the person). Muted rows, no
+   checkbox that can be ticked; the switch that lists them is in the Filters. */
 .attendees-table-v2__row--erased td,
 .attendees-card--erased {
   background: var(--surface-muted);
@@ -1919,19 +1902,6 @@
   font-family: inherit;
 }
 
-.attendees-erased-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border);
-  background: var(--surface-sunken);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
 /* The page of an erased attendee: what held personal data reads "Erased" in the muted italic of an
    empty value, and a wallet pass that is still to be deleted says so beside its Try again button. */
 .erased-value {
@@ -1945,15 +1915,4 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
-}
-
-/* The sentence takes the room it needs and the switch goes under it on a narrow screen, never
-   split across two lines. */
-.attendees-erased-bar > output {
-  flex: 1 1 14rem;
-}
-
-.attendees-erased-bar .link-btn {
-  flex: none;
-  white-space: nowrap;
 }
