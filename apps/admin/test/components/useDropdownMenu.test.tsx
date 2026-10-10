@@ -434,6 +434,31 @@ describe("useDropdownMenu", () => {
     vi.unstubAllGlobals();
   });
 
+  it("measures the panel at the viewport's left edge, so a trigger near the right edge does not squeeze it", () => {
+    // A fixed panel without `left` is as wide as the room between its static position (next to
+    // the trigger) and the viewport's right edge, so a trigger flush against that edge measured it
+    // too narrow and placed it past the edge until the next measurement.
+    vi.stubGlobal("innerWidth", 1100);
+    vi.stubGlobal("innerHeight", 600);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.getAttribute("role") === "menu") {
+        const measuredAtLeftEdge = this.style.left === "0px";
+        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: measuredAtLeftEdge ? 380 : 260, height: 100, toJSON() {} };
+      }
+      return { left: 1056, right: 1084, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
+    });
+
+    render(<EndAlignedMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    expect(screen.getByRole("menu").style.left).toBe("704px"); // 1084 (trigger right edge) - 380 (natural width)
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
     render(<TestMenu />);
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));

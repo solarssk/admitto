@@ -137,6 +137,12 @@ export function useDropdownMenu<
     let lockedAbove = false;
 
     const updatePlacement = () => {
+      // Measure at the viewport's left edge: a fixed panel's shrink-to-fit width is capped by the
+      // room between its `left` (before placement: its static position next to the trigger) and the
+      // viewport's right edge, so a trigger near that edge squeezed the panel, and the placement
+      // below was computed from that too-small size (it landed past the edge, or wrapped text and
+      // changed height a frame later). The final `left` is applied below.
+      panel.style.left = `${getFixedOverlayViewport().left}px`;
       const triggerRect = trigger.getBoundingClientRect();
       // `scrollHeight` stays natural after this effect applies a maxHeight, while the bounding
       // rect covers test environments and panels whose content has no scroll container.
