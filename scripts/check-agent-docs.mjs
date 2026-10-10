@@ -140,7 +140,10 @@ function checkIndex(root, steering) {
 export function checkAgentDocs(root) {
   const files = walk(root).map((f) => posix(relative(root, f)));
   const steering = files.filter(
-    (f) => /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f) || (f.startsWith("standards/") && f.endsWith(".md")),
+    (f) =>
+      /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f) ||
+      (f.startsWith("standards/") && f.endsWith(".md")) ||
+      /^\.(claude|cursor)\/rules\/[^/]+\.(md|mdc)$/.test(f),
   );
   return [...checkSizes(root, steering), ...checkLinks(root, steering), ...checkIndex(root, steering)];
 }

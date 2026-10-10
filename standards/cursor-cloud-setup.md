@@ -8,7 +8,7 @@ Read only when running as a Cursor Cloud agent, or setting up a local Postgres/R
 
 Notes for Cursor Cloud agents. The startup update script only runs `npm install`; everything
 below is intentionally **not** in that script (services, env, one-off setup) and persists in the
-VM snapshot. Standard build/run/test commands live in [README.md](README.md).
+VM snapshot. Standard build/run/test commands live in [README.md](../README.md).
 
 - **Node 24 required** (`engines`). nvm's default is set to 24, so fresh login shells use it. If
   `node -v` prints 22, run `nvm use 24` - the `/exec-daemon/node` shim is v22 and can precede nvm

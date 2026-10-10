@@ -76,3 +76,12 @@ test('closing hashes of a heading are not part of its anchor, a hash in the word
   }
   assert.deepEqual(check(files), [])
 })
+
+test('the editor rule files are checked too', () => {
+  const problems = check({
+    ...good,
+    '.cursor/rules/x.mdc': '---\nalwaysApply: false\n---\n[a](../../standards/gone.md)\n',
+    '.claude/rules/y.md': '[b](../../standards/README.md)\n',
+  })
+  assert.deepEqual(problems, ['.cursor/rules/x.mdc: link to ../../standards/gone.md does not resolve.'])
+})
