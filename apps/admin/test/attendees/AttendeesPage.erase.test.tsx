@@ -59,11 +59,17 @@ async function openEraseDialog(count = 2) {
   return screen.getByRole("dialog", { name: /^Erase personal data of / });
 }
 
+/** Opens the Filters of the list and returns the Erased entries switch in it. */
+async function openErasedSwitch() {
+  fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+  return screen.findByRole("radiogroup", { name: "Erased entries" });
+}
+
 const confirmErase = (dialog: HTMLElement) =>
   fireEvent.click(within(dialog).getByRole("button", { name: "Erase personal data" }));
 
 describe("AttendeesPage: erased entries", () => {
-  it("leaves erased entries out, says how many, and fetches them only after Show erased", async () => {
+  it("leaves erased entries out, offers them in Filters with their count, and fetches them only after Show", async () => {
     fetchEventAttendees.mockImplementation(async (_eventId: string, params: { includeErased?: boolean }) =>
       params.includeErased ? listOf([rowA, gone1, gone2], 2) : listOf([rowA], 2),
     );
@@ -73,46 +79,76 @@ describe("AttendeesPage: erased entries", () => {
     await screen.findByText("Jane Doe");
     expect(fetchEventAttendees.mock.calls[0]?.[1]).not.toHaveProperty("includeErased", true);
     expect(screen.getByText("Platform")).toBeTruthy();
-    expect(screen.getByText("2 erased entries are hidden. Reports still count them.")).toBeTruthy();
+    // Nothing under the table, however long the list is: the switch is in the Filters.
+    expect(screen.queryByText(/erased entr/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /(Show|Hide) erased/ })).toBeNull();
     expect(screen.queryByText("Erased attendee")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show erased" }));
+    const erasedSwitch = await openErasedSwitch();
+    expect(screen.getByText("2 in this event. Reports count them either way.")).toBeTruthy();
+    expect(within(erasedSwitch).getByRole("radio", { name: "Hide" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(erasedSwitch).getByRole("radio", { name: "Show" }));
 
-    await screen.findByText("Erased entries are included. Reports count them too.");
+    await screen.findAllByText("Erased attendee");
+    expect(within(erasedSwitch).getByRole("radio", { name: "Show" }).getAttribute("aria-checked")).toBe("true");
     expect(fetchEventAttendees).toHaveBeenLastCalledWith(
       "evt-1",
       expect.objectContaining({ includeErased: true, page: 1 }),
       expect.anything(),
     );
     expect(screen.getAllByText("Erased attendee")).toHaveLength(2);
-    expect(screen.getAllByText("Erased")).toHaveLength(2);
+    // The name says it, so there is no second "Erased" mark beside it, and the line under it has the date.
+    expect(screen.queryByText("Erased")).toBeNull();
     expect(screen.getAllByText(/^Erased on .*2026/)).toHaveLength(2);
+    // Showing them is a filter that is on: the Filters button counts it.
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("1");
     // The server's placeholders never reach the screen.
     expect(screen.queryByText("Placeholder name from the server")).toBeNull();
     expect(screen.queryByText(/erased\.invalid/)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Hide erased" }));
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Erased entries" })).getByRole("radio", { name: "Hide" }));
 
-    await screen.findByText("2 erased entries are hidden. Reports still count them.");
+    await waitFor(() => expect(screen.queryByText("Erased attendee")).toBeNull());
     expect(fetchEventAttendees).toHaveBeenLastCalledWith(
       "evt-1",
       expect.objectContaining({ includeErased: false }),
       expect.anything(),
     );
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).not.toContain("1");
   });
 
-  it("uses the singular for one erased entry and shows no line when there are none", async () => {
+  it("uses the singular for one erased entry and has no switch when there are none", async () => {
     fetchEventAttendees.mockResolvedValueOnce(listOf([rowA], 1));
     const first = renderListAndPage();
     await screen.findByText("Jane Doe");
-    expect(screen.getByText("1 erased entry is hidden. Reports still count it.")).toBeTruthy();
+    await openErasedSwitch();
+    expect(screen.getByText("1 in this event. Reports count it either way.")).toBeTruthy();
     first.unmount();
 
     fetchEventAttendees.mockResolvedValueOnce(listOf([rowA], 0));
     renderListAndPage();
     await screen.findByText("Jane Doe");
-    expect(screen.queryByText(/erased entr/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Show erased" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    expect(screen.queryByRole("radiogroup", { name: "Erased entries" })).toBeNull();
+    expect(screen.queryByText(/in this event/)).toBeNull();
+  });
+
+  it("keeps the switch while it is on, so that it can be turned off when the last erased entry has gone", async () => {
+    fetchEventAttendees.mockImplementation(async (_eventId: string, params: { includeErased?: boolean }) =>
+      params.includeErased ? listOf([rowA], 0) : listOf([rowA], 1),
+    );
+    renderListAndPage();
+    await screen.findByText("Jane Doe");
+    const erasedSwitch = await openErasedSwitch();
+
+    fireEvent.click(within(erasedSwitch).getByRole("radio", { name: "Show" }));
+
+    // The answer says the event has no erased entry any more; the switch is still on, so it stays.
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenLastCalledWith("evt-1", expect.objectContaining({ includeErased: true }), expect.anything()));
+    const stillThere = await screen.findByRole("radiogroup", { name: "Erased entries" });
+    expect(within(stillThere).getByRole("radio", { name: "Show" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(stillThere).getByRole("radio", { name: "Hide" }));
+    await waitFor(() => expect(screen.queryByRole("radiogroup", { name: "Erased entries" })).toBeNull());
   });
 
   it("gives an erased entry a checkbox that stays off, and Select all skips it", async () => {
@@ -164,7 +200,9 @@ describe("AttendeesPage: erased entries", () => {
     await screen.findByText("Jane Doe");
     const card = screen.getByText("Erased attendee").closest(".attendees-card");
     expect(card?.classList.contains("attendees-card--erased")).toBe(true);
-    expect(within(card as HTMLElement).getByText("Erased")).toBeTruthy();
+    // The name says it; the line under it has the date, and there is no second mark.
+    expect(within(card as HTMLElement).getByText(/^Erased on .*2026/)).toBeTruthy();
+    expect(within(card as HTMLElement).queryByText("Erased")).toBeNull();
     expect((screen.getByRole("checkbox", { name: "Erased entries cannot be selected" }) as HTMLInputElement).disabled).toBe(
       true,
     );

@@ -634,6 +634,8 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
   it("is read-only and says so, without a name, an address or a company", async () => {
     await openErasedPage({ company: "Should not show", email: "erased-att-1@erased.invalid" });
 
+    // The name says it: the title has no second "Erased" mark beside it.
+    expect(screen.getByRole("heading", { name: "Erased attendee" })).toBeTruthy();
     expect(screen.getByText("This entry is kept for your counts. It has no personal details.")).toBeTruthy();
     expect(screen.getByText(/^Personal data erased on .*2026\.$/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);

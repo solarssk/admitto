@@ -9,7 +9,6 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatEventDate } from "../utils/event-dates.js";
 import { ERASED_ATTENDEE_LABEL } from "./erasedAttendee.js";
-import { ErasedBadge } from "./ErasedBadge.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
@@ -243,12 +242,7 @@ export function ErasedAttendeeView({
   return (
     <>
       <PageHeader
-        title={
-          <>
-            {ERASED_ATTENDEE_LABEL}
-            <ErasedBadge />
-          </>
-        }
+        title={ERASED_ATTENDEE_LABEL}
         subtitle="This entry is kept for your counts. It has no personal details."
         className="attendee-detail-pageheader"
         actions={
