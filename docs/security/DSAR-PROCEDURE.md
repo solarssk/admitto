@@ -66,7 +66,8 @@ flowchart TD
        offers **Try again**, which repeats only the wallet step; the attendee's page keeps a **Try
        again** button until it has worked. Everything personal inside Admitto is gone either way.
      - **Audit:** the event action log and the central admin audit log record who erased how many
-       people and which ids, never a name or an address.
+       people and which ids, never a name or an address. The page of the erased person says who
+       erased them and when (a Superadmin also sees the address it was done from).
      - **Direct-API fallback:** `POST /api/admin/events/:eventId/attendees/:id/erase`, or
        `POST /api/admin/events/:eventId/attendees/bulk-erase` with `{ "attendeeIds": [...] }`, with an
        authenticated staff session and CSRF token. Repeating a request for people who are already
@@ -133,7 +134,7 @@ the attendees in place, blanks their addresses in saved import results, writes t
 
 - **Audit:** the event action log and the central admin audit log record who erased how many people and which ids
   (`method: "erase"`, `source: "cli"`), never a name or an address. `--operator-email` is required for the real run
-  and names the actor.
+  and names the actor, whom the page of the erased person then shows, as done on the emergency command line.
 - **Wallet pass:** if the provider cannot be reached, or the event's wallet credentials are no longer set, the
   command prints how many passes are still there and exits with code 2. Run the same command again (people who are
   already erased are left alone and only their passes are tried again), or let the worker's daily retention run do

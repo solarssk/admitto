@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import { Button, Card, EmptyState, Notice, PageHeader } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
-import type { AttendeeDetailDto, EventDto, TicketTypeDto } from "../api/types.js";
+import type { AttendeeDetailDto, AttendeeErasureDto, EventDto, TicketTypeDto } from "../api/types.js";
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatEventDate } from "../utils/event-dates.js";
-import { ERASED_ATTENDEE_LABEL } from "./erasedAttendee.js";
+import { formatActivityTimestamp } from "./attendeeTimeline.js";
+import { ERASED_ATTENDEE_LABEL, erasedByName, erasedNoticeText, erasureViaLine } from "./erasedAttendee.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
@@ -169,15 +170,53 @@ function ErasedOverviewTab({
   );
 }
 
-/** Activity log: the person's history went with their personal data. The tab stays, so that the page has the shape of every other attendee's. */
-function ErasedActivityTab() {
+/**
+ * Activity log: the person's history went with their personal data, but the erasure itself stays on record, as
+ * one entry in the shape of every other: when, by whom, through what, and from where for a viewer who is told.
+ * An erasure the audit log has no entry of leaves the tab saying the history is gone.
+ */
+function ErasedActivityTab({
+  erasure,
+  erasedAt,
+  timezone,
+}: Readonly<{ erasure: AttendeeErasureDto | null; erasedAt: string; timezone: string }>) {
+  if (erasure === null) {
+    return (
+      <Card padded>
+        <EmptyState
+          icon={<i className="ti ti-history" aria-hidden="true" />}
+          title="History erased"
+          description="The change history for this person was erased."
+        />
+      </Card>
+    );
+  }
+  const name = erasedByName(erasure);
   return (
     <Card padded>
-      <EmptyState
-        icon={<i className="ti ti-history" aria-hidden="true" />}
-        title="History erased"
-        description="The change history for this person was erased."
-      />
+      <ul className="at-timeline">
+        <li className="at-tl-item">
+          <div className="at-tl-dot at-tl-dot--neutral">
+            <i className="ti ti-eraser" aria-hidden="true" />
+          </div>
+          <div className="at-tl-body">
+            <b>Personal data erased</b>
+            <span>{erasureViaLine(erasure)}</span>
+          </div>
+          <div className="at-tl-meta">
+            <time className="at-tl-time" dateTime={erasedAt}>
+              {formatActivityTimestamp(erasedAt, erasure.timezone, timezone)}
+            </time>
+            {name !== null && (
+              <span className="at-tl-actor">
+                <i className="ti ti-user" aria-hidden="true" />
+                {name}
+              </span>
+            )}
+          </div>
+        </li>
+      </ul>
+      <p className="erased-history-note">The rest of the change history was erased with the personal data.</p>
     </Card>
   );
 }
@@ -239,6 +278,7 @@ export function ErasedAttendeeView({
 }>) {
   const isDesktop = useIsDesktop();
   const erasedOn = formatEventDate(erasedAt, event.timezone);
+  const erasure = detail.erasure ?? null;
   return (
     <>
       <PageHeader
@@ -260,8 +300,8 @@ export function ErasedAttendeeView({
         }
       />
       {error && <RefreshWarning message={error} onRetry={onRetry} landmark=".attendee-detail-page" />}
-      <Notice variant="highlight" icon="eraser">
-        Personal data erased on {erasedOn}.
+      <Notice variant="highlight" icon="eraser" className="erased-notice">
+        {erasedNoticeText(erasedOn, erasure)}
       </Notice>
       {statusStrip}
       {tabStrip}
@@ -274,7 +314,7 @@ export function ErasedAttendeeView({
           onWalletTryAgain={onWalletTryAgain}
         />
       )}
-      {tab === "activity" && <ErasedActivityTab />}
+      {tab === "activity" && <ErasedActivityTab erasure={erasure} erasedAt={erasedAt} timezone={event.timezone} />}
       {tab === "notes" && <ErasedNotesTab />}
     </>
   );

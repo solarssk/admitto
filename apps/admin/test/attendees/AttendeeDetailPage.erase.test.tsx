@@ -849,3 +849,98 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     expect(within(strip).queryByText(/^Around/)).toBeNull();
   });
 });
+
+describe("AttendeeDetailPage: who erased the person", () => {
+  /** What the API sends once the audit log has the erasure: a staff member in Kolkata, no address (the viewer is no Superadmin). */
+  const erasure = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    by: { display_name: "Admin Example", email: "admin@example.com" },
+    via: "admin",
+    timezone: "Asia/Kolkata",
+    ip: null,
+    location: null,
+    ...overrides,
+  });
+
+  async function openActivityTab(overrides: Partial<Record<string, unknown>> = {}) {
+    setPreferredLocale("en-GB");
+    mockLoad(erasedDetail(overrides));
+    renderPageAt("?tab=activity");
+    await screen.findByRole("heading", { name: /Erased attendee/ });
+  }
+
+  it("says who in the notice and keeps the erasure as the one entry of the Activity log, timed in the staff member's zone", async () => {
+    await openActivityTab({ erasure: erasure() });
+
+    expect(screen.getByText(/^Personal data erased on .*2026 by Admin Example\.$/)).toBeTruthy();
+    const entry = screen.getByRole("listitem");
+    expect(within(entry).getByText("Personal data erased")).toBeTruthy();
+    expect(within(entry).getByText("Through the admin app")).toBeTruthy();
+    expect(within(entry).getByText("Admin Example")).toBeTruthy();
+    // 12:00 UTC is 17:30 in Kolkata, where the staff member was, and 14:00 in the event's Warsaw.
+    const time = within(entry).getByText(/17:30/);
+    expect(time.textContent).toMatch(/UTC\+5:30/);
+    expect(time.getAttribute("datetime")).toBe("2026-10-08T12:00:00.000Z");
+    expect(screen.getByText("The rest of the change history was erased with the personal data.")).toBeTruthy();
+    expect(screen.queryByText("History erased")).toBeNull();
+    // Not Superadmin: no address, and no hint that there is one.
+    expect(entry.textContent).not.toMatch(/from /);
+  });
+
+  it("tells the time in the event's zone when the entry kept none", async () => {
+    await openActivityTab({ erasure: erasure({ timezone: null }) });
+
+    const time = within(screen.getByRole("listitem")).getByText(/14:00/);
+    expect(time.textContent).toMatch(/UTC\+2/);
+  });
+
+  it("tells a Superadmin from where: the address, and where it is", async () => {
+    await openActivityTab({
+      erasure: erasure({ ip: "203.0.113.7", location: { kind: "resolved", countryCode: "PL", city: "Warsaw" } }),
+    });
+
+    expect(within(screen.getByRole("listitem")).getByText("Through the admin app, from 203.0.113.7 (Warsaw, Poland)")).toBeTruthy();
+  });
+
+  it("says it was the emergency command line when it was", async () => {
+    await openActivityTab({ erasure: erasure({ via: "cli" }) });
+
+    expect(within(screen.getByRole("listitem")).getByText("Through the emergency command line")).toBeTruthy();
+  });
+
+  it("names no one when the audit log kept no identity: nothing after the date, no one in the entry", async () => {
+    await openActivityTab({ erasure: erasure({ by: null }) });
+
+    expect(screen.getByText(/^Personal data erased on .*2026\.$/)).toBeTruthy();
+    const entry = screen.getByRole("listitem");
+    expect(within(entry).getByText("Personal data erased")).toBeTruthy();
+    expect(entry.querySelector(".at-tl-actor")).toBeNull();
+  });
+
+  it("names the staff member by address when the log kept no name", async () => {
+    await openActivityTab({ erasure: erasure({ by: { display_name: null, email: "admin@example.com" } }) });
+
+    expect(screen.getByText(/^Personal data erased on .*2026 by admin@example\.com\.$/)).toBeTruthy();
+    expect(within(screen.getByRole("listitem")).getByText("admin@example.com")).toBeTruthy();
+  });
+
+  it("keeps saying the history is erased when the audit log has no entry of the erasure", async () => {
+    await openActivityTab({ erasure: null });
+
+    expect(screen.getByText(/^Personal data erased on .*2026\.$/)).toBeTruthy();
+    expect(screen.getByText("History erased")).toBeTruthy();
+    expect(screen.queryByRole("listitem")).toBeNull();
+    expect(screen.queryByText("The rest of the change history was erased with the personal data.")).toBeNull();
+  });
+
+  it("learns who from the server's version once the erasure is confirmed", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 0, wallet_removed_ids: [] });
+    mockLoad(baseDetail());
+    mockLoad(erasedDetail({ erasure: erasure() }));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    expect(await screen.findByText(/^Personal data erased on .*2026 by Admin Example\.$/)).toBeTruthy();
+  });
+});

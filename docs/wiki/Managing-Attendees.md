@@ -84,7 +84,7 @@ Use this when a person asks for their personal data to be erased and your organi
 3. Select **Erase personal data**. It cannot be undone, and it works on an archived event too.
 4. If the dialog **Personal data erased** says a wallet pass is still at the provider, everything personal inside Admitto is already gone. Select **Try again** to repeat only the wallet step.
 
-The attendee page of an erased person is read-only. It shows **Erased** in place of the name, email, company, custom fields and notes, keeps the ticket type, the check-in time to the hour and the ticket delivery result, and offers **Try again** next to a pass that is still to be deleted at the provider.
+The attendee page of an erased person is read-only. It shows **Erased** in place of the name, email, company, custom fields and notes, keeps the ticket type, the check-in time to the hour and the ticket delivery result, and offers **Try again** next to a pass that is still to be deleted at the provider. The notice above the page says who erased the person and when, and **Activity log** keeps that one entry, with the time in the zone the staff member was in and whether it was done in the admin or on the emergency command line. A Superadmin also sees the address it was done from and where it is. The rest of the person's history is gone.
 
 ### Remove from event (mistakes)
 
