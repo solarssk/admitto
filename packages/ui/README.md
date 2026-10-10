@@ -20,7 +20,7 @@ Stylesheets and assets are subpath exports served from source: `@admitto/ui/styl
 
 Prefer these components over one-off markup so spacing, focus, and toast behaviour stay consistent (see [standards/admin-spa/feedback-and-errors.md](../../standards/admin-spa/feedback-and-errors.md) for toast vs Notice).
 
-Every loading or busy state uses these components and the timing in [AGENTS.md](../../AGENTS.md#admin-spa-loading-and-busy-states) "Admin SPA loading and busy states", not a hand-made spinner, shimmer or label swap.
+Every loading or busy state uses these components and the timing in [standards/admin-spa/loading.md](../../standards/admin-spa/loading.md), not a hand-made spinner, shimmer or label swap.
 
 ## Build
 
