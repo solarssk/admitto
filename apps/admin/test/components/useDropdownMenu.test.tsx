@@ -539,6 +539,34 @@ describe("useDropdownMenu", () => {
     vi.unstubAllGlobals();
   });
 
+  it("puts the final left on a visible panel in the same task as a remeasure, not on the next render", () => {
+    // The measuring pass moves the panel to the left margin. For a panel that is already on screen
+    // (its content resized), leaving it there until React applies the new style would paint it there.
+    vi.stubGlobal("innerWidth", 1100);
+    vi.stubGlobal("innerHeight", 600);
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    vi.spyOn(console, "error").mockImplementation(() => {}); // the state update below is outside act on purpose
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, left: 0, right: 0, top: 0, bottom: 0, width: 300, height: 100 };
+      return { ...base, left: 900, right: 1000, top: 100, bottom: 130, width: 100, height: 30 };
+    });
+
+    render(<EndAlignedMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.style.left).toBe("700px");
+
+    MockResizeObserver.instances.at(-1)!.trigger();
+
+    expect(menu.style.left).toBe("700px"); // not left at the 8px margin the measuring pass used
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
     render(<TestMenu />);
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));

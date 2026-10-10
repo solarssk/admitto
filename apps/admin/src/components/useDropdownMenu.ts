@@ -197,6 +197,10 @@ export function useDropdownMenu<
       left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
       left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
 
+      // Put the final `left` on the element now: the measuring above moved it to the left margin, and
+      // React applies `panelStyle` later, so a remeasure of a visible panel (its content resized)
+      // could otherwise be painted there for a frame.
+      panel.style.left = `${left}px`;
       setOpenUpward(above);
       setPanelStyle({
         position: "fixed",
