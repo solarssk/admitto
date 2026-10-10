@@ -25,6 +25,7 @@ export { scrubAttendeeTraces } from "./attendee-traces.js";
 export {
   EXPORT_STOPPED_BY_ERASURE_ERROR,
   IMPORT_STOPPED_BY_ERASURE_ERROR,
+  attendeeJobIdsWithFiles,
   createUnderAttendeeJobQueueLock,
   lockAttendeeJobQueue,
   lockOpenAttendeeJobs,

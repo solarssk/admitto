@@ -148,3 +148,18 @@ export function createUnderAttendeeJobQueueLock<T>(
     return create(tx);
   }, JOB_CREATE_TX_OPTIONS);
 }
+
+/**
+ * The ids of the exports and imports of the event that hold a file, read at the end of an erasure or a removal,
+ * while its transaction still holds the queue lock: jobs that existed before it, which is exactly the set whose
+ * files it has to delete once it has committed. A job that was created after the erasure (it waited for the lock)
+ * is not in it, and so a purge that runs after the commit cannot delete the file of an export that came later.
+ */
+export async function attendeeJobIdsWithFiles(tx: Prisma.TransactionClient, eventId: string): Promise<string[]> {
+  const jobs = await tx.adminJob.findMany({
+    where: { event_id: eventId, type: { in: ATTENDEE_JOB_TYPES }, storage_key: { not: null } },
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  return jobs.map((job) => job.id);
+}

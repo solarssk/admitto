@@ -1,6 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
-import { lockOpenAttendeeJobs } from "./stop-open-jobs.js";
+import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 export type RemoveAttendeesParams = {
   eventId: string;
@@ -41,6 +41,11 @@ export type RemoveAttendeesResult = {
    * caller within the same request, never logged, audited or stored.
    */
   previousEmails: string[];
+  /**
+   * The ids of the exports and imports of the event that held a file when this transaction ended its work, under
+   * the queue lock (see attendeeJobIdsWithFiles): the files the caller deletes after the commit, and only those.
+   */
+  jobIdsWithFiles: string[];
 };
 
 /**
@@ -72,6 +77,7 @@ export async function removeAttendees(
     counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
     walletTargets: [],
     previousEmails: [],
+    jobIdsWithFiles: [],
   };
   if (requestedIds.length === 0) return empty;
 
@@ -134,5 +140,6 @@ export async function removeAttendees(
         : [],
     ),
     previousEmails,
+    jobIdsWithFiles: await attendeeJobIdsWithFiles(tx, eventId),
   };
 }

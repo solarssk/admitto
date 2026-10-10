@@ -31,7 +31,7 @@ type Where = {
   event_id?: string;
   finished_at?: { lte: Date } | { not: null };
   storage_key?: { not: null } | string;
-  id?: { gt: string } | string;
+  id?: { gt?: string; in?: string[] } | string;
 };
 
 /** Just enough of `adminJob` for the where clauses the purge uses, over rows in memory. */
@@ -48,7 +48,10 @@ function fakeDb(rows: Row[]): PrismaClient {
     if (typeof where.storage_key === "string" && row.storage_key !== where.storage_key) return false;
     if (typeof where.storage_key === "object" && row.storage_key === null) return false;
     if (typeof where.id === "string" && row.id !== where.id) return false;
-    if (typeof where.id === "object" && !(row.id > where.id.gt)) return false;
+    if (typeof where.id === "object") {
+      if (where.id.gt !== undefined && !(row.id > where.id.gt)) return false;
+      if (where.id.in !== undefined && !where.id.in.includes(row.id)) return false;
+    }
     return true;
   };
   return {
@@ -354,14 +357,15 @@ describe("purgeEventJobFiles", () => {
   const put = async (eventId: string) =>
     (await storage.put(Buffer.from("x"), { orgId: "org-1", eventId, scope: "event", ext: ".csv" })).key;
 
-  it("deletes every export file of the event whatever its age, and the staged CSV of every finished import, and nothing else", async () => {
-    const [freshOfEvent, oldOfEvent, otherEvent, failedImport, doneImport, otherEventImport, queuedImport, runningImport] = [
+  it("deletes the export files of the jobs it is given whatever their age, and the staged CSV of those that finished, and nothing else", async () => {
+    const [freshOfEvent, oldOfEvent, otherEvent, failedImport, doneImport, otherEventImport, queuedImport, runningImport, laterExport] = [
       await put("evt-1"),
       await put("evt-1"),
       await put("evt-2"),
       await put("evt-1"),
       await put("evt-1"),
       await put("evt-2"),
+      await put("evt-1"),
       await put("evt-1"),
       await put("evt-1"),
     ];
@@ -375,15 +379,51 @@ describe("purgeEventJobFiles", () => {
       { id: "j7", type: "import_commit", event_id: "evt-2", storage_key: otherEventImport, finished_at: daysAgo(1) },
       { id: "j8", type: "import_commit", event_id: "evt-1", storage_key: queuedImport, finished_at: null },
       { id: "j9", type: "import_commit", event_id: "evt-1", storage_key: runningImport, finished_at: null },
+      // An export that was requested after the erasure and has finished by now: the erasure never saw it.
+      { id: "j10", type: "export", event_id: "evt-1", storage_key: laterExport, finished_at: daysAgo(0) },
     ];
+    // What the erasure saw: the jobs of the event (and of another event, by mistake) that held a file, not j10.
+    const seen = ["j1", "j2", "j3", "j4", "j5", "j6", "j8", "j9"];
 
-    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1");
+    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1", seen);
 
     expect(result).toEqual({ deleted: 4, failed: 0 });
-    expect(rows.map((row) => row.storage_key)).toEqual([null, null, otherEvent, null, null, null, otherEventImport, queuedImport, runningImport]);
+    expect(rows.map((row) => row.storage_key)).toEqual([null, null, otherEvent, null, null, null, otherEventImport, queuedImport, runningImport, laterExport]);
     for (const gone of [freshOfEvent, oldOfEvent, failedImport, doneImport]) expect(existsSync(join(uploadDir, gone))).toBe(false);
-    // Another event's files, and the files of imports that are still waiting or running, are not touched.
-    for (const kept of [otherEvent, otherEventImport, queuedImport, runningImport]) expect(existsSync(join(uploadDir, kept))).toBe(true);
+    // Another event's files, the files of imports that are still waiting or running, and the file of an export that
+    // came after the erasure, are not touched.
+    for (const kept of [otherEvent, otherEventImport, queuedImport, runningImport, laterExport]) expect(existsSync(join(uploadDir, kept))).toBe(true);
+  });
+
+  it("deletes nothing when it is given no job ids", async () => {
+    const key = await put("evt-1");
+    const rows: Row[] = [{ id: "j1", type: "export", event_id: "evt-1", storage_key: key, finished_at: daysAgo(0) }];
+
+    expect(await purgeEventJobFiles(fakeDb(rows), storage, "evt-1", [])).toEqual({ deleted: 0, failed: 0 });
+    expect(existsSync(join(uploadDir, key))).toBe(true);
+  });
+
+  it("walks past a full page of files it is given that stay, without leaving the ids it was given", async () => {
+    const rows: Row[] = Array.from({ length: 450 }, (_, i) => ({
+      id: `k${String(i).padStart(4, "0")}`,
+      type: "export",
+      event_id: "evt-1",
+      storage_key: `org-1/events/evt-1/stuck-${i}.csv`,
+      finished_at: daysAgo(0),
+    }));
+    // A job of the same event that the erasure did not see sits among them, on the second page of the walk.
+    rows.push({ id: "k0250x", type: "export", event_id: "evt-1", storage_key: "org-1/events/evt-1/later.csv", finished_at: daysAgo(0) });
+    const tried: string[] = [];
+    vi.spyOn(storage, "delete").mockImplementation(async (key: string) => {
+      tried.push(key);
+      throw new Error("disk is read only");
+    });
+
+    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1", rows.slice(0, 450).map((row) => row.id));
+
+    expect(result).toEqual({ deleted: 0, failed: 450 });
+    expect(new Set(tried).size).toBe(450);
+    expect(tried).not.toContain("org-1/events/evt-1/later.csv");
   });
 
   it("keeps the key of a file it cannot delete, counts it, and still deletes the rest", async () => {
@@ -398,7 +438,7 @@ describe("purgeEventJobFiles", () => {
       return realDelete(key);
     });
 
-    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1");
+    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1", ["j1", "j2"]);
 
     expect(result).toEqual({ deleted: 1, failed: 1 });
     expect(rows.map((row) => row.storage_key)).toEqual([stuck, null]);

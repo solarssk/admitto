@@ -152,7 +152,7 @@ async function runErasure(
 
   // The files that exports and finished imports wrote before the erasure still hold the person: they go too
   // (nothing for an erasure that erased nobody new).
-  if (result.erasedIds.length > 0) await purgeEventJobFilesBestEffort(db, eventId);
+  if (result.erasedIds.length > 0) await purgeEventJobFilesBestEffort(db, eventId, result.jobIdsWithFiles);
 
   // After the commit: a network call has no place inside the transaction. Credentials alone decide
   // whether a provider exists; the event's wallet switch only governs issuing new passes.

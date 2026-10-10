@@ -275,6 +275,30 @@ describe("an erasure or a removal", () => {
     expect(await statusOf(running.id)).toBe("failed");
   });
 
+  it.each([
+    ["erasure", erase],
+    ["removal", remove],
+  ])(
+    "hands back the jobs that held a file when the %s ended, the stopped ones included, and not a job created afterwards",
+    async (_name, act) => {
+      const person = await attendeeIn(EVENT_ID);
+      const withKey = (type: string, status: string, eventId: string, key: string) =>
+        prisma.adminJob.create({ data: { ...jobData(eventId, type, status), storage_key: key } });
+      const finishedExport = await withKey("export", "succeeded", EVENT_ID, "k/one.csv");
+      const waitingImport = await withKey("import_commit", "pending", EVENT_ID, "k/two.csv");
+      await job(EVENT_ID, "export", "failed"); // no file
+      await withKey("wallet_push", "succeeded", EVENT_ID, "k/three.csv"); // not a job that holds attendees
+      await withKey("export", "succeeded", OTHER_EVENT_ID, "k/four.csv"); // another event
+
+      const result = await prisma.$transaction((tx) => act(tx, EVENT_ID, person.id));
+      // An export requested right after the erasure, finished before anything purges: the erasure never saw it.
+      const later = await withKey("export", "succeeded", EVENT_ID, "k/five.csv");
+
+      expect(result.jobIdsWithFiles).toEqual([finishedExport.id, waitingImport.id].sort());
+      expect(result.jobIdsWithFiles).not.toContain(later.id);
+    },
+  );
+
   it("does not wait for an erasure of another event", async () => {
     const mine = await attendeeIn(EVENT_ID);
     const theirs = await attendeeIn(OTHER_EVENT_ID);

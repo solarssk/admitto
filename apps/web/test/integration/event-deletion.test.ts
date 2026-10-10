@@ -579,6 +579,54 @@ describe("files the event's jobs left in storage", () => {
     expect(present(key)).toBe(false);
   });
 
+  it("waits for an import that is running in the event instead of deadlocking with it, and then finds the event not deletable", async () => {
+    const eventId = await createEvent({});
+    const job = await prisma.adminJob.create({
+      data: { type: "import_commit", status: "running", organization_id: ORG_DEL, event_id: eventId },
+    });
+    // What the import does: it takes the row of its job first, and later inserts a person, which needs the event row.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => (started = resolve));
+    const importing = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "status" FROM "AdminJob" WHERE "id" = ${job.id} FOR UPDATE`;
+        started();
+        await gate;
+        await tx.attendee.create({
+          data: { id: `${eventId}-person`, event_id: eventId, email: `${eventId}@example.com`, name: "Import Person" },
+        });
+      },
+      { timeout: 30_000 },
+    );
+    await startedPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    try {
+      // The deletion waits for the row of the job, before it locks the event row.
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%AdminJob%FOR UPDATE%'
+          `;
+          expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+    } finally {
+      release();
+    }
+    await importing;
+    const res = await deleting;
+
+    // No transaction was aborted as a deadlock victim: the import finished, and the person it created keeps the event.
+    expect(res.status).toBe(409);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
+    expect(await prisma.attendee.count({ where: { event_id: eventId } })).toBe(1);
+  });
+
   it("keeps the files when the event cannot be deleted", async () => {
     const eventId = await createEvent({ pinnedNote: "keep me" });
     const job = await seedJob(eventId, "export", "succeeded");

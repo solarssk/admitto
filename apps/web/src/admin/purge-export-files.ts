@@ -8,14 +8,20 @@ import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
  * an export is cheap to run again, a finished import's CSV has no use, and the person asked to be forgotten.
  * Best effort, like the wallet follow-up: a file that cannot be deleted is reported in the System logs and
  * keeps its job's key, so the retention run (`EXPORT_FILE_RETENTION_DAYS`) deletes it later, and the erasure
- * itself never fails because of it. An export or an import that is waiting or running when the erasure runs is
+ * itself never fails because of it. Only the files of the jobs that existed when the erasure ended its work (their
+ * ids are read in its transaction): an export requested a moment after it is not touched. An export or an import
+ * that is waiting or running when the erasure runs is
  * stopped by the erasure's own transaction (stopOpenAttendeeJobs), so an export cannot record a file afterwards,
  * an import cannot add the person back, and the staged CSV of a stopped import is a finished job's file by now.
  */
-export async function purgeEventJobFilesBestEffort(db: PrismaClient, eventId: string): Promise<void> {
+export async function purgeEventJobFilesBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  jobIds: readonly string[],
+): Promise<void> {
   try {
     const { getDefaultStorage, purgeEventJobFiles } = await import("@admitto/storage");
-    const { failed } = await purgeEventJobFiles(db, getDefaultStorage(), eventId);
+    const { failed } = await purgeEventJobFiles(db, getDefaultStorage(), eventId, jobIds);
     if (failed > 0) {
       recordSystemLog({
         level: "warn",

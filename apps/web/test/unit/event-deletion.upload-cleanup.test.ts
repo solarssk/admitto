@@ -93,9 +93,15 @@ describe("deleteEvent — managed upload cleanup", () => {
     const calls: string[] = [];
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
-      // The row of the event is locked first (SELECT ... FOR UPDATE); the jobs are deleted with RETURNING after it.
+      // The rows of the jobs are locked first, then the row of the event (both SELECT ... FOR UPDATE), the same order
+      // as an import takes them in; the jobs are deleted with RETURNING after that.
       $queryRaw: vi.fn().mockImplementation(async (strings: readonly string[]) => {
-        if (strings.join("?").includes("FOR UPDATE")) {
+        const sql = strings.join("?");
+        if (sql.includes("FOR UPDATE") && sql.includes('"AdminJob"')) {
+          calls.push("job rows lock");
+          return [{ id: "job-1" }];
+        }
+        if (sql.includes("FOR UPDATE")) {
           calls.push("event row lock");
           return [{ locked: 1 }];
         }
@@ -143,7 +149,7 @@ describe("deleteEvent — managed upload cleanup", () => {
     ]);
     // The row of the event is locked before its jobs are read, and the files go after the rows: the event is deleted
     // first, in the transaction.
-    expect(calls).toEqual(["event row lock", "jobs delete", "event.delete", "job files"]);
+    expect(calls).toEqual(["job rows lock", "event row lock", "jobs delete", "event.delete", "job files"]);
     deleteEventJobFilesBestEffort.mockReset().mockResolvedValue(undefined);
   });
 

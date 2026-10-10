@@ -47,7 +47,9 @@ function hasStoredFile(job: { id: string; storage_key: string | null }): job is 
 
 /** The jobs of `where` that still have a file, after `cursor` (the id of the last job of the page before). */
 function jobsWithFile(where: Prisma.AdminJobWhereInput, cursor: string | undefined): Prisma.AdminJobWhereInput {
-  return { ...where, storage_key: { not: null }, ...(cursor ? { id: { gt: cursor } } : {}) };
+  // The cursor joins an id filter that `where` already has (the jobs of one erasure) and does not replace it.
+  const idFilter = typeof where.id === "string" ? { equals: where.id } : where.id;
+  return { ...where, storage_key: { not: null }, ...(cursor ? { id: { ...idFilter, gt: cursor } } : {}) };
 }
 
 /**
@@ -163,19 +165,25 @@ export async function purgeJobFiles(
  * that worked deleted it already, so what is left is the CSV of a job that failed), so they go at once rather
  * than at the end of the retention window. A job that has not finished is left alone, because it still needs its
  * file: an export or an import that was waiting or running when the erasure ran is stopped by the erasure itself
- * (see stopOpenAttendeeJobs in @admitto/tickets), which makes it finished, so its file goes here too; one that
- * was created after the erasure committed starts from the list as it is then.
+ * (see stopOpenAttendeeJobs in @admitto/tickets), which makes it finished, so its file goes here too.
+ *
+ * Only the jobs in `jobIds`: the ones the erasure saw, at the end of its transaction and under the queue lock
+ * (attendeeJobIdsWithFiles). A job that was created after the erasure committed starts from the list as it is
+ * then, and a purge that runs a moment later must not delete the file of an export that finished meanwhile.
  */
 export async function purgeEventJobFiles(
   db: PrismaClient,
   storage: StorageAdapter,
   eventId: string,
+  jobIds: readonly string[],
 ): Promise<{ deleted: number; failed: number }> {
-  const exports = await purgeFilesWhere(db, storage, { type: "export", event_id: eventId }, false);
+  if (jobIds.length === 0) return { deleted: 0, failed: 0 };
+  const ids = { in: [...jobIds] };
+  const exports = await purgeFilesWhere(db, storage, { type: "export", event_id: eventId, id: ids }, false);
   const staged = await purgeFilesWhere(
     db,
     storage,
-    { type: "import_commit", event_id: eventId, finished_at: { not: null } },
+    { type: "import_commit", event_id: eventId, id: ids, finished_at: { not: null } },
     false,
   );
   return { deleted: exports.deleted + staged.deleted, failed: exports.failed + staged.failed };

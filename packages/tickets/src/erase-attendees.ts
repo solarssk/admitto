@@ -1,7 +1,7 @@
 import { Prisma } from "@admitto/db/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
-import { lockOpenAttendeeJobs } from "./stop-open-jobs.js";
+import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 /** Written to `Attendee.name` of an erased attendee. Mirrored by the CHECK constraint in migration
  * 20261008120000_add_attendee_erased_at - change both together. */
@@ -58,6 +58,11 @@ export type EraseAttendeesResult = {
    * memory by the caller within the same request, never logged, audited or stored.
    */
   previousEmails: string[];
+  /**
+   * The ids of the exports and imports of the event that held a file when this transaction ended its work, under
+   * the queue lock (see attendeeJobIdsWithFiles): the files the caller deletes after the commit, and only those.
+   */
+  jobIdsWithFiles: string[];
 };
 
 /**
@@ -110,6 +115,7 @@ export async function eraseAttendees(
     counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0 },
     walletTargets: [],
     previousEmails: [],
+    jobIdsWithFiles: [],
   };
   if (requestedIds.length === 0) return empty;
 
@@ -251,5 +257,6 @@ export async function eraseAttendees(
         : [],
     ),
     previousEmails,
+    jobIdsWithFiles: await attendeeJobIdsWithFiles(tx, eventId),
   };
 }

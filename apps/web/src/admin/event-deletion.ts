@@ -163,6 +163,11 @@ export async function deleteEvent(
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
       await lockEventForScopedWrite(tx, eventId);
+      // The rows of the event's jobs first, then the event row: an import holds its job row for the whole of its
+      // transaction and then needs the event row (the foreign key of the people it inserts), so the other order
+      // would make the two wait for each other. A running import is waited for, and the people it created make
+      // the event undeletable; a job that is deleted with the event makes the import that wakes up stop.
+      await tx.$queryRaw`SELECT "id" FROM "AdminJob" WHERE "event_id" = ${eventId} ORDER BY "id" FOR UPDATE`;
       // The row of the event itself, before anything is counted or read. A job that is being created for the
       // event (an import that has stored its CSV and is about to name it) holds a share of this row until it
       // commits, so the deletion waits for it and then sees its row, and a job that starts after finds the
