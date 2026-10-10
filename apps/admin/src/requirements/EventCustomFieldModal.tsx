@@ -164,7 +164,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
       aria-modal="true"
       aria-labelledby="custom-field-modal-title"
     >
-      <ModalBackdrop onClose={onClose} />
+      <ModalBackdrop />
       <div ref={panelRef} className="event-item-modal__panel">
         <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">

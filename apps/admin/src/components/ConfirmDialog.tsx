@@ -102,7 +102,7 @@ export function ConfirmDialog({
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
     >
-      <ModalBackdrop onClose={onCancel} />
+      <ModalBackdrop onClose={loading ? undefined : onCancel} />
       <div ref={panelRef} className={`confirm-dialog__panel${wide ? " confirm-dialog__panel--wide" : ""}`}>
         <h3 id={titleId} className="confirm-dialog__title">
           {icon && (

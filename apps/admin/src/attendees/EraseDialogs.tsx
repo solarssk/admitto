@@ -4,22 +4,32 @@ import { DialogCrossLink } from "./DialogCrossLink.js";
 import { anonymousEntries, freedPlacesLine, peopleCount } from "./erasedAttendee.js";
 import "./erase-dialogs.css";
 
-/** What an erasure takes and what it leaves, one line each: the same answer to "will Reports
- * change?" in the dialog of a single person and of a selection. */
+/** What an erasure takes and what it leaves: the same answer to "will Reports change?" in the dialog of a single
+ * person and of a selection. Each word is said once, with its lines beside it. */
 function EraseConsequences({ takes, stays }: Readonly<{ takes: readonly string[]; stays: string }>) {
   return (
-    <ul className="erase-consequences">
-      {takes.map((text) => (
-        <li key={text} className="erase-consequences__row">
-          <span className="erase-consequences__tag erase-consequences__tag--erased">Erased</span>
-          <span>{text}</span>
-        </li>
-      ))}
-      <li className="erase-consequences__row">
-        <span className="erase-consequences__tag erase-consequences__tag--stays">Stays</span>
-        <span>{stays}</span>
-      </li>
-    </ul>
+    <div className="erase-consequences">
+      <div className="erase-consequences__group">
+        <span className="erase-consequences__tag erase-consequences__tag--erased">
+          <i className="ti ti-eraser" aria-hidden="true" />
+          Erased
+        </span>
+        <ul className="erase-consequences__lines">
+          {takes.map((text) => (
+            <li key={text}>{text}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="erase-consequences__group">
+        <span className="erase-consequences__tag erase-consequences__tag--stays">
+          <i className="ti ti-shield-check" aria-hidden="true" />
+          Stays
+        </span>
+        <ul className="erase-consequences__lines">
+          <li>{stays}</li>
+        </ul>
+      </div>
+    </div>
   );
 }
 

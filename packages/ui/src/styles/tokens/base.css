@@ -20,12 +20,13 @@ body {
      description a narrow block with a wide empty strip to its right (the lines of a block are evened out to the shortest width
      that holds them), and put "check-" / "in." on two lines more often. The shorthand only on the body, where it cannot clash
      with a `white-space: nowrap` that an element sets itself. The short texts that stand alone (headings, titles, an empty
-     state, a notice, a toast, a tooltip) are balanced below. */
+     state, a toast, a tooltip) are balanced below. A notice is running text: balanced, its two lines stopped short of the
+     box, so it takes `pretty` like the rest. */
   text-wrap: pretty;
 }
 
 h1, h2, h3, h4, h5, h6,
-.at-card__title, .at-pageheader__title, .at-empty-state__title, .at-empty-state__desc, .at-notice__body, .at-toast, [role="tooltip"] {
+.at-card__title, .at-pageheader__title, .at-empty-state__title, .at-empty-state__desc, .at-toast, [role="tooltip"] {
   text-wrap: balance;
 }
 

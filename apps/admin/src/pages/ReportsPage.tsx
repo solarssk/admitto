@@ -263,7 +263,7 @@ function HourlyChart({
   const mounted = useMountAnimation();
 
   return (
-    <div>
+    <div className="reports-chart-wrap">
       <div className="reports-chart" aria-hidden="true">
         {visible.map((row, index) => {
           const isPeak = row.hour === peakHour;

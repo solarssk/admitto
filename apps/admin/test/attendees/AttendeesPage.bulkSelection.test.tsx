@@ -525,7 +525,8 @@ describe("AttendeesPage bulk remove from event", () => {
 
     const dialog = openAndArmRemoveDialog();
     expect(within(dialog).getByText("Remove 2 people from the event?")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("radio", { name: "Wrong import file" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Reason,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Wrong import file" }));
     const readsBefore = fetchEventAttendees.mock.calls.length;
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
@@ -578,7 +579,7 @@ describe("AttendeesPage bulk remove from event", () => {
     await selectOnly("Jane Doe");
 
     const dialog = openAndArmRemoveDialog();
-    expect((within(dialog).getByRole("radio", { name: "Duplicate entry" }) as HTMLInputElement).checked).toBe(true);
+    expect(within(dialog).getByRole("button", { name: "Reason, Duplicate entry" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
     await waitFor(() => {

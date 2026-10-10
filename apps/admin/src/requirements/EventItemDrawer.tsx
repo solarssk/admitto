@@ -181,7 +181,7 @@ export function EventItemDrawer({
         aria-modal="true"
         aria-labelledby="item-modal-title"
       >
-        <ModalBackdrop onClose={onClose} />
+        <ModalBackdrop />
         <div ref={panelRef} className="event-item-modal__panel">
           <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
             <div className="event-item-modal__header">

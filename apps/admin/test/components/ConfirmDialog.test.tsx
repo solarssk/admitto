@@ -172,6 +172,17 @@ describe("ConfirmDialog", () => {
     );
   });
 
+  it("closes on a click outside the panel, but not while its request runs", () => {
+    const onCancel = vi.fn();
+    const { rerender } = render(<ConfirmDialog open title="Delete" message="..." onConfirm={vi.fn()} onCancel={onCancel} />);
+    fireEvent.click(document.querySelector(".at-modal-backdrop") as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    rerender(<ConfirmDialog open title="Delete" message="..." loading onConfirm={vi.fn()} onCancel={onCancel} />);
+    fireEvent.click(document.querySelector(".at-modal-backdrop") as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the confirm button where it is, busy and aria-disabled, and switches Cancel off, while loading", () => {
     const { container } = render(
       <ConfirmDialog
