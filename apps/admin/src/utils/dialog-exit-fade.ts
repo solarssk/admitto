@@ -17,14 +17,21 @@ export function installDialogExitFade(): () => void {
   const observer = new MutationObserver((records) => {
     for (const record of records) {
       for (const node of record.removedNodes) {
-        if (node instanceof HTMLDialogElement && node.hasAttribute("open") && !node.hasAttribute(COPY_MARK)) {
-          fadeOutCopy(node, record.target);
-        }
+        // A dialog is also taken out with the page that holds it (a removal that navigates away while its dialog is
+        // still open), and then the record names the page, not the dialog.
+        if (!(node instanceof Element)) continue;
+        for (const dialog of openDialogsIn(node)) fadeOutCopy(dialog, record.target);
       }
     }
   });
   observer.observe(document.body, { childList: true, subtree: true });
   return () => observer.disconnect();
+}
+
+function openDialogsIn(node: Element): HTMLDialogElement[] {
+  const open = `dialog[open]:not([${COPY_MARK}])`;
+  const found = [...node.querySelectorAll<HTMLDialogElement>(open)];
+  return node.matches(open) ? [node as HTMLDialogElement, ...found] : found;
 }
 
 function fadeOutCopy(dialog: HTMLDialogElement, parent: Node): void {

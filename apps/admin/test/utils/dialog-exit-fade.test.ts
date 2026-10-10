@@ -64,6 +64,33 @@ describe("installDialogExitFade", () => {
     expect(document.querySelector("dialog")).toBeNull();
   });
 
+  it("also fades a dialog that was taken out together with the page that held it", async () => {
+    const page = document.createElement("section");
+    document.body.append(page);
+    addDialog(page);
+    page.remove();
+    await Promise.resolve();
+
+    expect(document.body.querySelectorAll("dialog")).toHaveLength(1);
+    expect(document.querySelector("section")).toBeNull();
+    for (const anim of fake.animations) anim.finish();
+    await Promise.resolve();
+    expect(document.querySelector("dialog")).toBeNull();
+  });
+
+  it("leaves a dialog alone when the place it was in is gone too", async () => {
+    const outer = document.createElement("div");
+    const inner = document.createElement("div");
+    document.body.append(outer);
+    outer.append(inner);
+    const dialog = addDialog(inner);
+    // Both leave at once: the record of the inner removal names a parent that is no longer in the page.
+    inner.removeChild(dialog);
+    outer.remove();
+    await Promise.resolve();
+    expect(document.querySelector("dialog")).toBeNull();
+  });
+
   it("does not copy the copy when it is removed", async () => {
     addDialog(document.body).remove();
     await Promise.resolve();
