@@ -2764,6 +2764,19 @@ export function AttendeeDetailPage() {
   // half-hour-offset zone like India's - title carries the untruncated text as a hover fallback.
   const admissionParts = admissionPartsOf(detail.admitted_at, event.timezone);
 
+  // One strip for every attendee, erased or not: the placeholder draws these tabs, and the page that follows it keeps them.
+  const tabStrip = (
+    <Tabs
+      value={tab}
+      onChange={(id) => selectTab(id as TabId)}
+      tabs={[
+        { id: "overview", label: "Overview" },
+        { id: "activity", label: "Activity log" },
+        { id: "notes", label: "Notes", count: detail.erased_at ? undefined : detail.notes_total || undefined },
+      ]}
+    />
+  );
+
   if (detail.erased_at) {
     return (
       <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
@@ -2773,6 +2786,8 @@ export function AttendeeDetailPage() {
           event={event}
           ticketTypes={ticketTypes}
           walletPlatforms={walletPlatforms}
+          tabStrip={tabStrip}
+          tab={tab}
           statusStrip={
             <AttendeeStatusStrip
               detail={detail}
@@ -2925,15 +2940,7 @@ export function AttendeeDetailPage() {
         walletPlatforms={walletPlatforms}
       />
 
-      <Tabs
-        value={tab}
-        onChange={(id) => selectTab(id as TabId)}
-        tabs={[
-          { id: "overview", label: "Overview" },
-          { id: "activity", label: "Activity log" },
-          { id: "notes", label: "Notes", count: detail.notes_total || undefined },
-        ]}
-      />
+      {tabStrip}
 
       {tab === "overview" && (
         <AttendeeOverviewTab

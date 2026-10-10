@@ -53,20 +53,15 @@ export function freedPlacesLine(count: number): string {
     : `${peopleCount(count)} are not checked in yet, so their places become free.`;
 }
 
-/** The line under the Attendees list while erased entries are left out of it. */
-export function hiddenErasedLine(count: number): string {
-  return count === 1
-    ? "1 erased entry is hidden. Reports still count it."
-    : `${count} erased entries are hidden. Reports still count them.`;
-}
-
 /**
- * The line under the Attendees list while erased entries are shown in it. It carries no count: the
- * count of the hidden line is the event's, but the rows are filtered and paged, so a number here
- * could say 20 beside a result of three.
+ * The hint under the Erased entries switch in the Filters of the Attendees list: how many erased
+ * entries the event has (the event's count, whatever the other filters say, since the rows are
+ * filtered and paged) and that Reports count them whether they are listed or not.
  */
-export function shownErasedLine(): string {
-  return "Erased entries are included. Reports count them too.";
+export function erasedFilterHint(count: number): string {
+  return count === 1
+    ? "1 in this event. Reports count it either way."
+    : `${count} in this event. Reports count them either way.`;
 }
 
 /** The toast after an erasure that left nothing to do at the wallet provider. */

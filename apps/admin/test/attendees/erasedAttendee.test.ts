@@ -9,7 +9,7 @@ import {
   erasedWalletChipLabel,
   erasureFreesPlace,
   freedPlacesLine,
-  hiddenErasedLine,
+  erasedFilterHint,
   isOlderThanErasure,
   peopleCount,
   placesFreedBy,
@@ -18,7 +18,6 @@ import {
   rowIdentity,
   rowsWithPassesRemoved,
   selectRowLabel,
-  shownErasedLine,
   withWalletOutcome,
 } from "../../src/attendees/erasedAttendee.js";
 
@@ -35,10 +34,9 @@ describe("counts in words", () => {
     expect(anonymousEntries(12)).toBe("12 anonymous entries");
   });
 
-  it("words the line under the list for one hidden erased entry and for several, and for shown ones without a count", () => {
-    expect(hiddenErasedLine(1)).toBe("1 erased entry is hidden. Reports still count it.");
-    expect(hiddenErasedLine(2)).toBe("2 erased entries are hidden. Reports still count them.");
-    expect(shownErasedLine()).toBe("Erased entries are included. Reports count them too.");
+  it("words the hint under the Erased entries switch for one entry and for several", () => {
+    expect(erasedFilterHint(1)).toBe("1 in this event. Reports count it either way.");
+    expect(erasedFilterHint(2)).toBe("2 in this event. Reports count them either way.");
   });
 });
 

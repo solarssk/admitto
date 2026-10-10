@@ -95,15 +95,17 @@ function renderPage() {
   );
 }
 
-function renderNotesTab() {
+function renderPageAt(search: string) {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1?tab=notes"]}>
+    <MemoryRouter initialEntries={[`/admin/events/evt-1/attendees/att-1${search}`]}>
       <Routes>
         <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
       </Routes>
     </MemoryRouter>,
   );
 }
+
+const renderNotesTab = () => renderPageAt("?tab=notes");
 
 const ERASE_TITLE = "Erase this person's personal data?";
 
@@ -248,6 +250,10 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     typeName(dialog);
     confirmErase(dialog);
     expect(await screen.findByRole("heading", { name: /Erased attendee/ })).toBeTruthy();
+    // The tab the operator was on stays open, and says what became of the notes instead of offering a composer.
+    expect(screen.getByRole("tab", { name: "Notes" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Notes erased")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Add a note about this attendee…")).toBeNull();
 
     // The server saved the note before it erased the person, so its answer still shows them.
     await act(async () => {
@@ -628,19 +634,63 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
   it("is read-only and says so, without a name, an address or a company", async () => {
     await openErasedPage({ company: "Should not show", email: "erased-att-1@erased.invalid" });
 
+    // The name says it: the title has no second "Erased" mark beside it.
+    expect(screen.getByRole("heading", { name: "Erased attendee" })).toBeTruthy();
     expect(screen.getByText("This entry is kept for your counts. It has no personal details.")).toBeTruthy();
-    expect(screen.getByText(/Personal data erased on .*2026\. This entry stays in your counts/)).toBeTruthy();
+    expect(screen.getByText(/^Personal data erased on .*2026\.$/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
     for (const row of ["Name", "Email", "Company", "Custom fields", "Notes", "Message copies"]) {
-      const label = screen.getByText(row);
+      // A span: the "Notes" tab is a button, and says the same word.
+      const label = screen.getByText(row, { selector: "span" });
       expect(within(label.parentElement as HTMLElement).getByText("Erased")).toBeTruthy();
     }
-    expect(screen.getByText("The change history for this person was erased.")).toBeTruthy();
     expect(screen.queryByText("Placeholder name from the server")).toBeNull();
     expect(screen.queryByText(/erased\.invalid/)).toBeNull();
     // Nothing that sends, issues or edits is on the page.
-    expect(screen.queryByRole("tab")).toBeNull();
     expect(screen.queryByRole("button", { name: /Resend|Revoke/ })).toBeNull();
+  });
+
+  it("keeps the three tabs of every attendee's page, Overview first, with no count on Notes", async () => {
+    await openErasedPage({ notes_total: 3 });
+
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Overview", "Activity log", "Notes"]);
+    expect(tabs[0]!.getAttribute("aria-selected")).toBe("true");
+    // Overview has the cards, and the Activity log is no longer one of them.
+    expect(screen.getByText("Profile")).toBeTruthy();
+    expect(screen.queryByText("The change history for this person was erased.")).toBeNull();
+  });
+
+  it("switches between the tabs, each saying what became of its contents", async () => {
+    await openErasedPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Activity log" }));
+    expect(screen.getByText("History erased")).toBeTruthy();
+    expect(screen.getByText("The change history for this person was erased.")).toBeTruthy();
+    expect(screen.queryByText("Profile")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    expect(screen.getByText("Notes erased")).toBeTruthy();
+    expect(screen.queryByText("History erased")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(screen.getByText("Profile")).toBeTruthy();
+    expect(screen.queryByText("Notes erased")).toBeNull();
+  });
+
+  it.each([
+    ["activity", "Activity log", "History erased"],
+    ["notes", "Notes", "Notes erased"],
+  ])("opens the %s tab from the address, with nothing to add to it", async (tabId, label, title) => {
+    mockLoad(erasedDetail());
+    renderPageAt(`?tab=${tabId}`);
+    await screen.findByRole("heading", { name: /Erased attendee/ });
+
+    expect(screen.getByRole("tab", { name: label }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByLabelText("New internal note")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
   });
 
   it("shows what the entry keeps: the check-in time to the hour and the ticket delivery", async () => {
@@ -683,7 +733,7 @@ describe("AttendeeDetailPage: the page of an erased attendee", () => {
     const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
     expect(within(row).getByText(expected)).toBeTruthy();
     expect(within(row).queryByRole("button", { name: "Try again" })).toBeNull();
-    expect(screen.getByText("No longer work")).toBeTruthy();
+    expect(screen.getByText("No longer works")).toBeTruthy();
   });
 
   it("offers Try again for a pass that is still to be deleted, and repeats the erasure from the dialog", async () => {
