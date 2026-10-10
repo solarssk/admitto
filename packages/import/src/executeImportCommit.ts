@@ -52,8 +52,8 @@ export type ExecuteImportCommitResult = {
 };
 
 /**
- * The job of this import was closed while the import ran: an erasure or a removal in the event stopped it, or it
- * was reclaimed as stale. Thrown inside the import's transaction, so none of its people stay.
+ * The job of this import was closed before it could start: an erasure or a removal in the event stopped it, or it
+ * was reclaimed as stale. Thrown first in the import's transaction, so nothing of the import is written.
  */
 export class ImportStoppedError extends Error {
   readonly code = "import_stopped" as const;
@@ -116,6 +116,16 @@ export async function executeImportCommit(
 
   const summary = await db.$transaction(
     async (tx) => {
+      if (params.adminJobId) {
+        // First, before any other lock: the row of the job is held until the import has committed, so an erasure or
+        // a removal in the event (which locks the open jobs before it locks an attendee, see lockOpenAttendeeJobs)
+        // either waits for this import to finish or has already closed the job, and then nothing of this import
+        // is written. Whichever came first, no person is created or changed behind an erasure's back.
+        const [job] = await tx.$queryRaw<{ status: string }[]>`
+          SELECT "status" FROM "AdminJob" WHERE "id" = ${params.adminJobId} FOR UPDATE
+        `;
+        if (job?.status !== "running") throw new ImportStoppedError();
+      }
       if (ticketTypes) {
         await acquireEventTicketTypesLock(tx, params.eventId);
       }
@@ -192,7 +202,7 @@ export async function executeImportCommit(
 
       if (params.adminJobId) {
         const invalidCombined = [...parsed.invalidRows, ...lockInvalidatedRows];
-        const marked = await tx.adminJob.updateMany({
+        await tx.adminJob.updateMany({
           where: { id: params.adminJobId, status: "running" },
           data: {
             status: "succeeded",
@@ -219,10 +229,6 @@ export async function executeImportCommit(
             error: null,
           },
         });
-        // One statement, so the check and the write cannot part. A job that is not running any more was closed
-        // meanwhile (an erasure or a removal stopped it): the update waited for that transaction, found the job
-        // closed and changed nothing, and the people this import created must not stay. The error rolls it back.
-        if (marked.count === 0) throw new ImportStoppedError();
       }
 
       return result;

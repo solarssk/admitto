@@ -1459,8 +1459,8 @@ describe("export files of the event, after an erasure or a removal", () => {
 
     const drained = drainImportJobs(prisma, storage as never, { limit: 50 });
     try {
-      // The import has created its people and reaches the update that marks its job done, which waits.
-      await waitUntilAStatementWaitsForALock();
+      // The import's transaction starts by taking the row of its job, which the erasure holds: it waits there.
+      await waitUntilAStatementWaitsForALock("SELECT%AdminJob%FOR UPDATE");
     } finally {
       await held?.commit();
     }

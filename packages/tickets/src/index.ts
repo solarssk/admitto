@@ -27,6 +27,7 @@ export {
   IMPORT_STOPPED_BY_ERASURE_ERROR,
   createUnderAttendeeJobQueueLock,
   lockAttendeeJobQueue,
+  lockOpenAttendeeJobs,
   stopOpenAttendeeJobs,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";

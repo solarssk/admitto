@@ -43,6 +43,27 @@ export async function lockAttendeeJobQueue(
 }
 
 /**
+ * Locks the exports and the imports of the event that have not finished (their rows, `FOR UPDATE`, in id order),
+ * after the queue lock. An erasure or a removal does this as the first thing it does, before it locks an attendee:
+ * a job that is running holds its row for the whole of its transaction (an import takes it first, see
+ * executeImportCommit), so the erasure waits for it to finish, and a job that has not started can neither be
+ * claimed nor finished while the erasure works. No import writes a person while an erasure of the same event
+ * runs, so nothing can be created, from an address the person has now or had before, behind its back.
+ *
+ * The order of locks is the same everywhere (the queue, the job rows, then the attendees), so none of these waits
+ * can end in a cycle: whoever holds a job row waits for nothing the other holds.
+ */
+export async function lockOpenAttendeeJobs(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+  await lockAttendeeJobQueue(tx, eventId, "exclusive");
+  await tx.$queryRaw`
+    SELECT "id" FROM "AdminJob"
+    WHERE "event_id" = ${eventId} AND "type" IN (${Prisma.join(ATTENDEE_JOB_TYPES)}) AND "status" IN (${Prisma.join(OPEN_JOB_STATUSES)})
+    ORDER BY "id"
+    FOR UPDATE
+  `;
+}
+
+/**
  * Stops the exports and the imports of an event that have not finished, inside the transaction of an
  * erasure or a removal. Both read the list of people, or write people into it, from a state that the
  * erasure is about to change, and neither could undo that afterwards:
@@ -58,18 +79,19 @@ export async function lockAttendeeJobQueue(
  * transaction is open, and a read does not see what an open transaction has changed.
  *
  * Closing the jobs in the same transaction as the erasure settles it. The worker claims a job only while it
- * is `pending`, an export records its file only while it is `running`, and an import commits its people only
- * together with the update that marks it `succeeded`, which finds nothing to update on a closed job and so
- * rolls the whole import back. Each is one conditional update, and an update that has to wait for the row
- * this transaction holds checks the row again once this transaction commits and finds it closed. A job that
+ * is `pending`, an export records its file only while it is `running`, and an import takes the row of its job
+ * first thing in its transaction and writes nothing if the job is not running. Each is one conditional update
+ * or one locked read, and a statement that has to wait for the row this transaction holds checks the row again
+ * once this transaction commits and finds it closed. A job that
  * finished before has what it wrote already committed: an export has a key that the purge after the commit
  * finds, an import has its result, which the erasure blanks afterwards. The staged file of a stopped import
  * is deleted by the same purge. The price: an export or an import that had not finished when someone was
  * erased or removed fails, and has to be started again.
  *
- * The queue lock is held before the jobs are looked for (eraseAttendees and removeAttendees take it as their first
- * statement; it is taken again here so that this function is right on its own), so a job that is being created
- * waits and is seen, and a job that is created later waits for this transaction and starts after it. That job is a
+ * The queue lock and the rows of the jobs are held before anything else is done (eraseAttendees and removeAttendees
+ * take them as their first statement, see lockOpenAttendeeJobs; they are taken again here so that this function is
+ * right on its own), so a job that is being created waits and is seen, and a job that is created later waits for this
+ * transaction and starts after it. That job is a
  * new one: an export reads the list as it is then, and an import adds back whoever its file lists, because nothing
  * that identifies an erased person is kept.
  *
@@ -79,7 +101,7 @@ export async function lockAttendeeJobQueue(
  * The search text of a stopped export is scrubbed like that of any other failed export.
  */
 export async function stopOpenAttendeeJobs(tx: Prisma.TransactionClient, eventId: string): Promise<number> {
-  await lockAttendeeJobQueue(tx, eventId, "exclusive");
+  await lockOpenAttendeeJobs(tx, eventId);
   const open = await tx.adminJob.findMany({
     where: { type: { in: ATTENDEE_JOB_TYPES }, event_id: eventId, status: { in: OPEN_JOB_STATUSES } },
     select: { id: true, type: true, result_json: true },

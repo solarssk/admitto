@@ -1,7 +1,7 @@
 import { Prisma } from "@admitto/db/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
-import { lockAttendeeJobQueue } from "./stop-open-jobs.js";
+import { lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 /** Written to `Attendee.name` of an erased attendee. Mirrored by the CHECK constraint in migration
  * 20261008120000_add_attendee_erased_at - change both together. */
@@ -113,12 +113,13 @@ export async function eraseAttendees(
   };
   if (requestedIds.length === 0) return empty;
 
-  // The first thing this transaction does, before it locks a single row: the erasures and the removals of one
-  // event run one after the other, and the exports and imports that read or write the list are created either
-  // before this one looks for them (stopOpenAttendeeJobs) or after it has committed. Taken later, this
-  // transaction could already hold rows that another erasure needs (a delivery that staff addressed to someone
-  // else's address) while it waits for the lock, and the two would deadlock.
-  await lockAttendeeJobQueue(tx, eventId, "exclusive");
+  // The first thing this transaction does, before it locks an attendee: the erasures and the removals of one
+  // event run one after the other, the exports and imports that read or write the list are created either before
+  // this one looks for them (stopOpenAttendeeJobs) or after it has committed, and one that is running is waited
+  // for, so that none can write a person while this works (an import that creates somebody from an address the
+  // person had before would otherwise finish unseen). Taken later, this transaction could already hold rows that
+  // another erasure or an import needs while it waits for these locks, and they would deadlock.
+  await lockOpenAttendeeJobs(tx, eventId);
 
   const event = await tx.event.findUnique({
     where: { id: eventId },

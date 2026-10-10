@@ -162,63 +162,28 @@ describe("stopOpenAttendeeJobs", () => {
     ]);
   });
 
-  /**
-   * A transaction whose first search is followed by `between`, run on another connection and committed before
-   * the update: the worker changing the job after the erasure looked and before it wrote.
-   */
-  const stopWithWorkerBetween = (between: () => Promise<unknown>) =>
-    prisma.$transaction((tx) => {
-      const racing = {
-        $executeRaw: (...args: Parameters<typeof tx.$executeRaw>) => tx.$executeRaw(...args),
-        adminJob: {
-          findMany: async (args: Prisma.AdminJobFindManyArgs) => {
-            const rows = await tx.adminJob.findMany(args);
-            await between();
-            return rows;
-          },
-          updateMany: (args: Prisma.AdminJobUpdateManyArgs) => tx.adminJob.updateMany(args),
-        },
-      } as unknown as Prisma.TransactionClient;
-      return stopOpenAttendeeJobs(racing, EVENT_ID);
-    });
+  it.each([
+    ["export", "running", "succeeded"],
+    ["import_commit", "running", "succeeded"],
+    ["export", "pending", "running"],
+    ["import_commit", "pending", "running"],
+  ])(
+    "makes the worker wait for the erasure when it moves an %s from %s to %s, and then finds the job closed",
+    async (type, from, to) => {
+      const open = await job(EVENT_ID, type, from);
+      const erasing = holdTransaction((tx) => stopOpenAttendeeJobs(tx, EVENT_ID));
+      await erasing.started;
 
-  it.each(["export", "import_commit"])(
-    "leaves an %s alone that finished between the search and the update, with what it recorded",
-    async (type) => {
-      const racing = await job(EVENT_ID, type, "running");
+      // What the worker does to claim a job, or to record what it did: one conditional update of the row. A Prisma
+      // query only starts when something waits for it, so `.then` starts it now.
+      const moving = prisma.adminJob.updateMany({ where: { id: open.id, status: from }, data: { status: to } }).then((result) => result);
+      await waitUntilWaitingFor("UPDATE%AdminJob");
+      await erasing.commit();
 
-      const stopped = await stopWithWorkerBetween(() =>
-        prisma.adminJob.update({
-          where: { id: racing.id },
-          data: { status: "succeeded", storage_key: "events/e/file.csv", finished_at: new Date() },
-        }),
-      );
-
-      expect(stopped).toBe(0);
-      expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: racing.id } })).toMatchObject({
-        status: "succeeded",
-        storage_key: "events/e/file.csv",
-        error: null,
-      });
+      expect((await moving).count).toBe(0);
+      expect(await statusOf(open.id)).toBe("failed");
     },
   );
-
-  it.each([
-    ["export", EXPORT_STOPPED_BY_ERASURE_ERROR],
-    ["import_commit", IMPORT_STOPPED_BY_ERASURE_ERROR],
-  ])("closes an %s that the worker claimed between the search and the update", async (type, reason) => {
-    const racing = await job(EVENT_ID, type, "pending");
-
-    const stopped = await stopWithWorkerBetween(() =>
-      prisma.adminJob.update({ where: { id: racing.id }, data: { status: "running", started_at: new Date() } }),
-    );
-
-    expect(stopped).toBe(1);
-    expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: racing.id } })).toMatchObject({
-      status: "failed",
-      error: reason,
-    });
-  });
 
   it("is what an erasure and a removal do: they stop the open jobs, and a call that changes nobody does not", async () => {
     const attendee = await prisma.attendee.create({
@@ -292,6 +257,23 @@ describe("an erasure or a removal", () => {
       expect(await done(second.id)).toBe(true);
     },
   );
+
+  it("waits for an import whose transaction holds its job before it locks a single attendee, then stops the job", async () => {
+    const person = await attendeeIn(EVENT_ID);
+    const running = await job(EVENT_ID, "import_commit", "running");
+    // What the import does first: it takes the row of its job and keeps it until it has committed.
+    const importing = holdTransaction((tx) => tx.$queryRaw`SELECT "status" FROM "AdminJob" WHERE "id" = ${running.id} FOR UPDATE`);
+    await importing.started;
+
+    const erasing = prisma.$transaction((tx) => erase(tx, EVENT_ID, person.id));
+    await waitUntilWaitingFor("SELECT%AdminJob%FOR UPDATE");
+    expect(await rowIsFree(person.id)).toBe(true);
+    await importing.commit();
+    await erasing;
+
+    expect(await isErased(person.id)).toBe(true);
+    expect(await statusOf(running.id)).toBe("failed");
+  });
 
   it("does not wait for an erasure of another event", async () => {
     const mine = await attendeeIn(EVENT_ID);
