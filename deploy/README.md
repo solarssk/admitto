@@ -470,7 +470,7 @@ docker compose run --rm app node apps/cli/dist/index.js storage gc --operator-em
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
 
-Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification cleanup in one audited command for manual/on-demand use.
+Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification + export/import job file cleanup in one audited command for manual/on-demand use.
 
 ## Nginx Proxy Manager (deep notes)
 

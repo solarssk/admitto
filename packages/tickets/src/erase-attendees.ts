@@ -1,6 +1,7 @@
 import { Prisma } from "@admitto/db/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
+import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 /** Written to `Attendee.name` of an erased attendee. Mirrored by the CHECK constraint in migration
  * 20261008120000_add_attendee_erased_at - change both together. */
@@ -57,6 +58,11 @@ export type EraseAttendeesResult = {
    * memory by the caller within the same request, never logged, audited or stored.
    */
   previousEmails: string[];
+  /**
+   * The ids of the exports and imports of the event that held a file when this transaction ended its work, under
+   * the queue lock (see attendeeJobIdsWithFiles): the files the caller deletes after the commit, and only those.
+   */
+  jobIdsWithFiles: string[];
 };
 
 /**
@@ -109,8 +115,17 @@ export async function eraseAttendees(
     counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0 },
     walletTargets: [],
     previousEmails: [],
+    jobIdsWithFiles: [],
   };
   if (requestedIds.length === 0) return empty;
+
+  // The first thing this transaction does, before it locks an attendee: the erasures and the removals of one
+  // event run one after the other, the exports and imports that read or write the list are created either before
+  // this one looks for them (stopOpenAttendeeJobs) or after it has committed, and one that is running is waited
+  // for, so that none can write a person while this works (an import that creates somebody from an address the
+  // person had before would otherwise finish unseen). Taken later, this transaction could already hold rows that
+  // another erasure or an import needs while it waits for these locks, and they would deadlock.
+  await lockOpenAttendeeJobs(tx, eventId);
 
   const event = await tx.event.findUnique({
     where: { id: eventId },
@@ -242,5 +257,6 @@ export async function eraseAttendees(
         : [],
     ),
     previousEmails,
+    jobIdsWithFiles: await attendeeJobIdsWithFiles(tx, eventId),
   };
 }

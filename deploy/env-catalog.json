@@ -991,6 +991,24 @@
       "secret": false,
       "ui": "none",
       "summary": "Days to keep in-app notification inbox rows a user never manually cleared (default 30)."
+    },
+    {
+      "name": "EXPORT_FILE_RETENTION_DAYS",
+      "group": "retention",
+      "boot": "optional",
+      "consumers": ["worker", "cli"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Days to keep the file of a finished attendee export in storage before the retention run deletes it (default 7). An erasure or a removal deletes the event's export files at once, whatever their age."
+    },
+    {
+      "name": "IMPORT_STAGED_FILE_RETENTION_DAYS",
+      "group": "retention",
+      "boot": "optional",
+      "consumers": ["worker", "cli"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Days to keep the staged CSV of a finished import job (one that failed, or whose cleanup failed) before the retention run deletes it (default 7)."
     }
   ]
 }

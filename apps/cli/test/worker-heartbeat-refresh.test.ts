@@ -44,6 +44,7 @@ vi.mock("@admitto/notifications", () => ({
 
 vi.mock("@admitto/import", () => ({ drainImportJobs }));
 vi.mock("@admitto/storage", () => ({ getDefaultStorage: vi.fn(() => ({})) }));
+vi.mock("../src/lib/retention-job-files.js", async () => (await import("./retention-job-files-mock.js")).mock);
 vi.mock("../src/lib/sse-publish.js", () => ({
   closeSsePublishClient: vi.fn(),
   publishActivityChanged: vi.fn(async () => undefined),

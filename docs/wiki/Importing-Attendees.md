@@ -52,6 +52,7 @@ A committed import changes the attendee list and records an import-history entry
 - **Unknown ticket type:** use a configured label or key and validate again.
 - **Import history could not be loaded:** the card says so with a **Retry** that stays busy until the answer is in. An import that already ran is not affected; **Retry** reads the list again.
 - **The event's custom columns could not be loaded:** the **Required CSV columns** list says so with a **Retry**. Select it before preparing the file, because without it the list is missing the event's own columns.
+- **Import stopped, someone in this event was erased or removed before it finished:** an erasure or a removal stops every import of the event that is still waiting or running, so that none of them can add the person back, whether or not its file lists them. Nobody from that file was added. If the file lists the person, remove them from it; then validate it again and run the import again.
 - **Event is at capacity:** an Organisation Admin can open **Event settings** and review capacity. A Superadmin-only override is offered only when an authorised exception is required.
 
 ## Related pages

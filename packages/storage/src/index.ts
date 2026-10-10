@@ -18,3 +18,14 @@ export {
   type SweepOrphanedUploadsOptions,
   type SweepOrphanedUploadsResult,
 } from "./gc/sweepOrphanedUploads.js";
+export {
+  DEFAULT_EXPORT_FILE_RETENTION_DAYS,
+  DEFAULT_STAGED_IMPORT_RETENTION_DAYS,
+  deleteStoredFiles,
+  purgeEventJobFiles,
+  purgeJobFiles,
+  resolveExportFileRetentionDays,
+  resolveStagedImportRetentionDays,
+  type PurgeJobFilesOptions,
+  type PurgeJobFilesResult,
+} from "./gc/purgeJobFiles.js";

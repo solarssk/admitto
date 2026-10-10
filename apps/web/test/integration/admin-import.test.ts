@@ -7,6 +7,7 @@ import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { drainImportJobs } from "@admitto/import";
+import { lockAttendeeJobQueue } from "@admitto/tickets";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
@@ -725,6 +726,130 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       });
     }
   }
+
+  it("waits for an erasure or a removal that is open in the event, and queues its job after it", async () => {
+    // The queue lock of the event is held the way an erasure holds it (stopOpenAttendeeJobs), until released.
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked!: () => void;
+    const hasLocked = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const erasure = prisma.$transaction(
+      async (tx) => {
+        await lockAttendeeJobQueue(tx, EVENT_A, "exclusive");
+        locked();
+        await released;
+      },
+      { timeout: 30_000 },
+    );
+    await hasLocked;
+    const jobsBefore = await prisma.adminJob.count({ where: { event_id: EVENT_A, type: "import_commit" } });
+
+    const posted = postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+    try {
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%pg_advisory_xact_lock_shared%'
+          `;
+          expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+      expect(await prisma.adminJob.count({ where: { event_id: EVENT_A, type: "import_commit" } })).toBe(jobsBefore);
+    } finally {
+      release();
+      await erasure;
+    }
+
+    const res = await posted;
+    expect(res.status).toBe(202);
+    const { jobId } = (await res.json()) as { jobId: string };
+    expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({ type: "import_commit", status: "pending" });
+    await drainImportJobs(prisma, getDefaultStorage(), { limit: 50 });
+  });
+
+  describe("when the job cannot be created after the CSV was staged", () => {
+    const stagedFilesOf = async () => {
+      const { readdir } = await import("node:fs/promises");
+      const walk = async (dir: string): Promise<string[]> => {
+        const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+        const nested = await Promise.all(
+          entries.map((entry) => (entry.isDirectory() ? walk(join(dir, entry.name)) : Promise.resolve([join(dir, entry.name)]))),
+        );
+        return nested.flat();
+      };
+      return walk(uploadDir);
+    };
+
+    /**
+     * Makes the creation of the job fail once, inside the transaction that creates it (under the queue lock of the
+     * event), and leaves every other transaction alone.
+     */
+    const failJobCreationOnce = () => {
+      const realTransaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+      let failed = false;
+      vi.spyOn(prisma, "$transaction").mockImplementation(((work: unknown, ...rest: unknown[]) => {
+        if (typeof work !== "function") return realTransaction(work, ...rest);
+        return realTransaction(
+          (tx: object) =>
+            (work as (client: object) => Promise<unknown>)(
+              new Proxy(tx, {
+                get: (target, prop) => {
+                  if (prop === "adminJob" && !failed) {
+                    return {
+                      create: async () => {
+                        failed = true;
+                        throw new Error("database is down");
+                      },
+                    };
+                  }
+                  const value = Reflect.get(target, prop);
+                  return typeof value === "function" ? value.bind(target) : value;
+                },
+              }),
+            ),
+          ...rest,
+        );
+      }) as never);
+    };
+
+    it("deletes the staged file again and answers with a server error", async () => {
+      const before = (await stagedFilesOf()).length;
+      failJobCreationOnce();
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+      errSpy.mockRestore();
+      vi.restoreAllMocks();
+
+      expect(res.status).toBe(500);
+      expect(await stagedFilesOf()).toHaveLength(before);
+    });
+
+    it("reports the key of the staged file on stdout when it cannot be deleted either, since nothing else knows of it", async () => {
+      failJobCreationOnce();
+      const storage = getDefaultStorage();
+      vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("disk is read only"));
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+      const lines = errSpy.mock.calls.map(([text]) => String(text));
+      errSpy.mockRestore();
+      vi.restoreAllMocks();
+
+      expect(res.status).toBe(500);
+      const reported = lines.find((line) => line.includes("Import staged file left in storage"));
+      expect(reported).toBeDefined();
+      const { key } = JSON.parse(reported as string) as { key: string };
+      expect(key).toMatch(/\.csv$/);
+      expect(await stagedFilesOf()).toContainEqual(expect.stringContaining(key));
+    });
+  });
 
   it("creates attendees and writes bulk audit without PII", async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_A } });

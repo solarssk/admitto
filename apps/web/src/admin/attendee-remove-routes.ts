@@ -18,6 +18,7 @@ import {
 } from "./attendees-api-routes.js";
 import { BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 import { publishActivityChanged } from "./checkin-sse-publish.js";
+import { purgeEventJobFilesBestEffort } from "./purge-export-files.js";
 
 /** A removal deletes a handful of tables per attendee; a large selection needs more than Prisma's
  * default 5 s transaction. */
@@ -98,7 +99,11 @@ async function runRemoval(
     { timeout: REMOVE_TX_TIMEOUT_MS },
   );
 
-  if (result.removedIds.length > 0) publishActivityChanged(eventId);
+  if (result.removedIds.length > 0) {
+    // The files that exports and finished imports wrote before the removal still hold the person: they go too.
+    await purgeEventJobFilesBestEffort(db, eventId, result.jobIdsWithFiles);
+    publishActivityChanged(eventId);
+  }
 
   // The removal is done, so nothing below may turn the answer into an error: a failure here only
   // leaves passes at the provider, and is logged like any other failed delete.

@@ -64,8 +64,8 @@ function mentionsAny(value: unknown, emails: readonly string[]): boolean {
  *
  * The jobs are locked, in id order, before they are read: two erasures of different people listed
  * in the same import would otherwise each rewrite the job from a stale copy and bring the other's
- * address back. A job that is still running has no result yet; the import that wrote it skipped
- * the attendee before the erasure and is not covered.
+ * address back. A job that is still running has no result yet, and cannot write one after the erasure: the
+ * erasure that calls this has stopped it (stopOpenAttendeeJobs), or waited for it to finish and so sees its result.
  *
  * Returns the number of jobs rewritten.
  */
