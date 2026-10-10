@@ -119,7 +119,13 @@ can, run the emergency CLI from the same image the app runs from. It does what t
 the attendees in place, blanks their addresses in saved import results, writes the same audit entries (marked
 `source: "cli"`), deletes the files the event's exports and imports left in storage, and deletes each attendee's wallet pass at the provider.
 
-1. Find the attendee ids: `docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "<name or email>"`.
+1. Find the ids: `docker compose run --rm app node apps/cli/dist/index.js attendees find --query "<name or email>"`.
+   It only reads, and it works for an archived event too (`checkin lookup` does not: check-in is locked there). It lists up to
+   20 people whose name or address contains the text, in every event, with the event's id and title, the attendee's id and
+   address, so that you find the event id too and can tell two people with the same name apart; add `--event <eventId>` to
+   look in one event only. People who are already erased are not listed. If more than 20 match, it says so: narrow the
+   query, for example to the whole address. Its output names people, so keep it out of tickets and chat (the erase
+   command prints counts and ids only). A person in several events is erased event by event.
 2. Preview: `docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <id>[,<id>...] --operator-email <your superadmin email> --dry-run`
    says how many would be erased, how many are erased already and how many ids match nobody, and changes nothing.
 3. Erase: the same command without `--dry-run`. It asks you to type `yes` first (`--yes` skips the question, for a

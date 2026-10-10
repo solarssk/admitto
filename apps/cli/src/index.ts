@@ -7,6 +7,7 @@ import { printUsage } from "./lib/usage.js";
 import { runCheckinAdmit, runCheckinLookup } from "./commands/checkin.js";
 import { runAttendeesExport } from "./commands/attendees.js";
 import { runAttendeesErase } from "./commands/attendees-erase.js";
+import { runAttendeesFind } from "./commands/attendees-find.js";
 import { runMailRetryFailed } from "./commands/mail.js";
 import {
   runAuthBootstrapSuperadmin,
@@ -48,6 +49,7 @@ function resolveCommandHandler(
     "checkin:admit": () => runCheckinAdmit(prisma),
     "attendees:export": () => runAttendeesExport(prisma),
     "attendees:erase": () => runAttendeesErase(prisma),
+    "attendees:find": () => runAttendeesFind(prisma),
     "mail:retry-failed": () => runMailRetryFailed(prisma),
     "auth:bootstrap-superadmin": () => runAuthBootstrapSuperadmin(prisma),
     "auth:reset-mfa": () => runAuthResetMfa(prisma),
