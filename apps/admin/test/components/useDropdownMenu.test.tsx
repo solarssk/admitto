@@ -434,7 +434,7 @@ describe("useDropdownMenu", () => {
     vi.unstubAllGlobals();
   });
 
-  it("measures the panel at the viewport's left edge, so a trigger near the right edge does not squeeze it", () => {
+  it("measures the panel at the padded left edge, so a trigger near the right edge does not squeeze it", () => {
     // A fixed panel without `left` is as wide as the room between its static position (next to
     // the trigger) and the viewport's right edge, so a trigger flush against that edge measured it
     // too narrow and placed it past the edge until the next measurement.
@@ -444,7 +444,7 @@ describe("useDropdownMenu", () => {
       this: HTMLElement,
     ) {
       if (this.getAttribute("role") === "menu") {
-        const measuredAtLeftEdge = this.style.left === "0px";
+        const measuredAtLeftEdge = this.style.left === "8px";
         return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: measuredAtLeftEdge ? 380 : 260, height: 100, toJSON() {} };
       }
       return { left: 1056, right: 1084, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
@@ -454,6 +454,32 @@ describe("useDropdownMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
 
     expect(screen.getByRole("menu").style.left).toBe("704px"); // 1084 (trigger right edge) - 380 (natural width)
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("caps the panel to the padded viewport on a viewport narrower than its natural width", () => {
+    // The cap is applied before measuring and kept on the panel, so a long-hint menu on a phone
+    // wraps inside the margins from the first measurement instead of overflowing the right edge.
+    vi.stubGlobal("innerWidth", 375);
+    vi.stubGlobal("innerHeight", 600);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.getAttribute("role") === "menu") {
+        const cap = Number.parseFloat(this.style.maxWidth);
+        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: Math.min(500, cap), height: 100, toJSON() {} };
+      }
+      return { left: 330, right: 358, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
+    });
+
+    render(<EndAlignedMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu.style.maxWidth).toBe("359px"); // 375 - 2 * 8
+    expect(menu.style.left).toBe("8px"); // 358 - 359 clamped to the left margin
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
