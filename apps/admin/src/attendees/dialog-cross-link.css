@@ -1,0 +1,14 @@
+.dialog-cross-link {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+/* The link is part of the sentence, so it takes the sentence's size, and the weight a link has everywhere else.
+   Two classes, because `.link-btn` (staff.css) sets its own size and which stylesheet comes later is not ours to
+   rely on. */
+.dialog-cross-link .dialog-cross-link__button {
+  font-size: inherit;
+  font-weight: 500;
+}

@@ -42,6 +42,19 @@ afterAll(async () => {
 });
 
 describe("backfillAgencyPublicRefs", () => {
+  it("does not count a row whose public_ref was set in the meantime", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const prismaRaced = {
+      attendee: {
+        findMany: vi.fn().mockResolvedValue([{ id: "agency-raced" }]),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+
+    await expect(backfillAgencyPublicRefs(prismaRaced)).resolves.toEqual({ updated: 0 });
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+
   it("assigns unique public_ref to agency rows only", async () => {
     const agency = await prisma.attendee.create({
       data: {

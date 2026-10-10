@@ -9,6 +9,7 @@ import { buildExportPdfBuffer } from "./attendees-export-pdf.js";
 import { buildExportXlsxBuffer } from "./attendees-export-xlsx.js";
 import type { ExportAttendeeSqlRow } from "./attendees-list-filters.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
+import { keepLiveRows } from "./lock-check.js";
 import { loadEventTicketTypes } from "./ticket-types.js";
 
 export type AttendeesExportFormat = "csv" | "xlsx" | "pdf";
@@ -37,7 +38,9 @@ export async function buildAttendeesExportArtifact(
     loadEventTicketTypes(db, eventId),
   ]);
   const exportColumns = buildExportColumns(attributeFields);
-  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone, ticketTypes);
+  // The last check before the file is built: the rows were read with plain queries, which do not
+  // wait for an erasure that is still open, so an attendee being erased now would still be in them.
+  const exportRows = buildSanitizedExportRows(await keepLiveRows(db, rows), attributeFields, timeZone, ticketTypes);
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
 

@@ -2,22 +2,30 @@ import type { Context, Next } from "hono";
 import { logRateLimitExceeded } from "@admitto/auth";
 import { INLINE_RATE_LIMITS } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
-import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { rateLimitIpKey, resolveClientIp } from "../rate-limit/client-ip.js";
 
 function mfaTotpSessionKey(sessionId: string, action?: string): string {
   return action ? `mfa:totp:session:${action}:${sessionId}` : `mfa:totp:session:${sessionId}`;
 }
 
 function mfaTotpIpKey(ip: string, action?: string): string {
-  return action ? `mfa:totp:ip:${action}:${ip}` : `mfa:totp:ip:${ip}`;
+  return action ? `mfa:totp:ip:${action}:${rateLimitIpKey(ip)}` : `mfa:totp:ip:${rateLimitIpKey(ip)}`;
 }
 
 function mfaRecoverySessionKey(sessionId: string, action?: string): string {
   return action ? `mfa:recovery:session:${action}:${sessionId}` : `mfa:recovery:session:${sessionId}`;
 }
 
+function mfaTotpUserKey(userId: string): string {
+  return `mfa:totp:user:${userId}`;
+}
+
+function mfaRecoveryUserKey(userId: string): string {
+  return `mfa:recovery:user:${userId}`;
+}
+
 function mfaRecoveryIpKey(ip: string, action?: string): string {
-  return action ? `mfa:recovery:ip:${action}:${ip}` : `mfa:recovery:ip:${ip}`;
+  return action ? `mfa:recovery:ip:${action}:${rateLimitIpKey(ip)}` : `mfa:recovery:ip:${rateLimitIpKey(ip)}`;
 }
 
 /** True when the submitted value looks like a 6-digit TOTP (not a recovery code). */
@@ -33,6 +41,11 @@ export function isTotpMfaAttempt(code: string): boolean {
  * "mfa-reset") so unrelated self-service actions sharing a session don't throttle each
  * other. Omit it only for the login-time step-up flow, which keeps its original,
  * un-namespaced key.
+ *
+ * `userId` adds a per-account bucket on top of the session and IP ones. Pass it for the
+ * login-time flow, where a password holder can mint a fresh partial session (a fresh session
+ * bucket) for every few guesses and rotate IPs; one counter per account caps the total guesses
+ * regardless of how many sessions or addresses are used.
  */
 export async function checkMfaVerifyRateLimit(
   store: RateLimitStore,
@@ -40,33 +53,30 @@ export async function checkMfaVerifyRateLimit(
   ip: string,
   code: string,
   action?: string,
+  userId?: string,
 ): Promise<boolean> {
   const totpAttempt = isTotpMfaAttempt(code);
   const { windowMs, max } =
     INLINE_RATE_LIMITS[totpAttempt ? "mfa:verify-totp" : "mfa:verify-recovery"];
+  const kind = totpAttempt ? "totp" : "recovery";
 
-  const sessionKey = totpAttempt
-    ? mfaTotpSessionKey(sessionId, action)
-    : mfaRecoverySessionKey(sessionId, action);
-  const ipKey = totpAttempt ? mfaTotpIpKey(ip, action) : mfaRecoveryIpKey(ip, action);
-
-  const sessionResult = await store.hit(sessionKey, windowMs, max);
-  if (!sessionResult.allowed) {
-    logRateLimitExceeded({
-      scope: "mfa_verify",
-      ip,
-      keyHint: totpAttempt ? "session_totp" : "session_recovery",
-    });
-    return false;
+  const buckets = [
+    {
+      hint: "session",
+      key: totpAttempt ? mfaTotpSessionKey(sessionId, action) : mfaRecoverySessionKey(sessionId, action),
+    },
+    { hint: "ip", key: totpAttempt ? mfaTotpIpKey(ip, action) : mfaRecoveryIpKey(ip, action) },
+  ];
+  if (userId) {
+    buckets.push({ hint: "user", key: totpAttempt ? mfaTotpUserKey(userId) : mfaRecoveryUserKey(userId) });
   }
-  const ipResult = await store.hit(ipKey, windowMs, max);
-  if (!ipResult.allowed) {
-    logRateLimitExceeded({
-      scope: "mfa_verify",
-      ip,
-      keyHint: totpAttempt ? "ip_totp" : "ip_recovery",
-    });
-    return false;
+
+  for (const { hint, key } of buckets) {
+    const result = await store.hit(key, windowMs, max);
+    if (!result.allowed) {
+      logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: `${hint}_${kind}` });
+      return false;
+    }
   }
   return true;
 }

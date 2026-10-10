@@ -4,7 +4,7 @@ import { BlockList, isIP, isIPv6 } from "node:net";
 
 /**
  * Hostname/IP-level SSRF blocklist: private (RFC1918), loopback, link-local (incl. cloud
- * metadata 169.254.169.254), and unspecified addresses, for both IPv4 and IPv6 (including
+ * metadata 169.254.169.254), carrier-grade NAT, multicast/reserved and unspecified addresses, for both IPv4 and IPv6 (including
  * IPv4-mapped IPv6). Shared by any outbound server-side fetch whose destination is
  * operator-controlled — OIDC/Cloudflare Access discovery (@admitto/auth) and mail transport
  * config (@admitto/mailer).
@@ -13,6 +13,31 @@ import { BlockList, isIP, isIPv6 } from "node:net";
 const privateIpv6 = new BlockList();
 privateIpv6.addSubnet("fe80::", 10, "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6");
+privateIpv6.addSubnet("ff00::", 8, "ipv6"); // NOSONAR - multicast CIDR in a blocklist, not a destination
+privateIpv6.addSubnet("64:ff9b:1::", 48, "ipv6"); // NOSONAR - RFC 8215 local-use NAT64 CIDR in a blocklist, not a destination
+
+/**
+ * Non-public IPv4 space beyond RFC1918/loopback/link-local: "this network" (0/8), carrier-grade
+ * NAT (100.64/10, which also holds Alibaba Cloud's metadata endpoint 100.100.100.200 and
+ * Tailscale's tailnet addresses), IETF protocol assignments (192.0.0/24), benchmarking
+ * (198.18/15), multicast (224/4) and reserved/broadcast (240/4).
+ */
+const privateIpv4 = new BlockList();
+for (const [octets, prefix] of [
+  [[0, 0, 0, 0], 8],
+  [[10, 0, 0, 0], 8],
+  [[100, 64, 0, 0], 10],
+  [[127, 0, 0, 0], 8],
+  [[169, 254, 0, 0], 16],
+  [[172, 16, 0, 0], 12],
+  [[192, 0, 0, 0], 24],
+  [[192, 168, 0, 0], 16],
+  [[198, 18, 0, 0], 15],
+  [[224, 0, 0, 0], 4],
+  [[240, 0, 0, 0], 4],
+] as const) {
+  privateIpv4.addSubnet(octets.join("."), prefix, "ipv4");
+}
 
 /**
  * Strip bracket wrapping from IPv6 literals in URL.hostname, and any IPv6 zone index
@@ -103,6 +128,29 @@ function expandIpv6Groups(host: string): number[] {
   return [...head, ...Array.from({ length: omittedGroups }, () => 0), ...tail];
 }
 
+/**
+ * IPv4 carried inside an IPv6 literal that a NAT64 gateway, 6to4 relay or legacy IPv4-compatible
+ * stack would deliver to that IPv4 host: 64:ff9b::/96 (RFC 6052), 2002::/16 (6to4, IPv4 in
+ * groups 1-2), ::ffff:0:0:0/96 (RFC 6145 IPv4-translatable) and ::/96 (deprecated IPv4-compatible).
+ */
+function extractEmbeddedIpv4(host: string): string | null {
+  const lower = host.toLowerCase();
+  if (!isIPv6(lower)) return null;
+  const g = expandIpv6Groups(lower);
+  const dotted = (high: number, low: number) =>
+    `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) {
+    return dotted(g[6]!, g[7]!);
+  }
+  if (g[0] === 0x2002) return dotted(g[1]!, g[2]!);
+  // RFC 6145 IPv4-translatable (SIIT): ::ffff:0:a.b.c.d
+  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) {
+    return dotted(g[6]!, g[7]!);
+  }
+  if (g.slice(0, 6).every((x) => x === 0)) return dotted(g[6]!, g[7]!);
+  return null;
+}
+
 /** IPv4-mapped IPv6 (::ffff:127.0.0.1 or ::ffff:7f00:1) — normalize to dotted IPv4 for SSRF checks. */
 function extractIpv4FromMappedIpv6(host: string): string | null {
   const lower = host.toLowerCase();
@@ -117,16 +165,7 @@ function extractIpv4FromMappedIpv6(host: string): string | null {
 }
 
 function isBlockedPrivateIpv4Dotted(host: string): boolean {
-  const ip = parseIpv4(host);
-  if (!ip) return false;
-  const [a, b, c, d] = ip;
-  if (a === 0 && b === 0 && c === 0 && d === 0) return true;
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 127) return true;
-  return false;
+  return parseIpv4(host) !== null && privateIpv4.check(host, "ipv4");
 }
 
 function isBlockedPrivateIpv6(hostname: string): boolean {
@@ -145,6 +184,9 @@ export function isBlockedPrivateOrMetadataHost(hostname: string): boolean {
 
   const mappedIpv4 = extractIpv4FromMappedIpv6(host);
   if (mappedIpv4 && isBlockedPrivateIpv4Dotted(mappedIpv4)) return true;
+
+  const embeddedIpv4 = extractEmbeddedIpv4(host);
+  if (embeddedIpv4 && isBlockedPrivateIpv4Dotted(embeddedIpv4)) return true;
 
   return isBlockedPrivateIpv4Dotted(host);
 }

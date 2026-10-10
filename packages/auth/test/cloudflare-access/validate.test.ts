@@ -4,6 +4,7 @@ import * as jose from "jose";
 import {
   validateAccessJwt,
   CfAccessJwtError,
+  isTransientCfAccessJwtFailure,
   isServiceTokenShape,
   clearCfAccessJwksCacheForTests,
 } from "../../src/cloudflare-access/validate.js";
@@ -123,5 +124,48 @@ describe("validateAccessJwt", () => {
 
   it("detects service token shape", () => {
     expect(isServiceTokenShape({ type: "app", sub: "", common_name: "" })).toBe(true);
+  });
+});
+
+describe("isTransientCfAccessJwtFailure", () => {
+  it("treats a rejected token as a verdict (expired, wrong audience, bad type)", async () => {
+    const expired = await validateAccessJwt(
+      await new jose.SignJWT({ type: "app", email: "a@example.com" })
+        .setProtectedHeader({ alg: "RS256", kid: "cf-test-key" })
+        .setIssuer(teamDomain)
+        .setAudience(audience)
+        .setSubject("sub-1")
+        .setExpirationTime(Math.floor(Date.now() / 1000) - 60)
+        .sign(privateKey),
+      { teamDomain, audience: [audience], jwksUri },
+    ).catch((err: unknown) => err);
+    expect(expired).toBeInstanceOf(CfAccessJwtError);
+    expect(isTransientCfAccessJwtFailure(expired)).toBe(false);
+    expect(isTransientCfAccessJwtFailure(new CfAccessJwtError("type", "invalid_type"))).toBe(false);
+  });
+
+  it("treats a non-200 JWKS answer and a malformed key set as transient, but not a token verdict from jose", () => {
+    const wrap = (cause: Error) => new CfAccessJwtError("m", "invalid_jwt", { cause });
+    expect(
+      isTransientCfAccessJwtFailure(wrap(new jose.errors.JOSEError("Expected 200 OK from the JSON Web Key Set HTTP response"))),
+    ).toBe(true);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWKSInvalid("malformed")))).toBe(true);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWKSNoMatchingKey()))).toBe(false);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWSSignatureVerificationFailed()))).toBe(false);
+    expect(isTransientCfAccessJwtFailure(wrap(new jose.errors.JWTInvalid("bad")))).toBe(false);
+  });
+
+  it("treats a JWKS timeout, a network error and an unrelated error as transient", () => {
+    expect(
+      isTransientCfAccessJwtFailure(
+        new CfAccessJwtError("t", "invalid_jwt", { cause: new jose.errors.JWKSTimeout() }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientCfAccessJwtFailure(
+        new CfAccessJwtError("n", "invalid_jwt", { cause: new TypeError("fetch failed") }),
+      ),
+    ).toBe(true);
+    expect(isTransientCfAccessJwtFailure(new Error("db"))).toBe(true);
   });
 });

@@ -42,15 +42,13 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderCard(fields: EventCustomFieldDto[], loading = false) {
+function renderCard(fields: EventCustomFieldDto[]) {
   const onChanged = vi.fn();
   renderWithToast(
     <EventCustomFieldsCard
       eventId="evt-1"
       event={event}
       fields={fields}
-      loading={loading}
-      showLoading={loading}
       onChanged={onChanged}
     />,
   );
@@ -65,6 +63,20 @@ describe("EventCustomFieldsCard", () => {
       screen.getByText(/Add one to collect extra attendee data, like dietary requirements/),
     ).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("keeps the card's padding for the empty state and lets the table bleed edge to edge", () => {
+    const { container, unmount } = renderWithToast(
+      <EventCustomFieldsCard eventId="evt-1" event={event} fields={[]} onChanged={vi.fn()} />,
+    );
+    expect(container.querySelector(".at-card__body")).not.toBeNull();
+    unmount();
+
+    const withFields = renderWithToast(
+      <EventCustomFieldsCard eventId="evt-1" event={event} fields={[dietaryField]} onChanged={vi.fn()} />,
+    );
+    expect(withFields.container.querySelector(".at-card__body")).toBeNull();
+    expect(withFields.container.querySelector(".at-card > .attendees-table-wrap")).not.toBeNull();
   });
 
   it("lists fields with description and required status", () => {

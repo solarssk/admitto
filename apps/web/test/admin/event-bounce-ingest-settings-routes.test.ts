@@ -51,6 +51,7 @@ vi.mock("@admitto/mail-delivery", async (importOriginal) => {
 
 vi.mock("@admitto/crypto", () => ({
   encryptToString: vi.fn((s: string) => `enc:${s}`),
+  SECRET_CONTEXTS: { imapPassword: "admitto:bounce-imap-password" },
 }));
 
 function mockContext(opts: {
@@ -394,7 +395,7 @@ describe("event bounce ingest settings routes", () => {
       db as never,
     );
     expect(res.status).toBe(200);
-    expect(encryptToString).toHaveBeenCalledWith("imap-secret");
+    expect(encryptToString).toHaveBeenCalledWith("imap-secret", "admitto:bounce-imap-password");
     expect(writeAdminAuditLog).toHaveBeenCalledWith(
       db,
       expect.objectContaining({

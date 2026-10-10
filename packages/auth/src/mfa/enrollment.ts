@@ -10,6 +10,7 @@ import {
 } from "./totp.js";
 import { BACKUP_RECOVERY_DELETE_FILTER, ensureFreshEnrollmentBackupCodes } from "./backup-recovery.js";
 import { runInTransaction } from "../prisma-tx.js";
+import { acquireMfaEnrollmentLock } from "./enrollment-lock.js";
 
 export interface StartTotpEnrollmentResult {
   /** otpauth:// URI for authenticator app setup (shown once). */
@@ -146,7 +147,18 @@ export async function confirmTotpEnrollment(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   code: string,
+  options: { onlyFirstMethod?: boolean } = {},
 ): Promise<boolean> {
+  if (options.onlyFirstMethod) {
+    // Login-time enrollment (a partial session): only valid while the account still has no
+    // confirmed method. A stale partial session issued before another session enrolled must not be
+    // able to add a second method without the proof the account page asks for.
+    return runInTransaction(prisma, async (tx) => {
+      await acquireMfaEnrollmentLock(tx, userId);
+      if (await userHasAnyConfirmedMfaMethod(tx, userId)) return false;
+      return confirmTotpEnrollment(tx, userId, code);
+    });
+  }
   const row = await prisma.userMfaMethod.findFirst({
     where: { user_id: userId, type: "totp", confirmed_at: null },
   });

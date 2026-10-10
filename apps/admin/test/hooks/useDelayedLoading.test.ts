@@ -13,6 +13,46 @@ afterEach(() => {
 });
 
 describe("useDelayedLoading", () => {
+  it("starts the delay again when the request it waits for is replaced by another while it is still on its way (restartKey)", () => {
+    const { result, rerender } = renderHook(
+      ({ key }: { key: string }) => useDelayedLoading(true, 200, key),
+      { initialProps: { key: "a" } },
+    );
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    rerender({ key: "b" });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    // 250ms since the first request began, but only 100ms since its replacement began.
+    expect(result.current).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current).toBe(true);
+
+    // Replaced once it was showing: it is hidden again until the new request has waited its own delay.
+    rerender({ key: "c" });
+    expect(result.current).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current).toBe(true);
+  });
+
+  it("is unchanged for a caller that passes no key: re-rendering while loading keeps the timer it has", () => {
+    const { result, rerender } = renderHook(() => useDelayedLoading(true, 200));
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    rerender();
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(result.current).toBe(true);
+  });
+
   it("stays false while isLoading resolves before the delay elapses", () => {
     const { result, rerender } = renderHook(
       ({ isLoading }) => useDelayedLoading(isLoading, 200),

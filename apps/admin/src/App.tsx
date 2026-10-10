@@ -1,12 +1,13 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
-import { PageLoader, ToastProvider, TopProgressBar } from "@admitto/ui";
+import { Button, PageLoader, ToastProvider, TopProgressBar } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
 import { isSuperadmin } from "./auth/capabilities.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
+import { RetryEmptyState } from "./components/RetryEmptyState.js";
 import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
@@ -15,8 +16,12 @@ import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvent } from "./api/client.js";
+import { operatorApiErrorMessage } from "./api/operator-api-error.js";
 import { useDelayedLoading, useLoadingGate } from "./hooks/useDelayedLoading.js";
-import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "./utils/loading-timing.js";
+import { useRetryKeepingError } from "./hooks/useRetryKeepingError.js";
+import { redirectToLogin } from "./identity/loginRedirect.js";
+import { loadWithTimeout, rejectOnAbort } from "./utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "./utils/loading-timing.js";
 import { lazyRoute, supersedePendingChunks, useChunkLoading } from "./utils/lazy-route.js";
 import type { EventDto } from "./api/types.js";
 
@@ -141,7 +146,11 @@ export function EventLayout() {
   navStateEventRef.current = navStateEvent;
 
   const [event, setEvent] = useState<EventDto | null>(navStateEvent);
-  const [error, setError] = useState(false);
+  // The event is not there for this viewer (404, or 403): the way back is the picker.
+  const [gone, setGone] = useState(false);
+  // A read that failed in a way a Retry may cure: the network, the server, or the 30 seconds.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   // On-demand re-fetch: pages nested under this layout (Settings, Attendees,
   // Requirements, Communication, Import, Check-in) all read `event` from the
@@ -180,6 +189,30 @@ export function EventLayout() {
     }
   }, [eventId]);
 
+  // Reads the event this route is for, when nothing handed it over. It has the 30 second limit (AGENTS.md "Admin SPA loading and busy
+  // states"); leaving the page, or moving to another event, abandons it, and says nothing.
+  const loadEvent = useCallback(async () => {
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const limit = loadWithTimeout(controller.signal);
+    setLoadError(null);
+    try {
+      setEvent(await rejectOnAbort(fetchAdminEvent(eventId!, limit.signal), limit.signal));
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (err instanceof ApiError && err.status === 401) {
+        // The browser is on its way to the login page: no error flashes up first.
+        redirectToLogin();
+      } else if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+        setGone(true);
+      } else {
+        setLoadError(limit.timedOut() ? `Could not load event. ${LOAD_TIMEOUT_MESSAGE}` : operatorApiErrorMessage(err, "Could not load event."));
+      }
+    } finally {
+      limit.done();
+    }
+  }, [eventId]);
+
   useEffect(() => {
     preloadEventRoute(location.pathname, eventId);
   }, [eventId, location.pathname]);
@@ -187,7 +220,6 @@ export function EventLayout() {
   useEffect(() => {
     const fromState = navStateEventRef.current;
     setEvent(fromState);
-    setError(false);
     if (fromState) {
       // One-shot: strip the event from this history entry's state once
       // consumed. The event endpoint re-scopes org-admin access on every
@@ -201,32 +233,40 @@ export function EventLayout() {
     }
     // Fallback (deep link, refresh without usable state): resolve the event
     // from the API before the shell can render.
-    let cancelled = false;
-    void (async () => {
-      try {
-        const found = await fetchAdminEvent(eventId!);
-        if (cancelled) return;
-        setEvent(found);
-      } catch (err) {
-        if (cancelled) return;
-        setError(true);
-        if (err instanceof ApiError && err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void loadEvent();
+    return () => requestRef.current?.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetches on eventId change; location/navigate are navigation side-effects, not data deps (re-adding them caused blank-shell re-fetch on every in-event nav, fixed in #282)
-  }, [eventId]);
+  }, [eventId, loadEvent]);
 
-  if (error) return <Navigate to="/admin" replace />;
+  // The Retry of a failed read keeps the error and its busy button on screen until the answer is in: the loader must not take their place.
+  const failure = useRetryKeepingError(loadError, loadEvent);
+  // Another event starts its 8 seconds again, also when it replaces one that was still on its way.
+  const slow = useDelayedLoading(!event, SLOW_NOTICE_MS, eventId);
+
+  if (gone) return <Navigate to="/admin" replace />;
   if (!event) {
+    if (failure.error) {
+      return (
+        // What replaces the loader fades in; the same wrapper stays through a Retry, so it plays once. There is no shell yet, so the
+        // way out is here too.
+        <div className="shell-loading at-fade-in">
+          <div className="event-load-error">
+            <RetryEmptyState
+              title="Could not load event"
+              message={failure.error}
+              retrying={failure.retrying}
+              onRetry={failure.retry}
+            />
+            <Button type="button" variant="ghost" onClick={() => void navigate("/admin")}>
+              Back to events
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="shell-loading">
-        <PageLoader label="Loading event" />
+        <PageLoader label="Loading event" caption={slow ? SLOW_NOTICE_TEXT : undefined} />
       </div>
     );
   }

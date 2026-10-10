@@ -57,7 +57,7 @@ export function CreateTemplateDialog({
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={busy ? undefined : onClose} />
+      <ModalBackdrop />
       <div className="add-attendee-modal__panel" ref={panelRef}>
       <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -80,7 +80,7 @@ export function CreateTemplateDialog({
               submit();
             }
           }}
-          disabled={busy}
+          readOnly={busy}
           autoFocus
         />
         {error && (
@@ -92,8 +92,8 @@ export function CreateTemplateDialog({
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy} onClick={submit}>
-            {busy ? "Creating…" : "Create"}
+          <Button type="button" variant="primary" loading={busy} onClick={submit}>
+            Create
           </Button>
         </div>
       </div>

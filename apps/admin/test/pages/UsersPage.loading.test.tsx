@@ -119,7 +119,8 @@ describe("UsersPage first load", () => {
     expect(placeholder()?.textContent).toContain(SLOW_NOTICE_TEXT);
   });
 
-  it("gives up after 30 seconds with an error and Retry, and a Retry is a first load again with its own 30 seconds", async () => {
+  /** A fetcher that never answers, and gives up (rejects) when its signal aborts: what the 30 second limit does. */
+  function hangingUsers() {
     const signals: AbortSignal[] = [];
     vi.mocked(fetchAdminUsers).mockImplementation(
       (_params, signal) =>
@@ -128,6 +129,11 @@ describe("UsersPage first load", () => {
           signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
         }),
     );
+    return signals;
+  }
+
+  it("gives up after 30 seconds with an error and Retry", async () => {
+    const signals = hangingUsers();
     vi.useFakeTimers();
     renderUsers();
     await advanceTimers(29_999);
@@ -136,15 +142,73 @@ describe("UsersPage first load", () => {
     await advanceTimers(0);
     expect(screen.getByText(LOAD_TIMEOUT_MESSAGE)).toBeTruthy();
     expect(signals[0]?.aborted).toBe(true);
+    // The error that replaces the placeholder fades in.
+    expect(screen.getByRole("button", { name: "Retry" }).closest(".at-fade-in")).not.toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  it("keeps the error on screen, with a busy Retry that keeps the focus, while a Retry runs: no placeholder takes its place, the retry has its own 30 seconds, and a repeat failure is announced again", async () => {
+    const signals = hangingUsers();
+    vi.useFakeTimers();
+    renderUsers();
+    await advanceTimers(30_000);
     await advanceTimers(0);
-    // Nothing is on screen, so the placeholder takes the list's place again.
-    expect(placeholder()).not.toBeNull();
-    expect(screen.queryByText(LOAD_TIMEOUT_MESSAGE)).toBeNull();
+    const message = screen.getByText(LOAD_TIMEOUT_MESSAGE);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    const fade = retry.closest(".at-fade-in");
+
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    // A Retry is not a first load: the same error and button, busy, with the focus, in the wrapper that has already faded in.
+    // The placeholder does not take their place.
+    expect(placeholder()).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.closest(".at-fade-in")).toBe(fade);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText(LOAD_TIMEOUT_MESSAGE)).toBe(message);
     expect(signals).toHaveLength(2);
+
+    // It has its own 30 seconds, and says nothing of being slow: that is for a first load.
     await advanceTimers(29_999);
     expect(signals[1]?.aborted).toBe(false);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    await advanceTimers(1);
+    await advanceTimers(0);
+    expect(signals[1]?.aborted).toBe(true);
+    // Failed again with the same text: a new message node (a live region says it again), the same button, still focused.
+    expect(screen.getByText(LOAD_TIMEOUT_MESSAGE)).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("hands the focus to the card that holds the list when the retry works, and brings the rows and the number on the tab only then", async () => {
+    vi.mocked(fetchAdminUsers).mockRejectedValueOnce(new Error("network down"));
+    renderUsers();
+    expect(await screen.findByText("Could not load users.")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /^Staff users/ }).textContent).toBe("Staff users");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const card = retry.closest(".at-card");
+    expect(card).not.toBeNull();
+
+    const second = deferred<UsersAnswer>();
+    vi.mocked(fetchAdminUsers).mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    // Nothing of the earlier answer or of the empty states while the retry is on its way.
+    expect(screen.queryByText("No users yet")).toBeNull();
+    expect(screen.getByRole("tab", { name: /^Staff users/ }).textContent).toBe("Staff users");
+
+    await act(async () => second.resolve(answer([makeStaffUser("user-1", "Jane Doe")], 7)));
+    expect((await screen.findAllByText("user-1@example.com")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Could not load users.")).toBeNull();
+    expect(screen.getByRole("tab", { name: /^Staff users/ }).textContent).toContain("7");
+    // The Retry that held the focus is gone: it goes to the card, not to the top of the page.
+    await waitFor(() => expect(document.activeElement).toBe(card));
   });
 
   it("draws the KPI tiles' placeholders at their place, and shows no false 0 on the tab until the answer is in", async () => {
@@ -230,6 +294,32 @@ describe("UsersPage refetch", () => {
     expect(screen.queryByText("user-1@example.com")).toBeNull();
     // The label does not keep showing the count of the list that gave way to the error.
     expect(screen.getByRole("tab", { name: /Staff users/ }).textContent).not.toMatch(/\d/);
+  });
+
+  it("does not bring the rows of the earlier query, or their number on the tab, back while the Retry of a failed search runs", async () => {
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce(answer([makeStaffUser("user-1", "Jane Doe")], 4))
+      .mockRejectedValueOnce(new Error("network down"));
+    renderUsers();
+    await screen.findAllByText("user-1@example.com");
+    expect(screen.getByRole("tab", { name: /Staff users/ }).textContent).toMatch(/4/);
+    search("jane");
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    // The answer that is still held is the earlier query's: until the retry answers, neither its rows nor its number are shown.
+    const second = deferred<UsersAnswer>();
+    vi.mocked(fetchAdminUsers).mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.queryByText("user-1@example.com")).toBeNull();
+    expect(screen.queryByText("No users yet")).toBeNull();
+    expect(screen.getByRole("tab", { name: /Staff users/ }).textContent).not.toMatch(/\d/);
+
+    await act(async () => second.resolve(answer([makeStaffUser("user-2", "Jane Roe")], 2)));
+    expect((await screen.findAllByText("user-2@example.com")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: /Staff users/ }).textContent).toMatch(/2/);
   });
 
   it("shows the delete when the refresh fails: the person is gone, the rest of the list stays, and a warning with a Retry that works says it may be older", async () => {

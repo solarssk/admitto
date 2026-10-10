@@ -296,9 +296,9 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
           value = validateCspTrustedOrigins(value);
         }
         if (value === null || value === undefined) {
-          await tx.systemSettings.deleteMany({ where: { key: settingKey } });
+          await tx.systemSettings.deleteMany({ where: { key: settingKey } }); // NOSONAR - statements in one transaction run one at a time
         } else {
-          await setSetting(tx, settingKey, value);
+          await setSetting(tx, settingKey, value); // NOSONAR - statements in one transaction run one at a time
         }
       }
 
@@ -308,8 +308,8 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
       // are not blocked by a pre-existing inconsistent configuration.
       for (const pair of IDLE_VS_ABSOLUTE_PAIRS) {
         if (!idleAbsolutePairTouched(pair, presentKeys)) continue;
-        const idleMs = await pair.getIdle(tx);
-        const absoluteMs = await pair.getAbsolute(tx);
+        const idleMs = await pair.getIdle(tx); // NOSONAR - statements in one transaction run one at a time
+        const absoluteMs = await pair.getAbsolute(tx); // NOSONAR - statements in one transaction run one at a time
         if (idleMs > absoluteMs) {
           throw new IdleExceedsAbsoluteError(pair.idleField);
         }

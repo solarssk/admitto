@@ -24,9 +24,9 @@ Every field-level and cross-field rule Admitto enforces, organised by screen. Us
 |---|---|
 | Email and password are both required | "Invalid email or password." |
 | Wrong password, unknown email, and a disabled account all return the *same* generic failure, at the *same* speed - by design, so a failed attempt can't be used to guess which part was wrong | "Invalid email or password." |
-| Max 10 login attempts per IP address, per minute | "Too many requests." |
-| Max 10 login attempts per email address, per minute (separate limit, checked after a failed attempt) | "Too many requests." |
-| Passkey sign-in: max 10 attempts per minute, in two separate stages (start / finish) | "Too many requests." |
+| Max 30 login attempts per IP address, per minute (an IPv6 network, a /64 block, counts as one address) | "Too many requests." |
+| Max 10 login attempts per email address, per minute (separate limit, counted before the password is checked, so once it is used up even the correct password is refused until the minute is over) | "Too many requests." |
+| Passkey sign-in: max 30 attempts per minute, in two separate stages (start / finish) | "Too many requests." |
 | A rejected or cancelled passkey sign-in re-enables the password form | "Could not sign in with your passkey. Try again, or use your email and password below." |
 | 5 consecutive failed sign-ins or MFA attempts against an admin/superadmin account raises an internal security alert - this doesn't change what you see, it's recorded for a Superadmin reviewing [Logs and Audit](Logs-and-Audit) | No visible change |
 | An owed backup-codes acknowledgement or a forced password change cannot be skipped by closing the tab or calling the API directly - your session is held at that step until you complete it | Redirected back to the required step every time |
@@ -48,7 +48,7 @@ Every field-level and cross-field rule Admitto enforces, organised by screen. Us
 | A 6-digit numeric code is treated as an authenticator-app code; anything else is treated as a backup code | Routed automatically, no separate message |
 | A code must be current (±30 seconds) and **cannot be reused** - even a code that's numerically correct is rejected if it (or an earlier one) was already accepted | "Invalid code. Try again." |
 | Enrolling requires a local password - an account that only signs in via SSO can't enroll local 2FA until it has one | "Password is managed by your identity provider." |
-| Max 10 verification attempts per 15 minutes (checked per session **and** per IP - both must pass) | "Too many requests." |
+| Max 10 verification attempts per 15 minutes (checked per session, per IP **and**, at sign-in, per account - all must pass, so opening new sessions or switching addresses does not add attempts) | "Too many requests." |
 | Across every 2FA-protected action combined (not just one), max 20 proof attempts per 15 minutes, so switching between actions can't multiply your attempts | "Too many requests." |
 | After your *first* confirmed 2FA method, you must acknowledge saving your backup codes before continuing - this can't be bypassed | Redirected to the backup-codes step |
 
@@ -112,6 +112,7 @@ See [Identity and SSO](Identity-and-SSO) and [Cloudflare Access - Identity Linki
 | Profile fields (display name, locale, time format, phone) have individual length limits; at least one must actually change | n/a - Save has nothing to do otherwise |
 | You can never revoke your own current session from any session list | "You cannot revoke your current session." |
 | Removing a confirmed 2FA method, resetting everything, or regenerating backup codes each requires proving your identity again first (current password, plus a step-up code if your role requires 2FA) | "Current password is incorrect." / "Enter your authenticator app code to continue." |
+| Adding a passkey, a security key or an authenticator app to an account that already has a confirmed 2FA method requires a step-up code (authenticator app, backup code, or an existing passkey/security key), whatever the role; the account's first method needs none | "Enter your authenticator app code to continue." / "Invalid authenticator or backup code." |
 | Unlinking SSO always requires setting a fresh local password in the same step, plus a step-up code if you have confirmed 2FA; an account with neither a password nor confirmed 2FA to verify with can't self-unlink | "This account has no password or confirmed two-factor method to verify with. Ask a superadmin for help." |
 | Unlinking SSO is blocked while any of your roles are still managed by that identity provider | "Some of your roles are managed by an identity provider. Ask an administrator to remove them first." |
 | Re-authentication attempts (for any of the above) are capped at 10 per window, per account and per IP | "Too many requests." |

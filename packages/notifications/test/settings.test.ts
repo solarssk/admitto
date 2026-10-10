@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@admitto/db";
-import { decryptFromString, encryptToString } from "@admitto/crypto";
+import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { describe, expect, it } from "vitest";
 import { describeNotificationSettings, patchNotificationSettings } from "../src/settings.js";
 import { createStubDb } from "./stubDb.js";
@@ -226,7 +226,7 @@ describe("patchNotificationSettings", () => {
     expect(call.create.scope_id).toBe(ORG_ID);
     expect(call.create.webhook_kind).toBe("discord");
     expect(call.create.webhook_url_enc).not.toContain("discord.com/api/webhooks");
-    expect(decryptFromString(call.create.webhook_url_enc)).toBe("https://discord.com/api/webhooks/x/y");
+    expect(decryptFromString(call.create.webhook_url_enc, SECRET_CONTEXTS.notificationWebhookUrl)).toBe("https://discord.com/api/webhooks/x/y");
   });
 
   it("clears the stored webhook URL when given an empty string", async () => {

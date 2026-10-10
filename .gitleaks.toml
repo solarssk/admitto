@@ -8,3 +8,8 @@ description = "Synthetic test fixtures that match secret-shaped regexes but carr
 paths = [
   '''^apps/admin/test/account/AccountPage\.test\.tsx$''',
 ]
+# A fake API-key-shaped value in an earlier commit of the AI review PR (a test fixture, since
+# removed). The scan reads every commit of a PR, so the value has to stay allowlisted.
+regexes = [
+  '''sk-test-0123456789abcdef''',
+]

@@ -10,6 +10,9 @@ import {
   finishWebauthnRegistration,
   SETTING_WEBAUTHN_ENABLED,
   SETTING_TRUSTED_DEVICE_DAYS,
+  createSession,
+  SESSION_STAGE,
+  AUTH_METHOD,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
@@ -300,6 +303,39 @@ describe("POST /api/auth/login MFA", () => {
   });
 });
 
+describe("login-time enrollment with a stale partial session", () => {
+  it("refuses to add a second method once another session has enrolled the first one", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+
+    // A password-only sign-in of a role that requires MFA gets an enrollment-only session.
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    const enrollRes = await app.request("/api/auth/mfa/totp/enroll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(enrollRes.status).toBe(200);
+    const secret = parseTotpSecretFromOtpauthUri(((await enrollRes.json()) as { otpauth_uri: string }).otpauth_uri)!;
+
+    // Meanwhile the account owner enrols the first method from another session.
+    await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, admin!.id);
+
+    const confirm = await app.request("/api/auth/mfa/totp/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    expect(confirm.status).toBe(401);
+    expect(
+      await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp", confirmed_at: { not: null } } }),
+    ).toBe(0);
+  });
+});
+
 describe("pending session check-in gate", () => {
   it("admin mfa_pending cannot scan", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -511,6 +547,36 @@ describe("HTML /mfa/verify — passkey button", () => {
     const html = await verifyPage.text();
     expect(html).toContain("Enter one of your backup recovery codes.");
     expect(html).not.toContain('id="mfa-webauthn-btn"');
+  });
+});
+
+describe("body size cap on routes a password-only (partial) session can reach", () => {
+  const oversized = "x".repeat(70 * 1024);
+
+  it.each([
+    ["/api/auth/mfa/totp/enroll", "application/json", JSON.stringify({ x: oversized })],
+    ["/api/auth/mfa/totp/confirm", "application/json", JSON.stringify({ code: oversized })],
+    ["/api/auth/mfa/webauthn/register/begin", "application/json", JSON.stringify({ attachment: oversized })],
+    ["/mfa/enroll/start", "application/x-www-form-urlencoded", `x=${oversized}`],
+    ["/mfa/enroll", "application/x-www-form-urlencoded", `code=${oversized}`],
+  ])("%s answers an oversized body with 413 once the partial session is valid", async (path, contentType, body) => {
+    // Each sign-in counts against the per-email login limit now, which this file's store carries over.
+    rateLimitStore.reset();
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect(((await loginRes.json()) as { next: string }).next).toBe(LOGIN_NEXT.ENROLLMENT_REQUIRED);
+
+    const res = await app.request(path, {
+      method: "POST",
+      headers: { "Content-Type": contentType, ...sameOrigin, ...cookieHeader(loginRes) },
+      body,
+    });
+    expect(res.status).toBe(413);
   });
 });
 
@@ -1734,7 +1800,7 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
     const response = authenticator.register({ challenge: begin!.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
     // Deliberately skip markBackupCodesAcknowledged, unlike registerConfirmedWebauthnCredential -
     // this is what promotes the completed session into BACKUP_CODES_REQUIRED instead of FULL.
-    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", "Seeded key", WEBAUTHN_RP);
+    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", WEBAUTHN_RP, { label: "Seeded key" });
 
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
@@ -2002,6 +2068,63 @@ describe("POST /api/auth/mfa/remember-device", () => {
       body: "{}",
     });
     expect(res.status).toBe(401);
+  });
+
+  it("records an auth.trusted_device.created audit row when a device is remembered", async () => {
+    const loginRes = await loginToFullSession();
+    await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.trusted_device.created" } });
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    const audit = await prisma.securityAuditLog.findFirst({
+      where: { user_id: admin!.id, event_type: "auth.trusted_device.created" },
+    });
+    expect(audit).not.toBeNull();
+  });
+
+  it("refuses a full session that never completed MFA (stolen cookie, OIDC, passkey login) and sets no cookie", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, admin!.id);
+    for (const authMethod of [AUTH_METHOD.LOCAL, AUTH_METHOD.OIDC]) {
+      const { rawToken } = await createSession(prisma, {
+        userId: admin!.id,
+        stage: SESSION_STAGE.FULL,
+        authMethod,
+      });
+      const res = await app.request("/api/auth/mfa/remember-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: `admitto_session=${rawToken}` },
+        body: "{}",
+      });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe("mfa_recent_required");
+      const trustedCookie = res.headers.getSetCookie?.().find((c) =>
+        c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`),
+      );
+      expect(trustedCookie).toBeUndefined();
+    }
+    expect(await prisma.trustedDevice.count({ where: { user_id: admin!.id, revoked_at: null } })).toBe(0);
+  });
+
+  it("refuses once the MFA step is older than the recent window", async () => {
+    const loginRes = await loginToFullSession();
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.session.updateMany({
+      where: { user_id: admin!.id },
+      data: { mfa_verified_at: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(res.status).toBe(403);
+    expect(await prisma.trustedDevice.count({ where: { user_id: admin!.id, revoked_at: null } })).toBe(0);
   });
 
   it("does not set a cookie when the instance's trusted-device days is 0", async () => {

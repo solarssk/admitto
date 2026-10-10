@@ -80,6 +80,9 @@ export function createPlaceholderCompletionSource(
     detail: description,
   }));
   return (context: CompletionContext) => {
+    // A read-only editor (an archived event's body) can be focused, so Ctrl+Space could open the
+    // list there, and picking an option dispatches its own change, which readOnly does not stop.
+    if (context.state.readOnly) return null;
     const match = context.matchBefore(PLACEHOLDER_TRIGGER_RE);
     if (!match) return null;
     return {

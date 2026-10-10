@@ -398,11 +398,16 @@ describe("claimInitialDelivery", () => {
       },
     });
 
-    const realUpdateMany = prisma.emailDelivery.updateMany.bind(prisma.emailDelivery);
-    vi.spyOn(prisma.emailDelivery, "updateMany").mockImplementationOnce(async (args) => {
-      await realUpdateMany({ where: { id: row.id, status: "cancelled" }, data: { status: "queued" } });
-      return realUpdateMany(args);
-    });
+    // The reclaim runs in its own transaction (it locks the attendee row first), the second one
+    // this call opens after the failed insert: flip the row just before it.
+    const realTransaction = prisma.$transaction.bind(prisma) as (fn: unknown) => Promise<unknown>;
+    let transactions = 0;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (fn: unknown) => {
+      if (++transactions === 2) {
+        await prisma.emailDelivery.updateMany({ where: { id: row.id, status: "cancelled" }, data: { status: "queued" } });
+      }
+      return realTransaction(fn);
+    }) as never);
 
     const result = await claimInitialDelivery({ ...claimInput, batchId: "batch-a" }, prisma);
 

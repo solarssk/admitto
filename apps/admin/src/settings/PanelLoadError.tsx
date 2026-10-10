@@ -8,7 +8,8 @@ import { useRetryFocusHandover } from "../hooks/useRetryFocusHandover.js";
  * the answer is in, so the keyboard keeps its place; a retry that fails again with the same message is announced again.
  * When a retry works, this card goes and the form takes its place: focus that was on the Retry then moves to the tab
  * panel the card sat in (a browser would drop it on `<body>`), so a screen reader hears where it is and the next Tab
- * goes into the form. Focus that is somewhere else by then is left alone.
+ * goes into the form. Focus that is somewhere else by then is left alone. A page that has no tab panel passes the
+ * selector of the region that stays (`landmark`).
  */
 export function PanelLoadError({
   cardTitle,
@@ -16,10 +17,18 @@ export function PanelLoadError({
   message,
   retrying,
   onRetry,
-}: Readonly<{ cardTitle: ReactNode; title: string; message: string; retrying: boolean; onRetry: () => Promise<void> }>) {
+  landmark,
+}: Readonly<{
+  cardTitle: ReactNode;
+  title: string;
+  message: string;
+  retrying: boolean;
+  onRetry: () => Promise<void>;
+  landmark?: string;
+}>) {
   const retryRef = useRef<HTMLButtonElement>(null);
 
-  useRetryFocusHandover(retryRef);
+  useRetryFocusHandover(retryRef, landmark);
 
   return (
     <Card title={cardTitle}>

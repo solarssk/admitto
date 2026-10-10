@@ -43,7 +43,6 @@ describe("drainImportJobs", () => {
       findFirst: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
       findUniqueOrThrow: ReturnType<typeof vi.fn>;
-      update: ReturnType<typeof vi.fn>;
     };
   };
 
@@ -57,7 +56,6 @@ describe("drainImportJobs", () => {
         findFirst: vi.fn().mockResolvedValue(null),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn(),
-        update: vi.fn().mockResolvedValue({}),
       },
     };
   });
@@ -138,9 +136,10 @@ describe("drainImportJobs", () => {
       healed: 0,
       eventIds: [],
     });
-    expect(db.adminJob.update).toHaveBeenCalledWith(
+    // Only a job that is still running is marked: the claim wrote `pending` -> `running`, this one `running` -> `failed`.
+    expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { id: "job-1" },
+        where: { id: "job-1", status: "running" },
         data: expect.objectContaining({ status: "failed", error: "boom" }),
       }),
     );
@@ -157,7 +156,7 @@ describe("drainImportJobs", () => {
     await expect(drainImportJobs(db as never, storage as never)).resolves.toMatchObject({
       failed: 1,
     });
-    expect(db.adminJob.update).toHaveBeenCalledWith(
+    expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ error: "capacity_blocked" }),
       }),
@@ -173,7 +172,7 @@ describe("drainImportJobs", () => {
     await expect(drainImportJobs(db as never, storage as never)).resolves.toMatchObject({
       failed: 1,
     });
-    expect(db.adminJob.update).toHaveBeenCalledWith(
+    expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ error: "plain-fail" }),
       }),
@@ -194,11 +193,37 @@ describe("drainImportJobs", () => {
       eventIds: [],
     });
     expect(executeImportCommit).not.toHaveBeenCalled();
-    expect(db.adminJob.update).toHaveBeenCalledWith(
+    expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ error: "import_job_incomplete" }),
       }),
     );
+  });
+
+  it("leaves a job alone that something else closed while it ran, keeps its staged CSV for the purge, and carries on with the next", async () => {
+    // An erasure stopped job A (it holds the reason), so the import rolled back and marking it failed matches nothing.
+    const jobA = baseJob({ id: "job-a", storage_key: "imports/evt/a.csv" });
+    const jobB = baseJob({ id: "job-b", storage_key: "imports/evt/b.csv" });
+    db.adminJob.findFirst.mockResolvedValueOnce(jobA).mockResolvedValueOnce(jobB).mockResolvedValue(null);
+    db.adminJob.findUniqueOrThrow.mockResolvedValueOnce(jobA).mockResolvedValueOnce(jobB);
+    db.adminJob.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim A
+      .mockResolvedValueOnce({ count: 0 }) // marking A failed: it is not running any more
+      .mockResolvedValueOnce({ count: 1 }); // claim B
+    vi.mocked(executeImportCommit)
+      .mockRejectedValueOnce(new Error("Import stopped before it finished."))
+      .mockResolvedValueOnce({} as never);
+
+    await expect(drainImportJobs(db as never, storage as never, { limit: 2 })).resolves.toEqual({
+      claimed: 2,
+      succeeded: 1,
+      failed: 1,
+      reclaimed: 0,
+      healed: 0,
+      eventIds: ["evt-1"],
+    });
+    expect(storage.delete).toHaveBeenCalledTimes(1);
+    expect(storage.delete).toHaveBeenCalledWith("imports/evt/b.csv");
   });
 
   it("skips a job lost to a claim race and keeps searching", async () => {

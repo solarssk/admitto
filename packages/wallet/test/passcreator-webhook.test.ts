@@ -5,6 +5,7 @@ import {
   applyFirstConfirmedAt,
   applyWebhookUpdate,
   findWebhookPassTarget,
+  webhookNamesAPassOfEvent,
   parseAdmittoUserProvidedId,
   parseFirstDownloadedAtUtc,
   parseWebhookData,
@@ -194,7 +195,7 @@ describe("applyWebhookUpdate", () => {
   it("matches by user_provided_id when present, sets registration_checked_at and provided fields", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    const result = await applyWebhookUpdate(db as never, {
+    const result = await applyWebhookUpdate(db as never, "evt-1", {
       userProvidedId: "admitto:evt-1:att-1",
       operatingSystem: "AndroidGooglePay",
       noOfActivePasses: 1,
@@ -206,6 +207,7 @@ describe("applyWebhookUpdate", () => {
       where: {
         provider_user_provided_id: { provider: "passcreator", user_provided_id: "admitto:evt-1:att-1" },
         provider_removed_at: null,
+        attendee: { event_id: "evt-1" },
       },
       data: expect.objectContaining({
         google_active_registrations: 1,
@@ -215,10 +217,19 @@ describe("applyWebhookUpdate", () => {
     });
   });
 
+  it("scopes an identifier-only update to the event of the route, so another event's pass cannot match", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockResolvedValueOnce({});
+    await applyWebhookUpdate(db as never, "evt-a", { identifier: "pc-of-event-b", noOfActivePasses: 1 });
+    expect(db.walletPass.update.mock.calls[0]?.[0].where).toMatchObject({
+      attendee: { event_id: "evt-a" },
+    });
+  });
+
   it("maps operatingSystem: iOS to the apple_* columns (confirmed live 2026-08-13)", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, {
+    await applyWebhookUpdate(db as never, "evt-1", {
       identifier: "pc-1",
       operatingSystem: "iOS",
       noOfActivePasses: 0,
@@ -237,7 +248,7 @@ describe("applyWebhookUpdate", () => {
   it("maps operatingSystem: AndroidGooglePay to the google_* columns (confirmed live 2026-08-13)", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, {
+    await applyWebhookUpdate(db as never, "evt-1", {
       identifier: "pc-2",
       operatingSystem: "AndroidGooglePay",
       noOfActivePasses: 1,
@@ -258,7 +269,7 @@ describe("applyWebhookUpdate", () => {
     async (operatingSystem) => {
       const db = makeDb();
       db.walletPass.update.mockResolvedValueOnce({});
-      await applyWebhookUpdate(db as never, { identifier: "pc-1", operatingSystem, noOfActivePasses: 1 });
+      await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-1", operatingSystem, noOfActivePasses: 1 });
       const call = db.walletPass.update.mock.calls[0]?.[0];
       expect(call.data).toMatchObject({ google_active_registrations: 1 });
       expect(call.data).not.toHaveProperty("apple_active_registrations");
@@ -268,7 +279,7 @@ describe("applyWebhookUpdate", () => {
   it("leaves both apple_* and google_* columns untouched when operatingSystem is absent - can't tell which platform the counts belong to", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, { identifier: "pc-1", noOfActivePasses: 1, noOfInactivePasses: 0 });
+    await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-1", noOfActivePasses: 1, noOfInactivePasses: 0 });
     const call = db.walletPass.update.mock.calls[0]?.[0];
     expect(call.data).not.toHaveProperty("apple_active_registrations");
     expect(call.data).not.toHaveProperty("google_active_registrations");
@@ -279,7 +290,7 @@ describe("applyWebhookUpdate", () => {
     async (operatingSystem) => {
       const db = makeDb();
       db.walletPass.update.mockResolvedValueOnce({});
-      await applyWebhookUpdate(db as never, { identifier: "pc-1", operatingSystem, noOfActivePasses: 1 });
+      await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-1", operatingSystem, noOfActivePasses: 1 });
       const call = db.walletPass.update.mock.calls[0]?.[0];
       expect(call.data).toMatchObject({ apple_active_registrations: 1 });
       expect(call.data).not.toHaveProperty("google_active_registrations");
@@ -289,7 +300,7 @@ describe("applyWebhookUpdate", () => {
   it("leaves both apple_* and google_* columns untouched when operatingSystem is an unrecognized value - never guess platform from a value we don't understand", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, {
+    await applyWebhookUpdate(db as never, "evt-1", {
       identifier: "pc-1",
       operatingSystem: "webOS",
       noOfActivePasses: 1,
@@ -305,12 +316,13 @@ describe("applyWebhookUpdate", () => {
   it("falls back to identifier (provider_pass_id) when userProvidedId is absent", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, { identifier: "pc-pass-1" });
+    await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-pass-1" });
     expect(db.walletPass.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           provider_provider_pass_id: { provider: "passcreator", provider_pass_id: "pc-pass-1" },
           provider_removed_at: null,
+          attendee: { event_id: "evt-1" },
         },
       }),
     );
@@ -318,7 +330,7 @@ describe("applyWebhookUpdate", () => {
 
   it("returns matched: false without calling update when neither identifier is present", async () => {
     const db = makeDb();
-    const result = await applyWebhookUpdate(db as never, { operatingSystem: "iOS", noOfActivePasses: 1 });
+    const result = await applyWebhookUpdate(db as never, "evt-1", { operatingSystem: "iOS", noOfActivePasses: 1 });
     expect(result).toEqual({ matched: false });
     expect(db.walletPass.update).not.toHaveBeenCalled();
   });
@@ -326,14 +338,14 @@ describe("applyWebhookUpdate", () => {
   it("returns matched: false (not throw) when no WalletPass row matches (Prisma P2025)", async () => {
     const db = makeDb();
     db.walletPass.update.mockRejectedValueOnce(recordNotFoundError());
-    const result = await applyWebhookUpdate(db as never, { identifier: "pc-gone" });
+    const result = await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-gone" });
     expect(result).toEqual({ matched: false });
   });
 
   it("propagates a non-P2025 failure instead of silently reporting matched: false", async () => {
     const db = makeDb();
     db.walletPass.update.mockRejectedValueOnce(new Error("connection terminated unexpectedly"));
-    await expect(applyWebhookUpdate(db as never, { identifier: "pc-1" })).rejects.toThrow(
+    await expect(applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-1" })).rejects.toThrow(
       "connection terminated unexpectedly",
     );
   });
@@ -341,8 +353,8 @@ describe("applyWebhookUpdate", () => {
   it("writes first_downloaded_at as delivered, including an explicit null", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValue({});
-    await applyWebhookUpdate(db as never, { identifier: "pc-1", firstDownloadedAt: "2026-08-13 10:00:00" });
-    await applyWebhookUpdate(db as never, { identifier: "pc-1", firstDownloadedAt: null });
+    await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-1", firstDownloadedAt: "2026-08-13 10:00:00" });
+    await applyWebhookUpdate(db as never, "evt-1", { identifier: "pc-1", firstDownloadedAt: null });
     expect(db.walletPass.update.mock.calls[0]?.[0].data.first_downloaded_at).toBe("2026-08-13 10:00:00");
     expect(db.walletPass.update.mock.calls[1]?.[0].data.first_downloaded_at).toBeNull();
   });
@@ -351,7 +363,7 @@ describe("applyWebhookUpdate", () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
     const data = parseWebhookData(JSON.stringify({ identifier: "pc-1", voided: true, operatingSystem: "iOS" }));
-    await applyWebhookUpdate(db as never, data!);
+    await applyWebhookUpdate(db as never, "evt-1", data!);
     const written = db.walletPass.update.mock.calls[0]?.[0].data;
     expect(written).not.toHaveProperty("status");
     expect(written).not.toHaveProperty("voided_at");
@@ -361,8 +373,8 @@ describe("applyWebhookUpdate", () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValue({});
     const payload = { identifier: "pc-1", operatingSystem: "iOS", noOfActivePasses: 2 };
-    await applyWebhookUpdate(db as never, payload);
-    await applyWebhookUpdate(db as never, payload);
+    await applyWebhookUpdate(db as never, "evt-1", payload);
+    await applyWebhookUpdate(db as never, "evt-1", payload);
     expect(db.walletPass.update).toHaveBeenCalledTimes(2);
     const [firstCall, secondCall] = db.walletPass.update.mock.calls;
     expect(firstCall?.[0].data.apple_active_registrations).toBe(2);
@@ -458,7 +470,7 @@ describe("applyFirstConfirmedAt", () => {
   it("sets first_confirmed_at, guarded on it currently being null, matched by user_provided_id", async () => {
     const db = makeDb();
     db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 });
-    await applyFirstConfirmedAt(db as never, { userProvidedId: "admitto:evt-1:att-1" });
+    await applyFirstConfirmedAt(db as never, "evt-1", { userProvidedId: "admitto:evt-1:att-1" });
     // Flat columns, not the { provider_user_provided_id: {...} } compound-unique shorthand
     // applyWebhookUpdate's plain `update` uses above - that shorthand type-checks here too but
     // throws "Unknown argument" at runtime inside updateMany's WhereInput (confirmed against a
@@ -470,6 +482,7 @@ describe("applyFirstConfirmedAt", () => {
         user_provided_id: "admitto:evt-1:att-1",
         first_confirmed_at: null,
         provider_removed_at: null,
+        attendee: { event_id: "evt-1" },
       },
       data: { first_confirmed_at: expect.any(Date) },
     });
@@ -478,7 +491,7 @@ describe("applyFirstConfirmedAt", () => {
   it("falls back to identifier (provider_pass_id) when userProvidedId is absent", async () => {
     const db = makeDb();
     db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 });
-    await applyFirstConfirmedAt(db as never, { identifier: "pc-pass-1" });
+    await applyFirstConfirmedAt(db as never, "evt-1", { identifier: "pc-pass-1" });
     expect(db.walletPass.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ provider: "passcreator", provider_pass_id: "pc-pass-1" }),
@@ -488,15 +501,15 @@ describe("applyFirstConfirmedAt", () => {
 
   it("does nothing when neither identifier is present", async () => {
     const db = makeDb();
-    await applyFirstConfirmedAt(db as never, {});
+    await applyFirstConfirmedAt(db as never, "evt-1", {});
     expect(db.walletPass.updateMany).not.toHaveBeenCalled();
   });
 
   it("a second call is a no-op at the DB level - updateMany's own where guard matches zero rows once already set (idempotent by construction, not by re-reading first)", async () => {
     const db = makeDb();
     db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
-    await applyFirstConfirmedAt(db as never, { identifier: "pc-1" });
-    await applyFirstConfirmedAt(db as never, { identifier: "pc-1" });
+    await applyFirstConfirmedAt(db as never, "evt-1", { identifier: "pc-1" });
+    await applyFirstConfirmedAt(db as never, "evt-1", { identifier: "pc-1" });
     expect(db.walletPass.updateMany).toHaveBeenCalledTimes(2);
     expect(db.walletPass.updateMany.mock.calls[1][0]).toEqual(
       expect.objectContaining({ where: expect.objectContaining({ first_confirmed_at: null }) }),
@@ -527,5 +540,37 @@ describe("parseFirstDownloadedAtUtc", () => {
 
   it("returns null for a value with fractional seconds", () => {
     expect(parseFirstDownloadedAtUtc("2026-08-13 10:00:00.123")).toBeNull();
+  });
+});
+
+describe("webhookNamesAPassOfEvent", () => {
+  const db = (row: unknown) => ({ walletPass: { findFirst: vi.fn().mockResolvedValue(row) } });
+
+  it("is true for a pass of the event matched by user_provided_id or, failing that, identifier", async () => {
+    const byId = db({ attendee_id: "att-1" });
+    expect(await webhookNamesAPassOfEvent(byId as never, "evt-1", { userProvidedId: "admitto:evt-1:att-1" })).toBe(true);
+    expect(byId.walletPass.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { provider: "passcreator", user_provided_id: "admitto:evt-1:att-1", attendee: { event_id: "evt-1" } },
+      }),
+    );
+    const byIdentifier = db({ attendee_id: "att-1" });
+    expect(await webhookNamesAPassOfEvent(byIdentifier as never, "evt-1", { identifier: "pc-1" })).toBe(true);
+    expect(byIdentifier.walletPass.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { provider: "passcreator", provider_pass_id: "pc-1", attendee: { event_id: "evt-1" } },
+      }),
+    );
+  });
+
+  it("is true for a legacy pass with an identifier but no user_provided_id, which findWebhookPassTarget skips", async () => {
+    expect(await webhookNamesAPassOfEvent(db({ attendee_id: "att-1" }) as never, "evt-1", { identifier: "pc-legacy" })).toBe(true);
+  });
+
+  it("is false when no pass of the event matches, or the payload names nothing", async () => {
+    expect(await webhookNamesAPassOfEvent(db(null) as never, "evt-1", { identifier: "pc-other" })).toBe(false);
+    const none = db({ attendee_id: "att-1" });
+    expect(await webhookNamesAPassOfEvent(none as never, "evt-1", {})).toBe(false);
+    expect(none.walletPass.findFirst).not.toHaveBeenCalled();
   });
 });

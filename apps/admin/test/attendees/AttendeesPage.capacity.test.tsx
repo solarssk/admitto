@@ -67,7 +67,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   exportAttendees: vi.fn(),
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
-  bulkDeleteAttendees: vi.fn(),
+  bulkRemoveAttendees: vi.fn(),
   bulkCheckInAttendees: vi.fn(),
   bulkRevokeCheckIn: vi.fn(),
   bulkRevokePass: vi.fn(),

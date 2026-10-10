@@ -52,6 +52,7 @@ describe("applyBounceResult", () => {
         where: {
           id: "del_1",
           status: { in: [...NON_TERMINAL] },
+          recipient_email: { not: null },
         },
         data: expect.objectContaining({
           status: "bounced",

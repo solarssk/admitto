@@ -179,6 +179,7 @@ describe("IdentityProviderEditor loading standard: the load of the provider", ()
     await advanceTimers(0);
 
     expect(screen.getByRole("alert").textContent).toContain("Could not load this provider.");
+    expect(screen.getByRole("alert").querySelector("p > i.ti-circle-x.failure-icon--large")?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("keeps the error on screen, with a busy Retry, until the retry's answer is in, then shows the form", async () => {

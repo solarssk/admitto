@@ -59,6 +59,15 @@ describe("parseAttendees — basic valid rows", () => {
   });
 });
 
+describe("parseAttendees — reserved addresses", () => {
+  it("rejects an address in the namespace reserved for erased attendees", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,Kowalski,erased-att-1@Erased.Invalid\nAna,Nowak,ana@example.com`);
+    expect(result.validRows.map((row) => row.email)).toEqual(["ana@example.com"]);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toContain("Invalid email");
+  });
+});
+
 describe("parseAttendees — header normalisation", () => {
   it("handles case-insensitive headers", () => {
     const result = parseAttendees(`EMAIL,FIRST_NAME,LAST_NAME\njan@example.com,Jan,K`);

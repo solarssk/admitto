@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoleAssignmentsTab } from "../../../src/pages/users/RoleAssignmentsTab.js";
 import { formatUtcDateTime } from "../../../src/utils/event-dates.js";
-import { advanceTimers, deferred, renderWithToast } from "../../test-utils.js";
+import { advanceTimers, deferred, mockMatchMedia, renderWithToast } from "../../test-utils.js";
 
 const fetchRoleAssignments = vi.fn();
 const fetchAdminEvents = vi.fn();
@@ -265,6 +265,36 @@ describe("RoleAssignmentsTab", () => {
     });
   });
 
+  it("gives the grant time, with its local time under it, both columns of a phone's card", async () => {
+    mockMatchMedia(false);
+    fetchRoleAssignments.mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "staff@example.com",
+        user_display_name: null,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T12:00:00.000Z",
+        event: { id: "evt-1", title: "Kickoff", slug: "kickoff", organization_id: "org-1" },
+        organization: null,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<RoleAssignmentsTab />);
+
+    await screen.findAllByText("staff@example.com");
+    const card = document.querySelector(".users-page__card") as HTMLElement;
+    // The cell of the time and its local time is the wide one (users-page.css), which the card's other cells are not.
+    expect(within(card).getByText("Granted").closest("div")?.className).toBe("users-page__card-meta-wide");
+    expect(within(card).getByText("Scope").closest("div")?.className).toBe("");
+  });
+
   it("shows the grant time in UTC with an explanatory tooltip on the column header", async () => {
     const grantedAt = "2026-01-01T12:00:00.000Z";
     fetchRoleAssignments.mockResolvedValue({
@@ -463,7 +493,8 @@ describe("RoleAssignmentsTab on the loading standard", () => {
 
     fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), { target: { value: "jane" } });
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
-    expect(onCountChange).toHaveBeenLastCalledWith(undefined);
+    // Seeing the error does not guarantee its count-reporting effect has run.
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(undefined));
   });
 
   it("keeps the dialog open, with the reason and a usable button, when the revoke itself fails, and does not refresh a list that did not change", async () => {
@@ -491,6 +522,67 @@ describe("RoleAssignmentsTab on the loading standard", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect((await screen.findAllByText("one@example.com")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("keeps the error with a busy Retry, whose focus it keeps, while a retry runs, and says it again when the retry fails again", async () => {
+    fetchRoleAssignments.mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(<RoleAssignmentsTab />);
+    const message = await screen.findByText("Could not load role assignments.");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    const second = deferred<ReturnType<typeof answer>>();
+    fetchRoleAssignments.mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    // Not a first load: the same error and button, busy, with the focus. Neither the placeholder nor "No role assignments yet"
+    // takes their place.
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load role assignments.")).toBe(message);
+    expect(screen.queryByLabelText("Loading role assignments")).toBeNull();
+    expect(screen.queryByText("No role assignments yet")).toBeNull();
+
+    await act(async () => second.reject(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+    expect(screen.getByText("Could not load role assignments.")).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("keeps the error on screen through the retry of a failed step back to the page that exists, which is not a wait either", async () => {
+    asSuperadmin();
+    fetchRoleAssignments.mockImplementation(async (params: { page: number }) =>
+      params.page === 1 ? answer([assignment("1", "first-page@example.com")], 26) : answer([assignment("26", "last-page@example.com")], 26),
+    );
+    revokeUserRole.mockResolvedValue(undefined);
+    renderWithToast(<RoleAssignmentsTab />);
+    await screen.findAllByText("first-page@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findAllByText("last-page@example.com");
+
+    fetchRoleAssignments.mockImplementation(async (params: { page: number }) => {
+      if (params.page === 1) throw new Error("network down");
+      return { assignments: [], total: 25, page: params.page, pageSize: 25 };
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke Operator for last-page@example.com" })[0]!);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    // The answer that is on screen is the one that said "the page is gone": it must not make the retry a wait.
+    const second = deferred<ReturnType<typeof answer>>();
+    fetchRoleAssignments.mockReturnValue(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByLabelText("Loading role assignments")).toBeNull();
+    expect(screen.queryByText("No role assignments yet")).toBeNull();
+
+    await act(async () => second.resolve(answer([assignment("1", "first-page@example.com")], 25)));
+    expect((await screen.findAllByText("first-page@example.com")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 

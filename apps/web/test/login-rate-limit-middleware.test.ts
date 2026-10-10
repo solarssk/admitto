@@ -5,9 +5,12 @@ import {
   checkLoginEmailRateLimit,
   createLoginRateLimitMiddleware,
 } from "../src/auth/login-rate-limit.js";
+import { INLINE_RATE_LIMITS, RATE_POLICIES } from "../src/rate-limit/policies.js";
 
-const LOGIN_IP_MAX = 10;
-const LOGIN_EMAIL_MAX = 10;
+// Taken from the registry (pinned there by rate-limit-registry.test.ts) so these tests check the
+// exhaust-then-429 behaviour, not a copy of the number.
+const LOGIN_IP_MAX = RATE_POLICIES["auth:login-ip"].checks[0].max;
+const LOGIN_EMAIL_MAX = INLINE_RATE_LIMITS["auth:login-email"].max;
 
 describe("createLoginRateLimitMiddleware", () => {
   it("allows requests under the IP budget and returns JSON 429 when exhausted", async () => {
@@ -78,7 +81,7 @@ describe("createLoginRateLimitMiddleware", () => {
     }
     expect((await app.request("/api/auth/login/webauthn/begin", { method: "POST" })).status).toBe(429);
     // begin's bucket is exhausted, but finish's separate bucket for the same IP is not - a
-    // shared bucket would have failed this (only 5 of the 10 "logins" would ever complete).
+    // shared bucket would have failed this (only half of the "logins" would ever complete).
     expect((await app.request("/api/auth/login/webauthn/finish", { method: "POST" })).status).toBe(200);
   });
 });

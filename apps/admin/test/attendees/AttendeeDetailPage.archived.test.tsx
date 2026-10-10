@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
+import { REMOVE_ARCHIVED_TOOLTIP } from "../../src/attendees/removeAttendee.js";
 import { baseAttendeeDetailEvent, getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
@@ -119,10 +120,12 @@ describe("AttendeeDetailPage archived lockdown", () => {
     expectArchivedLock(screen.getByRole("menuitem", { name: /Restore pass/ }));
   });
 
-  it("keeps the More actions trigger and Delete attendee open, but still locks Resend ticket (#356)", async () => {
-    // The trigger itself must stay clickable on an archived event - GDPR erasure requests can
-    // legally arrive after an event ends, and the DELETE endpoint doesn't block on archived_at.
-    // Resend ticket keeps its own inner archived lock; Delete attendee has none.
+  it("keeps the More actions trigger and Erase open, but locks Resend ticket and Remove from event (#356)", async () => {
+    // The trigger itself must stay clickable on an archived event - privacy requests can
+    // legally arrive after an event ends, and the erase endpoint doesn't block on archived_at.
+    // Resend ticket keeps its own inner archived lock. Remove from event changes Reports, which
+    // are final once the event is archived, so it is off with a tooltip of its own that names
+    // Erase as the way to answer a privacy request.
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
@@ -132,7 +135,41 @@ describe("AttendeeDetailPage archived lockdown", () => {
     fireEvent.click(trigger);
 
     expectArchivedLock(await screen.findByRole("menuitem", { name: /Resend ticket/ }));
-    const deleteItem = screen.getByRole("menuitem", { name: /Delete attendee/ });
-    expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
+    const eraseItem = screen.getByRole("menuitem", { name: /Erase personal data/ });
+    expect((eraseItem as HTMLButtonElement).disabled).toBe(false);
+    const removeItem = screen.getByRole("menuitem", { name: /Remove from event/ });
+    expect((removeItem as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(removeItem)).toBe(REMOVE_ARCHIVED_TOOLTIP);
+  });
+
+  it("turns off Remove from event for an erased attendee too, and keeps the same reason on its tooltip", async () => {
+    mockLoad(
+      baseDetail({
+        name: "Placeholder name from the server",
+        erased_at: "2026-10-08T12:00:00.000Z",
+        admitted_at: "2026-09-01T10:00:00.000Z",
+        check_in_status: "admitted" as const,
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: /Erased attendee/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const removeItem = await screen.findByRole("menuitem", { name: /Remove from event/ });
+    expect((removeItem as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(removeItem)).toBe(REMOVE_ARCHIVED_TOOLTIP);
+  });
+
+  it("has no way across to Remove from the Erase dialog, since there is no Remove to go to", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Erase personal data/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Erase this person's personal data?" });
+
+    expect(within(dialog).queryByRole("button", { name: "Use Remove from event" })).toBeNull();
+    expect(within(dialog).queryByText("A duplicate or a mistake?")).toBeNull();
   });
 });

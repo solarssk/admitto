@@ -1,4 +1,6 @@
-import type { Prisma, PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
+import { Prisma } from "@admitto/db/client";
+import { lockAttendeeRow } from "./attendee-lock.js";
 
 /** Prisma client or an active transaction — both support `attendeeActionLog.create`. */
 type OpsAuditDb = PrismaClient | Prisma.TransactionClient;
@@ -51,8 +53,18 @@ export async function writeActionLogMany(
   },
 ): Promise<void> {
   if (data.entries.length === 0) return;
+  // An erased attendee has no activity trail: a log entry written after the erasure (by a request
+  // that started before it) would bring one back. Locked in id order, like the erasure itself.
+  const states = await tx.$queryRaw<{ id: string; erased_at: Date | null }[]>`
+    SELECT "id", "erased_at" FROM "Attendee"
+    WHERE "id" IN (${Prisma.join([...new Set(data.entries.map((entry) => entry.attendee_id))])})
+    ORDER BY "id" FOR KEY SHARE
+  `;
+  const erased = new Set(states.filter((state) => state.erased_at !== null).map((state) => state.id));
+  const entries = data.entries.filter((entry) => !erased.has(entry.attendee_id));
+  if (entries.length === 0) return;
   await tx.attendeeActionLog.createMany({
-    data: data.entries.map((entry) => ({
+    data: entries.map((entry) => ({
       event_id: data.event_id,
       attendee_id: entry.attendee_id,
       action_type: data.action_type,
@@ -66,6 +78,9 @@ export async function writeActionLogMany(
   });
 }
 
+/** Appends one per-attendee audit row. Returns whether it did: false, with nothing written, for an
+ * erased attendee, so a caller whose result must not leave for someone being erased (a ticket link)
+ * can tell. The others ignore it. */
 export async function writeActionLog(
   tx: Prisma.TransactionClient,
   data: {
@@ -75,7 +90,14 @@ export async function writeActionLog(
     audit: OpsAuditContext;
     metadata?: Record<string, unknown>;
   },
-): Promise<void> {
+): Promise<boolean> {
+  // See writeActionLogMany: nothing is logged for an erased attendee. A missing attendee falls
+  // through to the insert, which fails on the foreign key as before.
+  // This lock comes late in a transaction that has already written something. One that updated or
+  // deleted a row an erasure also writes (wallet pass, check-in, email delivery, note) calls
+  // lockAttendeeRow before that write, or it can deadlock with an erasure that holds the attendee
+  // and waits for that row. (The insert below would take the same lock through its foreign key.)
+  if ((await lockAttendeeRow(tx, data.attendee_id))?.erased) return false;
   await tx.attendeeActionLog.create({
     data: {
       event_id: data.event_id,
@@ -89,4 +111,5 @@ export async function writeActionLog(
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
     },
   });
+  return true;
 }

@@ -29,6 +29,8 @@ import {
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
+import { erasedWalletPassesLeft, sweepErasedWalletPasses } from "../lib/retention-erased-wallet-passes.js";
+import { purgeJobFilesForRetention } from "../lib/retention-job-files.js";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
@@ -437,9 +439,12 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
       dryRun: false,
       retentionDays: notificationRetentionDays,
     });
+    const jobFilesResult = await purgeJobFilesForRetention(db, false);
+    // Calls the wallet provider for up to a minute: keep the heartbeat fresh, like the other drains that make network calls.
+    const walletSweep = await withHeartbeatRefresh(db, "retention", () => sweepErasedWalletPasses(db, { dryRun: false }));
     log(
       "retention",
-      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted}`,
+      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted} export_files=${jobFilesResult.exportFiles} staged_import_files=${jobFilesResult.stagedImportFiles} erased_wallet_passes=${walletSweep.deleted} failed=${jobFilesResult.failures + erasedWalletPassesLeft(walletSweep)}`,
     );
     return true;
   } finally {
@@ -566,11 +571,11 @@ export async function runWorker(db: PrismaClient): Promise<void> {
       // attendees at once) - keep draining immediately instead of waiting for the next
       // wake/tick, since the burst's notifications already collapsed into one wake.
       if (mightHaveMore) continue;
-      notify = await ensureNotifyClient(databaseUrl, notify);
+      notify = await ensureNotifyClient(databaseUrl, notify); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       if (notify) {
-        await notify.waitForWakeOrTimeout(tickMs, signal);
+        await notify.waitForWakeOrTimeout(tickMs, signal); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       } else {
-        await sleep(tickMs, signal);
+        await sleep(tickMs, signal); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       }
     }
   } finally {

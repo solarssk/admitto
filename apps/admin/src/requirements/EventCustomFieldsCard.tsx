@@ -16,8 +16,6 @@ export interface EventCustomFieldsCardProps {
   readonly eventId: string;
   readonly event: EventDto;
   readonly fields: EventCustomFieldDto[];
-  readonly loading: boolean;
-  readonly showLoading: boolean;
   readonly onChanged: () => void;
 }
 
@@ -91,14 +89,14 @@ function CustomFieldRow({
 /** Requirements screen card: manages the event's custom attendee data field registry
  * (dietary, shirt size, ...) — the single source of truth consumed by attendee edit/create,
  * import, export, and referenced by items as operator hints (see EventItemDrawer). */
-export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoading, onChanged }: EventCustomFieldsCardProps) {
+export function EventCustomFieldsCard({ eventId, event, fields, onChanged }: EventCustomFieldsCardProps) {
   const { addToast } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [editField, setEditField] = useState<EventCustomFieldDto | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EventCustomFieldDto | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const showTable = !loading && fields.length > 0;
+  const showTable = fields.length > 0;
 
   function closeModal() {
     setAddOpen(false);
@@ -125,9 +123,6 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
   }
 
   function renderBody() {
-    if (loading) {
-      return showLoading ? <p className="field-hint">Loading…</p> : null;
-    }
     if (fields.length === 0) {
       return (
         <EmptyState
@@ -169,7 +164,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
   return (
     <section className="requirements-section">
       <Card
-        /* Table bleeds edge-to-edge; empty/loading keep normal card padding (Import history). */
+        /* Table bleeds edge-to-edge; the empty state keeps the normal card padding (Import history). */
         padded={!showTable}
         title={<HintLabel hint={CUSTOM_FIELDS_HINT}>Custom attendee fields</HintLabel>}
         actions={

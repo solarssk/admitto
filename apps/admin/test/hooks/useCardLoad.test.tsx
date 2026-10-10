@@ -15,6 +15,7 @@ function list(over: Partial<ListLoad<string[]>>): ListLoad<string[]> {
     enabled: true,
     reload: () => Promise.resolve(),
     update: () => {},
+    poll: () => Promise.resolve(),
     ...over,
   };
 }
@@ -118,5 +119,27 @@ describe("useCardLoad", () => {
     expect(reload).toHaveBeenCalledOnce();
     expect(result.current.failure.retrying).toBe(true);
     expect(result.current.failure.error).toBe("Could not load.");
+  });
+
+  it("waits for an answer that is not one to show (alsoWaiting), like a first load, and says so only after 200ms", async () => {
+    const { result, rerender } = renderHook(({ alsoWaiting }: { alsoWaiting: boolean }) => useCardLoad(list({ data: [] }), { alsoWaiting }), {
+      initialProps: { alsoWaiting: false },
+    });
+    expect(result.current.gate.showContent).toBe(true);
+
+    rerender({ alsoWaiting: true });
+    expect(result.current.gate.showContent).toBe(false);
+    expect(result.current.gate.showIndicator).toBe(false);
+    await advanceTimers(200);
+    expect(result.current.gate.showIndicator).toBe(true);
+
+    rerender({ alsoWaiting: false });
+    await advanceTimers(400);
+    expect(result.current.gate.showContent).toBe(true);
+  });
+
+  it("does not wait for an answer that is not one to show while its list is not enabled", async () => {
+    const { result } = renderHook(() => useCardLoad(list({ enabled: false, data: [] }), { alsoWaiting: true }));
+    expect(result.current.gate.showContent).toBe(true);
   });
 });

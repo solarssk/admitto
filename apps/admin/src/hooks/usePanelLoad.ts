@@ -18,6 +18,16 @@ export interface PanelLoad {
 }
 
 /**
+ * What a panel (or a modal that reads a record when it opens) shows now: the placeholder, the error, or the form. A load
+ * that fails before the placeholder was drawn (within 200ms) shows the error at once; one that fails after it was drawn
+ * keeps the placeholder for its 400ms minimum first, like the form does, so it never flashes for a moment and goes.
+ */
+export function panelView(panel: Pick<PanelLoad, "gate" | "error">): "loading" | "error" | "ready" {
+  if (!panel.gate.showContent) return "loading";
+  return panel.error === null ? "ready" : "error";
+}
+
+/**
  * The first load of a settings panel (what its form is filled from) on the loading standard: nothing is drawn for the
  * first 200ms and a placeholder after that (`gate`), "Taking longer than usual" after 8 seconds (`slow`), and after 30
  * seconds an error with Retry (`error`, `retry`), instead of a bare "Loading…" or a panel that never answers. A Retry

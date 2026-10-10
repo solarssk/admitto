@@ -36,9 +36,13 @@ export type ConfirmDialogProps = {
   children?: ReactNode;
   /** External confirm-disabled condition (e.g. a required field in `children` is still empty), ORed with the built-in checks. */
   disableConfirm?: boolean;
+  /** A wider panel (520px instead of 400px), for a dialog whose children are a table-like list that reads better on one line. */
+  wide?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
+
+const ignore = () => undefined;
 
 /** Accessible confirmation modal replacing native window.confirm. */
 export function ConfirmDialog({
@@ -56,6 +60,7 @@ export function ConfirmDialog({
   confirmDelaySeconds,
   children,
   disableConfirm = false,
+  wide = false,
   onConfirm,
   onCancel,
 }: Readonly<ConfirmDialogProps>) {
@@ -64,7 +69,8 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const [typedValue, setTypedValue] = useState("");
   const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
-  useModalFocusTrap(panelRef, open, onCancel);
+  // Every way out is off while the request runs, as the Cancel button is: Escape, a click outside and Cancel itself.
+  useModalFocusTrap(panelRef, open, loading ? ignore : onCancel);
 
   useEffect(() => {
     if (open) setTypedValue("");
@@ -99,8 +105,8 @@ export function ConfirmDialog({
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
     >
-      <ModalBackdrop onClose={onCancel} />
-      <div ref={panelRef} className="confirm-dialog__panel">
+      <ModalBackdrop onClose={loading ? undefined : onCancel} />
+      <div ref={panelRef} className={`confirm-dialog__panel${wide ? " confirm-dialog__panel--wide" : ""}`}>
         <h3 id={titleId} className="confirm-dialog__title">
           {icon && (
             <span className="confirm-dialog__icon" aria-hidden="true">
@@ -114,7 +120,9 @@ export function ConfirmDialog({
         </p>
         {children}
         {errorMessage && (
-          <Notice variant="error" role="alert">
+          // `actionBusy`: when a retry from this dialog ends with the same error still there, the message is mounted
+          // afresh so that assistive tech announces it again (AGENTS.md, "A Retry that fails again").
+          <Notice variant="error" role="alert" actionBusy={loading}>
             {errorMessage}
           </Notice>
         )}

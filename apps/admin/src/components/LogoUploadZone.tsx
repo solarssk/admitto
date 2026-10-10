@@ -342,8 +342,17 @@ export function LogoUploadZone({
     }
   };
 
-  const clearLogo = () => {
+  /**
+   * Drop the upload in flight (its answer is discarded). Only the newest request ends the busy state in its
+   * `finally`, so whoever supersedes one without starting another must end it here.
+   */
+  const supersedeUpload = () => {
     uploadSeqRef.current += 1;
+    setUploading(false);
+  };
+
+  const clearLogo = () => {
+    supersedeUpload();
     lastUploadedUrlRef.current = null;
     setSourceOriginal(null);
     setZoneError(null);
@@ -560,7 +569,7 @@ export function LogoUploadZone({
             }}
             onUploadedFileCorrupt={() => {
               setZoneError("Uploaded file appears corrupt or unsupported. Please try another image.");
-              uploadSeqRef.current += 1;
+              supersedeUpload();
               setPreviewFailed(false);
               lastUploadedUrlRef.current = null;
               setSourceOriginal(null);

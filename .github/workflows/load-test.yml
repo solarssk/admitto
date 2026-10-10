@@ -96,8 +96,10 @@ jobs:
       # 9 operators = one per k6 VU (3 for the contested scenario, 6 for the distinct one); 12 of
       # the 512 attendees are the contested set, the rest are admitted once each; 2 more accounts
       # listen to the live check-in stream.
+      # Runs from apps/web because tsx is installed there, not hoisted to the repo root.
       - name: Seed operators and attendees
-        run: node --import tsx scripts/load-test/seed.ts 9 512 12 2 "$RUNNER_TEMP/load-seed.json"
+        working-directory: apps/web
+        run: node --import tsx ../../scripts/load-test/seed.ts 9 512 12 2 "$RUNNER_TEMP/load-seed.json"
       - name: Start the app
         working-directory: apps/web
         run: |

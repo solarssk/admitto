@@ -49,7 +49,7 @@ async function registerCredential(userId: string, label: string | null = null) {
   const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
   const response = authenticator.register({ challenge: begin.challenge, rpID: RP.rpID, origin: RP.origin });
-  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", label, RP);
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", RP, { label });
   if (!result) throw new Error("finishWebauthnRegistration returned null");
   // Acknowledge backup codes so login tests exercise the FULL-session path, not the
   // separate BACKUP_CODES_REQUIRED gate `finalizeLoginSession` also enforces.
@@ -219,7 +219,7 @@ describe("loginWithPasskey", () => {
     const authenticator = createVirtualAuthenticator();
     const beginReg = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     const regResponse = authenticator.register({ challenge: beginReg!.challenge, rpID: RP.rpID, origin: RP.origin });
-    await finishWebauthnRegistration(prisma, userId, regResponse, beginReg!.challenge, "platform", "Key", RP);
+    await finishWebauthnRegistration(prisma, userId, regResponse, beginReg!.challenge, "platform", RP, { label: "Key" });
 
     const begin = await beginPasskeyLogin(RP.rpID);
     const response = authenticator.authenticate({ challenge: begin.challenge, rpID: RP.rpID, origin: RP.origin });

@@ -26,12 +26,18 @@
  * normal use, and lifecycle-sensitive trails (e.g. attendee_erased) are also written to
  * org-level AdminAuditLog, which survives event deletion. EventImageAsset rows cascade too,
  * but managed `/uploads/…` files are deleted post-commit (same as handleDeleteEventImageAsset).
+ * The same goes for the files the event's jobs left in storage (the file of an export, the staged
+ * CSV of an import that failed): the jobs are deleted in the transaction, which hands back their
+ * `storage_key`s, and the files are deleted after the commit, because with the rows gone nothing
+ * (the retention run included) could find them again. The keys are also written into the audit entry
+ * of the deletion, so that a crash between the commit and the deletes does not lose them.
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
+import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, lockAttendeeJobQueue, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
+import { deleteEventJobFilesBestEffort } from "./purge-export-files.js";
 import {
   lockEventForScopedWrite,
   requireAuditActor,
@@ -140,7 +146,7 @@ type DeleteActor = { userId: string };
 type DeleteTxResult =
   | { kind: "not_found" }
   | { kind: "not_deletable" }
-  | { kind: "ok"; eventTitle: string; managedUploadUrls: Array<string | null> };
+  | { kind: "ok"; eventTitle: string; managedUploadUrls: Array<string | null>; jobFileKeys: string[] };
 
 export async function deleteEvent(
   db: PrismaClient,
@@ -157,6 +163,22 @@ export async function deleteEvent(
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
       await lockEventForScopedWrite(tx, eventId);
+      // No export or import job can be created until this transaction ends: the queue lock, exclusively, before the
+      // rows of the jobs are read. A job that was committed after that read could be claimed by a worker while this
+      // transaction holds the event row, and the import would wait for the event row while this transaction waited
+      // for its job row.
+      await lockAttendeeJobQueue(tx, eventId, "exclusive");
+      // The rows of the event's jobs first, then the event row: an import holds its job row for the whole of its
+      // transaction and then needs the event row (the foreign key of the people it inserts), so the other order
+      // would make the two wait for each other. A running import is waited for, and the people it created make
+      // the event undeletable; a job that is deleted with the event makes the import that wakes up stop.
+      await tx.$queryRaw`SELECT "id" FROM "AdminJob" WHERE "event_id" = ${eventId} ORDER BY "id" FOR UPDATE`;
+      // The row of the event itself, before anything is counted or read. A job that is being created for the
+      // event (an import that has stored its CSV and is about to name it) holds a share of this row until it
+      // commits, so the deletion waits for it and then sees its row, and a job that starts after finds the
+      // event gone, fails on its foreign key and deletes its own file. Without it, the cascade of the event
+      // would delete that job's row without handing back the key of its file.
+      await tx.$queryRaw`SELECT 1 FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`;
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
@@ -197,6 +219,14 @@ export async function deleteEvent(
       // deletable). Clean it up here so a delete never orphans its scope_id.
       await tx.mailSettings.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
 
+      // The event's jobs would cascade away with it, and with them the only record of the files they left
+      // in storage. Deleting them here hands back exactly the keys of the rows that went, as of the moment
+      // they went (a job that finished a moment ago is in the answer); the files go after the commit.
+      const deletedJobs = await tx.$queryRaw<{ storage_key: string | null }[]>`
+        DELETE FROM "AdminJob" WHERE "event_id" = ${eventId} RETURNING "storage_key"
+      `;
+      const jobFileKeys = deletedJobs.flatMap((job) => (job.storage_key ? [job.storage_key] : []));
+
       await tx.event.delete({ where: { id: eventId } });
 
       await writeAdminAuditLog(tx, {
@@ -207,10 +237,12 @@ export async function deleteEvent(
         timezone,
         actionType: "event_deleted",
         // Snapshot the title here: once the delete above commits, the audit log's usual
-        // live-lookup-by-eventId has nothing left to resolve against.
-        metadata: { eventId, eventTitle: event.title },
+        // live-lookup-by-eventId has nothing left to resolve against. The keys of the job files go in too:
+        // they are deleted after the commit, and if the process dies in between this entry is the only
+        // record of them (a key is org, event and a random name, no personal data).
+        metadata: { eventId, eventTitle: event.title, ...(jobFileKeys.length > 0 ? { jobFileKeys } : {}) },
       });
-      return { kind: "ok", eventTitle: event.title, managedUploadUrls };
+      return { kind: "ok", eventTitle: event.title, managedUploadUrls, jobFileKeys };
     });
 
     if (txResult.kind === "not_found") return { code: "not_found" };
@@ -222,6 +254,8 @@ export async function deleteEvent(
       [],
       { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
     );
+
+    await deleteEventJobFilesBestEffort(eventId, txResult.jobFileKeys);
 
     // Emitted after the transaction has committed (CodeRabbit review) - emitSystemLog is
     // not transactional, so logging it from inside the callback above would record a

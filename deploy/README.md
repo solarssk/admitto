@@ -282,7 +282,8 @@ Migrations apply in the one-shot `migrate` service. `docker compose up -d` block
 ## Self-hosted SMTP on a private address
 
 Mail destinations (SMTP host, Power Automate URL host, bounce IMAP host) are blocked when they are
-or resolve to loopback / RFC1918 / link-local / cloud-metadata addresses. That protects production
+or resolve to loopback / RFC1918 / link-local / carrier-grade NAT (100.64.0.0/10, including
+Tailscale) / cloud-metadata addresses. That protects production
 from SSRF via Settings UI.
 
 If your MTA is only reachable on the LAN (for example AdGuard rewrites `mail.example.lan` to
@@ -417,6 +418,21 @@ Additional instance superadmins can be assigned in the admin UI (Users) or via O
 Before demoting a superadmin in your IdP, ensure at least one other **active** instance superadmin
 remains - see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md).
 
+## Upgrading stored secrets to purpose-bound encryption
+
+Existing mail credentials, event wallet API keys, the bounce-mailbox IMAP password and the
+notification webhook URL keep working after an upgrade and are re-encrypted when saved again. To
+upgrade all of them at once, run the one-off command (preview first; it exits 1 if a value cannot be
+decrypted, and leaves such values untouched):
+
+```bash
+docker compose run --rm app node packages/db/dist/scripts/rebind-secret-contexts.js --dry-run
+docker compose run --rm app node packages/db/dist/scripts/rebind-secret-contexts.js
+```
+
+Take a database backup first and do not roll back to an older release afterwards: upgraded values
+cannot be read by it.
+
 ## Emergency CLI (event-day failover)
 
 When the admin SPA or scanner is down, use the unified emergency binary (same production `app` image - `npm`/`npx` are not available):
@@ -433,6 +449,14 @@ docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <e
 # (/uploads/* is served without auth; /backups is only on the db-backup sidecar volume)
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
 # File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
+
+# Privacy request while the admin UI/API is down: erase attendees' personal data (find the ids first, preview with --dry-run, then run it for real)
+# find only reads, lists up to 20 people in every event (add --event <eventId> for one) with the event id and the attendee id,
+# and also works for an archived event (checkin lookup does not)
+docker compose run --rm app node apps/cli/dist/index.js attendees find --query "<name or email>"
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com --dry-run
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com
+# Asks you to type yes; exits 2 when a wallet pass is still at the provider (run it again to retry).
 
 # Retry failed mail batch
 docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
@@ -454,7 +478,7 @@ docker compose run --rm app node apps/cli/dist/index.js storage gc --operator-em
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
 
-Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification cleanup in one audited command for manual/on-demand use.
+Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification + export/import job file cleanup + erased wallet pass retry in one audited command for manual/on-demand use.
 
 ## Nginx Proxy Manager (deep notes)
 
@@ -462,7 +486,7 @@ Start with **[Edge proxy: two variants](#edge-proxy-two-variants)** above (heade
 
 - **NPM must overwrite `X-Forwarded-For`** with the real client IP, never append (`$proxy_add_x_forwarded_for` would let a client spoof an earlier hop). Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
 - **Use `$http_host`, not `$host`,** when the public URL uses a non-default port (e.g. local smoke on `:8080`), so the CSRF origin check matches the browser's `Origin` header.
-- **Admitto trusts only the first `X-Forwarded-For` hop** ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)) when `TRUST_PROXY=true` - an appended chain would let clients pick their own rate-limit bucket. If that first hop isn't a valid IP, the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
+- **Admitto takes the rightmost `X-Forwarded-For` hop that is not inside `TRUSTED_PROXY_CIDRS`** ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)) when `TRUST_PROXY=true` - entries to its left were supplied by the client, so an appended chain cannot make a client pick its own rate-limit bucket. With a single-hop header (the overwriting setups above) that is simply the one hop. A chain of several trusted proxies works as long as each of them is listed in `TRUSTED_PROXY_CIDRS`; a proxy missing from it is taken for the client, and everyone behind it shares one rate-limit bucket. If any hop isn't a valid IP, the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
 - **Compose nginx trusts only two RealIP peers,** `127.0.0.1` (NPM on the host → `127.0.0.1:8080`) and `172.17.0.1` (the default Docker bridge gateway, for NPM running in Docker), set in `deploy/nginx/default.conf`. If NPM reaches the host through a different address, add that one address there - never widen it to a whole RFC1918 range.
 - **The app itself only honours `X-Forwarded-*`** when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)) - the compose `internal` subnet for Variant A, or NPM's exact source `/32` for Variant B (never a broad Docker RFC1918 range).
 - **`$scheme` is `https`** on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.

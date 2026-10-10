@@ -20,6 +20,14 @@ export interface TooltipProps {
    * that because neighbors sit above/below, never beside.
    */
   axis?: "vertical" | "horizontal";
+  /**
+   * CSS selector, resolved inside the trigger, of the element the bubble is placed against.
+   * A form field's trigger holds its label above the control, so by default the bubble lands
+   * above the label and floats well clear of the control it explains; pointing this at the
+   * control (`.at-input`) puts it right next to the control. Falls back to the whole trigger when
+   * nothing matches.
+   */
+  anchor?: string;
 }
 
 const MARGIN = 5;
@@ -31,10 +39,11 @@ const VIEWPORT_PADDING = 8;
 // ancestor <fieldset disabled> - e.g. every archived-event form (CommunicationPage, ImportPage,
 // AttendeeDetailPage) - still counts as not-actually-focusable: fieldset-inherited disabling
 // never sets the `disabled` attribute on the descendant itself, only on the fieldset. Same
-// selector as apps/admin/src/components/focusable.ts (modal focus trap / dropdown-menu hook);
+// selector as apps/admin/src/components/focusable.ts (modal focus trap / dropdown-menu hook),
+// plus `contenteditable` (a read-only CodeMirror body is a tab stop with no tabindex attribute);
 // duplicated rather than imported since this package can't depend on an app.
 const FOCUSABLE_SELECTOR =
-  'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+  'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"]), [contenteditable]:not([contenteditable="false"])';
 
 /**
  * Hover/focus tooltip that measures the trigger and its own rendered size at show-time and picks
@@ -44,7 +53,7 @@ const FOCUSABLE_SELECTOR =
  * it's never clipped by an ancestor's overflow and always paints above any dropdown/modal it's
  * triggered from (--z-tooltip).
  */
-export function Tooltip({ content, children, className, axis = "vertical" }: Readonly<TooltipProps>) {
+export function Tooltip({ content, children, className, axis = "vertical", anchor }: Readonly<TooltipProps>) {
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -67,7 +76,7 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     const bubble = bubbleRef.current;
     if (!trigger || !bubble) return;
 
-    const triggerRect = trigger.getBoundingClientRect();
+    const triggerRect = (anchor ? trigger.querySelector(anchor) : null)?.getBoundingClientRect() ?? trigger.getBoundingClientRect();
     const bubbleRect = bubble.getBoundingClientRect();
 
     if (axis === "horizontal") {
@@ -121,7 +130,7 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     left = Math.max(left, VIEWPORT_PADDING);
 
     setStyle({ position: "fixed", top, left, visibility: "visible" });
-  }, [visible, content, axis]);
+  }, [visible, content, axis, anchor]);
 
   const show = () => content && setVisible(true);
   const hide = () => {

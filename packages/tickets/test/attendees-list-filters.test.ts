@@ -217,6 +217,7 @@ describe("buildAttendeeListWhere", () => {
   it("omits ticket_type/rsvp_status from the where clause when their arrays are empty", () => {
     expect(buildAttendeeListWhere("event-1", { status: "all", ticket_type: [], rsvp_status: [] })).toEqual({
       event_id: "event-1",
+      erased_at: null,
     });
   });
 
@@ -229,10 +230,15 @@ describe("buildAttendeeListWhere", () => {
       }),
     ).toEqual({
       event_id: "event-1",
+      erased_at: null,
       admitted_at: { not: null },
       ticket_type: { in: ["vip", "staff"] },
       rsvp_status: { in: ["confirmed", "tentative"] },
     });
+  });
+
+  it("leaves erased attendees in only when asked to", () => {
+    expect(buildAttendeeListWhere("event-1", { status: "all", includeErased: true })).toEqual({ event_id: "event-1" });
   });
 });
 

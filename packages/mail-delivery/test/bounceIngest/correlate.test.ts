@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   findDeliveriesForBounceBatch,
   findDeliveryForBounce,
+  selectBounceDeliveryIndex,
   truncateEmailForLog,
 } from "../../src/bounceIngest/correlate.js";
 
@@ -118,5 +119,40 @@ describe("truncateEmailForLog", () => {
     const out = truncateEmailForLog("nobody@example.com");
     expect(out).toBe("n***@example.com");
     expect(out).not.toContain("nobody");
+  });
+});
+
+describe("selectBounceDeliveryIndex", () => {
+  const smtp = { id: "smtp", provider: "smtp", provider_message_id: "<Abc@mail.example.com>" };
+  const queuedSmtp = { id: "queued-smtp", provider: "smtp", provider_message_id: null };
+  const opaque = { id: "graph", provider: "graph", provider_message_id: "3f2c-request-id" };
+  const none = { id: "none", provider: "powerautomate", provider_message_id: null };
+  const q = (...rows: object[]) => rows as never[];
+
+  it("accepts an SMTP delivery only when the DSN names its Message-ID (case-insensitive)", () => {
+    expect(selectBounceDeliveryIndex(q(smtp), ["<abc@mail.example.com>"])).toBe(0);
+    expect(selectBounceDeliveryIndex(q(smtp), ["<other@mail.example.com>"])).toBe(-1);
+    expect(selectBounceDeliveryIndex(q(smtp), [])).toBe(-1);
+    expect(selectBounceDeliveryIndex(q(smtp), undefined)).toBe(-1);
+  });
+
+  it("keeps recipient-only matching for deliveries without an RFC Message-ID", () => {
+    expect(selectBounceDeliveryIndex(q(opaque), [])).toBe(0);
+    expect(selectBounceDeliveryIndex(q(none), undefined)).toBe(0);
+  });
+
+  it("never matches a still-queued SMTP delivery (no Message-ID yet) by recipient alone", () => {
+    expect(selectBounceDeliveryIndex(q(queuedSmtp), [])).toBe(-1);
+    expect(selectBounceDeliveryIndex(q(queuedSmtp), ["<other@mail.example.com>"])).toBe(-1);
+    expect(selectBounceDeliveryIndex(q(queuedSmtp, none), [])).toBe(1);
+  });
+
+  it("prefers the SMTP row the DSN names over a newer opaque-id row", () => {
+    expect(selectBounceDeliveryIndex(q(opaque, smtp), ["<abc@mail.example.com>"])).toBe(1);
+    expect(selectBounceDeliveryIndex(q(none, smtp), ["<abc@mail.example.com>"])).toBe(1);
+  });
+
+  it("skips a non-matching SMTP row and selects the next eligible one", () => {
+    expect(selectBounceDeliveryIndex(q(smtp, none), [])).toBe(1);
   });
 });

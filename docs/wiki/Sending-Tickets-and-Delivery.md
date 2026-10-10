@@ -44,7 +44,7 @@ Sending creates delivery records and can issue the attendee's ticket when needed
 ## Common problems
 
 - **The count is zero:** verify the selected template, filter, and attendee data.
-- **Ticket types fail to load:** retry before sending; do not fall back to all attendees by guesswork.
+- **Ticket types fail to load:** the **Ticket type** field stays off and says so with a **Retry** under it; retry before sending, and do not fall back to all attendees by guesswork.
 - **Some deliveries fail:** open that row's **View delivery details** for the exact provider error, then review [Email Delivery Statuses](Email-Delivery-Statuses), correct the cause, and use the permitted resend.
 - **The batch stays queued:** ask a Superadmin to review mail configuration and logs.
 - **You started a send by mistake:** select **Stop** while the batch is still draining. Anyone not yet emailed is left as Cancelled and can be sent to again immediately; anyone already emailed keeps that delivery, since it already left and cannot be undone.

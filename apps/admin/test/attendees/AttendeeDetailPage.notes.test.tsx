@@ -337,7 +337,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Oldest after add")).toBeTruthy();
-    expect(loadAttendeeDetailData).toHaveBeenLastCalledWith("evt-1", "att-1", 2);
+    expect(loadAttendeeDetailData).toHaveBeenLastCalledWith("evt-1", "att-1", 2, expect.any(AbortSignal));
   });
 
   it("ignores a stale notes-page response after switching attendee", async () => {
@@ -365,8 +365,8 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(await screen.findByText("Anna oldest")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
     await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(4));
-    expect(loadAttendeeDetailData).toHaveBeenNthCalledWith(3, "evt-2", "att-2", 2);
-    expect(loadAttendeeDetailData).toHaveBeenNthCalledWith(4, "evt-2", "att-2", 1);
+    expect(loadAttendeeDetailData).toHaveBeenNthCalledWith(3, "evt-2", "att-2", 2, expect.any(AbortSignal));
+    expect(loadAttendeeDetailData).toHaveBeenNthCalledWith(4, "evt-2", "att-2", 1, expect.any(AbortSignal));
 
     resolveFirstPage({
       detail: baseDetail({

@@ -14,6 +14,11 @@
   line-height: 1;
 }
 
+/* A failed load: the glyph takes the error colour, as in Notice's error. */
+.at-empty-state--error .at-empty-state__icon {
+  color: var(--status-error);
+}
+
 .at-empty-state__title {
   font-size: 1rem;
   font-weight: 500;
@@ -24,7 +29,9 @@
 .at-empty-state__desc {
   font-size: 0.875rem;
   margin: 0 0 1rem;
-  max-width: 30ch;
+  /* Wide enough for "Something went wrong. Try again. If it keeps happening, check System logs." in two even lines: at 30ch
+     it took three, with "it" or "logs." left over (the text is balanced, see base.css). */
+  max-width: 40ch;
 }
 
 .at-empty-state__action {

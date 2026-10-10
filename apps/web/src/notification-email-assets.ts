@@ -107,12 +107,15 @@ export async function generateNotificationEmailAssets(outDir?: string): Promise<
   await sharp(logoSvg).resize(354, 108).png().toFile(logoOut);
   written.push(logoOut);
 
-  for (const badge of notificationBadgeSpecs()) {
-    const svg = buildNotificationBadgeSvg(badge.color, badge.glyph);
-    const out = join(targetDir, badge.fileName);
-    await sharp(Buffer.from(svg)).png().toFile(out);
-    written.push(out);
-  }
+  const badgeOutputs = await Promise.all(
+    notificationBadgeSpecs().map(async (badge) => {
+      const svg = buildNotificationBadgeSvg(badge.color, badge.glyph);
+      const out = join(targetDir, badge.fileName);
+      await sharp(Buffer.from(svg)).png().toFile(out);
+      return out;
+    }),
+  );
+  written.push(...badgeOutputs);
 
   return written;
 }

@@ -180,8 +180,8 @@ describe("html-routes", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 429 when failed login hits the email rate limit", async () => {
-    mockLogin.mockResolvedValue({ ok: false } as Awaited<ReturnType<typeof login>>);
+  it("returns 429 without verifying the password once the email budget is spent", async () => {
+    mockLogin.mockClear();
     checkEmailLimit.mockResolvedValue(false);
     const res = await makeApp().request("/login", {
       method: "POST",
@@ -189,6 +189,7 @@ describe("html-routes", () => {
       body: "email=ops%40example.com&password=bad-password",
     });
     expect(res.status).toBe(429);
+    expect(mockLogin).not.toHaveBeenCalled();
   });
 
   it("returns 401 HTML when credentials are wrong but under rate limit", async () => {

@@ -1,8 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { SESSION_STAGE } from "@admitto/auth";
-import { handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify } from "../../src/auth/routes.js";
+import {
+  handlePostMfaRememberDevice,
+  handlePostMfaWebauthnBegin,
+  handlePostMfaWebauthnVerify,
+} from "../../src/auth/routes.js";
 import { stashWebauthnChallenge, clearWebauthnChallengeCacheForTests } from "../../src/auth/webauthn-challenge-cache.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -71,5 +75,20 @@ describe("handlePostMfaWebauthnBegin/Verify propagate a 422 when no instance URL
     const res = await handlePostMfaWebauthnVerify(ctx, db, new InMemoryRateLimitStore());
     expect(res.status).toBe(422);
     expect(((await res.json()) as { error: string }).error).toBe("instance_url_required");
+  });
+});
+
+describe("handlePostMfaRememberDevice", () => {
+  it("answers 401 for a principal without a session id and creates no trusted device", async () => {
+    const create = vi.fn();
+    const db = { trustedDevice: { create } } as unknown as PrismaClient;
+    const ctx = {
+      get: () => ({ userId: "user-1" }),
+      json: (payload: unknown, status?: number) => Response.json(payload, { status: status ?? 200 }),
+    } as unknown as Context;
+
+    const res = await handlePostMfaRememberDevice(ctx, db);
+    expect(res.status).toBe(401);
+    expect(create).not.toHaveBeenCalled();
   });
 });

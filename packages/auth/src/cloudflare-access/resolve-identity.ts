@@ -83,14 +83,14 @@ async function runCfAccessIdentityTransaction<T>(
 
   for (let attempt = 0; ; attempt++) {
     try {
-      return await prisma.$transaction(fn, {
+      return await prisma.$transaction(fn, { // NOSONAR - retry loop: an attempt runs only after the previous one failed
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (err) {
       if (!isSerializationFailure(err) || attempt >= SERIALIZATION_RETRY_ATTEMPTS - 1) {
         throw err;
       }
-      await sleep(randomInt(Math.min(500, 25 * 2 ** attempt) + 1));
+      await sleep(randomInt(Math.min(500, 25 * 2 ** attempt) + 1)); // NOSONAR - backoff: the next attempt must wait for this delay
     }
   }
 }

@@ -162,6 +162,26 @@ function webhookMatchFilter(data: PassCreatorWebhookData): Prisma.WalletPassWher
 }
 
 /**
+ * Whether a delivery names any PassCreator pass of `eventId` at all, by user_provided_id or, failing
+ * that, identifier: the binding that makes a signature-valid payload this event's traffic rather
+ * than another event's captured one (accounts share a signing key across events). Looser than
+ * {@link findWebhookPassTarget}, which also needs a provider identity to re-read the pass by.
+ */
+export async function webhookNamesAPassOfEvent(
+  db: PrismaClient,
+  eventId: string,
+  data: PassCreatorWebhookData,
+): Promise<boolean> {
+  const where = webhookMatchFilter(data);
+  if (!where) return false;
+  const row = await db.walletPass.findFirst({
+    where: { ...where, attendee: { event_id: eventId } },
+    select: { attendee_id: true },
+  });
+  return row !== null;
+}
+
+/**
  * The pass of `eventId` that a delivery names, as the reference a re-read of it needs - null when
  * nothing matches or the row has no provider identity to read by yet. Scoped to the event because
  * the payload's own `identifier` alone (no userProvidedId) says nothing about which Admitto event
@@ -239,6 +259,7 @@ function applyRegistrationCounts(updateData: Prisma.WalletPassUpdateInput, data:
 
 export async function applyWebhookUpdate(
   db: PrismaClient,
+  eventId: string,
   data: PassCreatorWebhookData,
 ): Promise<{ matched: boolean }> {
   const where = webhookMatchWhere(data);
@@ -254,7 +275,12 @@ export async function applyWebhookUpdate(
     // `provider_removed_at: null` in the where clause (extended unique filter) makes "never write a
     // removed pass's frozen snapshot" atomic with the write itself: the caller's own preflight read
     // of the marker can lose a race against a removal that lands right after it.
-    await db.walletPass.update({ where: { ...where, provider_removed_at: null }, data: updateData });
+    // `attendee.event_id` keeps a delivery on one event's route from touching another event's pass
+    // when it names it by identifier alone (payloadNamesADifferentEvent only sees Admitto-format ids).
+    await db.walletPass.update({
+      where: { ...where, provider_removed_at: null, attendee: { event_id: eventId } },
+      data: updateData,
+    });
     return { matched: true };
   } catch (err) {
     // P2025 ("record to update not found") is the only expected failure here - the pass may have
@@ -283,11 +309,15 @@ export async function applyWebhookUpdate(
  * once first_pushnotification_registered has already fired once) can never clobber the original
  * timestamp with a later one.
  */
-export async function applyFirstConfirmedAt(db: PrismaClient, data: PassCreatorWebhookData): Promise<void> {
+export async function applyFirstConfirmedAt(
+  db: PrismaClient,
+  eventId: string,
+  data: PassCreatorWebhookData,
+): Promise<void> {
   const where = webhookMatchFilter(data);
   if (!where) return;
   await db.walletPass.updateMany({
-    where: { ...where, first_confirmed_at: null, provider_removed_at: null },
+    where: { ...where, first_confirmed_at: null, provider_removed_at: null, attendee: { event_id: eventId } },
     data: { first_confirmed_at: new Date() },
   });
 }

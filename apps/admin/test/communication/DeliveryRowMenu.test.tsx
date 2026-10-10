@@ -134,6 +134,34 @@ describe("DeliveryRowMenu", () => {
     expect(onDismiss).toHaveBeenCalledWith(bouncedRow);
   });
 
+  it("keeps Resend and Dismiss bounce off, with the archived reason, for an archived event", () => {
+    const onResend = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <DeliveryRowMenu
+        row={{ ...row, status: "bounced" }}
+        onViewSentMessage={vi.fn()}
+        onViewDetails={vi.fn()}
+        onResend={onResend}
+        onDismiss={onDismiss}
+        archived
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    for (const name of ["Resend", "Dismiss bounce"]) {
+      const item = screen.getByRole("menuitem", { name }) as HTMLButtonElement;
+      expect(item.disabled).toBe(true);
+      expect(item.title).toBe("This event is archived. Editing is disabled.");
+      fireEvent.click(item);
+    }
+    expect(onResend).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+    // Reading the message and its details stays possible.
+    expect((screen.getByRole("menuitem", { name: "View sent message" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("menuitem", { name: "View delivery details" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("does not show Resend/Dismiss for a non-bounced row even when both callbacks are supplied", () => {
     render(
       <DeliveryRowMenu

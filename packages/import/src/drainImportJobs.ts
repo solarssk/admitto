@@ -35,8 +35,11 @@ function failureMessage(err: unknown): string {
 }
 
 async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
-  await db.adminJob.update({
-    where: { id: jobId },
+  // Only a job that is still running: one that something else closed already (an erasure stopped it, or it was
+  // reclaimed as stale) keeps its own error, and a row that is gone (its event was deleted) no longer aborts the
+  // rest of the queue. One statement, so the check and the write cannot part.
+  await db.adminJob.updateMany({
+    where: { id: jobId, status: "running" },
     data: {
       status: "failed",
       error: failureMessage(err).slice(0, 2000),
@@ -111,7 +114,7 @@ export async function drainImportJobs(
     const job = await claimNextAdminJob(db, "import_commit");
     if (!job) break;
     claimed += 1;
-    const outcome = await processImportJob(db, storage, job);
+    const outcome = await processImportJob(db, storage, job); // NOSONAR - jobs run one at a time on purpose: each claim depends on the previous run finishing
     if (outcome === "succeeded") {
       succeeded += 1;
       if (job.event_id) eventIds.push(job.event_id);

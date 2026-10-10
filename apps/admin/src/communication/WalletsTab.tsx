@@ -37,7 +37,7 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
         <Card title="Message">
           <div className="settings-card-stack">
             <p className="settings-card-intro">
-              Write a short message to push to attendees' installed wallet passes as a lock-screen
+              Write a short message to push to attendees' installed wallet passes as a lock screen
               notification.
             </p>
             <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>

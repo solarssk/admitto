@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { issueBadgeOnCheckIn } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
@@ -35,11 +36,17 @@ export type AdmitAttendeeParams = {
  *   2. AttendeeActionLog check_in
  *   3. If badge_at_entry: issue badge + item_issued log with metadata.check_in_id
  */
-export async function admitAttendee(
+export function admitAttendee(
   params: AdmitAttendeeParams,
   prisma: PrismaClient,
 ): Promise<AdmitResult> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient): Promise<AdmitResult> => {
+    // An erased attendee cannot be admitted, and an erasure cannot start while this transaction
+    // runs: every check-in row written below (including REVOKED / ALREADY_CHECKED_IN, which no
+    // update of the attendee row would otherwise serialise against) lands before it.
+    const locked = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
+    if (!locked || locked.erased) return { status: "INVALID", confirmed: false };
+
     const attendee = await tx.attendee.findFirst({
       where: { id: params.attendeeId, event_id: params.eventId },
     });

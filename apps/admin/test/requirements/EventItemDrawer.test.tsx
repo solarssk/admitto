@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto, EventItemDto } from "../../src/api/types.js";
 import { EventItemDrawer } from "../../src/requirements/EventItemDrawer.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { deferred, getTooltipText, isOff, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -156,6 +156,62 @@ describe("EventItemDrawer", () => {
       );
     });
     expect(screen.queryByText(/issued to attendees\. Disable it instead of deleting/)).toBeNull();
+  });
+
+  it("shows the save on the Save button, which keeps its label and the keyboard focus, makes the fields read-only and ignores a second press", async () => {
+    const saved = deferred<EventItemDto>();
+    vi.mocked(updateEventItem).mockReturnValueOnce(saved.promise);
+    renderDrawer(giftbagItem);
+    const name = screen.getByLabelText("Display name") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Gift bag " } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"));
+    expect(save.textContent).toContain("Save");
+    expect(isOff(save)).toBe(true);
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(save);
+    expect(name.readOnly).toBe(true);
+    expect((screen.getByLabelText("Description (shown to operators)") as HTMLInputElement).readOnly).toBe(true);
+    expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(save);
+    expect(updateEventItem).toHaveBeenCalledTimes(1);
+
+    await act(async () => saved.resolve(giftbagItem));
+  });
+
+  it("does not save twice when Enter is pressed in a field while the save runs", async () => {
+    const saved = deferred<EventItemDto>();
+    vi.mocked(updateEventItem).mockReturnValueOnce(saved.promise);
+    renderDrawer(giftbagItem);
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag " } });
+    const form = document.getElementById("item-edit-form") as HTMLFormElement;
+    fireEvent.submit(form);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).getAttribute("aria-busy")).toBe("true"));
+
+    fireEvent.submit(form);
+
+    expect(updateEventItem).toHaveBeenCalledTimes(1);
+    await act(async () => saved.resolve(giftbagItem));
+  });
+
+  it("brings the Save button back, with the focus and what was typed, when the save fails", async () => {
+    vi.mocked(updateEventItem).mockRejectedValueOnce(new Error("network error"));
+    renderDrawer(giftbagItem);
+    const name = screen.getByLabelText("Display name") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Gift bag " } });
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringMatching(/Failed to save item/), "error"));
+    expect(save.getAttribute("aria-busy")).not.toBe("true");
+    expect(isOff(save)).toBe(false);
+    expect(document.activeElement).toBe(save);
+    expect(name.readOnly).toBe(false);
+    expect(name.value).toBe("Gift bag ");
   });
 
   it("fires warning toast when save returns item_in_use", async () => {

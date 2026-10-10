@@ -214,10 +214,12 @@ describe("Admin pages delayed loading", () => {
         </Routes>
       </MemoryRouter>,
     );
+    // In the page from the first frame (its room is held), but not painted before 200ms.
+    expect(screen.getByLabelText("Loading the report").className).toContain("at-loading-hold");
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(document.querySelector(".reports-loading")).toBeTruthy();
+    expect(screen.getByLabelText("Loading the report").className).not.toContain("at-loading-hold");
   });
 
   it("UsersPage shows the loading skeleton once the fetch has genuinely taken a moment", () => {
@@ -443,10 +445,9 @@ describe("UsersPage operator errors", () => {
   it("shows load failure", async () => {
     vi.mocked(fetchAdminUsers).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<UsersPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load users/)).toBeTruthy();
-    });
-    expect(screen.getByText(/Could not load users/).closest("[role='alert']")).not.toBeNull();
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector(".at-empty-state__title")?.textContent).toBe("Could not load users");
+    expect(alert.querySelector(".at-empty-state__desc")?.textContent).toMatch(/Could not load users/);
   });
 
 });
@@ -489,10 +490,10 @@ describe("RoleAssignmentsTab operator errors", () => {
   it("shows load failure", async () => {
     vi.mocked(fetchRoleAssignments).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<RoleAssignmentsTab />);
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load role assignments/)).toBeTruthy();
-    });
-    expect(screen.getByText(/Could not load role assignments/).closest("[role='alert']")).not.toBeNull();
+    await waitFor(() => expect(document.querySelector(".at-empty-state--error[role='alert']")).not.toBeNull());
+    const alert = document.querySelector(".at-empty-state--error[role='alert']");
+    expect(alert?.querySelector(".at-empty-state__title")?.textContent).toBe("Could not load role assignments");
+    expect(alert?.querySelector(".at-empty-state__desc")?.textContent).toMatch(/Could not load role assignments/);
   });
 });
 
@@ -1653,7 +1654,7 @@ describe("EventsPickerPage archived event navigation", () => {
     expect(screen.getByText("Events you archive will appear here.")).toBeTruthy();
   });
 
-  it("shows an EmptyState with a link back to Archived when every event is archived (superadmin copy)", async () => {
+  it("shows a short restore hint, and no button, when every event is archived (superadmin copy)", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
     renderWithToast(
       <MemoryRouter initialEntries={["/admin"]}>
@@ -1674,16 +1675,11 @@ describe("EventsPickerPage archived event navigation", () => {
     await waitFor(() => {
       expect(screen.getByText("No active events")).toBeTruthy();
     });
-    expect(
-      screen.getByText(
-        "All events are archived. Open the Archived events tab, then restore an event from Organisation settings → Event archiving (or Event settings).",
-      ),
-    ).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "View archived events" }));
-    await waitFor(() => {
-      expect(screen.getByText("Archived Summit")).toBeTruthy();
-    });
+    expect(screen.getByText("Restore an event in Organisation settings → Archiving.")).toBeTruthy();
+    // The Archived events tab sits right above, so the empty state adds neither a second route
+    // to it nor a button for it.
+    expect(screen.queryByRole("button", { name: "View archived events" })).toBeNull();
+    expect(screen.queryByText(/All events are archived/)).toBeNull();
   });
 });
 

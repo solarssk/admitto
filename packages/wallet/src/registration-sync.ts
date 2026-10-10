@@ -165,7 +165,7 @@ async function syncEventBucket(
   const providerTimeZone = null;
 
   for (const batch of chunk(rows, SYNC_CONCURRENCY)) {
-    const settled = await Promise.allSettled(batch.map((row) => syncOne(db, provider, row, providerTimeZone)));
+    const settled = await Promise.allSettled(batch.map((row) => syncOne(db, provider, row, providerTimeZone))); // NOSONAR - batches are sequential on purpose: SYNC_CONCURRENCY bounds the provider load
     for (const outcome of settled) {
       result.checked += 1;
       if (outcome.status === "fulfilled") result.updated += 1;
@@ -258,7 +258,7 @@ export async function runWalletRegistrationSync(
   }
 
   for (const { event, rows } of byEvent.values()) {
-    await syncEventBucket(db, event, rows, result);
+    await syncEventBucket(db, event, rows, result); // NOSONAR - event buckets are synced one at a time on purpose, to bound the provider load
   }
 
   return result;

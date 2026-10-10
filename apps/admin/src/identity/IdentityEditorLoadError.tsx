@@ -1,4 +1,5 @@
 import { Button } from "@admitto/ui";
+import { FailureIcon } from "../components/FailureIcon.js";
 import { useBusyEndCount } from "../hooks/useRetry.js";
 
 /**
@@ -16,7 +17,10 @@ export function IdentityEditorLoadError({
   const ends = useBusyEndCount(retrying);
   return (
     <div className="identity-editor__error" role="alert">
-      <p key={ends}>{message}</p>
+      <p key={ends}>
+        <FailureIcon className="failure-icon--large" />
+        {message}
+      </p>
       <Button type="button" variant="secondary" loading={retrying} onClick={onRetry}>
         Retry
       </Button>

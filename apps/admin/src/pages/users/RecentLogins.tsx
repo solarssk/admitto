@@ -4,6 +4,7 @@ import { fetchSecurityAuditLog } from "../../api/client.js";
 import type { SecurityAuditLogEntryDto } from "../../api/types.js";
 import { GeoCell } from "../../components/GeoCell.js";
 import { RetryHint } from "../../components/RetryHint.js";
+import { SlowNote } from "../../components/SlowNote.js";
 import { useLoadingGate } from "../../hooks/useDelayedLoading.js";
 import { useOptionsLoad, type OptionsLoad } from "../../hooks/useOptionsLoad.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
@@ -48,6 +49,7 @@ export function RecentLogins({ logins }: Readonly<{ logins: OptionsLoad<Security
               <Skeleton variant="rect" height={44} />
             </div>
           ))}
+          {logins.slow ? <SlowNote /> : null}
         </output>
       )}
       {gate.showContent && logins.error && (

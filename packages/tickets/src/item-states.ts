@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient, AttendeeStatus } from "@admitto/db";
+import { lockAttendeeRow } from "./attendee-lock.js";
 import { ensureBadgeEventItem } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { isAdmittable } from "./admittable.js";
@@ -23,7 +24,13 @@ function operatorTransitionsFor(state: string): string[] {
 export const REVOCABLE_ITEM_STATES = ["issued", "returned"];
 
 export class IllegalItemTransitionError extends Error {
-  constructor(message: string) {
+  /** `erased`: the reason is that the attendee's personal data has been erased (see
+   * eraseAttendees). The message is for logs and the door; a staff route answers
+   * `attendee_erased` instead, which the admin app maps to its own words. */
+  constructor(
+    message: string,
+    readonly erased = false,
+  ) {
     super(message);
     this.name = "IllegalItemTransitionError";
   }
@@ -67,12 +74,14 @@ async function loadAttendeeForItemAction(
   attendeeId: string,
   eventId: string,
 ): Promise<{ id: string; status: AttendeeStatus }> {
-  const attendee = await tx.attendee.findFirst({
-    where: { id: attendeeId, event_id: eventId },
-    select: { id: true, status: true },
-  });
+  // Also the lock that keeps an erasure from starting before the caller's transaction ends:
+  // every item-state change and activity-log entry that follows lands before it.
+  const attendee = await lockAttendeeRow(tx, attendeeId, eventId);
   if (!attendee) {
     throw new IllegalItemTransitionError("Attendee not found for this event");
+  }
+  if (attendee.erased) {
+    throw new IllegalItemTransitionError("Attendee data has been erased", true);
   }
   return { id: attendee.id, status: attendee.status as AttendeeStatus };
 }
@@ -139,7 +148,7 @@ export async function issueBadgeOnCheckIn(
  * Conditional/idempotent item transition — operator paths only (Lock known limitation).
  * lost / problem / not_applicable → IllegalItemTransitionError.
  */
-export async function transitionItemState(
+export function transitionItemState(
   params: {
     attendeeId: string;
     eventId: string;
@@ -274,7 +283,7 @@ async function resetItemStateToPending(
  * disabled item but has no reason to block undoing one that was already
  * issued before it got disabled.
  */
-export async function revokeItemState(
+export function revokeItemState(
   params: {
     attendeeId: string;
     eventId: string;
@@ -380,7 +389,7 @@ export async function resetAllItemStatesForRevoke(
     // the loop, racing resetItemStateToPending's guarded updateMany into a silent no-op (already
     // "pending", nothing to do, no audit row written) - count only the resets this call actually
     // performed, not every row the earlier scan found (bot review).
-    const reset = await resetItemStateToPending(tx, {
+    const reset = await resetItemStateToPending(tx, { // NOSONAR - statements in one transaction run one at a time
       attendeeId: params.attendeeId,
       eventId: params.eventId,
       eventItemId: s.event_item_id,

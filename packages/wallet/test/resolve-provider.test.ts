@@ -8,7 +8,10 @@ const decrypt = vi.hoisted(() =>
     throw new Error("bad ciphertext");
   }),
 );
-vi.mock("@admitto/crypto", () => ({ decryptFromString: decrypt }));
+vi.mock("@admitto/crypto", () => ({
+  decryptFromString: decrypt,
+  SECRET_CONTEXTS: { walletApiKey: "admitto:event-wallet-api-key" },
+}));
 
 import { PassCreatorClient } from "../src/passcreator-client.js";
 import {
@@ -59,7 +62,7 @@ describe("resolveConfiguredWalletProvider", () => {
     const provider = resolveConfiguredWalletProvider(event({ walletEnabled: false }));
 
     expect(provider).toBeInstanceOf(PassCreatorClient);
-    expect(decrypt).toHaveBeenCalledWith("not-a-real-ciphertext");
+    expect(decrypt).toHaveBeenCalledWith("not-a-real-ciphertext", "admitto:event-wallet-api-key");
   });
 
   it("returns null without a template id or key", () => {

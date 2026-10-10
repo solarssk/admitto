@@ -14,13 +14,11 @@ const dismissBounce = vi.fn();
 const resendTicket = vi.fn();
 
 // A fresh `vi.fn()` per call (as a locally-declared one used to return) breaks CommunicationPage's
-// own memoization: `reportApiError` sits in the dependency array of 3 effects (initial template
-// load, the bounce-overview fetch, and the tab-switch delivery fetch), so an unstable identity
-// re-fires all of them on every render, flickering `loading` fast enough that
-// useDelayedLoading's 200ms window never elapses and the whole page intermittently renders
-// null - a CI-only race, since a fast/idle local machine never lingers in that window long
-// enough to observe it. The automocked `reportApiError` (`ConnectionStateProvider.js`'s
-// `__mocks__`) has a stable identity for exactly this reason.
+// own memoization: `reportApiError` sits in the dependency array of the callbacks behind the
+// bounce-overview fetch and the delivery-log fetch, so an unstable identity re-fires both on every
+// render, and the page keeps refetching (the first read of the templates is not one of them: it
+// goes through `usePanelLoad`, which keeps its `fetch` in a ref). The automocked `reportApiError`
+// (`ConnectionStateProvider.js`'s `__mocks__`) has a stable identity for exactly this reason.
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 // buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique

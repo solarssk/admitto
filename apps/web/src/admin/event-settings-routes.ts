@@ -7,6 +7,7 @@ import { canManageInstance } from "@admitto/auth";
 import {
   ADMITTABLE_STATUS_LIST,
   REVOCABLE_ITEM_STATES,
+  keepLiveRows,
   writeAdminAuditLog,
   parseWalletFieldMapping,
 } from "@admitto/tickets";
@@ -25,7 +26,7 @@ import {
 import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
-import { decryptFromString, encryptToString } from "@admitto/crypto";
+import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import {
   PassCreatorClient,
   WalletProviderError,
@@ -292,13 +293,15 @@ async function loadRevokeCounts(
         event_id: eventId,
         admitted_at: { not: null },
         status: { in: ADMITTABLE_STATUS_LIST },
+        // Erased attendees keep their admission and hand-outs: the bulk actions skip them.
+        erased_at: null,
       },
     }),
     db.attendeeItemState.count({
       where: {
         state: { in: REVOCABLE_ITEM_STATES },
         event_item: { event_id: eventId },
-        attendee: { status: { in: ADMITTABLE_STATUS_LIST } },
+        attendee: { status: { in: ADMITTABLE_STATUS_LIST }, erased_at: null },
       },
     }),
   ]);
@@ -311,11 +314,11 @@ async function loadRevokeCounts(
  * every *active* pass with a provider_pass_id, regardless of confirmed install), since the point
  * here is warning about real people who'd actually notice the update on their phone, not how many
  * PassCreator API calls will fire - an issued-but-never-installed pass doesn't bother anyone. */
-async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): Promise<number> {
+function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): Promise<number> {
   return db.walletPass.count({
     where: {
       status: "active",
-      attendee: { event_id: eventId },
+      attendee: { event_id: eventId, erased_at: null },
       OR: [
         { apple_active_registrations: { gt: 0 } },
         { google_active_registrations: { gt: 0 } },
@@ -338,13 +341,13 @@ async function loadInstalledWalletPassCountByPlatform(
 ): Promise<{ apple: number; google: number; samsung: number }> {
   const [apple, google, samsung] = await Promise.all([
     db.walletPass.count({
-      where: { status: "active", attendee: { event_id: eventId }, apple_active_registrations: { gt: 0 } },
+      where: { status: "active", attendee: { event_id: eventId, erased_at: null }, apple_active_registrations: { gt: 0 } },
     }),
     db.walletPass.count({
-      where: { status: "active", attendee: { event_id: eventId }, google_active_registrations: { gt: 0 } },
+      where: { status: "active", attendee: { event_id: eventId, erased_at: null }, google_active_registrations: { gt: 0 } },
     }),
     db.walletPass.count({
-      where: { status: "active", attendee: { event_id: eventId }, samsung_active_registrations: { gt: 0 } },
+      where: { status: "active", attendee: { event_id: eventId, erased_at: null }, samsung_active_registrations: { gt: 0 } },
     }),
   ]);
   return { apple, google, samsung };
@@ -355,7 +358,7 @@ async function loadInstalledWalletPassCountByPlatform(
  * loadInstalledWalletPassCount above) is the right population for the Template ID lock: a pass
  * PassCreator has created is already bound to the current template even if nobody's device has
  * confirmed it yet. */
-async function loadIssuedWalletPassCount(
+function loadIssuedWalletPassCount(
   db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
 ): Promise<number> {
@@ -366,7 +369,7 @@ async function loadIssuedWalletPassCount(
 
 /** Voided or expired passes still present at the provider - archiving an event does not clean
  * these up, so the archive confirm dialog names this count as a reminder. */
-async function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId: string): Promise<number> {
+function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId: string): Promise<number> {
   return db.walletPass.count({
     where: {
       status: { in: ["voided", "expired"] },
@@ -377,7 +380,7 @@ async function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId:
   });
 }
 
-async function loadEventSettingsRow(
+function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
 ): Promise<(EventSettingsRow & { organization_id: string }) | null> {
@@ -482,7 +485,7 @@ export async function handlePostEventWalletTest(c: Context, db: PrismaClient): P
       return c.json({ ok: false, error: "An API key is required to test the connection." });
     }
     try {
-      apiKey = decryptFromString(event.wallet_api_key_enc);
+      apiKey = decryptFromString(event.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
     } catch {
       return c.json({ ok: false, error: "The saved API key could not be decrypted." });
     }
@@ -533,7 +536,7 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
   // Empty string clears the key; omit to keep the previous one.
   if (patch.wallet_api_key !== undefined) {
-    data.wallet_api_key_enc = patch.wallet_api_key ? encryptToString(patch.wallet_api_key) : null;
+    data.wallet_api_key_enc = patch.wallet_api_key ? encryptToString(patch.wallet_api_key, SECRET_CONTEXTS.walletApiKey) : null;
   }
   if (patch.wallet_apple_enabled !== undefined) {
     data.wallet_apple_enabled = patch.wallet_apple_enabled;
@@ -735,10 +738,10 @@ async function listOwnWebhooksWithRetry(
 ): Promise<PassCreatorWebhookRow[] | undefined> {
   for (let attempt = 0; attempt < RE_CHECK_ATTEMPTS; attempt++) {
     try {
-      return (await client.listWebhooks()).filter((hook) => hook.passTemplate === templateId);
+      return (await client.listWebhooks()).filter((hook) => hook.passTemplate === templateId); // NOSONAR - retry loop: an attempt runs only after the previous one failed
     } catch (err) {
       if (attempt < RE_CHECK_ATTEMPTS - 1) {
-        await sleep(RE_CHECK_RETRY_DELAY_MS);
+        await sleep(RE_CHECK_RETRY_DELAY_MS); // NOSONAR - backoff: the next attempt must wait for this delay
       } else {
         console.error("wallet webhook subscribe: post-unsubscribe re-check failed after retries:", err);
       }
@@ -824,7 +827,7 @@ export async function subscribeWalletWebhooksBestEffort(
 
   let apiKey: string;
   try {
-    apiKey = decryptFromString(updated.wallet_api_key_enc);
+    apiKey = decryptFromString(updated.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
   } catch (err) {
     console.error("wallet webhook subscribe: API key decrypt failed:", err);
     return;
@@ -1132,7 +1135,7 @@ async function guardWalletExpirationModeChange(
       return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
     }
     try {
-      apiKey = decryptFromString(existing.wallet_api_key_enc);
+      apiKey = decryptFromString(existing.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
     } catch {
       return c.json({ error: "wallet_expiration_mode_requires_template" }, 409);
     }
@@ -1447,11 +1450,13 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
   const audit = adminAuditFromContext(c);
   if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
 
-  const totalCount = await db.attendee.count({ where: { event_id: eventId } });
+  // Erased attendees are left out: the file is for data-subject requests and audits of the
+  // personal data held, and an erased row holds none.
+  const totalCount = await db.attendee.count({ where: { event_id: eventId, erased_at: null } });
   const truncated = totalCount > PII_EXPORT_MAX_ROWS;
 
-  const attendees = await db.attendee.findMany({
-    where: { event_id: eventId },
+  const fetched = await db.attendee.findMany({
+    where: { event_id: eventId, erased_at: null },
     take: PII_EXPORT_MAX_ROWS,
     orderBy: { created_at: "asc" },
     select: {
@@ -1465,6 +1470,9 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
       custom_data: true,
     },
   });
+  // The last check before the file is built: `erased_at: null` above is evaluated against the row
+  // as it was before an erasure that is still open began, so such an attendee would be in the file.
+  const attendees = await keepLiveRows(db, fetched);
 
   const columns = [
     "id",

@@ -80,6 +80,13 @@ export function isTrustedProxyPeer(c: Context, env: EnvLike = process.env): bool
   return resolveTrustedProxyCidrs(env).check(peer, isIP(peer) === 6 ? "ipv6" : "ipv4");
 }
 
+/** Whether `address` (e.g. one X-Forwarded-For hop) is inside the configured trusted-proxy allowlist. */
+export function isTrustedProxyAddress(address: string, env: EnvLike = process.env): boolean {
+  const family = isIP(address);
+  if (!family) return false;
+  return resolveTrustedProxyCidrs(env).check(address, family === 6 ? "ipv6" : "ipv4");
+}
+
 /**
  * Whether X-Forwarded-For/Host/Proto should be trusted for this request: TRUST_PROXY=true AND
  * the request arrived directly from an allowlisted proxy peer. Gates every read of those headers

@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
-import { IllegalItemTransitionError, writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
+import { IllegalItemTransitionError, writeActionLog, writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { parseOptionalClientTimezone } from "./timezone.js";
@@ -305,6 +305,29 @@ export async function lockEventForScopedWrite(
   // deployed, even though the lock now protects more than MailSettings.
   const lockKey = `event-mail-settings:${eventId}`;
   await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+}
+
+/**
+ * Records that an admin retrieved an attendee's ticket link (the copy-link action, the sent-message
+ * preview), and says whether the link may go out: false, with nothing written, when the attendee is
+ * erased. writeActionLog takes the attendee's row lock first, so this is the last check before the
+ * response: an erasure that was still open when the link was put together is waited for here, where
+ * the plain reads before it showed the attendee as they were.
+ */
+export function logTicketLinkRetrieved(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+): Promise<boolean> {
+  return db.$transaction((tx) =>
+    writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "ticket_link_retrieved",
+      audit: adminAuditFromContext(c),
+    }),
+  );
 }
 
 /** Shared error shape for a failed item-state transition/revoke (operator and admin routes). */

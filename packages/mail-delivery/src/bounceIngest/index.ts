@@ -3,6 +3,7 @@ import { applyBounceResult } from "./applyBounceResult.js";
 import {
   findDeliveriesForBounceBatch,
   normalizeBounceRecipientEmail,
+  selectBounceDeliveryIndex,
   truncateEmailForLog,
 } from "./correlate.js";
 import { ImapInboundProvider } from "./imapProvider.js";
@@ -97,7 +98,9 @@ async function applyParsedLine(
   try {
     const key = normalizeBounceRecipientEmail(line.recipientEmail);
     const queue = deliveryByRecipient.get(key);
-    const delivery = queue?.[0];
+    const index = queue ? selectBounceDeliveryIndex(queue, message.referencedMessageIds) : -1;
+    // `.at(-1)` would wrap to the last row, so a miss (-1) is checked explicitly.
+    const delivery = index >= 0 ? queue?.at(index) : undefined;
     if (!delivery || !queue) {
       summary.noMatchingDelivery += 1;
       log(
@@ -108,7 +111,7 @@ async function applyParsedLine(
     const outcome = await applyBounceResult(db, delivery, line, log);
     if (outcome === "hard_bounced") {
       summary.bouncesApplied += 1;
-      queue.shift();
+      queue.splice(index, 1);
     } else if (outcome === "soft_logged") {
       summary.softBouncesLogged += 1;
     }
@@ -142,7 +145,7 @@ async function processMessage(
   }
 
   for (const line of lines) {
-    await applyParsedLine(ctx, message, line);
+    await applyParsedLine(ctx, message, line); // NOSONAR - lines of one message are applied in order
   }
 
   await markUidProcessed(db, settings.event_id, folder, message.uid);
@@ -210,7 +213,7 @@ async function processFolder(
   const ctx: FolderProcessCtx = { db, settings, summary, log, deliveryByRecipient };
   for (const { message, lines } of parsed) {
     try {
-      await processMessage(ctx, folder, message, lines, markedSeenUids);
+      await processMessage(ctx, folder, message, lines, markedSeenUids); // NOSONAR - messages are processed one at a time on purpose, in mailbox order
     } catch (err) {
       summary.errors += 1;
       log(
@@ -247,7 +250,7 @@ async function ingestEvent(
 
     try {
       for (const folder of parseFolders(settings.folders)) {
-        await processFolder(db, settings, summary, provider, folder, since, log);
+        await processFolder(db, settings, summary, provider, folder, since, log); // NOSONAR - folders are processed one at a time on purpose
       }
     } finally {
       try {
@@ -318,7 +321,7 @@ async function mapSettledInChunks<T>(
   const results: IngestSummary[] = [];
   for (let i = 0; i < items.length; i += concurrency) {
     const chunk = items.slice(i, i + concurrency);
-    const settled = await Promise.allSettled(chunk.map((item) => fn(item)));
+    const settled = await Promise.allSettled(chunk.map((item) => fn(item))); // NOSONAR - chunks run one after another on purpose: concurrency is capped by the concurrency argument
     for (const outcome of settled) {
       if (outcome.status === "fulfilled") {
         results.push(outcome.value);

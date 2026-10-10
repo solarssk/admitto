@@ -12,6 +12,7 @@ import type { TicketTypeInfo } from "../src/ticket-types.js";
 
 function makeRow(overrides: Partial<ExportAttendeeSqlRow> = {}): ExportAttendeeSqlRow {
   return {
+    id: "att-1",
     name: "Guest One",
     email: "guest-one@example.com",
     company: null,

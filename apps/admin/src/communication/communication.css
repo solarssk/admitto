@@ -260,8 +260,13 @@
   border-color: var(--status-warn, #f59f00);
 }
 
-.communication-chip:hover {
+.communication-chip:hover:not([aria-disabled="true"]) {
   background: var(--surface-hover);
+}
+
+/* An archived event's template is read-only: the chips stay as a reference, but do not insert. */
+.communication-chip[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
 /* Always-visible small thumbnail for image placeholders (see IMAGE_PLACEHOLDER_SAMPLES) - a
@@ -1009,10 +1014,16 @@
   color: var(--text-muted);
 }
 
-.communication-empty {
-  padding: var(--space-6);
+/* The delivery log's placeholder (DeliveryLogSkeleton.tsx): the table or the stacked cards of the real list, in a status region. */
+.delivery-log-skeleton {
+  display: block;
+}
+
+.delivery-log-skeleton__note {
+  display: block;
+  padding: var(--space-3) var(--space-4);
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* The header's shared .at-card__header is nowrap by design - but the Delivery log card's title

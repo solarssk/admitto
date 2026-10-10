@@ -244,6 +244,7 @@ function casRacePrisma(afterRace: Record<string, unknown> | null): PrismaClient 
     qr_payload: null,
     external_uuid: null,
     token_hash: null,
+    erased_at: null,
   };
   return {
     attendee: {
@@ -262,6 +263,7 @@ describe("issueTicket — compare-and-set race recovery", () => {
         qr_payload: null,
         external_uuid: "agency-after-race",
         token_hash: null,
+        erased_at: null,
       }),
       BASE_URL,
     );
@@ -277,7 +279,7 @@ describe("issueTicket — compare-and-set race recovery", () => {
   it("returns not_issuable when another writer revokes the attendee", async () => {
     const result = await issueTicket(
       "cas-race-attendee",
-      casRacePrisma({ status: "revoked", qr_payload: null, external_uuid: null, token_hash: null }),
+      casRacePrisma({ status: "revoked", qr_payload: null, external_uuid: null, token_hash: null, erased_at: null }),
       BASE_URL,
     );
 
@@ -297,6 +299,7 @@ describe("issueTicket — compare-and-set race recovery", () => {
         qr_payload: null,
         external_uuid: null,
         token_hash: "already-issued-after-race",
+        erased_at: null,
       }),
       BASE_URL,
     );
@@ -323,6 +326,7 @@ describe("issueTicket — compare-and-set race recovery", () => {
           qr_payload: null,
           external_uuid: null,
           token_hash: null,
+          erased_at: null,
         }),
         BASE_URL,
       ),
@@ -338,6 +342,7 @@ describe("issueTicketsForEvent — compare-and-set race recovery", () => {
       qr_payload: null,
       external_uuid: null,
       token_hash: null,
+      erased_at: null,
     };
     const tx = {
       attendee: {
@@ -347,6 +352,7 @@ describe("issueTicketsForEvent — compare-and-set race recovery", () => {
           qr_payload: "agency-qr-after-race",
           external_uuid: null,
           token_hash: null,
+          erased_at: null,
         }),
       },
     };
@@ -376,6 +382,7 @@ describe("issueTicketsForEvent — compare-and-set race recovery", () => {
       qr_payload: null,
       external_uuid: null,
       token_hash: null,
+      erased_at: null,
     };
     const tx = {
       attendee: {
@@ -401,6 +408,7 @@ describe("issueTicketsForEvent — compare-and-set race recovery", () => {
       qr_payload: null,
       external_uuid: null,
       token_hash: null,
+      erased_at: null,
     };
     const tx = {
       attendee: {
@@ -410,6 +418,7 @@ describe("issueTicketsForEvent — compare-and-set race recovery", () => {
           qr_payload: null,
           external_uuid: null,
           token_hash: null,
+          erased_at: null,
         }),
       },
     };

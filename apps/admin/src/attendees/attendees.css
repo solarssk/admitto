@@ -1229,12 +1229,33 @@
    fold into the More actions menu instead (see MoreActionsMenu's showEdit/RevokeActionMenuItems),
    so no order/flex-basis wrapping trick is needed here, unlike the list pages above. */
 @media (max-width: 767px) {
+  /* The title and the actions share the top row, and the subtitle takes the whole width under them. Beside the two
+     buttons it had 127px and ran to four lines ("check-" / "in status."), so the title's block gives up its box
+     (`display: contents`) and the title, the subtitle and the actions are cells of one grid. */
   .attendee-detail-pageheader .at-pageheader__row {
-    flex-direction: row;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-4);
+    align-items: start;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__row > :first-child {
+    display: contents;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__subtitle {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .attendee-detail-pageheader .at-pageheader__actions {
+    grid-column: 2;
+    grid-row: 1;
     justify-content: flex-end;
     /* Anchors the More-actions menu's panel to this row instead of letting it escape to the
        document root - .more-actions-menu itself switches to position: static below this same
@@ -1475,8 +1496,11 @@
   align-self: stretch;
   display: flex;
   flex-direction: row;
+  /* The time goes under the day when the chip is too narrow for both on one line (a laptop's 1280px: "Tod…" and
+     "09:51 UT…" sat side by side, both cut), as the stacked layout below 900px does; wide enough, it stays one line. */
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px;
+  gap: 0 4px;
   min-width: 0;
   line-height: 1.3;
 }
@@ -1614,6 +1638,31 @@
   font-size: 0.8125rem;
 }
 
+/* On a phone the time and the person go under the text. Beside it they are 173px or more of a row that is 292px wide at 390px, which
+   leaves the text a column of 66px, one or two words a line ("Note" / "added"). The padding lines them up with the text: the dot (28px)
+   and the gap (12px) of the row. The person's name wraps rather than stick out of the row when it is a long address. */
+@media (max-width: 560px) {
+  .at-tl-item {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .at-tl-meta {
+    flex: 0 0 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px var(--space-3);
+    margin-top: 0;
+    padding-left: calc(28px + 12px);
+  }
+
+  .at-tl-actor {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* Send tickets dialog */
 .send-tickets-radio {
   display: flex;
@@ -1708,23 +1757,29 @@
   border-bottom: none;
 }
 
+/* The head of a note wraps: the author's name (an address, when that is the name), the role and the time are 300px of words and a
+   timestamp that does not break, which is more than a phone has, so what does not fit goes to the next line instead of past the card. */
 .at-notes-list__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
   margin-bottom: var(--space-2);
 }
 
 .at-notes-list__author-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
 }
 
 .at-notes-list__author {
   font-size: 0.875rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .at-notes-list__time {
@@ -1763,4 +1818,117 @@
   margin-top: var(--space-3);
   color: var(--text-muted);
   font-size: var(--fs-sm);
+}
+
+/* The line under the first-load skeleton after 8 seconds of waiting. Its status region is empty, and has no height, until then. */
+.attendees-skeleton-note {
+  display: block;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  text-align: center;
+}
+
+/* The same line under the attendee page's skeleton, after 8 seconds of waiting. Its status region has no height until then. */
+.attendee-detail-slow-note {
+  display: block;
+  text-align: center;
+}
+
+/* The attendee page's skeleton (AttendeeDetailSkeleton) sits among the page's own rows, a flex column with a gap: its empty status
+   region would add a gap of its own, so it takes the next one back until the note is in it. */
+.attendee-detail-skeleton__status {
+  display: block;
+  margin-bottom: -18px;
+}
+
+.attendee-detail-skeleton__status--note {
+  margin-bottom: 0;
+}
+
+/* The tab strip of the skeleton is drawn, not clickable, and as tall as the real one: its tabs are buttons, whose line height is
+   `normal`, and these are spans, which would take the page's. */
+.attendee-detail-skeleton__tabs {
+  pointer-events: none;
+}
+
+.attendee-detail-skeleton__tabs .at-tab {
+  line-height: normal;
+}
+
+/* The Activity and Notes placeholders draw their text as bars of a fixed width, and a bar has to give way where the text it stands for
+   would wrap: the columns of the page's own rows that hold them (the body of a timeline row, the author of a note) are told that they
+   may shrink, so on a phone the bars yield to the room there is and nothing sticks out of the card. */
+.attendee-detail-skeleton .at-tl-body,
+.attendee-detail-skeleton .at-notes-list__author-group {
+  min-width: 0;
+}
+
+/* A bar in the place of a line of text: the line has the height of the text (set on the element), and the bar sits in the middle of it. */
+.attendee-detail-skeleton__line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The note field of the Notes placeholder: two rows of the page's textarea, which is taller on a touch screen (16px text, so that a
+   phone does not zoom in on it, `.at-textarea` in the UI package). */
+.at-skeleton.attendee-detail-skeleton__textarea {
+  height: 57px;
+}
+
+@media (pointer: coarse) {
+  .at-skeleton.attendee-detail-skeleton__textarea {
+    height: 66px;
+  }
+}
+
+/* Erased entries (the privacy-request action keeps the record, drops the person). Muted rows, no
+   checkbox that can be ticked; the switch that lists them is in the Filters. */
+.attendees-table-v2__row--erased td,
+.attendees-card--erased {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.attendees-table-v2__row--erased .attendees-table-v2__name,
+.attendees-card--erased .attendees-card__name {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* The date an entry was erased is a sentence, not an address. */
+.attendees-table-v2__email--note,
+.attendees-card__email--note {
+  font-family: inherit;
+}
+
+/* The page of an erased attendee: what held personal data reads "Erased" in the muted italic of an
+   empty value, and a wallet pass that is still to be deleted says so beside its Try again button. */
+.erased-value {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.erased-wallet-pending {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* The notice names the staff member, by address when the log kept no name: a long one has to wrap on a phone
+   instead of sticking out of the box (the body is a flex item, which cannot shrink below its longest word). */
+.erased-notice .at-notice__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Under the one entry the erased page's Activity log keeps: the rest of the history is gone. */
+.erased-history-note {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }

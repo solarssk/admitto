@@ -4,6 +4,7 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import {
   parseTrustedProxyCidrs,
   resolveTrustedProxyCidrs,
+  isTrustedProxyAddress,
   isTrustedProxyPeer,
   shouldTrustForwardedHeaders,
 } from "../src/rate-limit/trust-proxy.js";
@@ -33,6 +34,22 @@ function probeWithPeer(peerAddress: string | undefined) {
   );
   return app.request("/probe");
 }
+
+describe("isTrustedProxyAddress", () => {
+  it("matches addresses inside the configured CIDRs, IPv4 and IPv6", () => {
+    const env = { TRUSTED_PROXY_CIDRS: "10.0.0.0/8,2001:db8::/32" };
+    expect(isTrustedProxyAddress("10.1.2.3", env)).toBe(true);
+    expect(isTrustedProxyAddress("2001:db8::7", env)).toBe(true);
+    expect(isTrustedProxyAddress("203.0.113.10", env)).toBe(false);
+    expect(isTrustedProxyAddress("2001:db9::1", env)).toBe(false);
+  });
+
+  it("defaults to loopback only and rejects anything that is not an IP", () => {
+    expect(isTrustedProxyAddress("127.0.0.1", {})).toBe(true);
+    expect(isTrustedProxyAddress("10.0.0.1", {})).toBe(false);
+    expect(isTrustedProxyAddress("not-an-ip", {})).toBe(false);
+  });
+});
 
 describe("parseTrustedProxyCidrs", () => {
   it("matches an address inside a bare /32 IPv4 entry", () => {

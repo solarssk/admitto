@@ -116,26 +116,56 @@
   background: #fff;
 }
 
-/* Loading-state placeholder sized to match .delivery-modal-preview-frame above, so the
- * loaded/loading layouts are close enough in height that the swap doesn't visibly "jump". */
+/* Loading-state placeholders (DeliveryModalSkeleton.tsx), as tall as what they stand in for so the swap does not jump,
+ * measured against the real modals in Chrome: the frame is the preview frame's 320px, a line of text is its font size
+ * times the line height, and the outcome line is a one-line notice. */
 .delivery-modal-skeleton-frame {
   border-radius: var(--radius-md);
 }
 
-/* Vertical stack for a modal's Skeleton loading state (SentMessagePreviewModal and
- * DeliveryDetailsModal both use this) - a plain flex column with the same rhythm as the
- * loaded content it stands in for. */
+/* Vertical stack of a modal's placeholder (a status region), with the same rhythm as the loaded content it stands in for. */
 .delivery-modal-skeleton-group {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-/* One "section title + content" pair within .delivery-modal-skeleton-group. */
-.delivery-modal-skeleton-section {
+.delivery-modal-skeleton-note {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* A line of text holding a bar, so a row of placeholders is as tall as a row of real text. */
+.delivery-modal-skeleton-line {
+  display: flex;
+  align-items: center;
+  height: calc(var(--fs-sm) * var(--lh-normal));
+}
+
+.delivery-modal-skeleton-line--label {
+  height: calc(var(--fs-xs) * var(--lh-normal));
+}
+
+/* One pair of the details grid: the label's line, the 2px under it, the value's line. */
+.delivery-modal-skeleton-pair {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 2px;
+}
+
+/* The real grid is a <dl>, whose own margin (1em of the grid's font size) sits between its section title and its pairs. */
+.delivery-modal-kv--skeleton {
+  margin: 1em 0;
+}
+
+/* The outcome line under Overview, with the gap its real notice has. */
+.delivery-modal-skeleton-notice {
+  margin-top: var(--space-3);
+}
+
+/* The "Subject" label of the preview keeps the room its real label has above the subject. */
+.delivery-modal-skeleton-subject-label {
+  margin-bottom: var(--space-1);
 }
 
 /* Delivery details - key/value grid. */

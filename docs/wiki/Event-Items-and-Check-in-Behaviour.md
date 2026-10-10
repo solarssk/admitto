@@ -55,6 +55,7 @@ Active items and behaviour settings become available on check-in devices. Later 
 - **Operators cannot search attendees:** review **Allow manual lookup**. Check-in search matches name and email only (not company or department).
 - **A scan stops at a preview:** confirmation is required; the operator must confirm the attendee.
 - **The result disappears too quickly:** review **Auto-advance after valid check-in**.
+- **The Requirements page shows grey cards, says "Taking longer than usual", or "Could not load requirements":** the page reads the event's items and its custom fields together. It shows grey cards of its own shape (invisible for the first fraction of a second, so a quick answer shows no flash), and there is nothing to add to until they are in. After 30 seconds, or when the read fails, it stops waiting and shows an error with a **Retry** button; the button stays on screen, busy, until the answer is in, and the keyboard focus goes to the page when it works. An error that says you do not have access to the event means your role cannot see this event. After you add, change or delete an item or a field, the cards stay on screen, dimmed and not clickable, while the page is read again; if that fails, the page shows the error instead of cards that may be out of date. **Create** and **Save** show a spinner on the button while they work.
 
 ## Related pages
 

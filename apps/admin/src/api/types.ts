@@ -262,6 +262,9 @@ export type WalletPassActionDto = WalletPassApiFields;
 
 export interface AttendeeRowDto {
   id: string;
+  /** Set once the attendee's personal data has been erased (name and email are placeholders). The
+   * server always sends it; optional here so existing fixtures keep their shape. */
+  erased_at?: string | null;
   name: string;
   email: string;
   company: string | null;
@@ -272,6 +275,8 @@ export interface AttendeeRowDto {
   admitted_at: string | null;
   updated_at: string;
   last_mail_status: string | null;
+  /** Whether that last mail, when it failed, is still to be retried. */
+  last_mail_retryable: boolean | null;
   rsvp_status: RsvpStatus;
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * bulk "Revoke items" action report how many of the selection it would actually affect. */
@@ -325,8 +330,30 @@ export interface AttendeeNoteDto {
   created_at: string;
 }
 
+/** Who erased an attendee's personal data and how, as the central audit log has it (the erased person is not in it). */
+export interface AttendeeErasureDto {
+  /** The staff member, as they were when they did it. Null when the entry kept no identity. */
+  by: { display_name: string | null; email: string | null } | null;
+  /** Through the staff API (the admin screens use it) or the emergency command line. */
+  via: "admin" | "cli";
+  /** The zone the staff member was in, in which the Activity log tells their times. */
+  timezone: string | null;
+  /** Where from: only a Superadmin gets it, as the audit log it comes from is theirs. */
+  ip: string | null;
+  location: IpLocationDto | null;
+}
+
 export interface AttendeeDetailDto {
   id: string;
+  /** Set once the attendee's personal data has been erased: the page is read-only. */
+  erased_at?: string | null;
+  /** Who erased them and how. Null for everyone else, and for an erasure the audit log has no entry of; optional here so
+   * existing fixtures keep their shape. */
+  erasure?: AttendeeErasureDto | null;
+  /** True for an erased attendee whose wallet pass still has to be deleted at the provider;
+   * repeating the erasure is the retry. The server always sends it; optional here so existing
+   * fixtures keep their shape. */
+  wallet_pass_delete_pending?: boolean;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -373,6 +400,8 @@ export interface AttendeeDetailDto {
 export interface AttendeesListResponse {
   items: AttendeeRowDto[];
   total: number;
+  /** Erased attendees of the event, hidden from the list unless asked for (event-wide). */
+  erased_count?: number;
   page: number;
   pageSize: number;
 }
@@ -400,8 +429,33 @@ export interface AttendeesListParams {
    * The caller (AttendeesPage) builds this from the event's own EventCustomField list, so this
    * type doesn't need to know the field-type branching itself. */
   customFieldParams?: Record<string, string[]>;
+  /** Also list the attendees whose personal data has been erased (hidden by default). */
+  includeErased?: boolean;
   sortBy?: AttendeeSortBy;
   sortDir?: AttendeeSortDir;
+}
+
+/** What the erase endpoints answer (counts only): see attendee-erase-routes.ts. */
+export interface EraseAttendeesResponse {
+  /** Erased by this request. */
+  erased: number;
+  /** Already erased before: nothing was touched, but their wallet pass was tried again. */
+  already_erased: number;
+  /** Ids that match no attendee of this event. */
+  not_found: number;
+  /** Erased attendees of this request whose wallet pass is still not deleted at the provider. */
+  wallet_pending: number;
+  /** Attendees whose pass was deleted at the provider by this request (or by one running at the same moment):
+   * a pass that never reached the provider, or was removed before, is not among them. */
+  wallet_removed_ids: string[];
+}
+
+/** What the remove endpoints answer (counts only): see attendee-remove-routes.ts. */
+export interface RemoveAttendeesResponse {
+  /** Deleted by this request. */
+  removed: number;
+  /** Ids that match no attendee of the event (or that a request running at the same moment deleted first). */
+  not_found: number;
 }
 
 export interface UpdateAttendeePatch {
@@ -1859,6 +1913,8 @@ export interface MfaEnrollResponse {
 
 export interface ConfirmMfaTotpBody {
   code: string;
+  /** Proof from an existing method, required when the account already has one. */
+  step_up?: StepUpProofBody;
 }
 
 export interface ResetMfaBody extends StepUpProofBody {
@@ -1882,6 +1938,8 @@ export interface WebauthnRegisterFinishBody {
   attachment: WebauthnAttachment;
   label?: string;
   response: RegistrationResponseJSON;
+  /** Proof from an existing method, required when the account already has one. */
+  step_up?: StepUpProofBody;
 }
 
 export interface WebauthnRegisterFinishResponse {

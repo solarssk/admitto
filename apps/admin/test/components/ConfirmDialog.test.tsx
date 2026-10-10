@@ -172,6 +172,28 @@ describe("ConfirmDialog", () => {
     );
   });
 
+  it("closes on a click outside the panel, but not while its request runs", () => {
+    const onCancel = vi.fn();
+    const { rerender } = render(<ConfirmDialog open title="Delete" message="..." onConfirm={vi.fn()} onCancel={onCancel} />);
+    fireEvent.click(document.querySelector(".at-modal-backdrop") as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    rerender(<ConfirmDialog open title="Delete" message="..." loading onConfirm={vi.fn()} onCancel={onCancel} />);
+    fireEvent.click(document.querySelector(".at-modal-backdrop") as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores Escape while its request runs, and answers it again when the request is over", () => {
+    const onCancel = vi.fn();
+    const { rerender } = render(<ConfirmDialog open title="Delete" message="..." loading onConfirm={vi.fn()} onCancel={onCancel} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
+
+    rerender(<ConfirmDialog open title="Delete" message="..." onConfirm={vi.fn()} onCancel={onCancel} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the confirm button where it is, busy and aria-disabled, and switches Cancel off, while loading", () => {
     const { container } = render(
       <ConfirmDialog
@@ -377,5 +399,39 @@ describe("ConfirmDialog", () => {
         (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
       ).toBe(false);
     });
+  });
+});
+
+describe("ConfirmDialog: a retry that fails again", () => {
+  const dialog = (loading: boolean, errorMessage: string | null) => (
+    <ConfirmDialog
+      open
+      title="Personal data erased"
+      message="Everything personal is gone."
+      errorMessage={errorMessage}
+      confirmLabel="Try again"
+      loading={loading}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  );
+
+  it("keeps the error on screen while the confirm button works, and mounts it afresh when it fails again", () => {
+    const { rerender } = render(dialog(false, "Could not try again."));
+    const before = screen.getByText("Could not try again.");
+
+    rerender(dialog(true, "Could not try again."));
+    expect(screen.getByText("Could not try again.")).toBe(before);
+
+    rerender(dialog(false, "Could not try again."));
+    expect(screen.getByText("Could not try again.")).not.toBe(before);
+  });
+
+  it("does not mount the error again when the work ends without one", () => {
+    const { rerender } = render(dialog(true, null));
+
+    rerender(dialog(false, null));
+
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

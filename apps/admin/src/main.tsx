@@ -5,6 +5,7 @@ import { createBrowserRouter } from "react-router";
 import { polyfillCountryFlagEmojis } from "country-flag-emoji-polyfill";
 import App from "./App.js";
 import { installGlobalErrorReporting } from "./globalErrorReporting.js";
+import { installDialogExitFade } from "./utils/dialog-exit-fade.js";
 import { enableDeferredStylesheets } from "./utils/deferred-styles.js";
 import { revealIconsWhenLoaded } from "./utils/icon-font.js";
 import countryFlagFontUrl from "./assets/TwemojiCountryFlags.woff2?url";
@@ -31,6 +32,9 @@ revealIconsWhenLoaded();
 // The splash from index.html is still in #root here. Line the loaders' animation clock up with it,
 // so the tick keeps drawing when React replaces the splash instead of starting over.
 syncLoaderClockToSplash(root);
+
+// A dialog that closes fades away instead of vanishing.
+installDialogExitFade();
 
 createRoot(root).render(
   <StrictMode>

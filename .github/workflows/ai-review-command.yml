@@ -1,0 +1,61 @@
+name: AI review command
+
+# Comment commands for the AI review, so a review that hangs, fails or runs out of tokens can be
+# handled from the pull request itself: `/ai-review` (review again), `/ai-review status` and
+# `/ai-review cancel`. The rules are in scripts/ai-review-command.mjs and docs/dev/ai-review.md.
+#
+# issue_comment (not pull_request): the workflow definition always comes from the default branch,
+# so a pull request cannot edit this file to change who may give a command. Nothing from the pull
+# request is checked out or executed. Only the repository owner may command, decided by the
+# commenter's immutable user id (a login can be renamed) in the condition below and again in the
+# script. The person who started the run must be the owner as well, so re-running an old command
+# from the Actions page does nothing for anyone else. The comment text is untrusted data: it
+# reaches the script through the environment only, and the script reads nothing from it but the
+# first line, matched against a fixed set of commands.
+# A re-run of the latest AI review run is the same manual re-run the review workflow already
+# treats as attempt 2, so it needs no extra secret and cannot reach the model another way.
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  # Any comment starts a run before the condition below is evaluated, so the owner's runs get a
+  # group of their own: somebody else's comment cannot queue behind a command or displace it.
+  group: ai-review-command-${{ github.event.issue.number }}-${{ github.event.comment.user.id == github.event.repository.owner.id }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  command:
+    name: AI review command
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      ${{
+        github.event.issue.pull_request &&
+        github.event.comment.user.id == github.event.repository.owner.id &&
+        github.triggering_actor == github.repository_owner &&
+        startsWith(github.event.comment.body, '/ai-review')
+      }}
+    permissions:
+      contents: read # checkout of the default branch for the script
+      pull-requests: write # replies, the status comment, dismissing an approval
+      actions: write # cancel and re-run an AI review run
+
+    steps:
+      # No ref: on issue_comment this is the default branch, never the pull request.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the command
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_USER_ID: ${{ github.event.comment.user.id }}
+          OWNER_ID: ${{ github.event.repository.owner.id }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: node scripts/ai-review-command.mjs

@@ -4,6 +4,7 @@ import {
   WALLET_RELEVANT_ATTENDEE_FIELDS,
   enabledWalletPlatforms,
   isWalletAddClosed,
+  type AttendeeRemovalReason,
   type EnabledWalletPlatforms,
 } from "@admitto/shared";
 import { ATTENDEE_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
@@ -18,7 +19,6 @@ import {
   Notice,
   PageHeader,
   resolveStatusMeta,
-  Skeleton,
   Tabs,
   Tooltip,
   useToast,
@@ -28,13 +28,14 @@ import {
   addAttendeeNote,
   ApiError,
   bulkRevokeItems,
-  deleteAttendee,
   deleteAttendeeNote,
+  eraseAttendee,
   fetchAttendeeDetail,
   fetchTicketTypes,
   reissueWalletPass,
   refreshWalletPassStatus,
   deleteWalletPass,
+  removeAttendee,
   removeWalletPassFromProvider,
   resendTicket,
   fetchTicketLink,
@@ -46,16 +47,20 @@ import {
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, DeliveryDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch, WalletPassActionDto } from "../api/types.js";
+import type { AttendeeDetailDto, DeliveryDto, EraseAttendeesResponse, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch, WalletPassActionDto } from "../api/types.js";
 import {
   loadAttendeeDetailData,
   mergeFormAfterReload,
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { AttendeeDetailSkeleton } from "../attendees/AttendeeDetailSkeleton.js";
+import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useRetry } from "../hooks/useRetry.js";
+import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
+import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
+import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import {
   formatAdmissionDisplayParts,
   formatEventDateTime,
@@ -72,10 +77,25 @@ import {
   formatActivityTimestamp,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
+import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
+import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
+import {
+  ERASED_ATTENDEE_LABEL,
+  erasedCheckInParts,
+  erasedToast,
+  erasedWalletChipLabel,
+  erasureFreesPlace,
+  isOlderThanErasure,
+  redactedAfterErasure,
+  withWalletOutcome,
+} from "../attendees/erasedAttendee.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
+import { REMOVE_ARCHIVED_TOOLTIP, removedToast } from "../attendees/removeAttendee.js";
+import { RemoveAttendeeDialog } from "../attendees/RemoveDialogs.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { WalletStatusBadge, isWalletPassInstalled } from "../attendees/walletStatusBadge.js";
+import { hasWalletStatusChip } from "../attendees/walletStatusChip.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
@@ -87,9 +107,11 @@ import {
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
+import { useEraseWalletResult } from "../attendees/useEraseWalletResult.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { parseUserAgentWithVersion } from "../utils/parseUserAgent.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import {
   ArchivedGuard,
   ARCHIVED_ACTION_TOOLTIP,
@@ -154,7 +176,8 @@ function MoreActionsMenu({
   event,
   onResend,
   onCopyTicketLink,
-  onDelete,
+  onRemove,
+  onErase,
   mailConfigured,
   showEdit,
   onEdit,
@@ -183,7 +206,8 @@ function MoreActionsMenu({
   event: ArchivedGuardEvent;
   onResend: () => void;
   onCopyTicketLink: () => void;
-  onDelete: () => void;
+  onRemove: () => void;
+  onErase: () => void;
   mailConfigured: boolean | undefined;
   /** Mobile only (useIsDesktop() in the caller) - narrow viewports fold the standalone Edit
    * button in here instead, the same "own button on desktop, menu item on mobile" move already
@@ -395,24 +419,32 @@ function MoreActionsMenu({
             </>
           )}
           <hr className="more-actions-menu__divider" />
-          {/* Not ArchivedGuard'd, unlike Resend ticket above — GDPR erasure requests can
-           * legally arrive after an event ends, and the DELETE endpoint itself doesn't block
-           * on archived_at (see docs/DSAR-PROCEDURE.md). */}
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--danger"
+          {/* Erase is not ArchivedGuard'd, unlike Resend ticket above: privacy requests can legally arrive
+           * after an event ends, and the endpoint does not block on archived_at (see
+           * docs/security/DSAR-PROCEDURE.md). Remove changes Reports, which are final once the event is
+           * archived, so it is off there with its own tooltip, which names the way to answer a privacy request. */}
+          <MoreActionsMenuItem
+            icon="eraser"
+            variant="danger"
+            label="Erase personal data"
+            hint="For a privacy request. Reports keep their numbers."
             onClick={() => {
               setOpen(false);
-              onDelete();
+              onErase();
             }}
-          >
-            <i className="ti ti-trash" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>Delete attendee</span>
-              <span className="more-actions-menu__item-hint">Permanently remove this attendee</span>
-            </span>
-          </button>
+          />
+          <MoreActionsMenuItem
+            icon="trash"
+            variant="danger"
+            label="Remove from event"
+            hint="For a mistake, duplicate or test person. Changes Reports."
+            disabled={isEventArchived(event)}
+            tooltip={isEventArchived(event) ? REMOVE_ARCHIVED_TOOLTIP : undefined}
+            onClick={() => {
+              setOpen(false);
+              onRemove();
+            }}
+          />
         </div>
       )}
     </div>
@@ -1776,16 +1808,24 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
  * platform check here changes - see AttendeeOverviewTab above for the same reasoning applied to a
  * different part of this same page). Purely presentational - reads props, renders chips, no
  * handlers or local state of its own. */
+/** The day and time of a check-in as the status strip shows them, or nothing for an attendee who has not been admitted. */
+function admissionPartsOf(admittedAt: string | null, timezone: string): AdmissionDisplayParts | null {
+  return admittedAt === null ? null : formatAdmissionDisplayParts(admittedAt, timezone);
+}
+
 function AttendeeStatusStrip({
   detail,
   lastMail,
   admissionParts,
   walletPlatforms,
+  erased = false,
 }: Readonly<{
   detail: AttendeeDetailDto;
   lastMail: string | null;
   admissionParts: AdmissionDisplayParts | null;
   walletPlatforms: EnabledWalletPlatforms;
+  /** An erased attendee: the wallet chip says what became of the pass at the provider. */
+  erased?: boolean;
 }>) {
   return (
     <div className="attendee-status-strip">
@@ -1835,18 +1875,22 @@ function AttendeeStatusStrip({
       {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
        * status chip reads real per-attendee Samsung registration data the same way it already
        * does for Apple/Google (isWalletPassInstalled below), so a Samsung-only event must still
-       * get a chip. */}
-      {(walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung) && (
+       * get a chip. hasWalletStatusChip is the question the placeholder asks too. */}
+      {hasWalletStatusChip(walletPlatforms) && (
         <div className="attendee-status-chip">
           <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
             <i className="ti ti-wallet" aria-hidden="true" />
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <WalletStatusBadge
-              status={detail.wallet_pass?.status ?? null}
-              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
-            />
+            {erased ? (
+              <span>{erasedWalletChipLabel(detail)}</span>
+            ) : (
+              <WalletStatusBadge
+                status={detail.wallet_pass?.status ?? null}
+                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1948,9 +1992,12 @@ export function AttendeeDetailPage() {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [restoreForceCapacity, setRestoreForceCapacity] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [eraseOpen, setEraseOpen] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const [eraseError, setEraseError] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -1966,10 +2013,16 @@ export function AttendeeDetailPage() {
     onError: (err) => addToast(operatorApiErrorMessage(err, "Could not load activity."), "error"),
   });
   const resetActivity = activity.reset;
+  // The detail on screen, for applyDetail: an answer can come from a request started long ago, in a closure that
+  // rendered before the detail it would replace, so the state it sees would be stale.
+  const heldDetailRef = useRef<AttendeeDetailDto | null>(null);
   // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
-  // which invalidates any page request still in flight.
+  // which invalidates any page request still in flight. The one answer that is refused is an older one
+  // than the erasure (see isOlderThanErasure): nothing of an erased person comes back, by any path.
   const applyDetail = useCallback(
     (next: AttendeeDetailDto) => {
+      if (isOlderThanErasure(heldDetailRef.current, next)) return;
+      heldDetailRef.current = next;
       resetActivity(next);
       setDetail(next);
     },
@@ -1987,13 +2040,31 @@ export function AttendeeDetailPage() {
     return current.eventId === target.eventId && current.attendeeId === target.attendeeId;
   }
 
+  /** Aborted when the page is left: a read on its way stops, and says nothing. */
+  const lifeRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const life = new AbortController();
+    lifeRef.current = life;
+    return () => life.abort();
+  }, []);
+
+  /** Which read of the detail is the newest. A read that answers after a newer one never replaces it, because the
+   * newer one saw the pass, the check-in or the erasure after the older one did. */
+  const loadSeqRef = useRef(0);
+
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId, notesPage };
+    const seq = ++loadSeqRef.current;
     // Changing attendee resets the page to one, but the previous page's request can still
     // finish afterwards. Only let the currently selected page update the detail view.
     const isCurrentRequest = () =>
-      isStillSelected(target) && notesPageRef.current === target.notesPage;
+      isStillSelected(target) && notesPageRef.current === target.notesPage && loadSeqRef.current === seq;
+    // The 30 second limit (AGENTS.md "Admin SPA loading and busy states"): after it the request is given up, with an error
+    // and a Retry, instead of a skeleton, or a page that never settles, for ever.
+    const limit = loadWithTimeout(lifeRef.current?.signal);
+    // The page was left, not the wait that ran out: nothing to say, nothing to update.
+    const left = () => limit.signal.aborted && !limit.timedOut();
     setLoading(true);
     setError(null);
     setNotFound(false);
@@ -2014,8 +2085,10 @@ export function AttendeeDetailPage() {
     setNoteDeleting(false);
     setNoteDeleteError(null);
     try {
-      const { detail: d, attributeFields: fields, itemsWarning: warn } =
-        await loadAttendeeDetailData(eventId, attendeeId, notesPage);
+      const { detail: d, attributeFields: fields, itemsWarning: warn } = await rejectOnAbort(
+        loadAttendeeDetailData(eventId, attendeeId, notesPage, limit.signal),
+        limit.signal,
+      );
       if (!isCurrentRequest()) return;
       applyDetail(d);
       setAttributeFields(fields);
@@ -2025,20 +2098,36 @@ export function AttendeeDetailPage() {
       setStaleWrite(false);
       setEmailConflict(false);
     } catch (err) {
-      if (!isCurrentRequest()) return;
-      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+      if (!isCurrentRequest() || left()) return;
+      if (limit.timedOut()) {
+        setError(`Could not load attendee. ${LOAD_TIMEOUT_MESSAGE}`);
+      } else if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
         setError(operatorApiErrorMessage(err, "Could not load attendee."));
       }
     } finally {
-      if (isCurrentRequest()) setLoading(false);
+      limit.done();
+      if (isCurrentRequest() && !left()) setLoading(false);
     }
   }, [eventId, attendeeId, notesPage, applyDetail]);
 
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  // The dialog that says a wallet pass is still at the provider after an erasure, and repeats it. What the retry
+  // did to the pass is shown on the page at once, so a read that fails afterwards cannot make it look lost.
+  const afterWalletRetry = useCallback(
+    (result: EraseAttendeesResponse) => {
+      const held = heldDetailRef.current!;
+      const removedAt = result.wallet_removed_ids.includes(held.id) ? new Date().toISOString() : null;
+      applyDetail(withWalletOutcome(held, { pending: result.wallet_pending > 0, removedAt }));
+      void loadDetail();
+    },
+    [applyDetail, loadDetail],
+  );
+  const eraseWalletResult = useEraseWalletResult({ scopeKey: `${eventId}/${attendeeId}`, onSettled: afterWalletRetry });
 
   useEffect(() => {
     setNotesPage(1);
@@ -2076,21 +2165,65 @@ export function AttendeeDetailPage() {
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty = isAttendeeFormDirty(form, baseline);
 
-  async function handleDeleteConfirm() {
+  /** Removes this attendee from the event for good, with the reason chosen in the dialog. The attendee's page is gone
+   * after that, so the operator goes back to the list. */
+  async function handleRemoveConfirm(reason: AttendeeRemovalReason) {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId };
-    setDeleting(true);
-    setDeleteError(null);
+    setRemoving(true);
+    setRemoveError(null);
     try {
-      await deleteAttendee(eventId, attendeeId);
+      const result = await removeAttendee(eventId, attendeeId, reason);
       if (!isStillSelected(target)) return;
-      addToast("Attendee permanently deleted", "success");
+      addToast(removedToast(result), "success");
       void navigate(`/admin/events/${eventId}/attendees`);
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setDeleteError(operatorApiErrorMessage(err, "Could not delete attendee. Try again."));
+      setRemoveError(operatorApiErrorMessage(err, "Could not remove attendee. Try again."));
     } finally {
-      if (isStillSelected(target)) setDeleting(false);
+      if (isStillSelected(target)) setRemoving(false);
+    }
+  }
+
+  /** Erases this attendee's personal data. The page then reloads and shows the read-only page of an
+   * erased attendee. If the wallet pass could not be deleted at the provider the data is gone all
+   * the same, and a dialog offers Try again. */
+  async function handleEraseConfirm() {
+    // The dialog exists only on a page that has both ids (the page above returns early without them).
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
+    setErasing(true);
+    setEraseError(null);
+    try {
+      const result = await eraseAttendee(target.eventId, target.attendeeId);
+      if (!isStillSelected(target)) return;
+      setEraseOpen(false);
+      // Nothing of the person stays on screen while the page reads the server's version (or if that read fails), and
+      // an answer that was already on its way cannot bring them back (applyDetail refuses it).
+      const redacted = redactedAfterErasure(
+        detail!,
+        { at: new Date().toISOString(), timezone: event.timezone, eventArchived: isEventArchived(event) },
+        { pending: result.wallet_pending > 0, removed: result.wallet_removed_ids.includes(target.attendeeId) },
+      );
+      applyDetail(redacted);
+      setForm(toAttendeeForm(redacted, attributeFields));
+      if (result.wallet_pending > 0) {
+        eraseWalletResult.open(result.wallet_pending, () => eraseAttendee(target.eventId, target.attendeeId));
+      } else {
+        addToast(erasedToast(result), "success");
+      }
+      await loadDetail();
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setEraseError(operatorApiErrorMessage(err, "Could not erase personal data. Try again."));
+    } finally {
+      if (isStillSelected(target)) setErasing(false);
+    }
+  }
+
+  function cancelRemove() {
+    if (!removing) {
+      setRemoveOpen(false);
+      setRemoveError(null);
     }
   }
 
@@ -2531,8 +2664,12 @@ export function AttendeeDetailPage() {
   // Only the first load of an attendee has nothing to show yet. A fetch that resolves near-instantly
   // (localhost, a warm cache) shows no skeleton at all; a slower one shows it for at least 400ms so it
   // never flickers, and until its 200ms have passed it is in the page but invisible, so the space is
-  // already reserved and nothing jumps.
-  const { showIndicator: showLoadingSkeleton, showContent } = useLoadingGate(loading && !detail);
+  // already reserved and nothing jumps. After 8 seconds it says that it is taking longer than usual. A Retry of a
+  // failed first load is not a first load: its error stays on screen, with the Retry busy, until the answer is in.
+  const failure = useRetryKeepingError(error, loadDetail);
+  const waiting = loading && !detail && !failure.running;
+  const { showIndicator: showLoadingSkeleton, showContent } = useLoadingGate(waiting);
+  const slow = useDelayedLoading(waiting, SLOW_NOTICE_MS);
 
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
@@ -2556,41 +2693,37 @@ export function AttendeeDetailPage() {
         className={`attendee-detail-page screen ${showLoadingSkeleton ? "at-fade-in" : "at-loading-hold"}`}
         aria-busy="true"
       >
-        <output className="sr-only">Loading attendee</output>
-        <Skeleton variant="text" lines={2} />
-        <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
+        <AttendeeDetailSkeleton slow={slow} isDesktop={isDesktop} onBack={goBack} walletPlatforms={walletPlatforms} tab={tab} />
       </div>
     );
   }
 
   // The page, the not-found notice and the error all replace the skeleton (same key: none of them
-  // renders next to another), fading in over 150ms.
+  // renders next to another), fading in over 150ms. They are one region, named for the hand-over of the keyboard focus to
+  // it when the Retry of a failed read works and the error that held the focus goes.
   if (notFound) {
     return (
-      <div key="page" className="attendee-detail-page screen at-fade-in">
+      <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
         <PageHeader title="Attendee not found" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         <p>The attendee could not be found or you do not have access.</p>
-      </div>
+      </section>
     );
   }
 
   if (!detail || !form) {
     return (
-      <div key="page" className="attendee-detail-page screen at-fade-in">
+      <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
-        {error && (
-          <EmptyState
-            variant="error"
+        {failure.error && (
+          <RetryEmptyState
             title="Could not load attendee"
-            description={error}
-            action={
-              <Button type="button" variant="secondary" onClick={() => void loadDetail()}>
-                Retry
-              </Button>
-            }
+            message={failure.error}
+            retrying={failure.retrying}
+            onRetry={failure.retry}
+            landmark=".attendee-detail-page"
           />
         )}
-      </div>
+      </section>
     );
   }
 
@@ -2629,12 +2762,68 @@ export function AttendeeDetailPage() {
   // nie widzimy"). Usually short enough to never truncate, but the numeric UTC offset can push a
   // same-day fallback ("28 Jul 2026" / "04:30 PM UTC+5:30") past the chip's width for a
   // half-hour-offset zone like India's - title carries the untruncated text as a hover fallback.
-  const admissionParts = detail.admitted_at
-    ? formatAdmissionDisplayParts(detail.admitted_at, event.timezone)
-    : null;
+  const admissionParts = admissionPartsOf(detail.admitted_at, event.timezone);
+
+  // One strip for every attendee, erased or not: the placeholder draws these tabs, and the page that follows it keeps them.
+  const tabStrip = (
+    <Tabs
+      value={tab}
+      onChange={(id) => selectTab(id as TabId)}
+      tabs={[
+        { id: "overview", label: "Overview" },
+        { id: "activity", label: "Activity log" },
+        { id: "notes", label: "Notes", count: detail.erased_at ? undefined : detail.notes_total || undefined },
+      ]}
+    />
+  );
+
+  if (detail.erased_at) {
+    return (
+      <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
+        <ErasedAttendeeView
+          detail={detail}
+          erasedAt={detail.erased_at}
+          event={event}
+          ticketTypes={ticketTypes}
+          walletPlatforms={walletPlatforms}
+          tabStrip={tabStrip}
+          tab={tab}
+          statusStrip={
+            <AttendeeStatusStrip
+              detail={detail}
+              lastMail={lastMail}
+              admissionParts={erasedCheckInParts(detail.admitted_at, event.timezone)}
+              walletPlatforms={walletPlatforms}
+              erased
+            />
+          }
+          error={failure.error}
+          onRetry={failure.retry}
+          onBack={goBack}
+          onRemove={() => {
+            setRemoveError(null);
+            setRemoveOpen(true);
+          }}
+          onWalletTryAgain={() => eraseWalletResult.open(1, () => eraseAttendee(eventId, attendeeId))}
+        />
+        {/* No way across to Erase: this person is erased already. The check-in the entry keeps (to the hour) goes
+            out of Reports with it, so the dialog says so as for anyone else. */}
+        <RemoveAttendeeDialog
+          open={removeOpen}
+          name={ERASED_ATTENDEE_LABEL}
+          checkedIn={detail.admitted_at !== null}
+          busy={removing}
+          error={removeError}
+          onConfirm={(reason) => void handleRemoveConfirm(reason)}
+          onCancel={cancelRemove}
+        />
+        <EraseWalletResultDialog {...eraseWalletResult.dialogProps} />
+      </section>
+    );
+  }
 
   return (
-    <div key="page" className="attendee-detail-page screen at-fade-in">
+    <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
         title={detail.name}
         subtitle="Manage this attendee's profile, ticket, and check-in status."
@@ -2669,9 +2858,13 @@ export function AttendeeDetailPage() {
               onEdit={() => setEditMode(true)}
               onResend={() => setResendOpen(true)}
               onCopyTicketLink={() => void handleCopyTicketLink()}
-              onDelete={() => {
-                setDeleteError(null);
-                setDeleteOpen(true);
+              onRemove={() => {
+                setRemoveError(null);
+                setRemoveOpen(true);
+              }}
+              onErase={() => {
+                setEraseError(null);
+                setEraseOpen(true);
               }}
               canRevokeCheckIn={canRevokeCheckInForAttendee}
               revokeCheckInTooltip={revokeCheckInMenuTooltip(detail.check_in_status, isRevoked)}
@@ -2747,15 +2940,7 @@ export function AttendeeDetailPage() {
         walletPlatforms={walletPlatforms}
       />
 
-      <Tabs
-        value={tab}
-        onChange={(id) => selectTab(id as TabId)}
-        tabs={[
-          { id: "overview", label: "Overview" },
-          { id: "activity", label: "Activity log" },
-          { id: "notes", label: "Notes", count: detail.notes_total || undefined },
-        ]}
-      />
+      {tabStrip}
 
       {tab === "overview" && (
         <AttendeeOverviewTab
@@ -2815,7 +3000,7 @@ export function AttendeeDetailPage() {
 
       {editMode && (
         <dialog className="attendee-edit-modal" open aria-modal="true" aria-labelledby={editTitleId}>
-          <ModalBackdrop onClose={handleCancelEdit} />
+          <ModalBackdrop />
           <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={(e) => void handleSave(e)}>
             <h2 id={editTitleId} className="attendee-edit-modal__title">
               <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
@@ -3232,31 +3417,45 @@ export function AttendeeDetailPage() {
         }}
       />
 
-      <ConfirmDialog
-        open={deleteOpen}
-        title="Permanently delete this attendee?"
-        message={`This cannot be undone. Deleting ${detail.name} permanently removes:`}
-        errorMessage={deleteError}
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        loading={deleting}
-        confirmationValue={detail.name}
-        confirmationLabel={`Type the attendee's name to confirm: "${detail.name}"`}
-        onConfirm={() => void handleDeleteConfirm()}
+      <RemoveAttendeeDialog
+        open={removeOpen}
+        name={detail.name}
+        checkedIn={detail.admitted_at !== null}
+        busy={removing}
+        error={removeError}
+        onConfirm={(reason) => void handleRemoveConfirm(reason)}
+        onCancel={cancelRemove}
+        onUseErase={() => {
+          setRemoveOpen(false);
+          setRemoveError(null);
+          setEraseError(null);
+          setEraseOpen(true);
+        }}
+      />
+
+      <EraseAttendeeDialog
+        open={eraseOpen}
+        name={detail.name}
+        freesPlace={erasureFreesPlace(detail, isEventArchived(event))}
+        busy={erasing}
+        error={eraseError}
+        onConfirm={() => void handleEraseConfirm()}
         onCancel={() => {
-          if (!deleting) {
-            setDeleteOpen(false);
-            setDeleteError(null);
+          if (!erasing) {
+            setEraseOpen(false);
+            setEraseError(null);
           }
         }}
-      >
-        <ul className="confirm-dialog__list">
-          <li>Profile and contact details</li>
-          <li>Ticket deliveries</li>
-          <li>Wallet pass</li>
-          <li>Check-in history</li>
-        </ul>
-      </ConfirmDialog>
-    </div>
+        eventArchived={isEventArchived(event)}
+        onUseRemove={() => {
+          setEraseOpen(false);
+          setEraseError(null);
+          setRemoveError(null);
+          setRemoveOpen(true);
+        }}
+      />
+
+      <EraseWalletResultDialog {...eraseWalletResult.dialogProps} />
+    </section>
   );
 }

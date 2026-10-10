@@ -63,7 +63,8 @@ export async function optimisticAttendeeUpdate<S extends Prisma.AttendeeSelect>(
   return runOptimisticUpdate({
     updateMany: () =>
       tx.attendee.updateMany({
-        where: { id: args.id, updated_at: args.expectedUpdatedAt },
+        // erased_at: an attendee erased since the caller read the row is a stale write, not a patch.
+        where: { id: args.id, updated_at: args.expectedUpdatedAt, erased_at: null },
         data: args.data,
       }),
     loadUpdated: () =>

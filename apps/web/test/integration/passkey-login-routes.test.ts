@@ -58,7 +58,7 @@ async function registerCredential(targetUserId: string, label = "Login key") {
   const begin = await beginWebauthnRegistration(prisma, targetUserId, "platform", RP);
   if (!begin) throw new Error("beginWebauthnRegistration returned null");
   const response = authenticator.register({ challenge: begin.challenge, rpID: RP_ID, origin: BASE_URL });
-  const result = await finishWebauthnRegistration(prisma, targetUserId, response, begin.challenge, "platform", label, RP);
+  const result = await finishWebauthnRegistration(prisma, targetUserId, response, begin.challenge, "platform", RP, { label });
   if (!result) throw new Error("finishWebauthnRegistration returned null");
   await prisma.userMfaMethod.update({
     where: { id: result.credentialRowId },
@@ -336,7 +336,7 @@ describe("POST /api/auth/login/webauthn/finish", () => {
     const authenticator = createVirtualAuthenticator();
     const beginReg = await beginWebauthnRegistration(prisma, userId, "platform", RP);
     const regResponse = authenticator.register({ challenge: beginReg!.challenge, rpID: RP_ID, origin: BASE_URL });
-    await finishWebauthnRegistration(prisma, userId, regResponse, beginReg!.challenge, "platform", "Key", RP);
+    await finishWebauthnRegistration(prisma, userId, regResponse, beginReg!.challenge, "platform", RP, { label: "Key" });
 
     const { body: beginBody } = await begin();
     const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });

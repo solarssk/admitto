@@ -108,7 +108,7 @@ describe("EventArchivingPanel after an action", () => {
 });
 
 describe("EventArchivingPanel first load failing", () => {
-  it("is an error with a Retry that loads it again as a first load", async () => {
+  it("is an error with a Retry that loads it again, and the list takes the error's place", async () => {
     vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce([event("evt-1", "Summer Summit")]);
     renderWithToastAndRouter(<EventArchivingPanel />);
 
@@ -116,5 +116,54 @@ describe("EventArchivingPanel first load failing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Summer Summit")).toBeTruthy();
     expect(screen.queryByText("Could not load events")).toBeNull();
+  });
+
+  it("keeps the error with a busy Retry, whose focus it keeps, while a retry runs: no placeholder or empty list takes its place, and the card gets the focus when it works", async () => {
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network down"));
+    renderWithToastAndRouter(<EventArchivingPanel />);
+    const title = await screen.findByText("Could not load events");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    // A failure that shows with its Retry is not busy: only a click makes it so. It fades in with what it replaces.
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    const fade = retry.closest(".at-fade-in");
+    expect(fade).not.toBeNull();
+    const card = retry.closest(".at-card");
+
+    const second = deferred<EventDto[]>();
+    vi.mocked(fetchAdminEvents).mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.closest(".at-fade-in")).toBe(fade);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText("Could not load events")).toBe(title);
+    expect(screen.queryByLabelText("Loading events")).toBeNull();
+    expect(screen.queryByText("No active events")).toBeNull();
+
+    await act(async () => second.resolve([event("evt-1", "Summer Summit")]));
+    expect(await screen.findByText("Summer Summit")).toBeTruthy();
+    expect(screen.queryByText("Could not load events")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(card));
+  });
+
+  it("says the failure again, on the same Retry, when a retry fails again", async () => {
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network down"));
+    renderWithToastAndRouter(<EventArchivingPanel />);
+    await screen.findByText("Could not load events");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const message = screen.getByText("Could not load events.");
+
+    const second = deferred<EventDto[]>();
+    vi.mocked(fetchAdminEvents).mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    await act(async () => second.reject(new Error("still down")));
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBeNull(), { timeout: 3000 });
+
+    expect(screen.getByText("Could not load events.")).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
   });
 });

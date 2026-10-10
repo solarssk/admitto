@@ -9,6 +9,8 @@
   - [Find attendees on the list](#find-attendees-on-the-list)
   - [Bulk actions](#bulk-actions)
   - [Review or update one attendee](#review-or-update-one-attendee)
+  - [Erase personal data (privacy requests)](#erase-personal-data-privacy-requests)
+  - [Remove from event (mistakes)](#remove-from-event-mistakes)
 - [Expected result](#expected-result)
 - [Important decisions](#important-decisions)
 - [What changes after this action](#what-changes-after-this-action)
@@ -17,7 +19,7 @@
 
 ## What this page helps you do
 
-Add one attendee, find and review attendee records, run bulk actions on a selection, and make supported attendee-level corrections (including GDPR erasure).
+Add one attendee, find and review attendee records, run bulk actions on a selection, and make supported attendee-level corrections, including erasing a person's personal data for a privacy request and removing an entry that was a mistake.
 
 ## Before you start
 
@@ -40,6 +42,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 2. Choose how many rows per page to show.
 3. On phones, attendees appear as cards; on desktop, as a table.
 4. Use the single **Export** menu for approved exports of the current view.
+5. Entries whose personal data has been erased are left out of the list. When the event has any, **Filters** has an **Erased entries** switch that says how many there are: select **Show** to list them too and **Hide** to leave them out again.
 
 ### Bulk actions
 
@@ -51,7 +54,8 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Void wallet pass**, **Push updates**, **Refresh status**, **Delete wallet pass**, or **Remove from provider** (only enabled when the selection includes at least one attendee who added a pass)
    - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background), **Change attendance status**, **Set company**, or **Set department** (types one value and applies it to every selected attendee)
    - **Export** the selection as CSV
-   - **Delete** selected attendees (GDPR erasure; confirmation with a delay)
+   - **Erase personal data** of the selected people (for privacy requests; see [Erase personal data](#erase-personal-data-privacy-requests))
+   - **Remove from event** for the selected people (for mistakes, which changes Reports; see [Remove from event](#remove-from-event-mistakes))
 3. Confirm when Admitto asks, then verify the list and a sample detail page.
 
 ### Review or update one attendee
@@ -65,10 +69,33 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Resend ticket**
    - **Copy ticket link**: copies the attendee's ticket URL to the clipboard without sending anything. It issues the ticket first if it hasn't been issued yet, so this works even for an attendee who has never been sent a mail. It fails only when a ticket can never be issued: for a cancelled or revoked attendee, or an agency-imported attendee missing its reference.
    - **Revoke items**
-   - **Delete attendee** (typed confirmation for GDPR erasure)
+   - **Erase personal data** (typed confirmation; for a privacy request, see below)
+   - **Remove from event** (a reason and a typed confirmation; for a mistake, see below)
    - Once the attendee has added a wallet pass: **Void wallet pass**, **Push updates**, **Refresh status**, **Delete wallet pass**, and **Remove from provider** (shown greyed out until the pass is voided or expired). A pass that has expired only offers **Delete wallet pass** and **Remove from provider** - expiry is permanent, so there is no Restore, Push updates, or Refresh status for it.
 
    **Restore wallet pass** is only offered until the event is over (and never on an archived event), because a pass must not become valid again after it. **Restore wallet pass** asks for confirmation before applying; **Refresh status** does not, since it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
+
+### Erase personal data (privacy requests)
+
+Use this when a person asks for their personal data to be erased and your organisation has confirmed that it must be. The entry stays in the event as an anonymous attendee, so the numbers in Reports do not change.
+
+1. Open the attendee, then **More actions** and **Erase personal data**. For several people, select their rows on the **Attendees** list, then **More actions** in the bulk bar and **Erase personal data**.
+2. Read what the dialog says is erased and what stays. For one person, type their name to confirm; for a selection there is no name to type.
+3. Select **Erase personal data**. It cannot be undone, and it works on an archived event too.
+4. If the dialog **Personal data erased** says a wallet pass is still at the provider, everything personal inside Admitto is already gone. Select **Try again** to repeat only the wallet step.
+
+The attendee page of an erased person is read-only. It shows **Erased** in place of the name, email, company, custom fields and notes, keeps the ticket type, the check-in time to the hour and the ticket delivery result, and offers **Try again** next to a pass that is still to be deleted at the provider. The notice above the page says who erased the person and when, and **Activity log** keeps that one entry, with the time in the zone the staff member was in and whether it was done in the admin or on the emergency command line. A Superadmin also sees the address it was done from and where it is. The rest of the person's history is gone.
+
+### Remove from event (mistakes)
+
+Use this for an entry that should never have been there: a duplicate, a test person, a row from the wrong import file. The person is deleted from the event for good, so the numbers in Reports change with it. For a privacy request use [Erase personal data](#erase-personal-data-privacy-requests) instead.
+
+1. Open the attendee, then **More actions** and **Remove from event**. For several people, select their rows on the **Attendees** list, then **More actions** in the bulk bar and **Remove from event**.
+2. Choose the reason: **Duplicate entry**, **Test person**, **Wrong import file**, **Added by mistake** or **Other**. A reason is required. The audit log keeps this choice and nothing else about why, so there is no free text.
+3. For one person, type their name to confirm; for a selection there is no name to type.
+4. Select **Remove from event**. It cannot be undone.
+
+If someone in the selection has already checked in, the dialog says their check-ins are removed from Reports too. Each of the two dialogs links to the other (**A privacy request? Use Erase personal data** and **A duplicate or a mistake? Use Remove from event**), so you can switch when you picked the wrong one. On an archived event **Remove from event** is turned off, because its numbers are final: hover it to read why. **Erase personal data** still works there, and its dialog has no link to Remove.
 
 Use [Importing Attendees](Importing-Attendees) for a prepared list rather than adding many records one by one.
 
@@ -82,7 +109,8 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - Treat pass state, delivery status, and check-in state as separate facts.
 - Use notes only for event work that belongs on the attendee record.
 - Change a pass state only when the event's authorised process requires it.
-- **Delete attendee** permanently erases that person's event record for GDPR. Prefer revoke or status corrections when the person should stay in history.
+- **Erase personal data** is for privacy requests. It removes the name, email, company, notes, custom answers, ticket link, copies of the messages sent, the wallet pass at the provider and the person's address in saved import results, and keeps an anonymous entry so the Reports totals and the hourly chart do not move. Capacity does change: a person who had not checked in yet on an event that is not archived is marked cancelled, so their place becomes free, and the confirmation says how many places that is. The check-in time is kept to the hour.
+- **Remove from event** permanently removes the whole entry (profile, ticket deliveries, wallet pass and check-ins), so Reports change too. Use it for a mistake, a duplicate or a test person, not for a privacy request. It is not offered on an archived event. The audit log keeps the reason you chose, how many people and their ids, never a name or an address. Prefer revoke or status corrections when the person should stay in history.
 - **Delete wallet pass** permanently deletes the pass at the provider **and** erases the local record, including its Reports history (whether it was ever installed, registration counts). Prefer **Remove from provider** below when that history should stay.
 - **Remove from provider**, offered once a pass is voided or expired, permanently deletes the pass at the provider while keeping the local record and its Reports history intact - unlike **Delete wallet pass**. This is what actually stops the provider counting the pass towards its own plan; **Void wallet pass** alone does not. It cannot be undone at the provider, so use it once you are done tracking that pass there. The attendee's Wallet card and the Attendees list then show its registration counts as "Was registered" instead of "Registered", since they are the pass's last known snapshot, not a live read.
 - Neither **Delete wallet pass** nor **Remove from provider** removes the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can), and neither affects check-in. Use **Revoke pass** to block entry.
@@ -108,7 +136,9 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 
 - Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in.
 - A pass-state change can immediately affect whether the ticket can be admitted.
-- Deletion removes the attendee from the event permanently.
+- Removing an attendee from the event is permanent: the entry, its ticket deliveries, its wallet pass and its check-ins are gone, and the numbers in Reports change.
+- Erasing personal data cannot be undone. The entry cannot be edited, sent to, checked in or given a pass again, is left out of the list unless you show erased entries, and is left out of exports and mail audiences.
+- Files of earlier exports are deleted too: erasing or removing someone deletes every export file of the event at once, stops an export or an import that has not finished at that moment (run an export again; run an import again without that person, otherwise it would add them back), and an export file is deleted 7 days after the export in any case. Download an export when you run it, and run it again if you need a current copy.
 - A bulk ticket type change reports the wallet push outcome in a toast once it finishes. A pass that could not be reached stays on its previous ticket type until you retry with **Push updates**.
 - Editing an attendee's name, email, company, department, or ticket type also refreshes their already-issued active wallet pass, if they have one. Unlike the bulk ticket type change above, this push happens immediately and doesn't appear in Event settings → Wallet's Wallet push history list.
 
@@ -119,6 +149,9 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - **The attendee cannot be admitted:** review the pass state and the on-screen check-in result; do not create a replacement record as a workaround.
 - **A message did not arrive:** review delivery activity and [Email Delivery Statuses](Email-Delivery-Statuses).
 - **Bulk actions are disabled:** the event may be archived, or your selection may not allow that action.
+- **A person is missing from the list:** their personal data may have been erased. Open **Filters**, check **Erased entries** and select **Show**.
+- **Remove from event is greyed out:** the event is archived, and its numbers are final. For a privacy request use **Erase personal data**, which still works there.
+- **The wallet pass is still at the provider after an erasure:** the provider could not be reached. Select **Try again** in the dialog, or open the erased entry and use **Try again** next to the pass. Admitto also tries again by itself about once a day. If it keeps failing, check the wallet connection in Event settings, or delete the pass in the provider's own console.
 
 ## Related pages
 

@@ -12,11 +12,15 @@ vi.mock("../src/attendees-export-pdf.js", () => ({
 vi.mock("../src/attendees-export-xlsx.js", () => ({
   buildExportXlsxBuffer: vi.fn(),
 }));
+vi.mock("../src/lock-check.js", () => ({
+  keepLiveRows: vi.fn(),
+}));
 
 import { loadEventCustomDataFields } from "../src/event-custom-fields.js";
 import { loadEventTicketTypes } from "../src/ticket-types.js";
 import { buildExportPdfBuffer } from "../src/attendees-export-pdf.js";
 import { buildExportXlsxBuffer } from "../src/attendees-export-xlsx.js";
+import { keepLiveRows } from "../src/lock-check.js";
 import { buildAttendeesExportArtifact } from "../src/attendees-export-artifact.js";
 import type { ExportAttendeeSqlRow } from "../src/attendees-list-filters.js";
 
@@ -28,6 +32,7 @@ const event = {
 
 const rows: ExportAttendeeSqlRow[] = [
   {
+    id: "att-1",
     name: "Guest One",
     email: "guest-one@example.com",
     company: null,
@@ -44,6 +49,10 @@ describe("buildAttendeesExportArtifact", () => {
     vi.mocked(loadEventTicketTypes).mockReset().mockResolvedValue([]);
     vi.mocked(buildExportPdfBuffer).mockReset().mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
     vi.mocked(buildExportXlsxBuffer).mockReset().mockResolvedValue(new Uint8Array([80, 75]));
+    // By default the last check keeps every row.
+    vi.mocked(keepLiveRows)
+      .mockReset()
+      .mockImplementation((async (_db: unknown, list: readonly unknown[]) => [...list]) as never);
   });
 
   it("builds a CSV artifact", async () => {
@@ -72,5 +81,35 @@ describe("buildAttendeesExportArtifact", () => {
     expect(file.filename).toMatch(/\.xlsx$/);
     expect(file.bytes.equals(Buffer.from([80, 75]))).toBe(true);
     expect(buildExportXlsxBuffer).toHaveBeenCalledOnce();
+  });
+
+  it("builds the file only from the rows the last check keeps, and counts only those", async () => {
+    const two: ExportAttendeeSqlRow[] = [
+      ...rows,
+      { ...rows[0]!, id: "att-2", name: "Guest Two", email: "guest-two@example.com" },
+    ];
+    vi.mocked(keepLiveRows).mockResolvedValue([two[0]!] as never);
+    const db = {} as never;
+
+    const file = await buildAttendeesExportArtifact(db, "evt-1", two, "csv", event);
+
+    expect(keepLiveRows).toHaveBeenCalledWith(db, two);
+    expect(file.rowCount).toBe(1);
+    expect(file.bytes.toString("utf8")).toContain("guest-one@example.com");
+    expect(file.bytes.toString("utf8")).not.toContain("guest-two@example.com");
+  });
+
+  it("makes the last check after the lookups it needs, just before the rows are built", async () => {
+    const order: string[] = [];
+    vi.mocked(loadEventTicketTypes).mockImplementation(async () => (order.push("ticket types"), []));
+    vi.mocked(keepLiveRows).mockImplementation((async (_db: unknown, list: readonly unknown[]) => (
+      order.push("last check"),
+      [...list]
+    )) as never);
+
+    await buildAttendeesExportArtifact({} as never, "evt-1", rows, "xlsx", event);
+
+    expect(order).toEqual(["ticket types", "last check"]);
+    expect(buildExportXlsxBuffer).toHaveBeenCalledAfter(vi.mocked(keepLiveRows));
   });
 });

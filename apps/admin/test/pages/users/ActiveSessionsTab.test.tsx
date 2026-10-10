@@ -231,8 +231,10 @@ describe("ActiveSessionsTab rendering", () => {
     renderWithToast(<ActiveSessionsTab />);
 
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(document.querySelector(".sessions-status p")?.textContent).toMatch(/Could not load sessions/);
-    expect(document.querySelector(".sessions-status[role='alert'] p")?.textContent).toMatch(/Could not load sessions/);
+    // The shared error placeholder: the title says what failed, the description why, and the glyph an error has everywhere is over them.
+    expect(document.querySelector("[role='alert'] .at-empty-state__title")?.textContent).toBe("Could not load sessions");
+    expect(document.querySelector("[role='alert'] .at-empty-state__desc")?.textContent).toMatch(/Could not load sessions/);
+    expect(document.querySelector("[role='alert'] .at-empty-state__icon i.ti-circle-x")).not.toBeNull();
     expect(screen.queryByText("secret_internal")).toBeNull();
     // The alert in the card is the message: it is not said a second time as a toast.
     expect(screen.queryByTestId("at-toast")).toBeNull();
@@ -672,6 +674,9 @@ describe("ActiveSessionsTab responsive layout", () => {
     // by other tests here, but SessionCard is a separate component with its own copies.
     expect(within(card).getByText("Mobile User")).toBeTruthy();
     expect(within(card).getByText("Field Tablet")).toBeTruthy();
+    // The cell of the login time and its local time under it is the wide one (users-page.css), which the card's other cells are not.
+    expect(within(card).getByText("Logged in").closest("div")?.className).toBe("users-page__card-meta-wide");
+    expect(within(card).getByText("Device").closest("div")?.className).toBe("");
     expect(within(card).getByText("-")).toBeTruthy();
     expect(screen.getByRole("button", { name: REVOKE_NAME })).toBeTruthy();
 
@@ -679,6 +684,23 @@ describe("ActiveSessionsTab responsive layout", () => {
     const dialog = await screen.findByRole("dialog");
     const input = within(dialog).getByLabelText("Device label") as HTMLInputElement;
     expect(input.value).toBe("Field Tablet");
+  });
+
+  it("drops only the Sign-in column on a laptop, keeping Device and IP address, which are what a reviewer of sessions looks at", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [makeSession({ userEmail: "laptop@example.com" })] });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByText("laptop@example.com");
+    const table = screen.getByRole("table");
+    const headers = [...table.querySelectorAll("thead th")];
+    expect(headers.filter((th) => th.classList.contains("sessions-col-laptop-hide")).map((th) => th.textContent)).toEqual(["Sign-in"]);
+    // Its cells carry the class too, so the whole column goes and a row never has a cell more than a heading.
+    const cells = [...table.querySelectorAll("tbody tr:first-child td")];
+    expect(cells).toHaveLength(headers.length);
+    expect(cells.map((td) => td.classList.contains("sessions-col-laptop-hide"))).toEqual(headers.map((th) => th.classList.contains("sessions-col-laptop-hide")));
+    // On a tablet the three supplementary columns still drop together, as before.
+    expect(headers.filter((th) => th.classList.contains("sessions-col-tablet-hide")).map((th) => th.textContent)).toEqual(["Device", "IP address", "Sign-in"]);
   });
 
   it("falls back to email, parsed user agent, and a dash when a mobile card's optional fields are empty", async () => {
@@ -772,7 +794,21 @@ describe("ActiveSessionsTab on the loading standard", () => {
     expect(screen.getByRole("table")).toBeTruthy();
   });
 
-  it("gives up after 30 seconds with an error and Retry, and a Retry is a first load again", async () => {
+  it("draws the placeholder's Sign-in column with the classes of the real one, so it has the columns the table will have at every width", async () => {
+    vi.mocked(fetchSessions).mockReturnValue(deferred<{ sessions: SessionListDto[] }>().promise);
+    vi.useFakeTimers();
+    renderWithToast(<ActiveSessionsTab />);
+    await advanceTimers(200);
+
+    const headers = [...(region() as HTMLElement).querySelectorAll("th")];
+    expect(headers.find((th) => th.textContent === "Sign-in")?.className).toBe("sessions-col-tablet-hide sessions-col-laptop-hide");
+    expect(headers.filter((th) => th.classList.contains("sessions-col-laptop-hide"))).toHaveLength(1);
+  });
+
+  const TIMED_OUT = "The server did not answer in time. Check your connection and try again.";
+
+  /** A fetcher that never answers, and gives up (rejects) when its signal aborts: what the 30 second limit does. */
+  function hangingSessions() {
     const signals: AbortSignal[] = [];
     vi.mocked(fetchSessions).mockImplementation(
       (_role, signal) =>
@@ -781,17 +817,69 @@ describe("ActiveSessionsTab on the loading standard", () => {
           signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
         }),
     );
+    return signals;
+  }
+
+  it("gives up after 30 seconds with an error and Retry", async () => {
+    const signals = hangingSessions();
     vi.useFakeTimers();
     renderWithToast(<ActiveSessionsTab />);
     await advanceTimers(30_000);
     await advanceTimers(0);
-    expect(screen.getByText("The server did not answer in time. Check your connection and try again.")).toBeTruthy();
+    expect(screen.getByText(TIMED_OUT)).toBeTruthy();
     expect(signals[0]?.aborted).toBe(true);
+    // The error that replaces the placeholder fades in.
+    expect(screen.getByRole("button", { name: "Retry" }).closest(".at-fade-in")).not.toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  it("keeps the error on screen, with a busy Retry that keeps the focus, while a Retry runs: no placeholder takes its place, and a repeat failure is announced again", async () => {
+    const signals = hangingSessions();
+    vi.useFakeTimers();
+    renderWithToast(<ActiveSessionsTab />);
+    await advanceTimers(30_000);
     await advanceTimers(0);
-    expect(region()).not.toBeNull();
+    const message = screen.getByText(TIMED_OUT);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+
+    retry.focus();
+    fireEvent.click(retry);
+    await advanceTimers(0);
+    expect(region()).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByText(TIMED_OUT)).toBe(message);
     expect(signals).toHaveLength(2);
+
+    await advanceTimers(30_000);
+    await advanceTimers(0);
+    expect(signals[1]?.aborted).toBe(true);
+    expect(screen.getByText(TIMED_OUT)).not.toBe(message);
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("hands the focus to the card that holds the list when the retry works", async () => {
+    vi.mocked(fetchSessions).mockRejectedValueOnce(new Error("network down"));
+    renderWithToast(<ActiveSessionsTab />);
+    expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const card = retry.closest(".at-card");
+    expect(card).not.toBeNull();
+
+    const second = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions).mockReturnValueOnce(second.promise);
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText("No active sessions")).toBeNull();
+
+    await act(async () => second.resolve({ sessions: [makeSession()] }));
+    await screen.findByRole("table");
+    expect(screen.queryByText("Could not load sessions.")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(card));
   });
 
   it("keeps the rows while the refresh after a revoke is on its way: blocked, dimmed with a bar once it is noticeable, and no placeholder", async () => {
@@ -869,6 +957,44 @@ describe("ActiveSessionsTab on the loading standard", () => {
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText("one@example.com")).toBeNull();
     expect(screen.queryByText(/may show older details/)).toBeNull();
+  });
+
+  it("does not bring the possibly revoked rows back while the Retry of that error runs: the error stays, busy, until the answer is in", async () => {
+    vi.mocked(fetchSessions)
+      .mockResolvedValueOnce({ sessions: [makeSession({ id: "s1", userEmail: "one@example.com" })] })
+      .mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValue({ revokedCount: 1 });
+    const onCountChange = vi.fn();
+    renderWithToast(<ActiveSessionsTab onCountChange={onCountChange} />);
+    await screen.findByRole("table");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
+
+    const second = deferred<{ sessions: SessionListDto[] }>();
+    vi.mocked(fetchSessions).mockReturnValueOnce(second.promise);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The rows on screen before the revoke are older than the server's: they stay away, and so does the empty state.
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText("one@example.com")).toBeNull();
+    expect(screen.queryByText("No active sessions")).toBeNull();
+    // And the tab label keeps showing no number.
+    expect(onCountChange).toHaveBeenLastCalledWith(undefined);
+
+    await act(async () => second.resolve({ sessions: [makeSession({ id: "s2", userEmail: "two@example.com" })] }));
+    await screen.findByRole("table");
+    expect(screen.getAllByText("two@example.com").length).toBeGreaterThan(0);
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
   });
 
   it("keeps the rows with a warning when a bulk revoke that revoked nothing is followed by a refresh that fails", async () => {
@@ -1024,7 +1150,7 @@ describe("ActiveSessionsTab operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    const panel = document.querySelector(".sessions-status p");
+    const panel = document.querySelector("[role='alert'] .at-empty-state__desc");
     expect(panel?.textContent).toMatch(/session has expired/i);
     expect(screen.queryByText("authentication_required")).toBeNull();
   });

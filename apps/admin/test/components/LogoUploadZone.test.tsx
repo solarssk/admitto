@@ -533,12 +533,13 @@ describe("LogoUploadZone", () => {
     expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeTruthy();
     expect(screen.queryByText(/drop logo here/i)).toBeNull();
     expect(screen.queryByText("Uploading…")).toBeNull();
-    expect(onUploadingChange).toHaveBeenLastCalledWith(true);
+    // The zone reports the start and the end of an upload from a passive effect, one commit after the DOM changes.
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true));
 
     resolveUpload({ url: "/uploads/default/a-original.png" });
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy());
     expect(document.querySelector(".logo-upload__zone .at-spinner")).toBeNull();
-    expect(onUploadingChange).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false));
   });
 
   it("keeps Replace image and Edit image focusable but off while a file goes up, instead of disabling them", async () => {
@@ -885,5 +886,64 @@ describe("LogoUploadZone", () => {
     });
     expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/saved.png");
     expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/saved-orig.png");
+  });
+});
+
+describe("LogoUploadZone: an upload that Remove or a corrupt preview supersedes", () => {
+  const LOGO = "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png";
+  const ANSWERED = "/uploads/default/new-original.png";
+
+  function Harness({ onUploading }: { readonly onUploading: (uploading: boolean) => void }) {
+    const [value, setValue] = useState(LOGO);
+    return <LogoUploadZone value={value} onChange={setValue} onUploadingChange={onUploading} />;
+  }
+
+  /** A replacement file is on its way; `answer()` is the server answering it. */
+  async function startReplacement() {
+    let resolveUpload!: (v: { url: string }) => void;
+    mockUploadFile.mockReturnValueOnce(new Promise((r) => (resolveUpload = r)));
+    const onUploading = vi.fn();
+    renderWithToast(<Harness onUploading={onUploading} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "a.png", { type: "image/png" })] } });
+    await waitFor(() => expect(onUploading).toHaveBeenLastCalledWith(true));
+    const answer = () =>
+      act(async () => {
+        resolveUpload({ url: ANSWERED });
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    return { onUploading, answer };
+  }
+
+  /** What the parent (Save) and the operator (file choice, status) see of the busy state. */
+  function busyState(onUploading: ReturnType<typeof vi.fn>) {
+    return {
+      parentIsTold: onUploading.mock.calls.at(-1)?.[0],
+      fileInputDisabled: (document.querySelector('input[type="file"]') as HTMLInputElement).disabled,
+      status: document.querySelector("output.sr-only")?.textContent,
+      zoneAriaBusy: document.querySelector(".logo-upload__zone")?.getAttribute("aria-busy") ?? null,
+    };
+  }
+  const IDLE = { parentIsTold: false, fileInputDisabled: false, status: "", zoneAriaBusy: null };
+
+  it("an undisturbed upload ends the busy state and opens the crop dialog", async () => {
+    const { onUploading, answer } = await startReplacement();
+    expect(busyState(onUploading)).toMatchObject({ parentIsTold: true, fileInputDisabled: true });
+    await answer();
+    expect(busyState(onUploading)).toEqual(IDLE);
+    expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+  });
+
+  it.each([
+    ["Remove is clicked", () => fireEvent.click(screen.getByRole("button", { name: "Remove organisation logo" }))],
+    ["the current logo's preview turns out corrupt", () => fireEvent.error(screen.getByAltText("Organisation logo preview"))],
+  ])("%s while the file goes up: no longer busy, and the late answer is discarded", async (_what, supersede) => {
+    const { onUploading, answer } = await startReplacement();
+    supersede();
+    expect(busyState(onUploading)).toEqual(IDLE);
+    await answer();
+    expect(busyState(onUploading)).toEqual(IDLE);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith(ANSWERED);
   });
 });

@@ -19,6 +19,8 @@ import type {
   MeResponse,
   ResendTicketBody,
   DismissBounceResponse,
+  EraseAttendeesResponse,
+  RemoveAttendeesResponse,
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
@@ -162,6 +164,7 @@ import type {
   CreateTicketTypeBody,
   UpdateTicketTypePatch,
 } from "./types.js";
+import type { AttendeeRemovalReason } from "@admitto/shared";
 import { sleepWithAbort } from "../lib/sleep-with-abort.js";
 
 export type EventFullMeta = {
@@ -360,10 +363,11 @@ export async function previewImport(
   eventId: string,
   file: File,
   overwrite: boolean,
+  signal?: AbortSignal,
 ): Promise<ImportPreviewResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/import/preview`,
-    multipartPostInit(importFormData(file, overwrite)),
+    multipartPostInit(importFormData(file, overwrite), signal),
   );
   return parseJson<ImportPreviewResponse>(res);
 }
@@ -1020,6 +1024,7 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.rsvp_status?.length) q.set("rsvp_status", params.rsvp_status.join(","));
   if (params.mail_status?.length) q.set("mail_status", params.mail_status.join(","));
   appendCustomFieldParams(q, params.customFieldParams);
+  if (params.includeErased) q.set("include_erased", "1");
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
@@ -1096,36 +1101,59 @@ export async function updateAttendee(
   return parseJson<AttendeeDetailDto>(res);
 }
 
-/** Permanently erase an attendee's record (GDPR erasure) — profile, deliveries, wallet pass,
- * and check-ins. Irreversible; see docs/DSAR-PROCEDURE.md. */
-export async function deleteAttendee(eventId: string, attendeeId: string): Promise<void> {
+/** Remove one attendee from the event for good (the hard delete, for a duplicate, a test person
+ * or a mistake): the record goes with its deliveries, wallet pass and check-ins, and Reports
+ * change with it. The reason is a code from a fixed list, saved in the audit log with the id and
+ * nothing else. Irreversible, and refused on an archived event; see docs/dev/attendee-erasure.md. */
+export async function removeAttendee(
+  eventId: string,
+  attendeeId: string,
+  reason: AttendeeRemovalReason,
+): Promise<RemoveAttendeesResponse> {
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
-    jsonDeleteInit(),
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/remove`,
+    jsonPostInit({ reason }),
   );
-  if (!res.ok) {
-    let message = res.statusText || `HTTP ${res.status}`;
-    try {
-      const body = (await res.json()) as ApiErrorBody;
-      message = messageFromApiErrorBody(body) ?? message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, message);
-  }
+  return parseJson<RemoveAttendeesResponse>(res);
 }
 
-/** Permanently erase a selection of attendees at once (GDPR erasure), from the Attendees
- * list's row-selection bulk bar. Same effect as calling `deleteAttendee` once per id. */
-export async function bulkDeleteAttendees(
+/** Remove a selection from the event at once, from the Attendees list's row-selection bar. Same
+ * effect as `removeAttendee` once per id. */
+export async function bulkRemoveAttendees(
   eventId: string,
   attendeeIds: string[],
-): Promise<{ deletedCount: number }> {
+  reason: AttendeeRemovalReason,
+): Promise<RemoveAttendeesResponse> {
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-delete`,
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-remove`,
+    jsonPostInit({ attendeeIds, reason }),
+  );
+  return parseJson<RemoveAttendeesResponse>(res);
+}
+
+/** Erase one attendee's personal data (the privacy-request action): the record stays as an
+ * anonymous entry, so Reports keep their numbers. Irreversible. Repeating it for an attendee that
+ * is already erased changes nothing and simply tries the wallet pass delete again, which is the
+ * "try again" of `wallet_pending`. */
+export async function eraseAttendee(eventId: string, attendeeId: string): Promise<EraseAttendeesResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/erase`,
+    jsonPostInit({}),
+  );
+  return parseJson<EraseAttendeesResponse>(res);
+}
+
+/** Erase the personal data of a selection at once, from the Attendees list's row-selection bar.
+ * Same effect as `eraseAttendee` once per id. */
+export async function bulkEraseAttendees(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<EraseAttendeesResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-erase`,
     jsonPostInit({ attendeeIds }),
   );
-  return parseJson<{ deletedCount: number }>(res);
+  return parseJson<EraseAttendeesResponse>(res);
 }
 
 export interface BulkTicketTypeResponse {
@@ -2130,7 +2158,7 @@ async function pollExportJobUntilReady(
         throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
       }
     }
-    if (attempt < maxAttempts - 1) await sleepExportPoll(intervalMs, signal);
+    if (attempt < maxAttempts - 1) await sleepExportPoll(intervalMs, signal); // NOSONAR - polling: each check waits for the previous one and the interval
   }
   throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
 }

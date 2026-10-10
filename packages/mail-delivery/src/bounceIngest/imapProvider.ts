@@ -1,6 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { resolveSafeMailDestination } from "@admitto/mailer";
-import { extractPlainTextFromSource } from "./extractMimeText.js";
+import { extractPlainTextFromSource, extractReferencedMessageIds } from "./extractMimeText.js";
 import type {
   FetchCandidateOptions,
   InboundMailProvider,
@@ -77,6 +77,7 @@ export class ImapInboundProvider implements InboundMailProvider {
             receivedAt: messageReceivedAt(msg),
             subject: typeof subject === "string" ? subject : String(subject),
             bodyText: extractPlainTextFromSource(msg.source),
+            referencedMessageIds: extractReferencedMessageIds(msg.source),
           });
         } catch (err) {
           // One poison MIME/HTML entity must not abort the whole folder fetch.

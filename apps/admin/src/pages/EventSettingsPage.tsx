@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -60,8 +59,10 @@ import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useFocusAfterPageRetry } from "../hooks/useFocusAfterPageRetry.js";
 import { usePanelLoad, type PanelLoad } from "../hooks/usePanelLoad.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { PageRetryPanel } from "../components/PageRetryPanel.js";
 import {
   useWalletCustomFields,
   useWalletLocationPreview,
@@ -936,55 +937,17 @@ function computeSettingsDirty(form: SettingsForm | null, original: SettingsForm 
   }
 }
 
-/** The error of a failed first load is replaced by the whole page when a Retry works (or by "Event not found", when the
- * answer is a 403 or 404), so the tab panel that `PanelLoadError` would hand the focus to is gone with it: once the page
- * is there, the focus that was on the Retry (a browser drops it on `<body>`) goes to the page's open tab panel instead, or
- * to the Back button of "Event not found", so a screen reader hears where it is and the next Tab goes on from there. Focus
- * that was never in the error (`errorHadFocusRef`: a mouse click does not focus a button in every browser, and the
- * viewer may have moved to a tab), or is anywhere else by then, is left alone. */
-function useFocusOpenTabAfterRetry(
-  failed: boolean,
-  settled: boolean,
-  rootRef: RefObject<HTMLElement | null>,
-  errorHadFocusRef: RefObject<boolean>,
-): void {
-  const wasFailed = useRef(false);
-  useEffect(() => {
-    if (failed) {
-      wasFailed.current = true;
-      return;
-    }
-    if (!settled || !wasFailed.current) return;
-    wasFailed.current = false;
-    const hadFocus = errorHadFocusRef.current;
-    errorHadFocusRef.current = false;
-    // Only focus that went with the error and is on nothing now (a browser drops it on <body>) is handed on.
-    const onNothing = !document.activeElement || document.activeElement === document.body;
-    if (!hadFocus || !onNothing) return;
-    const target =
-      rootRef.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])') ??
-      rootRef.current?.querySelector<HTMLElement>("button");
-    if (target && !target.hasAttribute("tabindex") && target.getAttribute("role") === "tabpanel") target.tabIndex = -1;
-    target?.focus();
-  }, [failed, settled, rootRef, errorHadFocusRef]);
-}
+/** What the focus of a Retry that worked goes to once the page is there: the open tab's panel, or the Back button of "Event not found". */
+const EVENT_SETTINGS_RETRY_FOCUS_TARGETS = ['[role="tabpanel"]:not([hidden])', "button"] as const;
 
-/** The tab panel that holds the error of a failed first read. It notes whether the focus was inside it when it goes (React
- * runs this cleanup before it takes the panel out of the page, so a focused Retry is still focused here). */
+/** The tab panel that holds the error of a failed first read. */
 function EventSettingsLoadError({
   firstLoad,
   message,
   errorHadFocusRef,
 }: Readonly<{ firstLoad: PanelLoad; message: string; errorHadFocusRef: RefObject<boolean> }>) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const panel = panelRef.current;
-    return () => {
-      errorHadFocusRef.current = Boolean(panel?.contains(document.activeElement));
-    };
-  }, [errorHadFocusRef]);
   return (
-    <div ref={panelRef} role="tabpanel" aria-label="Event settings" className="event-settings-tabpanel">
+    <PageRetryPanel label="Event settings" errorHadFocusRef={errorHadFocusRef} className="event-settings-tabpanel">
       <PanelLoadError
         cardTitle="Event settings"
         title="Could not load event settings"
@@ -992,7 +955,7 @@ function EventSettingsLoadError({
         retrying={firstLoad.retrying}
         onRetry={firstLoad.retry}
       />
-    </div>
+    </PageRetryPanel>
   );
 }
 
@@ -1386,7 +1349,13 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
 
   const pageRef = useRef<HTMLDivElement>(null);
   const errorHadFocusRef = useRef(false);
-  useFocusOpenTabAfterRetry(Boolean(firstLoad.error), Boolean((event && form) || notFound), pageRef, errorHadFocusRef);
+  useFocusAfterPageRetry(
+    Boolean(firstLoad.error),
+    Boolean((event && form) || notFound),
+    pageRef,
+    errorHadFocusRef,
+    EVENT_SETTINGS_RETRY_FOCUS_TARGETS,
+  );
   const earlyExit = renderEventSettingsEarlyExit({
     firstLoad,
     notFound,

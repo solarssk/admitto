@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CameraOverlay } from "../../src/checkin/CameraOverlay.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
@@ -58,6 +59,19 @@ describe("CameraOverlay while the first load of the counts and history is runnin
     expect(screen.queryByText("No scans yet")).toBeNull();
   });
 
+  it("says it is taking longer than usual in the list after 8 seconds, and takes the note away with the wait", async () => {
+    const { rerender } = render(<CameraOverlay {...baseProps} admittedCount={0} historyLoading />);
+    const aside = () => document.querySelector(".ck-overlay__aside") as HTMLElement;
+    await advance(SLOW_NOTICE_MS - 1);
+    expect(aside().textContent).not.toContain(SLOW_NOTICE_TEXT);
+    await advance(1);
+    expect(aside().textContent).toContain(SLOW_NOTICE_TEXT);
+
+    rerender(<CameraOverlay {...baseProps} historyLoading={false} />);
+    await advance(0);
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+  });
+
   it("shows the real count and history once the load is over and the placeholder has had its 400ms", async () => {
     const { rerender } = render(<CameraOverlay {...baseProps} historyLoading />);
     await advance(250);
@@ -97,6 +111,17 @@ describe("CameraOverlay when the first load of the counts and history failed", (
     expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBe("true");
     await advance(1);
     expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("hands the focus to the list when the retry works, instead of letting it fall to the page", async () => {
+    const { rerender } = render(<CameraOverlay {...baseProps} historyError onRetryHistory={vi.fn()} />);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    rerender(<CameraOverlay {...baseProps} />);
+    await advance(0);
+    expect(document.activeElement).toBe(document.querySelector(".ck-overlay__aside"));
   });
 
   it("shows the count again when the retry succeeds", () => {

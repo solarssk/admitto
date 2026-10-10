@@ -216,7 +216,7 @@ export async function handlePostMfaVerify(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code, undefined, partial.userId))) {
     return c.text("Too many requests", 429);
   }
 
@@ -443,11 +443,11 @@ export async function handlePostMfaEnroll(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code, undefined, partial.userId))) {
     return c.text("Too many requests", 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, partial.userId, code);
+  const ok = await confirmTotpEnrollment(db, partial.userId, code, { onlyFirstMethod: true });
   if (!ok) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
     const scriptNonce = createAuthPageScriptNonce();

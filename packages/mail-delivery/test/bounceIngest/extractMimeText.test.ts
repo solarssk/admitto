@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractPlainTextFromSource, stripHtmlTagsSafely } from "../../src/bounceIngest/extractMimeText.js";
+import {
+  extractPlainTextFromSource,
+  extractReferencedMessageIds,
+  stripHtmlTagsSafely,
+} from "../../src/bounceIngest/extractMimeText.js";
 import { parseBounceLines } from "../../src/bounceIngest/parseBounceLine.js";
 import {
   iso8859QpNdr,
@@ -136,5 +140,99 @@ describe("stripHtmlTagsSafely", () => {
     expect(stripHtmlTagsSafely("<a ".repeat(100_000))).toBe("<a ".repeat(100_000).trim().replace(/[ \t]+/g, " "));
     expect(stripHtmlTagsSafely(`<a ${"x ".repeat(100_000)}`)).toContain("<a x x");
     expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe("extractReferencedMessageIds", () => {
+  it("collects ids from Message-ID, In-Reply-To and folded References headers, lower-cased", () => {
+    const source = [
+      "Message-ID: <Outer@bounce.example.com>",
+      "Subject: Undelivered",
+      "",
+      "Original headers follow:",
+      "Message-ID: <Orig123@mail.example.com>",
+      "References: <a@x.test>",
+      "\t<B@x.test>",
+      "Subject: Message-ID: <not-a-header@x.test>",
+      "X-Other: <ignored@x.test>",
+    ].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual([
+      "<outer@bounce.example.com>",
+      "<orig123@mail.example.com>",
+      "<a@x.test>",
+      "<b@x.test>",
+    ]);
+  });
+
+  it("reads ids from a base64-encoded quoted original, which the raw scan cannot see", () => {
+    const original = "Message-ID: <Encoded@mail.example.com>\r\nSubject: hi\r\n";
+    const source = [
+      "Message-ID: <outer@bounce.example.com>",
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="b1"',
+      "",
+      "--b1",
+      "Content-Type: text/plain",
+      "",
+      "Undeliverable",
+      "--b1",
+      "Content-Type: text/rfc822-headers",
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(original).toString("base64"),
+      "--b1--",
+    ].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual([
+      "<outer@bounce.example.com>",
+      "<encoded@mail.example.com>",
+    ]);
+  });
+
+  it("reads Original-Message-ID from a plain and from a base64 delivery-status part", () => {
+    const status = "Reporting-MTA: dns; mx.example.com\r\nOriginal-Message-ID: <Orig@mail.example.com>\r\n";
+    const build = (encoding: string, body: string) =>
+      [
+        'Content-Type: multipart/report; report-type=delivery-status; boundary="b1"',
+        "",
+        "--b1",
+        "Content-Type: message/delivery-status",
+        `Content-Transfer-Encoding: ${encoding}`,
+        "",
+        body,
+        "--b1--",
+      ].join("\r\n");
+    expect(extractReferencedMessageIds(build("7bit", status))).toEqual(["<orig@mail.example.com>"]);
+    expect(extractReferencedMessageIds(build("base64", Buffer.from(status).toString("base64")))).toEqual([
+      "<orig@mail.example.com>",
+    ]);
+  });
+
+  it("finds the original Message-ID even after more than 64 KiB of explanatory text", () => {
+    const source = [
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="b1"',
+      "",
+      "--b1",
+      "Content-Type: text/plain",
+      "",
+      "x".repeat(200_000),
+      "--b1",
+      "Content-Type: text/rfc822-headers",
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from("Message-ID: <Late@mail.example.com>\r\n").toString("base64"),
+      "--b1--",
+    ].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual(["<late@mail.example.com>"]);
+  });
+
+  it("ignores folded lines of other headers and header lines without an id", () => {
+    const source = ["Subject: x", "\t<folded@x.test>", "Message-ID: no-angle-brackets", "References:", "\t<ok@x.test>"].join("\r\n");
+    expect(extractReferencedMessageIds(source)).toEqual(["<ok@x.test>"]);
+  });
+
+  it("returns an empty list for missing or header-free input and caps the count", () => {
+    expect(extractReferencedMessageIds(undefined)).toEqual([]);
+    expect(extractReferencedMessageIds("just text")).toEqual([]);
+    const many = Array.from({ length: 80 }, (_, i) => `<${i}@x.test>`).join(" ");
+    expect(extractReferencedMessageIds(`References: ${many}`)).toHaveLength(50);
   });
 });

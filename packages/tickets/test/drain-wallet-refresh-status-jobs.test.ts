@@ -9,8 +9,10 @@ vi.mock("@admitto/wallet", () => ({
   resolveConfiguredWalletProvider: vi.fn(),
   refreshOneWalletPassStatus: vi.fn(),
 }));
+vi.mock("../src/lock-check.js", () => ({ attendeeIsLive: vi.fn() }));
 
 import { claimNextAdminJob } from "../src/claim-admin-job.js";
+import { attendeeIsLive } from "../src/lock-check.js";
 import { resolveConfiguredWalletProvider, resolveWalletProvider, refreshOneWalletPassStatus } from "@admitto/wallet";
 import {
   drainWalletRefreshStatusJobs,
@@ -60,6 +62,7 @@ describe("drainWalletRefreshStatusJobs", () => {
   beforeEach(() => {
     vi.mocked(claimNextAdminJob).mockReset();
     vi.mocked(refreshOneWalletPassStatus).mockReset().mockResolvedValue("refreshed" as never);
+    vi.mocked(attendeeIsLive).mockReset().mockResolvedValue(true);
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
     vi.mocked(resolveConfiguredWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
     resetSystemLogBufferForTest();
@@ -120,6 +123,26 @@ describe("drainWalletRefreshStatusJobs", () => {
         result_json: { request: { eventId: "evt-1" }, refreshed: 2, skipped: 0, errored: 0 },
         error: null,
       },
+    });
+  });
+
+  it("skips an attendee who is erased, or being erased, without reading their pass from the provider", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    vi.mocked(attendeeIsLive).mockImplementation(async (_db, attendeeId) => attendeeId !== "att-2");
+
+    await drainWalletRefreshStatusJobs(db as never);
+
+    expect(refreshOneWalletPassStatus).toHaveBeenCalledTimes(1);
+    expect(refreshOneWalletPassStatus).toHaveBeenCalledWith(
+      db,
+      { attendeeId: "att-1", providerPassId: "pc-1", userProvidedId: "admitto:evt-1:att-1" },
+      fakeProvider,
+    );
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+    );
+    expect(finalCall![0]).toMatchObject({
+      data: { result_json: { request: { eventId: "evt-1" }, refreshed: 1, skipped: 1, errored: 0 } },
     });
   });
 

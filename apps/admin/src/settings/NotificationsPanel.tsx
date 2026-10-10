@@ -278,7 +278,7 @@ function EditRecipientModal({
 
   return (
     <dialog open className="event-item-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={onCancel} />
+      <ModalBackdrop />
       <div ref={panelRef} className="event-item-modal__panel">
         <div className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">
@@ -863,7 +863,7 @@ export function NotificationsPanel() {
                     </td>
                     {CHANNEL_COLUMNS.map((col) =>
                       type.available_channels.includes(col.key) ? (
-                        <td key={col.key}>
+                        <td key={col.key} data-label={col.label}>
                           <Switch
                             id={`notifications-type-${type.id}-${col.key}`}
                             aria-label={`${type.label} - ${col.label}`}
@@ -873,7 +873,7 @@ export function NotificationsPanel() {
                           />
                         </td>
                       ) : (
-                        <td key={col.key} className="notifications-type-matrix__na">
+                        <td key={col.key} className="notifications-type-matrix__na" data-label={col.label}>
                           <span aria-hidden="true">-</span>
                           <span className="sr-only">Not applicable</span>
                         </td>

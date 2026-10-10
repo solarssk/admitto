@@ -24,7 +24,7 @@ export async function findMatchingRecoveryRowId(
   let matchedId: string | null = null;
   for (const row of candidates) {
     if (!row.credential_hash) continue;
-    const ok = await verifyRecoveryCode(normalizedCode, row.credential_hash);
+    const ok = await verifyRecoveryCode(normalizedCode, row.credential_hash); // NOSONAR - sequential on purpose, to avoid argon2 timing side-channels (see the function doc)
     if (ok && matchedId === null) matchedId = row.id;
   }
   return matchedId;

@@ -35,6 +35,12 @@
     flex-wrap: wrap;
   }
 
+  /* One under the other: side by side each had 140px, and "Generic JSON" in the format's select was cut to "Generic …". */
+  .notifications-webhook-row > .mail-secret-field,
+  .notifications-webhook-row > .at-field {
+    flex: 1 1 100%;
+  }
+
   .notifications-webhook-row > .at-btn {
     width: 100%;
     margin-top: 0;
@@ -136,6 +142,64 @@
 
 .notifications-type-matrix__na {
   color: var(--text-muted);
+}
+
+/* On a phone the matrix is a block for each type instead of a table: the type's name and description take the whole width
+   and its toggles sit under them, each with its channel's name (`data-label`). As a table the first column had 84px, so
+   the description ran to 13 lines of one or two words, and the last channel was off the edge of the screen. The header
+   row stays for assistive tech, out of sight. `.table tbody td` is the more specific rule it has to win over. */
+@media (max-width: 640px) {
+  .notifications-type-matrix-wrap {
+    overflow-x: visible;
+  }
+
+  .notifications-type-matrix,
+  .notifications-type-matrix tbody {
+    display: block;
+  }
+
+  .notifications-type-matrix thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table.notifications-type-matrix tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: var(--space-3);
+    row-gap: var(--space-2);
+    padding: var(--space-3) var(--pad-card);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table.notifications-type-matrix tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table.notifications-type-matrix tbody td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .table.notifications-type-matrix tbody td:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .table.notifications-type-matrix tbody td:not(:first-child)::before {
+    content: attr(data-label);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
 }
 
 /* This test result box never has body content below the head (no per-channel breakdown - PO

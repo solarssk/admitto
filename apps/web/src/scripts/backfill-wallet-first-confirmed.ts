@@ -39,7 +39,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { prisma } from "@admitto/db";
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { PassCreatorClient, parseFirstDownloadedAtUtc } from "@admitto/wallet";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { subscribeWalletWebhooksBestEffort } from "../admin/event-settings-routes.js";
@@ -97,7 +97,7 @@ export async function backfillEvent(
 
   let apiKey: string;
   try {
-    apiKey = decryptFromString(event.wallet_api_key_enc ?? "");
+    apiKey = decryptFromString(event.wallet_api_key_enc ?? "", SECRET_CONTEXTS.walletApiKey);
   } catch (err) {
     console.error(`[${event.title}] API key decrypt failed, skipping backfill for this event:`, err);
     return;
@@ -115,7 +115,7 @@ export async function backfillEvent(
       // Both ids are filtered non-null in the query above, but Prisma's own generated type for a
       // `not: null` filter doesn't narrow the selected column - non-null asserted here since the
       // query guarantees it, not because the type system already knows.
-      const snapshot = await client.getPassSnapshot({
+      const snapshot = await client.getPassSnapshot({ // NOSONAR - one provider call at a time on purpose: a backfill must not burst the provider API
         providerPassId: pass.provider_pass_id as string,
         userProvidedId: pass.user_provided_id as string,
       });
@@ -127,7 +127,7 @@ export async function backfillEvent(
       if (dryRun) {
         console.log(`[${event.title}] (dry-run) would set pass ${pass.id} first_confirmed_at=${firstConfirmedAt.toISOString()}`);
       } else {
-        await db.walletPass.updateMany({
+        await db.walletPass.updateMany({ // NOSONAR - one write at a time on purpose, in step with the provider calls
           where: { id: pass.id, first_confirmed_at: null },
           data: { first_confirmed_at: firstConfirmedAt },
         });
@@ -160,7 +160,7 @@ export async function main(): Promise<void> {
 
   console.log(`found ${events.length} wallet-enabled event(s)${dryRun ? " (dry run - no writes)" : ""}`);
   for (const event of events) {
-    await backfillEvent(prisma, event, dryRun);
+    await backfillEvent(prisma, event, dryRun); // NOSONAR - events are backfilled one at a time on purpose
   }
 }
 

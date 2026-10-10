@@ -64,7 +64,8 @@
     "db:seed": "prisma db seed",
     "db:backfill-public-ref": "tsx src/scripts/backfill-public-ref.ts",
     "db:backfill-event-custom-fields": "tsx src/scripts/backfill-event-custom-fields.ts",
-    "db:backfill-ticket-types": "tsx src/scripts/backfill-ticket-types.ts"
+    "db:backfill-ticket-types": "tsx src/scripts/backfill-ticket-types.ts",
+    "db:rebind-secret-contexts": "tsx src/scripts/rebind-secret-contexts.ts"
   },
   "dependencies": {
     "@admitto/crypto": "*",

@@ -30,6 +30,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div className="error-boundary">
           <div className="error-boundary__panel" role="alert">
+            <i className="ti ti-circle-x error-boundary__icon" aria-hidden="true" />
             <h1 className="error-boundary__title">Something went wrong</h1>
             <p className="error-boundary__message">
               An unexpected error occurred. Reload the page to continue.

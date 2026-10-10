@@ -1,0 +1,6 @@
+/* The Remove dialogs: a required reason from a fixed list, and the way across to Erase for a privacy request. */
+.remove-dialog__choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

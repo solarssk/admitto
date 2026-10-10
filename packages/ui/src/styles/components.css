@@ -47,6 +47,8 @@
 .at-btn__label-busy { visibility: hidden; }
 .at-btn--loading .at-btn__label-idle { visibility: hidden; }
 .at-btn--loading .at-btn__label-busy { visibility: visible; }
+/* The busy label of a button without an icon is spoken, not shown (the spinner covers the button), and takes no room. */
+.at-btn__label--text > .at-btn__label-busy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .at-btn--loading-solo { position: relative; }
 /* opacity, not visibility: `visibility: hidden` drops the label from the accessibility tree, and the
    overlay spinner is aria-hidden, so the busy button would have no accessible name. */
@@ -622,6 +624,26 @@
 }
 .at-notice--has-action .at-notice__icon {
   margin-top: 0;
+}
+/* On a phone the action goes under the text, lined up with it, instead of beside it: beside the text a long action
+   ("Open Support contact", 173px of a 292px notice) left the message a column of one or two words, 14 lines tall,
+   and pushed the button past the notice's edge. */
+@media (max-width: 640px) {
+  .at-notice--has-action {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .at-notice--has-action .at-notice__icon {
+    margin-top: 3px;
+  }
+  .at-notice--has-action .at-notice__body {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .at-notice--has-action .at-notice__action {
+    flex: 1 0 100%;
+    padding-left: calc(1em + var(--space-2));
+  }
 }
 /* A permanent fact about the surrounding view, not an alert - a neutral "well" reads as
    documentation rather than a warning. */

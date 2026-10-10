@@ -1,4 +1,3 @@
-import { memo } from "react";
 import {
   Bar,
   BarChart,
@@ -14,11 +13,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
+import { Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
-import { fetchEventWalletReports } from "../api/client.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
-import { useReportFetch } from "../hooks/useReportFetch.js";
 import { viewerLocalTime } from "../utils/event-dates.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 import {
@@ -768,47 +765,9 @@ function registrationCountBreakdownRows(
   }));
 }
 
-// Memoized: ReportsPage re-renders on every live check-in (Event Day's SSE feed), and this tab
-// stays mounted underneath even while Event Day is the visible one - without memo, each of those
-// unrelated re-renders reconstructed fresh chart data/config objects here and made every chart
-// replay its entrance animation for no reason (a periodic "jump" with no data actually
-// changing). eventId is stable for the component's whole mounted lifetime; walletPlatforms must
-// stay reference-stable across those same unrelated re-renders too (ReportsPage.tsx memoizes it),
-// or every SSE-driven re-render would defeat this memo() exactly the way an unmemoized eventId
-// would.
-export const WalletsReportsTab = memo(function WalletsReportsTab({
-  eventId,
-  walletPlatforms,
-  isActive,
-}: Readonly<{ eventId: string; walletPlatforms: EnabledWalletPlatforms; isActive: boolean }>) {
-  const { data, loading, error, showLoadingSkeleton, retry } = useReportFetch(
-    fetchEventWalletReports,
-    eventId,
-    "Could not load wallet report.",
-  );
-
-  if (loading && showLoadingSkeleton) {
-    return <p className="wallets-description">Loading wallet report…</p>;
-  }
-
-  if (!loading && error) {
-    return (
-      <EmptyState
-        variant="error"
-        icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-        title="Could not load wallet report"
-        description={error}
-        action={
-          <Button variant="secondary" onClick={retry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (!data) return null;
-
+/** The wallet report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
+ * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
+export function WalletsReport({ data, walletPlatforms, isActive }: Readonly<{ data: EventWalletReportsResponse; walletPlatforms: EnabledWalletPlatforms; isActive: boolean }>) {
   if (data.adoption.got_pass === 0) {
     return (
       <EmptyState
@@ -998,4 +957,4 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
     </>
   );
-});
+}

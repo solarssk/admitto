@@ -22,6 +22,7 @@
     "db:backfill-public-ref": "npm run db:backfill-public-ref -w @admitto/db",
     "db:backfill-event-custom-fields": "npm run db:backfill-event-custom-fields -w @admitto/db",
     "db:backfill-ticket-types": "npm run db:backfill-ticket-types -w @admitto/db",
+    "db:rebind-secret-contexts": "npm run db:rebind-secret-contexts -w @admitto/db --",
     "db:test-setup": "bash infra/scripts/create-test-dbs.sh",
     "db:test-reset-web": "bash infra/scripts/reset-test-db.sh admitto_web_test",
     "db:test-schema-web": "bash infra/scripts/apply-test-schema.sh admitto_web_test",
@@ -31,7 +32,7 @@
     "auth:bootstrap": "npm run cli -w @admitto/auth -- bootstrap-superadmin",
     "worker": "npm run cli -w @admitto/cli -- worker",
     "docs:env": "node scripts/generate-env-dictionary.mjs",
-    "docs:check": "node scripts/check-wiki-docs.mjs && node scripts/generate-env-dictionary.mjs --check",
+    "docs:check": "node scripts/check-wiki-docs.mjs && node scripts/check-agent-docs.mjs && node scripts/generate-env-dictionary.mjs --check",
     "docs:pr-check": "node scripts/check-pr-docs-impact.mjs"
   },
   "type": "module",
@@ -41,7 +42,7 @@
   "overrides": {
     "esbuild": "^0.28.1",
     "uuid": "^14.0.0",
-    "vite": "8.3.1",
+    "vite": "8.3.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-is": "^19.2.8",
@@ -49,19 +50,20 @@
     "deepmerge-ts": "8.0.1",
     "nanoid": "^3.3.17",
     "mysql2": "^3.24.2",
+    "node-gyp": "^13.1.0",
     "svgtofont": {
       "svgo": "^3.3.4"
     }
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.69.0",
-    "@vitest/coverage-v8": "5.0.2",
+    "@vitest/coverage-v8": "5.0.3",
     "eslint": "10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-security": "4.1.0",
+    "eslint-plugin-security": "4.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "vitest": "5.0.2"
+    "vitest": "5.0.3"
   }
 }

@@ -2,10 +2,10 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WalletsReportsTab } from "../../src/pages/WalletsReportsTab.js";
+import { WalletsReportsTab } from "../../src/reports/ReportsTabs.js";
 import { ApiError } from "../../src/api/client.js";
 import type { EventWalletReportsResponse } from "../../src/api/types.js";
-import { connectionStateValue, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, connectionStateValue, deferred, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventWalletReports = vi.fn();
 const reportApiError = vi.fn();
@@ -293,36 +293,53 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Waits until the report is on screen. Its placeholder draws the cards' real titles too, so a title alone does not say that the
+ * read has answered. */
+async function reportLoaded(title: string) {
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Loading the wallet report" })).toBeNull(), { timeout: 3000 });
+  return screen.getByText(title);
+}
+
 describe("WalletsReportsTab", () => {
-  it("shows the loading state once the delayed-loading threshold elapses", async () => {
+  it("holds its room invisibly for 200ms, then draws its own shape, and the report replaces it when the read answers", async () => {
     vi.useFakeTimers();
-    let resolveFetch: (value: EventWalletReportsResponse) => void = () => {};
-    fetchEventWalletReports.mockReturnValue(
-      new Promise<EventWalletReportsResponse>((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
+    const read = deferred<EventWalletReportsResponse>();
+    fetchEventWalletReports.mockReturnValue(read.promise);
     try {
-      renderWithToast(
-      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
-    );
+      renderWithToast(<WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />);
+      const placeholder = screen.getByRole("status", { name: "Loading the wallet report" });
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(true);
+      expect(screen.queryByText("No wallet passes yet")).toBeNull();
 
-      // useDelayedLoading only flips on after 200ms of continuous loading - before that the
-      // component renders nothing (data is still null), so this also proves the delay is real
-      // rather than the text simply being present from the first render.
-      expect(screen.queryByText("Loading wallet report…")).toBeNull();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(200);
-      });
-      expect(screen.getByText("Loading wallet report…")).toBeTruthy();
-
-      await act(async () => {
-        resolveFetch(fixture());
-      });
+      await advanceTimers(200);
+      expect(placeholder.classList.contains("at-loading-hold")).toBe(false);
+      for (const title of ["Wallet adoption", "Wallet platform", "Devices per attendee", "Adoption by ticket type", "Time to wallet install", "Time to install after reminder", "Pass validity", "Provider state", "Registration state (last known)", "Cumulative passes issued", "Admission rate by wallet status"]) {
+        expect(within(placeholder).getByText(title)).toBeTruthy();
+      }
+      // The shapes are decoration for the eyes only.
+      expect(placeholder.querySelector(".reports-skeleton")?.getAttribute("aria-hidden")).toBe("true");
+      read.resolve(fixture());
     } finally {
       vi.useRealTimers();
     }
+    await reportLoaded("Wallet adoption");
+    expect(screen.queryByRole("status", { name: "Loading the wallet report" })).toBeNull();
+  });
+
+  it("skips mounting every chart while the tab is hidden (isActive=false), keeping the cards and their titles", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab isActive={false} eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await reportLoaded("Wallet adoption");
+
+    // ReportsPage keeps this tab mounted with display:none instead of unmounting it on a tab switch (to avoid reading it
+    // again): isActive gates only the charts, since a chart left alive under a display:none ancestor measures a 0x0 box.
+    for (const chart of ["rc-radialbar", "rc-pie", "rc-area", "rc-bar"]) {
+      expect(screen.queryAllByTestId(chart)).toHaveLength(0);
+    }
+    expect(screen.getByText("Wallet platform")).toBeTruthy();
   });
 
   it("shows an EmptyState with a Retry action on a generic fetch error, and re-fetches on click", async () => {
@@ -342,7 +359,7 @@ describe("WalletsReportsTab", () => {
     await waitFor(() => {
       expect(fetchEventWalletReports).toHaveBeenCalledTimes(2);
     });
-    expect(await screen.findByText("Wallet adoption")).toBeTruthy();
+    expect(await reportLoaded("Wallet adoption")).toBeTruthy();
     expect(screen.queryByText("Could not load wallet report")).toBeNull();
   });
 
@@ -380,7 +397,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     // Adoption gauge: rings are listed [installedPct, issuedPct] (innermost to outermost) so
     // Issued actually renders as the outer ring - see the AdoptionGauge doc comment. Both rings
@@ -535,7 +552,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const providerCard = cardByTitle("Provider state");
     const notice = within(providerCard).getByText(expectedText);
@@ -550,7 +567,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const validityCard = cardByTitle("Pass validity");
     expect(dataValues(within(validityCard).getByTestId("rc-pie"))).toEqual([8, 3, 2, 2]);
@@ -575,7 +592,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const compareCard = cardByTitle("Admission rate by wallet status");
     expect(compareCard.querySelector(".wallets-compare-delta__pill")?.textContent).toBe("▼ 20 pts");
@@ -587,7 +604,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const notice = document.querySelector(".wallets-truncated-notice");
     expect(notice).toBeTruthy();
@@ -606,7 +623,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const cumulativeCard = cardByTitle("Cumulative passes issued");
     expect(within(cumulativeCard).getByText("No passes issued yet.")).toBeTruthy();
@@ -631,7 +648,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const tapCard = cardByTitle("Time to wallet install");
     const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
@@ -644,7 +661,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const reminderCard = cardByTitle("Time to install after reminder");
     const reminderRows = dataRows(within(reminderCard).getByTestId("rc-bar"));
@@ -670,7 +687,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const reminderCard = cardByTitle("Time to install after reminder");
     const reminderRows = dataRows(within(reminderCard).getByTestId("rc-bar"));
@@ -697,7 +714,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const devicesCard = cardByTitle("Devices per attendee");
     const [outerRing, innerRing] = Array.from(within(devicesCard).getAllByTestId("rc-pie"));
@@ -714,7 +731,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     expect(capturedDonut?.tooltipFormatter?.(1)).toBe("1 pass");
     expect(capturedDonut?.tooltipFormatter?.(2)).toBe("2 passes");
@@ -785,7 +802,7 @@ describe("WalletsReportsTab", () => {
       renderWithToast(
         <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
       );
-      await screen.findByText("Wallet adoption");
+      await reportLoaded("Wallet adoption");
 
       expect(capturedCumulative?.yTicks).toEqual(ticks);
       cleanup();
@@ -800,7 +817,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     expect(capturedCumulative?.yTicks).toEqual([0, 1, 2]);
   });
@@ -821,7 +838,7 @@ describe("WalletsReportsTab", () => {
       renderWithToast(
         <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
       );
-      await screen.findByText("Wallet adoption");
+      await reportLoaded("Wallet adoption");
 
       expect(capturedCumulative?.yWidth).toBe(width);
       cleanup();
@@ -833,7 +850,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     expect(capturedCumulative?.labelFormatter?.(Date.parse("2026-06-02T12:00:00Z"))).toBe("02 Jun 2026");
   });
@@ -843,7 +860,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     // fireEvent's return value mirrors native dispatchEvent: false once a handler in the
     // (bubbling) chain has called preventDefault() - see preventFocusRing's own comment in
@@ -859,7 +876,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: false, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 0]);
@@ -877,7 +894,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: false, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([3, 0]);
@@ -893,7 +910,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
     expect(within(platformCard).getByText(/more than one at once\.$/)).toBeTruthy();
@@ -910,7 +927,7 @@ describe("WalletsReportsTab", () => {
         walletPlatforms={{ apple: true, google: true, samsung: false, any: true }}
       />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
     // Apple, Google, More than one wallet - no Samsung slice.
@@ -932,7 +949,7 @@ describe("WalletsReportsTab", () => {
         walletPlatforms={{ apple: true, google: false, samsung: true, any: true }}
       />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
     expect(breakdownRows(platformCard).map((r) => r.name)).toEqual(["Apple Wallet", "Samsung Wallet"]);
@@ -952,7 +969,7 @@ describe("WalletsReportsTab", () => {
     renderWithToast(
       <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
     );
-    await screen.findByText("Wallet adoption");
+    await reportLoaded("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 2, 1]);

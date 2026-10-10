@@ -22,6 +22,29 @@ describe("SettingsPanelSkeleton", () => {
     expect(screen.getByText("Sessions")).toBeTruthy();
   });
 
+  it("draws a card with neither fields nor rows as its title and its intro only, and rows at their default height", () => {
+    const { container } = render(
+      <SettingsPanelSkeleton
+        label="Loading"
+        held={false}
+        slow={false}
+        footer={false}
+        cards={[
+          { id: "only", title: "Notes", intro: 2 },
+          { id: "rows", title: "Sessions", rows: 2 },
+        ]}
+      />,
+    );
+    const [notes, sessions] = [...container.querySelectorAll(".at-card")];
+    expect(notes?.textContent).toContain("Notes");
+    expect(notes?.querySelectorAll(".settings-skeleton__fields")).toHaveLength(0);
+    // The intro's two lines are the only shapes in the card.
+    expect(notes?.querySelectorAll(".at-skeleton")).toHaveLength(2);
+    // Rows of a card that gives no height are 60px.
+    const rows = [...(sessions?.querySelectorAll<HTMLElement>(".at-skeleton") ?? [])];
+    expect(rows.map((row) => row.style.height)).toEqual(["60px", "60px"]);
+  });
+
   it("hides the cards from assistive tech, so the region does not read their titles again when the slow note joins it", () => {
     const { container } = render(<SettingsPanelSkeleton label="Loading" held={false} slow cards={cards} />);
     expect(container.querySelectorAll('.at-card[aria-hidden="true"]')).toHaveLength(cards.length);

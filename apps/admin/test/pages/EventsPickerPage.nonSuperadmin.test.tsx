@@ -63,9 +63,8 @@ describe("EventsPickerPage — non-superadmin, everything archived", () => {
     await waitFor(() => {
       expect(screen.getByText("No active events")).toBeTruthy();
     });
-    expect(
-      screen.getByText("All events are archived. Contact your administrator if you need help."),
-    ).toBeTruthy();
+    expect(screen.getByText("Ask a superadmin to restore an event.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View archived events" })).toBeNull();
   });
 
   it("uses the two-column grid when at least four events are active", async () => {

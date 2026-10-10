@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { usePanelLoad } from "../../src/hooks/usePanelLoad.js";
+import { panelView, usePanelLoad } from "../../src/hooks/usePanelLoad.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 import { advanceTimers, deferred, hangUntilAborted } from "../test-utils.js";
 
@@ -138,5 +138,19 @@ describe("usePanelLoad", () => {
     await advanceTimers(0);
     expect(result.current.error).toBe(LOAD_TIMEOUT_MESSAGE);
     expect(apply).not.toHaveBeenCalled();
+  });
+});
+
+describe("panelView", () => {
+  const gate = (showContent: boolean) => ({ showContent, showIndicator: !showContent });
+
+  it("is the placeholder while the content is held back, whatever has been answered", () => {
+    expect(panelView({ gate: gate(false), error: null })).toBe("loading");
+    expect(panelView({ gate: gate(false), error: "Could not load." })).toBe("loading");
+  });
+
+  it("is the error once the content may show, and the content when there is no error", () => {
+    expect(panelView({ gate: gate(true), error: "Could not load." })).toBe("error");
+    expect(panelView({ gate: gate(true), error: null })).toBe("ready");
   });
 });

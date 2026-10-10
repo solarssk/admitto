@@ -5,7 +5,8 @@ import { routePath } from "hono/route";
 import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
 import { getEncryptionKey } from "@admitto/crypto";
 import { CHECKIN_STREAM_LIMITS, type CheckinStreamLimits } from "../checkin-stream-config.js";
-import { resolveClientIp } from "./client-ip.js";
+import { rateLimitIpKey, resolveClientIp } from "./client-ip.js";
+import { applyRateLimitOverrides } from "./overrides.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
 
@@ -70,7 +71,7 @@ function ipScopedPolicy(
   return {
     checks: [
       {
-        keyOf: (c) => `${keyPrefix}:ip:${resolveClientIp(c)}`,
+        keyOf: (c) => `${keyPrefix}:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs,
         max,
         logOnExceeded: { scope },
@@ -93,6 +94,9 @@ export const INLINE_RATE_LIMITS = {
   "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
   "account:password-check": { windowMs: 60_000, max: 10 },
   "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
+  /** Per-event ceiling on signature-verified PassCreator deliveries (retryEnabled bursts of one
+   * event must not throttle another's). Checked by the webhook handler after verification. */
+  "wallet:webhook-event": { windowMs: 60_000, max: 120 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -257,23 +261,16 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  /** PassCreator webhook deliveries. Two checks (both must pass): per-event, since PassCreator's
-   * own servers (not the attendee's browser) are the caller and retryEnabled means one event's
-   * bursts must not throttle another's; and per-IP, since :eventId is an unauthenticated,
-   * caller-controlled path segment - without this second check, rotating fake event ids gets a
-   * fresh 120-request allowance every time and the per-event check alone bounds nothing. The IP
-   * ceiling is deliberately generous (matches PassCreator's own documented 600 req/min outbound
-   * limit, ADR 0041 §3) so a real instance's legitimate multi-event traffic from PassCreator's
-   * servers is never the thing that trips it. */
+  /** PassCreator webhook deliveries, before the signature is known: per-IP only. :eventId is an
+   * unauthenticated, caller-controlled path segment, so a per-event bucket here would let anyone
+   * who knows a (public) event id burn that event's allowance with junk and starve PassCreator's
+   * real deliveries. The per-event ceiling (`wallet:webhook-event`, INLINE_RATE_LIMITS) is applied
+   * by the handler only once the signature has verified. The IP ceiling is deliberately generous
+   * (matches PassCreator's own documented 600 req/min outbound limit, ADR 0041 §3) so a real
+   * instance's legitimate multi-event traffic from PassCreator's servers is never the thing that
+   * trips it. */
   "wallet:webhook": {
     checks: [
-      {
-        keyOf: (c) => `wallet:webhook:event:${c.req.param("eventId") ?? "unknown"}`,
-        windowMs: 60_000,
-        max: 120,
-        onExceeded: (c) => c.body(null, 429),
-        logOnExceeded: { scope: "wallet_webhook" },
-      },
       {
         keyOf: (c) => `wallet:webhook:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,
@@ -288,7 +285,7 @@ export const RATE_POLICIES = {
       {
         keyOf: (c) => `auth:oidc:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,
-        max: 20,
+        max: 60,
         onExceeded: (c) => c.text("Too many requests", 429),
         logOnExceeded: { scope: "oidc_auth" },
       },
@@ -297,9 +294,9 @@ export const RATE_POLICIES = {
   "auth:login-ip": {
     checks: [
       {
-        keyOf: (c) => `auth:login:ip:${resolveClientIp(c)}`,
+        keyOf: (c) => `auth:login:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs: 60_000,
-        max: 10,
+        max: 30,
         logOnExceeded: { scope: "login_ip" },
       },
     ],
@@ -312,8 +309,8 @@ export const RATE_POLICIES = {
    * 10 hits (a cancelled/retried ceremony spent more), so a handful of staff signing in behind
    * the same office/VPN/NAT address within a minute could lock everyone else out even with
    * every ceremony succeeding (Codex P2 review, PR #1108). */
-  "auth:passkey-login-begin-ip": ipScopedPolicy("auth:passkey-login-begin", "passkey_login_ip", 10),
-  "auth:passkey-login-finish-ip": ipScopedPolicy("auth:passkey-login-finish", "passkey_login_ip", 10),
+  "auth:passkey-login-begin-ip": ipScopedPolicy("auth:passkey-login-begin", "passkey_login_ip", 30),
+  "auth:passkey-login-finish-ip": ipScopedPolicy("auth:passkey-login-finish", "passkey_login_ip", 30),
   /** Whole /api/account/* route group - own IP bucket, deliberately separate from
    * auth:login-ip. These routes run before requireSession (some pre-date the current
    * caller's session even being established), so without their own bucket a handful of
@@ -739,7 +736,7 @@ export const RATE_POLICIES = {
     ],
   },
   // Every bulk route that can cascade to one PassCreator call per selected attendee: the 3
-  // explicit bulk-wallet-* routes always do, and bulk-delete / bulk-revoke-pass do too whenever
+  // explicit bulk-wallet-* routes always do, and bulk-erase / bulk-remove / bulk-revoke-pass do too whenever
   // the selection includes attendees with a wallet pass (deleteWalletPassesBestEffort /
   // syncWalletPassOnStatusChangeBestEffort - bot review, PR #1064 round 2: these two shared only
   // the generic admin:attendee-bulk-mutation budget below, which doesn't account for the
@@ -766,9 +763,9 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  // Bulk-attendee mutation routes (bulk-delete, bulk-checkin, bulk-revoke-checkin,
+  // Bulk-attendee mutation routes (bulk-erase, bulk-remove, bulk-checkin, bulk-revoke-checkin,
   // bulk-revoke-items, bulk-revoke-pass, bulk-ticket-type, bulk-rsvp) - each request can touch up
-  // to BULK_SEND_LIMIT (500) attendees at once, and bulk-delete alone is a hard
+  // to BULK_SEND_LIMIT (500) attendees at once, and bulk-remove is a hard
   // DELETE ... RETURNING with no undo. Same cost class/window as admin:attendee-patch (20/60s),
   // but keyed per user+event rather than per user+attendee: these routes act on many attendees in
   // one call, so there's no single attendee id to scope the bucket to.
@@ -844,6 +841,10 @@ export const RATE_POLICIES = {
   },
   "checkin:stream": checkinStreamPolicy(CHECKIN_STREAM_LIMITS),
 } as const satisfies Record<string, RatePolicy>;
+
+// Operator overrides (RATE_LIMIT_OVERRIDES) are applied once, here, before any middleware reads a
+// policy - so retuning a limit needs a restart, not a release.
+applyRateLimitOverrides(RATE_POLICIES, INLINE_RATE_LIMITS);
 
 export type RatePolicyName = keyof typeof RATE_POLICIES;
 

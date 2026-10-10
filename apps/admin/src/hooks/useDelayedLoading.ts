@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Delays showing a loading state by `delayMs` so a request that resolves
@@ -7,8 +7,13 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
  * register it, reading as a glitch rather than an actual loading state.
  * Returns true only once `isLoading` has stayed true continuously for at
  * least `delayMs`; a request that finishes before that never flips it on.
+ *
+ * `restartKey` identifies the request that is being waited for. When a new request replaces one that
+ * is still on its way, `isLoading` stays true across the swap, so without a key the new request would
+ * inherit what is left of the old one's delay (or its already elapsed one). A changed key starts the
+ * delay again and hides the indicator until the new request has waited its own `delayMs`.
  */
-export function useDelayedLoading(isLoading: boolean, delayMs = 200): boolean {
+export function useDelayedLoading(isLoading: boolean, delayMs = 200, restartKey?: unknown): boolean {
   const [showLoading, setShowLoading] = useState(false);
 
   useEffect(() => {
@@ -16,19 +21,13 @@ export function useDelayedLoading(isLoading: boolean, delayMs = 200): boolean {
       setShowLoading(false);
       return;
     }
+    // A request that replaced one on its way starts from nothing, whether the old one had shown yet or not.
+    setShowLoading(false);
     const timer = setTimeout(() => setShowLoading(true), delayMs);
     return () => clearTimeout(timer);
-  }, [isLoading, delayMs]);
+  }, [isLoading, delayMs, restartKey]);
 
   return showLoading;
-}
-
-/** The single "only render this spinner/skeleton once the delay has elapsed" building
- * block behind `useDelayedLoading` - `show` is the hook's own return value, never the raw
- * `isLoading` flag it was computed from (which still has to gate a component's own
- * loading/empty/data branch on its own, this only ever decides the spinner within it). */
-export function whenShown(show: boolean, content: ReactNode): ReactNode {
-  return show ? content : null;
 }
 
 export interface LoadingGateOptions {

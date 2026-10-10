@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CryptoDecryptionError, decrypt, decryptFromString, encrypt, encryptToString } from "../src/encrypt.js";
+import {
+  CryptoDecryptionError,
+  decrypt,
+  decryptFromString,
+  encrypt,
+  encryptToString,
+  rebindToContext,
+} from "../src/encrypt.js";
+import { SECRET_CONTEXTS } from "../src/contexts.js";
 import { _resetKeyCache } from "../src/key.js";
 
 // Key is set by vitest.config.ts env (ENCRYPTION_KEY + NODE_ENV=test).
@@ -217,5 +225,57 @@ describe("keyVersion guard", () => {
     const { keyVersion: _, ...legacyPayload } = encrypt("hello");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => decrypt(legacyPayload as any)).toThrow("Unsupported key version: undefined");
+  });
+});
+
+describe("context-bound encryption (keyVersion 2)", () => {
+  it("writes keyVersion 2 and round-trips with the same context", () => {
+    const payload = encrypt("secret", "purpose-a");
+    expect(payload.keyVersion).toBe(2);
+    expect(decrypt(payload, "purpose-a")).toBe("secret");
+    expect(decryptFromString(encryptToString("secret", "purpose-a"), "purpose-a")).toBe("secret");
+  });
+
+  it("refuses a different or missing context", () => {
+    const payload = encrypt("secret", "purpose-a");
+    expect(() => decrypt(payload, "purpose-b")).toThrow(CryptoDecryptionError);
+    expect(() => decrypt(payload)).toThrow(CryptoDecryptionError);
+    expect(() => decryptFromString(JSON.stringify(payload), "purpose-b")).toThrow(
+      CryptoDecryptionError,
+    );
+  });
+
+  it("still reads legacy keyVersion 1 values, with or without a context", () => {
+    const legacy = encrypt("old");
+    expect(legacy.keyVersion).toBe(1);
+    expect(decrypt(legacy)).toBe("old");
+    expect(decrypt(legacy, "purpose-a")).toBe("old");
+  });
+});
+
+describe("rebindToContext", () => {
+  it("rewrites a legacy value as keyVersion 2 bound to the context", () => {
+    const { value, changed } = rebindToContext(encryptToString("old"), "purpose-a");
+    expect(changed).toBe(true);
+    expect(JSON.parse(value).keyVersion).toBe(2);
+    expect(decryptFromString(value, "purpose-a")).toBe("old");
+    expect(() => decryptFromString(value, "purpose-b")).toThrow(CryptoDecryptionError);
+  });
+
+  it("leaves a value already bound to the context unchanged", () => {
+    const stored = encryptToString("new", "purpose-a");
+    expect(rebindToContext(stored, "purpose-a")).toEqual({ value: stored, changed: false });
+  });
+
+  it("throws instead of rewriting a value bound to another context or unreadable", () => {
+    expect(() => rebindToContext(encryptToString("x", "purpose-b"), "purpose-a")).toThrow(CryptoDecryptionError);
+    expect(() => rebindToContext("not json", "purpose-a")).toThrow(CryptoDecryptionError);
+  });
+});
+
+describe("SECRET_CONTEXTS", () => {
+  it("gives every stored secret column its own context", () => {
+    const values = Object.values(SECRET_CONTEXTS);
+    expect(new Set(values).size).toBe(values.length);
   });
 });

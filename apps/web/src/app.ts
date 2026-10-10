@@ -26,6 +26,8 @@ import {
   resolveTicketPageDisplay,
   buildWalletPassInput,
   resolveWalletCustomFieldPlaceholders,
+  isAttendeeGone,
+  lockAttendeeRow,
 } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
@@ -87,6 +89,7 @@ import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
   createCheckinEventScope,
+  createCheckinStreamRevalidator,
   parseScanBodyMiddleware,
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
@@ -154,8 +157,6 @@ import {
   handleCreateEventAttendee,
   handleGetEventAttendee,
   handlePatchEventAttendee,
-  handleDeleteEventAttendee,
-  handleBulkDeleteEventAttendees,
   handleBulkCheckInEventAttendees,
   handleBulkRevokeAttendeeItems,
   handleBulkRevokeCheckInEventAttendees,
@@ -188,6 +189,8 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
+import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "./admin/attendee-remove-routes.js";
 import {
   handleGetWalletPushJob,
   handleGetWalletPushHistory,
@@ -506,12 +509,12 @@ function htmlWithSecurityHeaders(
  * createApp closure) since it captures nothing from there - SonarCloud S7721. `onMissing` builds
  * each caller's own error response (a redirect for the wallet handler, a rendered error page for
  * the ticket page). */
-async function resolveQrPayloadOrRespond(
+function resolveQrPayloadOrRespond(
   resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
   internalToken: string | undefined,
   logContext: string,
   onMissing: () => Response | Promise<Response>,
-): Promise<string | Response> {
+): string | Response | Promise<Response> {
   const { attendee } = resolved;
   if (resolved.mode === "internal") {
     if (!internalToken) {
@@ -531,6 +534,18 @@ async function resolveQrPayloadOrRespond(
 /** Marker `handleWalletRedirect`'s creation path returns for "nothing to hand out, and that is not
  * an error" - a redirect back to the ticket page without the retry notice. */
 const WALLET_PASS_UNAVAILABLE = "unavailable" as const;
+
+/** How long a short transaction of the wallet flow may take when it has to wait for an erasure of
+ * the same attendee. Prisma's default of 5 s is not enough: a statement blocked on the row lock
+ * keeps waiting for the erasure to end (it is not cut off at 5 s), but the transaction has expired
+ * by then and its commit fails, so the work is lost. An erasure's own transaction may take 60 s
+ * (attendee-erase-routes.ts); a single statement is cut by the database's statement timeout. */
+const ERASURE_WAIT_TX_TIMEOUT_MS = 65_000;
+
+/** What the on-demand wallet flow resolves to: the install links, "unavailable" (a quiet redirect
+ * back to the ticket page) or null (a failure, redirected with a retry notice). */
+type WalletPassUrls = { apple_url: string | null; android_url: string | null };
+type WalletPassUrlsOutcome = WalletPassUrls | typeof WALLET_PASS_UNAVAILABLE | null;
 
 /** A pass Admitto will never hand out (again) through the public Add to Wallet tap: voided and
  * expired are not revived from here (Restore is an explicit staff action, expiry is permanent), and
@@ -762,35 +777,42 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
   const adminBulkSendCancelRateLimit = rateLimit(rateLimitStore, "admin:bulk-send-cancel");
   const adminClientErrorRateLimit = rateLimit(rateLimitStore, "admin:client-error");
-  /** Wraps `adminWalletActionBulkRateLimit` so bulk-delete / bulk-revoke-pass only spend that
-   * budget when the event actually has wallet configured - unlike the 3 explicit
-   * bulk-wallet-void/reissue/delete routes (always a wallet action by definition), these two are
-   * general-purpose bulk mutations that only *sometimes* cascade into PassCreator calls
-   * (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort), and were charging the
+  /** Wraps a wallet limiter so a route only spends that budget when the event actually has wallet
+   * configured - unlike the explicit bulk-wallet-void/reissue/delete routes (always a wallet action
+   * by definition), bulk-revoke-pass / erase / remove are general-purpose mutations that only
+   * *sometimes* cascade into PassCreator calls (deleteWalletPassesBestEffort /
+   * syncWalletPassOnStatusChangeBestEffort / deleteErasedWalletPasses), and were charging the
    * strict wallet budget even for an event with wallet disabled entirely (bot review, PR #1064
    * round 3). Checks only the event's wallet config, not whether the specific selected attendees
    * have a wallet pass - the cheaper of the two checks the finding named, and still closes the
    * common case (wallet not configured for this event at all). */
-  async function walletActionBulkRateLimitIfWalletConfigured(c: Context, next: Next): Promise<Response | void> {
-    const eventId = c.req.param("eventId");
-    const event = eventId
-      ? await db.event.findUnique({
-          where: { id: eventId },
-          select: { wallet_template_id: true, wallet_api_key_enc: true },
-        })
-      : null;
-    // Same "is wallet actually usable for this event" check resolveWalletProvider itself makes
-    // (packages/wallet/src/resolve-provider.ts) - deliberately not also checking the org/event's
-    // own wallet_enabled toggle, since that governs whether *new* passes get issued, not whether
-    // an existing pass can still be voided/restored/deleted (same reasoning already applied to
-    // deleteWalletPassesBestEffort's own erasure path).
-    const walletConfigured = Boolean(event?.wallet_template_id && event?.wallet_api_key_enc);
-    if (!walletConfigured) {
-      await next();
-      return;
-    }
-    return adminWalletActionBulkRateLimit(c, next);
+  function ifWalletConfigured(limiter: (c: Context, next: Next) => Promise<Response | void>) {
+    return async (c: Context, next: Next): Promise<Response | void> => {
+      const eventId = c.req.param("eventId");
+      const event = eventId
+        ? await db.event.findUnique({
+            where: { id: eventId },
+            select: { wallet_template_id: true, wallet_api_key_enc: true },
+          })
+        : null;
+      // Same "is wallet actually usable for this event" check resolveWalletProvider itself makes
+      // (packages/wallet/src/resolve-provider.ts) - deliberately not also checking the org/event's
+      // own wallet_enabled toggle, since that governs whether *new* passes get issued, not whether
+      // an existing pass can still be voided/restored/deleted (same reasoning already applied to
+      // deleteWalletPassesBestEffort's own erasure path).
+      const walletConfigured = Boolean(event?.wallet_template_id && event?.wallet_api_key_enc);
+      if (!walletConfigured) {
+        await next();
+        return;
+      }
+      return limiter(c, next);
+    };
   }
+  /** For a route that can make one provider call per selected attendee (bulk-revoke-pass, bulk-erase,
+   * bulk-remove). */
+  const walletActionBulkRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionBulkRateLimit);
+  /** For a route that can make one provider call for the one attendee it acts on (erase, remove). */
+  const walletActionRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionRateLimit);
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -845,7 +867,23 @@ export function createApp(options: CreateAppOptions = {}) {
     maxSize: Math.ceil(0.5 * 1024 * 1024),
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
+  // Pre-authentication routes (login, setup, and every step reachable with only a password: MFA code
+  // entry and enrollment, the forced password change) carry a handful of short fields.
+  // Without a cap the body is buffered whole before any credential check, and the Origin-header
+  // CSRF guard is satisfied by an attacker-chosen header, so size has to be bounded here. Where a
+  // route has an IP rate limiter it runs first: a chunked body is read up to the cap before the
+  // 413, so a limiter placed after this one would never see those requests.
+  const preAuthBodyLimit = bodyLimit({
+    maxSize: 16 * 1024,
+    onError: (c) => c.json({ error: "request too large" }, 413),
+  });
+  // Wallet provider webhooks are parsed before the signature can be checked, so cap the body first.
+  const walletWebhookBodyLimit = bodyLimit({
+    maxSize: 64 * 1024,
+    onError: (c) => c.json({ error: "request too large" }, 413),
+  });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
+  const checkinStreamRevalidator = createCheckinStreamRevalidator(checkinAuthDeps);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot, db });
 
   void sweepExpiredOidcAuthStates(db).catch((err) => {
@@ -882,10 +920,7 @@ export function createApp(options: CreateAppOptions = {}) {
    * 2026-08-25). One lock per running `app` instance is enough for this app's actual deployment
    * topology (a single `app` container - deploy/README.md), not a distributed one.
    */
-  const walletCreateLocks = new Map<
-    string,
-    Promise<{ apple_url: string | null; android_url: string | null } | typeof WALLET_PASS_UNAVAILABLE | null>
-  >();
+  const walletCreateLocks = new Map<string, Promise<WalletPassUrlsOutcome>>();
 
   /**
    * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
@@ -969,12 +1004,22 @@ export function createApp(options: CreateAppOptions = {}) {
       userProvidedId: string,
       result: WalletPassResult,
       expirationDateSent: string | undefined,
-    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+    ): Promise<WalletPassUrlsOutcome> {
       let templateChanged = false;
       let expirationChanged = false;
+      let attendeeGone = false;
       let expiresAt: Date | null = null;
       try {
         await db.$transaction(async (tx) => {
+          // The attendee row first, before the event-wide advisory lock: waiting behind a running
+          // erasure while holding that lock would stall every other first-time pass of the event.
+          // The pass was just created at the provider with this attendee's data. If an erasure
+          // committed meanwhile, or the attendee was removed (no row left), no install links are
+          // saved (see deleteOrphanPassOfGoneAttendee).
+          if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) {
+            attendeeGone = true;
+            return;
+          }
           await acquireWalletTemplateLock(tx, event.id);
           const currentEvent = await tx.event.findUnique({
             where: { id: event.id },
@@ -1050,16 +1095,28 @@ export function createApp(options: CreateAppOptions = {}) {
               expires_at: expiresAt,
             },
           });
-        });
+        }, { timeout: ERASURE_WAIT_TX_TIMEOUT_MS });
       } catch (err) {
         console.error("walletPass upsert (active) failed:", err);
         recordSystemLog({
           level: "error",
           source: "api",
           message: "wallet_pass_upsert_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id },
+          fields: { eventId: event.id, attendeeId: attendee.id, providerPassId: result.providerPassId },
         });
+        // The new pass must not stay at the provider with nothing tracking it if the attendee was
+        // erased or removed meanwhile. Whatever made the save fail, the erasure or removal may
+        // still be open: the check takes the attendee's row lock, so it waits for it and sees its
+        // result.
+        if (await isAttendeeGoneNow()) {
+          await deleteOrphanPassOfGoneAttendee(userProvidedId, result.providerPassId);
+          return WALLET_PASS_UNAVAILABLE;
+        }
         return null;
+      }
+      if (attendeeGone) {
+        await deleteOrphanPassOfGoneAttendee(userProvidedId, result.providerPassId);
+        return WALLET_PASS_UNAVAILABLE;
       }
       if (templateChanged) {
         recordSystemLog({
@@ -1080,6 +1137,69 @@ export function createApp(options: CreateAppOptions = {}) {
         return markFailed("wallet_expiration_changed");
       }
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
+    }
+
+    /** True when the attendee has been erased or removed, read under their row lock: an erasure or
+     * removal that is still open is waited for, where a plain read would show the attendee as they
+     * were before it began. Best effort: a failed read counts as "still there". */
+    async function isAttendeeGoneNow(): Promise<boolean> {
+      try {
+        const locked = await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id), {
+          timeout: ERASURE_WAIT_TX_TIMEOUT_MS,
+        });
+        return isAttendeeGone(locked);
+      } catch {
+        return false;
+      }
+    }
+
+    /** For a pass just created at the provider for an attendee who has been erased or removed in
+     * the meantime: records only the provider's ids (no install links), so the pass stays findable
+     * as "still to delete at the provider" (an erased attendee's pass with provider ids and no
+     * provider_removed_at), then deletes it there and stamps it removed. A row that already holds
+     * another pass keeps its ids. A removed attendee has no row to keep the ids on (the insert
+     * fails on its foreign key, P2003) and nobody to look for them later: the pass is only
+     * deleted at the provider. Best effort and never throws: a failed delete leaves an erased
+     * attendee's row for the erasure's own retry, and a removed one's pass at the provider. */
+    async function deleteOrphanPassOfGoneAttendee(userProvidedId: string, providerPassId: string): Promise<void> {
+      try {
+        try {
+          await db.walletPass.create({
+            data: {
+              attendee_id: attendee.id,
+              provider: "passcreator",
+              provider_pass_id: providerPassId,
+              user_provided_id: userProvidedId,
+              status: "active",
+              issued_at: new Date(),
+            },
+          });
+        } catch (createErr) {
+          const code = createErr instanceof Prisma.PrismaClientKnownRequestError ? createErr.code : null;
+          if (code === "P2002") {
+            // A row exists already (for instance a failed attempt): give it the ids if it has none.
+            await db.walletPass.updateMany({
+              where: { attendee_id: attendee.id, provider_pass_id: null },
+              data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId },
+            });
+          } else if (code !== "P2003") {
+            throw createErr;
+          }
+        }
+        await provider.deletePass(providerPassId);
+        await db.walletPass.updateMany({
+          where: { attendee_id: attendee.id, provider_pass_id: providerPassId, provider_removed_at: null },
+          data: { provider_removed_at: new Date() },
+        });
+      } catch (err) {
+        console.error("wallet pass delete (erased attendee) failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_erased_delete_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id, providerPassId },
+        });
+      }
     }
 
     /** Marks the pass "failed" after an unrecoverable createPass error - split out of
@@ -1105,32 +1225,34 @@ export function createApp(options: CreateAppOptions = {}) {
       code: WalletProviderErrorCode | "wallet_credential_changed" | "wallet_expiration_changed",
     ): Promise<null> {
       try {
-        const { count } = await db.walletPass.updateMany({
-          where: { attendee_id: attendee.id, status: { not: "active" } },
-          data: { status: "failed", last_error_code: code },
+        await db.$transaction(async (tx) => {
+          // Nothing is recorded for an attendee erased or removed meanwhile.
+          if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return;
+          const { count } = await tx.walletPass.updateMany({
+            where: { attendee_id: attendee.id, status: { not: "active" } },
+            data: { status: "failed", last_error_code: code },
+          });
+          // No row matched: either none exists yet (create it), or a concurrent instance's
+          // markActive already holds "active" (the row exists but the guard above correctly
+          // skipped it). The two are told apart by looking for the row, then inserting: a
+          // unique-constraint violation (a concurrent insert) aborts this transaction and is
+          // swallowed below - the same losing-write-becomes-a-no-op pattern already used for
+          // P2002 elsewhere in this file (e.g. wallet-push-routes.ts).
+          if (count === 0 && !(await tx.walletPass.findUnique({ where: { attendee_id: attendee.id }, select: { id: true } }))) {
+            await tx.walletPass.create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: code } });
+          }
         });
-        // No row matched: either none exists yet (create it), or a concurrent instance's
-        // markActive already holds "active" (the row exists but the guard above correctly
-        // skipped it). The two are told apart by attempting the insert and catching the unique
-        // constraint violation the second case throws - the same losing-write-becomes-a-no-op
-        // pattern already used for P2002 elsewhere in this file (e.g. wallet-push-routes.ts).
-        if (count === 0) {
-          await db.walletPass
-            .create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: code } })
-            .catch((createErr) => {
-              if (!(createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002")) {
-                throw createErr;
-              }
-            });
-        }
       } catch (upsertErr) {
-        console.error("walletPass upsert (failed) failed:", upsertErr);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_upsert_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id },
-        });
+        // A unique violation is a concurrent insert that won: nothing to record.
+        if (!(upsertErr instanceof Prisma.PrismaClientKnownRequestError && upsertErr.code === "P2002")) {
+          console.error("walletPass upsert (failed) failed:", upsertErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_pass_upsert_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+        }
       }
       return null;
     }
@@ -1167,7 +1289,7 @@ export function createApp(options: CreateAppOptions = {}) {
      */
     async function createOrRecoverPass(
       input: WalletPassInput,
-    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+    ): Promise<WalletPassUrlsOutcome> {
       try {
         const result = await provider.createPass(input);
         // markActive compares input.expirationDate (exact string, or undefined) against the
@@ -1220,9 +1342,7 @@ export function createApp(options: CreateAppOptions = {}) {
     /** Dispatches on the existing WalletPass row's status - split out of the main handler body to
      * keep its cognitive complexity under the SonarCloud threshold (S3776). Returns null (after
      * the callee's own logging) when none of the three paths could produce a usable URL. */
-    async function resolvePassUrls(): Promise<
-      { apple_url: string | null; android_url: string | null } | typeof WALLET_PASS_UNAVAILABLE | null
-    > {
+    async function resolvePassUrls(): Promise<WalletPassUrlsOutcome> {
       // Voided, expired and removed passes are answered before this point (see the early exit right
       // after the lookup above): a tap never restores or re-creates one. Only an active pass is
       // handed out as is; anything else (no row, pending, failed) creates below.
@@ -1260,6 +1380,14 @@ export function createApp(options: CreateAppOptions = {}) {
         if (latest?.status === "active") {
           return { apple_url: latest.apple_url, android_url: latest.android_url };
         }
+        // The ticket was resolved at the top of the request: an attendee erased since must not
+        // have their data sent to the provider. (markActive's lock is the guard that closes the
+        // race; this keeps the common case from reaching the provider at all.)
+        const stillThere = await db.attendee.findUnique({
+          where: { id: attendee.id },
+          select: { erased_at: true },
+        });
+        if (!stillThere || stillThere.erased_at) return WALLET_PASS_UNAVAILABLE;
         const display = await resolveTicketPageDisplay(db, resolved);
         const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
           db,
@@ -1288,8 +1416,9 @@ export function createApp(options: CreateAppOptions = {}) {
     // Best-effort device capture: this is Admitto's own hop before the attendee's browser ever
     // reaches PassCreator's URL, so it's the only place Admitto can see the real request
     // User-Agent (PassCreator's own "Pass Activity" log isn't exposed via their API - see
-    // WalletPass.user_agent's own doc comment). A DB error here must never block the redirect the
-    // attendee is actually waiting on.
+    // WalletPass.user_agent's own doc comment). A DB error in the write itself must never block
+    // the redirect the attendee is actually waiting on (the write shares a transaction with the
+    // last erased check, see checkAndCaptureDevice below).
     //
     // Only writes while first_confirmed_at is still null - deliberately narrower than "capture
     // until we have something, then freeze" (an earlier version of this used
@@ -1304,14 +1433,53 @@ export function createApp(options: CreateAppOptions = {}) {
     // freezes. A pass that was already confirmed before this column existed has no such window
     // left to safely observe, so it never gets a captured device via this path - "unknown" here,
     // not "attribute it to whoever happens to hit the link next."
-    try {
-      await db.walletPass.updateMany({
-        where: { attendee_id: attendee.id, first_confirmed_at: null },
-        data: { user_agent: c.req.header("user-agent") ?? null, user_agent_captured_at: new Date() },
-      });
-    } catch (err) {
-      console.error("walletPass update (user_agent) failed:", err);
+
+    /** The last step before the redirect, under the attendee's row lock. Returns the response to
+     * send instead of the redirect to the pass, or null to go on:
+     * - the attendee is erased or removed: back to the ticket page, nothing recorded (the erasure
+     *   clears the device and this must not bring it back);
+     * - it could not be established whether they are (the lock gave up waiting behind an
+     *   erasure): the same retry notice as any other failure of this route, because redirecting
+     *   would hand a pass to someone who may have been erased.
+     * The device write failing on its own stays harmless: the visitor still gets the pass. */
+    async function checkAndCaptureDevice(userAgent: string | null): Promise<Response | null> {
+      let erased: boolean;
+      try {
+        erased = await db.$transaction(async (tx) => {
+          if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return true;
+          await tx.walletPass.updateMany({
+            where: { attendee_id: attendee.id, first_confirmed_at: null },
+            data: { user_agent: userAgent, user_agent_captured_at: new Date() },
+          });
+          return false;
+        });
+      } catch (err) {
+        console.error("walletPass update (user_agent) failed:", err);
+        // Either the write failed or the wait for the lock gave up, and which is not known: ask
+        // again for the lock alone. That is the answer the redirect needs, and it fails closed.
+        try {
+          erased = isAttendeeGone(await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id)));
+        } catch (checkErr) {
+          console.error("wallet redirect erased check failed:", checkErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_redirect_check_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+          return c.redirect(`${backHref}?walletError=1`, 302);
+        }
+      }
+      return erased ? c.redirect(backHref, 302) : null;
     }
+
+    // This transaction is also the last check before the redirect, whichever way the URL was
+    // obtained (a stored active pass, one created just now, one another request is creating): the
+    // attendee's row lock makes an erasure that is still open finish first, and a visitor whose
+    // attendee has been erased since the request began is sent back instead of to the pass. The
+    // erasure clears the stored links, but this request may already hold them.
+    const stop = await checkAndCaptureDevice(c.req.header("user-agent") ?? null);
+    if (stop) return stop;
 
     return c.redirect(url, 302);
   }
@@ -1448,7 +1616,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handleOpsSystemLogIngest(c, { opsHealthToken }),
   );
 
-  app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>
+  app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, preAuthBodyLimit, (c) =>
     handleLogin(c, db, rateLimitStore),
   );
   app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
@@ -1827,20 +1995,49 @@ export function createApp(options: CreateAppOptions = {}) {
     adminAttendeePatchRateLimit,
     guardArchivedEvent((c) => handlePatchEventAttendee(c, db)),
   );
-  app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
-    handleDeleteEventAttendee(c, db),
+  // Erase personal data (anonymise in place, Reports keep their numbers). Not behind
+  // guardArchivedEvent: a privacy request is still valid after the event has ended.
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/erase",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeeBulkMutationRateLimit,
+    // The pass of the erased attendee is deleted at the provider after the commit: the same budget
+    // as every other single-attendee wallet action, spent only when the event has wallet configured.
+    walletActionRateLimitIfWalletConfigured,
+    (c) => handleEraseEventAttendee(c, db),
   );
   app.post(
-    "/api/admin/events/:eventId/attendees/bulk-delete",
+    "/api/admin/events/:eventId/attendees/bulk-erase",
     jsonPostCsrf,
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
-    // Also shares the wallet-action-bulk budget, but only when this event has wallet configured:
-    // deleteWalletPassesBestEffort (inside the handler) calls PassCreator once per selected
-    // attendee that has a wallet pass, which can't happen at all for a non-wallet event.
+    // The pass of each erased attendee is deleted at the provider after the commit.
     walletActionBulkRateLimitIfWalletConfigured,
-    (c) => handleBulkDeleteEventAttendees(c, db),
+    (c) => handleBulkEraseEventAttendees(c, db),
+  );
+  // Remove from event (the hard delete, for mistakes, with a reason from a fixed list). Behind
+  // guardArchivedEvent: the numbers of an archived event are final. The pass of each removed attendee
+  // is deleted at the provider before the rows go.
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    // This route reads a body (the reason), unlike erase: the same cap as the bulk routes.
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionRateLimitIfWalletConfigured,
+    guardArchivedEvent((c) => handleRemoveEventAttendee(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    guardArchivedEvent((c) => handleBulkRemoveEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-checkin",
@@ -2058,9 +2255,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
     handlePutEventTemplate(c, db),
   ));
-  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
+  // No guardArchivedEvent on either preview route: a preview renders the draft with sample data and
+  // saves nothing, and the Communication page of an archived event previews its templates as soon
+  // as it opens, so blocking it left that page with an error toast and an empty preview.
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, (c) =>
     handlePreviewEventTemplate(c, db, mailInjectedBaseUrl),
-  ));
+  );
   app.post(
     "/api/admin/events/:eventId/template/test-send",
     jsonPostCsrf,
@@ -2110,7 +2310,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminTemplatePreviewRateLimit,
     templateBodyLimit,
-    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, mailInjectedBaseUrl)),
+    (c) => handlePreviewEventTemplateById(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/admin/events/:eventId/templates/:templateId/test-send",
@@ -2415,8 +2615,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.delete("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountMfaEnroll(c, db),
   );
-  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
-    handlePostAccountMfaConfirm(c, db, rateLimitStore),
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
+    handlePostAccountMfaConfirm(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post("/api/account/mfa/reset", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
     handlePostAccountMfaReset(c, db, rateLimitStore, mailInjectedBaseUrl),
@@ -2437,7 +2637,7 @@ export function createApp(options: CreateAppOptions = {}) {
     webauthnBodyLimit,
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
-    (c) => handlePostAccountWebauthnRegisterFinish(c, db, mailInjectedBaseUrl),
+    (c) => handlePostAccountWebauthnRegisterFinish(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post(
     "/api/account/mfa/webauthn/assert/begin",
@@ -2472,10 +2672,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));
   app.put("/api/staff/theme", jsonPostCsrf, requireSession, (c) => handlePutStaffTheme(c, db));
 
-  app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/verify", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
   );
-  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, preAuthBodyLimit, (c) =>
     handlePostMfaWebauthnBegin(c, db, mailInjectedBaseUrl),
   );
   app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, webauthnBodyLimit, requirePartialSession, (c) =>
@@ -2501,6 +2701,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     requirePartialSession,
     mfaEnrollRateLimitJson,
+    preAuthBodyLimit,
     (c) => handlePostMfaWebauthnEnrollBegin(c, db, mailInjectedBaseUrl),
   );
   app.post(
@@ -2511,19 +2712,19 @@ export function createApp(options: CreateAppOptions = {}) {
     mfaEnrollRateLimitJson,
     (c) => handlePostMfaWebauthnEnrollFinish(c, db, mailInjectedBaseUrl),
   );
-  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, (c) =>
+  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, preAuthBodyLimit, (c) =>
     handleTotpEnroll(c, db),
   );
-  app.post("/api/auth/mfa/totp/confirm", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/totp/confirm", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleTotpConfirm(c, db, rateLimitStore),
   );
-  app.post("/api/auth/mfa/totp/backup-codes/complete", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/totp/backup-codes/complete", preAuthBodyLimit, jsonPostCsrf, requirePartialSession, (c) =>
     handleTotpBackupCodesComplete(c, db),
   );
 
   // OIDC redirect_uri must match what the SPA shows (Instance URL / BASE_URL), not the
   // boot-only resolveBaseUrl() that skips DB instance_url in development.
-  async function oidcPublicBaseUrl(): Promise<string> {
+  function oidcPublicBaseUrl(): Promise<string> {
     return resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl);
   }
 
@@ -2606,36 +2807,36 @@ export function createApp(options: CreateAppOptions = {}) {
   );
 
   app.get("/setup", (c) => handleGetSetup(c, db));
-  app.post("/setup", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostSetup(c, db));
+  app.post("/setup", htmlPostCsrf, loginRateLimitHtml, preAuthBodyLimit, (c) => handlePostSetup(c, db));
   app.get("/login", (c) => handleGetLogin(c, db));
-  app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
+  app.post("/login", htmlPostCsrf, loginRateLimitHtml, preAuthBodyLimit, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c, db));
-  app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/verify", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaVerify(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
   app.get("/mfa/enroll/method", requirePartialSessionHtml, (c) => handleGetMfaEnrollMethod(c, db));
   app.get("/mfa/enroll/webauthn", requirePartialSessionHtml, (c) => handleGetMfaEnrollWebauthn(c, db));
-  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, (c) =>
+  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, preAuthBodyLimit, (c) =>
     handlePostMfaEnrollStart(c, db),
   );
-  app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnroll(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll/backup-codes", requirePartialSessionHtml, (c) =>
     handleGetMfaEnrollBackupCodes(c, db),
   );
-  app.post("/mfa/enroll/backup-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll/backup-codes", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollBackupCodes(c, db),
   );
-  app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll/download-codes", preAuthBodyLimit, htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, async (c) =>
     handlePostLogout(c, db, await resolveOidcPublicBaseUrlOrNull(db, mailInjectedBaseUrl)),
   );
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
-  app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
+  app.post("/change-password", preAuthBodyLimit, htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),
   );
 
@@ -2822,19 +3023,19 @@ export function createApp(options: CreateAppOptions = {}) {
   // PassCreator webhook deliveries (registration events: pushnotification_registered,
   // pushnotification_unregistered - first_pushnotification_registered has its own route below)
   // - never a browser navigation.
-  app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, (c) =>
-    handlePassCreatorWebhook(c, db, options.walletPassProvider),
+  app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
+    handlePassCreatorWebhook(c, db, rateLimitStore, options.walletPassProvider),
   );
   // pass_voided gets its own target URL (subscribeWalletWebhooksBestEffort) since PassCreator's
   // payload never names which event fired - see handlePassCreatorWebhook's doc comment.
-  app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, (c) =>
-    handlePassCreatorWebhook(c, db, options.walletPassProvider, true),
+  app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
+    handlePassCreatorWebhook(c, db, rateLimitStore, options.walletPassProvider, true),
   );
   // first_pushnotification_registered gets its own target URL too, same reason as pass_voided
   // above - stamps WalletPass.first_confirmed_at (applyFirstConfirmedAt) the first time a pass is
   // actually added to a wallet app.
-  app.post("/api/wallet/webhook/passcreator/:eventId/first-confirmed", walletWebhookRateLimit, (c) =>
-    handlePassCreatorWebhook(c, db, options.walletPassProvider, false, true),
+  app.post("/api/wallet/webhook/passcreator/:eventId/first-confirmed", walletWebhookRateLimit, walletWebhookBodyLimit, (c) =>
+    handlePassCreatorWebhook(c, db, rateLimitStore, options.walletPassProvider, false, true),
   );
 
   // Mode B hosted QR — filename param is "{public_ref}.png"
@@ -3019,7 +3220,7 @@ export function createApp(options: CreateAppOptions = {}) {
     checkinStreamRateLimit,
     createCheckinEventScope(checkinAuthDeps, (c) => c.req.param("eventId")),
     createCheckinStreamConcurrencyLimit(),
-    (c) => handleEventStream(c),
+    (c) => handleEventStream(c, () => checkinStreamRevalidator(c, c.req.param("eventId") ?? "")),
   );
 
   app.get(

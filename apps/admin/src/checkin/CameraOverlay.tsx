@@ -325,7 +325,7 @@ export function CameraOverlay({
 
         <aside className="ck-overlay__aside">
           {historyFailed ? (
-            <ScanHistoryError retrying={historyRetrying} onRetry={onRetryHistory} />
+            <ScanHistoryError retrying={historyRetrying} onRetry={onRetryHistory} landmark=".ck-overlay__aside" />
           ) : (
             <CkRecentScans
               history={history}

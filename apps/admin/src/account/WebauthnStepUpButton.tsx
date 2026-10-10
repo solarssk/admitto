@@ -62,7 +62,7 @@ export function WebauthnStepUpButton({ busy, onBusyChange, onError, onSubmit }: 
 
   return (
     <>
-      <Button type="button" variant="secondary" disabled={busy} onClick={() => void handleClick()}>
+      <Button type="button" variant="secondary" loading={busy} onClick={() => void handleClick()}>
         Use a passkey or security key
       </Button>
       {busy && (

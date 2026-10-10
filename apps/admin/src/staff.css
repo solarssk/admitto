@@ -627,6 +627,11 @@ html:not(.icons-ready) .ti {
   background: var(--status-error);
 }
 
+/* No verdict yet: neutral, not green. */
+.sys-status__dot--pending {
+  background: var(--text-muted);
+}
+
 .sys-status__label {
   font-size: 13px;
   font-weight: 400;
@@ -701,11 +706,17 @@ html:not(.icons-ready) .ti {
 }
 
 .sys-status__check--pending {
-  display: inline-block;
+  /* The kit's Spinner (a 16px ring, the size of the icon it stands in for), dimmed like the row's other secondary text. */
   color: var(--text-muted);
-  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
-     spinner.css) instead of a new one-off — always loaded globally via the shell. */
-  animation: at-spin 0.9s linear infinite;
+}
+
+/* The busy "Check again" keeps its focus and does nothing on a click while it works, so it does not light up on hover either. */
+.sys-status__check-again[aria-busy="true"] {
+  cursor: progress;
+}
+
+.sys-status__check-again[aria-busy="true"]:hover {
+  background: none;
 }
 
 .operator-shell__user-link {
@@ -811,6 +822,11 @@ html:not(.icons-ready) .ti {
 
 .notif-bell__status i {
   font-size: 1.5rem;
+}
+
+.notif-bell__status .failure-icon {
+  margin-right: 0;
+  vertical-align: baseline;
 }
 
 .notif-bell__list {
@@ -1360,6 +1376,12 @@ html:not(.icons-ready) .ti {
   margin-bottom: 12px;
 }
 
+/* The 8 second line a placeholder adds under its shapes (SlowNote). */
+.slow-note {
+  display: block;
+  padding-top: var(--space-1);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1748,6 +1770,16 @@ html:not(.icons-ready) .ti {
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+}
+
+/* The status region of the history's placeholder (CkRecentScans): its label for assistive tech and, after 8 seconds, the shared slow
+   note under the rows. On the dark camera overlay the note takes the light text its neighbours use. */
+.ck-recent__loading-status {
+  display: block;
+}
+
+.ck-overlay__aside .slow-note {
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .rec-dot {
@@ -3165,6 +3197,13 @@ html:not(.icons-ready) .ti {
   text-align: center;
 }
 
+/* The glyph of the application's own error screen: the one of a failed load (EmptyState's error), as large. */
+.error-boundary__icon {
+  font-size: 2.5rem;
+  line-height: 1;
+  color: var(--status-error);
+}
+
 .error-boundary__title {
   margin: 0;
   font-size: var(--fs-h2);
@@ -3548,8 +3587,10 @@ html:not(.icons-ready) .ti {
 .identity-editor__error {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
 }
 
 /* Mapping repeater + editor extras (#266 slice 3b) */
@@ -4504,25 +4545,52 @@ output.mail-field-hint {
   color: var(--status-warn-fg);
 }
 
-/* The Retry in a one-line hint (RetryHint) is a Button, for its busy contract (aria-disabled, keeps keyboard
-   focus), drawn as the underlined text link it replaced. Compound selectors, so they win over .at-btn and its
-   hover rule whatever order the stylesheets load in. */
+/* The glyph of a failed load where the failure is a line of text (FailureIcon: the compact alert, the one-line hint, the identity
+   editor, the log console, the notification bell): the error colour of Notice's error, inline before the message. */
+.failure-icon {
+  margin-right: 0.375em;
+  vertical-align: -0.1em;
+  color: var(--status-error);
+}
+
+/* Over the message, as large as an empty state's, where the failure has a block of its own (the body of a modal, the log
+   console): a line with a small cross beside it and a button under it read as unfinished. */
+.failure-icon--large {
+  display: block;
+  margin: 0 auto var(--space-2);
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+/* A hint that says something could not be loaded (RetryHint): the message in the error colour, like a field's own error, with room above it,
+   where the base hint tucks itself 4px under its field (a failure glued to the control it is about read as a smudge). Compound, to win
+   over .mail-field-hint. */
+.mail-field-hint.retry-hint {
+  margin: var(--space-2) 0;
+  color: var(--status-error-fg);
+}
+
+/* Its Retry is a word at the end of the sentence, not a boxed button: a button takes too much room for a remark under a field. It reads as
+   an action all the same: the link colour, semibold, a refresh glyph before it, a tint when hovered, and no underline, which is a link's.
+   It is a Button for its busy contract (aria-disabled, keeps keyboard focus, a spinner for the glyph), so these compound selectors win
+   over .at-btn, .at-btn--ghost, .at-btn--sm and their hover rule whatever order the stylesheets load in. */
 .retry-hint .at-btn.retry-hint__button {
   display: inline-flex;
   height: auto;
-  padding: 0;
+  gap: var(--space-1);
+  padding: 1px var(--space-1);
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-link, var(--primary));
   font-size: inherit;
-  font-weight: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  font-weight: var(--fw-semibold);
+  vertical-align: baseline;
 }
 
 .retry-hint .at-btn.retry-hint__button:hover:not(:disabled, [aria-disabled="true"]) {
-  background: none;
-  color: var(--text-link, var(--primary));
+  background: var(--primary-tint);
+  color: var(--primary-active);
 }
 
 .mail-transport__desc {
@@ -5873,9 +5941,12 @@ output.mail-field-hint {
 
 /* IPv6 addresses have no spaces to wrap on, so as a single unbroken token they'd otherwise force
    this column's minimum width to their full length under table-layout: auto, distorting every
-   other column in the row (same fix as .audit-log-ip - this table just isn't the audit log). */
+   other column in the row (same fix as .audit-log-ip - this table just isn't the audit log).
+   `overflow-wrap: anywhere` has the same effect on the column's width as `word-break: break-all`
+   did, but breaks inside a word only when it does not fit: "Internal network" under the address
+   was cut to "Interna" / "l network". */
 .sessions-ip-cell {
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .sessions-action-col {
@@ -5889,6 +5960,16 @@ output.mail-field-hint {
    card layout at a width that isn't actually a phone. */
 @media (min-width: 768px) and (max-width: 1180px) {
   .sessions-col-tablet-hide {
+    display: none;
+  }
+}
+
+/* Laptop (1181-1499px): the 8 columns only fit comfortably from 1500px, where a row is one or two lines. At 1280px the Logged in cell (the
+   login time in UTC and the signer's local time under it) and the address cell took four and five lines and a row was 117px tall. Sign-in
+   drops first, as it does in the Account page's own table: Device and IP address stay, because they are what an admin reviewing sessions
+   looks at, and the sign-in method is still on the cards, in the Staff users tab and from 1500px. */
+@media (min-width: 1181px) and (max-width: 1499px) {
+  .sessions-col-laptop-hide {
     display: none;
   }
 }
@@ -6663,6 +6744,11 @@ output.mail-field-hint {
   color: var(--at-red);
 }
 
+/* On the dark console the message and its glyph are the one red. */
+.system-log-panel__console-empty--error .failure-icon {
+  color: inherit;
+}
+
 /* The console's placeholder (ConsoleSkeleton): lines shaped like log lines, light on the dark shell. */
 .system-log-panel__console .at-skeleton {
   --skeleton-base: rgba(255, 255, 255, 0.08);
@@ -6921,12 +7007,6 @@ output.mail-field-hint {
   color: var(--text-secondary);
 }
 
-.picker-loading {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-7) var(--space-4);
-}
-
 .overview-stats {
   display: grid;
   /* minmax(0, 1fr), not a bare 1fr (= minmax(auto, 1fr)) — a bare 1fr lets whichever column
@@ -6956,9 +7036,13 @@ output.mail-field-hint {
  * "Event countdown", whose longer label/value wraps at in-between 4-column widths, see #612) the
  * icon+text block was left stranded at the top of unused blank space below it, instead of
  * centered in the full card. Scoped to this tile only (via Card's className prop) rather than
- * widening .at-card__body itself, which every other card in the app also uses. */
+ * widening .at-card__body itself, which every other card in the app also uses. The body is a flex
+ * box that centres the tile (the tile is only as tall as its text needs, below), so a tile that is
+ * taller than its siblings makes the whole row taller and the others keep their text in the middle. */
 .overview-kpi-card > .at-card__body {
   height: 100%;
+  display: flex;
+  align-items: center;
 }
 
 /* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only. Sizing
@@ -6973,15 +7057,14 @@ output.mail-field-hint {
   display: flex;
   align-items: center;
   gap: 13px;
-  /* Fixed, not 100%-of-stretched-grid-row - a variable-length value (e.g. the countdown tile's
-   * "Ended today" vs a shorter "In 4 days") could wrap to 2 lines and grow the whole row, and
-   * with it every sibling tile in that grid row (CSS Grid's default cross-axis stretch). A hard
-   * height plus nowrap/ellipsis on the value below (rather than min-height) makes the tile's
-   * footprint constant regardless of which value happens to be showing. 76px comfortably fits
-   * .reports-stat's own 3-line stack (value+label+sub) too, since both tiles now share this
-   * exact height (reports-page.css). overflow hidden is a backstop for the rare case a value
-   * still ends up too long to fit even truncated. */
-  height: 76px;
+  /* At least 76px, never a hard height: the value is one line (nowrap, below), so in the usual case
+   * the tile keeps the footprint it always had (76px also fits .reports-stat's 3-line stack, and both
+   * share it, reports-page.css), but a label that wraps (a narrow tile) makes the tile taller instead
+   * of being cut off, and the row with it (the grid stretches its tiles). overflow hidden stays as a
+   * backstop for a single word that is wider than the tile. */
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 76px;
   overflow: hidden;
 }
 
@@ -7025,7 +7108,9 @@ output.mail-field-hint {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-secondary);
-  white-space: nowrap;
+  /* Wraps (balanced, from the body) instead of an ellipsis that hides the word: "Via identity provi…"
+   * and "Event countd…" read worse than a second line (PO review, below). overflow hidden + ellipsis
+   * stay only for a single word that does not fit at all. */
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -7040,31 +7125,81 @@ output.mail-field-hint {
  * delivery" / "In 4 days" tiles still fit their content in roughly half the tablet breakpoint's
  * per-tile width. Same breakpoint and shrunk values as .reports-stat's own 640px rule. */
 @media (max-width: 640px) {
-  /* Taller fixed height (not the desktop tiles' 76px) - at 2-up mobile width there's less
-   * per-tile horizontal room, so the value/label below are allowed to wrap onto a 2nd line
-   * instead of truncating with an ellipsis (PO review: truncated "Failed deli…"/"Event cou…"
-   * read worse than just wrapping, now that there's a fixed height to wrap safely within
-   * instead of pushing the row taller). Still a hard constant, not content-driven - it just
-   * accounts for up to 2 wrapped lines instead of 1. */
+  /* Taller (not the desktop tiles' 76px) - at 2-up mobile width there's less per-tile horizontal
+   * room, so the value/label below are allowed to wrap onto a 2nd line instead of truncating with
+   * an ellipsis (PO review: truncated "Failed deli…"/"Event cou…" read worse than just wrapping).
+   * The tile has room for two wrapped lines and grows past that rather than cutting a third. */
   .overview-kpi {
-    height: 96px;
+    gap: 8px;
+    min-height: 96px;
+  }
+
+  /* The text column is what a phone has least of: 162px a tile, of which the card's padding, the
+   * icon and the gap took 101px, leaving 61px, which cut "Attendees" (64px) to "Attende…". Less
+   * padding on the sides, a smaller icon and gap leave 103px, enough for "Attendees", "Tickets sent",
+   * "Failed delivery" and "In 3 days" on one line, and two lines for "Event countdown". */
+  .overview-kpi-card > .at-card__body {
+    padding-inline: 10px;
   }
 
   .overview-kpi__icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    font-size: 17px;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    font-size: 14px;
   }
 
   .overview-kpi__value {
-    font-size: 21px;
+    font-size: 20px;
     white-space: normal;
   }
+}
 
-  .overview-kpi__label {
-    white-space: normal;
-  }
+/* Everything below the Overview's header (the page, its placeholder and its error) is one column with the same rhythm as
+ * .screen, whose flex gap does not collapse with the KPI row's margin; the page itself sits in a wrapper that fades in and keeps
+ * that rhythm. */
+.overview-stack,
+.overview-stack__page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* The placeholder is decoration: nothing in it reacts to the pointer. Its stacks of bars (the figure beside the ring, a
+ * glance tile's label and value) are columns, as their real texts are, with a little air between the bars. */
+.overview-skeleton {
+  pointer-events: none;
+}
+
+.overview-skeleton__lines {
+  gap: 4px;
+}
+
+/* A bar that stands in for a line of text keeps the height of that line (measured against the real card in Chrome): the
+ * detail under a checklist row's name, and the two lines of a glance tile. */
+.overview-skeleton .overview-check__body > .at-skeleton {
+  margin: 3px 0;
+}
+
+.overview-skeleton .overview-glance__text {
+  gap: 0;
+}
+
+.overview-skeleton .overview-glance__text > .at-skeleton:first-child {
+  margin: 2px 0;
+}
+
+.overview-skeleton .overview-glance__text > .at-skeleton:last-child {
+  margin: 3.5px 0;
+}
+
+/* A timeline row is two lines of text beside a time: its placeholder keeps that height, and the day heading its own. */
+.overview-skeleton .overview-activity__item {
+  min-height: 57px;
+}
+
+.overview-skeleton .overview-timeline__day {
+  min-height: 18px;
 }
 
 /* Two stacked, genuinely symmetric 1fr/1fr rows (mockup-aligned) instead of a wide-left +
@@ -8786,4 +8921,17 @@ output.mail-field-hint {
 .refetch-card--dim {
   opacity: 0.5;
   transition: opacity var(--dur-fast);
+}
+
+/* The event of the route could not be read before its shell exists (a deep link, a refresh): the error with its Retry and the way back to
+   the picker, centred on the page like the failed start of the app. The empty state brings its own padding; the way back sits close to it. */
+.event-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+}
+
+.event-load-error .at-empty-state {
+  padding-bottom: 1.5rem;
 }

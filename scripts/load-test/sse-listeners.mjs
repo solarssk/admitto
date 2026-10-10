@@ -89,10 +89,9 @@ async function listen(label, cookie) {
   }
 }
 
-const sessions = [];
-for (const [i, account] of seed.listeners.entries()) {
-  sessions.push({ i, cookie: await login(account) });
-}
+const sessions = await Promise.all(
+  seed.listeners.map(async (account, i) => ({ i, cookie: await login(account) })),
+);
 const running = sessions.flatMap(({ i, cookie }) =>
   [0, 1, 2].map((n) => listen(`listener${i}-stream${n}`, cookie)),
 );

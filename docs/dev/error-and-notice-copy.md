@@ -1,6 +1,6 @@
 # Error and notice message content
 
-Admitto has two layers of rules for user-facing error/notice/status messages. [AGENTS.md](../../AGENTS.md#admin-spa-feedback-toast-vs-inline)
+Admitto has two layers of rules for user-facing error/notice/status messages. [The admin feedback standard](../../standards/admin-spa/feedback-and-errors.md)
 decides **which surface** to use (Toast, `Notice`, `EmptyState`+Retry, `ConfirmDialog`, in-context
 inline) and how to get a server error into it safely (`operatorApiErrorMessage`, `hasApiErrorCode`).
 This doc decides **what the text says**, specifically that the same underlying event should not get
@@ -78,14 +78,14 @@ plain-English description of the role, not the product's name for it.
    - **Process for authors:** when adding a new load-error `EmptyState`, write the `title` and the
      `description`/fallback string together and read them back side by side before committing. CI
      cannot check this consistency the way `CODE_MESSAGES` coverage is checked
-     ([AGENTS.md § Compounding rules](../../AGENTS.md#compounding-rules)), so it depends on the
+     ([standards/admin-spa/ui-gotchas.md](../../standards/admin-spa/ui-gotchas.md)), so it depends on the
      author actually re-reading both strings.
 
 ## What this doesn't cover
 
-- Layout/surface choice (Toast vs `Notice` vs …): [AGENTS.md § Admin SPA feedback](../../AGENTS.md#admin-spa-feedback-toast-vs-inline).
+- Layout/surface choice (Toast vs `Notice` vs …): [Admin SPA feedback](../../standards/admin-spa/feedback-and-errors.md).
 - Getting server errors into the UI safely (never raw `ApiError.message`):
-  [AGENTS.md § Admin API errors in the UI](../../AGENTS.md#admin-api-errors-in-the-ui),
+  [Admin API errors in the UI](../../standards/admin-spa/feedback-and-errors.md#admin-api-errors-in-the-ui),
   `operatorApiErrorMessage` / `hasApiErrorCode`.
 - Mail template copy (attendee-facing email), governed by `packages/mail-templates`
   (rendering/placeholders/Outlook-safety). Apply this doc's Public-attendee register there too when

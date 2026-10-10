@@ -49,4 +49,30 @@ describe("RefreshWarning", () => {
     await advance(0);
     expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-busy")).toBeNull();
   });
+
+  it("hands the keyboard focus to the landmark it is given when the warning goes away after a Retry that worked", async () => {
+    const region = (children: React.ReactNode) => (
+      <section className="stays" aria-label="Report">
+        {children}
+      </section>
+    );
+    const { rerender } = render(region(<RefreshWarning message="Could not refresh." onRetry={async () => {}} landmark=".stays" />));
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(region(<p>Loaded</p>));
+    await Promise.resolve();
+
+    expect(document.activeElement).toBe(document.querySelector(".stays"));
+  });
+
+  it("leaves the focus alone when it is given no landmark", async () => {
+    const region = (children: React.ReactNode) => <section className="stays">{children}</section>;
+    const { rerender } = render(region(<RefreshWarning message="Could not refresh." onRetry={async () => {}} />));
+    screen.getByRole("button", { name: "Retry" }).focus();
+
+    rerender(region(<p>Loaded</p>));
+    await Promise.resolve();
+
+    expect(document.activeElement).toBe(document.body);
+  });
 });

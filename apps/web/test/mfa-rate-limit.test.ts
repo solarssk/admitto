@@ -14,6 +14,42 @@ const TOTP_MAX = 10;
 const RECOVERY_MAX = 10;
 
 describe("checkMfaVerifyRateLimit", () => {
+  it("caps TOTP guesses per account across fresh sessions and rotated IPs when userId is given", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < TOTP_MAX; i++) {
+      expect(
+        await checkMfaVerifyRateLimit(store, `sess-${i}`, `198.51.100.${i}`, TOTP_CODE, undefined, "user-1"),
+      ).toBe(true);
+    }
+    expect(
+      await checkMfaVerifyRateLimit(store, "sess-new", "198.51.100.200", TOTP_CODE, undefined, "user-1"),
+    ).toBe(false);
+    expect(
+      await checkMfaVerifyRateLimit(store, "sess-new", "198.51.100.200", TOTP_CODE, undefined, "user-2"),
+    ).toBe(true);
+  });
+
+  it("caps recovery-code guesses per account across fresh sessions and rotated IPs", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < RECOVERY_MAX; i++) {
+      expect(
+        await checkMfaVerifyRateLimit(store, `sess-${i}`, `198.51.100.${i}`, RECOVERY_CODE, undefined, "user-1"),
+      ).toBe(true);
+    }
+    expect(
+      await checkMfaVerifyRateLimit(store, "sess-new", "198.51.100.200", RECOVERY_CODE, undefined, "user-1"),
+    ).toBe(false);
+  });
+
+  it("treats addresses inside one IPv6 /64 as the same client", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < TOTP_MAX; i++) {
+      expect(await checkMfaVerifyRateLimit(store, `sess-${i}`, `2001:db8:1:2::${i + 1}`, TOTP_CODE)).toBe(true);
+    }
+    expect(await checkMfaVerifyRateLimit(store, "sess-x", "2001:db8:1:2:aaaa::9", TOTP_CODE)).toBe(false);
+    expect(await checkMfaVerifyRateLimit(store, "sess-y", "2001:db8:1:3::1", TOTP_CODE)).toBe(true);
+  });
+
   it("namespaces TOTP buckets by action — exhausting one action's limit does not block a different action for the same session/IP", async () => {
     const store = new InMemoryRateLimitStore();
     for (let i = 0; i < TOTP_MAX; i++) {

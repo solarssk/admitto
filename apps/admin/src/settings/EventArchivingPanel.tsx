@@ -5,16 +5,16 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
+import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { Segmented } from "../components/Segmented.js";
 import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
+import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useListLoad } from "../hooks/useListLoad.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
-import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { UsersListSkeleton, type SkeletonColumn } from "../pages/users/UsersListSkeleton.js";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
@@ -95,9 +95,9 @@ export function EventArchivingPanel() {
   );
   const list = useListLoad({ fetcher: fetchEvents, fallback: "Could not load events." });
   const events = list.data ?? NO_EVENTS;
-  // The placeholder: after 200ms, "Taking longer than usual" after 8 seconds. A refresh after an action keeps the rows.
-  const gate = useLoadingGate(list.loading);
-  const slow = useDelayedLoading(list.loading, SLOW_NOTICE_MS);
+  // The placeholder: after 200ms, "Taking longer than usual" after 8 seconds. A refresh after an action keeps the rows,
+  // and a Retry keeps the error on screen, busy, until the answer is in (`failure`).
+  const { gate, slow, failure } = useCardLoad(list);
 
   const activeEvents = useMemo(
     () => events.filter((e) => !e.archived_at),
@@ -321,24 +321,18 @@ export function EventArchivingPanel() {
           />
         )}
 
-        {gate.showContent && list.error && (
-          <EmptyState
-            variant="error"
-            title="Could not load events"
-            description={list.error}
-            action={
-              <Button type="button" variant="secondary" onClick={() => void list.reload()}>
-                Retry
-              </Button>
-            }
-          />
+        {gate.showContent && failure.error && (
+          // Fades in with what it replaces, once: the wrapper stays through a Retry.
+          <div className="at-fade-in">
+            <RetryEmptyState title="Could not load events" message={failure.error} retrying={failure.retrying} onRetry={failure.retry} />
+          </div>
         )}
 
-        {gate.showContent && !list.error && list.refreshError && (
+        {gate.showContent && !failure.error && list.refreshError && (
           <RefreshWarning message={list.refreshError} onRetry={list.reload} />
         )}
 
-        {gate.showContent && !list.error && list.data !== null && (
+        {gate.showContent && !failure.error && list.data !== null && (
           <RefetchRegion refreshing={list.refreshing} label="Refreshing events">
             {content}
 

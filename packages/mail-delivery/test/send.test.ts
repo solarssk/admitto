@@ -1,4 +1,4 @@
-import { PrismaClient } from "@admitto/db";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as mailer from "@admitto/mailer";
@@ -508,6 +508,48 @@ describe("sendTicketEmails", () => {
     });
     expect(rows).toHaveLength(1);
     expect(exported).toHaveLength(1);
+  });
+
+  it("race: an initial send is skipped, not resent, when another request completes it meanwhile", async () => {
+    // A real Promise.all rarely lands the second request's look at the existing delivery after
+    // the first request's whole claim/send cycle - the intermittent CI failure of the test above -
+    // so this injects it deterministically: the second request has begun but is held right before
+    // it reads its attendees, and a first request delivers the same attendee in full meanwhile.
+    // A delivery that completes after a request began is a concurrent duplicate (skip), not an
+    // earlier send being repeated on purpose (resend).
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-race-late" } });
+    await prisma.attendee.create({
+      data: {
+        id: "att-race-late",
+        event_id: EVENT_ID,
+        email: "race-late@example.com",
+        name: "Race Late",
+      },
+    });
+    exported.length = 0;
+    const options = { deliverImmediately: true, attendeeIds: ["att-race-late"] };
+
+    let first: Awaited<ReturnType<typeof sendTicketEmails>> | undefined;
+    const realFindMany = prisma.attendee.findMany.bind(prisma.attendee);
+    vi.spyOn(prisma.attendee, "findMany").mockImplementationOnce(async (args) => {
+      first = await sendTicketEmails(EVENT_ID, options, prisma, TEST_ENV, TEST_DEPS);
+      return realFindMany(args);
+    });
+
+    const second = await sendTicketEmails(EVENT_ID, options, prisma, TEST_ENV, TEST_DEPS);
+
+    // Precondition: the first request really delivered before the second one claimed anything.
+    expect(first?.sent).toBe(1);
+    const initial = await prisma.emailDelivery.findFirstOrThrow({
+      where: { attendee_id: "att-race-late", purpose: "initial" },
+    });
+    expect(EMAIL_DELIVERY_SUCCESS_STATUSES).toContain(initial.status);
+
+    // Outcome: the second request sent nothing and recorded no resend.
+    expect(second.sent).toBe(0);
+    expect(second.skipped).toEqual([{ attendeeId: "att-race-late", reason: "already_sent" }]);
+    expect(exported).toHaveLength(1);
+    expect(await prisma.emailDelivery.count({ where: { attendee_id: "att-race-late" } })).toBe(1);
   });
 
   it("skips agency attendee missing public_ref without aborting the batch", async () => {

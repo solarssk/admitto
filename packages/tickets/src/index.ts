@@ -10,6 +10,36 @@ export {
   parseWalletFieldMapping,
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
+export { isAttendeeGone, lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export { attendeeIsLive, keepLiveRows } from "./lock-check.js";
+export type { LockedAttendee } from "./attendee-lock.js";
+export {
+  ERASED_ATTENDEE_NAME,
+  ERASED_EMAIL_DOMAIN,
+  erasedAttendeeEmail,
+  eraseAttendees,
+  isErasedPlaceholderEmail,
+} from "./erase-attendees.js";
+export { scrubImportJobResults } from "./erase-job-results.js";
+export { scrubAttendeeTraces } from "./attendee-traces.js";
+export {
+  EXPORT_STOPPED_BY_ERASURE_ERROR,
+  IMPORT_STOPPED_BY_ERASURE_ERROR,
+  attendeeJobIdsWithFiles,
+  createUnderAttendeeJobQueueLock,
+  lockAttendeeJobQueue,
+  lockOpenAttendeeJobs,
+  stopOpenAttendeeJobs,
+} from "./stop-open-jobs.js";
+export { removeAttendees } from "./remove-attendees.js";
+export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
+export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
+export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
+export type {
+  EraseAttendeesParams,
+  EraseAttendeesResult,
+  EraseWalletTarget,
+} from "./erase-attendees.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
 export { ADMITTABLE_STATUS_LIST } from "./admittable.js";
 export { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
@@ -142,7 +172,7 @@ export {
 export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 export { drainWalletPushJobs, readWalletPushRequest } from "./drain-wallet-push-jobs.js";
 export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
-export { loadWalletMessageTargets } from "./send-wallet-message.js";
+export { keepLiveWalletMessageTargets, loadWalletMessageTargets } from "./send-wallet-message.js";
 export type { SendWalletMessageTarget } from "./send-wallet-message.js";
 export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
 export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
@@ -156,6 +186,8 @@ export {
 } from "./drain-wallet-cleanup-jobs.js";
 export type { DrainWalletCleanupJobsResult, WalletCleanupJobType } from "./drain-wallet-cleanup-jobs.js";
 export { voidOneWalletPassAtProvider } from "./void-wallet-pass-at-provider.js";
+export { refreshWalletPassStatusUnlessErased } from "./refresh-wallet-pass-status.js";
+export type { LiveWalletStatusRefreshOutcome } from "./refresh-wallet-pass-status.js";
 export type { VoidWalletPassOutcome } from "./void-wallet-pass-at-provider.js";
 export {
   reclaimStaleExportJobs,

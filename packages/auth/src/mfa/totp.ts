@@ -34,14 +34,17 @@ export function parseTotpSecretFromOtpauthUri(uri: string): string | null {
   }
 }
 
+/** AES-GCM additional data: a TOTP secret ciphertext only decrypts as a TOTP secret. */
+const TOTP_SECRET_CONTEXT = "admitto:user-totp-secret";
+
 /** Encrypt TOTP secret for DB storage. */
 export function encryptTotpSecret(secret: string): string {
-  return encryptToString(secret);
+  return encryptToString(secret, TOTP_SECRET_CONTEXT);
 }
 
 /** Decrypt TOTP secret from DB (enrollment resume / tests only). */
 export function decryptTotpSecret(secretEnc: string): string {
-  return decryptFromString(secretEnc);
+  return decryptFromString(secretEnc, TOTP_SECRET_CONTEXT);
 }
 
 function normalizeToken(code: string): string {

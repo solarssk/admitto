@@ -51,9 +51,6 @@ export function findLabelPairs(source: string): Pair[] {
   return pairs;
 }
 
-/** Labels that are longer today, per file. A migration may only remove entries. */
-const ALLOWED: Record<string, number> = {};
-
 describe("loadingLabel is never longer than the label at rest", () => {
   it("finds the pairs it is supposed to check", () => {
     const row = findLabelPairs('<MoreActionsMenuItem icon="send" label="Send tickets" loading={b} loadingLabel="Sending…" hint="x" />');
@@ -72,15 +69,12 @@ describe("loadingLabel is never longer than the label at rest", () => {
     expect(pair && pair.busy.length > pair.resting.length).toBe(true);
   });
 
-  it("finds no longer busy label in the admin source beyond the allowlist", () => {
+  it("finds no longer busy label in the admin source", () => {
     const found: Record<string, number> = {};
     for (const file of walk(SRC)) {
       const longer = findLabelPairs(readFileSync(file, "utf8")).filter((p) => p.busy.length > p.resting.length);
       if (longer.length > 0) found[relative(REPO, file).split(sep).join("/")] = longer.length;
     }
-    const grew = Object.entries(found).filter(([file, n]) => n > (ALLOWED[file] ?? 0));
-    expect(grew, 'A loadingLabel is longer than the label at rest. Leave loadingLabel out (AGENTS.md "Admin SPA loading and busy states").').toEqual([]);
-    const shrank = Object.entries(ALLOWED).filter(([file, n]) => (found[file] ?? 0) < n);
-    expect(shrank, "Nice: lower or remove these entries in ALLOWED.").toEqual([]);
+    expect(found, 'A loadingLabel is longer than the label at rest. Leave loadingLabel out (AGENTS.md "Admin SPA loading and busy states").').toEqual({});
   });
 });

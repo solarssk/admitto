@@ -36,7 +36,7 @@ export type IssuedTicketResult =
       status: "not_issuable";
       mode: "internal";
       attendeeId: string;
-      reason: "cancelled" | "revoked";
+      reason: "cancelled" | "revoked" | "erased";
     };
 
 export type IssueEventSummary = {

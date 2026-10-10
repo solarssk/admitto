@@ -36,6 +36,25 @@ export function loadWithTimeout(parent?: AbortSignal, ms: number = LOAD_TIMEOUT_
 }
 
 /**
+ * One signal for several sources: it aborts when any of them does (the one that is not given is ignored). Not
+ * `AbortSignal.any`, which older tablets and phones lack. `release` unlinks it from the sources again, so a request that
+ * has ended leaves nothing behind on a source that lives on.
+ */
+export function anyAbort(sources: readonly (AbortSignal | undefined)[]): { signal: AbortSignal; release: () => void } {
+  const controller = new AbortController();
+  const linked = sources.filter((source): source is AbortSignal => source !== undefined);
+  const abort = () => controller.abort();
+  if (linked.some((source) => source.aborted)) abort();
+  else for (const source of linked) source.addEventListener("abort", abort, { once: true });
+  return {
+    signal: controller.signal,
+    release: () => {
+      for (const source of linked) source.removeEventListener("abort", abort);
+    },
+  };
+}
+
+/**
  * `promise`, or a rejection (an `AbortError`) as soon as `signal` aborts: a request that was not given the signal, or
  * ignores it, still stops being waited for when its time is up.
  */

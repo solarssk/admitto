@@ -127,7 +127,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={handleClose} />
+      <ModalBackdrop />
       <div ref={panelRef} className="add-attendee-modal__panel">
       <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -223,10 +223,12 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             <Button
               type="button"
               variant="primary"
-              disabled={submitting || !canSubmit}
+              loading={submitting}
+              loadingLabel="Creating…"
+              disabled={!canSubmit}
               onClick={() => void handleSubmit()}
             >
-              {submitting ? "Creating…" : "Create event"}
+              Create event
             </Button>
           </div>
         </div>

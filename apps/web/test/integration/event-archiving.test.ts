@@ -504,3 +504,85 @@ describe("read-only guard on archived events", () => {
     expect(body.code).toBeUndefined();
   });
 });
+
+describe("template previews on archived events", () => {
+  // A preview renders a draft with sample data and saves nothing, so an archived event keeps it:
+  // the Communication page previews as soon as it opens, and a 403 there left an error toast and an
+  // empty preview. Saving the same draft stays blocked.
+  const draft = {
+    subject_template: "Ticket for {{event_name}}",
+    body_template: '<p><a href="{{ticket_url}}">Ticket</a></p><img src="{{qr_image_url}}" alt="QR">',
+    template_format: "html" as const,
+  };
+  const postJson = (path: string, method: "POST" | "PUT", payload: unknown) =>
+    app.request(`/api/admin/events/${EVENT_ARCH}${path}`, {
+      method,
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  const archive = () =>
+    prisma.event.update({ where: { id: EVENT_ARCH }, data: { archived_at: new Date() } });
+
+  // MailTemplate has no relation to Event, so deleting the event would not remove what a test made.
+  afterEach(async () => {
+    await prisma.mailTemplate.deleteMany({ where: { scope_id: EVENT_ARCH } });
+  });
+
+  it("renders POST /template/preview", async () => {
+    await archive();
+    const res = await postJson("/template/preview", "POST", draft);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string; html: string };
+    expect(body.subject).toBe("Ticket for Archiving Event");
+    expect(body.html.length).toBeGreaterThan(0);
+  });
+
+  it("renders POST /templates/:id/preview", async () => {
+    // Created while the event is still active: creating a template is blocked once it is archived.
+    const created = await postJson("/templates", "POST", { label: "Reminder", template_format: "html" });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    await archive();
+
+    const res = await postJson(`/templates/${id}/preview`, "POST", {
+      subject_template: "Reminder for {{event_name}}",
+      body_template: "<p>Hi {{first_name}}</p>",
+      template_format: "html",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string; html: string };
+    expect(body.subject).toBe("Reminder for Archiving Event");
+  });
+
+  it("still refuses a preview from an admin of another organisation (the handlers now do the access check alone)", async () => {
+    // EVENT_OTHER is archived and belongs to ORG_OTHER, which adminCookie has no role in.
+    for (const path of ["/template/preview", "/templates/any-template/preview"]) {
+      const res = await app.request(`/api/admin/events/${EVENT_OTHER}${path}`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error?: string; code?: string };
+      expect(body.error).toBe("forbidden");
+      expect(body.code).toBeUndefined();
+    }
+  });
+
+  it("still blocks saving the same draft, sending a test email and sending to attendees with event_archived", async () => {
+    await archive();
+    const blocked: Array<[string, "POST" | "PUT"]> = [
+      ["/template", "PUT"],
+      ["/template/test-send", "POST"],
+      ["/templates/any-template", "PUT"],
+      ["/templates/any-template/test-send", "POST"],
+      ["/send", "POST"],
+    ];
+    for (const [path, method] of blocked) {
+      const res = await postJson(path, method, { ...draft, to: "guest@example.com" });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code, `${method} ${path}`).toBe("event_archived");
+    }
+  });
+});

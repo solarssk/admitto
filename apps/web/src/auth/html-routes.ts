@@ -141,6 +141,12 @@ export async function handlePostLogin(
     );
   }
 
+  // Counted before the password is verified, so a correct guess after the budget is spent is
+  // refused too (otherwise the throttle only slows down wrong guesses, not the final right one).
+  if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
+    return c.text("Too many requests", 429);
+  }
+
   const result = await login(db, {
     email,
     password,
@@ -151,9 +157,6 @@ export async function handlePostLogin(
   });
 
   if (!result.ok) {
-    if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
-      return c.text("Too many requests", 429);
-    }
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(
       c,

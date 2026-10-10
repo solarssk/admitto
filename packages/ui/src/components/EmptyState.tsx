@@ -9,11 +9,15 @@ export interface EmptyStateProps {
   className?: string;
   /**
    * "error" for a load that failed (usually with a Retry as the `action`): announced at once by assistive
-   * tech (`role="alert"`) instead of politely, and the same wherever a failed load is shown. The look is
-   * the same. Default is a plain empty list ("No attendees yet"), which is only a status.
+   * tech (`role="alert"`) instead of politely, and drawn the same wherever a failed load is shown: with the
+   * glyph an error has everywhere else (`circle-x`, as in `Notice` and `Toast`) in the error colour, unless
+   * an `icon` is given. Default is a plain empty list ("No attendees yet"), which is only a status.
    */
   variant?: "default" | "error";
 }
+
+/** The glyph of a failed load: the one `Notice` and `Toast` give an error, so a failure looks like a failure wherever it is drawn. */
+const ERROR_ICON = <i className="ti ti-circle-x" aria-hidden="true" />;
 
 /** Centered empty-list placeholder with optional icon, description, and action slot. */
 export function EmptyState({
@@ -24,12 +28,14 @@ export function EmptyState({
   className,
   variant = "default",
 }: Readonly<EmptyStateProps>) {
-  const cls = ["at-empty-state", className].filter(Boolean).join(" ");
+  const cls = ["at-empty-state", variant === "error" ? "at-empty-state--error" : null, className].filter(Boolean).join(" ");
+  // An icon that is given wins (also `null`, for none); only an error that is given none gets the standard one.
+  const shownIcon = icon === undefined && variant === "error" ? ERROR_ICON : icon;
   const content = (
     <>
-      {icon && (
+      {shownIcon && (
         <div className="at-empty-state__icon" aria-hidden="true">
-          {icon}
+          {shownIcon}
         </div>
       )}
       <p className="at-empty-state__title">{title}</p>

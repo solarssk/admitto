@@ -2,6 +2,7 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
+import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
@@ -329,6 +330,48 @@ describe("AttendeesTable loading states (#271)", () => {
     });
     expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
     expect(screen.getByText(baseRow.name)).toBeTruthy();
+  });
+
+  it.each([
+    ["table", true],
+    ["mobile cards", false],
+  ])("says, in the status region of the %s skeleton, that the first load is taking longer than usual after 8 seconds", (_name, desktop) => {
+    mockMatchMedia(desktop);
+    vi.useFakeTimers();
+    const { rerender } = render(<AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />);
+
+    act(() => {
+      vi.advanceTimersByTime(SLOW_NOTICE_MS - 1);
+    });
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    // In view, and in the region that already names what is loading, so assistive tech hears it too.
+    const note = screen.getByText(SLOW_NOTICE_TEXT);
+    expect(note.classList.contains("sr-only")).toBe(false);
+    expect(screen.getByText("Loading attendees").closest("output")?.contains(note)).toBe(true);
+
+    // The list is in: the note goes with the skeleton.
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading={false} items={[baseRow]} total={1} />);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
+    expect(screen.queryByText("Loading attendees")).toBeNull();
+  });
+
+  it("never says it for a first load that answers before 8 seconds", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />);
+    act(() => {
+      vi.advanceTimersByTime(SLOW_NOTICE_MS - 1000);
+    });
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading={false} items={[baseRow]} total={1} />);
+    act(() => {
+      vi.advanceTimersByTime(SLOW_NOTICE_MS * 2);
+    });
+    expect(screen.queryByText(SLOW_NOTICE_TEXT)).toBeNull();
   });
 
   it("shows the shimmer skeleton only on the very first load, not a later filter landing on zero matches", () => {

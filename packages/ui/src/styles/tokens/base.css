@@ -15,7 +15,23 @@ body {
   background: var(--surface-page);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
+  /* Running text (a description, a hint, a paragraph in a dialog) is wrapped with `pretty`: the lines run to the edge of their
+     column as ordinary text does, and the browser only avoids a short last line. `balance` made every two- or three-line
+     description a narrow block with a wide empty strip to its right (the lines of a block are evened out to the shortest width
+     that holds them), and put "check-" / "in." on two lines more often. The shorthand only on the body, where it cannot clash
+     with a `white-space: nowrap` that an element sets itself. The short texts that stand alone (headings, titles, an empty
+     state, a toast, a tooltip) are balanced below. A notice is running text: balanced, its two lines stopped short of the
+     box, so it takes `pretty` like the rest. */
+  text-wrap: pretty;
 }
+
+h1, h2, h3, h4, h5, h6,
+.at-card__title, .at-pageheader__title, .at-empty-state__title, .at-empty-state__desc, .at-toast, [role="tooltip"] {
+  text-wrap: balance;
+}
+
+/* What is typed, or laid out by its author, is wrapped as it is: the longhand, so that a `pre`'s own `white-space` stays. */
+input, textarea, select, pre, code, kbd, samp { text-wrap-style: auto; }
 
 h1, h2, h3, h4 {
   margin: 0;

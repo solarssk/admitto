@@ -1,0 +1,48 @@
+import type { DeliveryDto } from "../../src/api/types.js";
+
+/** Delivery rows shared by the Communication delivery log tests. */
+export const acceptedRow: DeliveryDto = {
+  id: "dlv-1",
+  attendee_id: "att-1",
+  attendee_name: "Guest One",
+  purpose: "resend",
+  status: "accepted",
+  provider: "smtp",
+  provider_message_id: "msg-1",
+  attempts: 1,
+  retryable: null,
+  recipient_email: "guest@example.com",
+  rendered_subject: "Your ticket",
+  template_id: null,
+  template_name: null,
+  queued_at: "2026-09-01T11:55:00.000Z",
+  accepted_at: "2026-09-01T12:05:00.000Z",
+  sent_at: null,
+  failed_at: null,
+  error_code: null,
+  error: null,
+  client_timezone: null,
+};
+
+export const failedRow: DeliveryDto = {
+  id: "dlv-2",
+  attendee_id: "att-2",
+  attendee_name: "Guest Two",
+  purpose: "initial",
+  status: "failed",
+  provider: "smtp",
+  provider_message_id: null,
+  attempts: 3,
+  retryable: true,
+  recipient_email: "bounce@example.com",
+  rendered_subject: "Your ticket",
+  template_id: null,
+  template_name: null,
+  queued_at: "2026-09-01T13:00:00.000Z",
+  accepted_at: null,
+  sent_at: null,
+  failed_at: "2026-09-01T13:05:00.000Z",
+  error_code: "smtp_connect",
+  error: "Connection timed out",
+  client_timezone: "Europe/Warsaw",
+};

@@ -4,8 +4,9 @@ import { sanitizeDeliveryError } from "./sanitizeError.js";
 export interface DeliveryLogEntry {
   id: string;
   attendee_id: string;
-  /** Attendee's current display name (joined) — never dangling, GDPR erasure deletes deliveries
-   * in the same transaction as the attendee (see attendees-api-routes.ts handleDeleteEventAttendee). */
+  /** Attendee's current display name (joined) — never dangling: removing an attendee deletes their
+   * deliveries in the same transaction (`removeAttendees`), and an erasure keeps the attendee row, with
+   * the placeholder name. */
   attendee_name: string;
   status: string;
   provider: string;
@@ -166,7 +167,7 @@ function mapRow(row: {
 
 /** Cheap total-only count for the same filters listDeliveries would apply - lets a caller reject
  * an over-cap request (see handleExportEventDeliveries) before paying for a full items fetch. */
-export async function countDeliveries(params: ListDeliveriesParams, prisma: PrismaClient): Promise<number> {
+export function countDeliveries(params: ListDeliveriesParams, prisma: PrismaClient): Promise<number> {
   return prisma.emailDelivery.count({ where: buildWhere(params) });
 }
 
@@ -269,7 +270,7 @@ export async function getDeliveryWithTimeline(
  * nullifyDeliverySnapshots) — callers must render an explicit "message content no longer
  * available" state for that case, not treat it as a fetch error.
  */
-export async function getRenderedDelivery(
+export function getRenderedDelivery(
   params: { eventId: string; id: string },
   prisma: PrismaClient,
 ): Promise<{ attendee_id: string; rendered_subject: string | null; rendered_html: string | null } | null> {

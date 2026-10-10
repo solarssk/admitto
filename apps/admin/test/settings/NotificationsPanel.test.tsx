@@ -153,6 +153,27 @@ describe("NotificationsPanel", () => {
     expect(document.getElementById("notifications-type-auth.login.repeated_failures-email")).toBeNull();
   });
 
+  it("names every channel cell of the matrix, also the one that does not apply, for the phone's stacked layout that shows it above the toggle", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        notification_types: [
+          {
+            id: "auth.login.repeated_failures",
+            label: "Repeated failed logins",
+            default_severity: "error",
+            available_channels: ["webhook", "in_app"],
+          },
+        ],
+      }),
+    );
+    await renderLoaded();
+    const cell = (id: string) => document.getElementById(`notifications-type-auth.login.repeated_failures-${id}`)?.closest("td");
+    expect(cell("webhook")?.getAttribute("data-label")).toBe("Webhook");
+    expect(cell("in_app")?.getAttribute("data-label")).toBe("In-app");
+    const notApplicable = screen.getAllByText("Not applicable")[0]?.closest("td");
+    expect(notApplicable?.getAttribute("data-label")).toBe("Email");
+  });
+
   it("shows the webhook URL as 'Not set' by default, never a real value", async () => {
     await renderLoaded();
     expect(screen.getByText("Not set")).toBeTruthy();

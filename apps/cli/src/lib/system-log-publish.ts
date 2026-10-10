@@ -13,6 +13,48 @@
 import { setSystemLogPublisher, type SystemLogEntry } from "@admitto/shared/system-log";
 
 const DEFAULT_TIMEOUT_MS = 2_000;
+
+/**
+ * The ops endpoint takes 120 requests a minute per IP (the "ops:system-logs" policy in apps/web), and every relayed
+ * line is a request of its own, so a burst (a provider that refuses hundreds of calls in a row, each writing a line)
+ * would make the app answer 429 to the lines after it, which are the ones that sum the burst up. The relay therefore
+ * keeps below that: at most OVERALL_LIMIT lines in a minute, and at most PER_MESSAGE_LIMIT of any one message, which
+ * leaves room for the lines of other messages (the summary after the burst) and for other users of the same bridge.
+ * What is held back is still on stdout, which is the source of truth, and the last line of a message that reached its
+ * limit says so.
+ */
+const WINDOW_MS = 60_000;
+const OVERALL_LIMIT = 90;
+const PER_MESSAGE_LIMIT = 20;
+const RELAY_NOTE = "Further lines of this message are not relayed for a minute (see the worker's own output).";
+/** Beyond this many different messages the table is cleaned of the ones whose minute is over. */
+const MAX_TRACKED_MESSAGES = 200;
+
+type Window = { startedAt: number; sent: number };
+let overall: Window = { startedAt: 0, sent: 0 };
+const perMessage = new Map<string, Window>();
+
+function freshWindow(now: number): Window {
+  return { startedAt: now, sent: 0 };
+}
+
+/** Whether the line may go, and whether it is the last one its message may send in this minute. */
+function admit(entry: SystemLogEntry, now: number): { relay: boolean; last: boolean } {
+  if (now - overall.startedAt >= WINDOW_MS) overall = freshWindow(now);
+  if (perMessage.size > MAX_TRACKED_MESSAGES) {
+    for (const [key, window] of perMessage) if (now - window.startedAt >= WINDOW_MS) perMessage.delete(key);
+  }
+  const key = `${entry.source}/${entry.message}`;
+  let own = perMessage.get(key);
+  if (!own || now - own.startedAt >= WINDOW_MS) {
+    own = freshWindow(now);
+    perMessage.set(key, own);
+  }
+  if (overall.sent >= OVERALL_LIMIT || own.sent >= PER_MESSAGE_LIMIT) return { relay: false, last: false };
+  overall.sent += 1;
+  own.sent += 1;
+  return { relay: true, last: own.sent === PER_MESSAGE_LIMIT };
+}
 /** Matches apps/web/src/ops/system-log-ingest.ts's bodySchema message length cap - truncate here
  * instead of letting an over-length message (worker.ts's own startup banner, say) fail validation
  * and get silently dropped by the bridge. */
@@ -29,6 +71,8 @@ export type PublishSystemLogEntryOptions = {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Clock override for tests. */
+  nowMs?: number;
 };
 
 /** Registered as the emitSystemLog() publisher hook for the lifetime of the worker process (see
@@ -38,6 +82,8 @@ export type PublishSystemLogEntryOptions = {
 export function publishSystemLogEntry(entry: SystemLogEntry, options: PublishSystemLogEntryOptions = {}): void {
   const target = resolveTarget(options.env ?? process.env);
   if (!target) return;
+  const decision = admit(entry, options.nowMs ?? Date.now());
+  if (!decision.relay) return;
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -50,7 +96,7 @@ export function publishSystemLogEntry(entry: SystemLogEntry, options: PublishSys
       source: entry.source,
       level: entry.level,
       message: entry.message.slice(0, MAX_MESSAGE_LENGTH),
-      fields: entry.fields,
+      fields: decision.last ? { ...entry.fields, relay_note: RELAY_NOTE } : entry.fields,
     }),
     signal: controller.signal,
   })
@@ -72,4 +118,6 @@ export function installSystemLogRelay(): void {
  * otherwise a leftover publisher from one test/run keeps firing fetch() calls into the next. */
 export function uninstallSystemLogRelay(): void {
   setSystemLogPublisher(null);
+  overall = freshWindow(0);
+  perMessage.clear();
 }

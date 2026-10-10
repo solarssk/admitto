@@ -5,8 +5,14 @@ import { subscribe, type SseEvent } from "./sse-channel.js";
 
 const HEARTBEAT_MS = 25_000;
 
-/** GET /api/checkin/events/:eventId/stream — live check-in SSE feed. */
-export function handleEventStream(c: Context): Response {
+/**
+ * GET /api/checkin/events/:eventId/stream - live check-in SSE feed.
+ *
+ * `stillAuthorized` is asked on every heartbeat; when it answers false (the session was revoked,
+ * the operator lost access to the event, the event was archived) the stream is closed, so the
+ * connect-time authorization is not the only one a long-lived stream ever gets.
+ */
+export function handleEventStream(c: Context, stillAuthorized?: () => Promise<boolean>): Response {
   const eventId = c.req.param("eventId");
   if (!eventId) {
     releaseCheckinStreamSlot(c);
@@ -27,9 +33,7 @@ export function handleEventStream(c: Context): Response {
       void writeEvent(event);
     });
 
-    const heartbeat = setInterval(() => {
-      void writeEvent({ type: "ping" });
-    }, HEARTBEAT_MS);
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
 
     const cleanup = () => {
       clearInterval(heartbeat);
@@ -45,6 +49,25 @@ export function handleEventStream(c: Context): Response {
         cleanup();
         resolve();
       };
+
+      // One check at a time per stream: a slow database or JWKS lookup must not pile up further
+      // checks behind it every tick, which would amplify the very slowdown it is waiting on.
+      let checking = false;
+      heartbeat = setInterval(() => {
+        if (checking) return;
+        checking = true;
+        void (async () => {
+          try {
+            if (stillAuthorized && !(await stillAuthorized())) {
+              finish();
+              return;
+            }
+            await writeEvent({ type: "ping" });
+          } finally {
+            checking = false;
+          }
+        })();
+      }, HEARTBEAT_MS);
 
       stream.onAbort(finish);
 

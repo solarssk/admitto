@@ -1,66 +1,68 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ApiError } from "../api/client.js";
-import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "./useDelayedLoading.js";
+import { redirectToLogin } from "../identity/loginRedirect.js";
+import { panelView, usePanelLoad, type PanelLoad } from "./usePanelLoad.js";
 
-/** Abort-safe fetch lifecycle for a Reports tab's own aggregate endpoint: abort-then-refetch on
- * every call (so a rapid retry or an eventId change never lets a stale response land after a
- * newer one), ApiError mapping (403 -> a fixed access message, everything else ->
- * operatorApiErrorMessage with the caller's own fallback text), and the delayed-loading skeleton
- * gate - identical boilerplate WalletsReportsTab.tsx and CustomFieldsReportsTab.tsx both need for
- * their own "load one report object for this event, retry on demand" shape (SonarCloud new-code
- * duplication flag on PR #1185, same reasoning as reclaim-stale-admin-jobs-by-type.ts). */
+/** What the first read of a Reports screen (Event day, and each lazily loaded tab) does with a failure before it becomes the
+ * error on screen: the connection state hears of it, a 401 hands the browser to the login page (the answer never comes, so no
+ * error flashes up first), and whether the failure was a 403 is remembered, so that the error says the viewer has no access (the
+ * Retry stays, since access can be granted meanwhile). It is set when the answer is in, never when a Retry starts, so the wording
+ * of the error on screen does not change while the Retry runs. The failure is rethrown for `usePanelLoad`, which turns it into
+ * the message (the server's own operator-safe wording, or the fallback). Extracted from the loads so their own cognitive
+ * complexity stays low. */
+export function failReportLoad(
+  err: unknown,
+  reportApiError: (status: number) => void,
+  setAccessDenied: (denied: boolean) => void,
+): Promise<never> {
+  const status = err instanceof ApiError ? err.status : null;
+  if (status !== null) {
+    reportApiError(status);
+    if (status === 401) {
+      redirectToLogin();
+      return new Promise<never>(() => {});
+    }
+  }
+  setAccessDenied(status === 403);
+  throw err;
+}
+
+export interface ReportFetch<T> {
+  /** The report, once the first read has answered. */
+  data: T | null;
+  /** The placeholder, the error with its Retry, or the report. */
+  view: "loading" | "error" | "ready";
+  /** The first read's placeholder timing and its error (see `usePanelLoad`). */
+  panel: PanelLoad;
+  /** The failure was the server refusing access: the error says so instead of the server's words. */
+  accessDenied: boolean;
+}
+
+/**
+ * The first read of a Reports tab's own aggregate endpoint, on the loading standard (see `usePanelLoad`): nothing is drawn for
+ * the first 200ms and a placeholder after that, "Taking longer than usual" after 8 seconds, and an error with a busy Retry after
+ * 30 seconds or when it fails. It is one read for one event: a tab lives in a page that is keyed by the event, so another event
+ * is another tab, never a new `eventId` for this one.
+ */
 export function useReportFetch<T>(
   fetchFn: (eventId: string, signal?: AbortSignal) => Promise<T>,
   eventId: string,
   genericErrorMessage: string,
-): { data: T | null; loading: boolean; error: string | null; showLoadingSkeleton: boolean; retry: () => void } {
+): ReportFetch<T> {
   const { reportApiError } = useConnectionState();
-  const abortRef = useRef<AbortController | null>(null);
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadData = useCallback(async () => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setLoading(true);
-    setError(null);
-    // ReportsPage doesn't remount on an eventId-only in-SPA navigation (its own reconcile-timer
-    // comment explains why) - without this, switching events while this tab is the active/sticky
-    // one would keep rendering the *previous* event's chart data until the new fetch resolves,
-    // since `data` only otherwise changes on a successful response.
-    setData(null);
-    try {
-      const report = await fetchFn(eventId, ac.signal);
-      if (ac.signal.aborted) return;
-      setData(report);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setData(null);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        setError(
-          hasApiErrorCode(err, "forbidden")
-            ? "You do not have access to this event."
-            : operatorApiErrorMessage(err, "Request failed."),
-        );
-      } else {
-        setError(genericErrorMessage);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const panel = usePanelLoad({
+    fetch: async (signal) => {
+      try {
+        return await fetchFn(eventId, signal);
+      } catch (err) {
+        return await failReportLoad(err, reportApiError, setAccessDenied);
       }
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, fetchFn, reportApiError, genericErrorMessage]);
-
-  useEffect(() => {
-    void loadData();
-    return () => abortRef.current?.abort();
-  }, [loadData]);
-
-  const showLoadingSkeleton = useDelayedLoading(loading);
-
-  return { data, loading, error, showLoadingSkeleton, retry: () => void loadData() };
+    },
+    apply: setData,
+    fallback: genericErrorMessage,
+  });
+  return { data, view: panelView(panel), panel, accessDenied };
 }

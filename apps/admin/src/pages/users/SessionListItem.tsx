@@ -77,7 +77,7 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
         />
       </td>
       <td>{formatRelativeTime(s.lastSeenAt)}</td>
-      <td className="sessions-col-tablet-hide">
+      <td className="sessions-col-tablet-hide sessions-col-laptop-hide">
         <SessionSignIn authMethod={s.authMethod} />
       </td>
       <td>
@@ -133,7 +133,7 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
             {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
           </dd>
         </div>
-        <div>
+        <div className="users-page__card-meta-wide">
           <dt>Logged in</dt>
           <dd>
             {formatUtcPrimaryTime(s.loginAt)}

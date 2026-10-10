@@ -31,10 +31,31 @@ export class CfAccessJwtError extends Error {
   constructor(
     message: string,
     readonly code: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "CfAccessJwtError";
   }
+}
+
+/**
+ * Whether a failure from {@link validateAccessJwt} says nothing about the token itself: the JWKS
+ * could not be fetched or understood (timeout, network error, a non-200 answer, a body that is not
+ * a key set) rather than the token being rejected. jose's verdicts on a token (expired, bad
+ * signature, wrong audience, no matching key...) are specific JOSEError subclasses; a bare
+ * JOSEError (ERR_JOSE_GENERIC) is what it raises for a non-200 JWKS response, and anything that is
+ * not a JOSEError at all came from the fetch itself.
+ */
+export function isTransientCfAccessJwtFailure(err: unknown): boolean {
+  if (!(err instanceof CfAccessJwtError)) return true;
+  const cause = err.cause;
+  if (cause === undefined) return false;
+  if (!(cause instanceof jose.errors.JOSEError)) return true;
+  return (
+    cause instanceof jose.errors.JWKSTimeout ||
+    cause instanceof jose.errors.JWKSInvalid ||
+    cause.code === "ERR_JOSE_GENERIC"
+  );
 }
 
 /** Validate Cloudflare Access JWT signature and claims. */
@@ -64,7 +85,7 @@ export async function validateAccessJwt(
     payload = result.payload;
   } catch (err) {
     const message = err instanceof Error ? err.message : "JWT verification failed";
-    throw new CfAccessJwtError(message, "invalid_jwt");
+    throw new CfAccessJwtError(message, "invalid_jwt", { cause: err });
   }
 
   if (payload.type !== "app") {

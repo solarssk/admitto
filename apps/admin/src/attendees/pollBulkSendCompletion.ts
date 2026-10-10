@@ -61,7 +61,7 @@ export async function pollBulkSendCompletion(
         }
         return;
       }
-      await sleep(intervalMs);
+      await sleep(intervalMs); // NOSONAR - polling: each check waits for the previous one and the interval
     }
     if (signal?.aborted) return;
     addToast("Send is still running in the background. Check Communication for status.", "info");
