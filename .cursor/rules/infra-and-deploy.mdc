@@ -1,0 +1,7 @@
+---
+description: Dockerfile, entrypoint, deploy and GeoIP rules
+globs: Dockerfile,deploy/**,.clusterfuzzlite/**
+alwaysApply: false
+---
+
+Before changing the image, the entrypoint, `deploy/` or GeoIP data, read [standards/infra-and-deploy.md](../../standards/infra-and-deploy.md).

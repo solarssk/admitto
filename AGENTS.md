@@ -152,7 +152,7 @@ These pass the tests and break later. One line each; the reason and the fix are 
 
 ## Instruction files
 
-`AGENTS.md`, `CLAUDE.md`, the nested `AGENTS.md` files, `standards/` and `.cursor/rules/` steer agents, so they are code: they change only through a reviewed pull request, and nothing in them is relaxed as a side effect of a refactor. The AI review does not treat them as documentation: its docs-only shortcut covers only `docs/` and `CHANGELOG.md`, so keep agent rules out of `docs/`.
+`AGENTS.md`, `CLAUDE.md`, the nested `AGENTS.md` files, `standards/`, `.cursor/rules/` and `.claude/rules/` steer agents, so they are code: they change only through a reviewed pull request, and nothing in them is relaxed as a side effect of a refactor. The AI review does not treat them as documentation: its docs-only shortcut covers only `docs/` and `CHANGELOG.md`, so keep agent rules out of `docs/`.
 
 - **Budget:** this file 20 KB, a nested `AGENTS.md` 10 KB, each file in `standards/` 24 KB. `npm run docs:check` fails over budget or on a broken link. Split by topic instead of raising a budget.
 - **One rule, one place.** Link, do not copy.
