@@ -57,6 +57,18 @@ test('the live prompt and schema are usable', () => {
   assert.deepEqual(schema.properties.verdict.enum, ['approve', 'comment'])
 })
 
+test('the live prompt sends the reviewer to the rules of the area, not only to the root AGENTS.md', () => {
+  // Without these lines a change to the staff app or to attendee erasure would be reviewed without
+  // the rules that live outside the root AGENTS.md (apps/admin/AGENTS.md, standards/, docs/dev).
+  const prompt = read('.github/ai-review/prompt-live.md').replace(/\s+/g, ' ')
+  assert.match(prompt, /Read `AGENTS\.md` first/)
+  assert.match(prompt, /the `AGENTS\.md` of each folder the diff changes/, 'the nested AGENTS.md of the changed folders')
+  assert.match(prompt, /every file that the "Where to read next" table of `AGENTS\.md` names/, 'the whole routing table, not only standards/')
+  assert.match(prompt, /docs\/dev\/attendee-erasure\.md/, 'the attendee erasure rules')
+  assert.match(prompt, /follow it to the pages for the part the diff touches/, 'index pages are followed to their leaves')
+  assert.match(prompt, /read from the base branch/, 'the rule files come from the base branch, never from the pull request')
+})
+
 test('count-attempts.jq counts a cancelled run once it lived past the debounce wait', { skip: !hasJq }, () => {
   const filter = repoFile('.github/ai-review/count-attempts.jq')
   // gh run list returns timestamps without milliseconds, e.g. 2026-09-30T10:00:00Z
