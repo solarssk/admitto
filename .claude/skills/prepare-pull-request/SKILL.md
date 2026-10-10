@@ -21,7 +21,7 @@ When the change is operator-facing (a feature, a fix or a security change someon
 
 Use the headings of [.github/pull_request_template.md](../../../.github/pull_request_template.md) exactly: Description (business context and technical changes as separate paragraphs, describing the diff that shipped), How to test, What stays / known limitations, Documentation impact, Checklist.
 
-`Documentation impact` has exactly one checked line: `Wiki updated` when `docs/wiki/` changed, otherwise `No Wiki update needed - <specific reason>`. A Checklist bullet that mentions the Wiki does not count. Why CI is strict about this: [standards/docs-and-wiki.md](../../../standards/docs-and-wiki.md).
+`Documentation impact` keeps both option lines from the template and checks exactly one of them (delete neither): `Wiki updated` when `docs/wiki/` changed, otherwise `No Wiki update needed - <specific reason>`. A Checklist bullet that mentions the Wiki does not count. Why CI is strict about this: [standards/docs-and-wiki.md](../../../standards/docs-and-wiki.md).
 
 Describe behaviour, never personal data: use synthetic `@example.com` addresses, no real names, no secrets, no model name.
 
