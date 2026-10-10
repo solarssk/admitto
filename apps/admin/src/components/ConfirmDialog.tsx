@@ -42,6 +42,8 @@ export type ConfirmDialogProps = {
   onCancel: () => void;
 };
 
+const ignore = () => undefined;
+
 /** Accessible confirmation modal replacing native window.confirm. */
 export function ConfirmDialog({
   open,
@@ -67,7 +69,8 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const [typedValue, setTypedValue] = useState("");
   const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
-  useModalFocusTrap(panelRef, open, onCancel);
+  // Every way out is off while the request runs, as the Cancel button is: Escape, a click outside and Cancel itself.
+  useModalFocusTrap(panelRef, open, loading ? ignore : onCancel);
 
   useEffect(() => {
     if (open) setTypedValue("");
