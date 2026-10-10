@@ -60,10 +60,12 @@ jobs:
       # Spend guards. The reviewer runs on the maintainer's Claude subscription, whose limit is
       # shared with their own work, so a burst of pushes must not be able to drain it. A manual
       # re-run of the job (attempt 2 or later) skips the check on purpose.
-      PER_PR_LIMIT: 6 # review attempts on one PR before it stops reviewing new pushes
-      # Attempts, not reviews: failed runs and documentation-only approvals count too, and a heavy
-      # day (several PRs with a few pushes each) reaches 40 quickly, so the limit is 80.
-      DAILY_LIMIT: 80 # review attempts per UTC day, across all PRs
+      # Raised on 2026-10-10: at 6 and 80 a busy stack of PRs used them up within hours (24 runs on
+      # one PR, 82 in a day) and every later push got a policy approval with no review. The
+      # check stays as a runaway-loop guard only. The count reads at most 200 runs, so the daily
+      # limit above 200 can never trigger.
+      PER_PR_LIMIT: 100 # review attempts on one PR before it stops reviewing new pushes
+      DAILY_LIMIT: 1000 # review attempts per UTC day, across all PRs
       # Seconds a run waits for further pushes before it does anything else. The budget count reads
       # the same number: a run cancelled after this wait may already be in the reviewer.
       DEBOUNCE_SECONDS: 60

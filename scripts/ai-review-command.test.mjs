@@ -91,7 +91,7 @@ test('a skipped run of a fork does not hide the real run from /ai-review and /ai
 })
 
 test('the limits are read from the review workflow itself', () => {
-  assert.deepEqual(readLimits(readFileSync(new URL('../.github/workflows/ai-review.yml', import.meta.url), 'utf8')), { perPr: 6, daily: 80, settle: 60 })
+  assert.deepEqual(readLimits(readFileSync(new URL('../.github/workflows/ai-review.yml', import.meta.url), 'utf8')), { perPr: 100, daily: 1000, settle: 60 })
   assert.deepEqual(readLimits(''), { perPr: null, daily: null, settle: null })
 })
 
