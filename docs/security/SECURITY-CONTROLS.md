@@ -274,7 +274,7 @@ container recreated, not just restarted.
 | connects and reconnects, per operator per event | 120 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` |
 | connects and reconnects, per operator across events | 240 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` |
 | window | 60 s | `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` |
-| open streams, per operator per event, per application process | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
+| open streams, per operator per event, per application process | 6 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
 | open streams, per operator overall, per application process | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
 
 The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in

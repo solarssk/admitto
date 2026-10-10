@@ -2,8 +2,10 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  jitteredBackoffMs,
   probeStreamAuth,
   RATE_LIMIT_BACKOFF_MS,
+  STREAM_BACKOFF_JITTER_RATIO,
   STREAM_BACKOFF_MS,
   useEventStream,
 } from "../../src/hooks/useEventStream.js";
@@ -92,8 +94,31 @@ describe("probeStreamAuth", () => {
   });
 });
 
+describe("jitteredBackoffMs", () => {
+  it("keeps the full delay when the random draw is 0 and shortens it by at most the ratio", () => {
+    expect(jitteredBackoffMs(30_000, () => 0)).toBe(30_000);
+    expect(jitteredBackoffMs(30_000, () => 0.999999)).toBe(
+      Math.round(30_000 * (1 - STREAM_BACKOFF_JITTER_RATIO)),
+    );
+  });
+
+  it("never exceeds the schedule slot and never drops below its jitter floor", () => {
+    for (const base of STREAM_BACKOFF_MS) {
+      for (let i = 0; i < 200; i++) {
+        const ms = jitteredBackoffMs(base);
+        expect(ms).toBeLessThanOrEqual(base);
+        expect(ms).toBeGreaterThanOrEqual(Math.round(base * (1 - STREAM_BACKOFF_JITTER_RATIO)));
+      }
+    }
+  });
+});
+
 describe("useEventStream", () => {
+  let randomSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
+    // 0 = no shortening, so the exact-delay assertions below read the schedule itself.
+    randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
     instances.length = 0;
     vi.stubGlobal("EventSource", MockEventSource);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200 }));
@@ -101,6 +126,7 @@ describe("useEventStream", () => {
   });
 
   afterEach(() => {
+    randomSpy.mockRestore();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -343,6 +369,27 @@ describe("useEventStream", () => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[1] - STREAM_BACKOFF_MS[0]);
     });
     expect(instances).toHaveLength(3);
+  });
+
+  it("reconnects earlier than the schedule slot when the random draw shortens the delay", async () => {
+    randomSpy.mockReturnValue(0.999999);
+    renderHook(() => useEventStream("evt-1", vi.fn()));
+    act(() => {
+      instances[0]?.listeners.onopen?.();
+    });
+    act(() => {
+      instances[0]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+
+    act(() => {
+      vi.advanceTimersByTime(Math.round(STREAM_BACKOFF_MS[0] * (1 - STREAM_BACKOFF_JITTER_RATIO)) - 1);
+    });
+    expect(instances).toHaveLength(1);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(instances).toHaveLength(2);
   });
 
   it("resets reconnect backoff after a later successful open", async () => {
