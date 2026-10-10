@@ -30,7 +30,7 @@ One rule, one place: link to it, do not copy it. A rule in two files will drift,
 
 | File | Budget | Why |
 |---|---|---|
-| `AGENTS.md` | 20 000 bytes (90 000 until the loading standard has moved out of it) | Some tools cut a root instruction file at 32 KiB, silently, together with the nested files they load after it |
+| `AGENTS.md` | 20 000 bytes | Some tools cut a root instruction file at 32 KiB, silently, together with the nested files they load after it |
 | `apps/*/AGENTS.md`, `packages/*/AGENTS.md` | 10 000 bytes | Loaded next to the root file when working in that folder |
 | `CLAUDE.md` (each) | 4 000 bytes | It imports `AGENTS.md` |
 | each file here | 24 000 bytes | Split by topic before it gets there |
