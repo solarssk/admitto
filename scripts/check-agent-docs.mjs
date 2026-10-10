@@ -35,15 +35,23 @@ export function slug(heading) {
 
 const posix = (path) => path.replaceAll("\\", "/");
 
+// "## Title ##": the closing hashes are not part of the heading (CommonMark), but "## C#" keeps its #.
+function withoutClosingHashes(heading) {
+  const text = heading.trimEnd();
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "#") end--;
+  return end > 0 && end < text.length && text[end - 1] === " " ? text.slice(0, end).trimEnd() : text;
+}
+
 function anchorsOf(text) {
   const seen = new Map();
   const set = new Set();
   let fenced = false;
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) fenced = !fenced;
-    const m = !fenced && /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+    const m = !fenced && /^#{1,6}\s+(.*)$/.exec(line);
     if (!m) continue;
-    const base = slug(m[1]);
+    const base = slug(withoutClosingHashes(m[1]));
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
     set.add(n === 0 ? base : `${base}-${n}`);

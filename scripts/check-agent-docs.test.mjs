@@ -67,3 +67,12 @@ test('a standards file that no index lists is reported', () => {
   const problems = check({ ...good, 'standards/orphan.md': '# Orphan\n' })
   assert.deepEqual(problems, ['standards/orphan.md is not listed in standards/README.md.'])
 })
+
+test('closing hashes of a heading are not part of its anchor, a hash in the word is', () => {
+  const files = {
+    ...good,
+    'AGENTS.md': '[a](standards/README.md#standards) [b](standards/README.md#about-c)\n',
+    'standards/README.md': '# Standards ##\n\n## About C#\n\n- [admin](admin-spa/README.md)\n',
+  }
+  assert.deepEqual(check(files), [])
+})
