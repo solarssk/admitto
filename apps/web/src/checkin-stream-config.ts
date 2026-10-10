@@ -36,7 +36,7 @@ export const DEFAULT_CHECKIN_STREAM_LIMITS: Readonly<CheckinStreamLimits> = {
 
 /** Positive base-10 integer or `undefined`. Stricter than `Number.parseInt`, which would accept
  * `"12abc"` as 12 and `"1.5"` as 1 - a typo'd limit must not silently become a different one. */
-function parsePositiveInteger(raw: string): number | undefined {
+export function parsePositiveInteger(raw: string): number | undefined {
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) return undefined;
   const parsed = Number(trimmed);

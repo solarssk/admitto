@@ -220,17 +220,25 @@ development and test, and the application refuses to boot without it, so limits 
 replicas and survive restarts. Only development and test runs fall back to an in-memory store per
 process.
 
+**Retuning limits:** every limit below can be changed with the `RATE_LIMIT_OVERRIDES` environment
+variable (JSON keyed by limit name, for example `{"auth:login-ip":{"max":60}}`; see `deploy/ENV.md`),
+read at startup, so a change needs the container recreated, not a new release. The per-IP limits
+(sign-in, OIDC, passkey sign-in, account) are the ones to raise when many staff share one network
+address, such as venue Wi-Fi or a corporate NAT. The per-account protections (sign-in per email, MFA
+and password re-check buckets) are the real brute-force defence and should be loosened with care.
+The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
+
 ### Public and authentication
 
 | Surface | Bucket | Limit / window | Auth required |
 |---------|--------|----------------|---------------|
-| `POST /login`, `POST /api/auth/login` | client IP | 10 / 60 s | no |
+| `POST /login`, `POST /api/auth/login` | client IP | 30 / 60 s | no |
 | same | normalized email | 10 / 60 s | no (inside the handler, counted before the password is checked, so a correct password is refused too once the budget is spent) |
 | `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account (one counter per user across all sessions and addresses) | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
 | `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
-| `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
-| `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 10 / 60 s | no |
+| `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 60 / 60 s | no |
+| `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 30 / 60 s | no |
 | all `/api/account/*` routes except the notification unread-count poll (which has its own per-user bucket, 20 / 60 s) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |

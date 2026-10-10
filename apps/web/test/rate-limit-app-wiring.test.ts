@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createApp } from "../src/app.js";
 import { InMemoryRateLimitStore, MAX_REQUESTS } from "../src/rate-limit/index.js";
+import { RATE_POLICIES } from "../src/rate-limit/policies.js";
 import { RedisRateLimitStore } from "../src/rate-limit/redis.js";
+
+// From the registry, so the test checks exhaust-then-429, not a copy of the number.
+const LOGIN_IP_MAX = RATE_POLICIES["auth:login-ip"].checks[0].max;
 
 function createMockPrisma(): PrismaClient {
   return {
@@ -78,7 +82,7 @@ describe("createApp rate-limit wiring", () => {
       "X-Forwarded-For": "203.0.113.50",
     };
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < LOGIN_IP_MAX; i++) {
       expect(
         (await app.request("/api/auth/login", { method: "POST", headers, body: "{}" })).status,
       ).not.toBe(429);
@@ -93,7 +97,7 @@ describe("createApp rate-limit wiring", () => {
     const app = createWiringApp(store);
     const loginHeaders = { ...sameOrigin, "Content-Type": "application/json" };
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < LOGIN_IP_MAX; i++) {
       expect(
         (await app.request("/api/auth/login", { method: "POST", headers: loginHeaders, body: "{}" }))
           .status,
