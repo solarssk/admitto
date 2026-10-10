@@ -100,7 +100,7 @@ async function runRemoval(
   );
 
   if (result.removedIds.length > 0) {
-    // Export files written before the removal still hold the person: they go too.
+    // The files that exports and finished imports wrote before the removal still hold the person: they go too.
     await purgeEventJobFilesBestEffort(db, eventId);
     publishActivityChanged(eventId);
   }
