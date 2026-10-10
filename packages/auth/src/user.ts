@@ -55,7 +55,7 @@ export async function createUser(
 }
 
 /** Lookup by normalized email. */
-export async function findUserByEmail(
+export function findUserByEmail(
   prisma: PrismaClient | Prisma.TransactionClient,
   email: string,
 ): Promise<User | null> {
@@ -65,7 +65,7 @@ export async function findUserByEmail(
 }
 
 /** Lookup by primary key. */
-export async function findUserById(
+export function findUserById(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,
 ): Promise<User | null> {

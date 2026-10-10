@@ -67,7 +67,7 @@ export async function waitForImportJobResult(
       );
     }
     if (attempt < maxAttempts - 1) {
-      await sleep(intervalMs, signal);
+      await sleep(intervalMs, signal); // NOSONAR - polling: each check waits for the previous one and the interval
     }
   }
   throw new ApiError(

@@ -66,7 +66,7 @@ const TABLER_DIST = resolveTablerIconsDist();
  *
  * Route: GET /vendor/tabler-icons/*
  */
-export const serveTablerIcons: MiddlewareHandler = async (c) => {
+export const serveTablerIcons: MiddlewareHandler = async (c) => { // NOSONAR - MiddlewareHandler must return a Promise; the body has no await
   if (!TABLER_DIST) return c.notFound();
 
   const path = c.req.path;
@@ -104,7 +104,7 @@ const FONTSOURCE_FILES_DIR: Record<FontsourcePackage, string> = Object.fromEntri
  *
  * Route: GET /vendor/fontsource/*
  */
-export const serveFontsourceFonts: MiddlewareHandler = async (c) => {
+export const serveFontsourceFonts: MiddlewareHandler = async (c) => { // NOSONAR - MiddlewareHandler must return a Promise; the body has no await
   const path = c.req.path;
   const PREFIX = "/vendor/fontsource/";
   if (!path.startsWith(PREFIX)) return c.notFound();

@@ -399,13 +399,13 @@ export async function bestEffortDeleteReplacedUploadUrls(
     if (kept.has(url)) continue;
     if (opts?.isStillReferenced) {
       try {
-        if (await opts.isStillReferenced(url)) continue;
+        if (await opts.isStillReferenced(url)) continue; // NOSONAR - cleanup is best effort, one URL at a time
       } catch {
         // Check could not complete: skip unlink rather than failing the already-committed save.
         continue;
       }
     }
-    await bestEffortDeleteUploadUrl(url, trust);
+    await bestEffortDeleteUploadUrl(url, trust); // NOSONAR - cleanup is best effort, one URL at a time
   }
 }
 

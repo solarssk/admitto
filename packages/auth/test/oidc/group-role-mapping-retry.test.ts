@@ -37,6 +37,20 @@ function prismaForRevokeRetry($transaction: (...args: unknown[]) => unknown): Pr
   } as unknown as PrismaClient;
 }
 
+function prismaForEnsureRetry($transaction: (...args: unknown[]) => unknown): PrismaClient {
+  return {
+    oidcGroupRoleMapping: {
+      findMany: vi
+        .fn()
+        .mockResolvedValue([
+          { id: "map_1", provider_id: "prov_1", group: "staff", role: "admin", scope_type: "instance", scope_id: "" },
+        ]),
+    },
+    oidcRoleGrant: { findMany: vi.fn().mockResolvedValue([]) },
+    $transaction,
+  } as unknown as PrismaClient;
+}
+
 describe("isSerializationFailure", () => {
   it("detects P2034 and driver-adapter conflict causes", () => {
     expect(isSerializationFailure(serializationError())).toBe(true);
@@ -93,6 +107,31 @@ describe("applyOidcGroupRoleMappings serialization retry", () => {
     const $transaction = vi.fn().mockRejectedValue(serializationError());
 
     const done = applyOidcGroupRoleMappings(prismaForRevokeRetry($transaction), "prov_1", "user_1", []);
+    const assertion = expect(done).rejects.toMatchObject({ code: "P2034" });
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect($transaction).toHaveBeenCalledTimes(12);
+  });
+
+  it("retries a Serializable grant creation after P2034 then succeeds", async () => {
+    vi.useFakeTimers();
+    const $transaction = vi
+      .fn()
+      .mockRejectedValueOnce(serializationError())
+      .mockResolvedValueOnce(true);
+
+    const done = applyOidcGroupRoleMappings(prismaForEnsureRetry($transaction), "prov_1", "user_1", ["staff"]);
+    await vi.runAllTimersAsync();
+
+    await expect(done).resolves.toBe(1);
+    expect($transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("rethrows a grant creation after serialization retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const $transaction = vi.fn().mockRejectedValue(serializationError());
+
+    const done = applyOidcGroupRoleMappings(prismaForEnsureRetry($transaction), "prov_1", "user_1", ["staff"]);
     const assertion = expect(done).rejects.toMatchObject({ code: "P2034" });
     await vi.runAllTimersAsync();
     await assertion;

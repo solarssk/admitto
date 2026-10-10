@@ -413,7 +413,7 @@ function TicketTypesCardBody({ eventId, event, onDirtyChange, onSavingChange, on
     let failureCount = 0;
 
     for (const item of draft) {
-      const result = await saveTicketTypeItem(eventId, item, saved, addToast);
+      const result = await saveTicketTypeItem(eventId, item, saved, addToast); // NOSONAR - sequential on purpose: items are saved in order and a failure stops the rest, so the draft matches what was saved
       nextDraft.push(result.draftItem);
       if (result.savedItem) nextSaved.push(result.savedItem);
       if (result.failed) failureCount += 1;

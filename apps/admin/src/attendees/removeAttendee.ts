@@ -31,5 +31,6 @@ export function removedToast({ removed, not_found }: RemoveAttendeesResponse): s
   if (removed === 0) return "Nobody was removed";
   const done = removed === 1 ? "Attendee removed from the event" : `${peopleCount(removed)} removed from the event`;
   if (not_found === 0) return done;
-  return `${done}. ${not_found === 1 ? "1 was" : `${not_found} were`} already gone.`;
+  const gone = not_found === 1 ? "1 was" : `${not_found} were`;
+  return `${done}. ${gone} already gone.`;
 }

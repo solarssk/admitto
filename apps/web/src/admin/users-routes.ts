@@ -58,12 +58,12 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
  * routine helpdesk reset, and one that never trips the last-superadmin-lockout guard (role
  * assignments never change). Resetting your OWN account this way stays exempt, same as today -
  * you can't use a stolen session to escalate past what that session already grants you. */
-async function actorMustStepUpForReset(
+function actorMustStepUpForReset(
   db: PrismaClient,
   actorId: string,
   targetId: string,
 ): Promise<boolean> {
-  if (actorId === targetId) return false;
+  if (actorId === targetId) return Promise.resolve(false);
   return canManageInstance(db, targetId);
 }
 
@@ -316,7 +316,7 @@ const userInclude = {
   },
 } as const;
 
-async function loadUser(db: PrismaClient, id: string): Promise<UserWithRoles | null> {
+function loadUser(db: PrismaClient, id: string): Promise<UserWithRoles | null> {
   return db.user.findUnique({ where: { id }, include: userInclude });
 }
 
@@ -875,7 +875,7 @@ async function performRoleTypeSwitch(
       if (!(await canRevokeInTransaction(tx, actorId, old))) {
         return "forbidden" as const;
       }
-      await assertLastSuperadminRemovalAllowed(tx, old);
+      await assertLastSuperadminRemovalAllowed(tx, old); // NOSONAR - statements in one transaction run one at a time
     }
     await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
   }

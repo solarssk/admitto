@@ -661,7 +661,7 @@ export class PassCreatorClient implements WalletPassProvider {
 
       lastRes = res;
       if (attempt < MAX_RETRIES) {
-        await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt); // NOSONAR - backoff: the next attempt must wait for this delay
       }
     }
     emitSystemLog("wallet", "error", "passcreator_request_rate_limited", { method, route, attempts: MAX_RETRIES + 1 });

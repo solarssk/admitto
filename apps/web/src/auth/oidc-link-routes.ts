@@ -45,7 +45,7 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
-async function requiresTotpForUser(db: PrismaClient, userId: string): Promise<boolean> {
+function requiresTotpForUser(db: PrismaClient, userId: string): Promise<boolean> {
   return userRequiresMfaStepUp(db, userId);
 }
 

@@ -196,7 +196,7 @@ async function runOneWalletRefreshStatusJob(
     let done = 0;
 
     for (const batch of chunk(targets, WALLET_REFRESH_STATUS_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches run one after another on purpose: concurrency is capped by WALLET_REFRESH_STATUS_CONCURRENCY
         batch.map((target) => refreshWalletPassStatusUnlessErased(db, target, provider)),
       );
       for (const outcome of settled) {
@@ -208,7 +208,7 @@ async function runOneWalletRefreshStatusJob(
         else skipped += 1;
       }
       done += batch.length;
-      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } });
+      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } }); // NOSONAR - progress is written after each batch, in order
     }
 
     return await finalizeWalletRefreshStatusJob(db, job, request, targets.length, { refreshed, skipped, errored });
@@ -258,7 +258,7 @@ export async function drainWalletRefreshStatusJobs(
     const job = await claimNextAdminJob(db, "wallet_refresh_status");
     if (!job) break;
     claimed += 1;
-    const outcome = await runOneWalletRefreshStatusJob(db, job);
+    const outcome = await runOneWalletRefreshStatusJob(db, job); // NOSONAR - jobs run one at a time on purpose: each claim depends on the previous run finishing
     if (outcome === "succeeded") succeeded += 1;
     else failed += 1;
   }

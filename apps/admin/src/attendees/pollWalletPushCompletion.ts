@@ -58,7 +58,7 @@ export async function pollWalletPushCompletion(
         addToast("Wallet pass update failed to run. Try Push updates from the wallet menu.", "error");
         return;
       }
-      await sleepWithAbort(intervalMs, signal);
+      await sleepWithAbort(intervalMs, signal); // NOSONAR - polling: each check waits for the previous one and the interval
     }
     if (signal.aborted) return;
     addToast("Wallet pass update is still running in the background.", "info");

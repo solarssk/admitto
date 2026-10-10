@@ -341,7 +341,7 @@ export async function summarizeMany(
       const i = next;
       next += 1;
       if (i >= inputs.length) return;
-      results[i] = await service.summarize(inputs[i]!);
+      results[i] = await service.summarize(inputs[i]!); // NOSONAR - worker pool: a worker takes its next item only after finishing the current one
     }
   }
   await Promise.all(Array.from({ length: limit }, () => worker()));

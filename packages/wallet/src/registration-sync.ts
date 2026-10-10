@@ -258,7 +258,7 @@ export async function runWalletRegistrationSync(
   }
 
   for (const { event, rows } of byEvent.values()) {
-    await syncEventBucket(db, event, rows, result);
+    await syncEventBucket(db, event, rows, result); // NOSONAR - event buckets are synced one at a time on purpose, to bound the provider load
   }
 
   return result;

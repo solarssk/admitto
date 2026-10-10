@@ -62,7 +62,7 @@ export async function sendBatch(
       const index = next++;
       if (index >= messages.length) return;
       const message = messages.at(index)!;
-      const result = await adapter.send(message);
+      const result = await adapter.send(message); // NOSONAR - worker pool: a worker takes its next item only after finishing the current one
       pendingResults.set(index, result);
       options.onResult?.(result, message, index);
     }

@@ -1008,7 +1008,7 @@ async function uniqueTemplateName(
   }
 }
 
-async function getEventTemplateRow(
+function getEventTemplateRow(
   db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
   templateId: string,
@@ -1286,7 +1286,7 @@ export async function handlePatchEventTemplateMetadata(
 
 /** Create the event's template row inside a transaction, serialized against permanent deletion
  * and the image-assets delete handler, and re-checking the per-event template cap under lock. */
-async function createEventTemplateRow(
+function createEventTemplateRow(
   db: PrismaClient,
   eventId: string,
   baseName: string,

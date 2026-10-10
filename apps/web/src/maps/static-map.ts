@@ -19,6 +19,7 @@ import {
 } from "@admitto/shared/ssrf-guard";
 import sharp, { type OverlayOptions } from "sharp";
 import type { MapTileConfig } from "./config.js";
+import { readChunksCapped } from "./read-capped-chunks.js";
 
 export const STATIC_MAP_WIDTH = 600;
 export const STATIC_MAP_HEIGHT = 300;
@@ -282,28 +283,15 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
     }
   }
 
-  const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
+  let read: Awaited<ReturnType<typeof readChunksCapped>>;
   try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value || value.byteLength === 0) continue;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        throw new StaticMapRenderError(`Tile too large (${total} bytes): ${safeUrl}`);
-      }
-      chunks.push(value);
-    }
+    read = await readChunksCapped(res.body, maxBytes);
   } catch (err) {
-    if (err instanceof StaticMapRenderError) throw err;
     throw new StaticMapRenderError(`Tile read failed: ${safeUrl}`, err);
   }
+  if (read.tooLarge) throw new StaticMapRenderError(`Tile too large (${read.total} bytes): ${safeUrl}`);
 
-  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  return Buffer.concat(read.chunks.map((c) => Buffer.from(c)));
 }
 
 /** Resolve a 3xx Location against `current`, or throw. Cancels the redirect response body. */

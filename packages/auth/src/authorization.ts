@@ -55,7 +55,7 @@ export async function canManageEvent(
 }
 
 /** Instance-wide administration. */
-export async function canManageInstance(
+export function canManageInstance(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<boolean> {

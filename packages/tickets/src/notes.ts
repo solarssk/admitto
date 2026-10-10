@@ -57,7 +57,7 @@ export async function addAttendeeNote(
   if (!operator) throw new OperatorRequiredError();
   if (body.length > MAX_ATTENDEE_NOTE_LENGTH) throw new NoteTooLongError();
 
-  return prisma.$transaction(async (tx) => {
+  return await prisma.$transaction(async (tx) => {
     // An erased attendee has no notes and gets none: the lock keeps an erasure from starting
     // before this transaction ends, so the note cannot land after the notes were deleted.
     const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
@@ -106,7 +106,7 @@ export async function updateAttendeeNote(
   if (!operator) throw new OperatorRequiredError();
   if (body.length > MAX_ATTENDEE_NOTE_LENGTH) throw new NoteTooLongError();
 
-  return prisma.$transaction(async (tx) => {
+  return await prisma.$transaction(async (tx) => {
     // Attendee row first, like an erasure (which then deletes the notes): the same order on both
     // sides rules out a lock cycle. An erased attendee has no notes left to edit.
     const attendee = await lockAttendeeRow(tx, params.attendeeId, params.eventId);

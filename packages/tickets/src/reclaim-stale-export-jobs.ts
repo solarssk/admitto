@@ -96,7 +96,7 @@ export async function reclaimStaleExportJobs(
   let reclaimed = 0;
   for (const job of stale) {
     const error = job.status === "pending" ? STALE_EXPORT_PENDING_ERROR : STALE_EXPORT_JOB_ERROR;
-    if (await failExportJob(db, job, error, now)) reclaimed += 1;
+    if (await failExportJob(db, job, error, now)) reclaimed += 1; // NOSONAR - stale jobs are reclaimed one at a time on purpose
   }
   return { reclaimed };
 }

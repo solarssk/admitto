@@ -165,7 +165,7 @@ export async function issueTicketsForEvent(
       for (const pending of pendingInternal) {
         resultsByIndex.set(
           pending.index,
-          await issuePendingTicketInTransaction(tx, pending, baseUrl),
+          await issuePendingTicketInTransaction(tx, pending, baseUrl), // NOSONAR - statements in one transaction run one at a time
         );
       }
     });

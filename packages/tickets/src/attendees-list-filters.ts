@@ -302,7 +302,7 @@ export async function countFilteredAttendees(
   return Number(count);
 }
 
-export async function findFilteredAttendeesForList(
+export function findFilteredAttendeesForList(
   db: PrismaClient,
   eventId: string,
   params: AttendeeListFilterParams,
@@ -333,12 +333,12 @@ export async function findFilteredAttendeesForList(
 /** Explicit-selection export — rows for the given ids only, scoped to the event. Ids that
  * don't belong to this event are silently ignored, same convention as bulk delete/check-in
  * (the UI can only select rows already on the current event's current page). */
-export async function findSelectedAttendeesForExport(
+export function findSelectedAttendeesForExport(
   db: PrismaClient,
   eventId: string,
   attendeeIds: string[],
 ): Promise<ExportAttendeeSqlRow[]> {
-  if (attendeeIds.length === 0) return [];
+  if (attendeeIds.length === 0) return Promise.resolve([]);
   return db.attendee.findMany({
     // Never an erased attendee: there is nothing about them to export.
     where: { event_id: eventId, id: { in: attendeeIds }, erased_at: null },
@@ -348,7 +348,7 @@ export async function findSelectedAttendeesForExport(
   });
 }
 
-export async function findFilteredAttendeesForExport(
+export function findFilteredAttendeesForExport(
   db: PrismaClient,
   eventId: string,
   filterParams: AttendeeListFilterParams,
