@@ -85,6 +85,10 @@ describe("exports", () => {
     expect(searched.map((r) => r.email)).toEqual(["lists-live@example.com"]);
   });
 
+  it("export nothing for an empty explicit selection", async () => {
+    await expect(findSelectedAttendeesForExport(prisma, EVENT_ID, [])).resolves.toEqual([]);
+  });
+
   it("leave an erased attendee out of an explicit selection", async () => {
     const rows = await findSelectedAttendeesForExport(prisma, EVENT_ID, ["lists-live", "lists-gone"]);
     expect(rows.map((r) => r.email)).toEqual(["lists-live@example.com"]);

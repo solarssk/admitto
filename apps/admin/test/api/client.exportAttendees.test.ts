@@ -265,6 +265,34 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     }
   });
 
+  it("gives up with 408 once the poll cap is reached, without a last needless wait", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk("job-never-done"))
+      .mockResolvedValue(jobStatus("pending"));
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      const outcome = exportAttendees("evt-1", {}, "csv").then(
+        () => null,
+        (err: unknown) => err,
+      );
+      // 3600 status checks with a 5 s wait between them: 3599 waits, none after the last check.
+      await vi.advanceTimersByTimeAsync(3599 * 5000);
+      expect(await outcome).toMatchObject({
+        status: 408,
+        message: "Export is still running. Keep the worker running and try again.",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1 + 3600);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(stub.anchorClicks).toEqual([]);
+    } finally {
+      stub.restore();
+    }
+  });
+
   it("throws 408 when started_at is past the stale window while still running", async () => {
     const startedAt = new Date(Date.now() - 16 * 60 * 1000).toISOString();
     const fetchMock = vi

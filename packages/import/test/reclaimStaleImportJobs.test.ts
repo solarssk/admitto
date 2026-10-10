@@ -199,6 +199,20 @@ describe("reclaimStaleImportJobs", () => {
     expect(deleted).toEqual(["imports/evt/p.csv"]);
   });
 
+  it("leaves a stale pending job alone when something else moved it on first", async () => {
+    const deleted: string[] = [];
+    const storage = mockStorage(deleted);
+    const now = new Date("2026-08-07T12:00:00.000Z");
+    const db = dbWithJobs([{ id: "job-pending", storage_key: "imports/evt/p.csv", status: "pending" }], {
+      updateCounts: [0],
+    });
+
+    await expect(
+      reclaimStaleImportJobs(db, storage, { olderThanMs: 60_000, now }),
+    ).resolves.toEqual({ reclaimed: 0, healed: 0 });
+    expect(deleted).toEqual([]);
+  });
+
   it("fails stale pending jobs when the worker heartbeat is stale", async () => {
     const deleted: string[] = [];
     const storage = mockStorage(deleted);

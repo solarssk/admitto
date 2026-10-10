@@ -23,6 +23,7 @@ import {
   unbracketHostname,
 } from "@admitto/shared/ssrf-guard";
 import { emitSystemLog } from "@admitto/shared/system-log";
+import { readChunksCapped } from "./read-capped-chunks.js";
 
 /** Distinguishes a timed-out request (503, "try again shortly") from any other failure —
  * bad status, network error, malformed body — mapped to 502 by the route handler. */
@@ -181,33 +182,20 @@ export async function readBodyCapped(
     throw new GeocodingProviderError("unavailable");
   }
 
-  const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
+  let read: Awaited<ReturnType<typeof readChunksCapped>>;
   try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value || value.byteLength === 0) continue;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined); // NOSONAR - reading the response stream is sequential; this cancel is followed by a throw
-        throw new GeocodingProviderError("unavailable");
-      }
-      chunks.push(value);
-    }
+    read = await readChunksCapped(res.body, maxBytes);
   } catch (err) {
-    if (err instanceof GeocodingProviderError) throw err;
     throw new GeocodingProviderError(
       isTimeoutError(err) ? "timeout" : "unavailable",
       { cause: err },
     );
   }
+  if (read.tooLarge) throw new GeocodingProviderError("unavailable");
 
-  const out = new Uint8Array(total);
+  const out = new Uint8Array(read.total);
   let offset = 0;
-  for (const chunk of chunks) {
+  for (const chunk of read.chunks) {
     out.set(chunk, offset);
     offset += chunk.byteLength;
   }
