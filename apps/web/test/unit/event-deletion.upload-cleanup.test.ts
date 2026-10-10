@@ -92,7 +92,11 @@ describe("deleteEvent — managed upload cleanup", () => {
     const eventId = "evt-upload-cleanup";
     const calls: string[] = [];
     const tx = {
-      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      // The two advisory locks, told apart by their key: the scoped one of mail settings, then the job queue.
+      $executeRaw: vi.fn().mockImplementation(async (sql: { values: unknown[] }) => {
+        calls.push(String(sql.values[0]).startsWith("attendee-job-queue:") ? "queue lock" : "scoped lock");
+        return 0;
+      }),
       // The rows of the jobs are locked first, then the row of the event (both SELECT ... FOR UPDATE), the same order
       // as an import takes them in; the jobs are deleted with RETURNING after that.
       $queryRaw: vi.fn().mockImplementation(async (strings: readonly string[]) => {
@@ -149,7 +153,7 @@ describe("deleteEvent — managed upload cleanup", () => {
     ]);
     // The row of the event is locked before its jobs are read, and the files go after the rows: the event is deleted
     // first, in the transaction.
-    expect(calls).toEqual(["job rows lock", "event row lock", "jobs delete", "event.delete", "job files"]);
+    expect(calls).toEqual(["scoped lock", "queue lock", "job rows lock", "event row lock", "jobs delete", "event.delete", "job files"]);
     deleteEventJobFilesBestEffort.mockReset().mockResolvedValue(undefined);
   });
 

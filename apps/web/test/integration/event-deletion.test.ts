@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
-import { drainExportJobs } from "@admitto/tickets";
+import { drainExportJobs, lockAttendeeJobQueue } from "@admitto/tickets";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
@@ -625,6 +625,45 @@ describe("files the event's jobs left in storage", () => {
     expect(res.status).toBe(409);
     expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
     expect(await prisma.attendee.count({ where: { event_id: eventId } })).toBe(1);
+  });
+
+  it("waits for the job queue of the event before it reads the jobs, so that no job is created behind it", async () => {
+    const eventId = await createEvent({});
+    // An erasure, or any other transaction that holds the queue lock of the event exclusively, is open.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let held!: () => void;
+    const heldPromise = new Promise<void>((resolve) => (held = resolve));
+    const erasing = prisma.$transaction(
+      async (tx) => {
+        await lockAttendeeJobQueue(tx, eventId, "exclusive");
+        held();
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await heldPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    try {
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%pg_advisory_xact_lock%'
+          `;
+          expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+      expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
+    } finally {
+      release();
+      await erasing;
+    }
+
+    expect((await deleting).status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
   });
 
   it("keeps the files when the event cannot be deleted", async () => {

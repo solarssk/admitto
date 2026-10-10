@@ -34,7 +34,7 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
+import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, lockAttendeeJobQueue, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import { deleteEventJobFilesBestEffort } from "./purge-export-files.js";
@@ -163,6 +163,11 @@ export async function deleteEvent(
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
       await lockEventForScopedWrite(tx, eventId);
+      // No export or import job can be created until this transaction ends: the queue lock, exclusively, before the
+      // rows of the jobs are read. A job that was committed after that read could be claimed by a worker while this
+      // transaction holds the event row, and the import would wait for the event row while this transaction waited
+      // for its job row.
+      await lockAttendeeJobQueue(tx, eventId, "exclusive");
       // The rows of the event's jobs first, then the event row: an import holds its job row for the whole of its
       // transaction and then needs the event row (the foreign key of the people it inserts), so the other order
       // would make the two wait for each other. A running import is waited for, and the people it created make
