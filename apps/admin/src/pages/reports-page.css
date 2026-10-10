@@ -286,13 +286,34 @@
   gap: var(--space-4);
 }
 
+/* The two cards share one row, so the shorter one is stretched to the taller one's height (a
+   "By ticket type" list with 6 rows is much taller than the chart). The hourly chart grows into
+   that height instead of leaving an empty strip under the hour labels. */
+.reports-panels > .at-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-panels > .at-card > .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-chart-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 /* overflow-x: auto isn't scoped to a mobile media query - visibleHourRange() (ReportsPage.tsx)
    can legitimately return up to 24 columns for an event with admissions spread across the day,
    which already exceeds the "Hourly admissions" card's share of the two-column .reports-panels
    grid at tablet/desktop widths too, not just on mobile. */
 .reports-chart {
+  flex: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 4px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -311,16 +332,21 @@
 }
 
 .reports-chart__track {
+  position: relative;
   width: 100%;
-  height: 120px;
+  flex: 1;
+  min-height: 120px;
   border-radius: var(--radius-sm);
   background: var(--at-gray-100);
-  display: flex;
-  align-items: flex-end;
   overflow: hidden;
 }
 
+/* Absolute so its percentage height always resolves against the (now flexible) track. */
 .reports-chart__bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   min-height: 2px;
   border-radius: 2px 2px 0 0;

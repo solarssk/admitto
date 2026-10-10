@@ -27,7 +27,6 @@
 .danger-zone__desc {
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  max-width: 640px;
 }
 
 /* Below ~640px the description column gets squeezed to make room for the

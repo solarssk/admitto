@@ -57,7 +57,7 @@ export function CreateTemplateDialog({
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={busy ? undefined : onClose} />
+      <ModalBackdrop />
       <div className="add-attendee-modal__panel" ref={panelRef}>
       <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
