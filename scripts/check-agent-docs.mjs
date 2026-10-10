@@ -28,10 +28,12 @@ export function slug(heading) {
   return heading
     .trim()
     .toLowerCase()
-    .replace(/[`*_~]/g, "")
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .replace(/\s/g, "-");
+    .replaceAll(/[`*_~]/g, "")
+    .replaceAll(/[^\p{L}\p{N}\s-]/gu, "")
+    .replaceAll(/\s/g, "-");
 }
+
+const posix = (path) => path.replaceAll("\\", "/");
 
 function anchorsOf(text) {
   const seen = new Map();
@@ -55,68 +57,84 @@ function linksOf(text) {
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) fenced = !fenced;
     if (fenced) continue;
-    const bare = line.replace(/`[^`]*`/g, "");
+    const bare = line.replaceAll(/`[^`]*`/g, "");
     for (const m of bare.matchAll(/\]\(([^)\s]+)\)/g)) links.push(m[1]);
   }
   return links;
 }
 
-export function checkAgentDocs(root) {
-  const problems = [];
-  const files = walk(root).map((f) => relative(root, f).split("\\").join("/"));
-  const isSteering = (f) =>
-    /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f) || (f.startsWith("standards/") && f.endsWith(".md"));
-  const steering = files.filter(isSteering);
+function budgetOf(file) {
+  if (file === "AGENTS.md") return BUDGETS.root;
+  if (file.endsWith("CLAUDE.md")) return BUDGETS.claude;
+  if (file.startsWith("standards/")) return BUDGETS.standard;
+  return BUDGETS.nested;
+}
 
+function checkSizes(root, steering) {
+  const problems = [];
   for (const f of steering) {
     const size = statSync(join(root, f)).size;
-    let budget = BUDGETS.nested;
-    if (f === "AGENTS.md") budget = BUDGETS.root;
-    else if (f.endsWith("CLAUDE.md")) budget = BUDGETS.claude;
-    else if (f.startsWith("standards/")) budget = BUDGETS.standard;
+    const budget = budgetOf(f);
     if (size > budget) {
       problems.push(`${f} is ${size} bytes, over its ${budget} byte budget. Move detail into a standards/ file and keep a one-line rule plus a link here.`);
     }
   }
+  return problems;
+}
 
+function checkLinks(root, steering) {
+  const problems = [];
   const anchorCache = new Map();
   const anchors = (path) => {
     if (!anchorCache.has(path)) anchorCache.set(path, anchorsOf(readFileSync(path, "utf8")));
     return anchorCache.get(path);
   };
   for (const f of steering) {
-    const text = readFileSync(join(root, f), "utf8");
-    for (const href of linksOf(text)) {
+    for (const href of linksOf(readFileSync(join(root, f), "utf8"))) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(href)) continue; // https:, mailto:
       const [target, hash] = href.split("#");
       const path = target ? resolve(root, dirname(f), target) : join(root, f);
-      if (!existsSync(path)) {
-        problems.push(`${f}: link to ${href} does not resolve.`);
-      } else if (hash && path.endsWith(".md") && !statSync(path).isDirectory() && !anchors(path).has(hash)) {
+      if (!existsSync(path)) problems.push(`${f}: link to ${href} does not resolve.`);
+      else if (hash && path.endsWith(".md") && !anchors(path).has(hash)) {
         problems.push(`${f}: link to ${href} points at a heading that does not exist.`);
       }
     }
   }
-
-  const index = join(root, "standards/README.md");
-  if (steering.some((f) => f.startsWith("standards/"))) {
-    if (!existsSync(index)) {
-      problems.push("standards/README.md (the index) is missing.");
-    } else {
-      const indexed = new Set(
-        linksOf(readFileSync(index, "utf8")).map((h) => relative(root, resolve(dirname(index), h.split("#")[0])).split("\\").join("/")),
-      );
-      // A sub-index (standards/admin-spa/README.md) may list the files of its own folder.
-      for (const f of steering.filter((s) => s.startsWith("standards/") && s !== "standards/README.md")) {
-        const dir = dirname(f);
-        const sub = `${dir}/README.md`;
-        const viaSub = dir !== "standards" && indexed.has(sub) && existsSync(join(root, sub)) &&
-          new Set(linksOf(readFileSync(join(root, sub), "utf8")).map((h) => relative(root, resolve(join(root, dir), h.split("#")[0])).split("\\").join("/"))).has(f);
-        if (!indexed.has(f) && f !== sub && !viaSub) problems.push(`${f} is not listed in standards/README.md.`);
-      }
-    }
-  }
   return problems;
+}
+
+function linkedFiles(root, indexFile) {
+  const dir = dirname(indexFile);
+  return new Set(
+    linksOf(readFileSync(indexFile, "utf8")).map((h) => posix(relative(root, resolve(dir, h.split("#")[0])))),
+  );
+}
+
+function checkIndex(root, steering) {
+  const pages = steering.filter((f) => f.startsWith("standards/"));
+  if (pages.length === 0) return [];
+  const index = join(root, "standards/README.md");
+  if (!existsSync(index)) return ["standards/README.md (the index) is missing."];
+  const top = linkedFiles(root, index);
+  // A sub-index (standards/admin-spa/README.md) may list the files of its own folder.
+  const sub = new Map();
+  const listedBySubIndex = (f) => {
+    const subIndex = `${dirname(f)}/README.md`;
+    if (dirname(f) === "standards" || !top.has(subIndex)) return false;
+    if (!sub.has(subIndex)) sub.set(subIndex, linkedFiles(root, join(root, subIndex)));
+    return sub.get(subIndex).has(f);
+  };
+  return pages
+    .filter((f) => f !== "standards/README.md" && !f.endsWith("/README.md") && !top.has(f) && !listedBySubIndex(f))
+    .map((f) => `${f} is not listed in standards/README.md.`);
+}
+
+export function checkAgentDocs(root) {
+  const files = walk(root).map((f) => posix(relative(root, f)));
+  const steering = files.filter(
+    (f) => /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f) || (f.startsWith("standards/") && f.endsWith(".md")),
+  );
+  return [...checkSizes(root, steering), ...checkLinks(root, steering), ...checkIndex(root, steering)];
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
