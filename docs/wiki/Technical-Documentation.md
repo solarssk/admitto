@@ -9,6 +9,7 @@ The Wiki documents supported application use. It does not duplicate deployment, 
 - [Environment variable reference](https://github.com/solarssk/admitto/blob/main/deploy/ENV.md) (generated dictionary)
 - [Security policy](https://github.com/solarssk/admitto/blob/main/SECURITY.md)
 - [Data protection and retention](https://github.com/solarssk/admitto/blob/main/DATA-PROTECTION.md)
+- [Emergency CLI](https://github.com/solarssk/admitto/blob/main/deploy/README.md#emergency-cli-event-day-failover) (includes erasing attendees' personal data when the admin UI is unreachable)
 - [Versioning and releases](https://github.com/solarssk/admitto/blob/main/VERSIONING.md)
 - [Current release changes](https://github.com/solarssk/admitto/blob/main/CHANGELOG.md)
 
