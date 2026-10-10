@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -10,7 +10,7 @@ import { encryptToString } from "@admitto/crypto";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { drainExportJobs } from "@admitto/tickets";
-import { getDefaultStorage } from "@admitto/storage";
+import { getDefaultStorage, StoragePathError } from "@admitto/storage";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
@@ -533,6 +533,48 @@ describe("GET /api/admin/events/:eventId/export/jobs/:jobId", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
     expect(res.headers.get("Content-Disposition")).toMatch(/filename="export\.bin"/);
+  });
+
+  it("answers 404 not_ready, not a server error, when the file was deleted after the job was read", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    // An erasure, the retention run or an event deletion deletes the file just after this request has read the job:
+    // the file is gone while the key is still on the row the request holds.
+    await getDefaultStorage().delete(job.storage_key!);
+
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_ready" });
+  });
+
+  it.each([
+    ["a storage error", () => new Error("disk failure")],
+    ["a path error that is not a missing file", () => new StoragePathError()],
+  ])("still fails for %s", async (_name, makeError) => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+    vi.spyOn(getDefaultStorage(), "get").mockRejectedValueOnce(makeError());
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`, {
+      headers: { Cookie: adminCookie },
+    });
+    errSpy.mockRestore();
+    vi.restoreAllMocks();
+
+    expect(res.status).toBe(500);
   });
 
   it("treats succeeded jobs without a storage key and array result_json as not ready / sparse meta", async () => {

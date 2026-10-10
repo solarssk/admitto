@@ -194,6 +194,8 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` | optional | worker, cli | none | no | Days before rendered mail HTML/subject are nullified on terminal deliveries (default 60). Honored by the worker, admitto retention run and the standalone nullify-delivery-snapshots command. |
 | `SECURITY_AUDIT_LOG_RETENTION_DAYS` | optional | worker | none | no | Days to keep durable security audit rows (default 30). |
 | `NOTIFICATION_RETENTION_DAYS` | optional | worker | none | no | Days to keep in-app notification inbox rows a user never manually cleared (default 30). |
+| `EXPORT_FILE_RETENTION_DAYS` | optional | worker, cli | none | no | Days to keep the file of a finished attendee export in storage before the retention run deletes it (default 7). An erasure or a removal deletes the event's export files at once, whatever their age. |
+| `IMPORT_STAGED_FILE_RETENTION_DAYS` | optional | worker, cli | none | no | Days to keep the staged CSV of a finished import job (one that failed, or whose cleanup failed) before the retention run deletes it (default 7). |
 
 ## Maintenance
 
@@ -202,4 +204,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 116 distinct keys seen in scan (tests excluded)._
+_Last generated from 118 distinct keys seen in scan (tests excluded)._

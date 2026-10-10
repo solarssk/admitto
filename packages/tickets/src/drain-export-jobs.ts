@@ -5,6 +5,7 @@
  * @admitto/storage (storage → auth → tickets would be a package cycle).
  */
 import type { PrismaClient } from "@admitto/db";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { buildAttendeesExportArtifact } from "./attendees-export-artifact.js";
 import {
   countFilteredAttendees,
@@ -27,7 +28,7 @@ export type DrainExportJobsResult = {
   reclaimed: number;
 };
 
-/** Subset of StorageAdapter.put used by export drain. */
+/** Subset of StorageAdapter used by export drain: `put` writes the file, `delete` takes it back when the job cannot record it. */
 export type ExportJobStorage = {
   put(
     bytes: Buffer,
@@ -38,6 +39,7 @@ export type ExportJobStorage = {
       ext: ".csv" | ".pdf" | ".xlsx";
     },
   ): Promise<{ key: string }>;
+  delete(key: string): Promise<unknown>;
 };
 
 type AttendeesFilteredRequest = {
@@ -77,8 +79,11 @@ async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): 
     select: { result_json: true },
   });
   const scrubbed = scrubExportJobResultJson(existing?.result_json);
-  await db.adminJob.update({
-    where: { id: jobId },
+  // Only a job that is still running: one whose row is gone (its event was deleted while it ran) or that
+  // somebody closed already (an erasure stopped it, or it was reclaimed as stale) matches nothing, keeps its
+  // own error, and the rest of the queue still runs. One statement, so the check and the write cannot part.
+  await db.adminJob.updateMany({
+    where: { id: jobId, status: "running" },
     data: {
       status: "failed",
       finished_at: new Date(),
@@ -86,6 +91,47 @@ async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): 
       ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
     },
   });
+}
+
+/**
+ * What went wrong deleting a file, in a word: the code of a file system error (ENOSPC, EACCES), else the name of
+ * the error. It carries the key path at most, never a person's data.
+ */
+function deleteFailureReason(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === "string") return code;
+  return err instanceof Error ? err.name : "unknown";
+}
+
+/**
+ * Takes back a file that the job cannot record: its row is gone (the event was deleted while the export ran),
+ * was closed meanwhile (an erasure stopped the job, or it was reclaimed as stale) or the write failed. The
+ * file holds attendees and nothing else knows of it, so when even the delete fails its key must not be lost:
+ * it goes to stdout (the System logs buffer lives in memory) and, if the row is still there, onto the row,
+ * where the retention run of finished jobs tries again.
+ */
+async function takeBackStoredFile(
+  db: PrismaClient,
+  storage: ExportJobStorage,
+  job: { id: string; event_id: string | null },
+  key: string,
+): Promise<void> {
+  try {
+    await storage.delete(key);
+    return;
+  } catch (err) {
+    emitSystemLog("worker", "error", "export_file_left_in_storage", {
+      jobId: job.id,
+      eventId: job.event_id,
+      key,
+      reason: deleteFailureReason(err),
+    });
+  }
+  try {
+    await db.adminJob.updateMany({ where: { id: job.id, storage_key: null }, data: { storage_key: key } });
+  } catch {
+    /* the log line above is the record */
+  }
 }
 
 async function runOneExportJob(
@@ -121,27 +167,44 @@ async function runOneExportJob(
       ext: storageExt(request.format),
     });
 
-    await db.adminJob.update({
-      where: { id: job.id },
-      data: {
-        status: "succeeded",
-        finished_at: new Date(),
-        storage_key: staged.key,
-        filename: file.filename,
-        created_count: file.rowCount,
-        result_json: {
-          request: {
-            kind: request.kind,
-            format: request.format,
-            filters: redactAttendeeListFiltersForStorage(request.filters),
-          },
+    let recorded: { count: number };
+    try {
+      // Only a job that is still running records its file: one that was closed meanwhile (an erasure that
+      // committed after the last check of the rows stopped it) must not end up with a file that holds the
+      // people the erasure removed. One statement, so the check and the write cannot part.
+      recorded = await db.adminJob.updateMany({
+        where: { id: job.id, status: "running" },
+        data: {
+          status: "succeeded",
+          finished_at: new Date(),
+          storage_key: staged.key,
           filename: file.filename,
-          contentType: file.contentType,
-          rowCount: file.rowCount,
+          created_count: file.rowCount,
+          result_json: {
+            request: {
+              kind: request.kind,
+              format: request.format,
+              filters: redactAttendeeListFiltersForStorage(request.filters),
+            },
+            filename: file.filename,
+            contentType: file.contentType,
+            rowCount: file.rowCount,
+          },
+          error: null,
         },
-        error: null,
-      },
-    });
+      });
+    } catch (finalizeErr) {
+      // The write itself failed. The file is in storage and no row names it: take it back.
+      await takeBackStoredFile(db, storage, job, staged.key);
+      throw finalizeErr;
+    }
+    if (recorded.count === 0) {
+      // The job is not running any more: its row is gone (the event was deleted while the export ran), or
+      // somebody closed it (an erasure stopped it, or it was reclaimed as stale) and said why. The file
+      // holds attendees and nothing names it: take it back.
+      await takeBackStoredFile(db, storage, job, staged.key);
+      return "failed";
+    }
 
     // Audit must not flip a completed export back to failed (file already in storage).
     try {

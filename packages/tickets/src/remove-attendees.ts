@@ -1,5 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
+import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 export type RemoveAttendeesParams = {
   eventId: string;
@@ -40,6 +41,11 @@ export type RemoveAttendeesResult = {
    * caller within the same request, never logged, audited or stored.
    */
   previousEmails: string[];
+  /**
+   * The ids of the exports and imports of the event that held a file when this transaction ended its work, under
+   * the queue lock (see attendeeJobIdsWithFiles): the files the caller deletes after the commit, and only those.
+   */
+  jobIdsWithFiles: string[];
 };
 
 /**
@@ -71,8 +77,17 @@ export async function removeAttendees(
     counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
     walletTargets: [],
     previousEmails: [],
+    jobIdsWithFiles: [],
   };
   if (requestedIds.length === 0) return empty;
+
+  // The first thing this transaction does, before it locks an attendee: the erasures and the removals of one
+  // event run one after the other, the exports and imports that read or write the list are created either before
+  // this one looks for them (stopOpenAttendeeJobs) or after it has committed, and one that is running is waited
+  // for, so that none can write a person while this works (an import that creates somebody from an address the
+  // person had before would otherwise finish unseen). Taken later, this transaction could already hold rows that
+  // another erasure or an import needs while it waits for these locks, and they would deadlock.
+  await lockOpenAttendeeJobs(tx, eventId);
 
   const found = await tx.$queryRaw<{ id: string; email: string; erased_at: Date | null }[]>`
     SELECT "id", "email", "erased_at" FROM "Attendee"
@@ -125,5 +140,6 @@ export async function removeAttendees(
         : [],
     ),
     previousEmails,
+    jobIdsWithFiles: await attendeeJobIdsWithFiles(tx, eventId),
   };
 }

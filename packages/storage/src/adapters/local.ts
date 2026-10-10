@@ -75,9 +75,18 @@ export class LocalStorageAdapter implements StorageAdapter {
     // Path confined by buildKey + resolve-under-root check above.
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     await fsp.mkdir(dir, { recursive: true });
-    // Same trusted join as mkdir above.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await fsp.writeFile(abs, bytes);
+    try {
+      // Same trusted join as mkdir above.
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      await fsp.writeFile(abs, bytes);
+    } catch (err) {
+      // A write that fails half way (a full disk) leaves a truncated file at a key nobody received, so
+      // nothing would ever know to delete it: take it away before the caller sees the error.
+      // Same trusted join as above.
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      await fsp.unlink(abs).catch(() => undefined);
+      throw err;
+    }
     return { url: `/uploads/${key}`, key };
   }
 

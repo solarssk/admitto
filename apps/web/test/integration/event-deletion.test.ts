@@ -1,11 +1,15 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { drainExportJobs, lockAttendeeJobQueue } from "@admitto/tickets";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -453,5 +457,341 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(
       logs.some((entry) => entry.message === "event_deleted" && entry.fields?.eventId === eventId),
     ).toBe(true);
+  });
+});
+
+describe("files the event's jobs left in storage", () => {
+  let uploadDir: string;
+  let savedUploadDir: string | undefined;
+
+  beforeAll(() => {
+    savedUploadDir = process.env.UPLOAD_DIR;
+    uploadDir = mkdtempSync(join(tmpdir(), "admitto-event-deletion-files-"));
+    process.env.UPLOAD_DIR = uploadDir;
+    resetDefaultStorageForTests();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    rmSync(uploadDir, { recursive: true, force: true });
+    if (savedUploadDir === undefined) delete process.env.UPLOAD_DIR;
+    else process.env.UPLOAD_DIR = savedUploadDir;
+    resetDefaultStorageForTests();
+  });
+
+  /** A job of the event, with a file in storage unless `withFile` is false (as an export or an import leaves it). */
+  async function seedJob(eventId: string, type: string, status: string, withFile = true) {
+    const key = withFile
+      ? (
+          await getDefaultStorage().put(Buffer.from("name,email\nA B,a@example.com\n"), {
+            orgId: ORG_DEL,
+            eventId,
+            scope: "event",
+            ext: ".csv",
+          })
+        ).key
+      : null;
+    const job = await prisma.adminJob.create({
+      data: { type, status, organization_id: ORG_DEL, event_id: eventId, storage_key: key, filename: withFile ? "attendees.csv" : null },
+    });
+    return { jobId: job.id, key };
+  }
+  const present = (key: string | null) => key !== null && existsSync(join(uploadDir, key));
+
+  it("deletes the files of every job of the event with it (the staged CSV of a failed import included), and nothing of another event", async () => {
+    const eventId = await createEvent({});
+    const otherId = await createEvent({});
+    const exported = await seedJob(eventId, "export", "succeeded");
+    const failedImport = await seedJob(eventId, "import_commit", "failed");
+    const waitingImport = await seedJob(eventId, "import_commit", "pending");
+    await seedJob(eventId, "export", "failed", false);
+    const kept = await seedJob(otherId, "export", "succeeded");
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(await prisma.adminJob.count({ where: { event_id: eventId } })).toBe(0);
+    for (const file of [exported, failedImport, waitingImport]) expect(present(file.key)).toBe(false);
+    expect(present(kept.key)).toBe(true);
+    expect(await prisma.adminJob.count({ where: { id: kept.jobId } })).toBe(1);
+    // The keys are in the audit entry of the deletion too: if the process died after the commit and before
+    // the files were deleted, that entry would be the only record of them.
+    const audit = await prisma.adminAuditLog.findFirstOrThrow({
+      where: { organization_id: ORG_DEL, action_type: "event_deleted" },
+      orderBy: { created_at: "desc" },
+    });
+    expect([...((audit.metadata as { jobFileKeys?: string[] }).jobFileKeys ?? [])].sort()).toEqual(
+      [exported.key, failedImport.key, waitingImport.key].map(String).sort(),
+    );
+  });
+
+  it("writes no list of keys into the audit entry when the event has no job files", async () => {
+    const eventId = await createEvent({});
+    await seedJob(eventId, "export", "failed", false);
+
+    expect((await deleteEventRequest(eventId, superCookie)).status).toBe(200);
+
+    const audit = await prisma.adminAuditLog.findFirstOrThrow({
+      where: { organization_id: ORG_DEL, action_type: "event_deleted" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit.metadata).not.toHaveProperty("jobFileKeys");
+  });
+
+  it("waits for a job that is being created for the event, and deletes the file that job names", async () => {
+    const eventId = await createEvent({});
+    const { key } = await getDefaultStorage().put(Buffer.from("name,email\nA B,a@example.com\n"), {
+      orgId: ORG_DEL,
+      eventId,
+      scope: "event",
+      ext: ".csv",
+    });
+    // An import has stored its CSV and is naming it on a new job; its transaction is still open.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let created!: () => void;
+    const createdPromise = new Promise<void>((resolve) => (created = resolve));
+    const creating = prisma.$transaction(async (tx) => {
+      await tx.adminJob.create({
+        data: { type: "import_commit", status: "pending", organization_id: ORG_DEL, event_id: eventId, storage_key: key },
+      });
+      created();
+      await gate;
+    });
+    await createdPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    let settled = false;
+    void deleting.then(() => (settled = true), () => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(settled).toBe(false);
+    release();
+    await creating;
+    const res = await deleting;
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    // The cascade of the event would have deleted that job's row without handing back its key.
+    expect(present(key)).toBe(false);
+  });
+
+  it("waits for an import that is running in the event instead of deadlocking with it, and then finds the event not deletable", async () => {
+    const eventId = await createEvent({});
+    const job = await prisma.adminJob.create({
+      data: { type: "import_commit", status: "running", organization_id: ORG_DEL, event_id: eventId },
+    });
+    // What the import does: it takes the row of its job first, and later inserts a person, which needs the event row.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => (started = resolve));
+    const importing = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "status" FROM "AdminJob" WHERE "id" = ${job.id} FOR UPDATE`;
+        started();
+        await gate;
+        await tx.attendee.create({
+          data: { id: `${eventId}-person`, event_id: eventId, email: `${eventId}@example.com`, name: "Import Person" },
+        });
+      },
+      { timeout: 30_000 },
+    );
+    await startedPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    try {
+      // The deletion waits for the row of the job, before it locks the event row.
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%AdminJob%FOR UPDATE%'
+          `;
+          expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+    } finally {
+      release();
+    }
+    await importing;
+    const res = await deleting;
+
+    // No transaction was aborted as a deadlock victim: the import finished, and the person it created keeps the event.
+    expect(res.status).toBe(409);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
+    expect(await prisma.attendee.count({ where: { event_id: eventId } })).toBe(1);
+  });
+
+  it("waits for the job queue of the event before it reads the jobs, so that no job is created behind it", async () => {
+    const eventId = await createEvent({});
+    // An erasure, or any other transaction that holds the queue lock of the event exclusively, is open.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let held!: () => void;
+    const heldPromise = new Promise<void>((resolve) => (held = resolve));
+    const erasing = prisma.$transaction(
+      async (tx) => {
+        await lockAttendeeJobQueue(tx, eventId, "exclusive");
+        held();
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await heldPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    try {
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%pg_advisory_xact_lock%'
+          `;
+          expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+      expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
+    } finally {
+      release();
+      await erasing;
+    }
+
+    expect((await deleting).status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+  });
+
+  it("keeps the files when the event cannot be deleted", async () => {
+    const eventId = await createEvent({ pinnedNote: "keep me" });
+    const job = await seedJob(eventId, "export", "succeeded");
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(409);
+    expect(present(job.key)).toBe(true);
+    expect(await prisma.adminJob.count({ where: { id: job.jobId } })).toBe(1);
+  });
+
+  it("reports every key it could not delete (more than twenty of them), on stdout as well as in the System logs", async () => {
+    const eventId = await createEvent({});
+    const jobs: Array<{ jobId: string; key: string | null }> = [];
+    for (let i = 0; i < 25; i += 1) jobs.push(await seedJob(eventId, "export", "succeeded"));
+    const keys = jobs.map((job) => job.key as string).sort();
+    vi.spyOn(getDefaultStorage(), "delete").mockRejectedValue(new Error("disk is read only"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    const logged = querySystemLogs({ source: "admin" }).find(
+      (entry) => entry.message === "event_job_files_purge_incomplete" && entry.fields?.eventId === eventId,
+    );
+    expect(logged?.fields).toMatchObject({ failed: 25 });
+    expect([...(logged?.fields?.keys as string[])].sort()).toEqual(keys);
+    // With the job rows gone this is the only record of the files, and stdout is the part that survives a restart.
+    const line = warnSpy.mock.calls
+      .map(([text]) => String(text))
+      .find((text) => text.includes("event_job_files_purge_incomplete") && text.includes(eventId));
+    expect([...(JSON.parse(line as string).keys as string[])].sort()).toEqual(keys);
+  });
+
+  it("leaves no file behind for an export that is still running when its event is deleted", async () => {
+    const eventId = await createEvent({});
+    const { id: jobId } = await prisma.adminJob.create({
+      data: {
+        type: "export",
+        status: "pending",
+        organization_id: ORG_DEL,
+        event_id: eventId,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: {} } },
+      },
+    });
+    // The export has built its file and stored it; the event is deleted before the job can say so. The
+    // deletion cannot know of the file: no row names it yet.
+    const real = getDefaultStorage();
+    const stored: string[] = [];
+    const storage = {
+      put: async (bytes: Buffer, opts: Parameters<typeof real.put>[1]) => {
+        const staged = await real.put(bytes, opts);
+        if (opts.eventId === eventId) {
+          stored.push(staged.key);
+          expect((await deleteEventRequest(eventId, superCookie)).status).toBe(200);
+        }
+        return staged;
+      },
+      delete: (key: string) => real.delete(key),
+    };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await drainExportJobs(prisma, storage as never, { limit: 50 });
+    errSpy.mockRestore();
+
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    expect(stored).toHaveLength(1);
+    expect(present(stored[0] ?? null)).toBe(false);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(await prisma.adminJob.count({ where: { id: jobId } })).toBe(0);
+  });
+
+  it("still deletes the event, and logs every key, when the file cleanup itself breaks", async () => {
+    const eventId = await createEvent({});
+    const jobs: Array<{ jobId: string; key: string | null }> = [];
+    for (let i = 0; i < 22; i += 1) jobs.push(await seedJob(eventId, "export", "succeeded"));
+    const keys = jobs.map((job) => job.key as string).sort();
+    // A storage that cannot be built (a provider that is not implemented yet) breaks the cleanup before it deletes anything.
+    const savedProvider = process.env.STORAGE_PROVIDER;
+    process.env.STORAGE_PROVIDER = "s3";
+    resetDefaultStorageForTests();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let res: Response;
+    try {
+      res = await deleteEventRequest(eventId, superCookie);
+    } finally {
+      if (savedProvider === undefined) delete process.env.STORAGE_PROVIDER;
+      else process.env.STORAGE_PROVIDER = savedProvider;
+      resetDefaultStorageForTests();
+    }
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(errSpy).toHaveBeenCalled();
+    expect(jobs.every((job) => present(job.key))).toBe(true);
+    const logged = querySystemLogs({ source: "admin" }).find(
+      (entry) => entry.message === "event_job_files_purge_failed" && entry.fields?.eventId === eventId,
+    );
+    expect(logged?.level).toBe("error");
+    expect([...(logged?.fields?.keys as string[])].sort()).toEqual(keys);
+  });
+
+  it("still deletes the event when a file cannot be deleted, deletes the other files and logs the key that is left", async () => {
+    const eventId = await createEvent({});
+    const stuck = await seedJob(eventId, "export", "succeeded");
+    const fine = await seedJob(eventId, "import_commit", "failed");
+    const storage = getDefaultStorage();
+    const realDelete = storage.delete.bind(storage);
+    vi.spyOn(storage, "delete").mockImplementation(async (key: string) => {
+      if (key === stuck.key) throw new Error("disk is read only");
+      return realDelete(key);
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(present(fine.key)).toBe(false);
+    expect(present(stuck.key)).toBe(true);
+    expect(querySystemLogs({ source: "admin" })).toContainEqual(
+      expect.objectContaining({
+        message: "event_job_files_purge_incomplete",
+        fields: expect.objectContaining({ eventId, failed: 1, keys: [stuck.key] }),
+      }),
+    );
   });
 });

@@ -450,6 +450,14 @@ docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <e
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
 # File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
 
+# Privacy request while the admin UI/API is down: erase attendees' personal data (find the ids first, preview with --dry-run, then run it for real)
+# find only reads, lists up to 20 people in every event (add --event <eventId> for one) with the event id and the attendee id,
+# and also works for an archived event (checkin lookup does not)
+docker compose run --rm app node apps/cli/dist/index.js attendees find --query "<name or email>"
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com --dry-run
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com
+# Asks you to type yes; exits 2 when a wallet pass is still at the provider (run it again to retry).
+
 # Retry failed mail batch
 docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
 
@@ -470,7 +478,7 @@ docker compose run --rm app node apps/cli/dist/index.js storage gc --operator-em
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
 
-Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification cleanup in one audited command for manual/on-demand use.
+Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification + export/import job file cleanup + erased wallet pass retry in one audited command for manual/on-demand use.
 
 ## Nginx Proxy Manager (deep notes)
 

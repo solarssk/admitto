@@ -51,6 +51,19 @@ export type ExecuteImportCommitResult = {
   invalidCount: number;
 };
 
+/**
+ * The job of this import was closed before it could start: an erasure or a removal in the event stopped it, or it
+ * was reclaimed as stale. Thrown first in the import's transaction, so nothing of the import is written.
+ */
+export class ImportStoppedError extends Error {
+  readonly code = "import_stopped" as const;
+
+  constructor() {
+    super("Import stopped before it finished.");
+    this.name = "ImportStoppedError";
+  }
+}
+
 export class ImportCapacityExceededError extends Error {
   readonly code = "event_full" as const;
   readonly capacity: number;
@@ -103,6 +116,16 @@ export async function executeImportCommit(
 
   const summary = await db.$transaction(
     async (tx) => {
+      if (params.adminJobId) {
+        // First, before any other lock: the row of the job is held until the import has committed, so an erasure or
+        // a removal in the event (which locks the open jobs before it locks an attendee, see lockOpenAttendeeJobs)
+        // either waits for this import to finish or has already closed the job, and then nothing of this import
+        // is written. Whichever came first, no person is created or changed behind an erasure's back.
+        const [job] = await tx.$queryRaw<{ status: string }[]>`
+          SELECT "status" FROM "AdminJob" WHERE "id" = ${params.adminJobId} FOR UPDATE
+        `;
+        if (job?.status !== "running") throw new ImportStoppedError();
+      }
       if (ticketTypes) {
         await acquireEventTicketTypesLock(tx, params.eventId);
       }

@@ -30,7 +30,8 @@ function failureCode(err: unknown): string {
  * Deleting at the provider is idempotent (a pass that is already gone counts as deleted), and a
  * failure for one pass never stops the others. `budgetMs` bounds how long the whole run may take:
  * no new batch starts once it has passed (a slow provider must not outlast the HTTP request that
- * called this), and what was not tried is reported in `notTried` for the next call.
+ * called this), and what was not tried is reported in `notTried` for the next call: the passes go in attendee id
+ * order, so those are the `notTried` highest of the ids given.
  */
 export async function deleteErasedWalletPasses(
   db: PrismaClient,
@@ -50,6 +51,9 @@ export async function deleteErasedWalletPasses(
       attendee: { event_id: eventId, erased_at: { not: null } },
     },
     select: { attendee_id: true, provider_pass_id: true },
+    // In attendee id order, so that what was not tried (`notTried`) is the last of the ids, and a caller that
+    // walks the passes in that order knows where it stopped.
+    orderBy: { attendee_id: "asc" },
   });
 
   const startedAt = Date.now();

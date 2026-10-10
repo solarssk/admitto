@@ -116,6 +116,7 @@ describe("removeAttendees", () => {
       counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
       walletTargets: [],
       previousEmails: [],
+      jobIdsWithFiles: [],
     });
     expect(await remove(["nobody-1", "nobody-2"])).toMatchObject({ removedIds: [], notFoundIds: ["nobody-1", "nobody-2"] });
   });

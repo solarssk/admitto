@@ -386,6 +386,21 @@ describe("deleteErasedWalletPasses", () => {
     expect(result.failureCodes).toEqual(["unknown"]);
   });
 
+  it("goes by attendee id, so that what it did not try is the end of the ids, whatever order the rows were written in", async () => {
+    // Nine passes, written from the highest id to the lowest: one batch is eight, so one pass is left for the next call.
+    const ids = Array.from({ length: 9 }, (_, i) => `copies-wp-ord-${9 - i}`);
+    for (const id of ids) await attendeeWithPass(id);
+    const provider = stubProvider(vi.fn(async () => new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 20))));
+
+    const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [...ids], provider, { budgetMs: 1 });
+
+    expect(result).toMatchObject({ deleted: 8, notTried: 1 });
+    expect(provider.deletePass.mock.calls.map((call) => call[0]).sort()).toEqual(
+      [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `pc-copies-wp-ord-${n}`),
+    );
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: "copies-wp-ord-9" } })).provider_removed_at).toBeNull();
+  });
+
   it("stops starting batches when the time budget is used up and reports what it did not try", async () => {
     await attendeeWithPass("copies-wp-budget-1");
     await attendeeWithPass("copies-wp-budget-2");
