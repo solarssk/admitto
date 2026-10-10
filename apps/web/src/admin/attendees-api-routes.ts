@@ -107,6 +107,7 @@ import {
   resolveMailInstanceBaseUrl,
   TransactionResponseError,
 } from "./admin-helpers.js";
+import { loadAttendeeErasureRecordForViewer, type AttendeeErasureRecord } from "./attendee-erasure-record.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
@@ -378,6 +379,9 @@ export type AttendeeDetailDto = {
   /** Set once the attendee's personal data has been erased: the name and email are placeholders and
    * the page is read-only. */
   erased_at: string | null;
+  /** Who erased them and how, read from the central audit log, for the page of an erased attendee:
+   * null for everyone else, and for an erasure that left no entry naming them. */
+  erasure: AttendeeErasureRecord | null;
   name: string;
   first_name: string | null;
   last_name: string | null;
@@ -1114,6 +1118,7 @@ async function buildAttendeeDetailDto(
   return {
     id: row.id,
     erased_at: row.erased_at ? row.erased_at.toISOString() : null,
+    erasure: null,
     name: row.name,
     first_name: row.first_name,
     last_name: row.last_name,
@@ -1434,8 +1439,9 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
     activityPageSize,
     activitySnapshot,
   );
+  const erasure = await loadAttendeeErasureRecordForViewer(c, db, { eventId, attendeeId: row.id, erasedAt: row.erased_at });
   c.header("Cache-Control", "no-store");
-  return c.json(dto);
+  return c.json({ ...dto, erasure });
 }
 
 type PatchInput = z.infer<typeof patchAttendeeFieldsSchema>;

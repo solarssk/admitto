@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -29,6 +29,7 @@ import { drainImportJobs } from "@admitto/import";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { resolveIpLocation } from "../../src/rate-limit/ip-location.js";
 
 const ORG_ID = "org-erase-api";
 const EVENT_ID = "evt-erase-api";
@@ -592,6 +593,193 @@ describe("a request without an event id in its path", () => {
   it("is answered 400 by both remove handlers before anything is looked up", async () => {
     expect((await handleRemoveEventAttendee(withoutEventId, prisma)).status).toBe(400);
     expect((await handleBulkRemoveEventAttendees(withoutEventId, prisma)).status).toBe(400);
+  });
+});
+
+describe("who erased an attendee, on the page of the erased attendee", () => {
+  const ORG_ADMIN_EMAIL = "erase-api-org-admin@example.com";
+  const detailPath = (eventId: string, attendeeId: string) => `/api/admin/events/${eventId}/attendees/${attendeeId}`;
+  let orgAdminCookie = "";
+
+  beforeAll(async () => {
+    await prisma.session.deleteMany({ where: { user: { email: ORG_ADMIN_EMAIL } } });
+    await prisma.roleAssignment.deleteMany({ where: { user: { email: ORG_ADMIN_EMAIL } } });
+    await prisma.user.deleteMany({ where: { email: ORG_ADMIN_EMAIL } });
+    const admin = await prisma.user.create({
+      data: { email: ORG_ADMIN_EMAIL, password_hash: await hashPassword("erase-api-org-admin-pass-123") },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: admin.id, role: "admin", scope_type: "organization", scope_id: ORG_ID },
+    });
+    await prisma.userMfaMethod.create({
+      data: { user_id: admin.id, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    const session = await createSession(prisma, { userId: admin.id, stage: SESSION_STAGE.FULL });
+    orgAdminCookie = `admitto_session=${session.rawToken}`;
+  });
+
+  // The entries this block writes by hand are dated around now, two of them ahead of it. The removal tests below read the
+  // newest entry of the organisation, so none of them may stay.
+  afterEach(async () => {
+    await prisma.adminAuditLog.deleteMany({ where: { actor_user_id: "erase-api-actor" } });
+  });
+
+  /** What the page of this attendee is told about who erased them, as the viewer with this session reads it. */
+  async function erasureOf(attendeeId: string, sessionCookie = cookie) {
+    const res = await app.request(detailPath(EVENT_ID, attendeeId), { headers: { Cookie: sessionCookie } });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { erasure: unknown }).erasure;
+  }
+
+  type AuditEntry = {
+    organization_id: string | null;
+    actor_user_id: string;
+    actor_email: string | null;
+    actor_display_name: string | null;
+    actor_timezone: string | null;
+    ip: string | null;
+    action_type: string;
+    created_at: Date;
+    metadata: Prisma.InputJsonObject;
+  };
+
+  /** The entry the erase handler writes to the central audit log, for an attendee erased at `erasedAt`. */
+  const matchingEntry = (attendeeId: string, erasedAt: Date): AuditEntry => ({
+    organization_id: ORG_ID,
+    actor_user_id: "erase-api-actor",
+    actor_email: "actor@example.com",
+    actor_display_name: "Actor Example",
+    actor_timezone: "Asia/Kolkata",
+    ip: "203.0.113.7",
+    action_type: "attendee_erased",
+    created_at: erasedAt,
+    metadata: { event_id: EVENT_ID, event_title: "Erase Api", attendee_id: attendeeId, method: "erase" },
+  });
+
+  /** A person erased at `erasedAt`, as the database allows it: the placeholders and nothing else (it checks). */
+  async function createErasedAttendee(erasedAt: Date) {
+    const id = `erase-api-erased-${++seq}`;
+    return prisma.attendee.create({
+      data: { id, event_id: EVENT_ID, name: "Erased attendee", email: `erased-${id}@erased.invalid`, erased_at: erasedAt },
+    });
+  }
+
+  async function erasedWithEntry(change: (entry: AuditEntry, attendeeId: string) => AuditEntry = (e) => e) {
+    const erasedAt = new Date();
+    const attendee = await createErasedAttendee(erasedAt);
+    await prisma.adminAuditLog.create({ data: change(matchingEntry(attendee.id, erasedAt), attendee.id) });
+    return attendee;
+  }
+
+  it("names the staff member who erased the person, through the admin, in the zone they were in", async () => {
+    const a = await createAttendee();
+    await app.request(erasePath(EVENT_ID, a.id), {
+      method: "POST",
+      headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json", "X-Client-Timezone": "Europe/Zurich" },
+      body: "{}",
+    });
+
+    // The test request has no socket, so the log holds "unknown" for the address: that is no place, and not shown.
+    expect(await erasureOf(a.id)).toEqual({
+      by: { display_name: null, email: SUPER_EMAIL },
+      via: "admin",
+      timezone: "Europe/Zurich",
+      ip: null,
+      location: null,
+    });
+  });
+
+  it("finds the person in a bulk erasure too", async () => {
+    const [a, b] = [await createAttendee(), await createAttendee()];
+    await post(bulkPath(EVENT_ID), { attendeeIds: [a.id, b.id] });
+
+    for (const id of [a.id, b.id]) {
+      expect(await erasureOf(id)).toMatchObject({ by: { email: SUPER_EMAIL }, via: "admin" });
+    }
+  });
+
+  it("has nothing for a person who is not erased", async () => {
+    const a = await createAttendee();
+
+    expect(await erasureOf(a.id)).toBeNull();
+  });
+
+  it("has nothing when the audit log has no entry of the erasure", async () => {
+    const a = await createErasedAttendee(new Date());
+
+    expect(await erasureOf(a.id)).toBeNull();
+  });
+
+  it("finds the entry that names the person (the control of the cases below)", async () => {
+    const a = await erasedWithEntry();
+
+    expect(await erasureOf(a.id)).toMatchObject({ by: { display_name: "Actor Example", email: "actor@example.com" } });
+  });
+
+  it.each([
+    ["another event", (e: AuditEntry) => ({ ...e, metadata: { ...e.metadata, event_id: ARCHIVED_EVENT_ID } })],
+    ["another organisation", (e: AuditEntry) => ({ ...e, organization_id: OTHER_ORG_ID })],
+    ["a removal", (e: AuditEntry) => ({ ...e, metadata: { ...e.metadata, method: "remove" } })],
+    ["another person", (e: AuditEntry) => ({ ...e, metadata: { ...e.metadata, attendee_id: "someone-else" } })],
+    [
+      "a bulk erasure of other people",
+      (e: AuditEntry) => ({
+        ...e,
+        action_type: "attendees_bulk_erased",
+        metadata: { event_id: EVENT_ID, attendee_ids: ["someone-else", "and-another"], count: 2, method: "erase" },
+      }),
+    ],
+    ["another kind of action", (e: AuditEntry) => ({ ...e, action_type: "event_archived" })],
+    ["two hours before the erasure", (e: AuditEntry) => ({ ...e, created_at: new Date(e.created_at.getTime() - 2 * 3_600_000) })],
+    ["two hours after the erasure", (e: AuditEntry) => ({ ...e, created_at: new Date(e.created_at.getTime() + 2 * 3_600_000) })],
+  ])("does not mistake an entry of %s for the erasure", async (_label, change) => {
+    const a = await erasedWithEntry(change);
+
+    expect(await erasureOf(a.id)).toBeNull();
+  });
+
+  it("takes the first entry when the log has more than one for the person", async () => {
+    const erasedAt = new Date();
+    const a = await createErasedAttendee(erasedAt);
+    const later = { ...matchingEntry(a.id, new Date(erasedAt.getTime() + 60_000)), actor_email: "later@example.com" };
+    await prisma.adminAuditLog.create({ data: later });
+    await prisma.adminAuditLog.create({ data: matchingEntry(a.id, erasedAt) });
+
+    expect(await erasureOf(a.id)).toMatchObject({ by: { email: "actor@example.com" } });
+  });
+
+  it("names no one when the entry kept no identity", async () => {
+    const a = await erasedWithEntry((e) => ({ ...e, actor_email: null, actor_display_name: null }));
+
+    expect(await erasureOf(a.id)).toMatchObject({ by: null, via: "admin" });
+  });
+
+  it("finds the person in an entry of a bulk erasure by the ids it lists", async () => {
+    const a = await erasedWithEntry((e, id) => ({
+      ...e,
+      action_type: "attendees_bulk_erased",
+      metadata: { event_id: EVENT_ID, attendee_ids: ["someone-else", id], count: 2, method: "erase" },
+    }));
+
+    expect(await erasureOf(a.id)).toMatchObject({ by: { email: "actor@example.com" } });
+  });
+
+  it("tells a Superadmin the address and where it is, and an administrator of the organisation neither", async () => {
+    const a = await erasedWithEntry();
+
+    expect(await erasureOf(a.id)).toMatchObject({ ip: "203.0.113.7", location: resolveIpLocation("203.0.113.7") });
+    const res = await app.request(detailPath(EVENT_ID, a.id), { headers: { Cookie: orgAdminCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { erasure: unknown };
+    expect(body.erasure).toMatchObject({ by: { email: "actor@example.com" }, via: "admin", ip: null, location: null });
+    // Nowhere in the answer, not only in that field.
+    expect(JSON.stringify(body)).not.toContain("203.0.113.7");
+  });
+
+  it("names the command line, with no address even for a Superadmin: the one in the log is a placeholder", async () => {
+    const a = await erasedWithEntry((e) => ({ ...e, ip: "127.0.0.1", metadata: { ...e.metadata, source: "cli" } }));
+
+    expect(await erasureOf(a.id)).toMatchObject({ via: "cli", ip: null, location: null });
   });
 });
 

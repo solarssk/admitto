@@ -330,10 +330,26 @@ export interface AttendeeNoteDto {
   created_at: string;
 }
 
+/** Who erased an attendee's personal data and how, as the central audit log has it (the erased person is not in it). */
+export interface AttendeeErasureDto {
+  /** The staff member, as they were when they did it. Null when the entry kept no identity. */
+  by: { display_name: string | null; email: string | null } | null;
+  /** Through the staff API (the admin screens use it) or the emergency command line. */
+  via: "admin" | "cli";
+  /** The zone the staff member was in, in which the Activity log tells their times. */
+  timezone: string | null;
+  /** Where from: only a Superadmin gets it, as the audit log it comes from is theirs. */
+  ip: string | null;
+  location: IpLocationDto | null;
+}
+
 export interface AttendeeDetailDto {
   id: string;
   /** Set once the attendee's personal data has been erased: the page is read-only. */
   erased_at?: string | null;
+  /** Who erased them and how. Null for everyone else, and for an erasure the audit log has no entry of; optional here so
+   * existing fixtures keep their shape. */
+  erasure?: AttendeeErasureDto | null;
   /** True for an erased attendee whose wallet pass still has to be deleted at the provider;
    * repeating the erasure is the retry. The server always sends it; optional here so existing
    * fixtures keep their shape. */
