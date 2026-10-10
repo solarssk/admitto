@@ -609,7 +609,7 @@ export function renderStatus(f, stripped = false) {
   const [icon, title] = STATES[f.state] ?? STATES.failed
   const rows = [['Commit', commitCell(f)], ['Changes', changesCell(f)], ['Reviewer', reviewerCell(f)],
     ['Coverage', coverageCell(f)], ['Tools', toolsCell(f)], ['Run', runCell(f)], ['Budget', budgetCell(f)]].filter(([, value]) => value)
-  const body = [STATUS_MARKER, `## ${icon} AI review: ${title}`, '', '| | |', '|:--|:--|',
+  const body = [STATUS_MARKER, `## ${icon} AI review: ${title}`, '', '| Item | Detail |', '|:--|:--|',
     ...rows.map(([label, value]) => `| **${label}** | ${value} |`), '', outcomeLines(f).join('\n\n'),
     ...(stripped ? ['', 'Some details were left out because they looked like a credential.'] : []), ...logLines(f), ...footer(f)].join('\n')
   if (!CREDENTIAL.test(body)) return body
