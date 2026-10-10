@@ -54,7 +54,7 @@ export async function assertCanBootstrap(
 }
 
 /** Check whether a user is the instance superadmin (for tests). */
-export async function userIsInstanceSuperadmin(
+export function userIsInstanceSuperadmin(
   prisma: PrismaClient,
   userId: string,
 ): Promise<boolean> {

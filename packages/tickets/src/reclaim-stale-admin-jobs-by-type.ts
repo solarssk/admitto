@@ -43,7 +43,7 @@ export async function reclaimStaleAdminJobsByType(
   let reclaimed = 0;
   for (const job of stale) {
     const error = job.status === "pending" ? errors.pending : errors.running;
-    const updated = await db.adminJob.updateMany({
+    const updated = await db.adminJob.updateMany({ // NOSONAR - stale jobs are reclaimed one at a time on purpose
       where: { id: job.id, status: job.status },
       data: { status: "failed", error, finished_at: now },
     });

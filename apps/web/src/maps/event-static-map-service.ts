@@ -129,7 +129,7 @@ export class EventStaticMapService {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= RENDER_ATTEMPTS; attempt++) {
       try {
-        return await this.renderPng(req, {
+        return await this.renderPng(req, { // NOSONAR - retry loop: an attempt runs only after the previous one failed
           tileConfig,
           userAgent,
           ...this.renderOptions,
@@ -138,7 +138,7 @@ export class EventStaticMapService {
       } catch (err) {
         lastErr = err;
         if (attempt < RENDER_ATTEMPTS) {
-          await this.sleepMs(RENDER_RETRY_DELAY_MS);
+          await this.sleepMs(RENDER_RETRY_DELAY_MS); // NOSONAR - backoff: the next attempt must wait for this delay
         }
       }
     }

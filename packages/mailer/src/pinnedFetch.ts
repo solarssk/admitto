@@ -57,9 +57,9 @@ export async function withPinnedFetch<T>(
       continue;
     }
     try {
-      return await handler(res);
+      return await handler(res); // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
     } finally {
-      await dispatcher.close();
+      await dispatcher.close(); // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
     }
   }
   throw lastConnectError instanceof Error

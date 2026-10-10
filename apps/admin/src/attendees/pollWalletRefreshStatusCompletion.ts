@@ -65,7 +65,7 @@ export async function pollWalletRefreshStatusCompletion(
         addToast("Wallet status refresh failed to run. Try Refresh status from the wallet menu.", "error");
         return;
       }
-      await sleepWithAbort(intervalMs, signal);
+      await sleepWithAbort(intervalMs, signal); // NOSONAR - polling: each check waits for the previous one and the interval
     }
     if (signal.aborted) return;
     addToast("Wallet status refresh is still running in the background.", "info");

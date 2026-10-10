@@ -566,11 +566,11 @@ export async function runWorker(db: PrismaClient): Promise<void> {
       // attendees at once) - keep draining immediately instead of waiting for the next
       // wake/tick, since the burst's notifications already collapsed into one wake.
       if (mightHaveMore) continue;
-      notify = await ensureNotifyClient(databaseUrl, notify);
+      notify = await ensureNotifyClient(databaseUrl, notify); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       if (notify) {
-        await notify.waitForWakeOrTimeout(tickMs, signal);
+        await notify.waitForWakeOrTimeout(tickMs, signal); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       } else {
-        await sleep(tickMs, signal);
+        await sleep(tickMs, signal); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       }
     }
   } finally {

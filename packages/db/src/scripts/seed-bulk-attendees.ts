@@ -283,7 +283,7 @@ async function main(): Promise<void> {
   let inserted = 0;
   for (let offset = 0; offset < rows.length; offset += BATCH) {
     const batch = rows.slice(offset, offset + BATCH);
-    const result = await prisma.attendee.createMany({
+    const result = await prisma.attendee.createMany({ // NOSONAR - one-off script: sequential on purpose to keep the database load low
       data: batch,
       skipDuplicates: true,
     });

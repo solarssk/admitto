@@ -148,7 +148,7 @@ export async function issueBadgeOnCheckIn(
  * Conditional/idempotent item transition — operator paths only (Lock known limitation).
  * lost / problem / not_applicable → IllegalItemTransitionError.
  */
-export async function transitionItemState(
+export function transitionItemState(
   params: {
     attendeeId: string;
     eventId: string;
@@ -283,7 +283,7 @@ async function resetItemStateToPending(
  * disabled item but has no reason to block undoing one that was already
  * issued before it got disabled.
  */
-export async function revokeItemState(
+export function revokeItemState(
   params: {
     attendeeId: string;
     eventId: string;
@@ -389,7 +389,7 @@ export async function resetAllItemStatesForRevoke(
     // the loop, racing resetItemStateToPending's guarded updateMany into a silent no-op (already
     // "pending", nothing to do, no audit row written) - count only the resets this call actually
     // performed, not every row the earlier scan found (bot review).
-    const reset = await resetItemStateToPending(tx, {
+    const reset = await resetItemStateToPending(tx, { // NOSONAR - statements in one transaction run one at a time
       attendeeId: params.attendeeId,
       eventId: params.eventId,
       eventItemId: s.event_item_id,

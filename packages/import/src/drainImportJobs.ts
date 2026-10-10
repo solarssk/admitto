@@ -111,7 +111,7 @@ export async function drainImportJobs(
     const job = await claimNextAdminJob(db, "import_commit");
     if (!job) break;
     claimed += 1;
-    const outcome = await processImportJob(db, storage, job);
+    const outcome = await processImportJob(db, storage, job); // NOSONAR - jobs run one at a time on purpose: each claim depends on the previous run finishing
     if (outcome === "succeeded") {
       succeeded += 1;
       if (job.event_id) eventIds.push(job.event_id);

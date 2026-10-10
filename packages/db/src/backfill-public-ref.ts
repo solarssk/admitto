@@ -22,7 +22,7 @@ const BACKFILL_BATCH_SIZE = 1000;
 const MAX_ASSIGN_ATTEMPTS = 5;
 
 /** Fetches the next page of agency attendees still missing a public_ref, keyset-paginated by id. */
-async function fetchNextAgencyBatch(
+function fetchNextAgencyBatch(
   prisma: PrismaClient,
   cursor: string | undefined,
 ): Promise<{ id: string }[]> {
@@ -77,7 +77,7 @@ export async function backfillAgencyPublicRefs(
     if (rows.length === 0) break;
 
     for (const row of rows) {
-      if (await assignPublicRefWithRetry(prisma, row.id)) {
+      if (await assignPublicRefWithRetry(prisma, row.id)) { // NOSONAR - one-off script: sequential on purpose to keep the database load low
         updated += 1;
       }
     }

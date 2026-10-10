@@ -91,7 +91,7 @@ export async function ensureStandardTicketType(eventId: string, db: TicketTypeDb
 /** Reads an event's ticket-type catalog, ordered for display - the single source of truth
  * consumed by the Event Settings tab, attendee create/edit, CSV import, filters, bulk-send, and
  * Reports alike. */
-export async function loadEventTicketTypes(db: TicketTypeDb, eventId: string): Promise<TicketTypeInfo[]> {
+export function loadEventTicketTypes(db: TicketTypeDb, eventId: string): Promise<TicketTypeInfo[]> {
   return db.ticketType.findMany({
     where: { event_id: eventId },
     orderBy: { sort_order: "asc" },

@@ -264,7 +264,7 @@ async function pollForHardBounce(args: {
 
       const remaining = deadline - args.now();
       if (remaining <= 0) break;
-      await args.sleep(Math.min(args.pollMs, remaining));
+      await args.sleep(Math.min(args.pollMs, remaining)); // NOSONAR - polling: each check waits for the previous one and the interval
     }
   } finally {
     await softCloseProvider(args.provider);

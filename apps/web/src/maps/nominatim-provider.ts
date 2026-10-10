@@ -192,7 +192,7 @@ export async function readBodyCapped(
       if (!value || value.byteLength === 0) continue;
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
+        await reader.cancel().catch(() => undefined); // NOSONAR - reading the response stream is sequential; this cancel is followed by a throw
         throw new GeocodingProviderError("unavailable");
       }
       chunks.push(value);

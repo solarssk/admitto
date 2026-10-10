@@ -274,7 +274,7 @@ async function processLegacyRows(
   let fieldsCreated = 0;
 
   for (const row of rows) {
-    const outcome = await applyLegacyRow(prisma, eventId, itemId, row, slots);
+    const outcome = await applyLegacyRow(prisma, eventId, itemId, row, slots); // NOSONAR - one-off script: sequential on purpose to keep the database load low
     if (outcome.contentField && !contentFields.includes(outcome.contentField)) {
       contentFields.push(outcome.contentField);
     }
@@ -346,14 +346,14 @@ export async function backfillEventCustomFields(prisma: PrismaClient): Promise<{
     }
     if (rows.length === 0) continue;
 
-    const slots = await getEventSlots(prisma, slotsByEvent, item.event_id);
-    const result = await processLegacyRows(prisma, item.event_id, item.id, rows, slots);
+    const slots = await getEventSlots(prisma, slotsByEvent, item.event_id); // NOSONAR - one-off script: sequential on purpose to keep the database load low
+    const result = await processLegacyRows(prisma, item.event_id, item.id, rows, slots); // NOSONAR - one-off script: sequential on purpose to keep the database load low
     fieldsCreated += result.fieldsCreated;
     conflicts.push(...result.conflicts);
     skipped.push(...result.skipped);
 
     const nextConfig = buildUpdatedConfig(item.config, result.contentFields);
-    await prisma.eventItem.update({
+    await prisma.eventItem.update({ // NOSONAR - one-off script: sequential on purpose to keep the database load low
       where: { id: item.id },
       data: { config: nextConfig },
     });

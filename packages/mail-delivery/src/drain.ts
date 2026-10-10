@@ -320,7 +320,7 @@ async function drainEventBatch(
     let failed = 0;
     let skipped = 0;
     for (const row of rows) {
-      const applied = await markClaimedRowFailed(prisma, row, err);
+      const applied = await markClaimedRowFailed(prisma, row, err); // NOSONAR - rows are marked failed one at a time on purpose, in order
       if (applied) failed += 1;
       else skipped += 1;
     }
@@ -332,7 +332,7 @@ async function drainEventBatch(
   let skipped = 0;
   try {
     for (const row of rows) {
-      const outcome = await sendOneFromSnapshot(row, prisma, mailer, baseUrl);
+      const outcome = await sendOneFromSnapshot(row, prisma, mailer, baseUrl); // NOSONAR - rows are sent one at a time on purpose, in order
       if (outcome === "sent") sent += 1;
       else if (outcome === "failed") failed += 1;
       else skipped += 1;
@@ -370,7 +370,7 @@ export async function drainPendingDeliveries(
   let failed = 0;
   let skipped = 0;
   for (const [eventId, rows] of byEvent) {
-    const outcome = await drainEventBatch(prisma, env, deps, eventId, rows, baseUrl);
+    const outcome = await drainEventBatch(prisma, env, deps, eventId, rows, baseUrl); // NOSONAR - events are drained one at a time on purpose
     sent += outcome.sent;
     failed += outcome.failed;
     skipped += outcome.skipped;

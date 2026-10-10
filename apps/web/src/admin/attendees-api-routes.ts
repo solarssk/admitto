@@ -2128,7 +2128,7 @@ export async function deleteProviderPassesBestEffort(
   if (!provider) return deleted;
 
   for (const batch of chunk([...targets], BULK_CHECKIN_CONCURRENCY)) {
-    const settled = await Promise.allSettled(batch.map((pass) => provider.deletePass(pass.providerPassId)));
+    const settled = await Promise.allSettled(batch.map((pass) => provider.deletePass(pass.providerPassId))); // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
     for (const [index, outcome] of settled.entries()) {
       if (outcome.status === "fulfilled") {
         deleted.add(batch[index]!.providerPassId);
@@ -2988,7 +2988,7 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
 
     const audit = adminAuditFromContext(c);
     for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
         batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
       );
       for (const [index, outcome] of settled.entries()) {
@@ -3103,7 +3103,7 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
 
     const audit = adminAuditFromContext(c);
     for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
         batch.map(({ id }) =>
           db.$transaction((tx) =>
             revokeCheckInMutation({ eventId, attendeeId: id, audit, resetItems: true }, tx),
@@ -3263,7 +3263,7 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
 
     const audit = adminAuditFromContext(c);
     for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
         batch.map((a) =>
           revokeOneAttendeePass(eventId, a.id, a.status as AttendeeStatus, audit, db),
         ),
@@ -3495,7 +3495,7 @@ async function runBulkWalletAction<K extends string>(
 
     const audit = adminAuditFromContext(c);
     for (const batch of chunk(targets, BULK_CHECKIN_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
         batch.map((target) => perAttendee(db, eventId, target, provider, audit)),
       );
       for (const [index, outcome] of settled.entries()) {

@@ -2158,7 +2158,7 @@ async function pollExportJobUntilReady(
         throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
       }
     }
-    if (attempt < maxAttempts - 1) await sleepExportPoll(intervalMs, signal);
+    if (attempt < maxAttempts - 1) await sleepExportPoll(intervalMs, signal); // NOSONAR - polling: each check waits for the previous one and the interval
   }
   throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
 }

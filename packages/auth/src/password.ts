@@ -8,7 +8,7 @@ const ARGON2_OPTIONS: argon2.HashOptions & { type: typeof argon2.argon2id } = {
 };
 
 /** Hash a plaintext password with argon2id. Never log the input. */
-export async function hashPassword(plaintext: string): Promise<string> {
+export function hashPassword(plaintext: string): Promise<string> {
   return argon2.hash(plaintext, ARGON2_OPTIONS);
 }
 

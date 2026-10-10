@@ -314,7 +314,7 @@ async function loadRevokeCounts(
  * every *active* pass with a provider_pass_id, regardless of confirmed install), since the point
  * here is warning about real people who'd actually notice the update on their phone, not how many
  * PassCreator API calls will fire - an issued-but-never-installed pass doesn't bother anyone. */
-async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): Promise<number> {
+function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): Promise<number> {
   return db.walletPass.count({
     where: {
       status: "active",
@@ -358,7 +358,7 @@ async function loadInstalledWalletPassCountByPlatform(
  * loadInstalledWalletPassCount above) is the right population for the Template ID lock: a pass
  * PassCreator has created is already bound to the current template even if nobody's device has
  * confirmed it yet. */
-async function loadIssuedWalletPassCount(
+function loadIssuedWalletPassCount(
   db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
 ): Promise<number> {
@@ -380,7 +380,7 @@ function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId: strin
   });
 }
 
-async function loadEventSettingsRow(
+function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
 ): Promise<(EventSettingsRow & { organization_id: string }) | null> {
@@ -738,10 +738,10 @@ async function listOwnWebhooksWithRetry(
 ): Promise<PassCreatorWebhookRow[] | undefined> {
   for (let attempt = 0; attempt < RE_CHECK_ATTEMPTS; attempt++) {
     try {
-      return (await client.listWebhooks()).filter((hook) => hook.passTemplate === templateId);
+      return (await client.listWebhooks()).filter((hook) => hook.passTemplate === templateId); // NOSONAR - retry loop: an attempt runs only after the previous one failed
     } catch (err) {
       if (attempt < RE_CHECK_ATTEMPTS - 1) {
-        await sleep(RE_CHECK_RETRY_DELAY_MS);
+        await sleep(RE_CHECK_RETRY_DELAY_MS); // NOSONAR - backoff: the next attempt must wait for this delay
       } else {
         console.error("wallet webhook subscribe: post-unsubscribe re-check failed after retries:", err);
       }

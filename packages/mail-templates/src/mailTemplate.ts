@@ -244,7 +244,7 @@ export type MailTemplateMetadataRow = {
 /** Update a template's identity fields only (label/icon/description) - no MJML compilation, no
  * placeholder validation, since none of these fields ever appear in the rendered email. Caller
  * already resolved `templateId` to a row this event/org may edit. */
-export async function updateMailTemplateMetadata(
+export function updateMailTemplateMetadata(
   templateId: string,
   input: UpdateMailTemplateMetadataInput,
   prisma: PrismaClient | Prisma.TransactionClient,

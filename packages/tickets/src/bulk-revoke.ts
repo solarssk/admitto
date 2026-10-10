@@ -57,7 +57,7 @@ export async function revokeAllCheckInsForEvent(
 
   let revokedCount = 0;
   for (const batch of chunk(admitted, BULK_REVOKE_CONCURRENCY)) {
-    const outcomes = await Promise.all(
+    const outcomes = await Promise.all( // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_REVOKE_CONCURRENCY
       batch.map(async (attendee) => {
         try {
           await prisma.$transaction((tx) =>
@@ -97,7 +97,7 @@ async function resetItemsForAttendeeIds(
 ): Promise<number> {
   let revokedCount = 0;
   for (const batch of chunk(attendeeIds, BULK_REVOKE_CONCURRENCY)) {
-    const counts = await Promise.all(
+    const counts = await Promise.all( // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_REVOKE_CONCURRENCY
       batch.map(async (attendeeId) => {
         try {
           // Sum the transaction's own re-scanned count, not the outer

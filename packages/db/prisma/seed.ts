@@ -109,7 +109,7 @@ async function main() {
 
   let upserted = 0;
   for (const a of attendeeData) {
-    await prisma.attendee.upsert({
+    await prisma.attendee.upsert({ // NOSONAR - one-off script: sequential on purpose to keep the database load low
       where: { event_id_email: { event_id: event.id, email: a.email } },
       update: {
         name: a.name,

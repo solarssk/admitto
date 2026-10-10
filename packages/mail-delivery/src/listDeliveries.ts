@@ -270,7 +270,7 @@ export async function getDeliveryWithTimeline(
  * nullifyDeliverySnapshots) — callers must render an explicit "message content no longer
  * available" state for that case, not treat it as a fetch error.
  */
-export async function getRenderedDelivery(
+export function getRenderedDelivery(
   params: { eventId: string; id: string },
   prisma: PrismaClient,
 ): Promise<{ attendee_id: string; rendered_subject: string | null; rendered_html: string | null } | null> {

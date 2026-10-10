@@ -194,7 +194,7 @@ export async function drainExportJobs(
     const job = await claimNextAdminJob(db, "export");
     if (!job) break;
     claimed += 1;
-    const outcome = await runOneExportJob(db, storage, job);
+    const outcome = await runOneExportJob(db, storage, job); // NOSONAR - jobs run one at a time on purpose: each claim depends on the previous run finishing
     if (outcome === "succeeded") succeeded += 1;
     else failed += 1;
   }

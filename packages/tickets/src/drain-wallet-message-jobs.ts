@@ -193,7 +193,7 @@ export async function drainWalletMessageJobs(
     const job = await claimNextAdminJob(db, "wallet_message");
     if (!job) break;
     claimed += 1;
-    const outcome = await runOneWalletMessageJob(db, job);
+    const outcome = await runOneWalletMessageJob(db, job); // NOSONAR - jobs run one at a time on purpose: each claim depends on the previous run finishing
     if (outcome === "succeeded") succeeded += 1;
     else failed += 1;
   }
