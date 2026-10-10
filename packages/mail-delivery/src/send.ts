@@ -555,7 +555,7 @@ export async function sendTicketEmails(
 
   try {
     for (const attendee of attendees) {
-      const outcome = await processAttendeeForSend({
+      const outcome = await processAttendeeForSend({ // NOSONAR - attendees are processed one at a time on purpose, in order
         attendee,
         event,
         resolvedTemplate,

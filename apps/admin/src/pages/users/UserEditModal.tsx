@@ -751,7 +751,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       patched = updated;
 
       for (const assignmentId of pendingRemoveIds) {
-        await revokeUserRole(user.id, assignmentId);
+        await revokeUserRole(user.id, assignmentId); // NOSONAR - sequential on purpose: revoked ids are tracked one by one, so a failure leaves an accurate partial result
         revokedIds.add(assignmentId);
         setPendingRemoveIds((prev) => {
           const next = new Set(prev);

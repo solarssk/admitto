@@ -78,7 +78,7 @@ export function toProviderFormView(provider: IdentityProvider): IdentityProvider
 }
 
 /** List enabled OIDC providers for the login SSO picker. */
-export async function findEnabledOidcProviders(
+export function findEnabledOidcProviders(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<IdentityProvider[]> {
   return prisma.identityProvider.findMany({
@@ -88,7 +88,7 @@ export async function findEnabledOidcProviders(
 }
 
 /** Load one OIDC provider by id, or null when missing or not OIDC type. */
-export async function findOidcProviderById(
+export function findOidcProviderById(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,
 ): Promise<IdentityProvider | null> {
@@ -98,7 +98,7 @@ export async function findOidcProviderById(
 }
 
 /** List all OIDC providers for superadmin configuration UI. */
-export async function listOidcProviders(
+export function listOidcProviders(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<IdentityProvider[]> {
   return prisma.identityProvider.findMany({
@@ -159,7 +159,7 @@ export interface ResolvedEndpoints {
 }
 
 /** Create provider record from pre-resolved endpoints (no outbound HTTP). */
-export async function createIdentityProviderWithEndpoints(
+export function createIdentityProviderWithEndpoints(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: IdentityProviderInput,
   endpoints: ResolvedEndpoints,
@@ -201,7 +201,7 @@ export async function createIdentityProvider(
 }
 
 /** Update provider record from pre-resolved endpoints (no outbound HTTP). */
-export async function updateIdentityProviderWithEndpoints(
+export function updateIdentityProviderWithEndpoints(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,
   input: IdentityProviderInput,
@@ -424,7 +424,7 @@ export async function updateIdentityProviderWithMappings(
 }
 
 /** List group→role mapping rows configured for one OIDC provider. */
-export async function listProviderGroupMappings(
+export function listProviderGroupMappings(
   prisma: PrismaClient | Prisma.TransactionClient,
   providerId: string,
 ) {

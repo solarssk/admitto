@@ -293,7 +293,7 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
       if (!value || value.byteLength === 0) continue;
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
+        await reader.cancel().catch(() => undefined); // NOSONAR - reading the response stream is sequential; this cancel is followed by a throw
         throw new StaticMapRenderError(`Tile too large (${total} bytes): ${safeUrl}`);
       }
       chunks.push(value);

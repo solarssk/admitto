@@ -125,7 +125,7 @@ export function createStaffSpaHandlers(options: StaffSpaOptions) {
   const { db } = options;
   const indexHtml = () => readDistFile(root, "index.html");
 
-  const serveAsset: MiddlewareHandler = async (c) => {
+  const serveAsset: MiddlewareHandler = async (c) => { // NOSONAR - MiddlewareHandler must return a Promise; the body has no await
     const path = c.req.path;
     if (!path.startsWith("/assets/")) return c.notFound();
     const file = readDistFile(root, path.slice(1));

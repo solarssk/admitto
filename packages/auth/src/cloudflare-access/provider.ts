@@ -69,7 +69,7 @@ export async function ensureCloudflareAccessProvider(
   });
 }
 
-export async function findCloudflareAccessProvider(
+export function findCloudflareAccessProvider(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<IdentityProvider | null> {
   return prisma.identityProvider.findFirst({

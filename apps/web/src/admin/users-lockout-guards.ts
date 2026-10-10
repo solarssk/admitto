@@ -3,7 +3,7 @@ import { hasScope } from "@admitto/db";
 
 export class LastSuperadminError extends Error {}
 
-export async function countSuperadminAssignments(
+export function countSuperadminAssignments(
   db: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
   return db.roleAssignment.count({
@@ -16,7 +16,7 @@ export async function countSuperadminAssignments(
   });
 }
 
-async function targetIsSuperadmin(db: PrismaClient | Prisma.TransactionClient, userId: string): Promise<boolean> {
+function targetIsSuperadmin(db: PrismaClient | Prisma.TransactionClient, userId: string): Promise<boolean> {
   return hasScope(db, userId, "superadmin", "instance");
 }
 

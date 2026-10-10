@@ -152,7 +152,7 @@ function serializeEventItem(row: {
 /** Sibling items' key/label/config, for detecting a content_field already claimed elsewhere.
  * `excludeItemId` omits the item being written to - a PATCH keeping its own existing selection
  * is not a conflict with itself. */
-async function loadSiblingEventItems(
+function loadSiblingEventItems(
   db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
   excludeItemId?: string,
@@ -232,7 +232,7 @@ export async function runSerializableTransaction<T>(
       : 1;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      return await db.$transaction(fn, options);
+      return await db.$transaction(fn, options); // NOSONAR - retry loop: an attempt runs only after the previous one failed
     } catch (err) {
       if (isSerializationFailure(err) && attempt < attempts - 1) continue;
       throw err;
@@ -242,7 +242,7 @@ export async function runSerializableTransaction<T>(
 }
 
 /** Count attendee rows where the item is currently held (state = "issued"). */
-async function countActivelyIssuedStates(
+function countActivelyIssuedStates(
   db: PrismaClient | Prisma.TransactionClient,
   itemId: string,
 ): Promise<number> {

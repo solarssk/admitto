@@ -290,7 +290,7 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
     let done = skippedNoPass;
 
     for (const batch of chunk(targets, WALLET_PUSH_CONCURRENCY)) {
-      const settled = await Promise.allSettled(
+      const settled = await Promise.allSettled( // NOSONAR - batches run one after another on purpose: concurrency is capped by WALLET_PUSH_CONCURRENCY
         batch.map((target) => reissueOneWalletPass(db, eventId, target, provider, audit)),
       );
       for (const outcome of settled) {
@@ -299,7 +299,7 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
         else skipped += 1;
       }
       done += batch.length;
-      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } });
+      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } }); // NOSONAR - progress is written after each batch, in order
     }
 
     return await finalizeWalletPushJob(db, job, eventId, request, targets.length, { reissued, skipped, errored });
@@ -336,7 +336,7 @@ export async function reclaimStaleWalletPushJobs(
   let reclaimed = 0;
   for (const job of stale) {
     const error = job.status === "pending" ? STALE_WALLET_PUSH_PENDING_ERROR : STALE_WALLET_PUSH_JOB_ERROR;
-    const updated = await db.adminJob.updateMany({
+    const updated = await db.adminJob.updateMany({ // NOSONAR - stale jobs are reclaimed one at a time on purpose
       where: { id: job.id, status: job.status },
       data: { status: "failed", error, finished_at: now },
     });
@@ -364,7 +364,7 @@ export async function drainWalletPushJobs(
     const job = await claimNextAdminJob(db, "wallet_push");
     if (!job) break;
     claimed += 1;
-    const outcome = await runOneWalletPushJob(db, job);
+    const outcome = await runOneWalletPushJob(db, job); // NOSONAR - jobs run one at a time on purpose: each claim depends on the previous run finishing
     if (outcome === "succeeded") succeeded += 1;
     else failed += 1;
   }

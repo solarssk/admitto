@@ -82,7 +82,7 @@ async function sendAllSettledBounded(
     for (let index = next++; index < messages.length; index = next++) {
       const message = messages.at(index)!;
       try {
-        results.set(index, { status: "fulfilled", value: await mailer.send(message) });
+        results.set(index, { status: "fulfilled", value: await mailer.send(message) }); // NOSONAR - worker pool: a worker takes its next item only after finishing the current one
       } catch (reason) {
         results.set(index, { status: "rejected", reason });
       }

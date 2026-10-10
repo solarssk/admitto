@@ -130,7 +130,7 @@ export async function reservePassCreatorSlotDistributed(url: string): Promise<"r
     const admitted = await tryReserveDistributedSlot(url);
     if (admitted === null) return "fail-open";
     if (admitted) return "reserved";
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(POLL_INTERVAL_MS); // NOSONAR - polling: each check waits for the previous one and the interval
   }
 }
 

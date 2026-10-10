@@ -575,7 +575,7 @@ export async function revokeAllOperatorSessionsForEvent(
 }
 
 /** List sessions for admin tooling; excludes revoked rows unless `includeRevoked`. */
-export async function listSessions(
+export function listSessions(
   prisma: PrismaClient | Prisma.TransactionClient,
   filters: ListSessionsFilters = {},
 ): Promise<import("@admitto/db").Session[]> {

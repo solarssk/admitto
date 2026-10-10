@@ -31,7 +31,7 @@ export async function undoLastCheckIn(
     throw new UndoNotAllowedError("Device id required for undo");
   }
 
-  return prisma.$transaction(async (tx) => {
+  return await prisma.$transaction(async (tx) => {
     const lastValid = await tx.checkIn.findFirst({
       where: {
         event_id: params.eventId,
@@ -150,7 +150,7 @@ export async function undoLastCheckIn(
  * of who performed it or when (ADR: this is a deliberate correction, not the
  * split-second "I scanned the wrong badge" safety net).
  */
-export async function revokeCheckIn(
+export function revokeCheckIn(
   params: { eventId: string; attendeeId: string; audit: OpsAuditContext },
   prisma: PrismaClient,
 ): Promise<UndoCheckInResult> {

@@ -64,7 +64,7 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
     return c.json({ error: "forbidden" }, 403);
   }
 
-  // TODO(multi-org): hardcoded until organization context is threaded through the upload
+  // NOSONAR - TODO(multi-org): hardcoded until organization context is threaded through the upload
   // handler (see ROADMAP v0.5+). Safe today - single-tenant deployment, only one Organization
   // row exists. MUST be replaced before enabling multi-org (would leak uploads cross-tenant).
   const orgId = "default";
@@ -107,7 +107,7 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
   const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
   if (!exists) return c.json({ error: "not_found" }, 404);
 
-  // TODO(multi-org): same single-tenant assumption as handlePostUpload above.
+  // NOSONAR - TODO(multi-org): same single-tenant assumption as handlePostUpload above. Tracked on the v0.5+ roadmap, not a forgotten task.
   const orgId = "default";
 
   const fileOrRes = await parseUploadedFile(c);

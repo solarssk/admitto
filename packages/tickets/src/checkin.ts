@@ -98,7 +98,7 @@ export async function checkInScan(
 /**
  * Recent scan history for a given event, ordered newest first.
  */
-export async function getRecentCheckIns(
+export function getRecentCheckIns(
   eventId: string,
   prisma: PrismaClient,
   limit = 10,

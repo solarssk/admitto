@@ -55,7 +55,7 @@ export async function generateBackupRecoveryCodes(
     rows.push({
       user_id: userId,
       type: "recovery",
-      credential_hash: await hashRecoveryCode(plaintext),
+      credential_hash: await hashRecoveryCode(plaintext), // NOSONAR - argon2 is memory-hard: hashing the codes one at a time bounds peak memory
     });
   }
 
@@ -159,7 +159,7 @@ export async function verifyBackupRecoveryCodesSet(
   return matchedRowIds.size === expectedCount;
 }
 
-async function loadUnusedBackupRecoveryRows(
+function loadUnusedBackupRecoveryRows(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<{ id: string; credential_hash: string | null }[]> {

@@ -1212,7 +1212,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   async function handleRevokeAllConfirm(): Promise<void> {
     setRevokeAllBusy(true); setRevokeError(null);
     try {
-      for (const s of otherSessions) await deleteAccountSession(s.id);
+      for (const s of otherSessions) await deleteAccountSession(s.id); // NOSONAR - sequential on purpose: stops at the first failed revoke, so no later session is touched after an error
       setRevokeAllOpen(false);
       setRevokeError(null);
       await loadSessions();

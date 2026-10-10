@@ -80,7 +80,7 @@ export async function runMailRetryFailed(db: PrismaClient): Promise<void> {
   let failed = 0;
 
   for (const { id } of candidates) {
-    const outcome = await retryOneDelivery(id, db, baseUrl);
+    const outcome = await retryOneDelivery(id, db, baseUrl); // NOSONAR - deliveries are retried one at a time on purpose, in order
     if (outcome === "retried") {
       retried++;
     } else if (outcome === "skipped") {

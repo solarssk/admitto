@@ -166,7 +166,7 @@ async function* walkManagedFiles(
     const key = relative(root, abs).split(sep).join("/");
     if (!isManagedUploadKey(key)) continue;
 
-    const st = await resolved.safeStat(abs);
+    const st = await resolved.safeStat(abs); // NOSONAR - async generator: entries are yielded one at a time, in directory order
     if (!st) continue;
     yield { key, mtimeMs: st.mtimeMs, sizeBytes: st.size };
   }

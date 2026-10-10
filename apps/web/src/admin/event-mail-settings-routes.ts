@@ -84,7 +84,7 @@ async function hasEventMailOverride(db: PrismaClient, eventId: string): Promise<
  * attempts are exhausted - a nonzero count means "the worker is still working through these,
  * or is not running," not "nothing will retry these without the manual `admitto
  * mail retry-failed` CLI." */
-async function countFailedRetryableDeliveries(db: PrismaClient, eventId: string): Promise<number> {
+function countFailedRetryableDeliveries(db: PrismaClient, eventId: string): Promise<number> {
   return db.emailDelivery.count({ where: { event_id: eventId, status: "failed", retryable: true } });
 }
 

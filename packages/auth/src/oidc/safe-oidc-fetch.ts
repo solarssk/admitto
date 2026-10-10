@@ -120,7 +120,7 @@ async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Pro
   for (const record of resolved.records) {
     const dispatcher = createPinnedDispatcher(resolved.hostname, record);
     try {
-      return await pinnedUndiciFetch(urlString, {
+      return await pinnedUndiciFetch(urlString, { // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
         method: init?.method,
         body: init?.body,
         signal: init?.signal,
@@ -131,7 +131,7 @@ async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Pro
       if (!isConnectFailure(err)) throw err;
       lastError = err;
     } finally {
-      await dispatcher.close();
+      await dispatcher.close(); // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
     }
   }
 

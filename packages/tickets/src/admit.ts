@@ -36,7 +36,7 @@ export type AdmitAttendeeParams = {
  *   2. AttendeeActionLog check_in
  *   3. If badge_at_entry: issue badge + item_issued log with metadata.check_in_id
  */
-export async function admitAttendee(
+export function admitAttendee(
   params: AdmitAttendeeParams,
   prisma: PrismaClient,
 ): Promise<AdmitResult> {

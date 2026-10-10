@@ -145,7 +145,7 @@ async function processMessage(
   }
 
   for (const line of lines) {
-    await applyParsedLine(ctx, message, line);
+    await applyParsedLine(ctx, message, line); // NOSONAR - lines of one message are applied in order
   }
 
   await markUidProcessed(db, settings.event_id, folder, message.uid);
@@ -213,7 +213,7 @@ async function processFolder(
   const ctx: FolderProcessCtx = { db, settings, summary, log, deliveryByRecipient };
   for (const { message, lines } of parsed) {
     try {
-      await processMessage(ctx, folder, message, lines, markedSeenUids);
+      await processMessage(ctx, folder, message, lines, markedSeenUids); // NOSONAR - messages are processed one at a time on purpose, in mailbox order
     } catch (err) {
       summary.errors += 1;
       log(
@@ -250,7 +250,7 @@ async function ingestEvent(
 
     try {
       for (const folder of parseFolders(settings.folders)) {
-        await processFolder(db, settings, summary, provider, folder, since, log);
+        await processFolder(db, settings, summary, provider, folder, since, log); // NOSONAR - folders are processed one at a time on purpose
       }
     } finally {
       try {
@@ -321,7 +321,7 @@ async function mapSettledInChunks<T>(
   const results: IngestSummary[] = [];
   for (let i = 0; i < items.length; i += concurrency) {
     const chunk = items.slice(i, i + concurrency);
-    const settled = await Promise.allSettled(chunk.map((item) => fn(item)));
+    const settled = await Promise.allSettled(chunk.map((item) => fn(item))); // NOSONAR - chunks run one after another on purpose: concurrency is capped by the concurrency argument
     for (const outcome of settled) {
       if (outcome.status === "fulfilled") {
         results.push(outcome.value);
