@@ -24,6 +24,10 @@ The answer is `{ erased, already_erased, not_found, wallet_pending, wallet_remov
 
 The database enforces the result: `Attendee_erased_carries_no_personal_data` rejects any row with `erased_at` set that still holds a name, email, credential or answer, and a trigger refuses to change or clear `erased_at` once it is set (a delete of the row is still allowed).
 
+## The CLI
+
+`admitto attendees erase --event <id> --attendee-ids <id[,id...]> --operator-email <email> [--dry-run] [--yes]` ([`attendees-erase.ts`](../../apps/cli/src/commands/attendees-erase.ts)) is the break-glass path for a privacy request when the admin UI and API are not reachable. It runs the same domain functions as the API (`eraseAttendees`, `scrubImportJobResults`, the two audit writers, `purgeEventJobFiles`, `deleteErasedWalletPasses`) in the same order, with `source: "cli"` in the audit metadata (`attendee_erased` for one id, `attendees_bulk_erased` for several, ids and counts only). Differences: it asks for a typed `yes` (not for the attendee's name), takes up to 500 ids, gives the provider up to 10 minutes (nothing else waits for it), does not announce the change to open admin screens (they catch up on their 30 second poll), and exits with code 2 when a pass is still at the provider after the follow-up. `--dry-run` needs no operator and changes nothing. **Remove from event** has no CLI command on purpose: it is for mistakes, changes Reports, and its best-effort wallet delete before the transaction lives in the web app.
+
 ## The screens
 
 Where an Administrator or Superadmin reaches the erasure (`apps/admin`):

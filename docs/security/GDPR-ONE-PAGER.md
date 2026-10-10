@@ -57,7 +57,7 @@ Two layers: **product-automated** (Admitto **worker** at boot and about every 24
 | Files left by attendee exports and failed imports (the exported CSV, XLSX or PDF, and the staged import CSV) | Deleted automatically **7 days** after the job finished (`EXPORT_FILE_RETENTION_DAYS`, `IMPORT_STAGED_FILE_RETENTION_DAYS`) - **worker** (boot + ~24h); erasing or removing an attendee also deletes the event's export files and finished import CSVs at once and stops an export or an import that is waiting or running (so that an import cannot add the person back), and deleting an event deletes all the files its jobs left |
 | In-app security alert inbox (`Notification`) | Purged automatically after **30 days** by default (`NOTIFICATION_RETENTION_DAYS`), or earlier by the staff member's own Clear all - **worker** (boot + ~24h) |
 | IP in admin audit log | **30 days or operator corporate log retention policy** - not auto-purged by product. (Check-in-time IP only appears in the System logs live tail below, in-memory only - not a persisted, purgeable table.) |
-| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (**Erase personal data**, single or bulk) or the erase API directly, per DSAR procedure |
+| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (**Erase personal data**, single or bulk) the erase API directly, or the `attendees erase` command of the emergency CLI when the UI is unreachable, per DSAR procedure |
 | Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
 | System logs live tail (in-memory only) | Not persisted by the product - last 1000 entries, emptied on every restart |
 
@@ -93,7 +93,7 @@ Authorized staff export attendee data through the admin UI; erasure follows a **
 | Works with existing organizer workflows | Manual steps; legal must approve process |
 | No extra public API surface | Less suited to high-volume self-service DSAR |
 
-**Status:** export available in admin UI (v0.4.2+); erasure via the Attendees admin UI (**Erase personal data**, single or bulk) or the erase API directly, per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
+**Status:** export available in admin UI (v0.4.2+); erasure via the Attendees admin UI (**Erase personal data**, single or bulk) the erase API directly, or the `attendees erase` command of the emergency CLI when the UI is unreachable, per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
 
 ---
 

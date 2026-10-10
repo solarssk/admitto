@@ -7,7 +7,7 @@ Usage: admitto <namespace> <command> [options]
 Namespaces:
   worker       Background loop (bounce ingest + retention; ADR 0042) - long-running
   checkin      Manual attendee admission when the SPA/scanner is down
-  attendees    Emergency CSV export (paper backup list)
+  attendees    Emergency CSV export (paper backup list), erase personal data (privacy request)
   mail         Retry failed email deliveries
   auth         Superadmin bootstrap / MFA break-glass (bootstrap-superadmin, reset-mfa, generate-emergency-recovery)
   sessions     Emergency session purge (revoke --user, purge --all)
@@ -26,6 +26,7 @@ Examples:
   admitto checkin admit --event evt_123 --attendee-id att_456
   admitto checkin admit --event evt_123 --scan "https://tickets.example.com/t/..."
   admitto attendees export --event evt_123 --out /app/emergency-exports/emergency-attendees-evt_123.csv --operator-email super@example.com
+  admitto attendees erase --event evt_123 --attendee-ids att_456,att_789 --operator-email super@example.com [--dry-run] [--yes]
   admitto mail retry-failed --event evt_123
   admitto auth bootstrap-superadmin --email admin@example.com
   admitto auth reset-mfa --email admin@example.com

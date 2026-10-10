@@ -31,12 +31,23 @@ export function erasedWalletPassesLeft(result: ErasedWalletSweepResult): number 
   return result.failed + result.noProvider + result.notTried;
 }
 
-type EventToSweep = {
-  id: string;
+/** The columns of an event that say which wallet provider account its passes live in. */
+export type EventWalletCredentials = {
   wallet_template_id: string | null;
   wallet_api_key_enc: string | null;
   wallet_field_mapping: unknown;
 };
+
+/** The event's wallet provider, from its credentials alone (the Wallet switch only governs issuing new passes), or null. */
+export function resolveEventWalletProvider(event: EventWalletCredentials): WalletPassProvider | null {
+  return resolveConfiguredWalletProvider({
+    walletTemplateId: event.wallet_template_id,
+    walletApiKeyEnc: event.wallet_api_key_enc,
+    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+  });
+}
+
+type EventToSweep = EventWalletCredentials & { id: string };
 
 /** What the sweep needs from outside, so a test can stand in for the provider and the clock. */
 export type ErasedWalletSweepDeps = {
@@ -46,23 +57,21 @@ export type ErasedWalletSweepDeps = {
 };
 
 const realDeps: ErasedWalletSweepDeps = {
-  // Credentials alone decide whether a provider exists; the event's wallet switch only governs issuing new passes.
-  resolveProvider: (event) =>
-    resolveConfiguredWalletProvider({
-      walletTemplateId: event.wallet_template_id,
-      walletApiKeyEnc: event.wallet_api_key_enc,
-      walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
-    }),
+  resolveProvider: resolveEventWalletProvider,
   deletePasses: deleteErasedWalletPasses,
   nowMs: () => Date.now(),
 };
 
-/** The same question the erase API asks after an erasure: a pass with a provider id, not yet removed, of an erased attendee. */
-function passToDelete(eventId: string): Prisma.WalletPassWhereInput {
+/**
+ * The same question the erase API asks after an erasure: a pass with a provider id, not yet removed, of an erased
+ * attendee (of the given ones, when `attendeeIds` is set).
+ */
+export function passToDelete(eventId: string, attendeeIds?: readonly string[]): Prisma.WalletPassWhereInput {
   return {
     provider_pass_id: { not: null },
     provider_removed_at: null,
     attendee: { event_id: eventId, erased_at: { not: null } },
+    ...(attendeeIds ? { attendee_id: { in: [...attendeeIds] } } : {}),
   };
 }
 
