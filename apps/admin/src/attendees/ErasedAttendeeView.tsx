@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Button, Card, Notice, PageHeader } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { AttendeeDetailDto, EventDto, TicketTypeDto } from "../api/types.js";
+import { isEventArchived } from "../components/ArchivedGuard.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
@@ -10,6 +11,7 @@ import { formatEventDate } from "../utils/event-dates.js";
 import { ERASED_ATTENDEE_LABEL } from "./erasedAttendee.js";
 import { ErasedBadge } from "./ErasedBadge.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
+import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import "./attendees.css";
 
@@ -55,8 +57,13 @@ function ProviderPassRow({
 }
 
 /** The More actions menu of an erased attendee: nothing here sends, issues or edits. Erase is
- * there but off, with the date it happened; deleting the entry stays available. */
-function ErasedActionsMenu({ erasedOn, onDelete }: Readonly<{ erasedOn: string; onDelete: () => void }>) {
+ * there but off, with the date it happened; removing the entry from the event stays available, except on an
+ * archived event, whose numbers are final. */
+function ErasedActionsMenu({
+  erasedOn,
+  archived,
+  onRemove,
+}: Readonly<{ erasedOn: string; archived: boolean; onRemove: () => void }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
@@ -88,11 +95,13 @@ function ErasedActionsMenu({ erasedOn, onDelete }: Readonly<{ erasedOn: string; 
           <MoreActionsMenuItem
             icon="trash"
             variant="danger"
-            label="Delete attendee"
-            hint="Permanently remove this entry"
+            label="Remove from event"
+            hint="For a mistake, duplicate or test person. Changes Reports."
+            disabled={archived}
+            tooltip={archived ? REMOVE_ARCHIVED_TOOLTIP : undefined}
             onClick={() => {
               setOpen(false);
-              onDelete();
+              onRemove();
             }}
           />
         </div>
@@ -117,13 +126,13 @@ export function ErasedAttendeeView({
   error,
   onRetry,
   onBack,
-  onDelete,
+  onRemove,
   onWalletTryAgain,
 }: Readonly<{
   detail: AttendeeDetailDto;
   /** When the personal data was erased (`detail.erased_at`, which the page has checked is set). */
   erasedAt: string;
-  event: Pick<EventDto, "timezone">;
+  event: Pick<EventDto, "timezone" | "archived_at">;
   ticketTypes: TicketTypeDto[];
   walletPlatforms: EnabledWalletPlatforms;
   /** The row of status chips, built by the page that owns them. */
@@ -133,7 +142,7 @@ export function ErasedAttendeeView({
   /** Reads the page again: the Retry of `error`. */
   onRetry: () => Promise<void>;
   onBack: () => void;
-  onDelete: () => void;
+  onRemove: () => void;
   onWalletTryAgain: () => void;
 }>) {
   const isDesktop = useIsDesktop();
@@ -159,7 +168,7 @@ export function ErasedAttendeeView({
                 Edit
               </Button>
             )}
-            <ErasedActionsMenu erasedOn={erasedOn} onDelete={onDelete} />
+            <ErasedActionsMenu erasedOn={erasedOn} archived={isEventArchived(event)} onRemove={onRemove} />
             <Button variant="secondary" onClick={onBack}>
               Back
             </Button>

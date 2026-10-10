@@ -634,15 +634,20 @@ describe("removing attendees from an event", () => {
     });
     await prisma.checkIn.create({ data: { attendee_id: a.id, event_id: eventId, status: "VALID" } });
     await prisma.attendeeNote.create({ data: { attendee_id: a.id, event_id: eventId, author_user_id: "staff-1", body: "note" } });
+    // The person's own activity log goes with them: it is not an audit entry of the removal (those have no attendee id).
+    await prisma.attendeeActionLog.create({
+      data: { event_id: eventId, attendee_id: a.id, action_type: "test_existing_attendee_log", actor_user_id: "staff-1" },
+    });
     return a;
   }
   const gone = async (attendeeId: string) =>
     (await prisma.attendee.count({ where: { id: attendeeId } })) +
     (await prisma.emailDelivery.count({ where: { attendee_id: attendeeId } })) +
     (await prisma.checkIn.count({ where: { attendee_id: attendeeId } })) +
-    (await prisma.attendeeNote.count({ where: { attendee_id: attendeeId } })) === 0;
+    (await prisma.attendeeNote.count({ where: { attendee_id: attendeeId } })) +
+    (await prisma.attendeeActionLog.count({ where: { attendee_id: attendeeId } })) === 0;
 
-  it("removes the attendee with their deliveries, check-ins and notes, and answers with counts", async () => {
+  it("removes the attendee with their deliveries, check-ins, notes and activity log, and answers with counts", async () => {
     const a = await withDependents();
     const keep = await withDependents();
 
@@ -1104,5 +1109,36 @@ describe("an address the person had before it was edited", () => {
 
     expect(await deliveryNow(theirs.id)).toMatchObject({ recipient_email: manager, status: "queued" });
     expect(await savedResult(job.id)).toContain(manager);
+  });
+});
+
+describe("the request budget of a single removal", () => {
+  // An id that is no attendee of the event: the answer is a 403, and what is counted is the request.
+  const ghost = "erase-api-att-none";
+  const remove = (eventId: string) => post(`/api/admin/events/${eventId}/attendees/${ghost}/remove`, { reason: "duplicate" });
+  const refreshStatus = (eventId: string) => post(`/api/admin/events/${eventId}/attendees/${ghost}/wallet/refresh-status`);
+
+  it("spends the wallet-action budget (10 a minute) when the event has wallet credentials, like every other single-attendee wallet action", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      expect((await remove(EVENT_ID)).status).not.toBe(429);
+    }
+
+    expect((await remove(EVENT_ID)).status).toBe(429);
+  });
+
+  it("shares that budget with the other single-attendee wallet actions", async () => {
+    for (let i = 0; i < 5; i += 1) await remove(EVENT_ID);
+    for (let i = 0; i < 5; i += 1) {
+      expect((await refreshStatus(EVENT_ID)).status).not.toBe(429);
+    }
+
+    expect((await remove(EVENT_ID)).status).toBe(429);
+    expect((await refreshStatus(EVENT_ID)).status).toBe(429);
+  });
+
+  it("does not spend it on an event without wallet credentials, where no provider can be called", async () => {
+    for (let i = 0; i < 12; i += 1) {
+      expect((await remove(ARCHIVED_EVENT_ID)).status).not.toBe(429);
+    }
   });
 });

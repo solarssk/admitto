@@ -11,6 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
+import { ATTENDEE_REMOVAL_REASON_LABELS, type AttendeeRemovalReason } from "@admitto/shared";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
@@ -55,8 +56,10 @@ const ACTION_LABELS: Record<string, string> = {
   account_session_revoked: "Session revoked (self-service)",
   account_sso_unlinked: "SSO unlinked (self-service)",
   attendee_created_manual: "Attendee created manually",
-  attendee_erased: "Attendee erased (GDPR)",
-  attendees_bulk_erased: "Attendees bulk erased (GDPR)",
+  // Erase and Remove from event share these two types, so that one filter finds every attendee who is gone;
+  // an entry's own label tells them apart (entryActionLabel).
+  attendee_erased: "Attendee erased or removed",
+  attendees_bulk_erased: "Attendees bulk erased or removed",
   audit_log_exported: "Audit log exported",
   bounce_ingest_settings_tested: "Bounce detection connection tested",
   bounce_ingest_manual_run: "Bounce detection check run manually",
@@ -124,6 +127,18 @@ const ACTION_LABELS: Record<string, string> = {
 /** Map a raw action_type to a display label, falling back to the raw value. */
 function actionLabel(type: string): string {
   return ACTION_LABELS[type] ?? type;
+}
+
+/** The label of one entry. An erasure (a privacy request) and a removal (a mistake) are written under the same
+ * action types and told apart by `metadata.method`; an entry without one predates the split and is an erasure,
+ * which is what the hard delete of that time was called. */
+function entryActionLabel(entry: Pick<AuditLogEntryDto, "action_type" | "metadata">): string {
+  const removed = entry.metadata?.method === "remove";
+  if (entry.action_type === "attendee_erased") return removed ? "Attendee removed (mistake)" : "Attendee erased (GDPR)";
+  if (entry.action_type === "attendees_bulk_erased") {
+    return removed ? "Attendees bulk removed (mistake)" : "Attendees bulk erased (GDPR)";
+  }
+  return actionLabel(entry.action_type);
 }
 
 /** Badge tone per action type - destructive/revoking actions read as `error`, permission/role
@@ -336,6 +351,10 @@ function formatMetadataValue(key: string, value: unknown): string {
   if (key === "provider" && typeof value === "string" && value in MAIL_PROVIDER_LABELS) {
     return MAIL_PROVIDER_LABELS[value as keyof typeof MAIL_PROVIDER_LABELS];
   }
+  // The reason of a removal is stored as its code, and shown as the words the operator chose it by.
+  if (key === "reason" && typeof value === "string" && value in ATTENDEE_REMOVAL_REASON_LABELS) {
+    return ATTENDEE_REMOVAL_REASON_LABELS[value as AttendeeRemovalReason];
+  }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
@@ -392,7 +411,7 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
   const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
     `Time: ${formatUtcPrimaryTime(entry.created_at)}${localTimeSuffix}`,
-    `Action: ${actionLabel(entry.action_type)}`,
+    `Action: ${entryActionLabel(entry)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
@@ -770,7 +789,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   {
     key: "action",
     header: "Action",
-    cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>,
+    cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{entryActionLabel(entry)}</Badge>,
   },
   {
     key: "scope",
@@ -808,7 +827,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
 /** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
  * the Scope meta item Security has no equivalent of. */
 function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
-  const label = actionLabel(entry.action_type);
+  const label = entryActionLabel(entry);
   return (
     <>
       <div className="audit-log-card__action" title={label}>

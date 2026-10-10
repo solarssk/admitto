@@ -434,6 +434,14 @@ export interface EraseAttendeesResponse {
   wallet_removed_ids: string[];
 }
 
+/** What the remove endpoints answer (counts only): see attendee-remove-routes.ts. */
+export interface RemoveAttendeesResponse {
+  /** Deleted by this request. */
+  removed: number;
+  /** Ids that match no attendee of the event (or that a request running at the same moment deleted first). */
+  not_found: number;
+}
+
 export interface UpdateAttendeePatch {
   first_name?: string;
   last_name?: string;

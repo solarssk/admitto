@@ -35,7 +35,7 @@
 | Random token / QR code | Ticket identifier - **no personal data embedded** | Non-personal |
 | OIDC IdP group membership (`ExternalIdentity.groups`) | Role mapping at OIDC login | Personal data (access metadata) |
 | `AttendeeActionLog.metadata` (admin audit trail) | Accountability - who changed an attendee's email/company/department/ticket type, from what, to what, and when | Personal data - see **Admin audit trail** below |
-| `AdminAuditLog.metadata` for attendee create/erase (central audit log) | Security/incident-response - which attendee (name, email) was created or permanently erased, from which event, by whom | Personal data - see **Central admin audit log** below |
+| `AdminAuditLog.metadata` for attendee creation (central audit log) | Security/incident-response - which attendee (name, email) was added by hand, to which event, by whom. The name and email are blanked when that attendee is erased or removed. An erasure or a removal records ids, counts and (for a removal) a reason code, never a name or email; entries written by the old hard delete still hold them | Personal data - see **Central admin audit log** below |
 | Wallet pass registration (name, event details sent to PassCreator; provider pass ID, download URL, per-platform device-registration counts, lifecycle timestamps such as voided, expired and removed-from-provider, and the raw User-Agent of the device that opened the Add to Wallet link stored locally; the local record and its User-Agent stay until the attendee is erased or the pass is removed with **Delete wallet pass**) | Apple/Google Wallet ticket delivery, when Wallet is enabled | Personal data - see [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md) |
 | `Attendee.custom_data` (event-specific custom fields, e.g. dietary, accessibility, shirt size, emergency contact) | Event-specific attendee data collection (Requirements page → Custom attendee fields); aggregated in Reports' **Custom fields** tab | Personal data - **may hold GDPR Art. 9 special-category data** if staff configure such a field; see **Admin audit trail** below for how edits to this field are (deliberately, only partially) audited |
 
@@ -171,15 +171,20 @@ above is about:
 
 - **Access:** admin-only, same access control as the rest of the attendee's data (no separate
   export or public surface).
-- **Erasure:** deleting an attendee removes the `Attendee` row and, in the same transaction, their
-  email deliveries (including stored rendered mail), check-ins, wallet pass rows, notes, and every
-  `AttendeeActionLog` row tied to them (`attendee_id` cascades, `onDelete: Cascade` in the Prisma
-  schema), including any logged field values. Before that, Admitto makes a best-effort call to
-  delete the attendee's pass at the wallet provider; a provider failure is logged and does not
-  block erasure, so verify the provider side if it matters. Erasure leaves one `attendee_erased`
-  `AttendeeActionLog` row with no attendee link, holding only the opaque attendee id and removal
-  counts (no name or email; those are kept only in the superadmin-only `AdminAuditLog`, see
-  below).
+- **Erasure and removal:** an attendee's data ends in one of two ways. *Erase personal data* (a
+  privacy request) anonymises the entry in place; *Remove from event* (a mistake: a duplicate, a test
+  person, a wrong import file) deletes it. Either way every `AttendeeActionLog` row tied to the
+  attendee is deleted, including any logged field values (a removal does it with the `Attendee`
+  row: `attendee_id` cascades, `onDelete: Cascade` in the Prisma schema), and so are the notes. A
+  removal also deletes the email deliveries (including stored rendered mail), check-ins and wallet
+  pass rows in the same transaction; what an erasure keeps and clears is listed in
+  [attendee-erasure.md](docs/dev/attendee-erasure.md). Admitto makes a best-effort call to delete the
+  attendee's pass at the wallet provider (an erasure after its commit, a removal before it); a
+  provider failure is logged and does not block either, so verify the provider side if it matters.
+  Each leaves one `attendee_erased` (bulk: `attendees_bulk_erased`) `AttendeeActionLog` row with no
+  attendee link, holding only the opaque attendee ids, the counts, the method (`erase` or `remove`)
+  and, for a removal, a reason from a fixed list. It holds no free text, name or email, and neither
+  does the central `AdminAuditLog` entry (see below).
 - **IP address:** each row also stores the acting staff member's IP address (`ip`), session id and
   device id. This table is not purged by the worker; its rows (IP included) go when the attendee
   or the event is deleted.
@@ -193,22 +198,25 @@ above is about:
 
 Separate from the per-attendee `AttendeeActionLog` above: a single, instance-wide, **superadmin-
 only** table (Organisation settings → Logs → **Audit**) that already records event/user/session/settings
-actions. Attendee **creation** and **erasure** write here too, and - unlike the per-attendee log -
-deliberately include the attendee's name and email in `metadata`, plus the event's title (not just
-its opaque id).
+actions. Attendee **creation** writes here too and - unlike the per-attendee log - deliberately
+includes the attendee's name and email in `metadata`, plus the event's title (not just its opaque id).
+An **erasure** or a **removal** (`attendee_erased` / `attendees_bulk_erased`, told apart by
+`metadata.method`) records the event, the attendee ids, the counts and, for a removal, a reason code -
+never a name or an email - and blanks the name and email in that attendee's creation entry.
 
 This is a narrower, more deliberate exception than it looks:
 
-- **Why erasure needs it:** the whole point of `AttendeeActionLog.attendee_id` cascading away with
-  its `Attendee` row (see above) is that the per-attendee trail disappears too - which is correct
-  for a legitimate DSAR erasure, but means there is otherwise **no record anywhere** of who was
-  erased, from which event, or by whom. If an attacker compromises an admin session and mass-erases
-  attendees, that is unrecoverable without this log. GDPR Art. 33/34 (breach notification to the
-  supervisory authority and to affected individuals) require being able to identify who was
-  affected - a design that erases that ability by construction cannot meet that duty.
+- **Why an erasure or a removal records ids only:** the point of the action is that nothing which
+  identifies the person stays, and an audit entry that kept their name would keep exactly that.
+  What the entry does record is who did it, when, from where, to which event and how many people,
+  which is what a mass erasure by a compromised admin session leaves to investigate. To learn
+  who the ids were, use a database backup from before (14 days by default, see the Retention table
+  below); if your breach-response process has to name the people, keep backups for as long as that
+  process needs.
+- **Why creation records identity:** it is the one entry that says who added whom by hand. It is
+  blanked together with the person's data when they are erased or removed.
 - **Lawful basis:** Art. 6(1)(f) legitimate interest - security monitoring and incident response -
-  scoped to this one admin-only log, not to the erasure action itself (the attendee's own data is
-  still genuinely gone from every attendee-facing table and surface).
+  scoped to this one admin-only log.
 - **Access:** superadmin-only (`GET /api/admin/organizations`-tier gate), stricter than the
   admin-level access the per-attendee log gets.
 - **Actor identity:** each row stores immutable `actor_email` / `actor_display_name` snapshot columns
@@ -216,8 +224,9 @@ This is a narrower, more deliberate exception than it looks:
   audit trail for the table's retention window.
 - **Retention - operator-run, not automated (no scheduled purge job exists for this table):** the
   Retention table below already lists "IP addresses in admin audit log… operator, 30 days or your
-  policy, product does not auto-purge" - the same applies to the name/email fields added here, and
-  is worth being explicit about rather than assuming: run this after your chosen retention window
+  policy, product does not auto-purge" - the same applies to the name/email fields of creation
+  entries, and of the entries the old hard delete wrote before Erase and Remove were separate, and is
+  worth being explicit about rather than assuming: run this after your chosen retention window
   elapses, scoped to just the fields this section is about (never truncate the whole table - that
   destroys the accountability record itself, defeating the point):
 
@@ -228,7 +237,7 @@ This is a narrower, more deliberate exception than it looks:
   WHERE action_type IN ('attendee_erased', 'attendee_created_manual')
     AND created_at < now() - interval '30 days';
 
-  -- Bulk erasure: metadata.attendees is an array of {id, name, email} objects.
+  -- Bulk erasure by the old hard delete: metadata.attendees is an array of {id, name, email} objects.
   UPDATE "AdminAuditLog"
   SET metadata = jsonb_set(metadata, '{attendees}', (
         SELECT jsonb_agg(a - 'name' - 'email')
@@ -258,7 +267,7 @@ policy). Different retention periods for different categories are intentional - 
 | IP addresses in admin audit log and the `http_request` access log (every request, staff or anonymous) | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP logged this way is never itself persisted in a purgeable table - it lives in the System logs live tail below (in-memory only) and wherever your container log driver keeps stdout.) |
 | Wallet pass at the provider (PassCreator) | Operator | Stays at the provider after the event, even once voided or expired, until you run **Attendees → More actions → Remove inactive passes**, **Remove from provider** on the attendee, **Delete wallet pass** (which also deletes the pass at the provider and the local record), or erase the attendee (best-effort delete). |
 | System logs live tail (in-memory only) | Product - automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
-| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly - see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
+| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Erase personal data** (single) or the Attendees list's row-selection bulk bar (several at once), or the erase API directly; a mistake (duplicate, test person) is taken out with **Remove from event** in the same places - see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
 Automated post-event attendee purge is planned for **v1.0**; until then, export and erasure for the
 attendee list stay manual (see the table row above).
@@ -272,7 +281,7 @@ framework:
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI - **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
-| Per-attendee erasure | Admin SPA (single and bulk) + `DELETE` API (API since v0.4.6, single and bulk delete in the admin SPA) |
+| Per-attendee erasure | Admin SPA (single and bulk): **Erase personal data** (anonymises the entry, Reports keep their numbers) and **Remove from event** (deletes the entry, for mistakes); each has an API endpoint for one attendee and one for a selection |
 | Automated purge job | Partial - auth-state and email delivery snapshot cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights

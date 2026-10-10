@@ -4,8 +4,9 @@ import { sanitizeDeliveryError } from "./sanitizeError.js";
 export interface DeliveryLogEntry {
   id: string;
   attendee_id: string;
-  /** Attendee's current display name (joined) — never dangling, GDPR erasure deletes deliveries
-   * in the same transaction as the attendee (see attendees-api-routes.ts handleDeleteEventAttendee). */
+  /** Attendee's current display name (joined) — never dangling: removing an attendee deletes their
+   * deliveries in the same transaction (`removeAttendees`), and an erasure keeps the attendee row, with
+   * the placeholder name. */
   attendee_name: string;
   status: string;
   provider: string;

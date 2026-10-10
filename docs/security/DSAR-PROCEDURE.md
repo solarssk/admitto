@@ -67,34 +67,43 @@ flowchart TD
        `POST /api/admin/events/:eventId/attendees/bulk-erase` with `{ "attendeeIds": [...] }`, with an
        authenticated staff session and CSRF token. Repeating a request for people who are already
        erased changes nothing and only tries the pending wallet deletes again.
-  2. Alternatively, **delete the attendee record entirely**. This is for mistakes, duplicates and
-     test people, because Reports change with it. Both paths below call the same `DELETE`/`bulk-delete`
-     `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below, and both
-     work even when the event is archived.
-     - **Single-attendee deletion:** **Admin → Attendees → attendee detail → More actions →
-       Delete attendee**, typing the attendee's name to confirm.
-     - **Bulk deletion:** select the rows on the **Attendees** list, then **More actions → Delete**
-       from the bulk bar. A confirmation dialog lists what will be removed; there's no typed-name
-       confirmation here since there's no single name to type, unlike the single-attendee flow.
+  2. For an entry that should never have existed (a duplicate, a test person, a row from the wrong
+     import file), use **Remove from event** instead. It deletes the attendee for good, so Reports
+     change with it. It is not the way to answer a privacy request, and it is refused on an archived
+     event, whose numbers are final (an archived event is still answered with step 1).
+     - **Single attendee:** **Admin → Attendees → attendee detail → More actions → Remove from
+       event**, choosing a reason and typing the attendee's name to confirm.
+     - **Several attendees:** select the rows on the **Attendees** list, then **More actions →
+       Remove from event** from the bulk bar, choosing a reason (no typed name: there is no single
+       name to type).
      - **What gets removed and audited:** dependent delivery, wallet, and check-in rows are removed
-       in one transaction. An event-level action-log entry records the erasure (`attendee_erased`, or one
-       `attendees_bulk_erased` entry for a bulk delete; attendee ids and removed-row counts only, no
-       name or email), plus a central admin-audit-log entry (one per single erasure, one per bulk
-       request listing every erased attendee) naming the erased attendee(s) and event. See
-       [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for why
-       the central entry retains identity, unlike the event-level trail.
-     - **Wallet pass at the provider:** after the local delete, Admitto also asks the wallet
-       provider to delete each erased attendee's pass, so their name no longer sits there. This is
-       best effort: if a provider call fails, the attendee is still erased locally and a
+       in one transaction, and the notes and the attendee's own activity log go with the row. The
+       address is also blanked on mail that staff addressed to the person on behalf of another
+       attendee, and in the saved results of the event's imports. An event-level action-log entry
+       records the removal (`attendee_erased`, or one `attendees_bulk_erased` entry for a bulk
+       removal, told apart from an erasure by `method: "remove"`), plus a central admin-audit-log
+       entry (one per single removal, one per bulk request): the reason code, the attendee ids and
+       the removed-row counts only, never a name or email. The name and email in the person's
+       creation entry of the central log are blanked too. Entries written by the old hard delete,
+       before Erase and Remove were separate, still hold them: see
+       [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for how
+       to blank those after your retention window.
+     - **Wallet pass at the provider:** before the local delete, Admitto also asks the wallet
+       provider to delete each removed attendee's pass, so their name no longer sits there. This is
+       best effort: if a provider call fails, the attendee is still removed locally and a
        `wallet_pass_erasure_delete_failed` entry appears in **System logs** (live tail,
-       superadmin). Check that log after an erasure and remove any remaining pass by hand in the
+       superadmin). Check that log after a removal and remove any remaining pass by hand in the
        provider's own console. **Nothing is sent, and no failure entry is written,** when the
        event's wallet template or API key is no longer configured (for example removed after the
        pass was issued). In that case restore the credentials in Event Settings → Wallet before
-       erasing, or delete the attendee's pass in the provider's own console yourself: once the local
-       row is gone, Admitto no longer knows which provider pass belonged to the attendee.
-     - **Direct-API fallback:** if the SPA is unavailable, call the endpoint directly with an
-       authenticated staff session and CSRF token (same session model as other admin mutations).
+       removing, or delete the attendee's pass in the provider's own console yourself: once the
+       local row is gone, Admitto no longer knows which provider pass belonged to the attendee.
+     - **Direct-API fallback:** if the SPA is unavailable, call
+       `POST /api/admin/events/:eventId/attendees/:id/remove` with `{ "reason": "duplicate" }`, or
+       `POST /api/admin/events/:eventId/attendees/bulk-remove` with `{ "attendeeIds": [...],
+       "reason": "duplicate" }` (the reasons are `duplicate`, `test_person`, `wrong_import`,
+       `added_by_mistake` and `other`), with an authenticated staff session and CSRF token (same
+       session model as other admin mutations).
   3. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 

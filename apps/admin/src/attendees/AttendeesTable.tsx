@@ -28,6 +28,7 @@ import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ErasedBadge } from "./ErasedBadge.js";
 import { ErasedEntriesBar } from "./ErasedEntriesBar.js";
 import { rowIdentity, selectRowLabel } from "./erasedAttendee.js";
+import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
@@ -300,7 +301,8 @@ export interface AttendeesTableProps {
   bulkDeleteWalletBusy: boolean;
   onBulkRemoveWallet: () => void;
   bulkRemoveWalletBusy: boolean;
-  onBulkDelete: () => void;
+  /** Remove the selection from the event for good (mistakes, duplicates, test people). */
+  onBulkRemove: () => void;
   /** Erase the personal data of the selection (a privacy request). */
   onBulkErase: () => void;
   /** Erased entries of the event (event-wide count): left out of the list unless `showErased`. */
@@ -719,7 +721,7 @@ function BulkMoreActionsMenu({
   walletPassCount,
   walletPlatforms,
   walletConfigured,
-  onDelete,
+  onRemove,
   onErase,
 }: Readonly<{
   selectedCount: number;
@@ -746,7 +748,7 @@ function BulkMoreActionsMenu({
   onChangeRsvpStatus: () => void;
   onSetCompany: () => void;
   onSetDepartment: () => void;
-  onDelete: () => void;
+  onRemove: () => void;
   onErase: () => void;
 } & BulkItemPassWalletActions>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
@@ -938,8 +940,9 @@ function BulkMoreActionsMenu({
             close={() => setOpen(false)}
           />
           <hr className="more-actions-menu__divider" />
-          {/* Neither is ArchivedGuard'd — privacy requests can legally arrive after an event
-           * ends, and neither endpoint blocks on archived_at. */}
+          {/* Erase is not ArchivedGuard'd: privacy requests can legally arrive after an event ends, and the
+           * endpoint does not block on archived_at. Remove changes Reports, which are final once the event is
+           * archived, so it is off there with its own tooltip, which names the way to answer a privacy request. */}
           <MoreActionsMenuItem
             icon="eraser"
             variant="danger"
@@ -953,11 +956,13 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="trash"
             variant="danger"
-            label="Delete"
-            hint={`Permanently remove ${attendeeCount(selectedCount)}`}
+            label="Remove from event"
+            hint="For mistakes, duplicates or test people. Changes Reports."
+            disabled={archived}
+            tooltip={archived ? REMOVE_ARCHIVED_TOOLTIP : undefined}
             onClick={() => {
               setOpen(false);
-              onDelete();
+              onRemove();
             }}
           />
         </div>
@@ -1041,7 +1046,7 @@ function BulkBar({
   walletPassCount,
   walletPlatforms,
   walletConfigured,
-  onBulkDelete,
+  onBulkRemove,
   onBulkErase,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -1070,7 +1075,7 @@ function BulkBar({
   onBulkChangeRsvpStatus: () => void;
   onBulkSetCompany: () => void;
   onBulkSetDepartment: () => void;
-  onBulkDelete: () => void;
+  onBulkRemove: () => void;
   onBulkErase: () => void;
 } & BulkItemPassWalletActions>) {
   const archived = event.archived_at != null;
@@ -1188,7 +1193,7 @@ function BulkBar({
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
           walletConfigured={walletConfigured}
-          onDelete={onBulkDelete}
+          onRemove={onBulkRemove}
           onErase={onBulkErase}
         />
       </div>
@@ -1828,7 +1833,7 @@ export function AttendeesTable({
   bulkDeleteWalletBusy,
   onBulkRemoveWallet,
   bulkRemoveWalletBusy,
-  onBulkDelete,
+  onBulkRemove,
   onBulkErase,
   erasedCount,
   showErased,
@@ -1963,7 +1968,7 @@ export function AttendeesTable({
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
           walletConfigured={walletConfigured}
-          onBulkDelete={onBulkDelete}
+          onBulkRemove={onBulkRemove}
           onBulkErase={onBulkErase}
         />
       ) : (

@@ -20,6 +20,7 @@ import type {
   ResendTicketBody,
   DismissBounceResponse,
   EraseAttendeesResponse,
+  RemoveAttendeesResponse,
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
@@ -163,6 +164,7 @@ import type {
   CreateTicketTypeBody,
   UpdateTicketTypePatch,
 } from "./types.js";
+import type { AttendeeRemovalReason } from "@admitto/shared";
 import { sleepWithAbort } from "../lib/sleep-with-abort.js";
 
 export type EventFullMeta = {
@@ -1099,36 +1101,34 @@ export async function updateAttendee(
   return parseJson<AttendeeDetailDto>(res);
 }
 
-/** Permanently erase an attendee's record (GDPR erasure) — profile, deliveries, wallet pass,
- * and check-ins. Irreversible; see docs/DSAR-PROCEDURE.md. */
-export async function deleteAttendee(eventId: string, attendeeId: string): Promise<void> {
+/** Remove one attendee from the event for good (the hard delete, for a duplicate, a test person
+ * or a mistake): the record goes with its deliveries, wallet pass and check-ins, and Reports
+ * change with it. The reason is a code from a fixed list, saved in the audit log with the id and
+ * nothing else. Irreversible, and refused on an archived event; see docs/dev/attendee-erasure.md. */
+export async function removeAttendee(
+  eventId: string,
+  attendeeId: string,
+  reason: AttendeeRemovalReason,
+): Promise<RemoveAttendeesResponse> {
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
-    jsonDeleteInit(),
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/remove`,
+    jsonPostInit({ reason }),
   );
-  if (!res.ok) {
-    let message = res.statusText || `HTTP ${res.status}`;
-    try {
-      const body = (await res.json()) as ApiErrorBody;
-      message = messageFromApiErrorBody(body) ?? message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, message);
-  }
+  return parseJson<RemoveAttendeesResponse>(res);
 }
 
-/** Permanently erase a selection of attendees at once (GDPR erasure), from the Attendees
- * list's row-selection bulk bar. Same effect as calling `deleteAttendee` once per id. */
-export async function bulkDeleteAttendees(
+/** Remove a selection from the event at once, from the Attendees list's row-selection bar. Same
+ * effect as `removeAttendee` once per id. */
+export async function bulkRemoveAttendees(
   eventId: string,
   attendeeIds: string[],
-): Promise<{ deletedCount: number }> {
+  reason: AttendeeRemovalReason,
+): Promise<RemoveAttendeesResponse> {
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-delete`,
-    jsonPostInit({ attendeeIds }),
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-remove`,
+    jsonPostInit({ attendeeIds, reason }),
   );
-  return parseJson<{ deletedCount: number }>(res);
+  return parseJson<RemoveAttendeesResponse>(res);
 }
 
 /** Erase one attendee's personal data (the privacy-request action): the record stays as an

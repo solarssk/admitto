@@ -782,408 +782,33 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
   });
 });
 
-describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
-  const ERASE_ATTENDEE = "att-admin-erase";
-
-  async function seedErasableAttendee() {
-    await prisma.attendee.create({
-      data: {
-        id: ERASE_ATTENDEE,
-        event_id: EVENT_A,
-        email: "erase-me@example.com",
-        name: "Erase Me",
-        token_hash: hashToken(generateToken()),
-        token_enc: encryptToString(generateToken()),
-      },
-    });
-
-    const giftbag = await prisma.eventItem.findFirstOrThrow({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      select: { id: true },
-    });
-
-    await prisma.$transaction([
-      prisma.emailDelivery.create({
-        data: {
-          organization_id: ORG_A,
-          event_id: EVENT_A,
-          attendee_id: ERASE_ATTENDEE,
-          purpose: "initial",
-          provider: "export_only",
-          status: "sent",
-          recipient_email: "erase-me@example.com",
-          rendered_subject: "Erase ticket",
-          rendered_html: "<p>Erase Me ticket</p>",
-        },
-      }),
-      prisma.walletPass.create({
-        data: {
-          attendee_id: ERASE_ATTENDEE,
-          pass_type_id: "pass.example.admitto",
-          serial_number: "erase-serial-001",
-          auth_token: "erase-auth-token",
-        },
-      }),
-      prisma.checkIn.create({
-        data: {
-          attendee_id: ERASE_ATTENDEE,
-          event_id: EVENT_A,
-          status: "VALID",
-          checked_in_by: adminId,
-        },
-      }),
-      prisma.attendeeItemState.create({
-        data: {
-          attendee_id: ERASE_ATTENDEE,
-          event_item_id: giftbag.id,
-          state: "issued",
-          updated_by: adminId,
-        },
-      }),
-      prisma.attendeeNote.create({
-        data: {
-          attendee_id: ERASE_ATTENDEE,
-          event_id: EVENT_A,
-          author_user_id: adminId,
-          body: "private erasure note",
-        },
-      }),
-      prisma.attendeeActionLog.create({
-        data: {
-          event_id: EVENT_A,
-          attendee_id: ERASE_ATTENDEE,
-          action_type: "test_existing_attendee_log",
-          actor_user_id: adminId,
-        },
-      }),
-    ]);
-  }
-
-  it("erases attendee dependencies and writes durable non-PII audit", async () => {
-    await seedErasableAttendee();
-
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ERASE_ATTENDEE}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
-
-    expect(res.status).toBe(204);
-    expect(await prisma.attendee.findUnique({ where: { id: ERASE_ATTENDEE } })).toBeNull();
-    expect(await prisma.emailDelivery.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
-    expect(await prisma.walletPass.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
-    expect(await prisma.checkIn.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
-    expect(await prisma.attendeeItemState.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
-    expect(await prisma.attendeeNote.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
-    expect(await prisma.attendeeActionLog.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
-
-    const audit = await prisma.attendeeActionLog.findFirst({
-      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendee_erased" },
-      orderBy: { created_at: "desc" },
-    });
-    expect(audit).not.toBeNull();
-    expect(audit?.actor_user_id).toBe(adminId);
-    const metadata = audit!.metadata as {
-      attendee_id?: string;
-      removed?: { email_deliveries?: number; wallet_passes?: number; check_ins?: number };
-    };
-    expect(metadata.attendee_id).toBe(ERASE_ATTENDEE);
-    expect(metadata.removed).toMatchObject({
-      email_deliveries: 1,
-      wallet_passes: 1,
-      check_ins: 1,
-    });
-    expect(JSON.stringify(metadata)).not.toContain("erase-me@example.com");
-    expect(JSON.stringify(metadata)).not.toContain("Erase Me");
-
-    const adminAudit = await prisma.adminAuditLog.findFirst({
-      where: { organization_id: ORG_A, action_type: "attendee_erased" },
-      orderBy: { created_at: "desc" },
-    });
-    expect(adminAudit).not.toBeNull();
-    expect(adminAudit?.actor_user_id).toBe(adminId);
-    // Unlike the per-attendee AttendeeActionLog entry above, the central admin audit log
-    // deliberately does include the erased attendee's identity (PO review: needed to answer
-    // "who was deleted" for incident response / GDPR Art. 33-34 breach-notification duties).
-    const adminMeta = adminAudit!.metadata as {
-      event_id?: string;
-      event_title?: string;
-      attendee_id?: string;
-      attendee_name?: string;
-      attendee_email?: string;
-    };
-    expect(adminMeta.event_id).toBe(EVENT_A);
-    expect(adminMeta.event_title).toBe("Event A");
-    expect(adminMeta.attendee_id).toBe(ERASE_ATTENDEE);
-    expect(adminMeta.attendee_name).toBe("Erase Me");
-    expect(adminMeta.attendee_email).toBe("erase-me@example.com");
-  });
-
-  it("returns 403 for cross-event attendee", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
-
-    expect(res.status).toBe(403);
-    expect(await prisma.attendee.findUnique({ where: { id: ATT_B1 } })).not.toBeNull();
-  });
-
-  it("does not 500 or write another audit row for an already erased attendee", async () => {
-    await seedErasableAttendee();
-
-    const first = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ERASE_ATTENDEE}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
-    expect(first.status).toBe(204);
-
-    const beforeAudit = await prisma.attendeeActionLog.count({
-      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendee_erased" },
-    });
-
-    const second = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ERASE_ATTENDEE}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
-
-    expect(second.status).toBe(403);
-    const afterAudit = await prisma.attendeeActionLog.count({
-      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendee_erased" },
-    });
-    expect(afterAudit).toBe(beforeAudit);
-  });
-
-  it("rejects operator", async () => {
+describe("the removed hard-delete routes", () => {
+  // "Remove from event" (…/remove and …/bulk-remove, tested in attendee-erase-api.test.ts) replaced
+  // them: a hard delete now needs a reason, and an archived event refuses it. A stale tab or a script
+  // that still calls the old routes is refused too, and nothing is deleted.
+  it("answers 404 to DELETE …/attendees/:id and leaves the attendee alone", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "DELETE",
-      headers: { Cookie: opCookie, ...sameOrigin },
+      headers: { Cookie: adminCookie, ...sameOrigin },
     });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(await prisma.attendee.findUnique({ where: { id: ATT_A2 } })).not.toBeNull();
+  });
+
+  it("answers 404 to POST …/attendees/bulk-delete and leaves the attendees alone", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [ATT_A2] }),
+    });
+
+    expect(res.status).toBe(404);
     expect(await prisma.attendee.findUnique({ where: { id: ATT_A2 } })).not.toBeNull();
   });
 });
 
-describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
-  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
-  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
-  // fix, PR3).
-  beforeEach(() => rateLimitStore.reset());
-
-  async function seedBulkErasable(ids: string[]) {
-    await prisma.attendee.createMany({
-      data: ids.map((id, i) => ({
-        id,
-        event_id: EVENT_A,
-        email: `bulk-erase-${i}@example.com`,
-        name: `Bulk Erase ${i}`,
-        token_hash: hashToken(generateToken()),
-        token_enc: encryptToString(generateToken()),
-      })),
-    });
-  }
-
-  /** Dependent rows on the first of `ids` — proves bulk-delete's cleanup actually runs, not just
-   * that the attendee rows themselves disappear (Codecov review). */
-  async function seedBulkErasableDependents(firstId: string) {
-    await prisma.$transaction([
-      prisma.emailDelivery.create({
-        data: {
-          organization_id: ORG_A,
-          event_id: EVENT_A,
-          attendee_id: firstId,
-          purpose: "initial",
-          provider: "export_only",
-          status: "sent",
-          recipient_email: "bulk-erase-0@example.com",
-          rendered_subject: "Bulk erase ticket",
-          rendered_html: "<p>Bulk Erase ticket</p>",
-        },
-      }),
-      prisma.walletPass.create({
-        data: {
-          attendee_id: firstId,
-          pass_type_id: "pass.example.admitto",
-          serial_number: `bulk-erase-serial-${firstId}`,
-          auth_token: "bulk-erase-auth-token",
-        },
-      }),
-      prisma.checkIn.create({
-        data: {
-          attendee_id: firstId,
-          event_id: EVENT_A,
-          status: "VALID",
-          checked_in_by: adminId,
-        },
-      }),
-    ]);
-  }
-
-  it("erases every requested attendee and writes one bulk + one central audit row", async () => {
-    const ids = ["att-bulk-erase-1", "att-bulk-erase-2"];
-    await seedBulkErasable(ids);
-    await seedBulkErasableDependents(ids[0]!);
-
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: ids }),
-    });
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deletedCount: 2 });
-    expect(await prisma.attendee.count({ where: { id: { in: ids } } })).toBe(0);
-    expect(await prisma.emailDelivery.count({ where: { attendee_id: ids[0] } })).toBe(0);
-    expect(await prisma.walletPass.count({ where: { attendee_id: ids[0] } })).toBe(0);
-    expect(await prisma.checkIn.count({ where: { attendee_id: ids[0] } })).toBe(0);
-
-    const audit = await prisma.attendeeActionLog.findFirst({
-      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendees_bulk_erased" },
-      orderBy: { created_at: "desc" },
-    });
-    expect(audit).not.toBeNull();
-    const meta = audit!.metadata as {
-      attendee_ids?: string[];
-      removed?: { email_deliveries?: number; wallet_passes?: number; check_ins?: number };
-    };
-    expect(meta.attendee_ids?.sort()).toEqual([...ids].sort());
-    expect(meta.removed).toMatchObject({ email_deliveries: 1, wallet_passes: 1, check_ins: 1 });
-
-    const adminAudit = await prisma.adminAuditLog.findFirst({
-      where: { organization_id: ORG_A, action_type: "attendees_bulk_erased" },
-      orderBy: { created_at: "desc" },
-    });
-    expect(adminAudit).not.toBeNull();
-    expect(adminAudit?.actor_user_id).toBe(adminId);
-    // Same PO-review rationale as the single-attendee case above - the central log
-    // deliberately keeps each erased attendee's name/email for incident-response purposes.
-    const adminMeta = adminAudit!.metadata as {
-      event_id?: string;
-      event_title?: string;
-      count?: number;
-      attendees?: { id: string; name: string; email: string }[];
-    };
-    expect(adminMeta.event_id).toBe(EVENT_A);
-    expect(adminMeta.event_title).toBe("Event A");
-    expect(adminMeta.count).toBe(2);
-    expect(adminMeta.attendees?.map((a) => a.id).sort()).toEqual([...ids].sort());
-    expect(adminMeta.attendees?.map((a) => a.email).sort()).toEqual(
-      ["bulk-erase-0@example.com", "bulk-erase-1@example.com"].sort(),
-    );
-  });
-
-  it("reports only the attendees this request actually deleted when one is erased by a concurrent request mid-transaction (CodeRabbit review)", async () => {
-    const ids = ["att-bulk-erase-race-1", "att-bulk-erase-race-2", "att-bulk-erase-race-3"];
-    await seedBulkErasable(ids);
-
-    // Simulates another admin's request (or a separate DSAR erasure) committing a delete for
-    // one of the selected attendees between this request's findMany and its own DELETE
-    // statement - exactly the TOCTOU window CodeRabbit flagged. See `onAttendeeFindMany` above:
-    // arms the shared hook wired into the extended `prisma` client, which self-clears after
-    // firing once.
-    let armed = true;
-    onAttendeeFindMany = async () => {
-      armed = false;
-      await prisma.attendee.delete({ where: { id: ids[1]! } });
-    };
-
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: ids }),
-    });
-
-    expect(armed).toBe(false); // sanity check: the injected concurrent delete actually ran
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deletedCount: 2 });
-
-    const bulkLog = await prisma.attendeeActionLog.findFirst({
-      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendees_bulk_erased" },
-      orderBy: { created_at: "desc" },
-    });
-    const bulkMeta = bulkLog!.metadata as { attendee_ids?: string[] };
-    expect(bulkMeta.attendee_ids?.sort()).toEqual([ids[0], ids[2]].sort());
-
-    const adminAudit = await prisma.adminAuditLog.findFirst({
-      where: { organization_id: ORG_A, action_type: "attendees_bulk_erased" },
-      orderBy: { created_at: "desc" },
-    });
-    const adminMeta = adminAudit!.metadata as {
-      count?: number;
-      attendees?: { id: string; name: string; email: string }[];
-    };
-    // Must reflect exactly what this request deleted - not the pre-race selection, which would
-    // over-report the concurrently-erased attendee as removed by this action.
-    expect(adminMeta.count).toBe(2);
-    expect(adminMeta.attendees?.map((a) => a.id).sort()).toEqual([ids[0], ids[2]].sort());
-  });
-
-  it("silently ignores an id from a different event instead of failing the whole request", async () => {
-    const ownId = "att-bulk-erase-own";
-    await seedBulkErasable([ownId]);
-
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: [ownId, ATT_B1] }),
-    });
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deletedCount: 1 });
-    expect(await prisma.attendee.findUnique({ where: { id: ownId } })).toBeNull();
-    expect(await prisma.attendee.findUnique({ where: { id: ATT_B1 } })).not.toBeNull();
-  });
-
-  it("rejects an empty selection", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: [] }),
-    });
-
-    expect(res.status).toBe(400);
-  });
-
-  it("rejects an oversized bulk body before it ever reaches the handler", async () => {
-    // bulkAttendeeIdsBodyLimit (app.ts) caps every bulk-attendee-id-array route at 0.5MB - well
-    // past what BULK_SEND_LIMIT (500) UUID-length ids could ever legitimately need.
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: Array.from({ length: 20_000 }, (_, i) => `att-${i}-${"x".repeat(30)}`) }),
-    });
-
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "request too large" });
-  });
-
-  it("rejects an attendeeId longer than 128 characters", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: ["x".repeat(129)] }),
-    });
-
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "validation_failed" });
-  });
-
-  it("rejects operator", async () => {
-    const ids = ["att-bulk-erase-op"];
-    await seedBulkErasable(ids);
-
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
-      method: "POST",
-      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: ids }),
-    });
-
-    expect(res.status).toBe(403);
-    expect(await prisma.attendee.findUnique({ where: { id: ids[0] } })).not.toBeNull();
-  });
-});
-
-describe("attendee erasure — wallet pass deletion at the provider", () => {
+describe("removing attendees: wallet pass deletion at the provider", () => {
   const WALLET_ERASE_EVENT = "evt-admin-att-wallet-erase";
   let deleteSpy: ReturnType<typeof vi.spyOn>;
 
@@ -1204,15 +829,17 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
   // The suite-level seed() doesn't know about this block's own event - without this, it's left
   // behind for the next test run and later blocks seed()'s organization.deleteMany() with a
   // dangling Event_organization_id_fkey violation (every attendee under it is already gone, each
-  // test's own erasure call deletes it as the very thing under test).
+  // test's own removal call deletes it as the very thing under test).
   afterAll(async () => {
     await prisma.event.deleteMany({ where: { id: WALLET_ERASE_EVENT } });
   });
 
   // vi.spyOn reuses the same mock across repeat calls on the same method rather than resetting
   // it, so each test both re-establishes a clean default implementation and clears call history
-  // left over from the previous test's assertions.
+  // left over from the previous test's assertions. A fresh request budget as well: a removal
+  // spends the wallet-action budget of this event, which every test below shares.
   beforeEach(() => {
+    rateLimitStore.reset();
     deleteSpy = vi.spyOn(PassCreatorClient.prototype, "deletePass").mockClear().mockResolvedValue(undefined);
   });
 
@@ -1234,58 +861,54 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
     }
   }
 
-  it("DELETE calls the provider's deletePass with the pass's provider_pass_id, then erases locally", async () => {
+  const remove = (attendeeId: string) =>
+    app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/${attendeeId}/remove`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "duplicate" }),
+    });
+
+  it("remove calls the provider's deletePass with the pass's provider_pass_id, then removes locally", async () => {
     const attendeeId = "att-wallet-erase-single";
     await seedWalletAttendee(attendeeId, "pc-erase-single");
 
-    const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/${attendeeId}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
+    const res = await remove(attendeeId);
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
     expect(deleteSpy).toHaveBeenCalledWith("pc-erase-single");
     expect(await prisma.attendee.findUnique({ where: { id: attendeeId } })).toBeNull();
   });
 
-  it("DELETE still erases the attendee locally when the provider delete fails", async () => {
+  it("remove still removes the attendee locally when the provider delete fails", async () => {
     const attendeeId = "att-wallet-erase-fail";
     await seedWalletAttendee(attendeeId, "pc-erase-fail");
     deleteSpy.mockRejectedValueOnce(new Error("network down"));
 
-    const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/${attendeeId}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
+    const res = await remove(attendeeId);
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
     expect(await prisma.attendee.findUnique({ where: { id: attendeeId } })).toBeNull();
   });
 
-  it("DELETE does not call deletePass when the attendee has no wallet pass yet", async () => {
+  it("remove does not call deletePass when the attendee has no wallet pass yet", async () => {
     const attendeeId = "att-wallet-erase-none";
     await seedWalletAttendee(attendeeId, null);
 
-    const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/${attendeeId}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
+    const res = await remove(attendeeId);
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
     expect(deleteSpy).not.toHaveBeenCalled();
   });
 
-  it("DELETE still calls deletePass when wallet issuance is disabled but credentials are still configured (CodeRabbit review, GDPR)", async () => {
+  it("remove still calls deletePass when wallet issuance is disabled but credentials are still configured (CodeRabbit review, GDPR)", async () => {
     const attendeeId = "att-wallet-erase-disabled";
     await seedWalletAttendee(attendeeId, "pc-erase-disabled");
     await prisma.event.update({ where: { id: WALLET_ERASE_EVENT }, data: { wallet_enabled: false } });
     try {
-      const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/${attendeeId}`, {
-        method: "DELETE",
-        headers: { Cookie: adminCookie, ...sameOrigin },
-      });
+      const res = await remove(attendeeId);
 
-      expect(res.status).toBe(204);
+      expect(res.status).toBe(200);
       expect(deleteSpy).toHaveBeenCalledWith("pc-erase-disabled");
       expect(await prisma.attendee.findUnique({ where: { id: attendeeId } })).toBeNull();
     } finally {
@@ -1293,19 +916,19 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
     }
   });
 
-  it("bulk-delete calls deletePass for every selected attendee that has a wallet pass", async () => {
+  it("bulk-remove calls deletePass for every selected attendee that has a wallet pass", async () => {
     const ids = ["att-wallet-erase-bulk-1", "att-wallet-erase-bulk-2"];
     await seedWalletAttendee(ids[0]!, "pc-erase-bulk-1");
     await seedWalletAttendee(ids[1]!, "pc-erase-bulk-2");
 
-    const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/bulk-delete`, {
+    const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/bulk-remove`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ attendeeIds: ids }),
+      body: JSON.stringify({ attendeeIds: ids, reason: "wrong_import" }),
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deletedCount: 2 });
+    expect(await res.json()).toEqual({ removed: 2, not_found: 0 });
     expect(deleteSpy).toHaveBeenCalledTimes(2);
     expect(deleteSpy.mock.calls.map((call: unknown[]) => call[0]).sort()).toEqual(["pc-erase-bulk-1", "pc-erase-bulk-2"]);
   });
@@ -4266,24 +3889,24 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(await tooMany.json()).toMatchObject({ error: "validation_failed" });
     });
 
-    it("also rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids for bulk-delete and bulk-revoke-pass, once the event has wallet configured (own re-audit after PR #1064 round 3, before any bot flagged it)", async () => {
-      // bulk-delete/bulk-revoke-pass's own body schema still allows the generic BULK_SEND_LIMIT
+    it("also rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids for bulk-remove and bulk-revoke-pass, once the event has wallet configured (own re-audit after PR #1064 round 3, before any bot flagged it)", async () => {
+      // bulk-remove/bulk-revoke-pass's own body schema still allows the generic BULK_SEND_LIMIT
       // (500) - the round-3 fix only shrank the 3 dedicated wallet-bulk routes' schemas, missing
-      // that these two share the identical per-attendee PassCreator fan-out once the event has
+      // that these share the identical per-attendee PassCreator fan-out once the event has
       // wallet configured (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort).
       // assertWalletBulkSelectionWithinLimit closes that gap without touching either schema.
-      const tooManyIds = Array.from({ length: 101 }, (_, i) => `att-wallet-bulk-delete-toomany-${i}`);
+      const tooManyIds = Array.from({ length: 101 }, (_, i) => `att-wallet-bulk-remove-toomany-${i}`);
 
-      const bulkDeleteRes = await app.request(
-        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+      const bulkRemoveRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-remove`,
         {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ attendeeIds: tooManyIds }),
+          body: JSON.stringify({ attendeeIds: tooManyIds, reason: "duplicate" }),
         },
       );
-      expect(bulkDeleteRes.status).toBe(400);
-      expect(await bulkDeleteRes.json()).toMatchObject({ error: "validation_failed" });
+      expect(bulkRemoveRes.status).toBe(400);
+      expect(await bulkRemoveRes.json()).toMatchObject({ error: "validation_failed" });
 
       const bulkRevokePassRes = await app.request(
         `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-revoke-pass`,
@@ -4297,24 +3920,24 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(await bulkRevokePassRes.json()).toMatchObject({ error: "validation_failed" });
     });
 
-    it("does not shrink bulk-delete/bulk-revoke-pass below the generic BULK_SEND_LIMIT (500) on an event with no wallet configured", async () => {
+    it("does not shrink bulk-remove/bulk-revoke-pass below the generic BULK_SEND_LIMIT (500) on an event with no wallet configured", async () => {
       // Same over-100 selection as above, but against the unconfigured event - since
       // deleteWalletPassesBestEffort/syncWalletPassOnStatusChangeBestEffort can never reach
       // PassCreator for this event, the smaller wallet-only cap must not apply here.
       const overWalletLimitIds = Array.from(
         { length: 101 },
-        (_, i) => `att-nowallet-bulk-delete-toomany-${i}`,
+        (_, i) => `att-nowallet-bulk-remove-toomany-${i}`,
       );
 
-      const bulkDeleteRes = await app.request(
-        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-delete`,
+      const bulkRemoveRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-remove`,
         {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ attendeeIds: overWalletLimitIds }),
+          body: JSON.stringify({ attendeeIds: overWalletLimitIds, reason: "duplicate" }),
         },
       );
-      expect(bulkDeleteRes.status).not.toBe(400);
+      expect(bulkRemoveRes.status).not.toBe(400);
 
       const bulkRevokePassRes = await app.request(
         `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-revoke-pass`,
@@ -4327,58 +3950,58 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(bulkRevokePassRes.status).not.toBe(400);
     });
 
-    it("does not charge the wallet-bulk budget for bulk-delete or bulk-revoke-pass on an event with no wallet configured (bot review, PR #1064 round 3)", async () => {
-      // 11 bulk-delete requests in a row against a non-wallet event - if this route still charged
+    it("does not charge the wallet-bulk budget for bulk-remove or bulk-revoke-pass on an event with no wallet configured (bot review, PR #1064 round 3)", async () => {
+      // 11 bulk-remove requests in a row against a non-wallet event - if this route still charged
       // the wallet-bulk budget (10/10min) unconditionally, the 11th would 429. It shouldn't,
       // because deleteWalletPassesBestEffort can never actually call PassCreator for this event.
       for (let i = 0; i < 11; i++) {
-        const id = `att-nowallet-bulk-delete-${i}`;
+        const id = `att-nowallet-bulk-remove-${i}`;
         await seedActionAttendee(id, WALLET_ACTION_EVENT_UNCONFIGURED);
         const res = await app.request(
-          `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-delete`,
+          `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-remove`,
           {
             method: "POST",
             headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-            body: JSON.stringify({ attendeeIds: [id] }),
+            body: JSON.stringify({ attendeeIds: [id], reason: "duplicate" }),
           },
         );
         expect(res.status).not.toBe(429);
       }
     });
 
-    it("still charges the wallet-bulk budget for bulk-delete on an event that does have wallet configured, even before checking the specific selection", async () => {
+    it("still charges the wallet-bulk budget for bulk-remove on an event that does have wallet configured, even before checking the specific selection", async () => {
       // Conservative-but-cheap check: gated on the *event's* wallet config, not on whether the
       // specific submitted ids actually have a wallet pass (that would need a body-aware lookup
       // inside the rate-limit middleware itself) - so this still applies even to a selection of
       // attendees who happen to have no wallet pass, as long as the event has wallet configured.
       for (let i = 0; i < 10; i++) {
-        const id = `att-wallet-bulk-delete-budget-${i}`;
+        const id = `att-wallet-bulk-remove-budget-${i}`;
         await seedActionAttendee(id, WALLET_ACTION_EVENT);
         const res = await app.request(
-          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-remove`,
           {
             method: "POST",
             headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-            body: JSON.stringify({ attendeeIds: [id] }),
+            body: JSON.stringify({ attendeeIds: [id], reason: "duplicate" }),
           },
         );
         expect(res.status).not.toBe(429);
       }
 
-      const id = "att-wallet-bulk-delete-budget-limited";
+      const id = "att-wallet-bulk-remove-budget-limited";
       await seedActionAttendee(id, WALLET_ACTION_EVENT);
       try {
         const limited = await app.request(
-          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-remove`,
           {
             method: "POST",
             headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-            body: JSON.stringify({ attendeeIds: [id] }),
+            body: JSON.stringify({ attendeeIds: [id], reason: "duplicate" }),
           },
         );
         expect(limited.status).toBe(429);
       } finally {
-        // The 429 means bulk-delete never ran for this attendee, unlike the 10 above - clean it up
+        // The 429 means bulk-remove never ran for this attendee, unlike the 10 above - clean it up
         // ourselves so it doesn't linger past this point (see the "wallet_status on GET list"
         // block below, which expects its own single seeded attendee to still be on page 1 of the
         // default, unfiltered, 25-per-page attendee list).

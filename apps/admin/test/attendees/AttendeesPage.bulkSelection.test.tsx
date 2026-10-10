@@ -17,7 +17,8 @@ const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
-const bulkDeleteAttendees = vi.fn();
+const bulkRemoveAttendees = vi.fn();
+const bulkEraseAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
 const bulkRevokeCheckIn = vi.fn();
 const bulkRevokePass = vi.fn();
@@ -136,7 +137,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
-  bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
+  bulkRemoveAttendees: (...args: unknown[]) => bulkRemoveAttendees(...args),
+  bulkEraseAttendees: (...args: unknown[]) => bulkEraseAttendees(...args),
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
   bulkRevokeCheckIn: (...args: unknown[]) => bulkRevokeCheckIn(...args),
   bulkRevokePass: (...args: unknown[]) => bulkRevokePass(...args),
@@ -190,11 +192,10 @@ function bulkBar() {
   return within(bar as HTMLElement);
 }
 
-/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first.
- * The accessible name concatenates the label and hint text, so a plain prefix match on "Delete"
- * also catches "Delete wallet pass" - excluded via the lookahead. */
-function openAndArmDeleteDialog() {
-  return openMenuItemAndArmDialog(/^Delete(?! wallet)/);
+/** Remove from event lives behind the bulk bar's "More actions" menu (not a bare button) - open it
+ * first. The accessible name concatenates the label and hint text, so the prefix is matched. */
+function openAndArmRemoveDialog() {
+  return openMenuItemAndArmDialog(/^Remove from event/);
 }
 
 /** "Check in" is a bare bulk-bar button (not behind "More actions") gated by its own confirm
@@ -504,66 +505,117 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
   });
 });
 
-describe("AttendeesPage bulk delete (#356 follow-up)", () => {
-  it("deletes the selected attendees via bulkDeleteAttendees, toasts, and clears the selection", async () => {
+describe("AttendeesPage bulk remove from event", () => {
+  const rowCheckedIn = { ...rowA, check_in_status: "admitted" as const, admitted_at: "2026-06-01T09:30:00.000Z" };
+
+  async function selectOnly(...names: string[]) {
+    await screen.findByText("Jane Doe");
+    for (const name of names) fireEvent.click(screen.getByRole("checkbox", { name: `Select ${name}` }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+  }
+
+  it("removes the selected attendees via bulkRemoveAttendees with the chosen reason, toasts, and clears the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockResolvedValue({ deletedCount: 2 });
+    bulkRemoveAttendees.mockResolvedValue({ removed: 2, not_found: 0 });
 
     renderPage();
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await selectOnly("Jane Doe", "John Smith");
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
 
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const dialog = openAndArmRemoveDialog();
+    expect(within(dialog).getByText("Remove 2 people from the event?")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Wrong import file" }));
+    const readsBefore = fetchEventAttendees.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
     await waitFor(() => {
-      expect(bulkDeleteAttendees).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"]);
+      expect(bulkRemoveAttendees).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"], "wrong_import");
     });
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("2 attendees permanently deleted", "success");
+      expect(addToast).toHaveBeenCalledWith("2 people removed from the event", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+    // The dialog is closed (by role: its title counts the selection, which is empty by now) and the list is read
+    // again, so the removed rows leave the screen.
+    expect(screen.queryByRole("dialog", { name: /^Remove \d+ (person|people) from the event\?$/ })).toBeNull();
+    await waitFor(() => expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(readsBefore));
   });
 
-  it("shows an operator-safe error inside the dialog and keeps the selection when bulkDeleteAttendees fails", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
+  it("keeps the dialog open while the removal runs: Escape does nothing until it has answered", async () => {
+    let resolveRemoval!: (value: { removed: number; not_found: number }) => void;
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    bulkRemoveAttendees.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRemoval = resolve;
+      }),
+    );
 
     renderPage();
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: "Remove from event" }).getAttribute("aria-busy")).toBe("true"),
+    );
 
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Remove 1 person from the event?" })).toBeTruthy();
 
-    // Inline in the dialog, not a toast - matches the attendee detail page's single-delete
+    await act(async () => {
+      resolveRemoval({ removed: 1, not_found: 0 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove 1 person from the event?" })).toBeNull());
+  });
+
+  it("sends Duplicate entry when the reason was not changed", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRemoveAttendees.mockResolvedValue({ removed: 1, not_found: 0 });
+
+    renderPage();
+    await selectOnly("Jane Doe");
+
+    const dialog = openAndArmRemoveDialog();
+    expect((within(dialog).getByRole("radio", { name: "Duplicate entry" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
+
+    await waitFor(() => {
+      expect(bulkRemoveAttendees).toHaveBeenCalledWith("evt-1", ["att-1"], "duplicate");
+    });
+  });
+
+  it("shows an operator-safe error inside the dialog and keeps the selection when bulkRemoveAttendees fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRemoveAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderPage();
+    await selectOnly("Jane Doe");
+
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
+
+    // Inline in the dialog, not a toast - matches the attendee detail page's single remove
     // flow and the project's own "destructive actions don't also toast" convention.
-    await screen.findByText("Delete failed.");
+    await screen.findByText("Could not remove attendees. Try again.");
     expect(addToast).not.toHaveBeenCalled();
-    expect(screen.getByText("Permanently delete 1 attendee?")).toBeTruthy();
+    expect(screen.getByText("Remove 1 person from the event?")).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 
-  it("Cancel closes the bulk-delete dialog without calling bulkDeleteAttendees", async () => {
+  it("Cancel closes the bulk remove dialog without calling bulkRemoveAttendees", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
 
     renderPage();
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
-
-    const dialog = openAndArmDeleteDialog();
+    const dialog = openAndArmRemoveDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByText("Permanently delete 1 attendee?")).toBeNull();
-    expect(bulkDeleteAttendees).not.toHaveBeenCalled();
+    expect(screen.queryByText("Remove 1 person from the event?")).toBeNull();
+    expect(bulkRemoveAttendees).not.toHaveBeenCalled();
   });
 
   it("redirects to /login on a 401 instead of showing an inline error", async () => {
@@ -576,16 +628,13 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     });
     try {
       fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-      bulkDeleteAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+      bulkRemoveAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
 
       renderPage();
+      await selectOnly("Jane Doe");
 
-      await screen.findByText("Jane Doe");
-      fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-      await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
-
-      const dialog = openAndArmDeleteDialog();
-      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+      const dialog = openAndArmRemoveDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
       await waitFor(() => {
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
@@ -596,47 +645,95 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     }
   });
 
-  it("shows a generic inline error when bulkDeleteAttendees rejects with something other than ApiError", async () => {
+  it("shows a generic inline error when bulkRemoveAttendees rejects with something other than ApiError", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    bulkRemoveAttendees.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     renderPage();
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-
-    await screen.findByText("Failed to delete attendees.");
+    await screen.findByText("Could not remove attendees. Try again.");
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 
-  it("uses singular wording when exactly one attendee is deleted", async () => {
+  it("uses singular wording when exactly one attendee is removed", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockResolvedValueOnce({ deletedCount: 1 });
+    bulkRemoveAttendees.mockResolvedValueOnce({ removed: 1, not_found: 0 });
 
     renderPage();
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
-
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("1 attendee permanently deleted", "success");
+      expect(addToast).toHaveBeenCalledWith("Attendee removed from the event", "success");
     });
   });
 
-  it("ignores a stale bulk-delete completion after navigating to a different event mid-request (CodeRabbit review)", async () => {
-    let resolveDelete!: (value: { deletedCount: number }) => void;
+  it("says who was gone already, when someone else removed them a moment before", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockReturnValueOnce(
+    bulkRemoveAttendees.mockResolvedValueOnce({ removed: 1, not_found: 1 });
+
+    renderPage();
+    await selectOnly("Jane Doe", "John Smith");
+
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Attendee removed from the event. 1 was already gone.", "success");
+    });
+  });
+
+  it("says the check-ins go too, counting only the selected people who have checked in", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowCheckedIn, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await selectOnly("Jane Doe", "John Smith");
+
+    const dialog = openAndArmRemoveDialog();
+    expect(
+      within(dialog).getByText("1 person has already checked in. The check-in is removed from Reports too."),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    // Nobody selected has checked in: no line.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Alex Kim" }));
+    const second = openAndArmRemoveDialog();
+    expect(within(second).queryByText(/checked in/)).toBeNull();
+  });
+
+  it("points a privacy request to Erase, and Erase points back", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await selectOnly("Jane Doe");
+
+    const remove = openAndArmRemoveDialog();
+    fireEvent.click(within(remove).getByRole("button", { name: "Use Erase personal data" }));
+
+    expect(screen.queryByText("Remove 1 person from the event?")).toBeNull();
+    const erase = await screen.findByRole("dialog", { name: "Erase personal data of 1 person?" });
+
+    fireEvent.click(within(erase).getByRole("button", { name: "Use Remove from event" }));
+
+    expect(screen.queryByRole("dialog", { name: "Erase personal data of 1 person?" })).toBeNull();
+    await screen.findByRole("dialog", { name: "Remove 1 person from the event?" });
+    expect(bulkRemoveAttendees).not.toHaveBeenCalled();
+    expect(bulkEraseAttendees).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale bulk remove completion after navigating to a different event mid-request (CodeRabbit review)", async () => {
+    let resolveRemoval!: (value: { removed: number; not_found: number }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRemoveAttendees.mockReturnValueOnce(
       new Promise((resolve) => {
-        resolveDelete = resolve;
+        resolveRemoval = resolve;
       }),
     );
 
@@ -645,37 +742,34 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
       { initialEntries: ["/admin/events/evt-1/attendees"] },
     );
     render(<RouterProvider router={router} />);
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-
-    // Navigate to a different event while the bulk-delete request is still in flight — the
-    // completion below must not toast, close the dialog, or clear the selection on behalf of
-    // an event that's no longer the one being viewed.
+    // Navigate to a different event while the request is still in flight - the completion
+    // below must not toast, close the dialog, or clear the selection on behalf of an event
+    // that's no longer the one being viewed.
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
       expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
     });
 
     await act(async () => {
-      resolveDelete({ deletedCount: 1 });
+      resolveRemoval({ removed: 1, not_found: 0 });
       await Promise.resolve();
     });
 
-    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("permanently deleted"), "success");
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("removed from the event"), "success");
   });
 
-  it("ignores a stale bulk-delete failure after navigating to a different event mid-request (CodeRabbit review)", async () => {
+  it("ignores a stale bulk remove failure after navigating to a different event mid-request (CodeRabbit review)", async () => {
     const { ApiError } = await import("../../src/api/client.js");
-    let rejectDelete!: (err: unknown) => void;
+    let rejectRemoval!: (err: unknown) => void;
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockReturnValueOnce(
+    bulkRemoveAttendees.mockReturnValueOnce(
       new Promise((_resolve, reject) => {
-        rejectDelete = reject;
+        rejectRemoval = reject;
       }),
     );
 
@@ -684,35 +778,32 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
       { initialEntries: ["/admin/events/evt-1/attendees"] },
     );
     render(<RouterProvider router={router} />);
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
 
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-
-    // Navigate away before the bulk-delete request rejects — the failure below must not set an
-    // inline error on a dialog that belonged to an event the operator has since left.
+    // Navigate away before the request rejects - the failure below must not set an inline
+    // error on a dialog that belonged to an event the operator has since left.
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
       expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
     });
 
     await act(async () => {
-      rejectDelete(new ApiError(500, "secret_internal"));
+      rejectRemoval(new ApiError(500, "secret_internal"));
       await Promise.resolve().catch(() => {});
     });
 
-    expect(screen.queryByText("Delete failed.")).toBeNull();
+    expect(screen.queryByText("Could not remove attendees. Try again.")).toBeNull();
   });
 
   it("still clears the busy/spinner state after navigating away mid-request, even though the toast and dialog-close side effects are skipped (CodeRabbit review)", async () => {
-    let resolveDelete!: (value: { deletedCount: number }) => void;
+    let resolveRemoval!: (value: { removed: number; not_found: number }) => void;
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkDeleteAttendees.mockReturnValueOnce(
+    bulkRemoveAttendees.mockReturnValueOnce(
       new Promise((resolve) => {
-        resolveDelete = resolve;
+        resolveRemoval = resolve;
       }),
     );
 
@@ -721,14 +812,13 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
       { initialEntries: ["/admin/events/evt-1/attendees"] },
     );
     render(<RouterProvider router={router} />);
+    await selectOnly("Jane Doe");
 
-    await screen.findByText("Jane Doe");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
-    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
-
-    const dialog = openAndArmDeleteDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Delete" }).getAttribute("aria-busy")).toBe("true"));
+    const dialog = openAndArmRemoveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove from event" }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: "Remove from event" }).getAttribute("aria-busy")).toBe("true"),
+    );
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -736,16 +826,16 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     });
 
     await act(async () => {
-      resolveDelete({ deletedCount: 1 });
+      resolveRemoval({ removed: 1, not_found: 0 });
       await Promise.resolve();
     });
 
     // The dialog itself stays open (closing it is a skipped success side effect, same as the
     // toast covered above) but its busy state is this component's own local state, not tied to
-    // which event initiated the request — it must still clear, or the confirm button is stuck
+    // which event initiated the request - it must still clear, or the confirm button is stuck
     // busy forever once the operator has navigated away.
     await waitFor(() => {
-      expect(within(dialog).getByRole("button", { name: "Delete" }).getAttribute("aria-busy")).toBeNull();
+      expect(within(dialog).getByRole("button", { name: "Remove from event" }).getAttribute("aria-busy")).toBeNull();
     });
   });
 });
@@ -1897,7 +1987,7 @@ describe("AttendeesPage bulk export selected (#520)", () => {
     expect(bulkBar().getByText("CSV of 2 attendees")).toBeTruthy();
   });
 
-  it("shows dynamic hints on 'Send tickets' and 'Delete' too, matching 'Export selected' (PO review — consistency)", async () => {
+  it("shows a dynamic hint on 'Send tickets' like 'Export selected', and says when to use 'Remove from event' (PO review — consistency)", async () => {
     // "Send tickets" only lives in this menu below 768px (its own button on desktop).
     mockMatchMedia(false);
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
@@ -1910,7 +2000,7 @@ describe("AttendeesPage bulk export selected (#520)", () => {
 
     fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
     expect(bulkBar().getByText("Email tickets to 1 attendee")).toBeTruthy();
-    expect(bulkBar().getByText("Permanently remove 1 attendee")).toBeTruthy();
+    expect(bulkBar().getByText("For mistakes, duplicates or test people. Changes Reports.")).toBeTruthy();
   });
 
   it("toasts an operator-safe error and keeps the selection when the export fails", async () => {

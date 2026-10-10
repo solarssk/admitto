@@ -157,8 +157,6 @@ import {
   handleCreateEventAttendee,
   handleGetEventAttendee,
   handlePatchEventAttendee,
-  handleDeleteEventAttendee,
-  handleBulkDeleteEventAttendees,
   handleBulkCheckInEventAttendees,
   handleBulkRevokeAttendeeItems,
   handleBulkRevokeCheckInEventAttendees,
@@ -781,7 +779,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminClientErrorRateLimit = rateLimit(rateLimitStore, "admin:client-error");
   /** Wraps a wallet limiter so a route only spends that budget when the event actually has wallet
    * configured - unlike the explicit bulk-wallet-void/reissue/delete routes (always a wallet action
-   * by definition), bulk-delete / bulk-revoke-pass / erase / remove are general-purpose mutations that only
+   * by definition), bulk-revoke-pass / erase / remove are general-purpose mutations that only
    * *sometimes* cascade into PassCreator calls (deleteWalletPassesBestEffort /
    * syncWalletPassOnStatusChangeBestEffort / deleteErasedWalletPasses), and were charging the
    * strict wallet budget even for an event with wallet disabled entirely (bot review, PR #1064
@@ -810,8 +808,8 @@ export function createApp(options: CreateAppOptions = {}) {
       return limiter(c, next);
     };
   }
-  /** For a route that can make one provider call per selected attendee (bulk-delete, bulk-revoke-pass,
-   * bulk-erase, bulk-remove). */
+  /** For a route that can make one provider call per selected attendee (bulk-revoke-pass, bulk-erase,
+   * bulk-remove). */
   const walletActionBulkRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionBulkRateLimit);
   /** For a route that can make one provider call for the one attendee it acts on (erase, remove). */
   const walletActionRateLimitIfWalletConfigured = ifWalletConfigured(adminWalletActionRateLimit);
@@ -1997,9 +1995,6 @@ export function createApp(options: CreateAppOptions = {}) {
     adminAttendeePatchRateLimit,
     guardArchivedEvent((c) => handlePatchEventAttendee(c, db)),
   );
-  app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
-    handleDeleteEventAttendee(c, db),
-  );
   // Erase personal data (anonymise in place, Reports keep their numbers). Not behind
   // guardArchivedEvent: a privacy request is still valid after the event has ended.
   app.post(
@@ -2043,18 +2038,6 @@ export function createApp(options: CreateAppOptions = {}) {
     adminAttendeeBulkMutationRateLimit,
     walletActionBulkRateLimitIfWalletConfigured,
     guardArchivedEvent((c) => handleBulkRemoveEventAttendees(c, db)),
-  );
-  app.post(
-    "/api/admin/events/:eventId/attendees/bulk-delete",
-    jsonPostCsrf,
-    staffAdminGate,
-    bulkAttendeeIdsBodyLimit,
-    adminAttendeeBulkMutationRateLimit,
-    // Also shares the wallet-action-bulk budget, but only when this event has wallet configured:
-    // deleteWalletPassesBestEffort (inside the handler) calls PassCreator once per selected
-    // attendee that has a wallet pass, which can't happen at all for a non-wallet event.
-    walletActionBulkRateLimitIfWalletConfigured,
-    (c) => handleBulkDeleteEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-checkin",
