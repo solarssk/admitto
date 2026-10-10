@@ -1,3 +1,4 @@
+import { computePosition, flip, offset, shift, size, type Placement } from "@floating-ui/dom";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useFocusRecovery } from "./useFocusRecovery.js";
@@ -6,7 +7,13 @@ import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/f
 
 const VIEWPORT_PAD_PX = 8;
 
-const HIDDEN_FIXED_PANEL: CSSProperties = { position: "fixed", visibility: "hidden" };
+// `left: 0; top: 0` on purpose: a fixed panel is placed with `transform` (below), so its box never
+// depends on a position next to the trigger. Without them its width is capped by the room between
+// that static position and the viewport's right edge, and it is measured too narrow near that edge.
+//
+// Not `visibility: hidden` while it waits for its position: that takes the panel out of the
+// accessibility tree, and the position is computed a microtask after the panel mounts.
+const HIDDEN_FIXED_PANEL: CSSProperties = { position: "fixed", left: 0, top: 0, opacity: 0, pointerEvents: "none" };
 
 // Module-level, not React state: read synchronously from useModalFocusTrap's native capture-
 // phase keydown listener, which runs before any state update from this hook's own render cycle
@@ -49,9 +56,9 @@ export interface UseDropdownMenuOptions {
  * + popover panel — was duplicated between the Attendee Detail page's Revoke menu and the
  * Attendees list's Export menu before being extracted here.
  *
- * The panel is `position: fixed` with coordinates computed from the trigger's own
- * `getBoundingClientRect()` (the DeliveryRowMenu/DatePicker/TimezoneSelect pattern -
- * `attachFixedOverlayLifecycle`), NOT `position: absolute` inside a `position: relative`
+ * The panel is `position: fixed`, placed by Floating UI (`computePosition` with offset, flip, shift
+ * and size, applied as a `transform`) relative to the trigger's own rect, NOT `position: absolute`
+ * inside a `position: relative`
  * wrapper. A plain `absolute` panel is clipped by - and inflates the scroll height of - the
  * nearest ancestor with `overflow: auto`/`hidden` (e.g. a modal's own scrolling body), which
  * turns the popover into part of the scrollable content instead of floating over it (PO
@@ -101,15 +108,12 @@ export function useDropdownMenu<
 
   useClickOutside(rootRef, open, close);
 
-  // Places the panel with `position: fixed`, computed from the trigger's own
-  // getBoundingClientRect() - see this hook's own doc comment for why fixed (not absolute)
-  // coordinates, not a CSS class, are what escape a scrollable modal body. Flips above the
-  // trigger when the panel doesn't fit below (a trigger near the bottom of a tall, scrolled
-  // page/modal otherwise opens a panel that renders mostly or entirely off-screen), and clamps
-  // horizontally to the viewport. Recomputed on open and again on resize/ancestor-scroll
-  // (`attachFixedOverlayLifecycle`) - decided once per *content* otherwise, same as before:
-  // the reported bug was about the initial position, not the trigger moving while the panel is
-  // already open with the same content.
+  // Places the panel with Floating UI (`computePosition`: offset, flip, shift, size) in `position:
+  // fixed` coordinates, applied with `transform` - see this hook's own doc comment for why fixed
+  // (not absolute) is what escapes a scrollable modal body. The visible area is the visual
+  // viewport (`getFixedOverlayViewport`), so a mobile keyboard or a pinch-zoom is respected, and
+  // everything keeps `VIEWPORT_PAD_PX` from its edges. Recomputed on open, on a window/visual
+  // viewport resize, and when the panel's own size changes.
   useLayoutEffect(() => {
     if (!open) {
       setOpenUpward(false);
@@ -125,110 +129,91 @@ export function useDropdownMenu<
     /* v8 ignore if */
     if (!trigger || !panel) return;
 
-    // Which side the panel opens on is re-decided only when the *available space* around the
-    // trigger actually changes (a real window/viewport resize, e.g. a mobile keyboard opening) -
-    // not every time the panel's own content changes size. Without this lock, SearchableSelect's
-    // list shrinking as the user types (e.g. a search narrowing to one result) could flip a panel
-    // that opened upward - because the *full* option list didn't fit below - down to below the
-    // trigger the instant the narrower result count suddenly does fit there, yanking the panel
-    // out from under the user mid-keystroke (PO report).
-    let lastSpaceBelow: number | undefined;
-    let lastSpaceAbove: number | undefined;
-    let lockedAbove = false;
+    // Which side the panel opens on is decided on open and again only when the *available space*
+    // changes (a real window/visual viewport resize, e.g. a mobile keyboard opening), not every time
+    // the panel's own content changes size. Without this lock, SearchableSelect's list shrinking as
+    // the user types (a search narrowing to one result) flips a panel that opened upward - because
+    // the full option list did not fit below - down under the trigger the moment the shorter list
+    // does fit there, yanking it out from under the user mid-keystroke (PO report).
+    let lockedSide: "top" | "bottom" | undefined;
+    let latestRun = 0;
+    let disposed = false;
 
-    const updatePlacement = () => {
-      // Measure inside the padded viewport: a fixed panel's shrink-to-fit width is capped by the
-      // room between its `left` (before placement: its static position next to the trigger) and the
-      // viewport's right edge, so a trigger near that edge squeezed the panel, and the placement
-      // below was computed from that too-small size (it landed past the edge, or wrapped text and
-      // changed height a frame later). Starting at the padded left edge with the padded width as
-      // its cap measures the size the panel will really have, also on a viewport narrower than
-      // the panel's natural width. The final `left` is applied below.
+    const updatePlacement = async (relock: boolean) => {
+      if (relock) lockedSide = undefined;
+      const run = ++latestRun;
       const viewport = getFixedOverlayViewport();
+      const rootBoundary = { x: viewport.left, y: viewport.top, width: viewport.width, height: viewport.height };
       const maxWidth = Math.max(0, viewport.width - 2 * VIEWPORT_PAD_PX);
-      panel.style.left = `${viewport.left + VIEWPORT_PAD_PX}px`;
-      panel.style.maxWidth = `${maxWidth}px`;
-      // A CSS `min-width` wins over `max-width`, so a panel whose minimum is wider than the padded
-      // viewport (pinch-zoomed or very narrow phone) would still overflow: cap that too.
-      panel.style.minWidth = "";
-      const cssMinWidth = Number.parseFloat(getComputedStyle(panel).minWidth);
-      if (cssMinWidth > maxWidth) panel.style.minWidth = `${maxWidth}px`;
-      const triggerRect = trigger.getBoundingClientRect();
-      // A panel that follows the trigger's width is measured at that width: at the full padded
-      // width its height is too short, which could settle the open-below decision on a size the
-      // panel never has (the decision is kept while the available space is unchanged).
-      const matchedWidth = matchTriggerWidth ? Math.min(Math.max(minWidth ?? 0, triggerRect.width), maxWidth) : undefined;
-      if (matchedWidth !== undefined) panel.style.width = `${matchedWidth}px`;
-      // `scrollHeight` stays natural after this effect applies a maxHeight, while the bounding
-      // rect covers test environments and panels whose content has no scroll container.
-      const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
-      // Reserve the gap+pad margin *before* deciding which side to open on, not only when
-      // clamping maxHeight afterward - comparing the flip decision against the raw, unreserved
-      // space left a `margin`-tall dead zone where a panel was judged to "fit below" (panelHeight
-      // <= the raw space) yet still got clamped with a scrollbar once the margin came out of
-      // that same space for the maxHeight calc (panelHeight > space - margin). A panel landing in
-      // that narrow band stayed down with a near-invisible scroll clamp instead of comfortably
-      // fitting or cleanly flipping - found via a real 3-option picker (Communication's "By
-      // wallet status" filter) whose short, icon-only content happened to land exactly there.
-      const margin = gap + VIEWPORT_PAD_PX;
-      const spaceBelow = Math.max(0, viewport.bottom - triggerRect.bottom - margin);
-      const spaceAbove = Math.max(0, triggerRect.top - viewport.top - margin);
-      const spaceUnchanged = spaceBelow === lastSpaceBelow && spaceAbove === lastSpaceAbove;
-      // Only flip when upward genuinely has more room - never flip into an even tighter fit.
-      const above = spaceUnchanged ? lockedAbove : panelHeight > spaceBelow && spaceAbove > spaceBelow;
-      lockedAbove = above;
-      lastSpaceBelow = spaceBelow;
-      lastSpaceAbove = spaceAbove;
-      const available = above ? spaceAbove : spaceBelow;
-      const maxHeight = panelHeight > available ? available : undefined;
-      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-      const top = above ? triggerRect.top - usedHeight - gap : triggerRect.bottom + gap;
-
-      // Apply the height clamp to the DOM now, before reading the width: a panel that scrolls is
-      // wider by its scrollbar, and `align: "end"` derives `left` from that width. Measured before
-      // the clamp, `left` was off by the scrollbar's width for one paint (the panel stuck out past
-      // the trigger's edge, then jumped back when the ResizeObserver re-ran this), visible as a
-      // flash on tall menus. React applies the same values from `panelStyle` right after.
-      panel.style.maxHeight = maxHeight !== undefined ? `${maxHeight}px` : "";
-      panel.style.overflowY = maxHeight !== undefined ? "auto" : "";
-      const panelWidth = matchedWidth ?? panel.getBoundingClientRect().width;
-
-      let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
-      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
-
-      // Put the final `left` on the element now: the measuring above moved it to the left margin, and
-      // React applies `panelStyle` later, so a remeasure of a visible panel (its content resized)
-      // could otherwise be painted there for a frame.
-      panel.style.left = `${left}px`;
-      setOpenUpward(above);
-      setPanelStyle({
-        position: "fixed",
-        top,
-        left,
-        width: matchTriggerWidth ? panelWidth : undefined,
-        maxWidth,
-        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
-        overflowY: maxHeight !== undefined ? "auto" : undefined,
-        visibility: "visible",
+      // Measure the panel at its natural height: a max-height from the previous run is a clamp, not
+      // the size the content wants.
+      panel.style.maxHeight = "";
+      panel.style.overflowY = "";
+      const placement: Placement = `${lockedSide ?? "bottom"}-${align === "end" ? "end" : "start"}`;
+      const result = await computePosition(trigger, panel, {
+        strategy: "fixed",
+        placement,
+        middleware: [
+          offset(gap),
+          ...(lockedSide ? [] : [flip({ rootBoundary, padding: VIEWPORT_PAD_PX, crossAxis: false, fallbackAxisSideDirection: "none" })]),
+          shift({ rootBoundary, padding: VIEWPORT_PAD_PX }),
+          size({
+            rootBoundary,
+            padding: VIEWPORT_PAD_PX,
+            apply({ availableHeight, rects, elements }) {
+              const el = elements.floating;
+              el.style.maxWidth = `${maxWidth}px`;
+              // A CSS `min-width` beats `max-width`, so a panel whose minimum is wider than the padded
+              // viewport (pinch-zoomed, or a very narrow phone) would still overflow: cap that too.
+              el.style.minWidth = "";
+              if (Number.parseFloat(getComputedStyle(el).minWidth) > maxWidth) el.style.minWidth = `${maxWidth}px`;
+              if (matchTriggerWidth) {
+                el.style.width = `${Math.min(Math.max(minWidth ?? 0, rects.reference.width), maxWidth)}px`;
+              }
+              // `scrollHeight` is the content's natural height, also while a max-height clamps the box
+              // (the box's own height would make a clamped panel look like it fits and unclamp it).
+              const clamp = el.scrollHeight > availableHeight;
+              el.style.maxHeight = clamp ? `${availableHeight}px` : "";
+              el.style.overflowY = clamp ? "auto" : "";
+            },
+          }),
+        ],
       });
+      // A newer run, or the panel closing, owns the element now.
+      if (disposed || run !== latestRun) return;
+      const upward = result.placement.startsWith("top");
+      lockedSide = upward ? "top" : "bottom";
+      // Put the position on the element in the same task, before React applies `panelStyle`, so a
+      // remeasure of a visible panel is never painted in between.
+      const transform = `translate(${Math.round(result.x)}px, ${Math.round(result.y)}px)`;
+      panel.style.transform = transform;
+      panel.style.opacity = "";
+      panel.style.pointerEvents = "";
+      setOpenUpward(upward);
+      setPanelStyle({ position: "fixed", left: 0, top: 0, transform });
     };
 
-    updatePlacement();
-    const detachOverlayLifecycle = attachFixedOverlayLifecycle(panel, updatePlacement, () => close("scroll"));
+    void updatePlacement(true);
+    const detachOverlayLifecycle = attachFixedOverlayLifecycle(
+      panel,
+      () => void updatePlacement(true),
+      () => close("scroll"),
+    );
 
-    // Re-run placement when the panel's own rendered size changes, not just on window resize -
-    // SearchableSelect/PhoneCountrySelect's list shrinks by hundreds of pixels as the user types
-    // into the search box, and a panel flipped above the trigger anchors its `top` from that
-    // height (`top = triggerRect.top - panelHeight - gap`); without this, the stale `top` stays
-    // put while the shorter content renders under it, opening a growing gap between the panel's
-    // own bottom edge and the trigger it's meant to hug (bot review finding). Guarded, not
-    // assumed present - real browsers all support it, but jsdom (this hook's ~200 other tests)
-    // does not and has no reason to.
-    if (typeof ResizeObserver === "undefined") return detachOverlayLifecycle;
-    const resizeObserver = new ResizeObserver(updatePlacement);
+    // Re-run placement when the panel's own rendered size changes, not just on window resize:
+    // SearchableSelect/PhoneCountrySelect's list shrinks by hundreds of pixels as the user types, and
+    // a panel above the trigger is anchored by its bottom edge, so the position has to follow. Guarded,
+    // not assumed present: real browsers all support it, but jsdom does not.
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        disposed = true;
+        detachOverlayLifecycle();
+      };
+    }
+    const resizeObserver = new ResizeObserver(() => void updatePlacement(false));
     resizeObserver.observe(panel);
     return () => {
+      disposed = true;
       detachOverlayLifecycle();
       resizeObserver.disconnect();
     };

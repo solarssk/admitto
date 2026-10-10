@@ -124,8 +124,63 @@ function TestMenuWithoutMenuItems() {
   );
 }
 
+type Box = { left: number; top: number; width: number; height: number };
+
+/** jsdom has no layout. Floating UI reads the trigger from getBoundingClientRect and the panel's own
+ * size from offsetWidth/offsetHeight, so those are what a test controls. `panel` is a function of the
+ * element so a test can make the size depend on the style the hook has applied (max-height, width). */
+function mockGeometry(opts: {
+  trigger: () => Box;
+  panel: (el: HTMLElement) => { width: number; height: number; natural?: number };
+}) {
+  const isPanel = (el: HTMLElement) => el.getAttribute("role") === "menu";
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    if (isPanel(this)) {
+      const { width, height } = opts.panel(this);
+      return { left: 0, top: 0, right: width, bottom: height, x: 0, y: 0, width, height, toJSON() {} };
+    }
+    // Every other element (<html>, <body>, a scroll ancestor) sits at the origin; Floating UI subtracts
+    // the root element's own offset.
+    if (this.tagName !== "BUTTON") return { left: 0, top: 0, right: 0, bottom: 0, x: 0, y: 0, width: 0, height: 0, toJSON() {} };
+    const t = opts.trigger();
+    return { left: t.left, top: t.top, right: t.left + t.width, bottom: t.top + t.height, x: t.left, y: t.top, width: t.width, height: t.height, toJSON() {} };
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+    return isPanel(this) ? opts.panel(this).width : 0;
+  });
+  // scrollHeight is the content's natural height, whatever max-height clamps the box to.
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+    if (!isPanel(this)) return 0;
+    const { height, natural } = opts.panel(this);
+    return natural ?? height;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return isPanel(this) ? opts.panel(this).height : 0;
+  });
+}
+
+/** A panel `natural` tall that is as tall as its max-height lets it be, like a real scroll container. */
+const clamped = (el: HTMLElement, natural: number) => ({
+  height: Math.min(natural, Number.parseFloat(el.style.maxHeight) || natural),
+  natural,
+});
+
+async function openMenu() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+  });
+  return screen.getByRole("menu");
+}
+
+const translate = (x: number, y: number) => `translate(${x}px, ${y}px)`;
+
 describe("useDropdownMenu", () => {
-  it("positions the panel with position: fixed instead of position: absolute inside a scrolling ancestor", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("positions the panel with position: fixed instead of position: absolute inside a scrolling ancestor", async () => {
     // Regression coverage for the PO-reported bug: an `absolute` panel is clipped by - and
     // inflates the scroll height of - the nearest `overflow: auto` ancestor (e.g. a modal body),
     // turning the popover into part of the scrollable content (a scrollbar appears) instead of
@@ -133,382 +188,231 @@ describe("useDropdownMenu", () => {
     // containing block is the viewport, not this `overflow: auto` wrapper, so it escapes that
     // clipping without a portal.
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    expect(screen.getByRole("menu").style.position).toBe("fixed");
+    const menu = await openMenu();
+    expect(menu.style.position).toBe("fixed");
+    expect(menu.style.left).toBe("0px");
+    expect(menu.style.top).toBe("0px");
   });
 
-  it("flips the panel above the trigger when it doesn't fit below the viewport", () => {
+  it("flips the panel above the trigger when it doesn't fit below the viewport", async () => {
     vi.stubGlobal("innerHeight", 400);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
-      // Trigger sits near the bottom of a short viewport - only 40px of room below it, but a
-      // 250px-tall panel needs more than that, and there's ample room above.
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 250 };
-      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger
-    });
+    // Trigger near the bottom of a short viewport: 40px of room below, a 250px panel needs more,
+    // and there is ample room above.
+    mockGeometry({ trigger: () => ({ left: 0, top: 350, width: 10, height: 10 }), panel: () => ({ width: 100, height: 250 }) });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = await openMenu();
 
-    expect(screen.getByRole("menu").dataset.up).toBe("true");
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.transform).toBe(translate(8, 96)); // 350 - 250 - 4 (gap); x kept 8px from the edge
   });
 
-  it("repositions for the smaller visual viewport when the mobile keyboard opens", () => {
+  it("repositions for the smaller visual viewport when the mobile keyboard opens", async () => {
     let visualHeight = 900;
     const visualViewport = mockVisualViewport(390, () => visualHeight);
     vi.stubGlobal("innerHeight", 900);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 260, width: 260, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 450 };
-      return { ...base, top: 350, bottom: 360, height: 10 };
+    mockGeometry({
+      trigger: () => ({ left: 0, top: 350, width: 260, height: 10 }),
+      panel: (el) => ({ width: 260, ...clamped(el, 450) }),
     });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    expect(screen.getByRole("menu").dataset.up).toBe("false");
+    expect((await openMenu()).dataset.up).toBe("false");
 
     visualHeight = 400;
-    act(() => visualViewport.dispatchEvent(new Event("resize")));
+    await act(async () => {
+      visualViewport.dispatchEvent(new Event("resize"));
+    });
     const menu = screen.getByRole("menu");
     expect(menu.dataset.up).toBe("true");
-    expect(menu.style.top).toBe("8px");
+    expect(menu.style.transform).toBe(translate(8, 8));
     expect(menu.style.maxHeight).toBe("338px");
     expect(menu.style.overflowY).toBe("auto");
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
-  it("keeps a dropdown within the panned visual viewport", () => {
+  it("keeps a dropdown within the panned visual viewport", async () => {
     const visualViewport = mockVisualViewport(390, () => 400, () => 300);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 50, right: 310, width: 260, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 450 };
-      return { ...base, top: 500, bottom: 510, height: 10 };
+    mockGeometry({
+      trigger: () => ({ left: 50, top: 500, width: 260, height: 10 }),
+      panel: (el) => ({ width: 260, ...clamped(el, 450) }),
     });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    const menu = screen.getByRole("menu");
+    const menu = await openMenu();
     expect(menu.dataset.up).toBe("true");
-    expect(menu.style.top).toBe("308px");
+    expect(menu.style.transform).toBe(translate(50, 308));
     expect(menu.style.maxHeight).toBe("188px");
 
-    act(() => visualViewport.dispatchEvent(new Event("scroll")));
-    expect(screen.getByRole("menu").style.top).toBe("308px");
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    await act(async () => {
+      visualViewport.dispatchEvent(new Event("scroll"));
+    });
+    expect(screen.getByRole("menu").style.transform).toBe(translate(50, 308));
   });
 
-  it("never raises a dropdown above less than 160px of available viewport space", () => {
+  it("never raises a dropdown above less than 160px of available viewport space", async () => {
     vi.stubGlobal("innerHeight", 120);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 260, width: 260, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 300 };
-      return { ...base, top: 50, bottom: 60, height: 10 };
+    mockGeometry({
+      trigger: () => ({ left: 0, top: 50, width: 260, height: 10 }),
+      panel: (el) => ({ width: 260, ...clamped(el, 300) }),
     });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    const menu = screen.getByRole("menu");
+    const menu = await openMenu();
     expect(menu.style.maxHeight).toBe("48px");
     expect(menu.style.overflowY).toBe("auto");
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
-  it("flips instead of clamping a short panel that fits raw space below but not once the gap+pad margin is reserved", () => {
-    // Regression coverage for a real 3-option picker (Communication's "By wallet status"
-    // filter): a panel this short (35px) fits within the raw 40px below the trigger, so the old
-    // flip check (`panelHeight > spaceBelow`) judged it as "fits, stay down" - but the clamp
-    // check right after reserves gap(4) + VIEWPORT_PAD_PX(8) = 12px first, leaving only 28px
-    // available, which the same 35px panel does *not* fit into. That mismatch clamped the panel
-    // with a barely-there scrollbar instead of flipping it into the 350px of room above, which
-    // both checks agree it needs.
+  it("flips instead of clamping a short panel that fits raw space below but not once the gap+pad margin is reserved", async () => {
+    // Regression coverage for a real 3-option picker (Communication's "By wallet status" filter): a
+    // 35px panel fits the raw 40px below the trigger, but not once gap (4) and the viewport padding
+    // (8) are reserved, which left only 28px. It must flip into the 350px above, not be clamped with
+    // a barely-there scrollbar.
     vi.stubGlobal("innerHeight", 400);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 35 };
-      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger: 40px below, 350px above
-    });
+    mockGeometry({ trigger: () => ({ left: 0, top: 350, width: 10, height: 10 }), panel: () => ({ width: 100, height: 35 }) });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    const menu = screen.getByRole("menu");
+    const menu = await openMenu();
 
     expect(menu.dataset.up).toBe("true");
     expect(menu.style.maxHeight).toBe("");
-    expect(menu.style.top).toBe("311px"); // 350 - 35 - 4 (gap)
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect(menu.style.transform).toBe(translate(8, 311)); // 350 - 35 - 4 (gap)
   });
 
-  it("repositions an upward-flipped panel when its own content shrinks, not just on window resize", () => {
-    // Regression coverage for the bot review finding: SearchableSelect/PhoneCountrySelect's
-    // list can shrink by hundreds of pixels as the user types into the search box. A panel
-    // flipped above the trigger anchors `top` from the panel's height at that moment
-    // (`top = triggerTop - panelHeight - gap`) - without re-running that on the panel's own
-    // resize, the stale `top` stays put while the now-shorter content renders under it, opening
-    // a growing gap between the panel's bottom edge and the trigger it's meant to hug.
+  it("repositions an upward-flipped panel when its own content shrinks, not just on window resize", async () => {
+    // SearchableSelect/PhoneCountrySelect's list can shrink by hundreds of pixels as the user types.
+    // A panel above the trigger is anchored by its bottom edge, so without re-running placement on the
+    // panel's own resize a growing gap opens between its bottom edge and the trigger.
     let panelHeight = 200;
     vi.stubGlobal("innerHeight", 400);
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: panelHeight };
-      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger, near the viewport bottom
-    });
+    mockGeometry({ trigger: () => ({ left: 0, top: 350, width: 10, height: 10 }), panel: () => ({ width: 100, height: panelHeight }) });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-
-    const menu = screen.getByRole("menu");
+    const menu = await openMenu();
     expect(menu.dataset.up).toBe("true");
-    expect(menu.style.top).toBe("146px"); // 350 - 200 - 4 (gap)
+    expect(menu.style.transform).toBe(translate(8, 146)); // 350 - 200 - 4 (gap)
 
-    panelHeight = 50; // content shrank (e.g. a search query narrowed the list)
-    act(() => MockResizeObserver.instances.at(-1)!.trigger());
+    panelHeight = 50;
+    await act(async () => MockResizeObserver.instances.at(-1)!.trigger());
 
-    expect(screen.getByRole("menu").style.top).toBe("296px"); // 350 - 50 - 4, re-anchored
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect(screen.getByRole("menu").style.transform).toBe(translate(8, 296)); // 350 - 50 - 4, re-anchored
   });
 
-  it("never flips a panel back down just because its shrinking content would now fit below", () => {
-    // Regression coverage for the PO-reported bug: SearchableSelect's option list can shrink
-    // enough while typing (e.g. a search narrowing to one result) that the *shorter* content
-    // would fit below the trigger, even though the *original, full* list didn't. Re-deciding
-    // "above" purely from the new (smaller) panelHeight - as opposed to only re-deciding when the
-    // trigger/viewport's own available space actually changes - flipped the panel from above the
-    // trigger to below it mid-keystroke, a visible jump the fix in useDropdownMenu.ts prevents.
+  it("never flips a panel back down just because its shrinking content would now fit below", async () => {
+    // SearchableSelect's list can shrink enough while typing that the shorter content would fit below
+    // the trigger, even though the original, full list did not. Re-deciding the side from the new
+    // height alone flipped the panel below the trigger mid-keystroke, a visible jump.
     let panelHeight = 200;
     vi.stubGlobal("innerHeight", 400);
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: panelHeight };
-      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger, only 40px of room below
-    });
+    mockGeometry({ trigger: () => ({ left: 0, top: 350, width: 10, height: 10 }), panel: () => ({ width: 100, height: panelHeight }) });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    expect(screen.getByRole("menu").dataset.up).toBe("true");
+    expect((await openMenu()).dataset.up).toBe("true");
 
-    // A single search result: shorter than the 40px available below the trigger, which a fresh
-    // above/below decision from this height alone would place below it.
-    panelHeight = 30;
-    act(() => MockResizeObserver.instances.at(-1)!.trigger());
+    panelHeight = 30; // shorter than the 40px below the trigger
+    await act(async () => MockResizeObserver.instances.at(-1)!.trigger());
 
     const menu = screen.getByRole("menu");
     expect(menu.dataset.up).toBe("true");
-    expect(menu.style.top).toBe("316px"); // 350 - 30 - 4, still anchored above
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect(menu.style.transform).toBe(translate(8, 316)); // 350 - 30 - 4, still anchored above
   });
 
-  it("still flips when the available space itself genuinely changes, not just the content", () => {
-    // Companion to the regression test above: the lock must not freeze the side forever - a real
-    // viewport change (the existing "mobile keyboard" test covers this end-to-end) still needs to
-    // re-decide. This isolates that the space-changed comparison itself (not e.g. an accidental
-    // "decide once and never again") is what the fix relies on, using a plain resize rather than
-    // visualViewport so it's independent of that other test's mocking.
-    let triggerBottom = 100;
+  it("still flips when the available space itself genuinely changes, not just the content", async () => {
+    // The lock must not freeze the side forever: a real viewport change still re-decides.
+    let triggerTop = 90;
     vi.stubGlobal("innerHeight", 400);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 200 };
-      return { ...base, top: triggerBottom - 10, bottom: triggerBottom, height: 10 };
-    });
+    mockGeometry({ trigger: () => ({ left: 0, top: triggerTop, width: 10, height: 10 }), panel: () => ({ width: 100, height: 200 }) });
 
     render(<TestMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    // Plenty of room below (300px) and only 90px above - opens downward.
-    expect(screen.getByRole("menu").dataset.up).toBe("false");
+    // Plenty of room below (300px) and only 90px above: opens downward.
+    expect((await openMenu()).dataset.up).toBe("false");
 
-    // Trigger moves near the bottom of the viewport (e.g. the page scrolled) - now only 40px
-    // below but 350px above, so the same 200px-tall panel no longer fits below.
-    triggerBottom = 360;
-    act(() => window.dispatchEvent(new Event("resize")));
+    // The trigger moves near the bottom (the page scrolled): 40px below, 350px above.
+    triggerTop = 350;
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
 
     expect(screen.getByRole("menu").dataset.up).toBe("true");
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
-  it("matches the panel width to the trigger when matchTriggerWidth has no minWidth floor", () => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { top: 0, bottom: 0, height: 0, x: 0, y: 0, toJSON() {} };
-      if (this.tagName === "BUTTON") return { ...base, left: 0, right: 300, width: 300 };
-      return { ...base, left: 0, right: 0, width: 0 }; // panel
-    });
+  it("matches the panel width to the trigger when matchTriggerWidth has no minWidth floor", async () => {
+    mockGeometry({ trigger: () => ({ left: 0, top: 0, width: 300, height: 0 }), panel: () => ({ width: 0, height: 0 }) });
 
     render(<MatchWidthMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
 
-    expect(screen.getByRole("menu").style.width).toBe("300px");
-
-    vi.restoreAllMocks();
+    expect((await openMenu()).style.width).toBe("300px");
   });
 
-  it("measures a match-trigger panel at the trigger's width, so its height decides which side it opens on", () => {
-    // Long option labels wrap at the trigger's width and make the panel taller than it is at the
-    // full viewport width. Measured at the wrong width it looked short enough to fit below.
+  it("measures a match-trigger panel at the trigger's width, so its height decides which side it opens on", async () => {
+    // Long option labels wrap at the trigger's width and make the panel taller than at its natural
+    // width. Placement is settled after the width is applied, not on the shorter first measurement.
     vi.stubGlobal("innerWidth", 1100);
     vi.stubGlobal("innerHeight", 600);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { x: 0, y: 0, toJSON() {} };
-      if (this.tagName === "BUTTON") return { ...base, left: 0, right: 260, top: 400, bottom: 430, width: 260, height: 30 };
-      const height = this.style.width === "260px" ? 500 : 100;
-      return { ...base, left: 0, right: 0, top: 0, bottom: 0, width: 0, height };
+    mockGeometry({
+      trigger: () => ({ left: 0, top: 400, width: 260, height: 30 }),
+      panel: (el) => ({ width: 260, height: el.style.width === "260px" ? 500 : 100 }),
     });
 
     render(<MatchWidthMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
 
-    expect(screen.getByRole("menu").dataset.up).toBe("true");
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect((await openMenu()).dataset.up).toBe("true");
   });
 
-  it("keeps a 260px-floor panel inside a narrow viewport when its trigger sits flush against the right edge", () => {
-    // Regression coverage for a bot review finding on the Reports pagination footer (#753): with
-    // no pager visible (total rows <= page size), the "Rows per page" SearchableSelect is the
-    // only control left in that row, flush against the container's right edge. The concern was
-    // that its 260px minWidth floor would push the panel past the viewport's right edge - this
-    // proves the horizontal clamp below already accounts for that, for any `align: "start"`
-    // consumer, regardless of why the trigger ended up near the edge.
+  it("keeps a 260px-floor panel inside a narrow viewport when its trigger sits flush against the right edge", async () => {
+    // The Reports pagination footer's "Rows per page" SearchableSelect can be the only control in its
+    // row, flush against the container's right edge; its 260px floor must not push the panel past the
+    // viewport.
     vi.stubGlobal("innerWidth", 375);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { top: 100, bottom: 130, height: 30, x: 0, y: 0, toJSON() {} };
-      // A ~67px-wide trigger ("Rows per page: 25 ▾") flush against a 375px viewport's right edge.
-      if (this.tagName === "BUTTON") return { ...base, left: 300, right: 367, width: 67 };
-      return { ...base, left: 0, right: 0, width: 0 }; // panel, natural width irrelevant here
+    mockGeometry({
+      trigger: () => ({ left: 300, top: 100, width: 67, height: 30 }),
+      panel: (el) => ({ width: Number.parseFloat(el.style.width) || 0, height: 40 }),
     });
 
     render(<MinWidthFloorMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = await openMenu();
 
-    const menu = screen.getByRole("menu");
     expect(menu.style.width).toBe("260px");
-    const left = Number.parseFloat(menu.style.left);
-    expect(left).toBeGreaterThanOrEqual(0);
-    expect(left + 260).toBeLessThanOrEqual(375);
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    const x = Number.parseFloat(/translate\((-?[\d.]+)px/.exec(menu.style.transform)![1]!);
+    expect(x).toBeGreaterThanOrEqual(8);
+    expect(x + 260).toBeLessThanOrEqual(375 - 8);
   });
 
-  it("places a right-aligned panel using its width including the scrollbar it gets from the height clamp", () => {
+  it("places a right-aligned panel using its width including the scrollbar it gets from the height clamp", async () => {
     // A tall menu is clamped to the space below and starts scrolling, which makes it wider by the
-    // scrollbar. Measuring the width before the clamp put `left` off by that much for one paint
-    // (the panel stuck out past the trigger, then jumped), a visible flash on the bulk actions menu.
+    // scrollbar. `align: "end"` derives its position from that width.
     vi.stubGlobal("innerWidth", 1200);
     vi.stubGlobal("innerHeight", 400);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      if (this.getAttribute("role") === "menu") {
-        const clamped = this.style.overflowY === "auto";
-        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: clamped ? 308 : 300, height: 900, toJSON() {} };
-      }
-      return { left: 900, right: 1000, top: 100, bottom: 130, x: 0, y: 0, width: 100, height: 30, toJSON() {} };
+    mockGeometry({
+      trigger: () => ({ left: 900, top: 100, width: 100, height: 30 }),
+      panel: (el) => ({ width: el.style.overflowY === "auto" ? 308 : 300, ...clamped(el, 900) }),
     });
 
     render(<EndAlignedMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = await openMenu();
 
-    const menu = screen.getByRole("menu");
     expect(menu.style.overflowY).toBe("auto");
-    expect(menu.style.left).toBe("692px"); // 1000 (trigger right edge) - 308 (width with scrollbar)
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect(menu.style.transform).toBe(translate(692, 134)); // 1000 (trigger right edge) - 308 (width with scrollbar)
   });
 
-  it("measures the panel at the padded left edge, so a trigger near the right edge does not squeeze it", () => {
-    // A fixed panel without `left` is as wide as the room between its static position (next to
-    // the trigger) and the viewport's right edge, so a trigger flush against that edge measured it
-    // too narrow and placed it past the edge until the next measurement.
-    vi.stubGlobal("innerWidth", 1100);
-    vi.stubGlobal("innerHeight", 600);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      if (this.getAttribute("role") === "menu") {
-        const measuredAtLeftEdge = this.style.left === "8px";
-        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: measuredAtLeftEdge ? 380 : 260, height: 100, toJSON() {} };
-      }
-      return { left: 1056, right: 1084, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
-    });
-
-    render(<EndAlignedMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-
-    expect(screen.getByRole("menu").style.left).toBe("704px"); // 1084 (trigger right edge) - 380 (natural width)
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
-
-  it("caps the panel to the padded viewport on a viewport narrower than its natural width", () => {
-    // The cap is applied before measuring and kept on the panel, so a long-hint menu on a phone
-    // wraps inside the margins from the first measurement instead of overflowing the right edge.
+  it("caps the panel to the padded viewport on a viewport narrower than its natural width", async () => {
+    // A long-hint menu on a phone wraps inside the margins instead of overflowing the right edge.
     vi.stubGlobal("innerWidth", 375);
     vi.stubGlobal("innerHeight", 600);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      if (this.getAttribute("role") === "menu") {
-        const cap = Number.parseFloat(this.style.maxWidth);
-        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width: Math.min(500, cap), height: 100, toJSON() {} };
-      }
-      return { left: 330, right: 358, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
+    mockGeometry({
+      trigger: () => ({ left: 330, top: 100, width: 28, height: 30 }),
+      panel: (el) => ({ width: Math.min(500, Number.parseFloat(el.style.maxWidth) || 500), height: 100 }),
     });
 
     render(<EndAlignedMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = await openMenu();
 
-    const menu = screen.getByRole("menu");
     expect(menu.style.maxWidth).toBe("359px"); // 375 - 2 * 8
-    expect(menu.style.left).toBe("8px"); // 358 - 359 clamped to the left margin
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    expect(menu.style.transform).toBe(translate(8, 134));
   });
 
-  it("also caps a CSS min-width that is wider than the padded viewport", () => {
+  it("also caps a CSS min-width that is wider than the padded viewport", async () => {
     // `min-width` beats `max-width`, so capping only the max left a panel with a 300px minimum
     // overflowing the right edge of a 280px viewport.
     const style = document.createElement("style");
@@ -516,55 +420,19 @@ describe("useDropdownMenu", () => {
     document.head.append(style);
     vi.stubGlobal("innerWidth", 280);
     vi.stubGlobal("innerHeight", 600);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      if (this.getAttribute("role") === "menu") {
-        const min = Number.parseFloat(getComputedStyle(this).minWidth);
-        const width = Math.max(min, Math.min(400, Number.parseFloat(this.style.maxWidth)));
-        return { left: 0, right: 0, top: 0, bottom: 0, x: 0, y: 0, width, height: 100, toJSON() {} };
-      }
-      return { left: 230, right: 258, top: 100, bottom: 130, x: 0, y: 0, width: 28, height: 30, toJSON() {} };
+    mockGeometry({
+      trigger: () => ({ left: 230, top: 100, width: 28, height: 30 }),
+      panel: (el) => ({
+        width: Math.max(Number.parseFloat(getComputedStyle(el).minWidth), Math.min(400, Number.parseFloat(el.style.maxWidth) || 400)),
+        height: 100,
+      }),
     });
 
     render(<EndAlignedMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = await openMenu();
 
-    const menu = screen.getByRole("menu");
     expect(menu.style.minWidth).toBe("264px"); // 280 - 2 * 8
-    expect(menu.style.left).toBe("8px");
-
     style.remove();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
-
-  it("puts the final left on a visible panel in the same task as a remeasure, not on the next render", () => {
-    // The measuring pass moves the panel to the left margin. For a panel that is already on screen
-    // (its content resized), leaving it there until React applies the new style would paint it there.
-    vi.stubGlobal("innerWidth", 1100);
-    vi.stubGlobal("innerHeight", 600);
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
-    vi.spyOn(console, "error").mockImplementation(() => {}); // the state update below is outside act on purpose
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const base = { x: 0, y: 0, toJSON() {} };
-      if (this.getAttribute("role") === "menu") return { ...base, left: 0, right: 0, top: 0, bottom: 0, width: 300, height: 100 };
-      return { ...base, left: 900, right: 1000, top: 100, bottom: 130, width: 100, height: 30 };
-    });
-
-    render(<EndAlignedMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    const menu = screen.getByRole("menu");
-    expect(menu.style.left).toBe("700px");
-
-    MockResizeObserver.instances.at(-1)!.trigger();
-
-    expect(menu.style.left).toBe("700px"); // not left at the 8px margin the measuring pass used
-
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
