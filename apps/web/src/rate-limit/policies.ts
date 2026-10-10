@@ -6,6 +6,7 @@ import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
 import { getEncryptionKey } from "@admitto/crypto";
 import { CHECKIN_STREAM_LIMITS, type CheckinStreamLimits } from "../checkin-stream-config.js";
 import { rateLimitIpKey, resolveClientIp } from "./client-ip.js";
+import { applyRateLimitOverrides } from "./overrides.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
 
@@ -284,7 +285,7 @@ export const RATE_POLICIES = {
       {
         keyOf: (c) => `auth:oidc:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,
-        max: 20,
+        max: 60,
         onExceeded: (c) => c.text("Too many requests", 429),
         logOnExceeded: { scope: "oidc_auth" },
       },
@@ -295,7 +296,7 @@ export const RATE_POLICIES = {
       {
         keyOf: (c) => `auth:login:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs: 60_000,
-        max: 10,
+        max: 30,
         logOnExceeded: { scope: "login_ip" },
       },
     ],
@@ -308,8 +309,8 @@ export const RATE_POLICIES = {
    * 10 hits (a cancelled/retried ceremony spent more), so a handful of staff signing in behind
    * the same office/VPN/NAT address within a minute could lock everyone else out even with
    * every ceremony succeeding (Codex P2 review, PR #1108). */
-  "auth:passkey-login-begin-ip": ipScopedPolicy("auth:passkey-login-begin", "passkey_login_ip", 10),
-  "auth:passkey-login-finish-ip": ipScopedPolicy("auth:passkey-login-finish", "passkey_login_ip", 10),
+  "auth:passkey-login-begin-ip": ipScopedPolicy("auth:passkey-login-begin", "passkey_login_ip", 30),
+  "auth:passkey-login-finish-ip": ipScopedPolicy("auth:passkey-login-finish", "passkey_login_ip", 30),
   /** Whole /api/account/* route group - own IP bucket, deliberately separate from
    * auth:login-ip. These routes run before requireSession (some pre-date the current
    * caller's session even being established), so without their own bucket a handful of
@@ -840,6 +841,10 @@ export const RATE_POLICIES = {
   },
   "checkin:stream": checkinStreamPolicy(CHECKIN_STREAM_LIMITS),
 } as const satisfies Record<string, RatePolicy>;
+
+// Operator overrides (RATE_LIMIT_OVERRIDES) are applied once, here, before any middleware reads a
+// policy - so retuning a limit needs a restart, not a release.
+applyRateLimitOverrides(RATE_POLICIES, INLINE_RATE_LIMITS);
 
 export type RatePolicyName = keyof typeof RATE_POLICIES;
 

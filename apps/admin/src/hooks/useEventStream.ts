@@ -26,6 +26,17 @@ function hasStreamEventType(data: unknown): data is { type: string } {
 const MAX_CONSECUTIVE_FAILURES = 3;
 /** Reconnect backoff schedule (ms) after SSE disconnect. */
 export const STREAM_BACKOFF_MS = [2000, 4000, 8000, 30000] as const;
+/** Share of each normal reconnect delay that is randomised: with 0.5 a wait is 50-100% of its
+ * schedule slot, never longer, so the 30s ceiling holds. Without it every device that lost the
+ * stream at the same moment (a server restart, a proxy dropping idle connections) comes back at
+ * the same moment too. The 429 backoff below stays a fixed delay. */
+export const STREAM_BACKOFF_JITTER_RATIO = 0.5;
+
+/** Apply {@link STREAM_BACKOFF_JITTER_RATIO} to one schedule delay. */
+export function jitteredBackoffMs(baseMs: number, random: () => number = Math.random): number {
+  return Math.round(baseMs * (1 - STREAM_BACKOFF_JITTER_RATIO * random()));
+}
+
 /** Backoff after a confirmed 429 (rate/concurrency limited) - longer than the normal schedule's
  * own 30s ceiling, since retrying at the same pace that caused the limit just prolongs it. */
 export const RATE_LIMIT_BACKOFF_MS = 60_000;
@@ -104,7 +115,9 @@ export function useEventStream(
       // retrying at the pace that caused the limit just prolongs it.
       const delay = rateLimited
         ? RATE_LIMIT_BACKOFF_MS
-        : STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)];
+        : jitteredBackoffMs(
+            STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)]!,
+          );
       clearRetry();
       retryTimer = window.setTimeout(connect, delay);
     };
