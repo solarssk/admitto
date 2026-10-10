@@ -9,13 +9,13 @@ The rules live in the linked files; this page only orders the steps. If a link a
 
 ## 1. Before you push
 
-1. Run the full test suite of every workspace you changed, then `npm run build` for the ones that build with `tsc` (`apps/web`, `apps/admin`), then `npm run lint` at the root. A subset run does not authorize a push. Details and the `tsc`-only gotchas: [AGENTS.md, Tests](../../../AGENTS.md#tests).
+1. Run the full test suite of every workspace you changed, then the build and typecheck CI runs for the TypeScript you changed (`npm run build`, or `npm run build -w <package>` for one workspace; `apps/web` and `apps/admin` are the usual `tsc` surprises), then `npm run lint` at the root. A subset run does not authorize a push. Details and the `tsc`-only gotchas: [AGENTS.md, Tests](../../../AGENTS.md#tests).
 2. If you touched Markdown, an agent instruction file, `standards/` or `docs/wiki/`, run `npm run docs:check`.
 3. Run the gate again after your last change in the session.
 
 ## 2. CHANGELOG
 
-Add an operator-facing bullet under `[Unreleased]` as part of the change, not at the end. Rules and the release steps: [AGENTS.md, Changelog and releases](../../../AGENTS.md#changelog-and-releases).
+When the change is operator-facing (a feature, a fix or a security change someone running Admitto would notice), add a bullet under `[Unreleased]` as part of the change, not at the end. Chores, tests, CI and agent-instruction changes get none. Rules and the release steps: [AGENTS.md, Changelog and releases](../../../AGENTS.md#changelog-and-releases).
 
 ## 3. The pull request body
 
