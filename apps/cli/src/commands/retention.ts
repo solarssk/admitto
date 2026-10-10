@@ -5,6 +5,7 @@ import { purgeNotifications, resolveNotificationRetentionDays } from "@admitto/n
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { hasFlag } from "../lib/args.js";
 import { requireOperatorUserId } from "../lib/audit.js";
+import { erasedWalletPassesLeft, sweepErasedWalletPasses } from "../lib/retention-erased-wallet-passes.js";
 import { purgeJobFilesForRetention } from "../lib/retention-job-files.js";
 
 export async function runRetention(db: PrismaClient): Promise<void> {
@@ -26,6 +27,8 @@ export async function runRetention(db: PrismaClient): Promise<void> {
       retentionDays: notificationRetentionDays,
     });
     const jobFilesResult = await purgeJobFilesForRetention(db, false);
+    const walletSweep = await sweepErasedWalletPasses(db, { dryRun: false });
+    const walletPassesLeft = erasedWalletPassesLeft(walletSweep);
 
     await writeAdminAuditLog(db, {
       actorUserId,
@@ -40,17 +43,22 @@ export async function runRetention(db: PrismaClient): Promise<void> {
         notificationRows: notificationsResult.deleted,
         exportFiles: jobFilesResult.exportFiles,
         stagedImportFiles: jobFilesResult.stagedImportFiles,
+        erasedWalletPassesDeleted: walletSweep.deleted,
+        erasedWalletPassesLeft: walletPassesLeft,
       },
     });
 
     const failedFilesNote = jobFilesResult.failures > 0 ? ` (${jobFilesResult.failures} could not be deleted)` : "";
+    const walletPassesLeftNote = walletPassesLeft > 0 ? ` (${walletPassesLeft} still to delete, see the log lines above)` : "";
     console.log(
       `Purged/nullified auth: ${authResult.sessions} sessions, ${authResult.trustedDevices} trusted devices; ` +
         `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
         `security audit log: ${securityAuditResult.deleted} row(s); ` +
         `notifications: ${notificationsResult.deleted} row(s); ` +
         `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s)` +
-        `${failedFilesNote}.`,
+        `${failedFilesNote}; ` +
+        `erased wallet passes: ${walletSweep.deleted} deleted at the provider` +
+        `${walletPassesLeftNote}.`,
     );
     return;
   }
@@ -66,12 +74,14 @@ export async function runRetention(db: PrismaClient): Promise<void> {
     retentionDays: notificationRetentionDays,
   });
   const jobFilesResult = await purgeJobFilesForRetention(db, true);
+  const walletSweep = await sweepErasedWalletPasses(db, { dryRun: true });
 
   console.log(
     `Would purge/nullify auth: ${authResult.sessions} sessions, ${authResult.trustedDevices} trusted devices; ` +
       `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
       `security audit log: ${securityAuditResult.deleted} row(s); ` +
       `notifications: ${notificationsResult.deleted} row(s); ` +
-      `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s).`,
+      `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s); ` +
+      `erased wallet passes: ${walletSweep.pending} still to delete at the provider.`,
   );
 }

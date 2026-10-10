@@ -29,6 +29,7 @@ import {
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
+import { erasedWalletPassesLeft, sweepErasedWalletPasses } from "../lib/retention-erased-wallet-passes.js";
 import { purgeJobFilesForRetention } from "../lib/retention-job-files.js";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
@@ -439,9 +440,11 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
       retentionDays: notificationRetentionDays,
     });
     const jobFilesResult = await purgeJobFilesForRetention(db, false);
+    // Calls the wallet provider for up to a minute: keep the heartbeat fresh, like the other drains that make network calls.
+    const walletSweep = await withHeartbeatRefresh(db, "retention", () => sweepErasedWalletPasses(db, { dryRun: false }));
     log(
       "retention",
-      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted} export_files=${jobFilesResult.exportFiles} staged_import_files=${jobFilesResult.stagedImportFiles} failed=${jobFilesResult.failures}`,
+      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted} export_files=${jobFilesResult.exportFiles} staged_import_files=${jobFilesResult.stagedImportFiles} erased_wallet_passes=${walletSweep.deleted} failed=${jobFilesResult.failures + erasedWalletPassesLeft(walletSweep)}`,
     );
     return true;
   } finally {
