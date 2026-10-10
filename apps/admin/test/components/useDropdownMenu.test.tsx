@@ -73,7 +73,7 @@ function EndAlignedMenu() {
  * one, but the option itself is optional) - the panel should just track the trigger's own
  * width, not fall back to some nonzero default. */
 function MatchWidthMenu() {
-  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+  const { open, setOpen, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "start",
     matchTriggerWidth: true,
   });
@@ -82,7 +82,7 @@ function MatchWidthMenu() {
       <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
         Trigger
       </button>
-      {open && <div ref={panelRef} role="menu" style={panelStyle} />}
+      {open && <div ref={panelRef} role="menu" data-up={openUpward} style={panelStyle} />}
     </div>
   );
 }
@@ -375,6 +375,29 @@ describe("useDropdownMenu", () => {
     expect(screen.getByRole("menu").style.width).toBe("300px");
 
     vi.restoreAllMocks();
+  });
+
+  it("measures a match-trigger panel at the trigger's width, so its height decides which side it opens on", () => {
+    // Long option labels wrap at the trigger's width and make the panel taller than it is at the
+    // full viewport width. Measured at the wrong width it looked short enough to fit below.
+    vi.stubGlobal("innerWidth", 1100);
+    vi.stubGlobal("innerHeight", 600);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { x: 0, y: 0, toJSON() {} };
+      if (this.tagName === "BUTTON") return { ...base, left: 0, right: 260, top: 400, bottom: 430, width: 260, height: 30 };
+      const height = this.style.width === "260px" ? 500 : 100;
+      return { ...base, left: 0, right: 0, top: 0, bottom: 0, width: 0, height };
+    });
+
+    render(<MatchWidthMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("keeps a 260px-floor panel inside a narrow viewport when its trigger sits flush against the right edge", () => {

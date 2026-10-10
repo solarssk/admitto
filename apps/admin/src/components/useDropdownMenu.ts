@@ -149,6 +149,11 @@ export function useDropdownMenu<
       panel.style.left = `${viewport.left + VIEWPORT_PAD_PX}px`;
       panel.style.maxWidth = `${maxWidth}px`;
       const triggerRect = trigger.getBoundingClientRect();
+      // A panel that follows the trigger's width is measured at that width: at the full padded
+      // width its height is too short, which could settle the open-below decision on a size the
+      // panel never has (the decision is kept while the available space is unchanged).
+      const matchedWidth = matchTriggerWidth ? Math.min(Math.max(minWidth ?? 0, triggerRect.width), maxWidth) : undefined;
+      if (matchedWidth !== undefined) panel.style.width = `${matchedWidth}px`;
       // `scrollHeight` stays natural after this effect applies a maxHeight, while the bounding
       // rect covers test environments and panels whose content has no scroll container.
       const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
@@ -181,9 +186,7 @@ export function useDropdownMenu<
       // flash on tall menus. React applies the same values from `panelStyle` right after.
       panel.style.maxHeight = maxHeight !== undefined ? `${maxHeight}px` : "";
       panel.style.overflowY = maxHeight !== undefined ? "auto" : "";
-      const panelWidth = matchTriggerWidth
-        ? Math.max(minWidth ?? 0, triggerRect.width)
-        : panel.getBoundingClientRect().width;
+      const panelWidth = matchedWidth ?? panel.getBoundingClientRect().width;
 
       let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
       left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
