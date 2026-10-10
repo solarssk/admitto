@@ -92,6 +92,7 @@ import {
   refreshWalletPassStatusUnlessErased,
   resolveEventWalletProvider,
   issueTicket,
+  createUnderAttendeeJobQueueLock,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -1268,24 +1269,28 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   }
 
   const audit = adminAuditFromContext(c);
-  const job = await db.adminJob.create({
-    data: {
-      type: "export",
-      status: "pending",
-      organization_id: event.organization_id,
-      event_id: eventId,
-      actor_user_id: audit.operator ?? null,
-      session_id: audit.sessionId ?? null,
-      client_timezone: resolveClientTimezone(c),
-      result_json: {
-        request: {
-          kind: "attendees_filtered",
-          format,
-          filters: filterParams,
+  // Under the queue lock of the event: while an erasure or a removal is open the job waits for it, so it reads
+  // the list as it is afterwards, and one that is committed before it is stopped by it (stopOpenAttendeeJobs).
+  const job = await createUnderAttendeeJobQueueLock(db, eventId, (tx) =>
+    tx.adminJob.create({
+      data: {
+        type: "export",
+        status: "pending",
+        organization_id: event.organization_id,
+        event_id: eventId,
+        actor_user_id: audit.operator ?? null,
+        session_id: audit.sessionId ?? null,
+        client_timezone: resolveClientTimezone(c),
+        result_json: {
+          request: {
+            kind: "attendees_filtered",
+            format,
+            filters: filterParams,
+          },
         },
       },
-    },
-  });
+    }),
+  );
 
   return c.json({ jobId: job.id, status: "pending", format, rowCount: total }, 202);
 }

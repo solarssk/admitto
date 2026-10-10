@@ -1,5 +1,5 @@
 import { Prisma } from "@admitto/db/client";
-import { stopOpenExportJobs } from "./stop-open-exports.js";
+import { stopOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 export type ScrubAttendeeTracesParams = {
   eventId: string;
@@ -74,15 +74,16 @@ export async function collectAttendeeAddresses(
  *   mail still waiting to go out is cancelled.
  * - The central audit log keeps the creation entry of a manually added attendee; only the two
  *   identifying values go, the entry itself (who added someone, when) stays.
- * - An export that has not finished (waiting for the worker, or being built by it) may hold the list as it
- *   read it: its job is stopped here, so that no file it is still building can be recorded (stopOpenExportJobs).
+ * - An export or an import that has not finished (waiting for the worker, or being run by it) works from the
+ *   list as it was: its job is stopped here, so that no file it is still building can be recorded and no import
+ *   can create the person again (stopOpenAttendeeJobs).
  */
 export async function scrubAttendeeTraces(
   tx: Prisma.TransactionClient,
   { eventId, attendeeIds, emails }: ScrubAttendeeTracesParams,
 ): Promise<void> {
   if (attendeeIds.length === 0) return;
-  await stopOpenExportJobs(tx, eventId);
+  await stopOpenAttendeeJobs(tx, eventId);
   const attendeeList = Prisma.join([...attendeeIds]);
   if (emails.length > 0) {
     await tx.$executeRaw`

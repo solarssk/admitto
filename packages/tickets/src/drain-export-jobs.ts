@@ -94,6 +94,16 @@ async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): 
 }
 
 /**
+ * What went wrong deleting a file, in a word: the code of a file system error (ENOSPC, EACCES), else the name of
+ * the error. It carries the key path at most, never a person's data.
+ */
+function deleteFailureReason(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === "string") return code;
+  return err instanceof Error ? err.name : "unknown";
+}
+
+/**
  * Takes back a file that the job cannot record: its row is gone (the event was deleted while the export ran),
  * was closed meanwhile (an erasure stopped the job, or it was reclaimed as stale) or the write failed. The
  * file holds attendees and nothing else knows of it, so when even the delete fails its key must not be lost:
@@ -110,14 +120,11 @@ async function takeBackStoredFile(
     await storage.delete(key);
     return;
   } catch (err) {
-    // A file system error carries a code (ENOSPC, EACCES) and the key path, never a person's data.
-    const code = (err as { code?: unknown } | null)?.code;
-    const reason = typeof code === "string" ? code : err instanceof Error ? err.name : "unknown";
     emitSystemLog("worker", "error", "export_file_left_in_storage", {
       jobId: job.id,
       eventId: job.event_id,
       key,
-      reason,
+      reason: deleteFailureReason(err),
     });
   }
   try {

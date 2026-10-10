@@ -5,6 +5,7 @@ export {
   executeImportCommit,
   dryRunImportCounts,
   ImportCapacityExceededError,
+  ImportStoppedError,
 } from "./executeImportCommit.js";
 export type {
   ExecuteImportCommitParams,

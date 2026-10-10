@@ -1,5 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
+import { lockAttendeeJobQueue } from "./stop-open-jobs.js";
 
 export type RemoveAttendeesParams = {
   eventId: string;
@@ -73,6 +74,13 @@ export async function removeAttendees(
     previousEmails: [],
   };
   if (requestedIds.length === 0) return empty;
+
+  // The first thing this transaction does, before it locks a single row: the erasures and the removals of one
+  // event run one after the other, and the exports and imports that read or write the list are created either
+  // before this one looks for them (stopOpenAttendeeJobs) or after it has committed. Taken later, this
+  // transaction could already hold rows that another erasure needs (a delivery that staff addressed to someone
+  // else's address) while it waits for the lock, and the two would deadlock.
+  await lockAttendeeJobQueue(tx, eventId, "exclusive");
 
   const found = await tx.$queryRaw<{ id: string; email: string; erased_at: Date | null }[]>`
     SELECT "id", "email", "erased_at" FROM "Attendee"

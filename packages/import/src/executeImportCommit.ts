@@ -51,6 +51,19 @@ export type ExecuteImportCommitResult = {
   invalidCount: number;
 };
 
+/**
+ * The job of this import was closed while the import ran: an erasure or a removal in the event stopped it, or it
+ * was reclaimed as stale. Thrown inside the import's transaction, so none of its people stay.
+ */
+export class ImportStoppedError extends Error {
+  readonly code = "import_stopped" as const;
+
+  constructor() {
+    super("Import stopped before it finished.");
+    this.name = "ImportStoppedError";
+  }
+}
+
 export class ImportCapacityExceededError extends Error {
   readonly code = "event_full" as const;
   readonly capacity: number;
@@ -179,7 +192,7 @@ export async function executeImportCommit(
 
       if (params.adminJobId) {
         const invalidCombined = [...parsed.invalidRows, ...lockInvalidatedRows];
-        await tx.adminJob.updateMany({
+        const marked = await tx.adminJob.updateMany({
           where: { id: params.adminJobId, status: "running" },
           data: {
             status: "succeeded",
@@ -206,6 +219,10 @@ export async function executeImportCommit(
             error: null,
           },
         });
+        // One statement, so the check and the write cannot part. A job that is not running any more was closed
+        // meanwhile (an erasure or a removal stopped it): the update waited for that transaction, found the job
+        // closed and changed nothing, and the people this import created must not stay. The error rolls it back.
+        if (marked.count === 0) throw new ImportStoppedError();
       }
 
       return result;

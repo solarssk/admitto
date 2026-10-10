@@ -161,9 +161,10 @@ export async function purgeJobFiles(
  * CSV of every import job that has finished. After an erasure or a removal a file written before it still
  * holds the person; exports are cheap to run again and the staged CSV of a finished job has no use (a commit
  * that worked deleted it already, so what is left is the CSV of a job that failed), so they go at once rather
- * than at the end of the retention window. A job that has not finished is left alone: an export that is
- * waiting or running is stopped by the erasure itself (see stopOpenExportJobs in @admitto/tickets), and an import
- * that is queued or running still needs its file.
+ * than at the end of the retention window. A job that has not finished is left alone, because it still needs its
+ * file: an export or an import that was waiting or running when the erasure ran is stopped by the erasure itself
+ * (see stopOpenAttendeeJobs in @admitto/tickets), which makes it finished, so its file goes here too; one that
+ * was created after the erasure committed starts from the list as it is then.
  */
 export async function purgeEventJobFiles(
   db: PrismaClient,

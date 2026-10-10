@@ -14,6 +14,7 @@ import { getDefaultStorage } from "@admitto/storage";
 import {
   loadEventCustomDataFields,
   filterCustomDataAttributeFields,
+  createUnderAttendeeJobQueueLock,
 } from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
@@ -523,22 +524,27 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     const audit = adminAuditFromContext(c);
     let job;
     try {
-      job = await db.adminJob.create({
-        data: {
-          type: "import_commit",
-          status: "pending",
-          organization_id: event.organization_id,
-          event_id: eventId,
-          actor_user_id: audit.operator ?? null,
-          session_id: audit.sessionId ?? null,
-          client_timezone: resolveClientTimezone(c),
-          storage_key: staged.key,
-          filename: upload.filename,
-          overwrite: upload.overwrite,
-          force_capacity: forceCapacity,
-          import_id: importId,
-        },
-      });
+      // Under the queue lock of the event: while an erasure or a removal is open the job waits for it, and one that
+      // is committed before it is stopped by it (stopOpenAttendeeJobs), and its staged file with it. A job created
+      // after the erasure has committed is a new import: it adds back whoever its file lists.
+      job = await createUnderAttendeeJobQueueLock(db, eventId, (tx) =>
+        tx.adminJob.create({
+          data: {
+            type: "import_commit",
+            status: "pending",
+            organization_id: event.organization_id,
+            event_id: eventId,
+            actor_user_id: audit.operator ?? null,
+            session_id: audit.sessionId ?? null,
+            client_timezone: resolveClientTimezone(c),
+            storage_key: staged.key,
+            filename: upload.filename,
+            overwrite: upload.overwrite,
+            force_capacity: forceCapacity,
+            import_id: importId,
+          },
+        }),
+      );
     } catch (createErr) {
       try {
         await storage.delete(staged.key);

@@ -32,7 +32,15 @@ describe("handleExportAttendees enqueue audit fields", () => {
       ip: "127.0.0.1",
     });
 
-    const create = vi.fn().mockResolvedValue({ id: "job-1" });
+    const order: string[] = [];
+    const create = vi.fn().mockImplementation(async () => {
+      order.push("create");
+      return { id: "job-1" };
+    });
+    const executeRaw = vi.fn().mockImplementation(async () => {
+      order.push("queue lock");
+      return 0;
+    });
     const c = {
       req: {
         query: (name: string) => (name === "format" ? "csv" : undefined),
@@ -52,7 +60,8 @@ describe("handleExportAttendees enqueue audit fields", () => {
         }),
       },
       eventCustomField: { findMany: vi.fn().mockResolvedValue([]) },
-      adminJob: { create },
+      // The job is created in a transaction that first takes the queue lock of the event (shared).
+      $transaction: vi.fn(async (work: (tx: object) => Promise<unknown>) => work({ $executeRaw: executeRaw, adminJob: { create } })),
     };
 
     const res = await handleExportAttendees(c as never, db as never);
@@ -64,5 +73,8 @@ describe("handleExportAttendees enqueue audit fields", () => {
         client_timezone: null,
       }),
     });
+    expect(order).toEqual(["queue lock", "create"]);
+    const [lock] = executeRaw.mock.calls[0] as [{ strings: string[] }];
+    expect(lock.strings.join("")).toContain("pg_advisory_xact_lock_shared");
   });
 });

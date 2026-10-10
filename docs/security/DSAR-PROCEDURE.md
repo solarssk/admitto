@@ -58,6 +58,10 @@ flowchart TD
        data**, typing the attendee's name to confirm.
      - **Several attendees:** select the rows on the **Attendees** list, then **More actions →
        Erase personal data** from the bulk bar (no typed name: there is no single name to type).
+     - **Files still to import:** Admitto keeps nothing that identifies an erased person, so it cannot
+       refuse a file that lists them. An import or an export of the event that is still waiting or running is
+       stopped by the erasure, but a file that someone uploads afterwards adds the person back. Remove them
+       from any spreadsheet that is still to be imported.
      - **Wallet pass:** if the provider cannot be reached, a dialog says the pass is still there and
        offers **Try again**, which repeats only the wallet step; the attendee's page keeps a **Try
        again** button until it has worked. Everything personal inside Admitto is gone either way.
