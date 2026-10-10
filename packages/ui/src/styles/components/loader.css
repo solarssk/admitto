@@ -228,8 +228,39 @@
   }
 }
 
+/* Every page enters the way Overview, Attendees and Requirements always did: what the router puts into the content area fades in
+   over 150ms, so a move to Communication or Check-in is as soft as a move to Overview. (Those three fade their own loaded
+   content too, after their placeholder; this is the frame around it.) */
+.content > * {
+  animation: at-fade-in 0.15s ease-out backwards;
+}
+
+/* A dialog fades in with its dimmed backdrop over 150ms and its panel rises a few pixels over 180ms, instead of appearing in
+   one frame. Entering only: a dialog is removed from the page when it closes, and leaving is a separate piece of work. */
+dialog[open] {
+  animation: at-fade-in 0.15s ease-out backwards;
+}
+
+dialog[open] > :not(.at-modal-backdrop, [class*="backdrop"]) {
+  animation: at-dialog-panel-in 0.18s ease-out backwards;
+}
+
+@keyframes at-dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .at-fade-in {
+  .at-fade-in,
+  .content > *,
+  dialog[open],
+  dialog[open] > :not(.at-modal-backdrop, [class*="backdrop"]) {
     animation: none;
   }
 }

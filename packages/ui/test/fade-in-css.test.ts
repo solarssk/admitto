@@ -27,7 +27,15 @@ describe("content fade-in and held skeleton CSS (jsdom does not load the stylesh
 
   it("does not animate under prefers-reduced-motion", () => {
     const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)", css.indexOf("@keyframes at-fade-in")));
-    expect(reduced).toMatch(/\.at-fade-in\s*\{\s*animation:\s*none/);
+    expect(reduced).toMatch(/\.at-fade-in,[\s\S]*\{\s*animation:\s*none/);
+  });
+
+  it("makes every page and every dialog enter with the same 150ms fade, and no one of them under prefers-reduced-motion", () => {
+    expect(css).toMatch(/\.content\s*>\s*\*\s*\{\s*animation:\s*at-fade-in 0\.15s/);
+    expect(css).toMatch(/dialog\[open\]\s*\{\s*animation:\s*at-fade-in 0\.15s/);
+    expect(css).toMatch(/dialog\[open\] > :not\(\.at-modal-backdrop, \[class\*="backdrop"\]\)\s*\{\s*animation:\s*at-dialog-panel-in 0\.18s/);
+    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)", css.indexOf("@keyframes at-dialog-panel-in")));
+    for (const selector of [".content > *", "dialog[open],"]) expect(reduced).toContain(selector);
   });
 
   it("holds a skeleton's space without painting it (and without exposing it to assistive tech)", () => {

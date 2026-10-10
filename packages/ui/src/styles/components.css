@@ -47,6 +47,8 @@
 .at-btn__label-busy { visibility: hidden; }
 .at-btn--loading .at-btn__label-idle { visibility: hidden; }
 .at-btn--loading .at-btn__label-busy { visibility: visible; }
+/* The busy label of a button without an icon is spoken, not shown (the spinner covers the button), and takes no room. */
+.at-btn__label--text > .at-btn__label-busy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .at-btn--loading-solo { position: relative; }
 /* opacity, not visibility: `visibility: hidden` drops the label from the accessibility tree, and the
    overlay spinner is aria-hidden, so the busy button would have no accessible name. */

@@ -286,14 +286,17 @@ describe("Button", () => {
       expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     });
 
-    it("puts the spinner inside the busy label when there is no icon slot to swap", () => {
+    it("covers the label with the spinner when there is no icon slot to swap, and only speaks the busy label", () => {
       const { container } = render(
         <Button loading loadingLabel="Saving…">
           Save
         </Button>,
       );
-      expect(container.querySelector(".at-btn__label-busy .at-btn__spinner")).not.toBeNull();
-      expect(container.querySelector(".at-btn__spinner--overlay")).toBeNull();
+      // The busy label takes no room (the button stays as wide as "Save" at rest), the spinner is the one that is seen.
+      expect(container.querySelector(".at-btn__label--text > .at-btn__label-busy")?.textContent).toBe("Saving…");
+      expect(container.querySelector(".at-btn__label-busy .at-btn__spinner")).toBeNull();
+      expect(container.querySelectorAll(".at-btn__spinner--overlay")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Saving…" })).toBeTruthy();
     });
 
     it("does not add a second spinner to the busy label when the icon slot already shows one", () => {
