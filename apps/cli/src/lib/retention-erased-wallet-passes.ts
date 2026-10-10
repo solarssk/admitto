@@ -180,7 +180,7 @@ async function sweepEvent(walk: Walk, eventId: string, range: Range = {}): Promi
       if (attendeeIds.length === 0) return;
       const run = await walk.deps.deletePasses(walk.db, eventId, attendeeIds, walk.provider, { budgetMs: remainingMs });
       if (recordRun(walk, eventId, attendeeIds, run, failures) || attendeeIds.length < PAGE_SIZE) return;
-      cursor = attendeeIds[attendeeIds.length - 1];
+      cursor = attendeeIds.at(-1);
     }
   } finally {
     // Also when the walk stops on an error: what failed before it is still worth a line.
