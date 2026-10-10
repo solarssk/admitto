@@ -24,9 +24,9 @@ Every field-level and cross-field rule Admitto enforces, organised by screen. Us
 |---|---|
 | Email and password are both required | "Invalid email or password." |
 | Wrong password, unknown email, and a disabled account all return the *same* generic failure, at the *same* speed - by design, so a failed attempt can't be used to guess which part was wrong | "Invalid email or password." |
-| Max 10 login attempts per IP address, per minute (an IPv6 network, a /64 block, counts as one address) | "Too many requests." |
+| Max 30 login attempts per IP address, per minute (an IPv6 network, a /64 block, counts as one address) | "Too many requests." |
 | Max 10 login attempts per email address, per minute (separate limit, counted before the password is checked, so once it is used up even the correct password is refused until the minute is over) | "Too many requests." |
-| Passkey sign-in: max 10 attempts per minute, in two separate stages (start / finish) | "Too many requests." |
+| Passkey sign-in: max 30 attempts per minute, in two separate stages (start / finish) | "Too many requests." |
 | A rejected or cancelled passkey sign-in re-enables the password form | "Could not sign in with your passkey. Try again, or use your email and password below." |
 | 5 consecutive failed sign-ins or MFA attempts against an admin/superadmin account raises an internal security alert - this doesn't change what you see, it's recorded for a Superadmin reviewing [Logs and Audit](Logs-and-Audit) | No visible change |
 | An owed backup-codes acknowledgement or a forced password change cannot be skipped by closing the tab or calling the API directly - your session is held at that step until you complete it | Redirected back to the required step every time |

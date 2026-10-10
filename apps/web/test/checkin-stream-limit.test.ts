@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { Context, Next } from "hono";
+import { DEFAULT_CHECKIN_STREAM_LIMITS } from "../src/checkin-stream-config.js";
 import {
   activeCheckinStreamActorCountForTests,
   activeCheckinStreamCountForTests,
@@ -9,6 +10,10 @@ import {
   releaseCheckinStreamSlot,
   resetCheckinStreamLimitsForTests,
 } from "../src/checkin-stream-limit.js";
+
+// vitest.shared.ts pins the ENV to the defaults, so the process-wide limiter runs with these.
+const { maxConcurrentPerEvent: PER_EVENT, maxConcurrentPerActor: PER_ACTOR } =
+  DEFAULT_CHECKIN_STREAM_LIMITS;
 
 function sessionContext(userId: string) {
   return async (c: Context, next: Next): Promise<void> => {
@@ -53,20 +58,20 @@ describe("check-in stream concurrency limit", () => {
     );
 
     const readers = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < PER_EVENT; i++) {
       const res = await app.request("/events/evt-a/stream");
       expect(res.status).toBe(200);
       readers.push(res.body!.getReader());
     }
 
-    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-a")).toBe(3);
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-a")).toBe(PER_EVENT);
 
     const blocked = await app.request("/events/evt-a/stream");
     expect(blocked.status).toBe(429);
     expect(await blocked.json()).toEqual({ error: "too_many_streams" });
 
     // A stream for a different event under the same account has its own budget, not blocked by
-    // evt-a's already-full 3 slots - the whole point of scoping this key per event.
+    // evt-a's already-full slots - the whole point of scoping this key per event.
     const otherEvent = await app.request("/events/evt-b/stream");
     expect(otherEvent.status).toBe(200);
     expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-b")).toBe(1);
@@ -74,7 +79,7 @@ describe("check-in stream concurrency limit", () => {
 
     await readers[0]!.cancel();
     await new Promise((r) => setTimeout(r, 20));
-    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-a")).toBe(2);
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-a")).toBe(PER_EVENT - 1);
 
     const reopened = await app.request("/events/evt-a/stream");
     expect(reopened.status).toBe(200);
@@ -105,20 +110,21 @@ describe("check-in stream concurrency limit", () => {
         }),
     );
 
-    // 3 slots each across 4 distinct events = 12, the actor-wide ceiling - well under any single
-    // event's own per-event cap of 3, so only the actor-wide check can be what blocks the 13th.
+    // Fill the actor-wide ceiling with a full per-event budget on each of several events: no single
+    // event is over its own cap, so only the actor-wide check can be what blocks the next stream.
+    expect(PER_ACTOR % PER_EVENT).toBe(0);
     const readers = [];
-    for (let e = 0; e < 4; e++) {
-      for (let i = 0; i < 3; i++) {
+    for (let e = 0; e < PER_ACTOR / PER_EVENT; e++) {
+      for (let i = 0; i < PER_EVENT; i++) {
         const res = await app.request(`/events/evt-actor-${e}/stream`);
         expect(res.status).toBe(200);
         readers.push(res.body!.getReader());
       }
     }
-    expect(activeCheckinStreamActorCountForTests("checkin:stream:user:op-actor-cap")).toBe(12);
+    expect(activeCheckinStreamActorCountForTests("checkin:stream:user:op-actor-cap")).toBe(PER_ACTOR);
 
-    // A 5th, completely fresh event id still gets rejected - the actor-wide budget is exhausted
-    // even though this specific event has never been seen before (0 of its own 3 slots used).
+    // One more, completely fresh event id still gets rejected - the actor-wide budget is exhausted
+    // even though this specific event has never been seen before (none of its own slots used).
     const blocked = await app.request("/events/evt-actor-fresh/stream");
     expect(blocked.status).toBe(429);
     expect(await blocked.json()).toEqual({ error: "too_many_streams" });

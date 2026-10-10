@@ -24,19 +24,22 @@ export interface CheckinStreamLimits {
 }
 
 /** Defaults sized for phones on flaky Wi-Fi/LTE and reverse proxies, where one healthy client
- * can reconnect a stream many times a minute. The concurrency defaults are deliberately
- * unchanged: they bound parallel connections, which reconnect churn does not inflate. */
+ * can reconnect a stream many times a minute. One operator on one event already holds up to three
+ * streams (Check-in, Overview and Reports), and after a dropped connection the server keeps the
+ * old stream's slot until its next heartbeat write fails (up to 25s) while the client reconnects
+ * after 1-2s, so the per-event ceiling leaves room for those not-yet-released streams. The actor
+ * ceiling is unchanged. */
 export const DEFAULT_CHECKIN_STREAM_LIMITS: Readonly<CheckinStreamLimits> = {
   rateLimitPerEvent: 120,
   rateLimitPerActor: 240,
   rateLimitWindowMs: 60_000,
-  maxConcurrentPerEvent: 3,
+  maxConcurrentPerEvent: 6,
   maxConcurrentPerActor: 12,
 };
 
 /** Positive base-10 integer or `undefined`. Stricter than `Number.parseInt`, which would accept
  * `"12abc"` as 12 and `"1.5"` as 1 - a typo'd limit must not silently become a different one. */
-function parsePositiveInteger(raw: string): number | undefined {
+export function parsePositiveInteger(raw: string): number | undefined {
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) return undefined;
   const parsed = Number(trimmed);

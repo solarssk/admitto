@@ -29,12 +29,12 @@ function sessionContext(userId: string) {
 }
 
 describe("resolveCheckinStreamLimits", () => {
-  it("ships the documented defaults: 120/240 requests per 60s, 3/12 concurrent streams", () => {
+  it("ships the documented defaults: 120/240 requests per 60s, 6/12 concurrent streams", () => {
     expect(DEFAULT_CHECKIN_STREAM_LIMITS).toEqual({
       rateLimitPerEvent: 120,
       rateLimitPerActor: 240,
       rateLimitWindowMs: 60_000,
-      maxConcurrentPerEvent: 3,
+      maxConcurrentPerEvent: 6,
       maxConcurrentPerActor: 12,
     });
   });

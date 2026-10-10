@@ -220,17 +220,42 @@ development and test, and the application refuses to boot without it, so limits 
 replicas and survive restarts. Only development and test runs fall back to an in-memory store per
 process.
 
+**Retuning limits:** every limit below can be changed with the `RATE_LIMIT_OVERRIDES` environment
+variable (JSON keyed by limit name, for example `{"auth:login-ip":{"max":60}}`; see `deploy/ENV.md`),
+read at startup, so a change needs the container recreated, not a new release. The per-IP limits
+(sign-in, OIDC, passkey sign-in, account) are the ones to raise when many staff share one network
+address, such as venue Wi-Fi or a corporate NAT. The per-account protections (sign-in per email, MFA
+and password re-check buckets) are the real brute-force defence and should be loosened with care.
+The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
+
+**How the defaults compare with other software** (checked against their published defaults and source):
+
+| Project | Sign-in throttle | Notes |
+|---------|------------------|-------|
+| Mastodon (`config/initializers/rack_attack.rb`) | 25 / 5 min per IP; 25 / 1 h per email | unauthenticated API 300 / 5 min per IP |
+| GitLab (protected paths) | 10 / 60 s per IP | applies to sign-in, sign-up, password reset |
+| Grafana (`defaults.ini`) | 5 failed attempts per username | the per-IP login protection is **off** by default |
+| Discourse (`discourse_defaults.conf`) | no sign-in-specific IP limit | 200 / 60 s and 50 / 10 s per IP overall; private addresses exempt |
+| OWASP Authentication Cheat Sheet | count failures per account, not per IP | lockout can be abused to lock others out |
+| NIST SP 800-63B | at most 100 consecutive failed attempts per account | an upper bound, not a target |
+
+Admitto's per-IP limits (30 sign-in, 30 passkey, 60 OIDC per minute) sit at the permissive end of
+this range on purpose: a venue's staff share one address, and the guidance above puts the real
+brute-force defence on the per-account counters. Stream reconnects follow the usual client
+practice of exponential backoff with a 30 s ceiling (LaunchDarkly's SSE clients use the same
+shape); the request budgets are far above what that schedule can produce.
+
 ### Public and authentication
 
 | Surface | Bucket | Limit / window | Auth required |
 |---------|--------|----------------|---------------|
-| `POST /login`, `POST /api/auth/login` | client IP | 10 / 60 s | no |
+| `POST /login`, `POST /api/auth/login` | client IP | 30 / 60 s | no |
 | same | normalized email | 10 / 60 s | no (inside the handler, counted before the password is checked, so a correct password is refused too once the budget is spent) |
 | `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account (one counter per user across all sessions and addresses) | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
 | `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
-| `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
-| `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 10 / 60 s | no |
+| `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 60 / 60 s | no |
+| `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 30 / 60 s | no |
 | all `/api/account/*` routes except the notification unread-count poll (which has its own per-user bucket, 20 / 60 s) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
@@ -249,7 +274,7 @@ container recreated, not just restarted.
 | connects and reconnects, per operator per event | 120 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` |
 | connects and reconnects, per operator across events | 240 per window | `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` |
 | window | 60 s | `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` |
-| open streams, per operator per event, per application process | 3 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
+| open streams, per operator per event, per application process | 6 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
 | open streams, per operator overall, per application process | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
 
 The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in

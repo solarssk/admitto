@@ -45,6 +45,7 @@ vi.mock("../src/maps/maps-org-settings.js", async (importOriginal) => {
 
 import { createApp } from "../src/app.js";
 import { getMapsConfigCache, setMapsConfigCache } from "../src/maps/config.js";
+import { RATE_POLICIES } from "../src/rate-limit/policies.js";
 
 describe("createApp", () => {
   beforeEach(() => {
@@ -133,7 +134,9 @@ describe("createApp", () => {
           headers: { "Content-Type": "application/json", Origin: "http://localhost" },
           body: JSON.stringify({ email: "a@example.com", password: oversized }),
         });
-      for (let i = 0; i < 10; i++) expect((await send()).status).toBe(413);
+      for (let i = 0; i < RATE_POLICIES["auth:login-ip"].checks[0].max; i++) {
+        expect((await send()).status).toBe(413);
+      }
       expect((await send()).status).toBe(429);
     });
 
