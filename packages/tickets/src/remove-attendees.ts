@@ -18,8 +18,8 @@ export type RemoveAttendeesResult = {
     checkIns: number;
   };
   /**
-   * The addresses the removed attendees had, lower-cased: the current one and the ones their own
-   * deliveries went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
+   * The addresses the removed attendees had, lower-cased: the current one and the one their first
+   * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
    * that are not keyed by attendee (see scrubImportJobResults). Attendees that were erased before
    * have a placeholder address and add nothing. They are personal data: used in memory by the
    * caller within the same request, never logged, audited or stored.

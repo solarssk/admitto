@@ -15,10 +15,13 @@ const normalizedAddress = (value: string): string => value.trim().toLowerCase();
 
 /**
  * The addresses to scrub for attendees that are about to be erased or removed (lower-cased and trimmed): the one
- * each has now, and the ones their own deliveries went to. An attendee whose address was edited has the older ones
- * only in that history, which the erasure empties and the removal deletes, so this has to run before either. An
- * address that another attendee of the event holds now is that person's, not an old one of these attendees: it is
- * left out, because scrubbing it would blank, and cancel, mail that belongs to somebody else.
+ * each has now, and the one their first ticket mail went to. An attendee whose address was edited has the older one
+ * only in that delivery, which the erasure empties and the removal deletes, so this has to run before either.
+ *
+ * Only the first mail counts: it always goes to the address on the profile, while a resend can go to any address
+ * that staff typed in (a manager's mailbox, say), and that one is not the person's. An address is also left out when
+ * it is not safely theirs alone: another attendee of the event holds it now, or the first mail of another attendee
+ * went to it too. Scrubbing it would blank, and cancel, mail that belongs to somebody else.
  *
  * Personal data: used in memory within the caller's transaction (scrubAttendeeTraces, scrubImportJobResults),
  * never logged, audited or stored.
@@ -30,28 +33,34 @@ export async function collectAttendeeAddresses(
   const current = [...new Set(attendees.map((attendee) => normalizedAddress(attendee.email)).filter((email) => email.length > 0))];
   if (attendees.length === 0) return current;
   const ids = attendees.map((attendee) => attendee.id);
-  const delivered = await tx.emailDelivery.findMany({
-    where: { event_id: eventId, attendee_id: { in: ids }, recipient_email: { not: null } },
+  const firstMails = await tx.emailDelivery.findMany({
+    where: { event_id: eventId, attendee_id: { in: ids }, purpose: "initial", recipient_email: { not: null } },
     select: { recipient_email: true },
     distinct: ["recipient_email"],
   });
   const older = [
     ...new Set(
-      delivered
+      firstMails
         .map((row) => row.recipient_email)
         .filter((email): email is string => email !== null)
         .map(normalizedAddress),
     ),
   ].filter((email) => email.length > 0 && !current.includes(email));
   if (older.length === 0) return current;
-  const heldByOthers = await tx.$queryRaw<{ email: string }[]>`
-    SELECT LOWER(TRIM("email")) AS "email" FROM "Attendee"
+  const sharedWithOthers = await tx.$queryRaw<{ address: string }[]>`
+    SELECT LOWER(TRIM("email")) AS "address" FROM "Attendee"
     WHERE "event_id" = ${eventId}
       AND "id" NOT IN (${Prisma.join(ids)})
       AND LOWER(TRIM("email")) IN (${Prisma.join(older)})
+    UNION
+    SELECT LOWER(TRIM("recipient_email")) AS "address" FROM "EmailDelivery"
+    WHERE "event_id" = ${eventId}
+      AND "purpose" = 'initial'
+      AND "attendee_id" NOT IN (${Prisma.join(ids)})
+      AND LOWER(TRIM("recipient_email")) IN (${Prisma.join(older)})
   `;
-  const held = new Set(heldByOthers.map((row) => row.email));
-  return [...current, ...older.filter((email) => !held.has(email))];
+  const shared = new Set(sharedWithOthers.map((row) => row.address));
+  return [...current, ...older.filter((email) => !shared.has(email))];
 }
 
 /**

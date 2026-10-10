@@ -904,60 +904,86 @@ describe("an address the person had before it was edited", () => {
         rendered_html: "<p>ticket</p>",
       },
     });
-
-  /**
-   * A person whose address was edited from `old` to their current one, so their own delivery history is the only
-   * place that still says `old`; a mail staff resent to `old` on behalf of someone else; an address in that
-   * history that another attendee holds now; and a saved import result that names all of them.
-   */
-  async function seed() {
-    const n = ++runs;
-    const old = `typo.address.${n}@example.com`;
-    const heldNow = `held.by.someone.else.${n}@example.com`;
-    const person = await createAttendee(EVENT_ID, { email: `right.address.${n}@example.com` });
-    const other = await createAttendee();
-    const holder = await createAttendee(EVENT_ID, { email: heldNow });
-    await deliveryTo(person.id, old, "sent");
-    await deliveryTo(person.id, heldNow, "sent", "resend");
-    const resentToOld = await deliveryTo(other.id, old.toUpperCase(), "queued");
-    const holdersOwn = await deliveryTo(holder.id, heldNow, "queued");
-    const job = await prisma.adminJob.create({
+  const importResultNaming = (addresses: string[]) =>
+    prisma.adminJob.create({
       data: {
         type: "import_commit",
         organization_id: ORG_ID,
         event_id: EVENT_ID,
-        result_json: {
-          skipped: [
-            { email: old, reason: "Duplicate email" },
-            { email: heldNow, reason: "Duplicate email" },
-            { email: `unrelated.address.${n}@example.com`, reason: "Duplicate email" },
-          ],
-        },
+        result_json: { skipped: addresses.map((email) => ({ email, reason: "Duplicate email" })) },
       },
     });
-    return { person, resentToOld, holdersOwn, job, old, heldNow, unrelated: `unrelated.address.${n}@example.com` };
-  }
+  const savedResult = async (jobId: string) =>
+    JSON.stringify((await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).result_json).toLowerCase();
+  const deliveryNow = (id: string) => prisma.emailDelivery.findUniqueOrThrow({ where: { id } });
 
-  it.each([
+  const actions = [
     { name: "erasing", act: (id: string) => post(erasePath(EVENT_ID, id)) },
     { name: "removing", act: (id: string) => post(removePath(EVENT_ID, id), { reason: "duplicate" }) },
-  ])("$name them scrubs the old address too, and leaves an address someone else holds now alone", async ({ act }) => {
-    const { person, resentToOld, holdersOwn, job, old, heldNow, unrelated } = await seed();
+  ];
+
+  it.each(actions)("$name them scrubs the address their first ticket mail went to, from resent mail and saved import results", async ({ act }) => {
+    const n = ++runs;
+    const old = `typo.address.${n}@example.com`;
+    const person = await createAttendee(EVENT_ID, { email: `right.address.${n}@example.com` });
+    const other = await createAttendee();
+    await deliveryTo(person.id, old, "sent");
+    const resent = await deliveryTo(other.id, old.toUpperCase(), "queued", "resend");
+    const job = await importResultNaming([old, `unrelated.address.${n}@example.com`]);
 
     expect((await act(person.id)).status).toBe(200);
 
-    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resentToOld.id } })).toMatchObject({
-      recipient_email: null,
-      status: "cancelled",
-      retryable: false,
-    });
-    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: holdersOwn.id } })).toMatchObject({
-      recipient_email: heldNow,
-      status: "queued",
-    });
-    const saved = JSON.stringify((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json).toLowerCase();
+    expect(await deliveryNow(resent.id)).toMatchObject({ recipient_email: null, status: "cancelled", retryable: false });
+    const saved = await savedResult(job.id);
     expect(saved).not.toContain(old);
-    expect(saved).toContain(heldNow);
-    expect(saved).toContain(unrelated);
+    expect(saved).toContain(`unrelated.address.${n}@example.com`);
+  });
+
+  it.each(actions)("$name them leaves alone an address another attendee holds now", async ({ act }) => {
+    const n = ++runs;
+    const held = `held.by.someone.else.${n}@example.com`;
+    const person = await createAttendee();
+    // Holds it now, with no first mail of their own to it: only the profile says it is theirs.
+    await createAttendee(EVENT_ID, { email: held });
+    const other = await createAttendee();
+    await deliveryTo(person.id, held, "sent");
+    const theirs = await deliveryTo(other.id, held, "queued", "resend");
+    const job = await importResultNaming([held]);
+
+    expect((await act(person.id)).status).toBe(200);
+
+    expect(await deliveryNow(theirs.id)).toMatchObject({ recipient_email: held, status: "queued" });
+    expect(await savedResult(job.id)).toContain(held);
+  });
+
+  it.each(actions)("$name them leaves alone an address the first mail of another attendee went to as well", async ({ act }) => {
+    const n = ++runs;
+    const shared = `shared.before.${n}@example.com`;
+    const person = await createAttendee();
+    const other = await createAttendee();
+    await deliveryTo(person.id, shared, "sent");
+    const theirs = await deliveryTo(other.id, shared, "queued");
+    const job = await importResultNaming([shared]);
+
+    expect((await act(person.id)).status).toBe(200);
+
+    expect(await deliveryNow(theirs.id)).toMatchObject({ recipient_email: shared, status: "queued" });
+    expect(await savedResult(job.id)).toContain(shared);
+  });
+
+  it.each(actions)("$name them does not take an address that staff typed into a resend for theirs", async ({ act }) => {
+    const n = ++runs;
+    const manager = `manager.mailbox.${n}@example.com`;
+    const person = await createAttendee();
+    const other = await createAttendee();
+    await deliveryTo(person.id, person.email, "sent");
+    await deliveryTo(person.id, manager, "sent", "resend");
+    const theirs = await deliveryTo(other.id, manager, "queued", "resend");
+    const job = await importResultNaming([manager]);
+
+    expect((await act(person.id)).status).toBe(200);
+
+    expect(await deliveryNow(theirs.id)).toMatchObject({ recipient_email: manager, status: "queued" });
+    expect(await savedResult(job.id)).toContain(manager);
   });
 });

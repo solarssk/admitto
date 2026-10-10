@@ -172,11 +172,11 @@ describe("removeAttendees", () => {
 });
 
 describe("an address the person had before an edit", () => {
-  it("is scrubbed too: only their own deliveries still name it, and they go with the person", async () => {
+  it("is scrubbed too: only their first ticket mail still names it, and it goes with the person", async () => {
     const gone = await createAttendee(EVENT_ID, "right.address@example.com");
     const other = await createAttendee();
     await delivery(gone.id, { recipient_email: "Typo.Address@example.com" });
-    const resent = await delivery(other.id, { status: "queued", recipient_email: "typo.address@example.com" });
+    const resent = await delivery(other.id, { purpose: "resend", status: "queued", recipient_email: "typo.address@example.com" });
 
     const result = await remove([gone.id]);
 
@@ -192,15 +192,47 @@ describe("an address the person had before an edit", () => {
 
   it("is left alone when another attendee holds it now, because the mail to it is theirs", async () => {
     const gone = await createAttendee();
-    const holder = await createAttendee(EVENT_ID, "now.theirs@example.com");
+    await createAttendee(EVENT_ID, "now.theirs@example.com");
+    const other = await createAttendee();
     await delivery(gone.id, { recipient_email: "now.theirs@example.com" });
-    const theirs = await delivery(holder.id, { status: "queued", recipient_email: "now.theirs@example.com" });
+    const theirs = await delivery(other.id, { purpose: "resend", status: "queued", recipient_email: "now.theirs@example.com" });
 
     const result = await remove([gone.id]);
 
     expect(result.previousEmails).not.toContain("now.theirs@example.com");
     expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({
       recipient_email: "now.theirs@example.com",
+      status: "queued",
+    });
+  });
+
+  it("is left alone when the first mail of another attendee went to it too", async () => {
+    const gone = await createAttendee();
+    const other = await createAttendee();
+    await delivery(gone.id, { recipient_email: "shared.before@example.com" });
+    const theirs = await delivery(other.id, { status: "queued", recipient_email: "shared.before@example.com" });
+
+    const result = await remove([gone.id]);
+
+    expect(result.previousEmails).not.toContain("shared.before@example.com");
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({
+      recipient_email: "shared.before@example.com",
+      status: "queued",
+    });
+  });
+
+  it("is not told by a resend: staff typed that address in, and it is not the person's", async () => {
+    const gone = await createAttendee();
+    const other = await createAttendee();
+    await delivery(gone.id, { recipient_email: gone.email });
+    await delivery(gone.id, { purpose: "resend", recipient_email: "manager.mailbox@example.com" });
+    const theirs = await delivery(other.id, { purpose: "resend", status: "queued", recipient_email: "manager.mailbox@example.com" });
+
+    const result = await remove([gone.id]);
+
+    expect(result.previousEmails).toEqual([gone.email]);
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({
+      recipient_email: "manager.mailbox@example.com",
       status: "queued",
     });
   });
@@ -221,11 +253,11 @@ describe("collectAttendeeAddresses", () => {
     ).toEqual(["first@example.com"]);
   });
 
-  it("adds the addresses an attendee's own deliveries went to, once, and not those of other attendees' deliveries", async () => {
+  it("adds the address the attendee's first ticket mail went to, and neither a resend's nor another attendee's", async () => {
     const a = await createAttendee(EVENT_ID, "collect.now@example.com");
     const other = await createAttendee();
-    await delivery(a.id, { purpose: "initial", recipient_email: "Collect.Before@example.com" });
-    await delivery(a.id, { purpose: "resend", recipient_email: "collect.before@example.com", status: "failed", retryable: false });
+    await delivery(a.id, { recipient_email: "Collect.Before@example.com" });
+    await delivery(a.id, { purpose: "resend", recipient_email: "collect.override@example.com", status: "failed", retryable: false });
     await delivery(a.id, { purpose: "resend", recipient_email: null, status: "cancelled", retryable: false });
     await delivery(other.id, { recipient_email: "collect.someone.elses@example.com" });
 

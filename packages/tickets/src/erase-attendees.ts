@@ -51,8 +51,8 @@ export type EraseAttendeesResult = {
   /** Provider passes of the erased attendees that are not deleted at the provider yet. */
   walletTargets: EraseWalletTarget[];
   /**
-   * The addresses the erased attendees had, lower-cased: the current one and the ones their own
-   * deliveries went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
+   * The addresses the erased attendees had, lower-cased: the current one and the one their first
+   * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
    * that are not keyed by attendee (see scrubImportJobResults). They are personal data: used in
    * memory by the caller within the same request, never logged, audited or stored.
    */
