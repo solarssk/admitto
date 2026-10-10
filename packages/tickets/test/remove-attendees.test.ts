@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
-import { scrubAttendeeTraces } from "../src/attendee-traces.js";
+import { collectAttendeeAddresses, scrubAttendeeTraces } from "../src/attendee-traces.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { removeAttendees } from "../src/remove-attendees.js";
 
@@ -168,6 +168,70 @@ describe("removeAttendees", () => {
       recipient_email: "someone.else@example.com",
       status: "queued",
     });
+  });
+});
+
+describe("an address the person had before an edit", () => {
+  it("is scrubbed too: only their own deliveries still name it, and they go with the person", async () => {
+    const gone = await createAttendee(EVENT_ID, "right.address@example.com");
+    const other = await createAttendee();
+    await delivery(gone.id, { recipient_email: "Typo.Address@example.com" });
+    const resent = await delivery(other.id, { status: "queued", recipient_email: "typo.address@example.com" });
+
+    const result = await remove([gone.id]);
+
+    expect([...result.previousEmails].sort((a, b) => a.localeCompare(b))).toEqual([
+      "right.address@example.com",
+      "typo.address@example.com",
+    ]);
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resent.id } })).toMatchObject({
+      recipient_email: null,
+      status: "cancelled",
+    });
+  });
+
+  it("is left alone when another attendee holds it now, because the mail to it is theirs", async () => {
+    const gone = await createAttendee();
+    const holder = await createAttendee(EVENT_ID, "now.theirs@example.com");
+    await delivery(gone.id, { recipient_email: "now.theirs@example.com" });
+    const theirs = await delivery(holder.id, { status: "queued", recipient_email: "now.theirs@example.com" });
+
+    const result = await remove([gone.id]);
+
+    expect(result.previousEmails).not.toContain("now.theirs@example.com");
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({
+      recipient_email: "now.theirs@example.com",
+      status: "queued",
+    });
+  });
+});
+
+describe("collectAttendeeAddresses", () => {
+  const collect = (attendees: { id: string; email: string }[]) =>
+    prisma.$transaction((tx) => collectAttendeeAddresses(tx, { eventId: EVENT_ID, attendees }));
+
+  it("answers nothing for no attendees, and the current addresses, lower-cased and trimmed, for attendees without history", async () => {
+    expect(await collect([])).toEqual([]);
+    expect(
+      await collect([
+        { id: "remove-att-none-1", email: "  First@Example.com " },
+        { id: "remove-att-none-2", email: "first@example.com" },
+        { id: "remove-att-none-3", email: "   " },
+      ]),
+    ).toEqual(["first@example.com"]);
+  });
+
+  it("adds the addresses an attendee's own deliveries went to, once, and not those of other attendees' deliveries", async () => {
+    const a = await createAttendee(EVENT_ID, "collect.now@example.com");
+    const other = await createAttendee();
+    await delivery(a.id, { purpose: "initial", recipient_email: "Collect.Before@example.com" });
+    await delivery(a.id, { purpose: "resend", recipient_email: "collect.before@example.com", status: "failed", retryable: false });
+    await delivery(a.id, { purpose: "resend", recipient_email: null, status: "cancelled", retryable: false });
+    await delivery(other.id, { recipient_email: "collect.someone.elses@example.com" });
+
+    const addresses = await collect([{ id: a.id, email: a.email }]);
+
+    expect([...addresses].sort((x, y) => x.localeCompare(y))).toEqual(["collect.before@example.com", "collect.now@example.com"]);
   });
 });
 

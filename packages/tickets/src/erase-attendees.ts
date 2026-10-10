@@ -1,6 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
-import { scrubAttendeeTraces } from "./attendee-traces.js";
+import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
 
 /** Written to `Attendee.name` of an erased attendee. Mirrored by the CHECK constraint in migration
  * 20261008120000_add_attendee_erased_at - change both together. */
@@ -51,7 +51,8 @@ export type EraseAttendeesResult = {
   /** Provider passes of the erased attendees that are not deleted at the provider yet. */
   walletTargets: EraseWalletTarget[];
   /**
-   * The addresses the erased attendees had, lower-cased, for scrubbing event-level copies of them
+   * The addresses the erased attendees had, lower-cased: the current one and the ones their own
+   * deliveries went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
    * that are not keyed by attendee (see scrubImportJobResults). They are personal data: used in
    * memory by the caller within the same request, never logged, audited or stored.
    */
@@ -132,14 +133,11 @@ export async function eraseAttendees(
   const alreadyErasedIds = found.filter((row) => row.erased_at !== null).map((row) => row.id);
   const toErase = found.filter((row) => row.erased_at === null).map((row) => row.id);
   if (toErase.length === 0) return { ...empty, alreadyErasedIds, notFoundIds };
-  const previousEmails = [
-    ...new Set(
-      found
-        .filter((row) => row.erased_at === null)
-        .map((row) => row.email.trim().toLowerCase())
-        .filter((email) => email.length > 0),
-    ),
-  ];
+  // Before the deliveries are emptied: an address the person had before an edit is only in their history.
+  const previousEmails = await collectAttendeeAddresses(tx, {
+    eventId,
+    attendees: found.filter((row) => row.erased_at === null),
+  });
 
   const ids = Prisma.join(toErase);
   const erased = await tx.$queryRaw<{ id: string }[]>`

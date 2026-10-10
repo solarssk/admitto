@@ -885,3 +885,79 @@ describe("removing attendees from an event", () => {
     expect(bodies[0]!.not_found + bodies[1]!.not_found).toBe(2);
   });
 });
+
+describe("an address the person had before it was edited", () => {
+  const removePath = (eventId: string, attendeeId: string) => `/api/admin/events/${eventId}/attendees/${attendeeId}/remove`;
+  let runs = 0;
+
+  const deliveryTo = (attendeeId: string, recipient: string, status: string, purpose = "initial") =>
+    prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: attendeeId,
+        purpose,
+        provider: "smtp",
+        status,
+        recipient_email: recipient,
+        rendered_subject: "Your ticket",
+        rendered_html: "<p>ticket</p>",
+      },
+    });
+
+  /**
+   * A person whose address was edited from `old` to their current one, so their own delivery history is the only
+   * place that still says `old`; a mail staff resent to `old` on behalf of someone else; an address in that
+   * history that another attendee holds now; and a saved import result that names all of them.
+   */
+  async function seed() {
+    const n = ++runs;
+    const old = `typo.address.${n}@example.com`;
+    const heldNow = `held.by.someone.else.${n}@example.com`;
+    const person = await createAttendee(EVENT_ID, { email: `right.address.${n}@example.com` });
+    const other = await createAttendee();
+    const holder = await createAttendee(EVENT_ID, { email: heldNow });
+    await deliveryTo(person.id, old, "sent");
+    await deliveryTo(person.id, heldNow, "sent", "resend");
+    const resentToOld = await deliveryTo(other.id, old.toUpperCase(), "queued");
+    const holdersOwn = await deliveryTo(holder.id, heldNow, "queued");
+    const job = await prisma.adminJob.create({
+      data: {
+        type: "import_commit",
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        result_json: {
+          skipped: [
+            { email: old, reason: "Duplicate email" },
+            { email: heldNow, reason: "Duplicate email" },
+            { email: `unrelated.address.${n}@example.com`, reason: "Duplicate email" },
+          ],
+        },
+      },
+    });
+    return { person, resentToOld, holdersOwn, job, old, heldNow, unrelated: `unrelated.address.${n}@example.com` };
+  }
+
+  it.each([
+    { name: "erasing", act: (id: string) => post(erasePath(EVENT_ID, id)) },
+    { name: "removing", act: (id: string) => post(removePath(EVENT_ID, id), { reason: "duplicate" }) },
+  ])("$name them scrubs the old address too, and leaves an address someone else holds now alone", async ({ act }) => {
+    const { person, resentToOld, holdersOwn, job, old, heldNow, unrelated } = await seed();
+
+    expect((await act(person.id)).status).toBe(200);
+
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resentToOld.id } })).toMatchObject({
+      recipient_email: null,
+      status: "cancelled",
+      retryable: false,
+    });
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: holdersOwn.id } })).toMatchObject({
+      recipient_email: heldNow,
+      status: "queued",
+    });
+    const saved = JSON.stringify((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json).toLowerCase();
+    expect(saved).not.toContain(old);
+    expect(saved).toContain(heldNow);
+    expect(saved).toContain(unrelated);
+  });
+});

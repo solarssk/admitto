@@ -1,5 +1,5 @@
 import { Prisma } from "@admitto/db/client";
-import { scrubAttendeeTraces } from "./attendee-traces.js";
+import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
 
 export type RemoveAttendeesParams = {
   eventId: string;
@@ -18,7 +18,8 @@ export type RemoveAttendeesResult = {
     checkIns: number;
   };
   /**
-   * The addresses the removed attendees had, lower-cased, for scrubbing event-level copies of them
+   * The addresses the removed attendees had, lower-cased: the current one and the ones their own
+   * deliveries went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
    * that are not keyed by attendee (see scrubImportJobResults). Attendees that were erased before
    * have a placeholder address and add nothing. They are personal data: used in memory by the
    * caller within the same request, never logged, audited or stored.
@@ -65,6 +66,12 @@ export async function removeAttendees(
   if (found.length === 0) return empty;
   const ids = found.map((row) => row.id);
 
+  // Before the deliveries go: an address the person had before an edit is only in their history.
+  const previousEmails = await collectAttendeeAddresses(tx, {
+    eventId,
+    attendees: found.filter((row) => row.erased_at === null),
+  });
+
   const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
     tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
     tx.walletPass.deleteMany({ where: { attendee_id: { in: ids } } }),
@@ -79,14 +86,6 @@ export async function removeAttendees(
   `;
   const removedIds = deleted.map((row) => row.id);
   const removed = new Set(removedIds);
-  const previousEmails = [
-    ...new Set(
-      found
-        .filter((row) => removed.has(row.id) && row.erased_at === null)
-        .map((row) => row.email.trim().toLowerCase())
-        .filter((email) => email.length > 0),
-    ),
-  ];
 
   await scrubAttendeeTraces(tx, { eventId, attendeeIds: removedIds, emails: previousEmails });
 
