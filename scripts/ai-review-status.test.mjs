@@ -185,6 +185,10 @@ test('the status says which tools were used and warns when they were not the thr
   assert.doesNotMatch(renderStatus(facts({ log: logOf() })), /Tools/, 'no tool calls, no row')
 })
 
+test('the table header has names, not an empty bar', () => {
+  assert.match(renderStatus(facts({ log: logOf() })), /\n\| Item \| Detail \|\n\|:--\|:--\|\n/)
+})
+
 test('an approval that rests on a partly seen diff says so, and a complete one does not', () => {
   const partial = { ...diffCoverage(diffSections(diffText), [[1, 70]]), atLeast: false }
   const approved = renderStatus(facts({ log: logOf({ ranges: [[1, 70]] }), coverage: partial }))

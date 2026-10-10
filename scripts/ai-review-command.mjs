@@ -96,7 +96,7 @@ export function renderLive(f) {
     ['Earlier attempts', budget],
     ['Last report', f.reportUrl ? `[status comment](${f.reportUrl})` : 'none yet'],
   ].filter(([, value]) => value)
-  return [LIVE_MARKER, '## AI review: live status', '', '| | |', '|:--|:--|',
+  return [LIVE_MARKER, '## AI review: live status', '', '| Item | Detail |', '|:--|:--|',
     ...rows.map(([label, value]) => `| **${label}** | ${value} |`), '',
     '`/ai-review` reviews again, `/ai-review cancel` stops a run.', '',
     `<sub>Updated ${new Date(f.now).toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`].join('\n')
