@@ -92,7 +92,7 @@ async function purgeFilesWhere(
       take: PAGE_SIZE,
     });
     for (const job of page.filter(hasStoredFile)) {
-      const outcome = await purgeJobFile(db, storage, job, dryRun);
+      const outcome = await purgeJobFile(db, storage, job, dryRun); // NOSONAR - one file at a time on purpose: a retention run must not burst the disk or the database pool
       if (outcome === "deleted") counts.deleted += 1;
       else counts.failed += 1;
     }

@@ -43,13 +43,14 @@ export async function runRetention(db: PrismaClient): Promise<void> {
       },
     });
 
+    const failedFilesNote = jobFilesResult.failures > 0 ? ` (${jobFilesResult.failures} could not be deleted)` : "";
     console.log(
       `Purged/nullified auth: ${authResult.sessions} sessions, ${authResult.trustedDevices} trusted devices; ` +
         `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
         `security audit log: ${securityAuditResult.deleted} row(s); ` +
         `notifications: ${notificationsResult.deleted} row(s); ` +
         `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s)` +
-        `${jobFilesResult.failures > 0 ? ` (${jobFilesResult.failures} could not be deleted)` : ""}.`,
+        `${failedFilesNote}.`,
     );
     return;
   }
