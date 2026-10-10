@@ -15,11 +15,17 @@ body {
   background: var(--surface-page);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
-  /* A block of text of up to six lines is wrapped so that its lines come out even, which keeps a lone word off its
-     last line ("connection." alone on the second line of a message); a longer block wraps as it always did, the browser
-     ignores `balance` past six lines. Set here, so that every text inherits it and a new one is covered without anyone
-     having to remember. The shorthand only on the body, where it cannot clash with a `white-space: nowrap` that an element
-     sets itself; `text-wrap: pretty` was tried and does not do this (it leaves "check-in." alone on a second line). */
+  /* Running text (a description, a hint, a paragraph in a dialog) is wrapped with `pretty`: the lines run to the edge of their
+     column as ordinary text does, and the browser only avoids a short last line. `balance` made every two- or three-line
+     description a narrow block with a wide empty strip to its right (the lines of a block are evened out to the shortest width
+     that holds them), and put "check-" / "in." on two lines more often. The shorthand only on the body, where it cannot clash
+     with a `white-space: nowrap` that an element sets itself. The short texts that stand alone (headings, titles, an empty
+     state, a notice, a toast, a tooltip) are balanced below. */
+  text-wrap: pretty;
+}
+
+h1, h2, h3, h4, h5, h6,
+.at-card__title, .at-pageheader__title, .at-empty-state__title, .at-empty-state__desc, .at-notice__body, .at-toast, [role="tooltip"] {
   text-wrap: balance;
 }
 
