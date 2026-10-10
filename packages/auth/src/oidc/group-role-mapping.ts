@@ -124,7 +124,7 @@ function ruleStillAuthorizesGrant(
 }
 
 /** Count active users with instance-scoped superadmin RoleAssignment. */
-export async function countActiveInstanceSuperadmins(
+export function countActiveInstanceSuperadmins(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
   return prisma.roleAssignment.count({
@@ -185,7 +185,7 @@ async function revokeOidcRoleGrant(
 
   for (let attempt = 0; attempt < SERIALIZATION_RETRY_ATTEMPTS; attempt++) {
     try {
-      return await runInOwnTransaction(
+      return await runInOwnTransaction( // NOSONAR - retry loop: an attempt runs only after the previous one failed
         prisma,
         async (tx) => {
           if (isInstanceSuperadminGrant(grant)) {
@@ -207,7 +207,7 @@ async function revokeOidcRoleGrant(
       );
     } catch (err) {
       if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
-        await sleep(serializationRetryDelayMs(attempt));
+        await sleep(serializationRetryDelayMs(attempt)); // NOSONAR - backoff: the next attempt must wait for this delay
         continue;
       }
       throw err;
@@ -238,7 +238,7 @@ async function ensureOidcGrantForRule(
   // the retry loop below then reruns against the winner's now-committed row.
   for (let attempt = 0; attempt < SERIALIZATION_RETRY_ATTEMPTS; attempt++) {
     try {
-      return await runInOwnTransaction(
+      return await runInOwnTransaction( // NOSONAR - retry loop: an attempt runs only after the previous one failed
         prisma,
         async (tx) => {
           if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {
@@ -295,7 +295,7 @@ async function ensureOidcGrantForRule(
       );
     } catch (err) {
       if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
-        await sleep(serializationRetryDelayMs(attempt));
+        await sleep(serializationRetryDelayMs(attempt)); // NOSONAR - backoff: the next attempt must wait for this delay
         continue;
       }
       throw err;
@@ -360,7 +360,7 @@ export async function applyOidcGroupRoleMappings(
 
   for (const grant of grants) {
     if (ruleStillAuthorizesGrant(grant, rules, groupSet)) continue;
-    if (await revokeOidcRoleGrant(prisma, grant, userId, providerId)) {
+    if (await revokeOidcRoleGrant(prisma, grant, userId, providerId)) { // NOSONAR - grants are processed one at a time on purpose, so the changed count stays in order
       changed++;
     }
   }
@@ -375,7 +375,7 @@ export async function applyOidcGroupRoleMappings(
     const scopeId = roleAssignmentScopeId(rule.scope_type, rule.scope_id);
     const grantKey = grantWhere(userId, providerId, rule, scopeId);
 
-    if (await ensureOidcGrantForRule(prisma, userId, providerId, rule, scopeId, grantKey)) {
+    if (await ensureOidcGrantForRule(prisma, userId, providerId, rule, scopeId, grantKey)) { // NOSONAR - grants are processed one at a time on purpose, so the changed count stays in order
       changed++;
       if (onElevatedGrant && (rule.role === "admin" || rule.role === "superadmin")) {
         onElevatedGrant({ role: rule.role, scopeType: rule.scope_type as ScopeType, scopeId });
@@ -387,7 +387,7 @@ export async function applyOidcGroupRoleMappings(
 }
 
 /** Returns true if user is a bootstrap-style instance superadmin (invariant check). */
-export async function preservesSuperadminInvariant(
+export function preservesSuperadminInvariant(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<boolean> {

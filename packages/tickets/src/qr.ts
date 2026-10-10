@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 
 /** Generate a PNG QR code for the given payload. Returns a Buffer. */
-export async function generateQrPng(payload: string): Promise<Buffer> {
+export function generateQrPng(payload: string): Promise<Buffer> {
   return QRCode.toBuffer(payload, { type: "png", errorCorrectionLevel: "M" });
 }
 

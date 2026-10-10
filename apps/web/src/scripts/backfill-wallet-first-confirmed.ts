@@ -127,7 +127,7 @@ export async function backfillEvent(
       if (dryRun) {
         console.log(`[${event.title}] (dry-run) would set pass ${pass.id} first_confirmed_at=${firstConfirmedAt.toISOString()}`);
       } else {
-        await db.walletPass.updateMany({
+        await db.walletPass.updateMany({ // NOSONAR - one write at a time on purpose, in step with the provider calls
           where: { id: pass.id, first_confirmed_at: null },
           data: { first_confirmed_at: firstConfirmedAt },
         });
@@ -160,7 +160,7 @@ export async function main(): Promise<void> {
 
   console.log(`found ${events.length} wallet-enabled event(s)${dryRun ? " (dry run - no writes)" : ""}`);
   for (const event of events) {
-    await backfillEvent(prisma, event, dryRun);
+    await backfillEvent(prisma, event, dryRun); // NOSONAR - events are backfilled one at a time on purpose
   }
 }
 

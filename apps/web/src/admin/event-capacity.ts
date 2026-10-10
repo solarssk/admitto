@@ -33,12 +33,12 @@ export async function acquireEventCapacityLock(
 }
 
 /** Count attendees that consume event capacity (excludes revoked and cancelled). */
-export async function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {
+export function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {
   return db.attendee.count({ where: activeAttendeeWhere(eventId) });
 }
 
 /** Admitted attendees that still consume capacity (same scope as countActiveAttendees). */
-export async function countActiveAdmittedAttendees(db: CapacityDb, eventId: string): Promise<number> {
+export function countActiveAdmittedAttendees(db: CapacityDb, eventId: string): Promise<number> {
   return db.attendee.count({
     where: { ...activeAttendeeWhere(eventId), admitted_at: { not: null } },
   });

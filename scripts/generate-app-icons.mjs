@@ -19,10 +19,10 @@ const svg = readFileSync(svgPath);
 // Brand blue from favicon.svg's own rounded-rect fill - used to flatten the apple touch icon.
 const BRAND_BLUE = "#066fd1";
 
-for (const [size, name] of [
+await Promise.all([
   [32, "favicon-32.png"],
   [180, "apple-touch-icon.png"],
-]) {
+].map(async ([size, name]) => {
   const out = join(publicDir, name);
   let image = sharp(svg).resize(size, size);
   // iOS applies its own corner mask to home-screen icons and does not handle alpha
@@ -33,4 +33,4 @@ for (const [size, name] of [
   }
   await image.png().toFile(out);
   console.log(`wrote ${out}`);
-}
+}));

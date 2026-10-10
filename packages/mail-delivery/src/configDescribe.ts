@@ -58,7 +58,7 @@ export function serializeConfigDescriptionForCli(desc: ConfigDescriptor): string
  * Read-only masked mail config for an event (secrets never decrypted).
  * Thin passthrough for future admin UI — same semantics as describeMailConfig.
  */
-export async function getMailConfigDescription(
+export function getMailConfigDescription(
   eventId: string,
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,

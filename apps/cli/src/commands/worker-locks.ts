@@ -59,7 +59,7 @@ export async function openWorkerLockClient(connectionString: string): Promise<Wo
 
   async function releaseAll(): Promise<void> {
     for (const job of held) {
-      await release(job);
+      await release(job); // NOSONAR - locks are released one at a time on purpose, in order
     }
   }
 

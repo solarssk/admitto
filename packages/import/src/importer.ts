@@ -172,7 +172,7 @@ async function prefetchExistingAttendees(
   for (let i = 0; i < Math.max(emails.length, agencyIdentifiers.length, 1); i += PREFETCH_BATCH_SIZE) {
     const emailBatch = emails.slice(i, i + PREFETCH_BATCH_SIZE);
     const agencyBatch = agencyIdentifiers.slice(i, i + PREFETCH_BATCH_SIZE);
-    const batch = await prisma.attendee.findMany({
+    const batch = await prisma.attendee.findMany({ // NOSONAR - batches run one after another on purpose, to keep the database load bounded
       where: {
         event_id: eventId,
         OR: [
@@ -371,14 +371,14 @@ async function writeAttendeeBatches(
 
   for (let i = 0; i < creates.length; i += CREATE_BATCH_SIZE) {
     const batch = creates.slice(i, i + CREATE_BATCH_SIZE);
-    const result = await createAttendeesBatch(client, batch);
+    const result = await createAttendeesBatch(client, batch); // NOSONAR - batches run one after another on purpose, to keep the database load bounded
     created += result.created;
     skipped.push(...result.skipped);
   }
 
   for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
     const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
-    await Promise.all(batch.map(({ id, data }) => client.attendee.update({ where: { id }, data })));
+    await Promise.all(batch.map(({ id, data }) => client.attendee.update({ where: { id }, data }))); // NOSONAR - batches run one after another on purpose, to keep the database load bounded
     updated += batch.length;
   }
 

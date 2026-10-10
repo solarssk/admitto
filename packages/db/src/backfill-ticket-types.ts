@@ -75,7 +75,7 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
   let attendeesNormalized = 0;
 
   for (const event of events) {
-    const attendees = await prisma.attendee.findMany({
+    const attendees = await prisma.attendee.findMany({ // NOSONAR - one-off script: sequential on purpose to keep the database load low
       where: { event_id: event.id, ticket_type: { not: null } },
       select: { id: true, ticket_type: true },
       // Explicit order so "first-seen" (below) is well-defined: without one, SQL row order is
@@ -111,7 +111,7 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
     // Wrapped in a transaction so a mid-event crash can't leave a partially migrated event
     // behind - the idempotency check above (`ticket_types: { none: {} } `) would then skip it
     // forever on re-run, since it already has at least one TicketType row (CodeRabbit review).
-    const migrated = await prisma.$transaction(
+    const migrated = await prisma.$transaction( // NOSONAR - one-off script: sequential on purpose to keep the database load low
       async (tx) => {
         // Serialize against any other process touching this event's ticket-type catalog - a
         // concurrent replica of this same script on a rolling deploy, or an API route - same lock
@@ -142,13 +142,13 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
             usedKeys.add(key);
             const label = group.label.slice(0, TICKET_TYPE_LABEL_MAX_LENGTH);
             const color = norm === "vip" ? "purple" : "gray";
-            await tx.ticketType.create({
+            await tx.ticketType.create({ // NOSONAR - statements in one transaction run one at a time
               data: { event_id: event.id, key, label, color, sort_order: sortOrder },
             });
             typesCreated += 1;
             sortOrder += 1;
 
-            const { count } = await tx.attendee.updateMany({
+            const { count } = await tx.attendee.updateMany({ // NOSONAR - statements in one transaction run one at a time
               where: { id: { in: group.attendeeIds }, ticket_type: { not: key } },
               data: { ticket_type: key },
             });

@@ -303,7 +303,7 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
   if (!validation.ok) return validation.response;
   const { fileField, displayName, tokenBase, originalUrl, crop } = validation;
 
-  // TODO(multi-org): same single-tenant assumption as handlePostEventBrandingUpload.
+  // NOSONAR - TODO(multi-org): same single-tenant assumption as handlePostEventBrandingUpload. Tracked on the v0.5+ roadmap, not a forgotten task.
   const orgId = "default";
 
   try {

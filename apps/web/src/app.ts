@@ -509,12 +509,12 @@ function htmlWithSecurityHeaders(
  * createApp closure) since it captures nothing from there - SonarCloud S7721. `onMissing` builds
  * each caller's own error response (a redirect for the wallet handler, a rendered error page for
  * the ticket page). */
-async function resolveQrPayloadOrRespond(
+function resolveQrPayloadOrRespond(
   resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
   internalToken: string | undefined,
   logContext: string,
   onMissing: () => Response | Promise<Response>,
-): Promise<string | Response> {
+): string | Response | Promise<Response> {
   const { attendee } = resolved;
   if (resolved.mode === "internal") {
     if (!internalToken) {
@@ -2724,7 +2724,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   // OIDC redirect_uri must match what the SPA shows (Instance URL / BASE_URL), not the
   // boot-only resolveBaseUrl() that skips DB instance_url in development.
-  async function oidcPublicBaseUrl(): Promise<string> {
+  function oidcPublicBaseUrl(): Promise<string> {
     return resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl);
   }
 

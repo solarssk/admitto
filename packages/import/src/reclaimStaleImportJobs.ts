@@ -118,7 +118,7 @@ export function importResultJsonFromAuditMetadata(
   };
 }
 
-async function loadImportAuditForHeal(
+function loadImportAuditForHeal(
   db: PrismaClient,
   eventId: string,
   importId: string,
@@ -239,10 +239,10 @@ export async function reclaimStaleImportJobs(
   let healed = 0;
   for (const job of stale) {
     if (job.status === "pending") {
-      if (await failStalePendingImportJob(db, storage, job, now)) reclaimed += 1;
+      if (await failStalePendingImportJob(db, storage, job, now)) reclaimed += 1; // NOSONAR - stale jobs are reclaimed one at a time on purpose
       continue;
     }
-    const outcome = await reclaimStaleRunningImportJob(db, storage, job, now);
+    const outcome = await reclaimStaleRunningImportJob(db, storage, job, now); // NOSONAR - stale jobs are reclaimed one at a time on purpose
     if (outcome === "healed") healed += 1;
     else if (outcome === "reclaimed") reclaimed += 1;
   }
