@@ -15,6 +15,7 @@ function entry(overrides: Partial<SystemLogEntry> = {}): SystemLogEntry {
 
 afterEach(() => {
   resetSystemLogBufferForTest();
+  uninstallSystemLogRelay();
 });
 
 describe("publishSystemLogEntry", () => {
@@ -84,6 +85,63 @@ describe("publishSystemLogEntry", () => {
       }),
     ).not.toThrow();
     await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+  });
+});
+
+describe("the limits of the relay", () => {
+  const env = { ADMITTO_INTERNAL_URL: "http://app:3000", OPS_HEALTH_TOKEN: "ops-token" };
+  const send = (fetchImpl: ReturnType<typeof vi.fn>, message: string, nowMs: number) =>
+    publishSystemLogEntry(entry({ source: "wallet", level: "warn", message, fields: { n: 1 } }), { env, fetchImpl, nowMs });
+  const relayed = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    fetchImpl.mock.calls.map((call) => JSON.parse((call[1] as { body: string }).body) as { message: string; fields?: Record<string, unknown> });
+
+  it("relays at most 20 lines of one message in a minute, marks the last of them, and holds the rest back", () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+
+    for (let i = 0; i < 200; i += 1) send(fetchImpl, "passcreator_request_rejected", 1_000 + i);
+
+    const lines = relayed(fetchImpl);
+    expect(lines).toHaveLength(20);
+    expect(lines[18]!.fields).toEqual({ n: 1 });
+    expect(lines[19]!.fields).toMatchObject({ n: 1, relay_note: expect.stringContaining("not relayed") });
+  });
+
+  it("still relays other messages after a burst of one, which is where the line that sums it up comes", () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    for (let i = 0; i < 300; i += 1) send(fetchImpl, "passcreator_request_rejected", 1_000);
+
+    send(fetchImpl, "wallet_pass_erasure_delete_failed", 1_000);
+    send(fetchImpl, "retention summary", 1_000);
+
+    expect(relayed(fetchImpl).slice(-2).map((line) => line.message)).toEqual(["wallet_pass_erasure_delete_failed", "retention summary"]);
+  });
+
+  it("relays again once the minute is over", () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    for (let i = 0; i < 25; i += 1) send(fetchImpl, "passcreator_request_rejected", 1_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(20);
+
+    send(fetchImpl, "passcreator_request_rejected", 1_000 + 60_000);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(21);
+  });
+
+  it("keeps the whole relay below 90 lines a minute, however many different messages there are", () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+
+    for (let i = 0; i < 400; i += 1) send(fetchImpl, `message ${i}`, 1_000);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(90);
+  });
+
+  it("forgets the messages whose minute is over when it has seen very many different ones", () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    for (let i = 0; i < 250; i += 1) send(fetchImpl, `old message ${i}`, 1_000);
+
+    // A minute later: the table is cleaned, and a message that was at its limit can be relayed again.
+    send(fetchImpl, "old message 0", 70_000);
+
+    expect(relayed(fetchImpl).filter((line) => line.message === "old message 0")).toHaveLength(2);
   });
 });
 

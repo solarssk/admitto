@@ -24,6 +24,14 @@ const nullifyDeliverySnapshots = vi.fn();
 const purgeNotifications = vi.fn(async () => ({ deleted: 0 }));
 const resolveNotificationRetentionDays = vi.fn(() => 30);
 const purgeJobFilesForRetention = vi.fn(async () => ({ exportFiles: 0, stagedImportFiles: 0, failures: 0 }));
+const touchWorkerHeartbeat = vi.fn(async () => undefined);
+const sweepErasedWalletPasses = vi.fn(async (..._args: unknown[]) => ({
+  pending: 0,
+  deleted: 0,
+  failed: 0,
+  noProvider: 0,
+  notTried: 0,
+}));
 
 vi.mock("@admitto/auth", () => ({
   InstanceUrlRequiredError: class extends Error {},
@@ -58,6 +66,10 @@ vi.mock("@admitto/import", () => ({
 }));
 vi.mock("@admitto/storage", () => ({ getDefaultStorage: vi.fn(() => ({})) }));
 vi.mock("../src/lib/retention-job-files.js", () => ({ purgeJobFilesForRetention }));
+vi.mock("../src/lib/retention-erased-wallet-passes.js", async (importActual) => ({
+  ...(await importActual<typeof import("../src/lib/retention-erased-wallet-passes.js")>()),
+  sweepErasedWalletPasses,
+}));
 vi.mock("../src/lib/sse-publish.js", () => ({
   closeSsePublishClient: vi.fn(),
   publishActivityChanged: vi.fn(async () => undefined),
@@ -81,7 +93,7 @@ vi.mock("../src/commands/wallet-sync.js", () => ({
 vi.mock("../src/commands/wallet-expire.js", () => ({
   runWalletExpiry: vi.fn(async () => ({ expired: 0, deferredEvents: 0 })),
 }));
-vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn(async () => undefined) }));
+vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat }));
 
 const { logLevel, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
@@ -99,10 +111,13 @@ describe("runWorkerTick — scheduled retention pass", () => {
   beforeEach(() => {
     nullifyDeliverySnapshots.mockClear();
     purgeJobFilesForRetention.mockClear();
+    sweepErasedWalletPasses.mockClear();
+    touchWorkerHeartbeat.mockClear();
     vi.stubEnv(SNAPSHOT_RETENTION_ENV, undefined);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
@@ -115,6 +130,7 @@ describe("runWorkerTick — scheduled retention pass", () => {
     expect(purgeSecurityAuditLog).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 30 });
     expect(purgeNotifications).toHaveBeenCalledWith(db, { dryRun: false, retentionDays: 30 });
     expect(purgeJobFilesForRetention).toHaveBeenCalledWith(db, false);
+    expect(sweepErasedWalletPasses).toHaveBeenCalledWith(db, { dryRun: false });
   });
 
   it("says how many export files and staged import CSVs it deleted, and warns when one could not be", async () => {
@@ -124,7 +140,7 @@ describe("runWorkerTick — scheduled retention pass", () => {
     await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
 
     const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
-    expect(line).toContain("export_files=3 staged_import_files=2 failed=1");
+    expect(line).toContain("export_files=3 staged_import_files=2 erased_wallet_passes=0 failed=1");
     expect(logLevel(line!)).toBe("warn");
     log.mockRestore();
   });
@@ -135,8 +151,57 @@ describe("runWorkerTick — scheduled retention pass", () => {
     await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
 
     const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
-    expect(line).toContain("export_files=0 staged_import_files=0 failed=0");
+    expect(line).toContain("export_files=0 staged_import_files=0 erased_wallet_passes=0 failed=0");
     expect(logLevel(line!)).toBe("info");
+    log.mockRestore();
+  });
+
+  it("says how many wallet passes of erased attendees it deleted at the provider, and warns for each that stays", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 8, deleted: 4, failed: 1, noProvider: 2, notTried: 1 });
+    purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 0, stagedImportFiles: 0, failures: 1 });
+
+    await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
+
+    const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
+    // One counter for everything that stays: 1 file + 1 refused + 2 without credentials + 1 not tried.
+    expect(line).toContain("erased_wallet_passes=4 failed=5");
+    expect(logLevel(line!)).toBe("warn");
+    log.mockRestore();
+  });
+
+  it("keeps the worker heartbeat fresh while the sweep is still at the wallet provider", async () => {
+    vi.useFakeTimers();
+    let finishSweep!: (result: { pending: number; deleted: number; failed: number; noProvider: number; notTried: number }) => void;
+    sweepErasedWalletPasses.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSweep = resolve;
+      }),
+    );
+
+    const tick = runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
+    await vi.waitFor(() => expect(sweepErasedWalletPasses).toHaveBeenCalled());
+    touchWorkerHeartbeat.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(touchWorkerHeartbeat).toHaveBeenCalledTimes(1);
+
+    finishSweep({ pending: 0, deleted: 0, failed: 0, noProvider: 0, notTried: 0 });
+    await tick;
+    // Stopped with the sweep: no more refreshes once it is over.
+    touchWorkerHeartbeat.mockClear();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(touchWorkerHeartbeat).not.toHaveBeenCalled();
+  });
+
+  it("reports a sweep that breaks as a failed retention run, and tries again after the failure backoff", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    sweepErasedWalletPasses.mockRejectedValueOnce(new Error("db down"));
+
+    await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
+
+    const lines = log.mock.calls.map((call) => String(call[0])).filter((text) => text.includes("[worker:retention]"));
+    expect(lines.some((text) => text.includes("FAILED db down"))).toBe(true);
+    expect(lines.some((text) => text.includes("retry after failure backoff (15m)"))).toBe(true);
     log.mockRestore();
   });
 

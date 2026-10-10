@@ -151,7 +151,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - **Bulk actions are disabled:** the event may be archived, or your selection may not allow that action.
 - **A person is missing from the list:** their personal data may have been erased. Check the line under the table for hidden erased entries and select **Show erased**.
 - **Remove from event is greyed out:** the event is archived, and its numbers are final. For a privacy request use **Erase personal data**, which still works there.
-- **The wallet pass is still at the provider after an erasure:** the provider could not be reached. Select **Try again** in the dialog, or open the erased entry and use **Try again** next to the pass. If it keeps failing, check the wallet connection in Event settings, or delete the pass in the provider's own console.
+- **The wallet pass is still at the provider after an erasure:** the provider could not be reached. Select **Try again** in the dialog, or open the erased entry and use **Try again** next to the pass. Admitto also tries again by itself about once a day. If it keeps failing, check the wallet connection in Event settings, or delete the pass in the provider's own console.
 
 ## Related pages
 
