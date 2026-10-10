@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, Card, Notice, PageHeader } from "@admitto/ui";
+import { Button, Card, EmptyState, Notice, PageHeader } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { AttendeeDetailDto, EventDto, TicketTypeDto } from "../api/types.js";
 import { isEventArchived } from "../components/ArchivedGuard.js";
@@ -9,7 +9,6 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatEventDate } from "../utils/event-dates.js";
 import { ERASED_ATTENDEE_LABEL } from "./erasedAttendee.js";
-import { ErasedBadge } from "./ErasedBadge.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
@@ -110,11 +109,98 @@ function ErasedActionsMenu({
   );
 }
 
+/** The tabs of the attendee page, which an erased attendee keeps (the page owns the strip and the `?tab=` address). */
+export type ErasedAttendeeTab = "overview" | "activity" | "notes";
+
+/** Overview: what the entry keeps is shown as it is, and every field that held personal data reads "Erased". */
+function ErasedOverviewTab({
+  detail,
+  event,
+  ticketTypes,
+  walletPlatforms,
+  onWalletTryAgain,
+}: Readonly<{
+  detail: AttendeeDetailDto;
+  event: Pick<EventDto, "timezone">;
+  ticketTypes: TicketTypeDto[];
+  walletPlatforms: EnabledWalletPlatforms;
+  onWalletTryAgain: () => void;
+}>) {
+  // The Wallet card is there when the event offers wallet passes, or this entry still has one.
+  const showWallet =
+    detail.wallet_pass !== null || walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
+  return (
+    <div className="attendee-detail-grid">
+      <div className="attendee-detail-main">
+        <Card title="Profile" className="attendee-detail-profile">
+          <div className="attendee-detail-readonly">
+            <ErasedRow label="Name" />
+            <ErasedRow label="Email" />
+            <ErasedRow label="Company" />
+            <div className="attendee-detail-row">
+              <span>Ticket type</span>
+              <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
+            </div>
+            <ErasedRow label="Custom fields" />
+            <ErasedRow label="Notes" />
+          </div>
+        </Card>
+      </div>
+      <div className="attendee-detail-side">
+        <Card title="Delivery history">
+          <div className="attendee-detail-readonly">
+            <div className="attendee-detail-row">
+              <span>Ticket email</span>
+              <MailStatusBadge status={detail.deliveries[0]?.status ?? null} />
+            </div>
+            <ErasedRow label="Message copies" />
+          </div>
+        </Card>
+        {showWallet && (
+          <Card title="Wallet">
+            <div className="attendee-detail-readonly">
+              <ProviderPassRow detail={detail} timezone={event.timezone} onTryAgain={onWalletTryAgain} />
+              <ErasedRow label="Ticket link and QR code">No longer works</ErasedRow>
+            </div>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Activity log: the person's history went with their personal data. The tab stays, so that the page has the shape of every other attendee's. */
+function ErasedActivityTab() {
+  return (
+    <Card padded>
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="History erased"
+        description="The change history for this person was erased."
+      />
+    </Card>
+  );
+}
+
+/** Notes: they were erased too, and none can be added to an erased entry, so there is no composer. */
+function ErasedNotesTab() {
+  return (
+    <Card padded>
+      <EmptyState
+        icon={<i className="ti ti-notes" aria-hidden="true" />}
+        title="Notes erased"
+        description="Notes were erased with the personal data. None can be added to an erased entry."
+      />
+    </Card>
+  );
+}
+
 /**
  * The page of an attendee whose personal data has been erased: read-only. The entry stays so that
- * the Reports totals do not move, and it says so. Every field that held personal data reads
- * "Erased"; what the entry keeps (ticket type, delivery result, check-in time to the hour) is shown
- * as it is.
+ * the Reports totals do not move, and it says so. It keeps the page of every other attendee: the
+ * same header, status chips and tabs (Overview, Activity log, Notes), each of which says what
+ * became of its contents. Every field that held personal data reads "Erased"; what the entry keeps
+ * (ticket type, delivery result, check-in time to the hour) is shown as it is.
  */
 export function ErasedAttendeeView({
   detail,
@@ -123,6 +209,8 @@ export function ErasedAttendeeView({
   ticketTypes,
   walletPlatforms,
   statusStrip,
+  tabStrip,
+  tab,
   error,
   onRetry,
   onBack,
@@ -137,6 +225,10 @@ export function ErasedAttendeeView({
   walletPlatforms: EnabledWalletPlatforms;
   /** The row of status chips, built by the page that owns them. */
   statusStrip: ReactNode;
+  /** The strip of tabs, built by the page that owns it and its `?tab=` address, the same one every attendee has. */
+  tabStrip: ReactNode;
+  /** The tab the strip has open. */
+  tab: ErasedAttendeeTab;
   /** A read of the page that failed (after an erasure, or a retry), shown above the page with a Retry. */
   error: string | null;
   /** Reads the page again: the Retry of `error`. */
@@ -147,18 +239,10 @@ export function ErasedAttendeeView({
 }>) {
   const isDesktop = useIsDesktop();
   const erasedOn = formatEventDate(erasedAt, event.timezone);
-  // The Wallet card is there when the event offers wallet passes, or this entry still has one.
-  const showWallet =
-    detail.wallet_pass !== null || walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
   return (
     <>
       <PageHeader
-        title={
-          <>
-            {ERASED_ATTENDEE_LABEL}
-            <ErasedBadge />
-          </>
-        }
+        title={ERASED_ATTENDEE_LABEL}
         subtitle="This entry is kept for your counts. It has no personal details."
         className="attendee-detail-pageheader"
         actions={
@@ -177,48 +261,21 @@ export function ErasedAttendeeView({
       />
       {error && <RefreshWarning message={error} onRetry={onRetry} landmark=".attendee-detail-page" />}
       <Notice variant="highlight" icon="eraser">
-        Personal data erased on {erasedOn}. This entry stays in your counts, with no personal details.
+        Personal data erased on {erasedOn}.
       </Notice>
       {statusStrip}
-      <div className="attendee-detail-grid">
-        <div className="attendee-detail-main">
-          <Card title="Profile" className="attendee-detail-profile">
-            <div className="attendee-detail-readonly">
-              <ErasedRow label="Name" />
-              <ErasedRow label="Email" />
-              <ErasedRow label="Company" />
-              <div className="attendee-detail-row">
-                <span>Ticket type</span>
-                <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
-              </div>
-              <ErasedRow label="Custom fields" />
-              <ErasedRow label="Notes" />
-            </div>
-          </Card>
-        </div>
-        <div className="attendee-detail-side">
-          <Card title="Delivery history">
-            <div className="attendee-detail-readonly">
-              <div className="attendee-detail-row">
-                <span>Ticket email</span>
-                <MailStatusBadge status={detail.deliveries[0]?.status ?? null} />
-              </div>
-              <ErasedRow label="Message copies" />
-            </div>
-          </Card>
-          {showWallet && (
-            <Card title="Wallet">
-              <div className="attendee-detail-readonly">
-                <ProviderPassRow detail={detail} timezone={event.timezone} onTryAgain={onWalletTryAgain} />
-                <ErasedRow label="Ticket link and QR code">No longer work</ErasedRow>
-              </div>
-            </Card>
-          )}
-          <Card title="Activity log">
-            <p className="erased-value">The change history for this person was erased.</p>
-          </Card>
-        </div>
-      </div>
+      {tabStrip}
+      {tab === "overview" && (
+        <ErasedOverviewTab
+          detail={detail}
+          event={event}
+          ticketTypes={ticketTypes}
+          walletPlatforms={walletPlatforms}
+          onWalletTryAgain={onWalletTryAgain}
+        />
+      )}
+      {tab === "activity" && <ErasedActivityTab />}
+      {tab === "notes" && <ErasedNotesTab />}
     </>
   );
 }
