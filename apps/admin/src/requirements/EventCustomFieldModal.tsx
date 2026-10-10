@@ -158,12 +158,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   }
 
   return (
-    <div
-      className="event-item-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="custom-field-modal-title"
-    >
+    <dialog open className="event-item-modal" aria-modal="true" aria-labelledby="custom-field-modal-title">
       <ModalBackdrop />
       <div ref={panelRef} className="event-item-modal__panel">
         <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
@@ -340,6 +335,6 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           })}
         </ul>
       </ConfirmDialog>
-    </div>
+    </dialog>
   );
 }
