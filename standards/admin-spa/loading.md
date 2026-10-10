@@ -17,7 +17,7 @@ Every wait in the staff SPA uses the shared kit from `@admitto/ui` and the same 
 | Page change | `TopProgressBar`, the old page stays (after 8s it also says it is taking longer than usual, `note`) | after 200ms |
 | The user clicked a button | `<Button loading>`, with `loadingLabel` only when it is no longer than the label at rest (a row in a More actions menu: `<MoreActionsMenuItem loading>`, same rule) | immediately |
 | Door actions: scan, confirm, manual search | inline "Checking…" with `Spinner` | immediately |
-| Long job: send, import, upload | determinate bar with a count or percent (an upload that reports no progress, a `fetch` of a file, is an indeterminate bar along the zone it goes into, see the settings-panel rule below) | immediately |
+| Long job: send, import, upload | determinate bar with a count or percent (an upload that reports no progress, a `fetch` of a file, is an indeterminate bar along the zone it goes into, see [the settings panel recipe](loading-settings-and-pages.md#settings-panel)) | immediately |
 
 ### Timing
 
