@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { AttendeeErasureDto } from "../../src/api/types.js";
 import {
   anonymousEntries,
   ERASED_ATTENDEE_LABEL,
   ERASED_NOT_SELECTABLE_LABEL,
+  erasedByName,
   erasedCheckInParts,
   erasedOnLabel,
   erasedToast,
@@ -10,6 +12,8 @@ import {
   erasureFreesPlace,
   freedPlacesLine,
   erasedFilterHint,
+  erasedNoticeText,
+  erasureViaLine,
   isOlderThanErasure,
   peopleCount,
   placesFreedBy,
@@ -489,5 +493,53 @@ describe("rowsWithPassesRemoved", () => {
     rowsWithPassesRemoved(rows as never, new Set(["a"]), "2026-10-09T12:05:00.000Z");
 
     expect(JSON.stringify(rows)).toBe(before);
+  });
+});
+
+describe("who erased the person", () => {
+  const erasure = (overrides: Partial<AttendeeErasureDto> = {}): AttendeeErasureDto => ({
+    by: { display_name: "Admin Example", email: "admin@example.com" },
+    via: "admin",
+    timezone: null,
+    ip: null,
+    location: null,
+    ...overrides,
+  });
+
+  it("names the staff member by name, else by address, else nobody", () => {
+    expect(erasedByName(erasure())).toBe("Admin Example");
+    expect(erasedByName(erasure({ by: { display_name: null, email: "admin@example.com" } }))).toBe("admin@example.com");
+    expect(erasedByName(erasure({ by: null }))).toBeNull();
+    expect(erasedByName(null)).toBeNull();
+    expect(erasedByName(undefined)).toBeNull();
+  });
+
+  it("adds who to the notice only when the audit log says who", () => {
+    expect(erasedNoticeText("10 Oct 2026", erasure())).toBe("Personal data erased on 10 Oct 2026 by Admin Example.");
+    expect(erasedNoticeText("10 Oct 2026", erasure({ by: null }))).toBe("Personal data erased on 10 Oct 2026.");
+    expect(erasedNoticeText("10 Oct 2026", null)).toBe("Personal data erased on 10 Oct 2026.");
+    expect(erasedNoticeText("10 Oct 2026", undefined)).toBe("Personal data erased on 10 Oct 2026.");
+  });
+
+  it("says through what it was done", () => {
+    expect(erasureViaLine(erasure())).toBe("Through the admin app");
+    expect(erasureViaLine(erasure({ via: "cli" }))).toBe("Through the emergency command line");
+  });
+
+  it("says from where only when the server sent an address, with the place when the dataset has one", () => {
+    const from = (location: AttendeeErasureDto["location"], ip = "203.0.113.7") => erasureViaLine(erasure({ ip, location }));
+
+    expect(from({ kind: "resolved", countryCode: "PL", city: "Warsaw" })).toBe(
+      "Through the admin app, from 203.0.113.7 (Warsaw, Poland)",
+    );
+    expect(from({ kind: "resolved", countryCode: "PL" })).toBe("Through the admin app, from 203.0.113.7 (Poland)");
+    expect(from({ kind: "internal" }, "10.0.0.5")).toBe("Through the admin app, from 10.0.0.5 (Internal network)");
+    // The dataset has no entry for the address, or the server could not look it up: the address stands alone.
+    expect(from({ kind: "unknown" })).toBe("Through the admin app, from 203.0.113.7");
+    expect(from(null)).toBe("Through the admin app, from 203.0.113.7");
+    // Without an address (a viewer who may not know it) the line does not hint that there was one.
+    expect(erasureViaLine(erasure({ ip: null, location: { kind: "resolved", countryCode: "PL" } }))).toBe(
+      "Through the admin app",
+    );
   });
 });

@@ -213,6 +213,13 @@ This is a narrower, more deliberate exception than it looks:
   who the ids were, use a database backup from before (14 days by default, see the Retention table
   below); if your breach-response process has to name the people, keep backups for as long as that
   process needs.
+- **Who erased whom is read back on the attendee's page:** the page of an erased attendee says who
+  erased the person, when and through what (the staff member's name or address, the zone they were in,
+  and the admin or the emergency command line), read from this log by the attendee id the entry holds. A
+  Superadmin, the only role that can read this log, also sees the address the request came from and
+  where it is; the rest of the staff get neither, and the command line's placeholder address is
+  never sent. This is the staff member's own data, kept for accountability on the basis below; nothing
+  about the erased person is added to it or read from it beyond the id.
 - **Why creation records identity:** it is the one entry that says who added whom by hand. It is
   blanked together with the person's data when they are erased or removed.
 - **Lawful basis:** Art. 6(1)(f) legitimate interest - security monitoring and incident response -

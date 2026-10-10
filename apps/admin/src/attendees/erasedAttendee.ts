@@ -1,5 +1,6 @@
 import type { AttendeeStatus } from "@admitto/db/status";
-import type { AttendeeDetailDto, AttendeeRowDto, EraseAttendeesResponse } from "../api/types.js";
+import type { AttendeeDetailDto, AttendeeErasureDto, AttendeeRowDto, EraseAttendeesResponse } from "../api/types.js";
+import { geoLocationText } from "../components/GeoCell.js";
 import {
   formatAdmissionDisplayParts,
   formatEventClockTime,
@@ -15,6 +16,28 @@ export const ERASED_ATTENDEE_LABEL = "Erased attendee";
 /** "Erased on 08 Oct 2026", in the event's time zone. */
 export function erasedOnLabel(erasedAt: string, timezone: string): string {
   return `Erased on ${formatEventDate(erasedAt, timezone)}`;
+}
+
+/** Who erased the person, as the page names them: the staff member's name, else their address; null when the audit log kept neither. */
+export function erasedByName(erasure: AttendeeErasureDto | null | undefined): string | null {
+  return erasure?.by?.display_name ?? erasure?.by?.email ?? null;
+}
+
+/** The notice above an erased attendee's page: when, and by whom once the audit log has told. */
+export function erasedNoticeText(erasedOn: string, erasure: AttendeeErasureDto | null | undefined): string {
+  const name = erasedByName(erasure);
+  return name === null ? `Personal data erased on ${erasedOn}.` : `Personal data erased on ${erasedOn} by ${name}.`;
+}
+
+/**
+ * The line under "Personal data erased" in the Activity log: through what, and from where (the address and where
+ * it is) for the viewer the server told. Where the dataset has no place for the address, the address stands alone.
+ */
+export function erasureViaLine(erasure: AttendeeErasureDto): string {
+  const way = erasure.via === "cli" ? "Through the emergency command line" : "Through the admin app";
+  if (erasure.ip === null) return way;
+  const place = erasure.location ? geoLocationText(erasure.location) : "";
+  return place === "" ? `${way}, from ${erasure.ip}` : `${way}, from ${erasure.ip} (${place})`;
 }
 
 /** "1 person" / "12 people". */
