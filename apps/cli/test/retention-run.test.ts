@@ -146,7 +146,7 @@ describe("admitto retention run - wallet passes of erased attendees", () => {
       }),
     );
     expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("erased wallet passes: 5 deleted at the provider (4 still to delete, see the System logs)."),
+      expect.stringContaining("erased wallet passes: 5 deleted at the provider (4 still to delete, see the log lines above)."),
     );
   });
 

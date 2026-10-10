@@ -103,7 +103,7 @@ What this does not cover: the gap above; and a file that exists in storage with 
 | `noProvider` | The event has no usable wallet credentials (none, or the key cannot be read), so nothing was tried. Each such event is logged as `wallet_pass_erasure_no_provider` with its id and the number of passes that wait, which is how an operator finds the event whose credentials need fixing. |
 | `notTried` | The time budget ran out first. |
 
-The worker's retention line carries `erased_wallet_passes` (the deleted ones) and counts the other three in `failed=`, so any pass that stays raises the line to a warning, every day until it is dealt with (fix the credentials, or delete the pass in the provider's own console). `retention run` writes `erasedWalletPassesDeleted` and `erasedWalletPassesLeft` into its audit entry.
+The worker's retention line carries `erased_wallet_passes` (the deleted ones) and counts the other three in `failed=`, so any pass that stays raises the line to a warning, every day until it is dealt with (fix the credentials, or delete the pass in the provider's own console). `retention run` writes `erasedWalletPassesDeleted` and `erasedWalletPassesLeft` into its audit entry. The command is not the worker, so the lines of the failures (`wallet_pass_erasure_delete_failed`, `wallet_pass_erasure_no_provider`) are printed by the command itself, above its summary, and do not reach the System logs panel (only the worker relays its lines there).
 
 ## Rules for code
 

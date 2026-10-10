@@ -49,7 +49,7 @@ export async function runRetention(db: PrismaClient): Promise<void> {
     });
 
     const failedFilesNote = jobFilesResult.failures > 0 ? ` (${jobFilesResult.failures} could not be deleted)` : "";
-    const walletPassesLeftNote = walletPassesLeft > 0 ? ` (${walletPassesLeft} still to delete, see the System logs)` : "";
+    const walletPassesLeftNote = walletPassesLeft > 0 ? ` (${walletPassesLeft} still to delete, see the log lines above)` : "";
     console.log(
       `Purged/nullified auth: ${authResult.sessions} sessions, ${authResult.trustedDevices} trusted devices; ` +
         `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
