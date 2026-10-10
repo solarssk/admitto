@@ -228,6 +228,23 @@ address, such as venue Wi-Fi or a corporate NAT. The per-account protections (si
 and password re-check buckets) are the real brute-force defence and should be loosened with care.
 The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
 
+**How the defaults compare with other software** (checked against their published defaults and source):
+
+| Project | Sign-in throttle | Notes |
+|---------|------------------|-------|
+| Mastodon (`config/initializers/rack_attack.rb`) | 25 / 5 min per IP; 25 / 1 h per email | unauthenticated API 300 / 5 min per IP |
+| GitLab (protected paths) | 10 / 60 s per IP | applies to sign-in, sign-up, password reset |
+| Grafana (`defaults.ini`) | 5 failed attempts per username | the per-IP login protection is **off** by default |
+| Discourse (`discourse_defaults.conf`) | no sign-in-specific IP limit | 200 / 60 s and 50 / 10 s per IP overall; private addresses exempt |
+| OWASP Authentication Cheat Sheet | count failures per account, not per IP | lockout can be abused to lock others out |
+| NIST SP 800-63B | at most 100 consecutive failed attempts per account | an upper bound, not a target |
+
+Admitto's per-IP limits (30 sign-in, 30 passkey, 60 OIDC per minute) sit at the permissive end of
+this range on purpose: a venue's staff share one address, and the guidance above puts the real
+brute-force defence on the per-account counters. Stream reconnects follow the usual client
+practice of exponential backoff with a 30 s ceiling (LaunchDarkly's SSE clients use the same
+shape); the request budgets are far above what that schedule can produce.
+
 ### Public and authentication
 
 | Surface | Bucket | Limit / window | Auth required |
