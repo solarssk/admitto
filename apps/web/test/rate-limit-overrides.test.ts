@@ -76,6 +76,21 @@ describe("applyRateLimitOverrides", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("auth:login-ip"));
   });
 
+  it.each(["5", "null", '"x"', "true", "[]"])("rejects %s as the entry of a single-check policy", (entry) => {
+    const t = apply(`{"auth:login-ip":${entry}}`);
+    expect(t.policies["auth:login-ip"].checks[0]).toEqual({ windowMs: 60_000, max: 30 });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("auth:login-ip"));
+  });
+
+  it("rejects a non-object entry inside an array and still applies its valid sibling", () => {
+    const t = apply('{"admin:resend":[7,{"max":60}]}');
+    expect(t.policies["admin:resend"].checks).toEqual([
+      { windowMs: 60_000, max: 5 },
+      { windowMs: 3_600_000, max: 60 },
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("admin:resend[0]"));
+  });
+
   it("rejects a whole entry with an unknown field, so a typo cannot half-apply", () => {
     const t = apply('{"auth:login-ip":{"max":90,"windwMs":1}}');
     expect(t.policies["auth:login-ip"].checks[0]).toEqual({ windowMs: 60_000, max: 30 });

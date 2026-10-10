@@ -116,8 +116,7 @@ export function useEventStream(
       const delay = rateLimited
         ? RATE_LIMIT_BACKOFF_MS
         : jitteredBackoffMs(
-            STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)] ??
-              STREAM_BACKOFF_MS[STREAM_BACKOFF_MS.length - 1]!,
+            STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)]!,
           );
       clearRetry();
       retryTimer = window.setTimeout(connect, delay);
