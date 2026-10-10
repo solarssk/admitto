@@ -114,9 +114,41 @@ describe("removeAttendees", () => {
       removedIds: [],
       notFoundIds: [],
       counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
+      walletTargets: [],
       previousEmails: [],
     });
     expect(await remove(["nobody-1", "nobody-2"])).toMatchObject({ removedIds: [], notFoundIds: ["nobody-1", "nobody-2"] });
+  });
+
+  it("returns the passes that are still at the provider, read from the rows it deletes, and no other", async () => {
+    const withPass = await createAttendee();
+    const alreadyDeleted = await createAttendee();
+    const neverIssued = await createAttendee();
+    const notRemoved = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: withPass.id, status: "active", provider_pass_id: `pc-${withPass.id}` } });
+    await prisma.walletPass.create({
+      data: { attendee_id: alreadyDeleted.id, status: "active", provider_pass_id: `pc-${alreadyDeleted.id}`, provider_removed_at: new Date() },
+    });
+    await prisma.walletPass.create({ data: { attendee_id: neverIssued.id, status: "failed" } });
+    await prisma.walletPass.create({ data: { attendee_id: notRemoved.id, status: "active", provider_pass_id: `pc-${notRemoved.id}` } });
+
+    const result = await remove([withPass.id, alreadyDeleted.id, neverIssued.id]);
+
+    expect(result.walletTargets).toEqual([{ attendeeId: withPass.id, providerPassId: `pc-${withPass.id}` }]);
+    expect(result.counts.walletPasses).toBe(3);
+    // The pass of somebody who stays is neither deleted nor returned.
+    expect(await prisma.walletPass.count({ where: { attendee_id: notRemoved.id } })).toBe(1);
+  });
+
+  it("returns the pass of an attendee who was erased before and whose pass is still to delete at the provider", async () => {
+    const erased = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: erased.id, status: "active", provider_pass_id: `pc-${erased.id}` } });
+    await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: [erased.id] }));
+
+    const result = await remove([erased.id]);
+
+    expect(result.removedIds).toEqual([erased.id]);
+    expect(result.walletTargets).toEqual([{ attendeeId: erased.id, providerPassId: `pc-${erased.id}` }]);
   });
 
   it("returns the addresses lower-cased and trimmed, and none for an attendee who was erased before", async () => {

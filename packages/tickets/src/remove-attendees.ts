@@ -6,6 +6,12 @@ export type RemoveAttendeesParams = {
   attendeeIds: readonly string[];
 };
 
+/** A wallet pass of a removed attendee that was still at the provider when its row was deleted. */
+export type RemoveWalletTarget = {
+  attendeeId: string;
+  providerPassId: string;
+};
+
 export type RemoveAttendeesResult = {
   /** Attendees this call deleted. */
   removedIds: string[];
@@ -17,6 +23,15 @@ export type RemoveAttendeesResult = {
     walletPasses: number;
     checkIns: number;
   };
+  /**
+   * The passes of the removed attendees that were still at the wallet provider (a provider id, not
+   * marked removed) when their rows went, read by the statement that deleted the rows, under the
+   * attendee locks. The caller deletes at the provider those it has not deleted yet, after the
+   * commit: its own delete ran before the transaction and cannot have seen a pass that was saved
+   * in between (an Add to Wallet request that finished right then), and with the row gone this
+   * list is the only place that still knows the provider id.
+   */
+  walletTargets: RemoveWalletTarget[];
   /**
    * The addresses the removed attendees had, lower-cased: the current one and the one their first
    * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
@@ -39,9 +54,10 @@ export type RemoveAttendeesResult = {
  * check-in transactions: deleting the children first can deadlock against one of them. A send or a
  * check-in that was waiting for the lock then finds the attendee gone.
  *
- * Not done here: deleting the wallet pass at the provider (a network call, and the local row is
- * the only place that knows the provider id, so the caller does it before the transaction), saved
- * import results (scrubImportJobResults) and the audit entries.
+ * Not done here: deleting the wallet pass at the provider (a network call: the caller does it
+ * before the transaction, while the local row still knows the provider id, and after the commit
+ * for the passes in `walletTargets` that this missed), saved import results
+ * (scrubImportJobResults) and the audit entries.
  */
 export async function removeAttendees(
   tx: Prisma.TransactionClient,
@@ -53,6 +69,7 @@ export async function removeAttendees(
     removedIds: [],
     notFoundIds: requestedIds,
     counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
+    walletTargets: [],
     previousEmails: [],
   };
   if (requestedIds.length === 0) return empty;
@@ -74,7 +91,12 @@ export async function removeAttendees(
 
   const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
     tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
-    tx.walletPass.deleteMany({ where: { attendee_id: { in: ids } } }),
+    // RETURNING, like the attendee delete below: the provider ids of exactly the rows this
+    // statement deletes are the ones to delete at the provider afterwards.
+    tx.$queryRaw<{ attendee_id: string; provider_pass_id: string | null; provider_removed_at: Date | null }[]>`
+      DELETE FROM "WalletPass" WHERE "attendee_id" IN (${Prisma.join(ids)})
+      RETURNING "attendee_id", "provider_pass_id", "provider_removed_at"
+    `,
     tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
   ]);
 
@@ -94,9 +116,14 @@ export async function removeAttendees(
     notFoundIds: requestedIds.filter((id) => !removed.has(id)),
     counts: {
       emailDeliveries: emailDeliveries.count,
-      walletPasses: walletPasses.count,
+      walletPasses: walletPasses.length,
       checkIns: checkIns.count,
     },
+    walletTargets: walletPasses.flatMap((pass) =>
+      pass.provider_pass_id && !pass.provider_removed_at
+        ? [{ attendeeId: pass.attendee_id, providerPassId: pass.provider_pass_id }]
+        : [],
+    ),
     previousEmails,
   };
 }

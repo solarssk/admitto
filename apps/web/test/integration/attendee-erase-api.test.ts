@@ -20,6 +20,7 @@ import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../s
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "../../src/admin/attendee-remove-routes.js";
 import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { querySystemLogs } from "@admitto/shared/system-log";
 
 const ORG_ID = "org-erase-api";
 const EVENT_ID = "evt-erase-api";
@@ -829,6 +830,94 @@ describe("removing attendees from an event", () => {
     expect(res.status).toBe(200);
     expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
     expect(errSpy).toHaveBeenCalled();
+  });
+
+  it("deletes at the provider, after the commit, a pass that was saved after the first delete had read the passes", async () => {
+    const a = await createAttendee();
+    const b = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    // B has no pass when the removal starts. One that an Add to Wallet request was still creating
+    // is saved while A's pass is being deleted, which is after the first delete read the passes.
+    const fetchMock = vi.fn(async (url: unknown) => {
+      if (String(url).includes(`pc-${a.id}`)) {
+        await prisma.walletPass.create({ data: { attendee_id: b.id, status: "active", provider_pass_id: `pc-${b.id}` } });
+      }
+      return new Response(null, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id, b.id], reason: REASON });
+
+    expect(await res.json()).toEqual({ removed: 2, not_found: 0 });
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining(`pc-${a.id}`),
+      expect.stringContaining(`pc-${b.id}`),
+    ]);
+    expect(await prisma.walletPass.count({ where: { attendee_id: { in: [a.id, b.id] } } })).toBe(0);
+  });
+
+  it("does not call the provider for a pass that was deleted there before", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({
+      data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, provider_removed_at: new Date() },
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await prisma.walletPass.count({ where: { attendee_id: a.id } })).toBe(0);
+  });
+
+  it("tries a pass again after the commit when the first delete could not delete it", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    const fetchMock = vi.fn(async (_url: unknown) =>
+      fetchMock.mock.calls.length === 1 ? new Response("down", { status: 500 }) : new Response(null, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(errSpy).toHaveBeenCalled();
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+  });
+
+  it("still answers, and logs the pass that is left, when the clean-up after the commit itself breaks", async () => {
+    const a = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    // The first delete fails, so the pass is left for the clean-up, whose read of the event's
+    // credentials (the one that happens once the attendee is gone) then breaks.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })));
+    const realFindUnique = prisma.event.findUnique.bind(prisma.event);
+    let brokenReads = 0;
+    vi.spyOn(prisma.event, "findUnique").mockImplementation(((args: Parameters<typeof realFindUnique>[0]) => {
+      if (!args?.select || !("wallet_api_key_enc" in args.select)) return realFindUnique(args);
+      return prisma.attendee.count({ where: { id: a.id } }).then((still) => {
+        if (still > 0) return realFindUnique(args);
+        brokenReads += 1;
+        return Promise.reject(new Error("db hiccup"));
+      });
+    }) as never);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+    expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+    expect(brokenReads).toBe(1);
+    expect(errSpy).toHaveBeenCalled();
+    // One entry for the first delete that failed, one for the clean-up that broke.
+    const logged = querySystemLogs({ source: "admin" }).filter(
+      (entry) => entry.message === "wallet_pass_erasure_delete_failed" && entry.fields?.attendeeId === a.id,
+    );
+    expect(logged).toHaveLength(2);
   });
 
   it("removes a selection: the ones that exist, counts the rest, and audits the ids once", async () => {

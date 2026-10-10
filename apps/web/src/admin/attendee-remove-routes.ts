@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { ATTENDEE_REMOVAL_REASONS, type AttendeeRemovalReason } from "@admitto/shared";
+import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   removeAttendees,
   scrubImportJobResults,
@@ -11,6 +12,7 @@ import {
 import { adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 import {
   assertWalletBulkSelectionWithinLimit,
+  deleteProviderPassesBestEffort,
   deleteWalletPassesBestEffort,
   writeAttendeeLifecycleAuditLog,
 } from "./attendees-api-routes.js";
@@ -44,7 +46,11 @@ type RemoveResponseBody = {
  * entries: the event's activity log and the central admin audit log, with the reason code, the ids
  * and the counts, never a name or an address (nor a note: the reason is a fixed list). Their wallet
  * passes are deleted at the provider first, best effort, because the local row is the only place
- * that knows the provider id.
+ * that knows the provider id. The ids of the passes the transaction then deleted are read under
+ * the attendee locks, so a pass saved after that first delete (an Add to Wallet request that was
+ * running) is deleted after the commit, and so is one the first delete could not delete. A pass
+ * that is created at the provider after the commit finds the attendee gone and deletes itself (see
+ * handleWalletRedirect).
  *
  * The audit entries reuse the action names of an erasure (`attendee_erased`,
  * `attendees_bulk_erased`) and tell the two apart with `metadata.method` (`"remove"` here,
@@ -61,7 +67,7 @@ async function runRemoval(
   const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true, title: true } });
   if (!event) return null;
 
-  await deleteWalletPassesBestEffort(db, eventId, attendeeIds);
+  const deletedBeforehand = await deleteWalletPassesBestEffort(db, eventId, attendeeIds);
 
   const audit = adminAuditFromContext(c);
   const actionType = mode === "single" ? "attendee_erased" : "attendees_bulk_erased";
@@ -93,6 +99,24 @@ async function runRemoval(
   );
 
   if (result.removedIds.length > 0) publishActivityChanged(eventId);
+
+  // The removal is done, so nothing below may turn the answer into an error: a failure here only
+  // leaves passes at the provider, and is logged like any other failed delete.
+  const leftover = result.walletTargets.filter((target) => !deletedBeforehand.has(target.providerPassId));
+  try {
+    await deleteProviderPassesBestEffort(db, eventId, leftover);
+  } catch (err) {
+    console.error("wallet pass delete (removal, after commit) failed:", err);
+    for (const target of leftover) {
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_pass_erasure_delete_failed",
+        fields: { eventId, attendeeId: target.attendeeId },
+      });
+    }
+  }
+
   c.header("Cache-Control", "no-store");
   return { result, body: { removed: result.removedIds.length, not_found: result.notFoundIds.length } };
 }

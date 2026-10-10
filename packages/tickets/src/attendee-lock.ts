@@ -38,6 +38,16 @@ export async function lockAttendeeRow(
 }
 
 /**
+ * Whether what `lockAttendeeRow` found means the person is no longer there: erased, or removed
+ * (no row, which is how a removal looks to a request that started before it). A request that
+ * already sent the person's data to someone (a wallet pass created at the provider) uses this to
+ * decide it must not keep what it made.
+ */
+export function isAttendeeGone(locked: LockedAttendee | null): boolean {
+  return locked === null || locked.erased;
+}
+
+/**
  * Locks attendee rows `FOR KEY SHARE`, in id order (the order an erasure takes them in), and
  * returns the ids of those that exist and are not erased. For a reader that must see the result of
  * an erasure that is still open before it acts on what it read (a mail about to leave): it waits
