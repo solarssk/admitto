@@ -15,7 +15,7 @@ import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "
 import { assertWalletBulkSelectionWithinLimit, writeAttendeeLifecycleAuditLog } from "./attendees-api-routes.js";
 import { BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 import { publishActivityChanged } from "./checkin-sse-publish.js";
-import { purgeEventExportFilesBestEffort } from "./purge-export-files.js";
+import { purgeEventJobFilesBestEffort } from "./purge-export-files.js";
 
 /** An erasure touches a handful of tables per attendee; a large selection needs more than
  * Prisma's default 5 s transaction. */
@@ -152,7 +152,7 @@ async function runErasure(
 
   // Export files written before the erasure still hold the person: they go too (nothing for an erasure that
   // erased nobody new).
-  if (result.erasedIds.length > 0) await purgeEventExportFilesBestEffort(db, eventId);
+  if (result.erasedIds.length > 0) await purgeEventJobFilesBestEffort(db, eventId);
 
   // After the commit: a network call has no place inside the transaction. Credentials alone decide
   // whether a provider exists; the event's wallet switch only governs issuing new passes.

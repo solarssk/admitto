@@ -726,6 +726,52 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     }
   }
 
+  describe("when the job cannot be created after the CSV was staged", () => {
+    const stagedFilesOf = async () => {
+      const { readdir } = await import("node:fs/promises");
+      const walk = async (dir: string): Promise<string[]> => {
+        const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+        const nested = await Promise.all(
+          entries.map((entry) => (entry.isDirectory() ? walk(join(dir, entry.name)) : Promise.resolve([join(dir, entry.name)]))),
+        );
+        return nested.flat();
+      };
+      return walk(uploadDir);
+    };
+
+    it("deletes the staged file again and answers with a server error", async () => {
+      const before = (await stagedFilesOf()).length;
+      vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("database is down"));
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+      errSpy.mockRestore();
+      vi.restoreAllMocks();
+
+      expect(res.status).toBe(500);
+      expect((await stagedFilesOf()).length).toBe(before);
+    });
+
+    it("reports the key of the staged file on stdout when it cannot be deleted either, since nothing else knows of it", async () => {
+      vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("database is down"));
+      const storage = getDefaultStorage();
+      vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("disk is read only"));
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+      const lines = errSpy.mock.calls.map(([text]) => String(text));
+      errSpy.mockRestore();
+      vi.restoreAllMocks();
+
+      expect(res.status).toBe(500);
+      const reported = lines.find((line) => line.includes("Import staged file left in storage"));
+      expect(reported).toBeDefined();
+      const { key } = JSON.parse(reported as string) as { key: string };
+      expect(key).toMatch(/\.csv$/);
+      expect(await stagedFilesOf()).toContainEqual(expect.stringContaining(key));
+    });
+  });
+
   it("creates attendees and writes bulk audit without PII", async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_A } });
     await prisma.attendee.deleteMany({

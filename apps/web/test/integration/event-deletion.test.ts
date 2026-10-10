@@ -518,6 +518,65 @@ describe("files the event's jobs left in storage", () => {
     for (const file of [exported, failedImport, waitingImport]) expect(present(file.key)).toBe(false);
     expect(present(kept.key)).toBe(true);
     expect(await prisma.adminJob.count({ where: { id: kept.jobId } })).toBe(1);
+    // The keys are in the audit entry of the deletion too: if the process died after the commit and before
+    // the files were deleted, that entry would be the only record of them.
+    const audit = await prisma.adminAuditLog.findFirstOrThrow({
+      where: { organization_id: ORG_DEL, action_type: "event_deleted" },
+      orderBy: { created_at: "desc" },
+    });
+    expect([...((audit.metadata as { jobFileKeys?: string[] }).jobFileKeys ?? [])].sort()).toEqual(
+      [exported.key, failedImport.key, waitingImport.key].map(String).sort(),
+    );
+  });
+
+  it("writes no list of keys into the audit entry when the event has no job files", async () => {
+    const eventId = await createEvent({});
+    await seedJob(eventId, "export", "failed", false);
+
+    expect((await deleteEventRequest(eventId, superCookie)).status).toBe(200);
+
+    const audit = await prisma.adminAuditLog.findFirstOrThrow({
+      where: { organization_id: ORG_DEL, action_type: "event_deleted" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit.metadata).not.toHaveProperty("jobFileKeys");
+  });
+
+  it("waits for a job that is being created for the event, and deletes the file that job names", async () => {
+    const eventId = await createEvent({});
+    const { key } = await getDefaultStorage().put(Buffer.from("name,email\nA B,a@example.com\n"), {
+      orgId: ORG_DEL,
+      eventId,
+      scope: "event",
+      ext: ".csv",
+    });
+    // An import has stored its CSV and is naming it on a new job; its transaction is still open.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let created!: () => void;
+    const createdPromise = new Promise<void>((resolve) => (created = resolve));
+    const creating = prisma.$transaction(async (tx) => {
+      await tx.adminJob.create({
+        data: { type: "import_commit", status: "pending", organization_id: ORG_DEL, event_id: eventId, storage_key: key },
+      });
+      created();
+      await gate;
+    });
+    await createdPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    let settled = false;
+    void deleting.then(() => (settled = true), () => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(settled).toBe(false);
+    release();
+    await creating;
+    const res = await deleting;
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    // The cascade of the event would have deleted that job's row without handing back its key.
+    expect(present(key)).toBe(false);
   });
 
   it("keeps the files when the event cannot be deleted", async () => {

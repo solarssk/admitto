@@ -8,7 +8,7 @@ import {
   DEFAULT_STAGED_IMPORT_RETENTION_DAYS,
   LocalStorageAdapter,
   deleteStoredFiles,
-  purgeEventExportFiles,
+  purgeEventJobFiles,
   purgeJobFiles,
   resolveExportFileRetentionDays,
   resolveStagedImportRetentionDays,
@@ -29,7 +29,7 @@ type Row = {
 type Where = {
   type?: string;
   event_id?: string;
-  finished_at?: { lte: Date };
+  finished_at?: { lte: Date } | { not: null };
   storage_key?: { not: null } | string;
   id?: { gt: string } | string;
 };
@@ -41,7 +41,10 @@ function fakeDb(rows: Row[]): PrismaClient {
   const matches = (row: Row, where: Where): boolean => {
     if (where.type !== undefined && row.type !== where.type) return false;
     if (where.event_id !== undefined && row.event_id !== where.event_id) return false;
-    if (where.finished_at !== undefined && (row.finished_at === null || row.finished_at > where.finished_at.lte)) return false;
+    if (where.finished_at !== undefined) {
+      if (row.finished_at === null) return false;
+      if ("lte" in where.finished_at && row.finished_at > where.finished_at.lte) return false;
+    }
     if (typeof where.storage_key === "string" && row.storage_key !== where.storage_key) return false;
     if (typeof where.storage_key === "object" && row.storage_key === null) return false;
     if (typeof where.id === "string" && row.id !== where.id) return false;
@@ -335,12 +338,12 @@ describe("purgeJobFiles", () => {
   });
 });
 
-describe("purgeEventExportFiles", () => {
+describe("purgeEventJobFiles", () => {
   let uploadDir: string;
   let storage: LocalStorageAdapter;
 
   beforeEach(() => {
-    uploadDir = mkdtempSync(join(tmpdir(), "admitto-event-exports-"));
+    uploadDir = mkdtempSync(join(tmpdir(), "admitto-event-job-files-"));
     storage = new LocalStorageAdapter({ UPLOAD_DIR: uploadDir });
   });
 
@@ -348,30 +351,57 @@ describe("purgeEventExportFiles", () => {
     rmSync(uploadDir, { recursive: true, force: true });
   });
 
-  it("deletes every export file of the event whatever its age, and nothing else", async () => {
-    const put = async (eventId: string) =>
-      (await storage.put(Buffer.from("x"), { orgId: "org-1", eventId, scope: "event", ext: ".csv" })).key;
-    const [freshOfEvent, oldOfEvent, otherEvent, stagedImport] = [
+  const put = async (eventId: string) =>
+    (await storage.put(Buffer.from("x"), { orgId: "org-1", eventId, scope: "event", ext: ".csv" })).key;
+
+  it("deletes every export file of the event whatever its age, and the staged CSV of every finished import, and nothing else", async () => {
+    const [freshOfEvent, oldOfEvent, otherEvent, failedImport, doneImport, otherEventImport, queuedImport, runningImport] = [
       await put("evt-1"),
       await put("evt-1"),
       await put("evt-2"),
+      await put("evt-1"),
+      await put("evt-1"),
+      await put("evt-2"),
+      await put("evt-1"),
       await put("evt-1"),
     ];
     const rows: Row[] = [
       { id: "j1", type: "export", event_id: "evt-1", storage_key: freshOfEvent, finished_at: daysAgo(0) },
       { id: "j2", type: "export", event_id: "evt-1", storage_key: oldOfEvent, finished_at: daysAgo(200) },
       { id: "j3", type: "export", event_id: "evt-2", storage_key: otherEvent, finished_at: daysAgo(1) },
-      { id: "j4", type: "import_commit", event_id: "evt-1", storage_key: stagedImport, finished_at: daysAgo(1) },
+      { id: "j4", type: "import_commit", event_id: "evt-1", storage_key: failedImport, finished_at: daysAgo(1) },
       { id: "j5", type: "export", event_id: "evt-1", storage_key: null, finished_at: null },
+      { id: "j6", type: "import_commit", event_id: "evt-1", storage_key: doneImport, finished_at: daysAgo(0) },
+      { id: "j7", type: "import_commit", event_id: "evt-2", storage_key: otherEventImport, finished_at: daysAgo(1) },
+      { id: "j8", type: "import_commit", event_id: "evt-1", storage_key: queuedImport, finished_at: null },
+      { id: "j9", type: "import_commit", event_id: "evt-1", storage_key: runningImport, finished_at: null },
     ];
 
-    const result = await purgeEventExportFiles(fakeDb(rows), storage, "evt-1");
+    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1");
 
-    expect(result).toEqual({ deleted: 2, failed: 0 });
-    expect(rows.map((row) => row.storage_key)).toEqual([null, null, otherEvent, stagedImport, null]);
-    expect(existsSync(join(uploadDir, freshOfEvent))).toBe(false);
-    expect(existsSync(join(uploadDir, otherEvent))).toBe(true);
-    expect(existsSync(join(uploadDir, stagedImport))).toBe(true);
+    expect(result).toEqual({ deleted: 4, failed: 0 });
+    expect(rows.map((row) => row.storage_key)).toEqual([null, null, otherEvent, null, null, null, otherEventImport, queuedImport, runningImport]);
+    for (const gone of [freshOfEvent, oldOfEvent, failedImport, doneImport]) expect(existsSync(join(uploadDir, gone))).toBe(false);
+    // Another event's files, and the files of imports that are still waiting or running, are not touched.
+    for (const kept of [otherEvent, otherEventImport, queuedImport, runningImport]) expect(existsSync(join(uploadDir, kept))).toBe(true);
+  });
+
+  it("keeps the key of a file it cannot delete, counts it, and still deletes the rest", async () => {
+    const [stuck, fine] = [await put("evt-1"), await put("evt-1")];
+    const rows: Row[] = [
+      { id: "j1", type: "export", event_id: "evt-1", storage_key: stuck, finished_at: daysAgo(0) },
+      { id: "j2", type: "import_commit", event_id: "evt-1", storage_key: fine, finished_at: daysAgo(0) },
+    ];
+    const realDelete = storage.delete.bind(storage);
+    vi.spyOn(storage, "delete").mockImplementation(async (key: string) => {
+      if (key === stuck) throw new Error("disk is read only");
+      return realDelete(key);
+    });
+
+    const result = await purgeEventJobFiles(fakeDb(rows), storage, "evt-1");
+
+    expect(result).toEqual({ deleted: 1, failed: 1 });
+    expect(rows.map((row) => row.storage_key)).toEqual([stuck, null]);
   });
 });
 

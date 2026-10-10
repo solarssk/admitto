@@ -18,7 +18,7 @@ import {
 } from "./attendees-api-routes.js";
 import { BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 import { publishActivityChanged } from "./checkin-sse-publish.js";
-import { purgeEventExportFilesBestEffort } from "./purge-export-files.js";
+import { purgeEventJobFilesBestEffort } from "./purge-export-files.js";
 
 /** A removal deletes a handful of tables per attendee; a large selection needs more than Prisma's
  * default 5 s transaction. */
@@ -101,7 +101,7 @@ async function runRemoval(
 
   if (result.removedIds.length > 0) {
     // Export files written before the removal still hold the person: they go too.
-    await purgeEventExportFilesBestEffort(db, eventId);
+    await purgeEventJobFilesBestEffort(db, eventId);
     publishActivityChanged(eventId);
   }
 

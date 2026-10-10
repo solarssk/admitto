@@ -157,17 +157,27 @@ export async function purgeJobFiles(
 }
 
 /**
- * Delete every export file the event still has, whatever its age. After an erasure or a removal, a file
- * written before it still holds the person; exports are cheap to run again, so they go at once rather
- * than at the end of the retention window. An export that is still running writes its file afterwards
- * and is covered by the retention run.
+ * Delete the job files of an event that hold people, whatever their age: every export file, and the staged
+ * CSV of every import job that has finished. After an erasure or a removal a file written before it still
+ * holds the person; exports are cheap to run again and the staged CSV of a finished job has no use (a commit
+ * that worked deleted it already, so what is left is the CSV of a job that failed), so they go at once rather
+ * than at the end of the retention window. A job that has not finished is left alone: an export that is
+ * waiting or running is stopped by the erasure itself (see stopOpenExportJobs in @admitto/tickets), and an import
+ * that is queued or running still needs its file.
  */
-export async function purgeEventExportFiles(
+export async function purgeEventJobFiles(
   db: PrismaClient,
   storage: StorageAdapter,
   eventId: string,
 ): Promise<{ deleted: number; failed: number }> {
-  return purgeFilesWhere(db, storage, { type: "export", event_id: eventId }, false);
+  const exports = await purgeFilesWhere(db, storage, { type: "export", event_id: eventId }, false);
+  const staged = await purgeFilesWhere(
+    db,
+    storage,
+    { type: "import_commit", event_id: eventId, finished_at: { not: null } },
+    false,
+  );
+  return { deleted: exports.deleted + staged.deleted, failed: exports.failed + staged.failed };
 }
 
 /**

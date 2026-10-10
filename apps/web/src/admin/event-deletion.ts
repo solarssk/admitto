@@ -29,7 +29,8 @@
  * The same goes for the files the event's jobs left in storage (the file of an export, the staged
  * CSV of an import that failed): the jobs are deleted in the transaction, which hands back their
  * `storage_key`s, and the files are deleted after the commit, because with the rows gone nothing
- * (the retention run included) could find them again.
+ * (the retention run included) could find them again. The keys are also written into the audit entry
+ * of the deletion, so that a crash between the commit and the deletes does not lose them.
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
@@ -162,6 +163,12 @@ export async function deleteEvent(
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
       await lockEventForScopedWrite(tx, eventId);
+      // The row of the event itself, before anything is counted or read. A job that is being created for the
+      // event (an import that has stored its CSV and is about to name it) holds a share of this row until it
+      // commits, so the deletion waits for it and then sees its row, and a job that starts after finds the
+      // event gone, fails on its foreign key and deletes its own file. Without it, the cascade of the event
+      // would delete that job's row without handing back the key of its file.
+      await tx.$queryRaw`SELECT 1 FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`;
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
@@ -220,8 +227,10 @@ export async function deleteEvent(
         timezone,
         actionType: "event_deleted",
         // Snapshot the title here: once the delete above commits, the audit log's usual
-        // live-lookup-by-eventId has nothing left to resolve against.
-        metadata: { eventId, eventTitle: event.title },
+        // live-lookup-by-eventId has nothing left to resolve against. The keys of the job files go in too:
+        // they are deleted after the commit, and if the process dies in between this entry is the only
+        // record of them (a key is org, event and a random name, no personal data).
+        metadata: { eventId, eventTitle: event.title, ...(jobFileKeys.length > 0 ? { jobFileKeys } : {}) },
       });
       return { kind: "ok", eventTitle: event.title, managedUploadUrls, jobFileKeys };
     });

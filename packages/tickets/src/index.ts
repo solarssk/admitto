@@ -22,6 +22,7 @@ export {
 } from "./erase-attendees.js";
 export { scrubImportJobResults } from "./erase-job-results.js";
 export { scrubAttendeeTraces } from "./attendee-traces.js";
+export { EXPORT_STOPPED_BY_ERASURE_ERROR, stopOpenExportJobs } from "./stop-open-exports.js";
 export { removeAttendees } from "./remove-attendees.js";
 export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
 export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";

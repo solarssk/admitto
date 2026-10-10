@@ -543,7 +543,8 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       try {
         await storage.delete(staged.key);
       } catch {
-        /* best-effort orphan cleanup */
+        // No job row names the file, so this line is the only record of it: stdout, not only the buffer in memory.
+        logger.error("Import staged file left in storage", { eventId, importId, key: staged.key });
       }
       throw createErr;
     }

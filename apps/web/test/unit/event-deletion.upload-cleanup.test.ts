@@ -93,9 +93,15 @@ describe("deleteEvent — managed upload cleanup", () => {
     const calls: string[] = [];
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
-      $queryRaw: vi
-        .fn()
-        .mockResolvedValue([{ storage_key: "org-1/events/evt-upload-cleanup/a.csv" }, { storage_key: null }, { storage_key: "org-1/events/evt-upload-cleanup/b.csv" }]),
+      // The row of the event is locked first (SELECT ... FOR UPDATE); the jobs are deleted with RETURNING after it.
+      $queryRaw: vi.fn().mockImplementation(async (strings: readonly string[]) => {
+        if (strings.join("?").includes("FOR UPDATE")) {
+          calls.push("event row lock");
+          return [{ locked: 1 }];
+        }
+        calls.push("jobs delete");
+        return [{ storage_key: "org-1/events/evt-upload-cleanup/a.csv" }, { storage_key: null }, { storage_key: "org-1/events/evt-upload-cleanup/b.csv" }];
+      }),
       event: {
         findUnique: vi.fn().mockResolvedValue({
           archived_at: null,
@@ -135,14 +141,16 @@ describe("deleteEvent — managed upload cleanup", () => {
       "org-1/events/evt-upload-cleanup/a.csv",
       "org-1/events/evt-upload-cleanup/b.csv",
     ]);
-    // The files go after the rows: the event is deleted first, in the transaction.
-    expect(calls).toEqual(["event.delete", "job files"]);
+    // The row of the event is locked before its jobs are read, and the files go after the rows: the event is deleted
+    // first, in the transaction.
+    expect(calls).toEqual(["event row lock", "jobs delete", "event.delete", "job files"]);
     deleteEventJobFilesBestEffort.mockReset().mockResolvedValue(undefined);
   });
 
   it("skips upload cleanup when delete is rejected as not_deletable", async () => {
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
       event: {
         findUnique: vi.fn().mockResolvedValue({
           archived_at: null,

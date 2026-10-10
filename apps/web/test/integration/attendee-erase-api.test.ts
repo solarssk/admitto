@@ -23,6 +23,7 @@ import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../s
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "../../src/admin/attendee-remove-routes.js";
 import { deleteProviderPassesBestEffort } from "../../src/admin/attendees-api-routes.js";
 import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
+import { drainExportJobs, EXPORT_STOPPED_BY_ERASURE_ERROR, stopOpenExportJobs } from "@admitto/tickets";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -1173,7 +1174,7 @@ describe("export files of the event, after an erasure or a removal", () => {
   const bulkRemovePath = (eventId: string) => `/api/admin/events/${eventId}/attendees/bulk-remove`;
 
   /** A finished job of `type` whose file is in storage, as an export or an import job leaves it. */
-  async function seedJobFile(eventId: string, type = "export") {
+  async function seedJobFile(eventId: string, type = "export", finished = true) {
     const { key } = await getDefaultStorage().put(Buffer.from("name,email\nA B,a@example.com\n"), {
       orgId: ORG_ID,
       eventId,
@@ -1183,12 +1184,12 @@ describe("export files of the event, after an erasure or a removal", () => {
     const job = await prisma.adminJob.create({
       data: {
         type,
-        status: "succeeded",
+        status: finished ? "succeeded" : "pending",
         organization_id: ORG_ID,
         event_id: eventId,
         storage_key: key,
         filename: "attendees.csv",
-        finished_at: new Date(),
+        finished_at: finished ? new Date() : null,
       },
     });
     jobIds.push(job.id);
@@ -1197,23 +1198,191 @@ describe("export files of the event, after an erasure or a removal", () => {
   const present = (key: string) => existsSync(join(uploadDir, key));
   const keyOf = async (jobId: string) => (await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).storage_key;
 
-  it("erasing someone deletes the export files of the event and clears their keys, and leaves everything else", async () => {
+  it("erasing someone deletes the export files and the staged CSV of every finished import of the event and clears their keys, and leaves everything else", async () => {
     const a = await createAttendee();
     const first = await seedJobFile(EVENT_ID);
     const second = await seedJobFile(EVENT_ID);
     const otherEvent = await seedJobFile(WALLET_OFF_EVENT_ID);
-    const staged = await seedJobFile(EVENT_ID, "import_commit");
+    const failedImport = await seedJobFile(EVENT_ID, "import_commit");
+    const queuedImport = await seedJobFile(EVENT_ID, "import_commit", false);
+    const otherEventImport = await seedJobFile(WALLET_OFF_EVENT_ID, "import_commit");
 
     const res = await post(erasePath(EVENT_ID, a.id));
 
     expect(res.status).toBe(200);
-    expect(present(first.key)).toBe(false);
-    expect(present(second.key)).toBe(false);
-    expect(await keyOf(first.jobId)).toBeNull();
-    expect(await keyOf(second.jobId)).toBeNull();
-    expect(present(otherEvent.key)).toBe(true);
-    expect(await keyOf(otherEvent.jobId)).toBe(otherEvent.key);
-    expect(present(staged.key)).toBe(true);
+    for (const gone of [first, second, failedImport]) {
+      expect(present(gone.key)).toBe(false);
+      expect(await keyOf(gone.jobId)).toBeNull();
+    }
+    // Another event's files, and the file of an import that is still waiting for its turn, stay.
+    for (const kept of [otherEvent, otherEventImport, queuedImport]) {
+      expect(present(kept.key)).toBe(true);
+      expect(await keyOf(kept.jobId)).toBe(kept.key);
+    }
+  });
+
+  it.each([
+    ["erasing", (attendeeId: string) => post(erasePath(EVENT_ID, attendeeId))],
+    ["removing", (attendeeId: string) => post(`/api/admin/events/${EVENT_ID}/attendees/${attendeeId}/remove`, { reason: "duplicate" })],
+  ])("%s someone while an export is running stops that export, and the file it was building does not survive", async (_name, act) => {
+    const a = await createAttendee();
+    const { id: jobId } = await prisma.adminJob.create({
+      data: {
+        type: "export",
+        status: "pending",
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: { q: "Erase Api" } } },
+      },
+    });
+    jobIds.push(jobId);
+    // The export has read its rows (this person is in them) and stored its file when the erasure commits.
+    const real = getDefaultStorage();
+    const stored: string[] = [];
+    const storage = {
+      put: async (bytes: Buffer, opts: Parameters<typeof real.put>[1]) => {
+        const staged = await real.put(bytes, opts);
+        if (opts.eventId === EVENT_ID) {
+          stored.push(staged.key);
+          expect((await act(a.id)).status).toBe(200);
+        }
+        return staged;
+      },
+      delete: (key: string) => real.delete(key),
+    };
+
+    await drainExportJobs(prisma, storage as never, { limit: 50 });
+
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job).toMatchObject({ status: "failed", error: EXPORT_STOPPED_BY_ERASURE_ERROR, storage_key: null });
+    expect(JSON.stringify(job.result_json)).not.toContain("Erase Api");
+    expect(stored).toHaveLength(1);
+    expect(present(stored[0] as string)).toBe(false);
+  });
+
+  const exportJob = async (status: "pending" | "running") => {
+    const { id } = await prisma.adminJob.create({
+      data: {
+        type: "export",
+        status,
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: { q: "Erase Api" } } },
+      },
+    });
+    jobIds.push(id);
+    return id;
+  };
+
+  it.each([
+    ["erasing", (attendeeId: string) => post(erasePath(EVENT_ID, attendeeId))],
+    ["removing", (attendeeId: string) => post(`/api/admin/events/${EVENT_ID}/attendees/${attendeeId}/remove`, { reason: "duplicate" })],
+  ])("%s someone while an export is waiting for the worker stops it, so that nothing is built for it afterwards", async (_name, act) => {
+    const a = await createAttendee();
+    const jobId = await exportJob("pending");
+    const put = vi.fn();
+
+    expect((await act(a.id)).status).toBe(200);
+    const drained = await drainExportJobs(prisma, { put, delete: vi.fn() } as never, { limit: 50 });
+
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job).toMatchObject({ status: "failed", error: EXPORT_STOPPED_BY_ERASURE_ERROR, storage_key: null });
+    expect(JSON.stringify(job.result_json)).not.toContain("Erase Api");
+    expect(drained.claimed).toBe(0);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  /** Waits until some statement on this database is waiting for a lock on a job row that another transaction holds. */
+  const waitUntilAStatementWaitsForALock = () =>
+    vi.waitFor(
+      async () => {
+        const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+          SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%AdminJob%'
+        `;
+        expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+      },
+      { timeout: 5000, interval: 25 },
+    );
+
+  /** The transaction of an erasure, kept open after it has stopped the open exports of the event. */
+  async function holdErasureOfExports() {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let stopped!: () => void;
+    const hasStopped = new Promise<void>((resolve) => {
+      stopped = resolve;
+    });
+    const transaction = prisma.$transaction(
+      async (tx) => {
+        await stopOpenExportJobs(tx, EVENT_ID);
+        stopped();
+        await released;
+      },
+      { timeout: 30_000 },
+    );
+    await hasStopped;
+    return {
+      commit: async () => {
+        release();
+        await transaction;
+      },
+    };
+  }
+
+  it("a worker that is done while an erasure still holds its job waits for it, finds the job closed, and deletes its file", async () => {
+    const jobId = await exportJob("pending");
+    const real = getDefaultStorage();
+    const stored: string[] = [];
+    let held: Awaited<ReturnType<typeof holdErasureOfExports>> | undefined;
+    const storage = {
+      put: async (bytes: Buffer, opts: Parameters<typeof real.put>[1]) => {
+        const staged = await real.put(bytes, opts);
+        if (opts.eventId === EVENT_ID) {
+          stored.push(staged.key);
+          held = await holdErasureOfExports();
+        }
+        return staged;
+      },
+      delete: (key: string) => real.delete(key),
+    };
+
+    const drained = drainExportJobs(prisma, storage as never, { limit: 50 });
+    try {
+      await waitUntilAStatementWaitsForALock();
+      expect(held).toBeDefined();
+    } finally {
+      // Whatever happened, the erasure's transaction ends here, so a failure never leaves a lock behind.
+      await held?.commit();
+    }
+
+    expect(await drained).toMatchObject({ succeeded: 0 });
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job).toMatchObject({ status: "failed", error: EXPORT_STOPPED_BY_ERASURE_ERROR, storage_key: null });
+    expect(stored).toHaveLength(1);
+    expect(present(stored[0] as string)).toBe(false);
+  });
+
+  it("a worker that wants a waiting export which an erasure still holds waits for it, finds it closed, and builds nothing", async () => {
+    const jobId = await exportJob("pending");
+    const held = await holdErasureOfExports();
+    const put = vi.fn();
+
+    const drained = drainExportJobs(prisma, { put, delete: vi.fn() } as never, { limit: 50 });
+    try {
+      await waitUntilAStatementWaitsForALock();
+    } finally {
+      await held.commit();
+    }
+
+    expect(await drained).toMatchObject({ claimed: 0 });
+    expect(put).not.toHaveBeenCalled();
+    expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({
+      status: "failed",
+      error: EXPORT_STOPPED_BY_ERASURE_ERROR,
+    });
   });
 
   it("removing someone, one or a selection, does the same", async () => {
@@ -1263,7 +1432,7 @@ describe("export files of the event, after an erasure or a removal", () => {
     expect(await keyOf(stuck.jobId)).toBe(stuck.key);
     expect(present(stuck.key)).toBe(true);
     expect(await keyOf(fine.jobId)).toBeNull();
-    expect(querySystemLogs({ search: "export_file_purge_incomplete" })).toEqual([
+    expect(querySystemLogs({ search: "job_file_purge_incomplete" })).toEqual([
       expect.objectContaining({ level: "warn", fields: { eventId: EVENT_ID, failed: 1 } }),
     ]);
   });
@@ -1278,6 +1447,6 @@ describe("export files of the event, after an erasure or a removal", () => {
     expect(res.status).toBe(200);
     expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
     expect(errSpy).toHaveBeenCalled();
-    expect(querySystemLogs({ search: "export_file_purge_failed" })).toHaveLength(1);
+    expect(querySystemLogs({ search: "job_file_purge_failed" })).toHaveLength(1);
   });
 });
