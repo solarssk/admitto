@@ -530,9 +530,35 @@ describe("files the event's jobs left in storage", () => {
     expect(await prisma.adminJob.count({ where: { id: job.jobId } })).toBe(1);
   });
 
-  it("still deletes the event, and logs it, when the file cleanup itself breaks", async () => {
+  it("reports every key it could not delete (more than twenty of them), on stdout as well as in the System logs", async () => {
     const eventId = await createEvent({});
-    const job = await seedJob(eventId, "export", "succeeded");
+    const jobs: Array<{ jobId: string; key: string | null }> = [];
+    for (let i = 0; i < 25; i += 1) jobs.push(await seedJob(eventId, "export", "succeeded"));
+    const keys = jobs.map((job) => job.key as string).sort();
+    vi.spyOn(getDefaultStorage(), "delete").mockRejectedValue(new Error("disk is read only"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    const logged = querySystemLogs({ source: "admin" }).find(
+      (entry) => entry.message === "event_job_files_purge_incomplete" && entry.fields?.eventId === eventId,
+    );
+    expect(logged?.fields).toMatchObject({ failed: 25 });
+    expect([...(logged?.fields?.keys as string[])].sort()).toEqual(keys);
+    // With the job rows gone this is the only record of the files, and stdout is the part that survives a restart.
+    const line = warnSpy.mock.calls
+      .map(([text]) => String(text))
+      .find((text) => text.includes("event_job_files_purge_incomplete") && text.includes(eventId));
+    expect([...(JSON.parse(line as string).keys as string[])].sort()).toEqual(keys);
+  });
+
+  it("still deletes the event, and logs every key, when the file cleanup itself breaks", async () => {
+    const eventId = await createEvent({});
+    const jobs: Array<{ jobId: string; key: string | null }> = [];
+    for (let i = 0; i < 22; i += 1) jobs.push(await seedJob(eventId, "export", "succeeded"));
+    const keys = jobs.map((job) => job.key as string).sort();
     // A storage that cannot be built (a provider that is not implemented yet) breaks the cleanup before it deletes anything.
     const savedProvider = process.env.STORAGE_PROVIDER;
     process.env.STORAGE_PROVIDER = "s3";
@@ -550,10 +576,12 @@ describe("files the event's jobs left in storage", () => {
     expect(res.status).toBe(200);
     expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
     expect(errSpy).toHaveBeenCalled();
-    expect(present(job.key)).toBe(true);
-    expect(querySystemLogs({ source: "admin" })).toContainEqual(
-      expect.objectContaining({ level: "error", message: "event_job_files_purge_failed", fields: { eventId, keys: [job.key] } }),
+    expect(jobs.every((job) => present(job.key))).toBe(true);
+    const logged = querySystemLogs({ source: "admin" }).find(
+      (entry) => entry.message === "event_job_files_purge_failed" && entry.fields?.eventId === eventId,
     );
+    expect(logged?.level).toBe("error");
+    expect([...(logged?.fields?.keys as string[])].sort()).toEqual(keys);
   });
 
   it("still deletes the event when a file cannot be deleted, deletes the other files and logs the key that is left", async () => {
@@ -566,6 +594,7 @@ describe("files the event's jobs left in storage", () => {
       if (key === stuck.key) throw new Error("disk is read only");
       return realDelete(key);
     });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const res = await deleteEventRequest(eventId, superCookie);
 
