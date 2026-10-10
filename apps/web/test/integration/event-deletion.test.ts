@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { drainExportJobs } from "@admitto/tickets";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
@@ -552,6 +553,44 @@ describe("files the event's jobs left in storage", () => {
       .map(([text]) => String(text))
       .find((text) => text.includes("event_job_files_purge_incomplete") && text.includes(eventId));
     expect([...(JSON.parse(line as string).keys as string[])].sort()).toEqual(keys);
+  });
+
+  it("leaves no file behind for an export that is still running when its event is deleted", async () => {
+    const eventId = await createEvent({});
+    const { id: jobId } = await prisma.adminJob.create({
+      data: {
+        type: "export",
+        status: "pending",
+        organization_id: ORG_DEL,
+        event_id: eventId,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: {} } },
+      },
+    });
+    // The export has built its file and stored it; the event is deleted before the job can say so. The
+    // deletion cannot know of the file: no row names it yet.
+    const real = getDefaultStorage();
+    const stored: string[] = [];
+    const storage = {
+      put: async (bytes: Buffer, opts: Parameters<typeof real.put>[1]) => {
+        const staged = await real.put(bytes, opts);
+        if (opts.eventId === eventId) {
+          stored.push(staged.key);
+          expect((await deleteEventRequest(eventId, superCookie)).status).toBe(200);
+        }
+        return staged;
+      },
+      delete: (key: string) => real.delete(key),
+    };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await drainExportJobs(prisma, storage as never, { limit: 50 });
+    errSpy.mockRestore();
+
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    expect(stored).toHaveLength(1);
+    expect(present(stored[0] ?? null)).toBe(false);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(await prisma.adminJob.count({ where: { id: jobId } })).toBe(0);
   });
 
   it("still deletes the event, and logs every key, when the file cleanup itself breaks", async () => {

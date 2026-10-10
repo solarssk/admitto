@@ -52,6 +52,7 @@ function baseJob(overrides: Record<string, unknown> = {}) {
 describe("drainExportJobs", () => {
   const storage = {
     put: vi.fn().mockResolvedValue({ key: "org/evt/export.csv" }),
+    delete: vi.fn().mockResolvedValue({ deleted: true }),
   };
 
   let db: {
@@ -72,6 +73,7 @@ describe("drainExportJobs", () => {
     vi.mocked(findFilteredAttendeesForExport).mockReset();
     vi.mocked(writeBulkActionLog).mockReset().mockResolvedValue(undefined);
     storage.put.mockReset().mockResolvedValue({ key: "org/evt/export.csv" });
+    storage.delete.mockReset().mockResolvedValue({ deleted: true });
 
     db = {
       adminJob: {
@@ -378,6 +380,99 @@ describe("drainExportJobs", () => {
         data: expect.objectContaining({ error: "boom-string" }),
       }),
     );
+  });
+
+  describe("a job that cannot record the file it stored", () => {
+    const rowGone = () => Object.assign(new Error("Record to update not found."), { code: "P2025" });
+
+    it("takes the file back when the job row is gone (the event was deleted while the export ran), marks nothing and carries on", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+      // Both writes find no row: the one that records the file, and the one that would mark the job failed.
+      db.adminJob.update.mockRejectedValue(rowGone());
+      db.adminJob.findUnique.mockResolvedValue(null);
+
+      await expect(drainExportJobs(db as never, storage)).resolves.toEqual({
+        claimed: 1,
+        succeeded: 0,
+        failed: 1,
+        reclaimed: 0,
+      });
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith("org/evt/export.csv");
+      expect(writeBulkActionLog).not.toHaveBeenCalled();
+    });
+
+    it("runs the next job of the queue after one whose row vanished", async () => {
+      vi.mocked(claimNextAdminJob)
+        .mockResolvedValueOnce(baseJob({ id: "job-gone" }) as never)
+        .mockResolvedValueOnce(baseJob({ id: "job-next" }) as never)
+        .mockResolvedValue(null);
+      db.adminJob.update.mockImplementation(async ({ where }: { where: { id: string } }) => {
+        if (where.id === "job-gone") throw rowGone();
+        return {};
+      });
+
+      await expect(drainExportJobs(db as never, storage, { limit: 2 })).resolves.toEqual({
+        claimed: 2,
+        succeeded: 1,
+        failed: 1,
+        reclaimed: 0,
+      });
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes the file back and marks the job failed when recording it fails for another reason", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+      db.adminJob.update.mockRejectedValueOnce(new Error("database is down")).mockResolvedValue({});
+
+      await expect(drainExportJobs(db as never, storage)).resolves.toEqual({
+        claimed: 1,
+        succeeded: 0,
+        failed: 1,
+        reclaimed: 0,
+      });
+      expect(storage.delete).toHaveBeenCalledWith("org/evt/export.csv");
+      expect(db.adminJob.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "failed", error: "database is down" }),
+        }),
+      );
+    });
+
+    it("still reports the failure of the job when the file cannot be taken back either", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+      db.adminJob.update.mockRejectedValueOnce(new Error("database is down")).mockResolvedValue({});
+      storage.delete.mockRejectedValue(new Error("disk is read only"));
+
+      await expect(drainExportJobs(db as never, storage)).resolves.toEqual({
+        claimed: 1,
+        succeeded: 0,
+        failed: 1,
+        reclaimed: 0,
+      });
+      expect(db.adminJob.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "failed", error: "database is down" }),
+        }),
+      );
+    });
+
+    it("does not touch the file of a job that was recorded", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+
+      await drainExportJobs(db as never, storage);
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  it("lets a failure to mark a job failed that is not a missing row through", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+    vi.mocked(buildAttendeesExportArtifact).mockRejectedValue(new Error("boom"));
+    // An error that has a code, and not the code of a missing row.
+    db.adminJob.update.mockRejectedValue(Object.assign(new Error("database is down"), { code: "ECONNRESET" }));
+
+    await expect(drainExportJobs(db as never, storage)).rejects.toThrow("database is down");
   });
 
   it("keeps succeeded when audit logging fails after the file is stored", async () => {

@@ -27,7 +27,7 @@ export type DrainExportJobsResult = {
   reclaimed: number;
 };
 
-/** Subset of StorageAdapter.put used by export drain. */
+/** Subset of StorageAdapter used by export drain: `put` writes the file, `delete` takes it back when the job cannot record it. */
 export type ExportJobStorage = {
   put(
     bytes: Buffer,
@@ -38,6 +38,7 @@ export type ExportJobStorage = {
       ext: ".csv" | ".pdf" | ".xlsx";
     },
   ): Promise<{ key: string }>;
+  delete(key: string): Promise<unknown>;
 };
 
 type AttendeesFilteredRequest = {
@@ -77,15 +78,26 @@ async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): 
     select: { result_json: true },
   });
   const scrubbed = scrubExportJobResultJson(existing?.result_json);
-  await db.adminJob.update({
-    where: { id: jobId },
-    data: {
-      status: "failed",
-      finished_at: new Date(),
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
-      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
-    },
-  });
+  try {
+    await db.adminJob.update({
+      where: { id: jobId },
+      data: {
+        status: "failed",
+        finished_at: new Date(),
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
+        ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
+      },
+    });
+  } catch (updateErr) {
+    // The row is gone (its event was deleted while the job ran): there is nothing left to mark, and the
+    // rest of the queue must still run. Any other failure is still the caller's problem.
+    if (!isRecordNotFound(updateErr)) throw updateErr;
+  }
+}
+
+/** Prisma's "record to update not found" (P2025), told by its code so that this file needs no Prisma runtime import. */
+function isRecordNotFound(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2025";
 }
 
 async function runOneExportJob(
@@ -121,27 +133,39 @@ async function runOneExportJob(
       ext: storageExt(request.format),
     });
 
-    await db.adminJob.update({
-      where: { id: job.id },
-      data: {
-        status: "succeeded",
-        finished_at: new Date(),
-        storage_key: staged.key,
-        filename: file.filename,
-        created_count: file.rowCount,
-        result_json: {
-          request: {
-            kind: request.kind,
-            format: request.format,
-            filters: redactAttendeeListFiltersForStorage(request.filters),
-          },
+    try {
+      await db.adminJob.update({
+        where: { id: job.id },
+        data: {
+          status: "succeeded",
+          finished_at: new Date(),
+          storage_key: staged.key,
           filename: file.filename,
-          contentType: file.contentType,
-          rowCount: file.rowCount,
+          created_count: file.rowCount,
+          result_json: {
+            request: {
+              kind: request.kind,
+              format: request.format,
+              filters: redactAttendeeListFiltersForStorage(request.filters),
+            },
+            filename: file.filename,
+            contentType: file.contentType,
+            rowCount: file.rowCount,
+          },
+          error: null,
         },
-        error: null,
-      },
-    });
+      });
+    } catch (finalizeErr) {
+      // The file is in storage but the job cannot say so: its row is gone (the event was deleted while
+      // the export ran, and the deletion could not know of a file that no row named yet) or the write
+      // failed. Nothing would ever find the file again, and it holds attendees: take it back.
+      try {
+        await storage.delete(staged.key);
+      } catch {
+        /* best effort: the job is marked failed below either way */
+      }
+      throw finalizeErr;
+    }
 
     // Audit must not flip a completed export back to failed (file already in storage).
     try {
