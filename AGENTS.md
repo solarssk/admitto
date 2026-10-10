@@ -38,7 +38,7 @@ Admitto is a self-hostable **internal event access gateway**: attendee import (C
 
 Admitto handles attendee personal data under GDPR. When a rule here conflicts with convenience, the rule wins; when you are unsure whether a change is safe, say so in the pull request instead of guessing.
 
-- **Never** commit secrets, tokens, API keys, or real personal data. Use `.env.example` for required configuration (Claude Code's project settings deny reading any `.env*` file, `.env.example` included; the variables are listed in [deploy/ENV.md](deploy/ENV.md)) and synthetic `@example.com` in seeds, samples, fixtures and wiki pages.
+- **Never** commit secrets, tokens, API keys, or real personal data. Use `.env.example` for required configuration (Claude Code's project settings deny reading local `.env*` files; `.env.example` stays readable, and the variables are listed in [deploy/ENV.md](deploy/ENV.md)) and synthetic `@example.com` in seeds, samples, fixtures and wiki pages.
 - **Logs and error text carry no personal data.** Log ids and counts, never names or addresses. A job's stored error, an API error and a toast never carry a raw exception message; in the admin UI use `operatorApiErrorMessage` ([apps/admin/AGENTS.md](apps/admin/AGENTS.md)).
 - QR/token payloads must be non-guessable; avoid PII in QR unless explicitly required.
 - Separate admin / operator / superadmin responsibilities; check the role on the server, not only in the UI.
