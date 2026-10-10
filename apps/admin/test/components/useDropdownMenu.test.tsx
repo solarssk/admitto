@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
 import { mockVisualViewport } from "./panelPlacementMocks.js";
 
@@ -418,6 +418,8 @@ describe("useDropdownMenu", () => {
     const style = document.createElement("style");
     style.textContent = '[role="menu"] { min-width: 300px; }';
     document.head.append(style);
+    // Removed even when an assertion fails, so one failure cannot leak a min-width into other tests.
+    onTestFinished(() => style.remove());
     vi.stubGlobal("innerWidth", 280);
     vi.stubGlobal("innerHeight", 600);
     mockGeometry({
@@ -432,7 +434,6 @@ describe("useDropdownMenu", () => {
     const menu = await openMenu();
 
     expect(menu.style.minWidth).toBe("264px"); // 280 - 2 * 8
-    style.remove();
   });
 
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
