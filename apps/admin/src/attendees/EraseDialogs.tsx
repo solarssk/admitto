@@ -12,7 +12,7 @@ function EraseConsequences({ takes, stays }: Readonly<{ takes: readonly string[]
       <div className="erase-consequences__group">
         <span className="erase-consequences__tag erase-consequences__tag--erased">
           <i className="ti ti-eraser" aria-hidden="true" />
-          Erased
+          <span>Erased</span>
         </span>
         <ul className="erase-consequences__lines">
           {takes.map((text) => (
@@ -23,7 +23,7 @@ function EraseConsequences({ takes, stays }: Readonly<{ takes: readonly string[]
       <div className="erase-consequences__group">
         <span className="erase-consequences__tag erase-consequences__tag--stays">
           <i className="ti ti-shield-check" aria-hidden="true" />
-          Stays
+          <span>Stays</span>
         </span>
         <ul className="erase-consequences__lines">
           <li>{stays}</li>
