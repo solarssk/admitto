@@ -260,6 +260,28 @@ describe("wallet pass creation racing an erasure", () => {
     expect(pass.provider_removed_at).not.toBeNull();
   });
 
+  it("gives the provider ids to a pass row that exists already (a failed attempt), then deletes the new pass", async () => {
+    const { attendee, token } = await createAttendee();
+    await prisma.walletPass.create({ data: { attendee_id: attendee.id, status: "failed", last_error_code: "wallet_provider_rejected" } });
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      await erase([attendee.id]);
+      return { providerPassId: `pc-${input.userProvidedId}`, downloadUrl: null, appleUrl: "https://pc.test/a", androidUrl: null };
+    });
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.headers.get("location")).toBe(`/t/${token}`);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
+    const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
+    expect(pass).toMatchObject({
+      apple_url: null,
+      provider_pass_id: `pc-admitto:${EVENT_ID}:${attendee.id}`,
+      user_provided_id: `admitto:${EVENT_ID}:${attendee.id}`,
+    });
+    expect(pass.provider_removed_at).not.toBeNull();
+  });
+
   it("does not send an attendee erased after the ticket was resolved to the provider", async () => {
     const { attendee, token } = await createAttendee();
     const provider = stubProvider();

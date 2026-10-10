@@ -18,6 +18,7 @@ import type { Context } from "hono";
 import { createApp } from "../../src/app.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "../../src/admin/attendee-erase-routes.js";
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "../../src/admin/attendee-remove-routes.js";
+import { deleteProviderPassesBestEffort } from "../../src/admin/attendees-api-routes.js";
 import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs } from "@admitto/shared/system-log";
@@ -972,6 +973,35 @@ describe("removing attendees from an event", () => {
 
     expect(bodies[0]!.removed + bodies[1]!.removed).toBe(2);
     expect(bodies[0]!.not_found + bodies[1]!.not_found).toBe(2);
+  });
+});
+
+describe("deleting wallet passes at the provider", () => {
+  const targets = [
+    { attendeeId: "gone-a", providerPassId: "pc-gone-a" },
+    { attendeeId: "gone-b", providerPassId: "pc-gone-b" },
+  ];
+
+  it("answers the provider ids it deleted, and leaves out the ones that failed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown) =>
+      String(url).includes("pc-gone-b") ? new Response("down", { status: 500 }) : new Response(null, { status: 200 }),
+    ));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const deleted = await deleteProviderPassesBestEffort(prisma, EVENT_ID, targets);
+
+    expect(deleted).toEqual(new Set(["pc-gone-a"]));
+    expect(errSpy).toHaveBeenCalled();
+  });
+
+  it("calls nobody for an event that does not exist, or one without wallet credentials, and for nothing to delete", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await deleteProviderPassesBestEffort(prisma, "evt-nobody", targets)).toEqual(new Set());
+    expect(await deleteProviderPassesBestEffort(prisma, ARCHIVED_EVENT_ID, targets)).toEqual(new Set());
+    expect(await deleteProviderPassesBestEffort(prisma, EVENT_ID, [])).toEqual(new Set());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
