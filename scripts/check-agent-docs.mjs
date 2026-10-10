@@ -43,15 +43,25 @@ function withoutClosingHashes(heading) {
   return end > 0 && end < text.length && text[end - 1] === " " ? text.slice(0, end).trimEnd() : text;
 }
 
+// The text of an ATX heading ("## Title"), or null when the line is not one. No regex: whitespace
+// around a "(.*)" is what makes a pattern backtrack.
+function headingTitle(line) {
+  let level = 0;
+  while (line[level] === "#") level++;
+  const next = line[level];
+  if (level < 1 || level > 6 || (next !== " " && next !== "\t")) return null;
+  return line.slice(level).trim();
+}
+
 function anchorsOf(text) {
   const seen = new Map();
   const set = new Set();
   let fenced = false;
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) fenced = !fenced;
-    const m = !fenced && /^#{1,6}\s+(.*)$/.exec(line);
-    if (!m) continue;
-    const base = slug(withoutClosingHashes(m[1]));
+    const title = fenced ? null : headingTitle(line);
+    if (title === null) continue;
+    const base = slug(withoutClosingHashes(title));
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
     set.add(n === 0 ? base : `${base}-${n}`);
