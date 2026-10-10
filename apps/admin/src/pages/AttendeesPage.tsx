@@ -437,7 +437,7 @@ function SendTicketsDialog({
 
   return (
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop />
+      <ModalBackdrop onClose={busy ? undefined : onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
       <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -573,7 +573,7 @@ function CardPickerDialog<T>({
 
   return (
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop />
+      <ModalBackdrop onClose={busy ? undefined : onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
       <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
