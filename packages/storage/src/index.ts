@@ -21,6 +21,7 @@ export {
 export {
   DEFAULT_EXPORT_FILE_RETENTION_DAYS,
   DEFAULT_STAGED_IMPORT_RETENTION_DAYS,
+  deleteStoredFiles,
   purgeEventExportFiles,
   purgeJobFiles,
   resolveExportFileRetentionDays,

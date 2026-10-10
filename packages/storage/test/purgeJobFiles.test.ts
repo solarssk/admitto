@@ -7,6 +7,7 @@ import {
   DEFAULT_EXPORT_FILE_RETENTION_DAYS,
   DEFAULT_STAGED_IMPORT_RETENTION_DAYS,
   LocalStorageAdapter,
+  deleteStoredFiles,
   purgeEventExportFiles,
   purgeJobFiles,
   resolveExportFileRetentionDays,
@@ -371,6 +372,56 @@ describe("purgeEventExportFiles", () => {
     expect(existsSync(join(uploadDir, freshOfEvent))).toBe(false);
     expect(existsSync(join(uploadDir, otherEvent))).toBe(true);
     expect(existsSync(join(uploadDir, stagedImport))).toBe(true);
+  });
+});
+
+describe("deleteStoredFiles", () => {
+  let uploadDir: string;
+  let storage: LocalStorageAdapter;
+
+  beforeEach(() => {
+    uploadDir = mkdtempSync(join(tmpdir(), "admitto-stored-files-"));
+    storage = new LocalStorageAdapter({ UPLOAD_DIR: uploadDir });
+  });
+
+  afterEach(() => {
+    rmSync(uploadDir, { recursive: true, force: true });
+  });
+
+  const put = async (eventId: string) => (await storage.put(Buffer.from("name,email\n"), { orgId: "org-1", eventId, scope: "event", ext: ".csv" })).key;
+
+  it("deletes the files of the keys it is given, and counts a key that is gone already as deleted", async () => {
+    const [a, b] = [await put("evt-1"), await put("evt-1")];
+    const gone = await put("evt-1");
+    await storage.delete(gone);
+
+    const result = await deleteStoredFiles(storage, [a, b, gone]);
+
+    expect(result).toEqual({ deleted: 3, failedKeys: [] });
+    expect(existsSync(join(uploadDir, a))).toBe(false);
+    expect(existsSync(join(uploadDir, b))).toBe(false);
+  });
+
+  it("returns the keys it could not delete and still deletes the rest", async () => {
+    const [a, b] = [await put("evt-1"), await put("evt-1")];
+    const badKey = "../outside.csv";
+
+    const result = await deleteStoredFiles(storage, [a, badKey, b]);
+
+    expect(result).toEqual({ deleted: 2, failedKeys: [badKey] });
+    expect(existsSync(join(uploadDir, a))).toBe(false);
+    expect(existsSync(join(uploadDir, b))).toBe(false);
+  });
+
+  it("tries a key once however often it is given, and does nothing for no keys", async () => {
+    const key = await put("evt-1");
+    const spy = vi.spyOn(storage, "delete");
+
+    expect(await deleteStoredFiles(storage, [key, key, key])).toEqual({ deleted: 1, failedKeys: [] });
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockClear();
+    expect(await deleteStoredFiles(storage, [])).toEqual({ deleted: 0, failedKeys: [] });
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

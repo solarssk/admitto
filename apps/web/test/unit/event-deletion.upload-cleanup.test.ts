@@ -1,12 +1,17 @@
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { bestEffortDeleteReplacedUploadUrls } = vi.hoisted(() => ({
+const { bestEffortDeleteReplacedUploadUrls, deleteEventJobFilesBestEffort } = vi.hoisted(() => ({
   bestEffortDeleteReplacedUploadUrls: vi.fn().mockResolvedValue(undefined),
+  deleteEventJobFilesBestEffort: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../src/admin/branding-upload.js", () => ({
   bestEffortDeleteReplacedUploadUrls,
+}));
+
+vi.mock("../../src/admin/purge-export-files.js", () => ({
+  deleteEventJobFilesBestEffort,
 }));
 
 vi.mock("@admitto/tickets", async (importOriginal) => {
@@ -27,6 +32,7 @@ import { deleteEvent } from "../../src/admin/event-deletion.js";
 describe("deleteEvent — managed upload cleanup", () => {
   beforeEach(() => {
     bestEffortDeleteReplacedUploadUrls.mockClear();
+    deleteEventJobFilesBestEffort.mockClear();
   });
 
   it("best-effort deletes event branding and named image asset URLs after commit", async () => {
@@ -36,6 +42,10 @@ describe("deleteEvent — managed upload cleanup", () => {
 
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
+      // The event's jobs, deleted with RETURNING: one export file, one job without a file, the staged CSV of a failed import.
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([{ storage_key: "org-1/events/evt-upload-cleanup/a.csv" }, { storage_key: null }, { storage_key: "org-1/events/evt-upload-cleanup/b.csv" }]),
       event: {
         findUnique: vi.fn().mockResolvedValue({
           archived_at: null,
@@ -78,6 +88,58 @@ describe("deleteEvent — managed upload cleanup", () => {
     );
   });
 
+  it("hands the keys of the jobs it deleted, and only those that have a file, to the file cleanup after commit", async () => {
+    const eventId = "evt-upload-cleanup";
+    const calls: string[] = [];
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([{ storage_key: "org-1/events/evt-upload-cleanup/a.csv" }, { storage_key: null }, { storage_key: "org-1/events/evt-upload-cleanup/b.csv" }]),
+      event: {
+        findUnique: vi.fn().mockResolvedValue({
+          archived_at: null,
+          pinned_note: null,
+          organization_id: "org-1",
+          title: "Cleanup Event",
+          logo_url: null,
+          logo_original_url: null,
+          header_image_url: null,
+        }),
+        delete: vi.fn().mockImplementation(async () => {
+          calls.push("event.delete");
+          return { id: eventId };
+        }),
+      },
+      attendee: { count: vi.fn().mockResolvedValue(0) },
+      eventItem: { count: vi.fn().mockResolvedValue(0) },
+      ticketType: { count: vi.fn().mockResolvedValue(0) },
+      eventContact: { count: vi.fn().mockResolvedValue(0) },
+      eventResource: { count: vi.fn().mockResolvedValue(0) },
+      mailTemplate: { count: vi.fn().mockResolvedValue(0), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      mailSettings: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      eventImageAsset: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    deleteEventJobFilesBestEffort.mockImplementation(async () => {
+      calls.push("job files");
+    });
+    const db = {
+      $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
+      user: { findUnique: vi.fn().mockResolvedValue({ email: "super@example.com" }) },
+    } as unknown as PrismaClient;
+
+    const result = await deleteEvent(db, eventId, { userId: "user-1" }, null, null);
+
+    expect(result).toEqual({ ok: true });
+    expect(deleteEventJobFilesBestEffort).toHaveBeenCalledWith(eventId, [
+      "org-1/events/evt-upload-cleanup/a.csv",
+      "org-1/events/evt-upload-cleanup/b.csv",
+    ]);
+    // The files go after the rows: the event is deleted first, in the transaction.
+    expect(calls).toEqual(["event.delete", "job files"]);
+    deleteEventJobFilesBestEffort.mockReset().mockResolvedValue(undefined);
+  });
+
   it("skips upload cleanup when delete is rejected as not_deletable", async () => {
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
@@ -108,6 +170,7 @@ describe("deleteEvent — managed upload cleanup", () => {
 
     expect(result).toEqual({ code: "not_deletable" });
     expect(bestEffortDeleteReplacedUploadUrls).not.toHaveBeenCalled();
+    expect(deleteEventJobFilesBestEffort).not.toHaveBeenCalled();
   });
 
   it("skips upload cleanup when the transaction fails", async () => {
@@ -124,5 +187,6 @@ describe("deleteEvent — managed upload cleanup", () => {
 
     expect(result).toEqual({ code: "not_deletable" });
     expect(bestEffortDeleteReplacedUploadUrls).not.toHaveBeenCalled();
+    expect(deleteEventJobFilesBestEffort).not.toHaveBeenCalled();
   });
 });

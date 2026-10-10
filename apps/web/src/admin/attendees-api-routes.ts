@@ -1315,8 +1315,16 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
   const { job } = loaded;
   if (job.status !== "succeeded" || !job.storage_key) return c.json({ error: "not_ready" }, 404);
 
-  const { getDefaultStorage } = await import("@admitto/storage");
-  const bytes = await getDefaultStorage().get(job.storage_key);
+  const { getDefaultStorage, StoragePathError } = await import("@admitto/storage");
+  let bytes: Buffer;
+  try {
+    bytes = await getDefaultStorage().get(job.storage_key);
+  } catch (err) {
+    // The file was deleted after this request read the job (an erasure, the retention run, an event
+    // deletion): the same answer as a job whose file is already gone.
+    if (err instanceof StoragePathError && err.message === "not_found") return c.json({ error: "not_ready" }, 404);
+    throw err;
+  }
   const meta =
     job.result_json && typeof job.result_json === "object" && !Array.isArray(job.result_json)
       ? (job.result_json as Record<string, unknown>)

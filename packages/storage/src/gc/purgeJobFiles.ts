@@ -169,3 +169,29 @@ export async function purgeEventExportFiles(
 ): Promise<{ deleted: number; failed: number }> {
   return purgeFilesWhere(db, storage, { type: "export", event_id: eventId }, false);
 }
+
+/**
+ * Delete files by key, for jobs whose rows are gone. A permanent event deletion removes the event's jobs
+ * with it, and the retention run finds a file only through a surviving row, so the caller reads the keys
+ * in the transaction that deletes the rows and calls this after it has committed. Best effort: a file that
+ * cannot be deleted is returned (nothing else remembers it) and the rest are still tried; a file that is
+ * already gone counts as deleted.
+ */
+export async function deleteStoredFiles(
+  storage: StorageAdapter,
+  keys: readonly string[],
+): Promise<{ deleted: number; failedKeys: string[] }> {
+  const unique = [...new Set(keys)];
+  const failures = await Promise.all(
+    unique.map(async (key) => {
+      try {
+        await storage.delete(key);
+        return null;
+      } catch {
+        return key;
+      }
+    }),
+  );
+  const failedKeys = failures.filter((key): key is string => key !== null);
+  return { deleted: unique.length - failedKeys.length, failedKeys };
+}

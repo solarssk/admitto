@@ -26,12 +26,17 @@
  * normal use, and lifecycle-sensitive trails (e.g. attendee_erased) are also written to
  * org-level AdminAuditLog, which survives event deletion. EventImageAsset rows cascade too,
  * but managed `/uploads/…` files are deleted post-commit (same as handleDeleteEventImageAsset).
+ * The same goes for the files the event's jobs left in storage (the file of an export, the staged
+ * CSV of an import that failed): the jobs are deleted in the transaction, which hands back their
+ * `storage_key`s, and the files are deleted after the commit, because with the rows gone nothing
+ * (the retention run included) could find them again.
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
+import { deleteEventJobFilesBestEffort } from "./purge-export-files.js";
 import {
   lockEventForScopedWrite,
   requireAuditActor,
@@ -140,7 +145,7 @@ type DeleteActor = { userId: string };
 type DeleteTxResult =
   | { kind: "not_found" }
   | { kind: "not_deletable" }
-  | { kind: "ok"; eventTitle: string; managedUploadUrls: Array<string | null> };
+  | { kind: "ok"; eventTitle: string; managedUploadUrls: Array<string | null>; jobFileKeys: string[] };
 
 export async function deleteEvent(
   db: PrismaClient,
@@ -197,6 +202,14 @@ export async function deleteEvent(
       // deletable). Clean it up here so a delete never orphans its scope_id.
       await tx.mailSettings.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
 
+      // The event's jobs would cascade away with it, and with them the only record of the files they left
+      // in storage. Deleting them here hands back exactly the keys of the rows that went, as of the moment
+      // they went (a job that finished a moment ago is in the answer); the files go after the commit.
+      const deletedJobs = await tx.$queryRaw<{ storage_key: string | null }[]>`
+        DELETE FROM "AdminJob" WHERE "event_id" = ${eventId} RETURNING "storage_key"
+      `;
+      const jobFileKeys = deletedJobs.flatMap((job) => (job.storage_key ? [job.storage_key] : []));
+
       await tx.event.delete({ where: { id: eventId } });
 
       await writeAdminAuditLog(tx, {
@@ -210,7 +223,7 @@ export async function deleteEvent(
         // live-lookup-by-eventId has nothing left to resolve against.
         metadata: { eventId, eventTitle: event.title },
       });
-      return { kind: "ok", eventTitle: event.title, managedUploadUrls };
+      return { kind: "ok", eventTitle: event.title, managedUploadUrls, jobFileKeys };
     });
 
     if (txResult.kind === "not_found") return { code: "not_found" };
@@ -222,6 +235,8 @@ export async function deleteEvent(
       [],
       { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
     );
+
+    await deleteEventJobFilesBestEffort(eventId, txResult.jobFileKeys);
 
     // Emitted after the transaction has committed (CodeRabbit review) - emitSystemLog is
     // not transactional, so logging it from inside the callback above would record a

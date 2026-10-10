@@ -27,3 +27,35 @@ export async function purgeEventExportFilesBestEffort(db: PrismaClient, eventId:
     recordSystemLog({ level: "error", source: "admin", message: "export_file_purge_failed", fields: { eventId } });
   }
 }
+
+/**
+ * A permanent event deletion removes the event's jobs by cascade, and with them the only record of the
+ * files they left in storage (the file of an export, the staged CSV of an import that failed), which hold
+ * attendees and which the retention run can no longer find. The deletion reads the keys in the
+ * transaction that deletes the rows and calls this after it has committed. Best effort: the deletion
+ * never fails because of it, and a file that cannot be deleted is reported in the System logs with its
+ * key (it carries no personal data), because nothing else remembers it.
+ */
+export async function deleteEventJobFilesBestEffort(eventId: string, keys: readonly string[]): Promise<void> {
+  if (keys.length === 0) return;
+  try {
+    const { getDefaultStorage, deleteStoredFiles } = await import("@admitto/storage");
+    const { failedKeys } = await deleteStoredFiles(getDefaultStorage(), keys);
+    if (failedKeys.length > 0) {
+      recordSystemLog({
+        level: "warn",
+        source: "admin",
+        message: "event_job_files_purge_incomplete",
+        fields: { eventId, failed: failedKeys.length, keys: failedKeys.slice(0, 20) },
+      });
+    }
+  } catch (err) {
+    console.error("event job file purge failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "event_job_files_purge_failed",
+      fields: { eventId, keys: keys.slice(0, 20) },
+    });
+  }
+}

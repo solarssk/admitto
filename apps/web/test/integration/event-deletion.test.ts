@@ -1,3 +1,5 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +8,7 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -453,5 +456,128 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(
       logs.some((entry) => entry.message === "event_deleted" && entry.fields?.eventId === eventId),
     ).toBe(true);
+  });
+});
+
+describe("files the event's jobs left in storage", () => {
+  let uploadDir: string;
+  let savedUploadDir: string | undefined;
+
+  beforeAll(() => {
+    savedUploadDir = process.env.UPLOAD_DIR;
+    uploadDir = mkdtempSync(join(tmpdir(), "admitto-event-deletion-files-"));
+    process.env.UPLOAD_DIR = uploadDir;
+    resetDefaultStorageForTests();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    rmSync(uploadDir, { recursive: true, force: true });
+    if (savedUploadDir === undefined) delete process.env.UPLOAD_DIR;
+    else process.env.UPLOAD_DIR = savedUploadDir;
+    resetDefaultStorageForTests();
+  });
+
+  /** A job of the event, with a file in storage unless `withFile` is false (as an export or an import leaves it). */
+  async function seedJob(eventId: string, type: string, status: string, withFile = true) {
+    const key = withFile
+      ? (
+          await getDefaultStorage().put(Buffer.from("name,email\nA B,a@example.com\n"), {
+            orgId: ORG_DEL,
+            eventId,
+            scope: "event",
+            ext: ".csv",
+          })
+        ).key
+      : null;
+    const job = await prisma.adminJob.create({
+      data: { type, status, organization_id: ORG_DEL, event_id: eventId, storage_key: key, filename: withFile ? "attendees.csv" : null },
+    });
+    return { jobId: job.id, key };
+  }
+  const present = (key: string | null) => key !== null && existsSync(join(uploadDir, key));
+
+  it("deletes the files of every job of the event with it (the staged CSV of a failed import included), and nothing of another event", async () => {
+    const eventId = await createEvent({});
+    const otherId = await createEvent({});
+    const exported = await seedJob(eventId, "export", "succeeded");
+    const failedImport = await seedJob(eventId, "import_commit", "failed");
+    const waitingImport = await seedJob(eventId, "import_commit", "pending");
+    await seedJob(eventId, "export", "failed", false);
+    const kept = await seedJob(otherId, "export", "succeeded");
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(await prisma.adminJob.count({ where: { event_id: eventId } })).toBe(0);
+    for (const file of [exported, failedImport, waitingImport]) expect(present(file.key)).toBe(false);
+    expect(present(kept.key)).toBe(true);
+    expect(await prisma.adminJob.count({ where: { id: kept.jobId } })).toBe(1);
+  });
+
+  it("keeps the files when the event cannot be deleted", async () => {
+    const eventId = await createEvent({ pinnedNote: "keep me" });
+    const job = await seedJob(eventId, "export", "succeeded");
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(409);
+    expect(present(job.key)).toBe(true);
+    expect(await prisma.adminJob.count({ where: { id: job.jobId } })).toBe(1);
+  });
+
+  it("still deletes the event, and logs it, when the file cleanup itself breaks", async () => {
+    const eventId = await createEvent({});
+    const job = await seedJob(eventId, "export", "succeeded");
+    // A storage that cannot be built (a provider that is not implemented yet) breaks the cleanup before it deletes anything.
+    const savedProvider = process.env.STORAGE_PROVIDER;
+    process.env.STORAGE_PROVIDER = "s3";
+    resetDefaultStorageForTests();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let res: Response;
+    try {
+      res = await deleteEventRequest(eventId, superCookie);
+    } finally {
+      if (savedProvider === undefined) delete process.env.STORAGE_PROVIDER;
+      else process.env.STORAGE_PROVIDER = savedProvider;
+      resetDefaultStorageForTests();
+    }
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(errSpy).toHaveBeenCalled();
+    expect(present(job.key)).toBe(true);
+    expect(querySystemLogs({ source: "admin" })).toContainEqual(
+      expect.objectContaining({ level: "error", message: "event_job_files_purge_failed", fields: { eventId, keys: [job.key] } }),
+    );
+  });
+
+  it("still deletes the event when a file cannot be deleted, deletes the other files and logs the key that is left", async () => {
+    const eventId = await createEvent({});
+    const stuck = await seedJob(eventId, "export", "succeeded");
+    const fine = await seedJob(eventId, "import_commit", "failed");
+    const storage = getDefaultStorage();
+    const realDelete = storage.delete.bind(storage);
+    vi.spyOn(storage, "delete").mockImplementation(async (key: string) => {
+      if (key === stuck.key) throw new Error("disk is read only");
+      return realDelete(key);
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(present(fine.key)).toBe(false);
+    expect(present(stuck.key)).toBe(true);
+    expect(querySystemLogs({ source: "admin" })).toContainEqual(
+      expect.objectContaining({
+        message: "event_job_files_purge_incomplete",
+        fields: expect.objectContaining({ eventId, failed: 1, keys: [stuck.key] }),
+      }),
+    );
   });
 });
