@@ -11,7 +11,7 @@ import {
 type Pass = { attendee_id: string; event_id: string; removed: boolean };
 type EventRow = { id: string; wallet_template_id: string | null; wallet_api_key_enc: string | null; wallet_field_mapping: unknown };
 
-type Where = { attendee: { event_id: string }; attendee_id?: { gt: string } };
+type Where = { attendee: { event_id: string }; attendee_id?: { gt?: string; lte?: string } };
 
 const eventRow = (id: string, credentials = true): EventRow => ({
   id,
@@ -27,10 +27,21 @@ const passesOf = (eventId: string, count: number, from = 0): Pass[] =>
   }));
 
 /** Just enough of the database for the sweep's queries, over passes in memory (every pass here is of an erased attendee). */
-function fakeDb(events: EventRow[], passes: Pass[]): PrismaClient {
+function fakeDb(events: EventRow[], passes: Pass[], settings = new Map<string, string>()): PrismaClient {
   const pending = (eventId: string) => passes.filter((pass) => pass.event_id === eventId && !pass.removed);
   let reads = 0;
   return {
+    // The place a sweep that ran out of time keeps (a SystemSettings row).
+    systemSettings: {
+      findUnique: vi.fn(async ({ where }: { where: { key: string } }) =>
+        settings.has(where.key) ? { key: where.key, value_json: settings.get(where.key)! } : null,
+      ),
+      upsert: vi.fn(async ({ where, update }: { where: { key: string }; update: { value_json: string } }) => {
+        settings.set(where.key, update.value_json);
+        return {};
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: { key: string } }) => ({ count: settings.delete(where.key) ? 1 : 0 })),
+    },
     event: {
       findMany: vi.fn(async () => events.filter((event) => pending(event.id).length > 0)),
     },
@@ -40,8 +51,9 @@ function fakeDb(events: EventRow[], passes: Pass[]): PrismaClient {
         // No honest walk reads this many pages: a loop that does not advance fails here instead of hanging the suite.
         if (++reads > 50) throw new Error("the walk does not advance");
         const after = where.attendee_id?.gt;
+        const upTo = where.attendee_id?.lte;
         return pending(where.attendee.event_id)
-          .filter((pass) => after === undefined || pass.attendee_id > after)
+          .filter((pass) => (after === undefined || pass.attendee_id > after) && (upTo === undefined || pass.attendee_id <= upTo))
           .sort((a, b) => a.attendee_id.localeCompare(b.attendee_id))
           .slice(0, take)
           .map((pass) => ({ attendee_id: pass.attendee_id }));
@@ -270,6 +282,150 @@ describe("sweepErasedWalletPasses", () => {
     deletePasses.mockRejectedValueOnce(new Error("db down"));
 
     await expect(sweepErasedWalletPasses(fakeDb([eventRow("evt-1")], passes), { dryRun: false }, deps)).rejects.toThrow("db down");
+  });
+
+  it("says which event has no wallet credentials, with its id and how many passes wait, since the summary only counts", async () => {
+    passes.push(...passesOf("evt-1", 2), ...passesOf("evt-2", 1));
+    resolveProvider.mockImplementation((event: EventRow) => (event.id === "evt-1" ? null : provider));
+
+    await sweepErasedWalletPasses(fakeDb([eventRow("evt-1", false), eventRow("evt-2")], passes), { dryRun: false }, deps);
+
+    const logged = querySystemLogs({ search: "wallet_pass_erasure_no_provider" });
+    expect(logged.map((entry) => ({ level: entry.level, source: entry.source, fields: entry.fields }))).toEqual([
+      { level: "warn", source: "wallet", fields: { eventId: "evt-1", pending: 2 } },
+    ]);
+  });
+
+  describe("when the budget runs out", () => {
+    const settings = () => new Map<string, string>();
+    const cursorOf = (store: Map<string, string>) => JSON.parse(store.get("retention.erased_wallet_sweep_cursor") ?? "null");
+    /**
+     * A deleteErasedWalletPasses with a budget of `budget.left` passes for the whole sweep: it tries that many of a page
+     * (in id order) and reports the rest as not tried, like the real one does when its time is up.
+     */
+    const budget = { left: 0 };
+    const withBudget = (failing: boolean) =>
+      vi.fn(async (_db: unknown, _eventId: string, attendeeIds: string[]) => {
+        const tried = attendeeIds.slice(0, budget.left);
+        budget.left -= tried.length;
+        if (!failing) for (const pass of passes) if (tried.includes(pass.attendee_id)) pass.removed = true;
+        return {
+          deleted: failing ? 0 : tried.length,
+          failedAttendeeIds: failing ? tried : [],
+          failureCodes: failing ? ["unknown"] : [],
+          notTried: attendeeIds.length - tried.length,
+        };
+      });
+    const use = (fn: ReturnType<typeof vi.fn>) => {
+      deps.deletePasses = fn as unknown as ErasedWalletSweepDeps["deletePasses"];
+      return fn;
+    };
+    const triedBy = (fn: ReturnType<typeof vi.fn>) => fn.mock.results.length;
+
+    it("keeps the place where it stopped, and the next sweep goes on after it, and wraps round to the start", async () => {
+      passes.push(...passesOf("evt-1", 5), ...passesOf("evt-2", 3));
+      const store = settings();
+      const events = [eventRow("evt-1"), eventRow("evt-2")];
+      budget.left = 2;
+      use(withBudget(false));
+
+      const first = await sweepErasedWalletPasses(fakeDb(events, passes, store), { dryRun: false }, deps);
+
+      expect(first.notTried).toBe(6);
+      expect(cursorOf(store)).toEqual({ eventId: "evt-1", attendeeId: "evt-1-att-0001" });
+
+      // The second sweep has all the time it needs: it starts after the place, goes through the rest and then the start.
+      budget.left = 100;
+      const second = use(withBudget(false));
+      const result = await sweepErasedWalletPasses(fakeDb(events, passes, store), { dryRun: false }, deps);
+
+      expect(second.mock.calls.map((call) => [call[1], call[2]])).toEqual([
+        ["evt-1", ["evt-1-att-0002", "evt-1-att-0003", "evt-1-att-0004"]],
+        ["evt-2", ["evt-2-att-0000", "evt-2-att-0001", "evt-2-att-0002"]],
+      ]);
+      expect(result).toMatchObject({ deleted: 6, notTried: 0 });
+      // Two passes of the start were done by the first sweep, so nothing is left there; the sweep got through everything.
+      expect(store.has("retention.erased_wallet_sweep_cursor")).toBe(false);
+    });
+
+    it("reaches every pass in the end when the passes at the start keep failing, instead of trying the same few again", async () => {
+      passes.push(...passesOf("evt-1", 6));
+      const store = settings();
+      const events = [eventRow("evt-1")];
+      const fn = use(withBudget(true));
+
+      const tried: string[] = [];
+      for (let run = 0; run < 3; run += 1) {
+        budget.left = 2;
+        const before = triedBy(fn);
+        await sweepErasedWalletPasses(fakeDb(events, passes, store), { dryRun: false }, deps);
+        tried.push(...(await Promise.all(fn.mock.results.slice(before).map((r) => r.value as Promise<{ failedAttendeeIds: string[] }>))).flatMap((r) => r.failedAttendeeIds));
+      }
+
+      // Two a sweep, and every sweep starts after the last: six different passes in three sweeps, none of them twice.
+      expect(tried).toEqual(["evt-1-att-0000", "evt-1-att-0001", "evt-1-att-0002", "evt-1-att-0003", "evt-1-att-0004", "evt-1-att-0005"]);
+    });
+
+    it("comes back to the start after the end, up to the place it began at, and no further", async () => {
+      passes.push(...passesOf("evt-1", 4));
+      const store = new Map([["retention.erased_wallet_sweep_cursor", JSON.stringify({ eventId: "evt-1", attendeeId: "evt-1-att-0001" })]]);
+      budget.left = 100;
+      const fn = use(withBudget(true));
+
+      const result = await sweepErasedWalletPasses(fakeDb([eventRow("evt-1")], passes, store), { dryRun: false }, deps);
+
+      expect(fn.mock.calls.map((call) => call[2])).toEqual([
+        ["evt-1-att-0002", "evt-1-att-0003"],
+        ["evt-1-att-0000", "evt-1-att-0001"],
+      ]);
+      expect(result).toMatchObject({ failed: 4, notTried: 0 });
+    });
+
+    it("gives the events after the one that used the time a turn, not only the first one", async () => {
+      passes.push(...passesOf("evt-1", 4), ...passesOf("evt-2", 2));
+      const store = settings();
+      const events = [eventRow("evt-1"), eventRow("evt-2")];
+      // The first event takes the whole budget: 4 passes tried, all failing, and nothing is left for the second.
+      budget.left = 4;
+      use(withBudget(true));
+      await sweepErasedWalletPasses(fakeDb(events, passes, store), { dryRun: false }, deps);
+      expect(cursorOf(store)).toEqual({ eventId: "evt-1", attendeeId: "evt-1-att-0003" });
+
+      budget.left = 100;
+      const seen = use(withBudget(false));
+      await sweepErasedWalletPasses(fakeDb(events, passes, store), { dryRun: false }, deps);
+
+      // The second sweep starts with the second event, which the first one never reached.
+      expect(seen.mock.calls[0]!.slice(1, 3)).toEqual(["evt-2", ["evt-2-att-0000", "evt-2-att-0001"]]);
+    });
+
+    it("keeps the old place when it could not try anything, and does not touch it in a dry run", async () => {
+      passes.push(...passesOf("evt-1", 3));
+      const store = new Map([["retention.erased_wallet_sweep_cursor", JSON.stringify({ eventId: "evt-1", attendeeId: "evt-1-att-0000" })]]);
+
+      await sweepErasedWalletPasses(fakeDb([eventRow("evt-1")], passes, store), { dryRun: false, budgetMs: 0 }, deps);
+      expect(cursorOf(store)).toEqual({ eventId: "evt-1", attendeeId: "evt-1-att-0000" });
+
+      const db = fakeDb([eventRow("evt-1")], passes, store);
+      await sweepErasedWalletPasses(db, { dryRun: true }, deps);
+      expect(db.systemSettings.findUnique).not.toHaveBeenCalled();
+      expect(db.systemSettings.upsert).not.toHaveBeenCalled();
+      expect(db.systemSettings.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("starts from the beginning when the place it kept is not readable, and carries on when it cannot keep one", async () => {
+      passes.push(...passesOf("evt-1", 3));
+      const db = fakeDb([eventRow("evt-1")], passes, new Map([["retention.erased_wallet_sweep_cursor", "not json"]]));
+      budget.left = 1;
+      const fn = use(withBudget(false));
+      vi.mocked(db.systemSettings.upsert).mockRejectedValueOnce(new Error("db hiccup"));
+
+      const result = await sweepErasedWalletPasses(db, { dryRun: false }, deps);
+
+      expect(fn.mock.calls[0]![2]).toEqual(["evt-1-att-0000", "evt-1-att-0001", "evt-1-att-0002"]);
+      expect(result.deleted).toBe(1);
+      expect(querySystemLogs({ search: "wallet_pass_sweep_cursor_not_saved" })).toHaveLength(1);
+    });
   });
 
   it("with its own provider lookup and clock, counts an event that has no wallet credentials", async () => {
