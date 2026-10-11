@@ -1,19 +1,8 @@
-import { computePosition, flip, offset, shift, size, type Placement } from "@floating-ui/dom";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useFocusRecovery } from "./useFocusRecovery.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
-
-const VIEWPORT_PAD_PX = 8;
-
-// `left: 0; top: 0` on purpose: a fixed panel is placed with `transform` (below), so its box never
-// depends on a position next to the trigger. Without them its width is capped by the room between
-// that static position and the viewport's right edge, and it is measured too narrow near that edge.
-//
-// Not `visibility: hidden` while it waits for its position: that takes the panel out of the
-// accessibility tree, and the position is computed a microtask after the panel mounts.
-const HIDDEN_FIXED_PANEL: CSSProperties = { position: "fixed", left: 0, top: 0, opacity: 0, pointerEvents: "none" };
+import { useFloatingPlacement } from "./useFloatingPlacement.js";
 
 // Module-level, not React state: read synchronously from useModalFocusTrap's native capture-
 // phase keydown listener, which runs before any state update from this hook's own render cycle
@@ -73,13 +62,6 @@ export function useDropdownMenu<
 >(options: UseDropdownMenuOptions = {}) {
   const { gap = 4, align = "start", matchTriggerWidth = false, minWidth, escapeSuspended = false } = options;
   const [open, setOpen] = useState(false);
-  // Whether the panel is anchored above the trigger instead of below it - set once per open,
-  // see the layout effect below. Consumers that need more than the `top`/`left` from
-  // `panelStyle` (e.g. SearchableSelect/PhoneCountrySelect reversing their child order so the
-  // search box stays next to the trigger) add their own modifier class for that when this is
-  // true; the hook only computes the decision, it doesn't know each consumer's class names.
-  const [openUpward, setOpenUpward] = useState(false);
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>(HIDDEN_FIXED_PANEL);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
   const panelRef = useRef<TPanel>(null);
@@ -102,122 +84,25 @@ export function useDropdownMenu<
   // restores focus as normal.
   const close = (reason?: OutsideInteraction) => {
     setOpen(false);
-    setPanelStyle(HIDDEN_FIXED_PANEL);
     if (reason !== "focus" && reason !== "scroll") triggerRef.current?.focus({ preventScroll: true });
   };
 
   useClickOutside(rootRef, open, close);
 
-  // Places the panel with Floating UI (`computePosition`: offset, flip, shift, size) in `position:
-  // fixed` coordinates, applied with `transform` - see this hook's own doc comment for why fixed
-  // (not absolute) is what escapes a scrollable modal body. The visible area is the visual
-  // viewport (`getFixedOverlayViewport`), so a mobile keyboard or a pinch-zoom is respected, and
-  // everything keeps `VIEWPORT_PAD_PX` from its edges. Recomputed on open, on a window/visual
-  // viewport resize, and when the panel's own size changes.
-  useLayoutEffect(() => {
-    if (!open) {
-      setOpenUpward(false);
-      setPanelStyle(HIDDEN_FIXED_PANEL);
-      return;
-    }
-    const trigger = triggerRef.current;
-    const panel = panelRef.current;
-    // Type-narrowing only: triggerRef's element always renders regardless of `open`, and
-    // panelRef's `{open && <div ref={panelRef}>}` has already committed by the time this
-    // layout effect runs (it fires synchronously after DOM mutations, keyed on the same
-    // `open` this effect reads) - so both are already set whenever this line is reached.
-    /* v8 ignore if */
-    if (!trigger || !panel) return;
+  // `openUpward` is for consumers that need more than the position from `panelStyle` (SearchableSelect
+  // and PhoneCountrySelect reverse their children so the search box stays next to the trigger): the
+  // hook only decides, it doesn't know each consumer's class names.
+  const { openUpward, panelStyle } = useFloatingPlacement({
+    open,
+    anchorRef: triggerRef,
+    panelRef,
+    onScrollClose: () => close("scroll"),
+    gap,
+    align,
+    matchWidth: matchTriggerWidth,
+    minWidth,
+  });
 
-    // Which side the panel opens on is decided on open and again only when the *available space*
-    // changes (a real window/visual viewport resize, e.g. a mobile keyboard opening), not every time
-    // the panel's own content changes size. Without this lock, SearchableSelect's list shrinking as
-    // the user types (a search narrowing to one result) flips a panel that opened upward - because
-    // the full option list did not fit below - down under the trigger the moment the shorter list
-    // does fit there, yanking it out from under the user mid-keystroke (PO report).
-    let lockedSide: "top" | "bottom" | undefined;
-    let latestRun = 0;
-    let disposed = false;
-
-    const updatePlacement = async (relock: boolean) => {
-      if (relock) lockedSide = undefined;
-      const run = ++latestRun;
-      const viewport = getFixedOverlayViewport();
-      const rootBoundary = { x: viewport.left, y: viewport.top, width: viewport.width, height: viewport.height };
-      const maxWidth = Math.max(0, viewport.width - 2 * VIEWPORT_PAD_PX);
-      // Measure the panel at its natural height: a max-height from the previous run is a clamp, not
-      // the size the content wants.
-      panel.style.maxHeight = "";
-      panel.style.overflowY = "";
-      const placement: Placement = `${lockedSide ?? "bottom"}-${align === "end" ? "end" : "start"}`;
-      const result = await computePosition(trigger, panel, {
-        strategy: "fixed",
-        placement,
-        middleware: [
-          offset(gap),
-          ...(lockedSide ? [] : [flip({ rootBoundary, padding: VIEWPORT_PAD_PX, crossAxis: false, fallbackAxisSideDirection: "none" })]),
-          shift({ rootBoundary, padding: VIEWPORT_PAD_PX }),
-          size({
-            rootBoundary,
-            padding: VIEWPORT_PAD_PX,
-            apply({ availableHeight, rects, elements }) {
-              const el = elements.floating;
-              el.style.maxWidth = `${maxWidth}px`;
-              // A CSS `min-width` beats `max-width`, so a panel whose minimum is wider than the padded
-              // viewport (pinch-zoomed, or a very narrow phone) would still overflow: cap that too.
-              el.style.minWidth = "";
-              if (Number.parseFloat(getComputedStyle(el).minWidth) > maxWidth) el.style.minWidth = `${maxWidth}px`;
-              if (matchTriggerWidth) {
-                el.style.width = `${Math.min(Math.max(minWidth ?? 0, rects.reference.width), maxWidth)}px`;
-              }
-              // `scrollHeight` is the content's natural height, also while a max-height clamps the box
-              // (the box's own height would make a clamped panel look like it fits and unclamp it).
-              const clamp = el.scrollHeight > availableHeight;
-              el.style.maxHeight = clamp ? `${availableHeight}px` : "";
-              el.style.overflowY = clamp ? "auto" : "";
-            },
-          }),
-        ],
-      });
-      // A newer run, or the panel closing, owns the element now.
-      if (disposed || run !== latestRun) return;
-      const upward = result.placement.startsWith("top");
-      lockedSide = upward ? "top" : "bottom";
-      // Put the position on the element in the same task, before React applies `panelStyle`, so a
-      // remeasure of a visible panel is never painted in between.
-      const transform = `translate(${Math.round(result.x)}px, ${Math.round(result.y)}px)`;
-      panel.style.transform = transform;
-      panel.style.opacity = "";
-      panel.style.pointerEvents = "";
-      setOpenUpward(upward);
-      setPanelStyle({ position: "fixed", left: 0, top: 0, transform });
-    };
-
-    void updatePlacement(true);
-    const detachOverlayLifecycle = attachFixedOverlayLifecycle(
-      panel,
-      () => void updatePlacement(true),
-      () => close("scroll"),
-    );
-
-    // Re-run placement when the panel's own rendered size changes, not just on window resize:
-    // SearchableSelect/PhoneCountrySelect's list shrinks by hundreds of pixels as the user types, and
-    // a panel above the trigger is anchored by its bottom edge, so the position has to follow. Guarded,
-    // not assumed present: real browsers all support it, but jsdom does not.
-    if (typeof ResizeObserver === "undefined") {
-      return () => {
-        disposed = true;
-        detachOverlayLifecycle();
-      };
-    }
-    const resizeObserver = new ResizeObserver(() => void updatePlacement(false));
-    resizeObserver.observe(panel);
-    return () => {
-      disposed = true;
-      detachOverlayLifecycle();
-      resizeObserver.disconnect();
-    };
-  }, [open, align, gap, matchTriggerWidth, minWidth]);
 
   useEffect(() => {
     if (!open || escapeSuspended) return;

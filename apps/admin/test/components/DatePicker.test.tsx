@@ -320,8 +320,10 @@ describe("DatePicker", () => {
     expect(dialog.className).not.toContain("date-picker__panel--above");
 
     visualHeight = 440;
-    act(() => visualViewport.dispatchEvent(new Event("resize")));
-    expect(dialog.className).toContain("date-picker__panel--above");
+    await act(async () => {
+      visualViewport.dispatchEvent(new Event("resize"));
+    });
+    await waitFor(() => expect(dialog.className).toContain("date-picker__panel--above"));
     expect(dialog.style.maxHeight).toBe("");
   });
 
@@ -340,8 +342,8 @@ describe("DatePicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Choose date" });
-    expect(dialog.className).toContain("date-picker__panel--above");
-    expect(dialog.style.top).toBe("308px");
+    await waitFor(() => expect(dialog.className).toContain("date-picker__panel--above"));
+    expect(dialog.style.transform).toBe("translate(50px, 308px)");
     expect(dialog.style.maxHeight).toBe("186px");
   });
 
