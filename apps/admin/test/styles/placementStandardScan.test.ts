@@ -7,14 +7,32 @@ const only = (count: number) => (count === 0 ? {} : { [FILE]: count });
 
 describe("placement-standard scanner: inline fixed position", () => {
   it("counts a style object with position fixed, however it is quoted or spaced", () => {
-    for (const source of ['{ position: "fixed", top: 1 }', "{ position: 'fixed' }", '{position:"fixed"}', '{ "position": "fixed" }', "{ position: `fixed` }"]) {
+    for (const source of [
+      '{ position: "fixed", top: 1 }',
+      "{ position: 'fixed', left: 0 }",
+      '{position:"fixed",visibility:"hidden"}',
+      '{ "position": "fixed", transform: "none" }',
+      "{ position: `fixed`, zIndex: 1100 }",
+    ]) {
       expect(scan(`const s = ${source};`)["inline-fixed-position"]).toEqual(only(1));
     }
   });
 
+  it("counts a bare position fixed where the object is known to be a style", () => {
+    expect(scan('const el = <div style={{ position: "fixed" }} />;')["inline-fixed-position"]).toEqual(only(1));
+    expect(scan('const s: CSSProperties = { position: "fixed" };')["inline-fixed-position"]).toEqual(only(1));
+    expect(scan('const s = { position: "fixed" } as CSSProperties;')["inline-fixed-position"]).toEqual(only(1));
+    expect(scan('const [s] = useState<CSSProperties>({ position: "fixed" });')["inline-fixed-position"]).toEqual(only(1));
+  });
+
+  it("does not count an object that is data, not a style", () => {
+    expect(scan('const mode = { position: "fixed" };')["inline-fixed-position"]).toEqual({});
+    expect(scan('const toolbar = { position: "fixed", label: "Sticky" };')["inline-fixed-position"]).toEqual({});
+  });
+
   it("does not count another position, or a computed key", () => {
-    expect(scan('const s = { position: "absolute" };')["inline-fixed-position"]).toEqual({});
-    expect(scan('const s = { [position]: "fixed" };')["inline-fixed-position"]).toEqual({});
+    expect(scan('const s = { position: "absolute", top: 1 };')["inline-fixed-position"]).toEqual({});
+    expect(scan('const s = { [position]: "fixed", top: 1 };')["inline-fixed-position"]).toEqual({});
   });
 });
 
@@ -33,6 +51,18 @@ describe("placement-standard scanner: measuring an element and reading the windo
     expect(scan(effect)["viewport-math-in-component"]).toEqual(only(1));
     expect(scan("const f = () => { el.getBoundingClientRect(); return window.visualViewport; };")["viewport-math-in-component"]).toEqual(only(1));
     expect(scan("function f() { el.getBoundingClientRect(); return document.documentElement.clientHeight; }")["viewport-math-in-component"]).toEqual(only(1));
+  });
+
+  it("counts the window's size read without a window. in front of it", () => {
+    expect(scan("const r = el.getBoundingClientRect();\nconst y = innerHeight - r.bottom;")["viewport-math-in-component"]).toEqual(only(1));
+    expect(scan("const f = () => { el.getBoundingClientRect(); return visualViewport?.height; };")["viewport-math-in-component"]).toEqual(only(1));
+    expect(scan("const f = () => { el.getBoundingClientRect(); return globalThis.innerWidth; };")["viewport-math-in-component"]).toEqual(only(1));
+  });
+
+  it("does not count a property or a key that only has the same name as a window size", () => {
+    expect(scan("const f = () => { el.getBoundingClientRect(); return panel.innerHeight; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const f = () => { el.getBoundingClientRect(); return { innerWidth: 5 }; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const f = () => { el.getBoundingClientRect(); const innerHeight = 5; };")["viewport-math-in-component"]).toEqual({});
   });
 
   it("counts placement math written inside a template interpolation", () => {
@@ -86,13 +116,13 @@ describe("placement-standard scanner: what is not code", () => {
   });
 
   it("does not mistake text that looks like a comment, a regex or a URL for the end of the code", () => {
-    const source = 'const u = "https://example.com"; const re = /["\'`]\\/\\//; const s = { position: "fixed" };';
+    const source = 'const u = "https://example.com"; const re = /["\'`]\\/\\//; const s = { position: "fixed", top: 0 };';
     expect(scan(source)["inline-fixed-position"]).toEqual(only(1));
   });
 });
 
 describe("placement-standard scanner: the files that implement placement", () => {
-  const source = 'const s = { position: "fixed" };\nattachFixedOverlayLifecycle(a, b, c);\nel.getBoundingClientRect(); window.innerWidth;';
+  const source = 'const s = { position: "fixed", top: 0 };\nattachFixedOverlayLifecycle(a, b, c);\nel.getBoundingClientRect(); window.innerWidth;';
 
   it("lets the placement hook implement all of it, and the helper file all but a fixed style", () => {
     const hook = scan(source, "apps/admin/src/components/useFloatingPlacement.ts");

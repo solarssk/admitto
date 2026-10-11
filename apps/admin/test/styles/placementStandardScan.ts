@@ -37,6 +37,13 @@ const IMPLEMENTS_PLACEMENT: Record<Rule, ReadonlySet<string>> = {
 const LIFECYCLE_HELPERS = new Set(["attachFixedOverlayLifecycle", "getFixedOverlayViewport"]);
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
 const WINDOW_SIZE = new Set(["innerWidth", "innerHeight", "visualViewport"]);
+/** Objects the browser's global scope is reachable through. */
+const GLOBAL_OBJECTS = new Set(["window", "globalThis", "self"]);
+/** Keys that, next to `position: "fixed"`, make an object a style rather than data. */
+const STYLE_KEYS = new Set([
+  "top", "left", "right", "bottom", "inset", "transform", "zIndex", "visibility", "opacity", "pointerEvents",
+  "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "margin", "overflow", "overflowY",
+]);
 const DOCUMENT_SIZE = new Set(["clientWidth", "clientHeight"]);
 /** AST keys that point back up the tree or hold source positions, not children. */
 const NOT_CHILDREN = new Set(["parent", "loc", "range", "tokens", "comments"]);
@@ -47,16 +54,22 @@ function isNode(value: unknown): value is Node {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
-function walk(value: unknown, enclosing: Node | null, visit: (node: Node, enclosing: Node | null) => void): void {
+function walk(
+  value: unknown,
+  enclosing: Node | null,
+  ancestors: Node[],
+  visit: (node: Node, enclosing: Node | null, ancestors: Node[]) => void,
+): void {
   if (Array.isArray(value)) {
-    for (const child of value) walk(child, enclosing, visit);
+    for (const child of value) walk(child, enclosing, ancestors, visit);
     return;
   }
   if (!isNode(value)) return;
-  visit(value, enclosing);
+  visit(value, enclosing, ancestors);
   const next = FUNCTIONS.has(value.type) ? value : enclosing;
+  const nextAncestors = [...ancestors, value];
   for (const [key, child] of Object.entries(value)) {
-    if (!NOT_CHILDREN.has(key)) walk(child, next, visit);
+    if (!NOT_CHILDREN.has(key)) walk(child, next, nextAncestors, visit);
   }
 }
 
@@ -74,12 +87,21 @@ function stringValue(node: unknown): string | undefined {
   return undefined;
 }
 
-/** `window.innerWidth`, `window.visualViewport`, `document.documentElement.clientHeight` and the like. */
-function readsViewportSize(node: Node): boolean {
+/** `window.innerWidth`, `visualViewport`, `document.documentElement.clientHeight` and the like. */
+function readsViewportSize(node: Node, parent: Node | undefined): boolean {
+  // A bare `innerHeight` or `visualViewport` is the same global. It has to be a reference: not the property
+  // of another object (`panel.innerHeight`) and not the key of an object literal.
+  if (node.type === "Identifier") {
+    if (!WINDOW_SIZE.has(node.name as string) || !parent) return false;
+    if (parent.type === "MemberExpression" && parent.property === node && parent.computed !== true) return false;
+    if (parent.type === "Property" && parent.key === node && parent.computed !== true && parent.shorthand !== true) return false;
+    return !["VariableDeclarator", "FunctionDeclaration", "ImportSpecifier", "ExportSpecifier"].includes(parent.type) || parent.id !== node;
+  }
   if (node.type !== "MemberExpression" || node.computed === true) return false;
   const property = identifierName(node.property);
   if (!property) return false;
-  if (identifierName(node.object) === "window") return WINDOW_SIZE.has(property);
+  const objectName = identifierName(node.object);
+  if (objectName && GLOBAL_OBJECTS.has(objectName)) return WINDOW_SIZE.has(property);
   const object = node.object;
   return (
     isNode(object) &&
@@ -88,6 +110,44 @@ function readsViewportSize(node: Node): boolean {
     identifierName(object.property) === "documentElement" &&
     DOCUMENT_SIZE.has(property)
   );
+}
+
+/** Whether an object literal is a style: it sits in a JSX `style` attribute, is typed `CSSProperties`, or has
+ * a CSS key next to its `position`. A `{ position: "fixed" }` that is data of some other kind is not. */
+function isStyleObject(object: Node, ancestors: Node[]): boolean {
+  const keys = (object.properties as Node[]).map((p) => (p.type === "Property" ? (identifierName(p.key) ?? stringValue(p.key)) : undefined));
+  if (keys.some((key) => key !== undefined && STYLE_KEYS.has(key))) return true;
+  const container = ancestors.at(-1);
+  const attribute = ancestors.at(-2);
+  if (container?.type === "JSXExpressionContainer" && attribute?.type === "JSXAttribute" && jsxName(attribute) === "style") {
+    return true;
+  }
+  // `const s: CSSProperties = {...}`, `{...} as CSSProperties`, `useState<CSSProperties>({...})`
+  return ancestors.slice(-3).some((ancestor) => JSON.stringify(typeNames(ancestor)).includes("CSSProperties"));
+}
+
+function jsxName(attribute: Node): string | undefined {
+  const name = attribute.name;
+  return isNode(name) && name.type === "JSXIdentifier" ? (name.name as string) : undefined;
+}
+
+/** The type names written on a declarator, a cast or a call's type arguments. */
+function typeNames(node: Node): string[] {
+  const names: string[] = [];
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(collect);
+    else if (isNode(value)) {
+      if (value.type === "TSTypeReference") {
+        const name = identifierName(value.typeName);
+        if (name) names.push(name);
+      }
+      for (const [key, child] of Object.entries(value)) if (!NOT_CHILDREN.has(key)) collect(child);
+    }
+  };
+  if (node.type === "VariableDeclarator") collect((node.id as Node).typeAnnotation);
+  else if (node.type === "TSAsExpression" || node.type === "TSSatisfiesExpression") collect(node.typeAnnotation);
+  else if (node.type === "CallExpression") collect(node.typeArguments);
+  return names;
 }
 
 function callsGetBoundingClientRect(node: Node): boolean {
@@ -123,16 +183,19 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
     } catch (error) {
       throw new Error(`placement-standard scanner could not parse ${file}: ${String(error)}`, { cause: error });
     }
-    walk(ast, null, (node, enclosing) => {
+    walk(ast, null, [], (node, enclosing, ancestors) => {
       const name = identifierName(node);
       // An import specifier names the helper twice (`imported` and `local`, at the same place).
       if (name && LIFECYCLE_HELPERS.has(name)) helperSpots.add(node.range[0]);
       if (node.type === "Property" && node.computed !== true) {
         const key = identifierName(node.key) ?? stringValue(node.key);
-        if (key === "position" && stringValue(node.value) === "fixed") counts["inline-fixed-position"] += 1;
+        const object = ancestors.at(-1);
+        if (key === "position" && stringValue(node.value) === "fixed" && object?.type === "ObjectExpression" && isStyleObject(object, ancestors.slice(0, -1))) {
+          counts["inline-fixed-position"] += 1;
+        }
       }
       if (callsGetBoundingClientRect(node)) note(enclosing).measures = true;
-      if (readsViewportSize(node)) note(enclosing).readsViewport = true;
+      if (readsViewportSize(node, ancestors.at(-1))) note(enclosing).readsViewport = true;
     });
     counts["overlay-lifecycle-outside-hook"] = helperSpots.size;
     counts["viewport-math-in-component"] = [...functions.values()].filter((f) => f.measures && f.readsViewport).length;
