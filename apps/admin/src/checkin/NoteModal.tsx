@@ -43,6 +43,8 @@ export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>)
           Do not record medical, dietary, or other sensitive personal data.
         </p>
         <textarea
+          id="note-modal-textarea"
+          name="note"
           aria-describedby="note-modal-hint"
           className="note-modal__textarea"
           value={value}

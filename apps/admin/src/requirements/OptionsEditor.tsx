@@ -295,6 +295,7 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
                 <i className="ti ti-grip-vertical" aria-hidden="true" />
               </button>
               <input
+                name="option-text"
                 className="at-input options-editor__input"
                 data-key={row.key}
                 value={row.text}

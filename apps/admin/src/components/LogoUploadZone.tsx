@@ -585,6 +585,7 @@ export function LogoUploadZone({
         <input
           ref={fileRef}
           type="file"
+          name="logo-file"
           accept="image/png,image/jpeg,image/webp"
           className="logo-upload__file-input"
           onChange={(e) => {

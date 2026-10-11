@@ -615,6 +615,7 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
         <input
           ref={fileRef}
           type="file"
+          name="image-file"
           accept="image/png,image/jpeg,image/webp"
           className="image-asset-library__file-input"
           disabled={disabled || working}

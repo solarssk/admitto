@@ -167,6 +167,7 @@ function ColorPaletteField({
         )}
         <input
           type="color"
+          name="custom-colour"
           value={isValidHex(customHex) ? customHex : "#066fd1"}
           disabled={disabled}
           aria-label="Custom colour picker"

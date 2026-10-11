@@ -462,15 +462,15 @@ export function TemplateEditorCard({
                 disable the inputs of the editor's own search panel. An archived event's body stays
                 focusable and read-only (`readOnly`, not `editable={false}`), so its text can be
                 selected and copied and Ctrl/Cmd+F opens that search - the editor only draws the
-                lines in view, so the browser's find cannot see the rest. Native label-click-to-focus
-                doesn't reach a contenteditable div either, hence the explicit onClick. */}
-            <label // NOSONAR - onClick is a mouse-only convenience widening the label's own click-to-focus hit area (see comment above); the editor itself is an independently keyboard-focusable role="textbox" a keyboard user tabs to directly, so nothing here is keyboard-inaccessible
+                lines in view, so the browser's find cannot see the rest. A contenteditable div
+                is not a labelable element, so a `<label for>` pointing at it is a DevTools "incorrect
+                use of label" error; the caption is a span with an explicit onClick instead. */}
+            <span // NOSONAR - onClick is a mouse-only convenience that focuses the editor on a click on its caption (see comment above); the editor itself is an independently keyboard-focusable role="textbox" with its own aria-label, so nothing here is keyboard-inaccessible
               className="at-label"
-              htmlFor="communication-body"
               onClick={() => bodyRef.current?.view?.focus()}
             >
               {format === "mjml" ? "MJML body" : "HTML body"}
-            </label>
+            </span>
             <CodeMirror
               // Forces a fresh EditorView (and with it, a fresh undo history) whenever the admin
               // switches to a different template or toggles MJML/HTML format - @uiw/react-codemirror
