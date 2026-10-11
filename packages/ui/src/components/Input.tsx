@@ -32,7 +32,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   ref,
 ) {
   const uid = useId();
-  const autoId = id ?? (label ? `f-${uid}` : undefined);
+  const autoId = id ?? `f-${uid}`;
   const isInvalid = invalid || !!error;
   const hintId = hint && !error ? `${uid}-hint` : undefined;
   const errorId = error ? `${uid}-error` : undefined;

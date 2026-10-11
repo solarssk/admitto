@@ -1516,6 +1516,8 @@ function AttendeeNotesTab({
       </Notice>
       <div className="at-notes-form">
         <textarea
+          id="attendee-new-note"
+          name="note"
           className="at-textarea at-notes-form__textarea"
           rows={2}
           aria-label="New internal note"
@@ -1575,6 +1577,8 @@ function AttendeeNotesTab({
                 {isEditing ? (
                   <div className="at-notes-list__edit">
                     <textarea
+                      id={`attendee-edit-note-${note.id}`}
+                      name="note"
                       className="at-textarea at-notes-form__textarea"
                       rows={2}
                       aria-label="Edit note"

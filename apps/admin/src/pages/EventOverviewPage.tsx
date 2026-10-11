@@ -784,6 +784,8 @@ function PinnedNoteModal({
       }
     >
       <textarea
+        id="overview-pinned-note"
+        name="pinned_note"
         className="overview-note-textarea"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
