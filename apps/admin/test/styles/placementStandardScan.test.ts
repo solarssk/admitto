@@ -82,6 +82,27 @@ describe("placement-standard scanner: measuring an element and reading the windo
     expect(scan("const visualViewport = null;\nconst f = () => { el.getBoundingClientRect(); return visualViewport; };")["viewport-math-in-component"]).toEqual({});
   });
 
+  it("counts a viewport size taken out of the global by destructuring", () => {
+    for (const source of [
+      "const f = () => { const { innerHeight } = window; el.getBoundingClientRect(); return innerHeight; };",
+      "const f = () => { const { innerHeight: h, innerWidth } = window; el.getBoundingClientRect(); return h; };",
+      "const f = () => { const { visualViewport } = globalThis; el.getBoundingClientRect(); return visualViewport; };",
+    ]) {
+      expect(scan(source)["viewport-math-in-component"]).toEqual(only(1));
+    }
+  });
+
+  it("does not count destructuring that is not the window's size", () => {
+    expect(scan("const f = () => { const { scrollY } = window; el.getBoundingClientRect(); return scrollY; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const f = (window) => { const { innerHeight } = window; el.getBoundingClientRect(); return innerHeight; };")["viewport-math-in-component"]).toEqual({});
+  });
+
+  it("does not count window.innerHeight when window is a parameter or a variable", () => {
+    expect(scan("const f = (window) => { el.getBoundingClientRect(); return window.innerHeight; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const f = () => { const self = frame; el.getBoundingClientRect(); return self.innerWidth; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const f = (document) => { el.getBoundingClientRect(); return document.documentElement.clientHeight; };")["viewport-math-in-component"]).toEqual({});
+  });
+
   it("still counts the global when only another function has a variable of that name", () => {
     const source = "const g = (innerHeight) => innerHeight;\nconst f = () => { el.getBoundingClientRect(); return innerHeight; };";
     expect(scan(source)["viewport-math-in-component"]).toEqual(only(1));

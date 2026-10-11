@@ -88,34 +88,53 @@ function stringValue(node: unknown): string | undefined {
   return undefined;
 }
 
-/** `window.innerWidth`, `document.documentElement.clientHeight` and the like. A bare `innerHeight` is the
- * same global, but only when nothing in scope is called that: `globalViewportReads` holds the identifiers
- * that scope analysis could not resolve to a parameter or a variable. */
-function readsViewportSize(node: Node, globalViewportReads: ReadonlySet<unknown>): boolean {
-  if (node.type === "Identifier") return globalViewportReads.has(node);
+/** The references that scope analysis could not resolve to a parameter or a variable, i.e. the browser's own:
+ * a bare `innerHeight`, and the objects `window.`, `globalThis.`, `self.` and `document.` that reach it. */
+type GlobalReferences = { viewportNames: Set<unknown>; objects: Set<unknown> };
+
+function findGlobalReferences(ast: unknown): GlobalReferences {
+  const scopeManager = analyze(ast as Parameters<typeof analyze>[0], { sourceType: "module", jsxPragma: null });
+  const found: GlobalReferences = { viewportNames: new Set(), objects: new Set() };
+  for (const reference of scopeManager.globalScope?.through ?? []) {
+    const name = reference.identifier.name;
+    if (WINDOW_SIZE.has(name)) found.viewportNames.add(reference.identifier);
+    if (GLOBAL_OBJECTS.has(name) || name === "document") found.objects.add(reference.identifier);
+  }
+  return found;
+}
+
+/** The browser's global named `name` (`window`, `document`...), as opposed to a local that is called the same. */
+function isGlobalObject(node: unknown, names: ReadonlySet<string> | string, globals: GlobalReferences): boolean {
+  const name = identifierName(node);
+  if (!name || !globals.objects.has(node)) return false;
+  return typeof names === "string" ? name === names : names.has(name);
+}
+
+/** `window.innerWidth`, `document.documentElement.clientHeight` and a bare `innerHeight`, each one only when it
+ * is the browser's global and not something of the same name in scope. */
+function readsViewportSize(node: Node, globals: GlobalReferences): boolean {
+  if (node.type === "Identifier") return globals.viewportNames.has(node);
   if (node.type !== "MemberExpression" || node.computed === true) return false;
   const property = identifierName(node.property);
   if (!property) return false;
-  const objectName = identifierName(node.object);
-  if (objectName && GLOBAL_OBJECTS.has(objectName)) return WINDOW_SIZE.has(property);
+  if (isGlobalObject(node.object, GLOBAL_OBJECTS, globals)) return WINDOW_SIZE.has(property);
   const object = node.object;
   return (
     isNode(object) &&
     object.type === "MemberExpression" &&
-    identifierName(object.object) === "document" &&
+    isGlobalObject(object.object, "document", globals) &&
     identifierName(object.property) === "documentElement" &&
     DOCUMENT_SIZE.has(property)
   );
 }
 
-/** The identifiers `innerWidth`, `innerHeight` and `visualViewport` that refer to the browser's global. */
-function findGlobalViewportReads(ast: unknown): Set<unknown> {
-  const scopeManager = analyze(ast as Parameters<typeof analyze>[0], { sourceType: "module", jsxPragma: null });
-  const reads = new Set<unknown>();
-  for (const reference of scopeManager.globalScope?.through ?? []) {
-    if (WINDOW_SIZE.has(reference.identifier.name)) reads.add(reference.identifier);
-  }
-  return reads;
+/** `const { innerHeight } = window;`, also renamed (`{ innerHeight: h }`) and from `globalThis`/`self`. */
+function destructuresViewportSize(node: Node, globals: GlobalReferences): boolean {
+  if (node.type !== "VariableDeclarator" || !isNode(node.id) || node.id.type !== "ObjectPattern") return false;
+  if (!isGlobalObject(node.init, GLOBAL_OBJECTS, globals)) return false;
+  return (node.id.properties as Node[]).some(
+    (p) => p.type === "Property" && p.computed !== true && WINDOW_SIZE.has(identifierName(p.key) ?? stringValue(p.key) ?? ""),
+  );
 }
 
 /** Whether an object literal is a style: it sits in a JSX `style` attribute, is typed `CSSProperties`, or has
@@ -191,7 +210,7 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
     } catch (error) {
       throw new Error(`placement-standard scanner could not parse ${file}: ${String(error)}`, { cause: error });
     }
-    const globalViewportReads = findGlobalViewportReads(ast);
+    const globals = findGlobalReferences(ast);
     walk(ast, null, [], (node, enclosing, ancestors) => {
       const name = identifierName(node);
       // An import specifier names the helper twice (`imported` and `local`, at the same place).
@@ -204,7 +223,7 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
         }
       }
       if (callsGetBoundingClientRect(node)) note(enclosing).measures = true;
-      if (readsViewportSize(node, globalViewportReads)) note(enclosing).readsViewport = true;
+      if (readsViewportSize(node, globals) || destructuresViewportSize(node, globals)) note(enclosing).readsViewport = true;
     });
     counts["overlay-lifecycle-outside-hook"] = helperSpots.size;
     counts["viewport-math-in-component"] = [...functions.values()].filter((f) => f.measures && f.readsViewport).length;
