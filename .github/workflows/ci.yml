@@ -294,7 +294,7 @@ jobs:
             --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout \
             --test-reporter-destination=scripts/coverage/lcov.info scripts/*.test.mjs
       - name: Upload script coverage for SonarCloud
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-scripts
           path: scripts/coverage/lcov.info
@@ -418,7 +418,7 @@ jobs:
       # this repo's fork PRs never receive secrets - see that job's own comment).
       - name: Upload coverage artifact for SonarCloud
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-web
           path: |
@@ -488,7 +488,7 @@ jobs:
           fail_ci_if_error: false
       - name: Upload coverage artifact for SonarCloud
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-admin
           path: |
@@ -606,7 +606,7 @@ jobs:
           fail_ci_if_error: false
       - name: Upload coverage artifact for SonarCloud
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-rest
           path: |
@@ -720,7 +720,7 @@ jobs:
         run: npm run e2e -w @admitto/admin
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: playwright-report-pr
           path: |
