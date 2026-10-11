@@ -282,6 +282,7 @@ export function EventItemDrawer({
                           >
                             <input
                               type="checkbox"
+                              name={field.source_field}
                               aria-label={label}
                               checked={checked}
                               disabled={disabled}

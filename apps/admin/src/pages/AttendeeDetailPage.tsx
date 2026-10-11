@@ -3276,6 +3276,7 @@ export function AttendeeDetailPage() {
           <label className="attendee-restore-force">
             <input
               type="checkbox"
+              name="force-capacity"
               checked={restoreForceCapacity}
               onChange={(e) => setRestoreForceCapacity(e.target.checked)}
               disabled={revokeBusy}

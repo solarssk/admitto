@@ -481,6 +481,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
             <span className="at-hint">WOFF, WOFF2, TTF, OTF · max 5 MB per file · add as many weights as you have</span>
             <input
               type="file"
+              name="font-files"
               multiple
               accept=".woff,.woff2,.ttf,.otf"
               style={{ display: "none" }}
@@ -530,6 +531,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                     {/* First, so the label is always the file input's (the Spinner is a labelable element too). */}
                     <input
                       type="file"
+                      name="font-file"
                       accept=".woff,.woff2,.ttf,.otf"
                       style={{ display: "none" }}
                       onChange={(e) => {
