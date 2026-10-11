@@ -30,6 +30,7 @@ async function login({ email, password }) {
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: origin },
+    // codeql[js/file-access-to-http]: the throwaway accounts the seed step wrote are sent to the server under test, on purpose
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) throw new Error(`login failed for ${email}: ${res.status}`);

@@ -102,6 +102,10 @@ jobs:
         run: node --import tsx ../../scripts/load-test/seed.ts 9 512 12 2 "$RUNNER_TEMP/load-seed.json"
       - name: Start the app
         working-directory: apps/web
+        env:
+          # The SSE step expects the fourth stream on one account to be refused with 429, so the
+          # per-event cap is pinned to the 3 the script opens instead of following the app default.
+          CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT: "3"
         run: |
           NODE_ENV=development nohup node --import tsx src/index.ts > "$RUNNER_TEMP/web.log" 2>&1 &
           for _ in $(seq 1 60); do
