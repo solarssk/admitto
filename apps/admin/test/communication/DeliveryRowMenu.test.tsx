@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeliveryRowMenu } from "../../src/communication/DeliveryRowMenu.js";
 import type { DeliveryDto } from "../../src/api/types.js";
@@ -33,11 +33,21 @@ const row: DeliveryDto = {
  * approach as packages/ui/test/tooltip.test.tsx, distinguishing by role="menu" instead of
  * role="tooltip". */
 function stubRects(triggerRect: Partial<DOMRect>, panelRect: Partial<DOMRect>) {
+  const zero = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON() {} };
+  const isPanel = (el: HTMLElement) => el.getAttribute("role") === "menu";
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
-    const rect = this.getAttribute("role") === "menu" ? panelRect : triggerRect;
-    return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON() {}, ...rect };
+    // Only the trigger button and the panel have a size; <html> and friends sit at the origin.
+    if (!isPanel(this) && this.tagName !== "BUTTON") return zero;
+    return { ...zero, ...(isPanel(this) ? panelRect : triggerRect) };
+  });
+  // The placement library reads the panel's own size from offsetWidth/offsetHeight.
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+    return isPanel(this) ? (panelRect.width ?? 0) : 0;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return isPanel(this) ? (panelRect.height ?? 0) : 0;
   });
 }
 
@@ -61,9 +71,9 @@ describe("DeliveryRowMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("positions the panel above the trigger when there isn't enough room below", () => {
+  it("positions the panel above the trigger when there isn't enough room below", async () => {
     stubRects(
-      { top: 700, bottom: 720, left: 270, right: 300 },
+      { top: 700, bottom: 720, left: 270, right: 300, width: 30, height: 20 },
       { height: 100, width: 220 },
     );
     vi.stubGlobal("innerHeight", 730);
@@ -71,34 +81,38 @@ describe("DeliveryRowMenu", () => {
 
     const onViewDetails = vi.fn();
     render(<DeliveryRowMenu row={row} onViewSentMessage={vi.fn()} onViewDetails={onViewDetails} />);
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    });
 
     const panel = screen.getByRole("menu");
-    // placeAbove: spaceAbove (700) > spaceBelow (730-720=10) - top = 700 - 100 - MARGIN(5).
-    expect(panel.style.top).toBe("595px");
+    // Only 10px below the trigger, so it opens above: 700 - 100 - 4 (gap), right-aligned: 300 - 220.
+    expect(panel.style.transform).toBe("translate(80px, 596px)");
 
     fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
     expect(onViewDetails).toHaveBeenCalledWith(row);
   });
 
-  it("positions the panel below the trigger when there's more room below than above", () => {
+  it("positions the panel below the trigger when there's more room below than above", async () => {
     stubRects(
-      { top: 20, bottom: 40, left: 270, right: 300 },
+      { top: 20, bottom: 40, left: 270, right: 300, width: 30, height: 20 },
       { height: 100, width: 220 },
     );
     vi.stubGlobal("innerHeight", 730);
     vi.stubGlobal("innerWidth", 1024);
 
     render(<DeliveryRowMenu row={row} onViewSentMessage={vi.fn()} onViewDetails={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    });
 
     const panel = screen.getByRole("menu");
-    // Not placeAbove: bottom (40) + MARGIN(5).
-    expect(panel.style.top).toBe("45px");
+    // More room below: bottom (40) + 4 (gap), right-aligned: 300 - 220.
+    expect(panel.style.transform).toBe("translate(80px, 44px)");
   });
 
   it("closes when a scrolling ancestor scrolls while open", () => {
-    stubRects({ top: 20, bottom: 40, left: 270, right: 300 }, { height: 100, width: 220 });
+    stubRects({ top: 20, bottom: 40, left: 270, right: 300, width: 30, height: 20 }, { height: 100, width: 220 });
     vi.stubGlobal("innerHeight", 730);
     vi.stubGlobal("innerWidth", 1024);
 
