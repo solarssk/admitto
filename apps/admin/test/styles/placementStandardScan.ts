@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "@typescript-eslint/parser";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 /** Where staff UI code lives: the admin app and the shared kit it renders. */
@@ -17,7 +18,7 @@ export const RULE_HINTS: Record<Rule, string> = {
   "inline-fixed-position":
     'Do not write `position: "fixed"` in a style object. A floating panel gets its position from useFloatingPlacement (`panelStyle`), which places it with a transform and keeps it inside the visual viewport.',
   "viewport-math-in-component":
-    "Do not measure an element with getBoundingClientRect() and compare it with the window's size to place a panel. That is what useFloatingPlacement (Floating UI) is for: it flips, shifts and clamps against the visual viewport, and the copies of this math each had to be fixed again for narrow screens, zoom and the phone keyboard.",
+    "Do not measure an element with getBoundingClientRect() and read the window's size (window.innerWidth, innerHeight, visualViewport, documentElement.clientWidth/clientHeight) in the same function: that is placing a panel by hand. useFloatingPlacement (Floating UI) flips, shifts and clamps against the visual viewport, and the copies of this math each had to be fixed again for narrow screens, zoom and the phone keyboard.",
 };
 
 /** Files that implement placement themselves, per rule. */
@@ -33,78 +34,65 @@ const IMPLEMENTS_PLACEMENT: Record<Rule, ReadonlySet<string>> = {
   ]),
 };
 
-const LIFECYCLE_HELPERS = /\b(?:attachFixedOverlayLifecycle|getFixedOverlayViewport)\b/g;
-const INLINE_FIXED = /position:\s*["']fixed["']/g;
-const MEASURES_AN_ELEMENT = /\.getBoundingClientRect\(/;
-const READS_THE_VIEWPORT = /\bwindow\.(?:innerWidth|innerHeight|visualViewport)\b|\bdocument\.documentElement\.client(?:Width|Height)\b/;
+const LIFECYCLE_HELPERS = new Set(["attachFixedOverlayLifecycle", "getFixedOverlayViewport"]);
+const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+const WINDOW_SIZE = new Set(["innerWidth", "innerHeight", "visualViewport"]);
+const DOCUMENT_SIZE = new Set(["clientWidth", "clientHeight"]);
+/** AST keys that point back up the tree or hold source positions, not children. */
+const NOT_CHILDREN = new Set(["parent", "loc", "range", "tokens", "comments"]);
 
-function walk(dir: string, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    if (name === "node_modules" || name === "dist") continue;
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else if (/\.(?:ts|tsx)$/.test(name) && !/\.d\.ts$/.test(name)) out.push(full);
-  }
-  return out;
+type Node = { type: string; range: [number, number]; [key: string]: unknown };
+
+function isNode(value: unknown): value is Node {
+  return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
-/** What is left of the source when only code counts: comments (whole-line, block and trailing) are gone and
- * the text inside every string and template literal is blanked, so `'position: "fixed"'` in a message or a
- * helper's name in a sentence is not mistaken for placement code. Two things are kept: the literal "fixed"
- * itself, because `position: "fixed"` is code with a quote in it, and the expressions inside a template
- * literal's `${...}`, which are code. */
-export function toCode(source: string): string {
-  return scanCode(source, 0, false).out;
+function walk(value: unknown, enclosing: Node | null, visit: (node: Node, enclosing: Node | null) => void): void {
+  if (Array.isArray(value)) {
+    for (const child of value) walk(child, enclosing, visit);
+    return;
+  }
+  if (!isNode(value)) return;
+  visit(value, enclosing);
+  const next = FUNCTIONS.has(value.type) ? value : enclosing;
+  for (const [key, child] of Object.entries(value)) {
+    if (!NOT_CHILDREN.has(key)) walk(child, next, visit);
+  }
 }
 
-/** Scans from `start`; with `untilBrace` it stops after the `}` that closes the `${` it was started in. */
-function scanCode(source: string, start: number, untilBrace: boolean): { out: string; end: number } {
-  let out = "";
-  let i = start;
-  let depth = 0;
-  while (i < source.length) {
-    const ch = source[i]!;
-    const next = source[i + 1];
-    if (ch === "/" && next === "/") {
-      while (i < source.length && source[i] !== "\n") i += 1;
-    } else if (ch === "/" && next === "*") {
-      const end = source.indexOf("*/", i + 2);
-      i = end === -1 ? source.length : end + 2;
-    } else if (ch === '"' || ch === "'") {
-      let j = i + 1;
-      while (j < source.length && source[j] !== ch && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
-      const closed = source[j] === ch;
-      const content = source.slice(i + 1, Math.min(j, source.length));
-      out += ch + (content === "fixed" ? content : " ".repeat(content.length)) + (closed ? ch : "");
-      i = closed ? j + 1 : Math.min(j, source.length);
-    } else if (ch === "`") {
-      out += ch;
-      i += 1;
-      while (i < source.length && source[i] !== "`") {
-        if (source[i] === "$" && source[i + 1] === "{") {
-          const inner = scanCode(source, i + 2, true);
-          out += "${" + inner.out;
-          i = inner.end;
-        } else {
-          const width = source[i] === "\\" ? 2 : 1;
-          out += source.slice(i, i + width).replaceAll(/[^\n]/g, " ");
-          i += width;
-        }
-      }
-      if (source[i] === "`") {
-        out += "`";
-        i += 1;
-      }
-    } else if (untilBrace && ch === "}" && depth === 0) {
-      return { out: out + "}", end: i + 1 };
-    } else {
-      if (ch === "{") depth += 1;
-      else if (ch === "}") depth -= 1;
-      out += ch;
-      i += 1;
-    }
+function identifierName(node: unknown): string | undefined {
+  return isNode(node) && node.type === "Identifier" ? (node.name as string) : undefined;
+}
+
+/** The text of a string literal, or of a template literal without interpolations. */
+function stringValue(node: unknown): string | undefined {
+  if (!isNode(node)) return undefined;
+  if (node.type === "Literal" && typeof node.value === "string") return node.value;
+  if (node.type === "TemplateLiteral" && (node.expressions as unknown[]).length === 0) {
+    return ((node.quasis as { value: { cooked: string } }[])[0]?.value.cooked) ?? undefined;
   }
-  return { out, end: source.length };
+  return undefined;
+}
+
+/** `window.innerWidth`, `window.visualViewport`, `document.documentElement.clientHeight` and the like. */
+function readsViewportSize(node: Node): boolean {
+  if (node.type !== "MemberExpression" || node.computed === true) return false;
+  const property = identifierName(node.property);
+  if (!property) return false;
+  if (identifierName(node.object) === "window") return WINDOW_SIZE.has(property);
+  const object = node.object;
+  return (
+    isNode(object) &&
+    object.type === "MemberExpression" &&
+    identifierName(object.object) === "document" &&
+    identifierName(object.property) === "documentElement" &&
+    DOCUMENT_SIZE.has(property)
+  );
+}
+
+function callsGetBoundingClientRect(node: Node): boolean {
+  if (node.type !== "CallExpression" || !isNode(node.callee) || node.callee.type !== "MemberExpression") return false;
+  return identifierName(node.callee.property) === "getBoundingClientRect";
 }
 
 /** Findings per rule and file (repo-relative, `/`-separated) for the given sources. */
@@ -114,22 +102,62 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
     "inline-fixed-position": {},
     "viewport-math-in-component": {},
   };
-  for (const [file, raw] of Object.entries(files)) {
-    const source = toCode(raw);
-    const count = (rule: Rule, n: number) => {
-      if (n > 0 && !IMPLEMENTS_PLACEMENT[rule].has(file)) found[rule][file] = n;
+  for (const [file, source] of Object.entries(files)) {
+    const counts: Record<Rule, number> = { "overlay-lifecycle-outside-hook": 0, "inline-fixed-position": 0, "viewport-math-in-component": 0 };
+    const helperSpots = new Set<number>();
+    // Per function: does it measure an element, and does it read the window's size? Both in one function
+    // is placement math; a drag handler that measures and a render that reads the width are not.
+    const functions = new Map<Node | null, { measures: boolean; readsViewport: boolean }>();
+    const note = (fn: Node | null) => {
+      let entry = functions.get(fn);
+      if (!entry) {
+        entry = { measures: false, readsViewport: false };
+        functions.set(fn, entry);
+      }
+      return entry;
     };
-    count("overlay-lifecycle-outside-hook", source.match(LIFECYCLE_HELPERS)?.length ?? 0);
-    count("inline-fixed-position", source.match(INLINE_FIXED)?.length ?? 0);
-    count("viewport-math-in-component", MEASURES_AN_ELEMENT.test(source) && READS_THE_VIEWPORT.test(source) ? 1 : 0);
+
+    let ast: unknown;
+    try {
+      ast = parse(source, { jsx: file.endsWith(".tsx"), range: true });
+    } catch (error) {
+      throw new Error(`placement-standard scanner could not parse ${file}: ${String(error)}`, { cause: error });
+    }
+    walk(ast, null, (node, enclosing) => {
+      const name = identifierName(node);
+      // An import specifier names the helper twice (`imported` and `local`, at the same place).
+      if (name && LIFECYCLE_HELPERS.has(name)) helperSpots.add(node.range[0]);
+      if (node.type === "Property" && node.computed !== true) {
+        const key = identifierName(node.key) ?? stringValue(node.key);
+        if (key === "position" && stringValue(node.value) === "fixed") counts["inline-fixed-position"] += 1;
+      }
+      if (callsGetBoundingClientRect(node)) note(enclosing).measures = true;
+      if (readsViewportSize(node)) note(enclosing).readsViewport = true;
+    });
+    counts["overlay-lifecycle-outside-hook"] = helperSpots.size;
+    counts["viewport-math-in-component"] = [...functions.values()].filter((f) => f.measures && f.readsViewport).length;
+
+    for (const rule of RULES) {
+      if (counts[rule] > 0 && !IMPLEMENTS_PLACEMENT[rule].has(file)) found[rule][file] = counts[rule];
+    }
   }
   return found;
+}
+
+function walkFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name === "dist") continue;
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) walkFiles(full, out);
+    else if (/\.(?:ts|tsx)$/.test(name) && !/\.d\.ts$/.test(name)) out.push(full);
+  }
+  return out;
 }
 
 export function scanPlacementViolations(): Record<Rule, Counts> {
   const files: Record<string, string> = {};
   for (const root of SCAN_ROOTS) {
-    for (const full of walk(join(REPO_ROOT, root))) {
+    for (const full of walkFiles(join(REPO_ROOT, root))) {
       files[relative(REPO_ROOT, full).split(sep).join("/")] = readFileSync(full, "utf8");
     }
   }

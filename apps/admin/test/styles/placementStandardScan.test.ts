@@ -1,135 +1,112 @@
 import { describe, expect, it } from "vitest";
-import { scanPlacement, toCode } from "./placementStandardScan.js";
+import { scanPlacement } from "./placementStandardScan.js";
 
-const scan = (source: string, file = "apps/admin/src/components/Panel.tsx") => scanPlacement({ [file]: source });
+const FILE = "apps/admin/src/components/Panel.tsx";
+const scan = (source: string, file = FILE) => scanPlacement({ [file]: source });
+const only = (count: number) => (count === 0 ? {} : { [FILE]: count });
 
-describe("placement-standard scanner: what counts as a violation", () => {
-  it("counts an inline fixed position, in either quote style", () => {
-    expect(scan('const s = { position: "fixed", top: 1 };')["inline-fixed-position"]).toEqual({
-      "apps/admin/src/components/Panel.tsx": 1,
-    });
-    expect(scan("const s = { position: 'fixed' };")["inline-fixed-position"]).toEqual({
-      "apps/admin/src/components/Panel.tsx": 1,
-    });
+describe("placement-standard scanner: inline fixed position", () => {
+  it("counts a style object with position fixed, however it is quoted or spaced", () => {
+    for (const source of ['{ position: "fixed", top: 1 }', "{ position: 'fixed' }", '{position:"fixed"}', '{ "position": "fixed" }', "{ position: `fixed` }"]) {
+      expect(scan(`const s = ${source};`)["inline-fixed-position"]).toEqual(only(1));
+    }
   });
 
-  it("counts the overlay lifecycle helpers used outside the hook", () => {
+  it("does not count another position, or a computed key", () => {
+    expect(scan('const s = { position: "absolute" };')["inline-fixed-position"]).toEqual({});
+    expect(scan('const s = { [position]: "fixed" };')["inline-fixed-position"]).toEqual({});
+  });
+});
+
+describe("placement-standard scanner: overlay lifecycle helpers", () => {
+  it("counts an import and a call of a helper outside the hook", () => {
     const source = 'import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";\nattachFixedOverlayLifecycle(a, b, c);';
-    expect(scan(source)["overlay-lifecycle-outside-hook"]).toEqual({ "apps/admin/src/components/Panel.tsx": 2 });
-    expect(scan("const v = getFixedOverlayViewport();")["overlay-lifecycle-outside-hook"]).toEqual({
-      "apps/admin/src/components/Panel.tsx": 1,
-    });
-  });
-
-  it("counts a file that measures an element and compares it with the window", () => {
-    const source = "const r = el.getBoundingClientRect();\nconst below = window.innerHeight - r.bottom;";
-    expect(scan(source)["viewport-math-in-component"]).toEqual({ "apps/admin/src/components/Panel.tsx": 1 });
-    expect(scan("const r = el.getBoundingClientRect();\nconst v = window.visualViewport;")["viewport-math-in-component"]).toEqual({
-      "apps/admin/src/components/Panel.tsx": 1,
-    });
-  });
-
-  it("does not count measuring an element without placing anything against the window", () => {
-    // Auto-scroll while dragging, scrolling a tab into view: measuring, not placing a panel.
-    expect(scan("const r = list.getBoundingClientRect();\nif (e.clientY - r.top < 26) list.scrollTop -= 9;")["viewport-math-in-component"]).toEqual({});
-    expect(scan("const w = window.innerWidth;")["viewport-math-in-component"]).toEqual({});
-  });
-
-  it("ignores what is written in a comment", () => {
-    const source = '// position: "fixed" and attachFixedOverlayLifecycle used to live here\n/* getFixedOverlayViewport */\nconst a = 1;';
-    const found = scan(source);
-    expect(found["inline-fixed-position"]).toEqual({});
-    expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
-  });
-
-  it("lets the placement hook and its helper implement all of it", () => {
-    const source = 'const s = { position: "fixed" };\nattachFixedOverlayLifecycle(a, b, c);\nel.getBoundingClientRect(); window.innerWidth;';
-    for (const file of ["apps/admin/src/components/useFloatingPlacement.ts", "apps/admin/src/utils/fixed-overlay-lifecycle.ts"]) {
-      const found = scan(source, file);
-      expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
-      expect(found["viewport-math-in-component"]).toEqual({});
-    }
-    expect(scan(source, "apps/admin/src/components/useFloatingPlacement.ts")["inline-fixed-position"]).toEqual({});
-    // The helper file itself is not a place to write a fixed panel style.
-    expect(scan(source, "apps/admin/src/utils/fixed-overlay-lifecycle.ts")["inline-fixed-position"]).toEqual({
-      "apps/admin/src/utils/fixed-overlay-lifecycle.ts": 1,
-    });
+    expect(scan(source)["overlay-lifecycle-outside-hook"]).toEqual(only(2));
+    expect(scan("const v = getFixedOverlayViewport();")["overlay-lifecycle-outside-hook"]).toEqual(only(1));
   });
 });
 
-describe("placement-standard scanner: comments", () => {
-  it("ignores a trailing comment after code", () => {
-    const source = 'const mode = value; // position: "fixed", attachFixedOverlayLifecycle\nconst a = 1; /* getFixedOverlayViewport */ const b = 2;';
-    const found = scan(source);
-    expect(found["inline-fixed-position"]).toEqual({});
-    expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
+describe("placement-standard scanner: measuring an element and reading the window in one function", () => {
+  it("counts placement math in one function, at the top level or nested", () => {
+    expect(scan("const r = el.getBoundingClientRect();\nconst below = window.innerHeight - r.bottom;")["viewport-math-in-component"]).toEqual(only(1));
+    const effect = "useEffect(() => { const update = () => { const r = a.getBoundingClientRect(); const w = window.innerWidth; }; update(); });";
+    expect(scan(effect)["viewport-math-in-component"]).toEqual(only(1));
+    expect(scan("const f = () => { el.getBoundingClientRect(); return window.visualViewport; };")["viewport-math-in-component"]).toEqual(only(1));
+    expect(scan("function f() { el.getBoundingClientRect(); return document.documentElement.clientHeight; }")["viewport-math-in-component"]).toEqual(only(1));
   });
 
-  it("does not mistake a comment-looking text inside a string for a comment", () => {
-    expect(toCode('const u = "https://example.com"; // gone')).toBe('const u = "                   "; ');
-    expect(toCode("const t = `a // b ${x}`; /* gone */ const c = 1;")).toBe("const t = `       ${x}`;  const c = 1;");
-    expect(toCode("const q = 'it\\'s // not'; // gone")).toBe(`const q = '${" ".repeat(12)}'; `);
+  it("counts placement math written inside a template interpolation", () => {
+    const source = "const style = { transform: `translateX(${window.innerWidth - el.getBoundingClientRect().right}px)` };";
+    expect(scan(source)["viewport-math-in-component"]).toEqual(only(1));
   });
 
-  it("still counts a violation that comes before a trailing comment", () => {
-    expect(scan('const s = { position: "fixed" }; // a panel')["inline-fixed-position"]).toEqual({
-      "apps/admin/src/components/Panel.tsx": 1,
-    });
-  });
-
-  it("handles an unclosed block comment and a line that ends inside a quote", () => {
-    expect(toCode("a /* never closed")).toBe("a ");
-    expect(toCode("const s = 'oops\nconst b = 1; // c")).toBe("const s = '    \nconst b = 1; ");
-  });
-});
-
-describe("placement-standard scanner: strings", () => {
-  it("does not count a rule's pattern that is only text inside a string", () => {
-    const found = scan(
-      [
-        "const a = 'position: \"fixed\"';",
-        'const b = "use attachFixedOverlayLifecycle instead";',
-        "const c = `getFixedOverlayViewport ${x}`;",
-      ].join("\n"),
-    );
-    expect(found["inline-fixed-position"]).toEqual({});
-    expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
-  });
-
-  it("still counts the literal fixed value, in either quote style, and in a style written without spaces", () => {
-    for (const source of ['{ position: "fixed" }', "{ position: 'fixed' }", '{position:"fixed"}']) {
-      expect(scan(source)["inline-fixed-position"]).toEqual({ "apps/admin/src/components/Panel.tsx": 1 });
-    }
-  });
-
-  it("does not count a viewport read that is only text", () => {
-    const source = "const r = el.getBoundingClientRect();\nconst note = 'compare with window.innerHeight';";
+  it("does not count a component that measures for one thing and reads the width for another", () => {
+    // A drag handler that auto-scrolls its list, and a render that picks a layout from the window's width.
+    const source = [
+      "export function Editor() {",
+      "  const onMove = (e) => { const r = list.getBoundingClientRect(); if (e.clientY - r.top < 26) list.scrollTop -= 9; };",
+      "  const compact = window.innerWidth < 768;",
+      "  return null;",
+      "}",
+    ].join("\n");
     expect(scan(source)["viewport-math-in-component"]).toEqual({});
   });
+
+  it("does not count measuring alone, or reading the window alone", () => {
+    expect(scan("const r = list.getBoundingClientRect(); const x = r.left;")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const w = window.innerWidth;")["viewport-math-in-component"]).toEqual({});
+  });
 });
 
-describe("placement-standard scanner: template literals", () => {
-  it("counts placement math written inside a template interpolation", () => {
-    const source =
-      "const style = { transform: `translateX(${window.innerWidth - el.getBoundingClientRect().right}px)` };";
-    expect(scan(source)["viewport-math-in-component"]).toEqual({ "apps/admin/src/components/Panel.tsx": 1 });
-    expect(scan("const s = `${attachFixedOverlayLifecycle(a, b, c)}`;")["overlay-lifecycle-outside-hook"]).toEqual({
-      "apps/admin/src/components/Panel.tsx": 1,
-    });
+describe("placement-standard scanner: what is not code", () => {
+  it("ignores comments, trailing ones included", () => {
+    const source = [
+      '// position: "fixed" and attachFixedOverlayLifecycle used to live here',
+      'const mode = value; // position: "fixed", getFixedOverlayViewport',
+      "/* el.getBoundingClientRect() with window.innerWidth */",
+      "const a = 1;",
+    ].join("\n");
+    const found = scan(source);
+    expect(found["inline-fixed-position"]).toEqual({});
+    expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
+    expect(found["viewport-math-in-component"]).toEqual({});
   });
 
-  it("blanks the text of a template but not its expressions, also when they nest", () => {
-    expect(toCode("`a ${b + `c ${d}`} e`")).toBe("`  ${b + `  ${d}`}  `");
-    expect(toCode("`x ${ {a: 1}.a } y`")).toBe("`  ${ {a: 1}.a }  `");
+  it("ignores a rule's pattern that is only text in a string or in the text of a template", () => {
+    const source = [
+      "const a = 'position: \"fixed\"';",
+      'const b = "use attachFixedOverlayLifecycle instead";',
+      "const c = `getFixedOverlayViewport and position: 'fixed'`;",
+      "const d = 'compare getBoundingClientRect() with window.innerHeight';",
+    ].join("\n");
+    const found = scan(source);
+    expect(found["inline-fixed-position"]).toEqual({});
+    expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
+    expect(found["viewport-math-in-component"]).toEqual({});
   });
 
-  it("does not count a rule's pattern that is only text in a template", () => {
-    expect(scan("const s = `use position: 'fixed' and getFixedOverlayViewport`;")["inline-fixed-position"]).toEqual({});
-    expect(scan("const s = `use getFixedOverlayViewport`;")["overlay-lifecycle-outside-hook"]).toEqual({});
+  it("does not mistake text that looks like a comment, a regex or a URL for the end of the code", () => {
+    const source = 'const u = "https://example.com"; const re = /["\'`]\\/\\//; const s = { position: "fixed" };';
+    expect(scan(source)["inline-fixed-position"]).toEqual(only(1));
+  });
+});
+
+describe("placement-standard scanner: the files that implement placement", () => {
+  const source = 'const s = { position: "fixed" };\nattachFixedOverlayLifecycle(a, b, c);\nel.getBoundingClientRect(); window.innerWidth;';
+
+  it("lets the placement hook implement all of it, and the helper file all but a fixed style", () => {
+    const hook = scan(source, "apps/admin/src/components/useFloatingPlacement.ts");
+    expect(hook["inline-fixed-position"]).toEqual({});
+    expect(hook["overlay-lifecycle-outside-hook"]).toEqual({});
+    expect(hook["viewport-math-in-component"]).toEqual({});
+
+    const helper = scan(source, "apps/admin/src/utils/fixed-overlay-lifecycle.ts");
+    expect(helper["overlay-lifecycle-outside-hook"]).toEqual({});
+    expect(helper["viewport-math-in-component"]).toEqual({});
+    expect(helper["inline-fixed-position"]).toEqual({ "apps/admin/src/utils/fixed-overlay-lifecycle.ts": 1 });
   });
 
-  it("keeps the line breaks of a multi-line template and survives an unclosed one", () => {
-    expect(toCode("`a\nb ${c}`")).toBe("` \n  ${c}`");
-    expect(toCode("`never closed ${x")).toBe("`             ${x");
+  it("says which file it could not parse", () => {
+    expect(() => scan("const = ;", "apps/admin/src/components/Broken.tsx")).toThrow(/Broken\.tsx/);
   });
 });
