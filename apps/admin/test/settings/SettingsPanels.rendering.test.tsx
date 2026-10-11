@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mockPlacementLayout } from "../components/panelPlacementMocks.js";
 import type {
   AuditLogEntryDto,
   AuditLogResponse,
@@ -642,11 +643,14 @@ describe("AuditLogPanel rendering", () => {
       pageSize: 25,
     });
 
-    const rectSpy = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockReturnValue({ top: 700, bottom: 720, right: 300, left: 260, width: 40, height: 20 } as DOMRect);
-    const innerHeightSpy = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
-    const innerWidthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+    // Only 68px below the trigger for a 150px panel, 688px above.
+    mockPlacementLayout({
+      rect: { top: 700, bottom: 720, left: 260, width: 40 },
+      panelHeight: 150,
+      panelWidth: 200,
+      innerWidth: 1024,
+      innerHeight: 800,
+    });
 
     try {
       renderAuditPanel();
@@ -654,13 +658,31 @@ describe("AuditLogPanel rendering", () => {
       fireEvent.click(within(table).getByText("View"));
 
       const panel = document.querySelector(".audit-log-details__panel") as HTMLElement;
-      expect(panel.style.bottom).not.toBe("");
-      expect(panel.style.top).toBe("");
+      // Above the trigger (700 - 150 - 4 gap), its right edge under the trigger's (300 - 200).
+      await waitFor(() => expect(panel.style.transform).toBe("translate(100px, 546px)"));
     } finally {
-      rectSpy.mockRestore();
-      innerHeightSpy.mockRestore();
-      innerWidthSpy.mockRestore();
+      // The layout stubs sit on HTMLElement.prototype: later tests measure their own scroll heights.
+      vi.restoreAllMocks();
     }
+  });
+
+  it("closes the Details popover when something outside it scrolls", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ metadata: { event_id: "evt-1", note: "hello" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+    expect(document.querySelector(".audit-log-details__panel")).not.toBeNull();
+
+    // The popover is placed from the trigger's position: when the page moves under it, it closes.
+    fireEvent.scroll(window);
+
+    expect(document.querySelector(".audit-log-details__panel")).toBeNull();
   });
 
   it("shows an explanatory tooltip on the Scope column header", async () => {
