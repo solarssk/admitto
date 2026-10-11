@@ -43,6 +43,7 @@ CLAUDE.local.md
 graphify-out/
 .claude/*
 !.claude/rules/
+!.claude/skills/
 !.claude/settings.json
 *.rdb
 admitto-ux-review-screenshots/

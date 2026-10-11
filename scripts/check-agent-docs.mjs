@@ -153,7 +153,8 @@ export function checkAgentDocs(root) {
     (f) =>
       /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f) ||
       (f.startsWith("standards/") && f.endsWith(".md")) ||
-      /^\.(claude|cursor)\/rules\/[^/]+\.(md|mdc)$/.test(f),
+      /^\.(claude|cursor)\/rules\/[^/]+\.(md|mdc)$/.test(f) ||
+      /^\.claude\/skills\/[^/]+\/SKILL\.md$/.test(f),
   );
   return [...checkSizes(root, steering), ...checkLinks(root, steering), ...checkIndex(root, steering)];
 }
