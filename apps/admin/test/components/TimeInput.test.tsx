@@ -285,7 +285,7 @@ describe("TimeInput", () => {
     await waitFor(() => expect(dialog.className).toContain("time-input__picker--above"));
   });
 
-  it("clamps the picker inside the viewport for a field near the right edge, instead of overflowing", () => {
+  it("clamps the picker inside the viewport for a field near the right edge, instead of overflowing", async () => {
     mockPlacementLayout({
       rect: { top: 100, bottom: 130, left: 900 },
       panelHeight: 200,
@@ -299,7 +299,7 @@ describe("TimeInput", () => {
     const dialog = screen.getByRole("group", { name: "Choose time" });
     // Would overflow past 1024 (900 + 200 = 1100) if left-anchored at the field's own left edge -
     // clamped to stay within the viewport instead of opening off to the right of it.
-    expect(Number.parseFloat(dialog.style.left)).toBeLessThanOrEqual(1024 - 8 - 200);
+    await waitFor(() => expect(dialog.style.transform).toBe("translate(816px, 136px)")); // 1024 - 8 - 200
   });
 
   it("clamps the picker's own height and scrolls when neither above nor below has room for it", async () => {

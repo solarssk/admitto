@@ -81,9 +81,13 @@ export function useFloatingPlacement({
   onScrollCloseRef.current = onScrollClose;
   const getReferenceRectRef = useRef(getReferenceRect);
   getReferenceRectRef.current = getReferenceRect;
+  // Which side the panel opened on. It lives across effect runs (a changed `remeasureKey` runs the
+  // effect again) and is dropped only when the panel closes or the available space really changes.
+  const lockedSideRef = useRef<"top" | "bottom" | undefined>(undefined);
 
   useLayoutEffect(() => {
     if (!open) {
+      lockedSideRef.current = undefined;
       setOpenUpward(false);
       setPanelStyle(HIDDEN_FIXED_PANEL);
       return;
@@ -101,20 +105,21 @@ export function useFloatingPlacement({
     // (a search narrowing to one result) flips a panel that opened upward - because the full list did
     // not fit below - down under the anchor the moment the shorter list does fit there, yanking it out
     // from under the user mid-keystroke (PO report).
-    let lockedSide: "top" | "bottom" | undefined;
     let latestRun = 0;
     let disposed = false;
 
     const updatePlacement = async (relock: boolean) => {
-      if (relock) lockedSide = undefined;
+      if (relock) lockedSideRef.current = undefined;
+      const lockedSide = lockedSideRef.current;
       const run = ++latestRun;
       const viewport = getFixedOverlayViewport();
       const rootBoundary = { x: viewport.left, y: viewport.top, width: viewport.width, height: viewport.height };
       const maxWidth = Math.max(0, viewport.width - 2 * VIEWPORT_PAD_PX);
-      // Measure the panel at its natural height: a max-height from the previous run is a clamp, not
+      // Measure the panel at its natural height, but never taller than `maxHeight`: the side is chosen
+      // from the height the panel really has, and a max-height from the previous run is a clamp, not
       // the size the content wants.
-      panel.style.maxHeight = "";
-      panel.style.overflowY = "";
+      panel.style.maxHeight = maxHeightCap === undefined ? "" : `${maxHeightCap}px`;
+      panel.style.overflowY = maxHeightCap === undefined ? "" : "auto";
       const placement: Placement = `${lockedSide ?? "bottom"}-${align}`;
       const reference = getReferenceRectRef.current
         ? {
@@ -168,7 +173,7 @@ export function useFloatingPlacement({
       // A newer run, or the panel closing, owns the element now.
       if (disposed || run !== latestRun) return;
       const upward = result.placement.startsWith("top");
-      lockedSide = upward ? "top" : "bottom";
+      lockedSideRef.current = upward ? "top" : "bottom";
       // Put the position on the element in the same task, before React applies `panelStyle`, so a
       // remeasure of a visible panel is never painted in between.
       const transform = `translate(${Math.round(result.x)}px, ${Math.round(result.y)}px)`;
@@ -180,7 +185,7 @@ export function useFloatingPlacement({
       setPanelStyle({ position: "fixed", left: 0, top: 0, transform, zIndex });
     };
 
-    void updatePlacement(true);
+    void updatePlacement(false);
     const detachOverlayLifecycle = attachFixedOverlayLifecycle(
       panel,
       () => void updatePlacement(true),

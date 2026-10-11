@@ -121,6 +121,84 @@ describe("useFloatingPlacement", () => {
     expect((await renderOpen({ minMaxHeight: 120 })).style.maxHeight).toBe("120px");
   });
 
+  it("chooses the side from the height capped by maxHeight, not from the full list", async () => {
+    // 400px below, 488px above, and a 600px list capped at 320px: the 320px panel fits below.
+    mockLayout({
+      anchor: { left: 50, top: 500, width: 100, height: 30 },
+      panel: { width: 200, height: 600 },
+      innerHeight: 942,
+    });
+    const menu = await renderOpen({ maxHeight: 320 });
+
+    expect(menu.dataset.up).toBe("false");
+    expect(menu.style.maxHeight).toBe("320px");
+  });
+
+  it("opens above without the cap when the full list does not fit below", async () => {
+    mockLayout({
+      anchor: { left: 50, top: 500, width: 100, height: 30 },
+      panel: { width: 200, height: 600 },
+      innerHeight: 942,
+    });
+
+    expect((await renderOpen({})).dataset.up).toBe("true");
+  });
+
+  it("keeps the side it opened on when only the remeasure key changes", async () => {
+    // Opens above (only 20px below), then the list shrinks to 5px and the key changes, as when typing
+    // narrows a search: the 5px panel would fit below (8px of room), but it must stay where it is.
+    let panelHeight = 200;
+    mockLayout({
+      anchor: { left: 50, top: 400, width: 100, height: 30 },
+      panel: {
+        width: 200,
+        get height() {
+          return panelHeight;
+        },
+      },
+      innerHeight: 450,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(<Harness opts={{ remeasureKey: 1 }} />);
+    });
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
+
+    panelHeight = 5;
+    await act(async () => {
+      view.rerender(<Harness opts={{ remeasureKey: 2 }} />);
+    });
+
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
+    expect(screen.getByRole("menu").style.transform).toBe("translate(50px, 391px)"); // 400 - 5 - 4 (gap)
+  });
+
+  it("decides the side again after the panel was closed and opened", async () => {
+    let panelHeight = 200;
+    mockLayout({
+      anchor: { left: 50, top: 400, width: 100, height: 30 },
+      panel: {
+        width: 200,
+        get height() {
+          return panelHeight;
+        },
+      },
+      innerHeight: 450,
+    });
+    const Toggle = ({ open }: Readonly<{ open: boolean }>) => (open ? <Harness opts={{}} /> : null);
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(<Toggle open />);
+    });
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
+
+    await act(async () => view.rerender(<Toggle open={false} />));
+    panelHeight = 5;
+    await act(async () => view.rerender(<Toggle open />));
+
+    expect(screen.getByRole("menu").dataset.up).toBe("false");
+  });
+
   it("hangs from the reference rect when one is given, not from the anchor's own", async () => {
     mockLayout({ anchor: { left: 50, top: 100, width: 100, height: 30 }, panel: { width: 200, height: 100 } });
     const menu = await renderOpen({
