@@ -3,6 +3,10 @@
 
 .scroll-fade-tabs {
   position: relative;
+  /* How far .scroll-fade-tabs__scroll reaches past this box on each side (its padding + negative
+     margin below). The arrows and fades sit on the scroll box's edge, not this box's, or the
+     outer slice of a clipped tab name shows beside the arrow. */
+  --scroll-fade-tabs-bleed: -4px;
   /* One breath under the tab strip. Do not stack this with .screen's flex gap — see shell.css. */
   margin-bottom: var(--space-3);
 }
@@ -53,12 +57,12 @@
 }
 
 .scroll-fade-tabs::before {
-  left: 0;
+  left: var(--scroll-fade-tabs-bleed);
   background: linear-gradient(to left, transparent, var(--surface-page));
 }
 
 .scroll-fade-tabs::after {
-  right: 0;
+  right: var(--scroll-fade-tabs-bleed);
   background: linear-gradient(to right, transparent, var(--surface-page));
 }
 
@@ -98,9 +102,9 @@
 }
 
 .scroll-fade-tabs__arrow--left {
-  left: 0;
+  left: var(--scroll-fade-tabs-bleed);
 }
 
 .scroll-fade-tabs__arrow--right {
-  right: 0;
+  right: var(--scroll-fade-tabs-bleed);
 }
