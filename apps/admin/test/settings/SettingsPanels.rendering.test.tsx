@@ -666,6 +666,25 @@ describe("AuditLogPanel rendering", () => {
     }
   });
 
+  it("closes the Details popover when something outside it scrolls", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ metadata: { event_id: "evt-1", note: "hello" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+    expect(document.querySelector(".audit-log-details__panel")).not.toBeNull();
+
+    // The popover is placed from the trigger's position: when the page moves under it, it closes.
+    fireEvent.scroll(window);
+
+    expect(document.querySelector(".audit-log-details__panel")).toBeNull();
+  });
+
   it("shows an explanatory tooltip on the Scope column header", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry()],

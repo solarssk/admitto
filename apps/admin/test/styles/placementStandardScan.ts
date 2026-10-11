@@ -48,8 +48,36 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-function stripComments(source: string): string {
-  return source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/^\s*\/\/.*$/gm, "");
+/** The source without its comments (whole-line, block and trailing), with strings and template literals
+ * left as they are: what a rule looks for, such as `position: "fixed"`, is itself code with quotes in it. */
+export function stripComments(source: string): string {
+  let out = "";
+  let i = 0;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (quote) {
+      out += ch;
+      if (ch === "\\" && next !== undefined) {
+        out += next;
+        i += 2;
+        continue;
+      }
+      if (ch === quote || (ch === "\n" && quote !== "`")) quote = null;
+      i += 1;
+    } else if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+    } else if (ch === "/" && next === "*") {
+      const end = source.indexOf("*/", i + 2);
+      i = end === -1 ? source.length : end + 2;
+    } else {
+      if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+      out += ch;
+      i += 1;
+    }
+  }
+  return out;
 }
 
 /** Findings per rule and file (repo-relative, `/`-separated) for the given sources. */
