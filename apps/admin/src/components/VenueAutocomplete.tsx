@@ -1,30 +1,23 @@
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import { Button, Input, Notice } from "@admitto/ui";
 import { searchGeocoding } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { GeocodingResultDto } from "../api/types.js";
-import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
+import { useFloatingPlacement } from "./useFloatingPlacement.js";
 import "./venue-autocomplete.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 2;
 const SUGGEST_MAX_HEIGHT_PX = 320;
-const SUGGEST_MARGIN_PX = 4;
-const VIEWPORT_PAD_PX = 8;
-
-const HIDDEN_FIXED: CSSProperties = {
-  position: "fixed",
-  visibility: "hidden",
-  // Above add-attendee-modal (z-index 1000) when this list escapes overflow:auto.
-  zIndex: 1100,
-};
+const SUGGEST_GAP_PX = 4;
+const SUGGEST_MIN_HEIGHT_PX = 120;
+// Above add-attendee-modal (z-index 1000) when this list escapes overflow:auto.
+const SUGGEST_Z_INDEX = 1100;
 
 export interface VenueAutocompleteProps {
   id: string;
@@ -73,7 +66,6 @@ export function VenueAutocomplete({
 }: Readonly<VenueAutocompleteProps>) {
   const [results, setResults] = useState<GeocodingResultDto[]>([]);
   const [visible, setVisible] = useState(false);
-  const [suggestStyle, setSuggestStyle] = useState<CSSProperties>(HIDDEN_FIXED);
   const [searching, setSearching] = useState(false);
   const [noMatch, setNoMatch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -87,7 +79,6 @@ export function VenueAutocomplete({
 
   const hideSuggestions = () => {
     setVisible(false);
-    setSuggestStyle(HIDDEN_FIXED);
   };
 
   /** Cancel in-flight lookup and clear Find/"Searching…" so a cancelled request cannot stick. */
@@ -106,7 +97,6 @@ export function VenueAutocomplete({
     setSearching(false);
     setResults([]);
     setVisible(false);
-    setSuggestStyle(HIDDEN_FIXED);
     setNoMatch(false);
     setSearchError(null);
   }, [lookupResetKey]);
@@ -118,42 +108,28 @@ export function VenueAutocomplete({
     };
   }, []);
 
-  useLayoutEffect(() => {
-    if (!visible || !fieldRef.current || !suggestRef.current) return;
-
-    const updatePlacement = () => {
+  // The list is as wide as the field and starts at its left edge, but hangs from the input itself
+  // (the field also holds the Find button and the hint under it).
+  const suggestOpen = visible && results.length > 0;
+  const { panelStyle: suggestStyle } = useFloatingPlacement({
+    open: suggestOpen,
+    anchorRef: fieldRef,
+    panelRef: suggestRef,
+    onScrollClose: () => setVisible(false),
+    gap: SUGGEST_GAP_PX,
+    align: "start",
+    matchWidth: true,
+    maxHeight: SUGGEST_MAX_HEIGHT_PX,
+    minMaxHeight: SUGGEST_MIN_HEIGHT_PX,
+    zIndex: SUGGEST_Z_INDEX,
+    remeasureKey: results.length,
+    getReferenceRect: () => {
       const field = fieldRef.current!;
-      const list = suggestRef.current!;
       const fieldBox = field.getBoundingClientRect();
-      const anchor =
-        field.querySelector<HTMLElement>("input") ?? field;
-      const rect = anchor.getBoundingClientRect();
-      const listHeight = Math.min(list.scrollHeight, SUGGEST_MAX_HEIGHT_PX);
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const above =
-        spaceBelow < listHeight + SUGGEST_MARGIN_PX && spaceAbove > spaceBelow;
-      const available = (above ? spaceAbove : spaceBelow) - SUGGEST_MARGIN_PX - VIEWPORT_PAD_PX;
-      const maxHeight = Math.max(120, Math.min(SUGGEST_MAX_HEIGHT_PX, available));
-      const height = Math.min(list.scrollHeight, maxHeight);
-      const top = above
-        ? rect.top - height - SUGGEST_MARGIN_PX
-        : rect.bottom + SUGGEST_MARGIN_PX;
-
-      setSuggestStyle({
-        position: "fixed",
-        top,
-        left: fieldBox.left,
-        width: fieldBox.width,
-        maxHeight,
-        visibility: "visible",
-        zIndex: 1100,
-      });
-    };
-
-    updatePlacement();
-    return attachFixedOverlayLifecycle(suggestRef.current, updatePlacement, () => setVisible(false));
-  }, [visible, results.length]);
+      const input = (field.querySelector<HTMLElement>("input") ?? field).getBoundingClientRect();
+      return { left: fieldBox.left, top: input.top, width: fieldBox.width, height: input.height };
+    },
+  });
 
   const runSearch = async (query: string, opts?: { fromFindButton?: boolean }) => {
     const seq = ++seqRef.current;
@@ -168,7 +144,6 @@ export function VenueAutocomplete({
       const res = await searchGeocoding(query);
       if (seq !== seqRef.current) return;
       setResults(res.results);
-      setSuggestStyle(HIDDEN_FIXED);
       setVisible(res.results.length > 0);
       setNoMatch(surfaceLookupFeedback && res.results.length === 0);
       setSearchError(null);
@@ -254,7 +229,6 @@ export function VenueAutocomplete({
       blurTimerRef.current = null;
     }
     if (results.length > 0) {
-      setSuggestStyle(HIDDEN_FIXED);
       setVisible(true);
     }
   };

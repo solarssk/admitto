@@ -1,11 +1,9 @@
 import {
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import {
@@ -19,17 +17,12 @@ import {
 } from "../utils/event-dates.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
+import { useFloatingPlacement } from "./useFloatingPlacement.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PANEL_GAP_PX = 6;
-const VIEWPORT_PAD_PX = 8;
+const PANEL_Z_INDEX = 1100;
 
-const HIDDEN_FIXED_PANEL: CSSProperties = {
-  position: "fixed",
-  visibility: "hidden",
-  zIndex: 1100,
-};
 function parseIsoDate(iso: string): { y: number; m: number; d: number } | null {
   if (!ISO_DATE_RE.test(iso)) return null;
   // ISO_DATE_RE (^\d{4}-\d{2}-\d{2}$) already guarantees exactly 3 dash-separated segments, so
@@ -112,14 +105,6 @@ export function DatePicker({
   const resolvedPlaceholder = placeholder ?? inputPattern;
 
   const [open, setOpen] = useState(false);
-  const [panelAbove, setPanelAbove] = useState(false);
-  // The panel normally left-aligns with the field (extending right) - for a field near the
-  // viewport's right edge (e.g. the last of several filters in a row), that would push it past
-  // the edge. The page body clips overflow-x, so that's not just untidy, it's invisible.
-  const [panelRightAligned, setPanelRightAligned] = useState(false);
-  // Fixed coords so an overflow:auto ancestor (New event modal) neither clips the calendar nor
-  // grows scroll height around an absolutely positioned dialog (DeliveryRowMenu pattern).
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>(HIDDEN_FIXED_PANEL);
   const [text, setText] = useState(() => (value ? formatIsoCalendarDate(value) : ""));
   const [typing, setTyping] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -140,7 +125,6 @@ export function DatePicker({
   // ancestor scroll closed the fixed panel — refocusing would undo that scroll).
   const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
-    setPanelStyle(HIDDEN_FIXED_PANEL);
     if (reason !== "focus" && reason !== "scroll") {
       window.setTimeout(() => inputRef.current?.focus(), 0);
     }
@@ -175,50 +159,26 @@ export function DatePicker({
 
   useClickOutside(containerRef, open, closePanel);
 
-  useLayoutEffect(() => {
-    if (!open || !containerRef.current || !panelRef.current) return;
-    const updatePlacement = () => {
-      const rect = containerRef.current!.getBoundingClientRect();
-      // scrollHeight (natural content height), not offsetHeight - the panel may already be
-      // clamped by the maxHeight this same effect applied last run; measuring the clamped box
-      // instead of the true content height would make the clamp look unnecessary, remove
-      // itself, regrow the panel, then re-clamp on the next scroll/resize tick - a visible
-      // height oscillation every time the panel is open during a scroll or resize.
-      const panel = panelRef.current!;
-      const panelHeight = panel.scrollHeight;
-      const panelWidth = panel.offsetWidth;
-      const viewport = getFixedOverlayViewport();
-      const spaceBelow = viewport.bottom - rect.bottom;
-      const spaceAbove = rect.top - viewport.top;
-      const above = spaceBelow < panelHeight + PANEL_GAP_PX && spaceAbove > spaceBelow;
-      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX);
-      const maxHeight = panelHeight > available ? available : undefined;
-      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-      const rightAligned = viewport.right - rect.left < panelWidth;
-      const top = above
-        ? rect.top - usedHeight - PANEL_GAP_PX
-        : rect.bottom + PANEL_GAP_PX;
-      let left = rightAligned ? rect.right - panelWidth : rect.left;
-      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
-
-      setPanelAbove(above);
-      setPanelRightAligned(rightAligned);
-      setPanelStyle({
-        position: "fixed",
-        top,
-        left,
-        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
-        overflowY: maxHeight !== undefined ? "auto" : undefined,
-        visibility: "visible",
-        zIndex: 1100,
-      });
-    };
-    updatePlacement();
-    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, () =>
-      closePanel("scroll"),
-    );
-  }, [open, viewMonth, viewYear]);
+  // The panel normally left-aligns with the field (extending right). For a field near the viewport's
+  // right edge (the last of several filters in a row) that would push it past the edge, and the page
+  // body clips overflow-x, so it then aligns its right edge with the field's instead. Fixed
+  // coordinates so an overflow:auto ancestor (New event modal) neither clips the calendar nor grows its
+  // scroll height.
+  const {
+    openUpward: panelAbove,
+    alignedEnd: panelRightAligned,
+    panelStyle,
+  } = useFloatingPlacement({
+    open,
+    anchorRef: containerRef,
+    panelRef,
+    onScrollClose: () => closePanel("scroll"),
+    gap: PANEL_GAP_PX,
+    align: "start",
+    flipAlignment: true,
+    zIndex: PANEL_Z_INDEX,
+    remeasureKey: `${viewYear}-${viewMonth}`,
+  });
 
   const commitText = (raw: string) => {
     const trimmed = raw.trim();
@@ -340,7 +300,6 @@ export function DatePicker({
               closePanel();
               return;
             }
-            setPanelStyle(HIDDEN_FIXED_PANEL);
             setOpen(true);
           }}
         >
@@ -373,7 +332,6 @@ export function DatePicker({
             }
             if (event.key === "ArrowDown" && !open) {
               event.preventDefault();
-              setPanelStyle(HIDDEN_FIXED_PANEL);
               setOpen(true);
             }
           }}

@@ -8,27 +8,19 @@ import {
   useDeferredValue,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import { getTimeZones, normalizeTimeZone } from "@admitto/shared/timezones";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
+import { useFloatingPlacement } from "./useFloatingPlacement.js";
 
-/** Worst-case open panel height (search + hint + 16rem list + chrome) for pre-open estimate. */
-const TIMEZONE_PANEL_MAX_ESTIMATE_PX = 352;
 const PANEL_GAP_PX = 6;
-const VIEWPORT_PAD_PX = 8;
-
-const HIDDEN_FIXED_PANEL: CSSProperties = {
-  position: "fixed",
-  visibility: "hidden",
-  zIndex: 1100,
-};
+const PANEL_Z_INDEX = 1100;
+/** The list is never squeezed below this, even when there is less room (it then overflows). */
+const PANEL_MIN_LIST_HEIGHT_PX = 200;
 
 interface TzEntry {
   iana: string;
@@ -229,8 +221,6 @@ export function TimezoneSelect({
   const hintId = hint ? `${controlId}-hint` : undefined;
 
   const [open, setOpen] = useState(false);
-  const [panelAbove, setPanelAbove] = useState(false);
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>(HIDDEN_FIXED_PANEL);
   const [query, setQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
   const deferred = useDeferredValue(query);
@@ -268,7 +258,6 @@ export function TimezoneSelect({
   const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
     setQuery("");
-    setPanelStyle(HIDDEN_FIXED_PANEL);
     if (reason === "pointer") {
       // Suppress only the same gesture's click (which can land on the re-focused trigger).
       // Clear on the next macrotask so an ordinary outside click that never hits the trigger
@@ -304,61 +293,22 @@ export function TimezoneSelect({
     item?.scrollIntoView?.({ block: "nearest" });
   }, [highlightIndex, open]);
 
-  useLayoutEffect(() => {
-    if (!open || !containerRef.current || !panelRef.current) return;
-    const updatePlacement = () => {
-      // Panel only mounts while open, and open is driven from the trigger button.
-      const trigger = triggerRef.current!;
-      const rect = trigger.getBoundingClientRect();
-      const panel = panelRef.current!;
-      // scrollHeight (natural content), not offsetHeight — a prior maxHeight clamp would make
-      // offsetHeight look like the panel already fits and drop the clamp on the next query.
-      const panelHeight = panel.scrollHeight;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const above =
-        spaceBelow < panelHeight + PANEL_GAP_PX && spaceAbove > spaceBelow;
-      const available = (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX;
-      const maxHeight = panelHeight > available ? Math.max(200, available) : undefined;
-      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-      const top = above
-        ? rect.top - usedHeight - PANEL_GAP_PX
-        : rect.bottom + PANEL_GAP_PX;
-      const width = Math.max(rect.width, containerRef.current!.getBoundingClientRect().width);
-      let left = rect.left;
-      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - width);
-      left = Math.max(left, VIEWPORT_PAD_PX);
-
-      setPanelAbove(above);
-      setPanelStyle({
-        position: "fixed",
-        top,
-        left,
-        width,
-        maxHeight,
-        overflowY: maxHeight ? "auto" : undefined,
-        visibility: "visible",
-        zIndex: 1100,
-      });
-    };
-    updatePlacement();
-    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, () =>
-      closePanel("scroll"),
-    );
-  }, [open, optionCount, query]);
+  // As wide as the field (or the trigger, if that is wider), flipped above when there is no room below.
+  const { openUpward: panelAbove, panelStyle } = useFloatingPlacement({
+    open,
+    anchorRef: triggerRef,
+    panelRef,
+    onScrollClose: () => closePanel("scroll"),
+    gap: PANEL_GAP_PX,
+    align: "start",
+    matchWidth: true,
+    widthFloorRef: containerRef,
+    minMaxHeight: PANEL_MIN_LIST_HEIGHT_PX,
+    zIndex: PANEL_Z_INDEX,
+    remeasureKey: `${optionCount}-${query}`,
+  });
 
   const openPanel = () => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) {
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      setPanelAbove(
-        spaceBelow < TIMEZONE_PANEL_MAX_ESTIMATE_PX + PANEL_GAP_PX && spaceAbove > spaceBelow,
-      );
-    } else {
-      setPanelAbove(false);
-    }
-    setPanelStyle(HIDDEN_FIXED_PANEL);
     setOpen(true);
   };
   const selectOption = (entry: TzEntry) => {

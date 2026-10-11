@@ -1,7 +1,6 @@
 import {
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -13,20 +12,13 @@ import {
   type RefObject,
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import {
-  attachFixedOverlayLifecycle,
-  getFixedOverlayViewport,
-  type FixedOverlayViewport,
-} from "../utils/fixed-overlay-lifecycle.js";
+import { useFloatingPlacement } from "./useFloatingPlacement.js";
 import { getPreferredTimeFormat } from "../utils/locale-store.js";
 import "../staff.css";
 
 type TimeParts = { hours: number; minutes: number };
 
 const PICKER_GAP_PX = 6;
-const VIEWPORT_PAD_PX = 8;
-
-const HIDDEN_FIXED_PICKER: CSSProperties = { position: "fixed", visibility: "hidden" };
 
 const TWELVE_HOUR_OPTIONS = Array.from({ length: 12 }, (_, index) => index + 1);
 const TWENTY_FOUR_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => index);
@@ -128,40 +120,6 @@ function pickerOptionClassName(selected: boolean): string {
     "time-input__picker-option",
     selected && "time-input__picker-option--selected",
   );
-}
-
-type PickerPlacement = { above: boolean; style: CSSProperties };
-
-/** Pure placement math for the fixed-position picker panel - see the useLayoutEffect call site
- * for why this exists (flips above/below, clamps to the viewport, clamps + scrolls its height). */
-function computePickerPlacement(
-  rect: DOMRect,
-  panelHeight: number,
-  panelWidth: number,
-  viewport: FixedOverlayViewport,
-): PickerPlacement {
-  const spaceBelow = viewport.bottom - rect.bottom;
-  const spaceAbove = rect.top - viewport.top;
-  const above = spaceBelow < panelHeight + PICKER_GAP_PX && spaceAbove > spaceBelow;
-  const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PICKER_GAP_PX - VIEWPORT_PAD_PX);
-  const maxHeight = panelHeight > available ? available : undefined;
-  const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-  const top = above ? rect.top - usedHeight - PICKER_GAP_PX : rect.bottom + PICKER_GAP_PX;
-  let left = rect.left;
-  left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
-  left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
-
-  return {
-    above,
-    style: {
-      position: "fixed",
-      top,
-      left,
-      maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
-      overflowY: maxHeight !== undefined ? "auto" : undefined,
-      visibility: "visible",
-    },
-  };
 }
 
 function renderFieldMessage(
@@ -344,14 +302,6 @@ export function TimeInput({
   const [typedInvalid, setTypedInvalid] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTime, setPickerTime] = useState(() => splitTime(value));
-  // Fixed coords (not the old absolute-inside-`.time-input` panel) so a trigger near the bottom
-  // of a scrolled page flips the picker above instead of forcing the page to grow to fit it -
-  // an absolutely positioned panel still inflates the nearest scrolling ancestor's scrollHeight
-  // even with nothing else clipping it (PO report: opening "Fan zone opens", the last field in a
-  // long card, pushed the whole page taller). Same DatePicker/attachFixedOverlayLifecycle
-  // pattern as the Date and Timezone pickers in this same row.
-  const [pickerAbove, setPickerAbove] = useState(false);
-  const [pickerStyle, setPickerStyle] = useState<CSSProperties>(HIDDEN_FIXED_PICKER);
 
   useEffect(() => {
     setText(formatTime(value, twelveHour));
@@ -373,7 +323,6 @@ export function TimeInput({
   const invalidHintId = typedInvalid && !error ? `${uid}-invalid` : undefined;
   const closePicker = (reason?: OutsideInteraction) => {
     setPickerOpen(false);
-    setPickerStyle(HIDDEN_FIXED_PICKER);
     if (reason === "pointer") {
       suppressNextIconClickRef.current = true;
       window.setTimeout(() => {
@@ -384,34 +333,20 @@ export function TimeInput({
 
   useClickOutside(containerRef, pickerOpen, closePicker, [pickerRef]);
 
-  // Places the picker with `position: fixed`, computed from the trigger's own
-  // getBoundingClientRect() - same technique as DatePicker/TimezoneSelect. Flips above the
-  // trigger when it doesn't fit below, clamps horizontally to the viewport (so the right-most
-  // field in a row opens directly under itself instead of overflowing past the card edge), and
-  // clamps its own height + scrolls when neither side has room for the panel's full height (a
-  // short viewport - landscape mobile, a zoomed page) - without this, `top` was computed from
-  // the panel's full natural height regardless of whether that fit, so the panel could render
-  // partly or fully off-screen with no way to reach it (closePicker on outside scroll rules out
-  // "just scroll the page instead").
-  useLayoutEffect(() => {
-    if (!pickerOpen) return;
-    const trigger = containerRef.current;
-    const panel = pickerRef.current;
-    /* v8 ignore if */
-    if (!trigger || !panel) return;
-    const updatePlacement = () => {
-      const { above, style } = computePickerPlacement(
-        trigger.getBoundingClientRect(),
-        panel.scrollHeight,
-        panel.offsetWidth,
-        getFixedOverlayViewport(),
-      );
-      setPickerAbove(above);
-      setPickerStyle(style);
-    };
-    updatePlacement();
-    return attachFixedOverlayLifecycle(panel, updatePlacement, () => closePicker("scroll"));
-  }, [pickerOpen]);
+  // Fixed coordinates (not an absolute panel inside `.time-input`) so a field near the bottom of a
+  // scrolled page flips the picker above instead of forcing the page to grow to fit it: an absolutely
+  // positioned panel still inflates the nearest scrolling ancestor's scrollHeight (PO report: opening
+  // "Fan zone opens", the last field in a long card, pushed the whole page taller). The same placement
+  // as the Date and Timezone pickers in this row; it also clamps the picker's height and scrolls it
+  // when neither side has room for all of it (a short viewport, a zoomed page).
+  const { openUpward: pickerAbove, panelStyle: pickerStyle } = useFloatingPlacement({
+    open: pickerOpen,
+    anchorRef: containerRef,
+    panelRef: pickerRef,
+    onScrollClose: () => closePicker("scroll"),
+    gap: PICKER_GAP_PX,
+    align: "start",
+  });
 
   function setTypedValidity(valid: boolean): void {
     setTypedInvalid(!valid);

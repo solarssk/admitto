@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TimeInput } from "../../src/components/TimeInput.js";
 import { setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 import { mockPlacementLayout } from "./panelPlacementMocks.js";
@@ -253,7 +253,7 @@ describe("TimeInput", () => {
     expect(screen.getByLabelText("Start time")).toBeTruthy();
   });
 
-  it("opens the picker fixed-positioned below the field by default", () => {
+  it("opens the picker fixed-positioned below the field by default", async () => {
     mockPlacementLayout({
       rect: { top: 100, bottom: 130, left: 50 },
       panelHeight: 200,
@@ -265,12 +265,12 @@ describe("TimeInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
     const dialog = screen.getByRole("group", { name: "Choose time" });
-    expect(dialog.className).not.toContain("time-input__picker--above");
     expect(dialog.style.position).toBe("fixed");
-    expect(dialog.style.left).toBe("50px");
+    await waitFor(() => expect(dialog.style.transform).toBe("translate(50px, 136px)")); // 130 + 6 (gap)
+    expect(dialog.className).not.toContain("time-input__picker--above");
   });
 
-  it("flips the picker above the field when there isn't room below - e.g. the last field on a scrolled page", () => {
+  it("flips the picker above the field when there isn't room below - e.g. the last field on a scrolled page", async () => {
     mockPlacementLayout({
       rect: { top: 500, bottom: 540, left: 50 },
       panelHeight: 300,
@@ -282,7 +282,7 @@ describe("TimeInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
     const dialog = screen.getByRole("group", { name: "Choose time" });
-    expect(dialog.className).toContain("time-input__picker--above");
+    await waitFor(() => expect(dialog.className).toContain("time-input__picker--above"));
   });
 
   it("clamps the picker inside the viewport for a field near the right edge, instead of overflowing", () => {
@@ -302,7 +302,7 @@ describe("TimeInput", () => {
     expect(Number.parseFloat(dialog.style.left)).toBeLessThanOrEqual(1024 - 8 - 200);
   });
 
-  it("clamps the picker's own height and scrolls when neither above nor below has room for it", () => {
+  it("clamps the picker's own height and scrolls when neither above nor below has room for it", async () => {
     mockPlacementLayout({
       rect: { top: 50, bottom: 90, left: 50 },
       panelHeight: 500,
@@ -314,7 +314,7 @@ describe("TimeInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
     const dialog = screen.getByRole("group", { name: "Choose time" });
-    expect(dialog.style.maxHeight).toBe("96px");
+    await waitFor(() => expect(dialog.style.maxHeight).toBe("96px"));
     expect(dialog.style.overflowY).toBe("auto");
   });
 });
