@@ -36,6 +36,22 @@ describe("placement-standard scanner: inline fixed position", () => {
     expect(scan('const s: Other.CSSPropertiesLike = { position: "fixed" };')["inline-fixed-position"]).toEqual({});
   });
 
+  it("counts position fixed under a type assertion, as TypeScript narrows it", () => {
+    for (const source of [
+      '{ position: "fixed" as const, top: 0 }',
+      '{ position: ("fixed" as const), top: 0 }',
+      '{ position: "fixed" satisfies Position, top: 0 }',
+      '{ position: `fixed` as const, top: 0 }',
+    ]) {
+      expect(scan(`const s = ${source};`)["inline-fixed-position"]).toEqual(only(1));
+    }
+    expect(scan('const s: CSSProperties = { position: "fixed" as const };')["inline-fixed-position"]).toEqual(only(1));
+    // The angle-bracket form is only valid outside .tsx.
+    const ts = "apps/admin/src/components/panel.ts";
+    expect(scan('const s = { position: <const>"fixed", top: 0 };', ts)["inline-fixed-position"]).toEqual({ [ts]: 1 });
+    expect(scan('const s = { position: "absolute" as const, top: 0 };')["inline-fixed-position"]).toEqual({});
+  });
+
   it("does not count an object that is data, not a style", () => {
     expect(scan('const mode = { position: "fixed" };')["inline-fixed-position"]).toEqual({});
     expect(scan('const toolbar = { position: "fixed", label: "Sticky" };')["inline-fixed-position"]).toEqual({});

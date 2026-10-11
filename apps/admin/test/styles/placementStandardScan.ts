@@ -78,8 +78,21 @@ function identifierName(node: unknown): string | undefined {
   return isNode(node) && node.type === "Identifier" ? (node.name as string) : undefined;
 }
 
-/** The text of a string literal, or of a template literal without interpolations. */
-function stringValue(node: unknown): string | undefined {
+/** The expression itself, without the type assertions around it: `"fixed" as const`, `x satisfies T`, `x!`, `<T>x`. */
+function unwrapAssertions(node: unknown): unknown {
+  let current = node;
+  while (
+    isNode(current) &&
+    ["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSTypeAssertion"].includes(current.type)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/** The text of a string literal, or of a template literal without interpolations, however it is asserted. */
+function stringValue(value: unknown): string | undefined {
+  const node = unwrapAssertions(value);
   if (!isNode(node)) return undefined;
   if (node.type === "Literal" && typeof node.value === "string") return node.value;
   if (node.type === "TemplateLiteral" && (node.expressions as unknown[]).length === 0) {
