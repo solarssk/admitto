@@ -24,6 +24,7 @@ import { RefetchRegion } from "../components/RefetchRegion.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
+import { useFloatingPlacement } from "../components/useFloatingPlacement.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useBusyEndCount } from "../hooks/useRetry.js";
@@ -426,61 +427,38 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
   return lines.join("\n");
 }
 
-// Matches .audit-log-details__panel's max-height (12rem) and gap (--space-1) in
-// staff.css — used to decide above-vs-below placement before the panel exists to measure.
+// Matches .audit-log-details__panel's max-height (12rem) and gap (--space-1) in staff.css.
 const DETAILS_PANEL_MAX_HEIGHT_PX = 192;
 const DETAILS_PANEL_GAP_PX = 4;
-// Matches .audit-log-details__panel's max-width (22rem) - the panel is right-anchored from
-// the trigger, which works fine on a wide desktop row, but a mobile card's trigger sits close
-// to the left edge itself; using this as the worst-case width to clamp against guarantees the
-// panel's own left edge never goes past the viewport, even before the real (max-content, so
-// possibly narrower) width is known.
-const DETAILS_PANEL_MAX_WIDTH_PX = 352;
-const DETAILS_PANEL_EDGE_MARGIN_PX = 8;
 
 /**
  * Details cell — shows metadata as a humanized label/value list in a small popover instead of
  * an inline `<details>` block, so opening it never changes the table row's height or pushes
- * other rows around. Positioned `fixed` from the trigger's own rect (recomputed on
- * open/resize/scroll, same technique as DatePicker) so it floats over the page instead of being
- * clipped by the table's horizontal scroll wrapper, which forces a matching `overflow-y` per the
- * CSS spec. Flips above the trigger when there isn't room below, so a row near the bottom of the
- * viewport doesn't push the panel off-screen.
+ * other rows around. Placed by `useFloatingPlacement` (fixed, from the trigger's own rect) so it
+ * floats over the page instead of being clipped by the table's horizontal scroll wrapper, which
+ * forces a matching `overflow-y` per the CSS spec. Flips above the trigger when there isn't room
+ * below, so a row near the bottom of the viewport doesn't push the panel off-screen.
  */
 function DetailsCell({
   metadata,
   hiddenKeys,
 }: Readonly<{ metadata: Record<string, unknown> | null; hiddenKeys: ReadonlySet<string> }>) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDListElement>(null);
 
   useClickOutside(rootRef, open, () => setOpen(false));
 
-  useEffect(() => {
-    if (!open) return;
-    const updatePosition = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const naturalRight = window.innerWidth - rect.right;
-      const maxRight = window.innerWidth - DETAILS_PANEL_MAX_WIDTH_PX - DETAILS_PANEL_EDGE_MARGIN_PX;
-      const right = Math.max(DETAILS_PANEL_EDGE_MARGIN_PX, Math.min(naturalRight, maxRight));
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < DETAILS_PANEL_MAX_HEIGHT_PX && rect.top > spaceBelow) {
-        setPos({ bottom: window.innerHeight - rect.top + DETAILS_PANEL_GAP_PX, right });
-      } else {
-        setPos({ top: rect.bottom + DETAILS_PANEL_GAP_PX, right });
-      }
-    };
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open]);
+  const { panelStyle } = useFloatingPlacement({
+    open,
+    anchorRef: triggerRef,
+    panelRef,
+    onScrollClose: () => setOpen(false),
+    gap: DETAILS_PANEL_GAP_PX,
+    align: "end",
+    maxHeight: DETAILS_PANEL_MAX_HEIGHT_PX,
+  });
 
   if (!hasVisibleMetadata(metadata, hiddenKeys)) return <>-</>;
   const rows = Object.entries(metadata!).filter(([key]) => !hiddenKeys.has(key));
@@ -495,11 +473,8 @@ function DetailsCell({
       >
         View
       </button>
-      {open && pos && (
-        <dl
-          className="audit-log-details__panel audit-log-details__list"
-          style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}
-        >
+      {open && (
+        <dl ref={panelRef} className="audit-log-details__panel audit-log-details__list" style={panelStyle}>
           {rows.map(([key, value]) => (
             <div key={key} className="audit-log-details__row">
               <dt>{humanizeMetadataKey(key)}</dt>

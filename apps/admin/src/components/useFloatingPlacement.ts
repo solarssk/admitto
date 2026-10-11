@@ -151,7 +151,11 @@ export function useFloatingPlacement({
             padding: VIEWPORT_PAD_PX,
             apply({ availableHeight, rects, elements }) {
               const el = elements.floating;
-              el.style.maxWidth = `${maxWidth}px`;
+              // Cap the width to the padded viewport, unless the panel's own CSS already caps it lower
+              // (a `max-width: 22rem` is not ours to override with a wider inline value).
+              el.style.maxWidth = "";
+              const cssMaxWidth = /^([\d.]+)px$/.exec(getComputedStyle(el).maxWidth);
+              if (!cssMaxWidth || Number.parseFloat(cssMaxWidth[1]!) > maxWidth) el.style.maxWidth = `${maxWidth}px`;
               // A CSS `min-width` beats `max-width`, so a panel whose minimum is wider than the padded
               // viewport (pinch-zoomed, or a very narrow phone) would still overflow: cap that too.
               el.style.minWidth = "";

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { useRef, useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { useFloatingPlacement, type FloatingPlacementOptions } from "../../src/components/useFloatingPlacement.js";
 
 afterEach(() => {
@@ -197,6 +197,21 @@ describe("useFloatingPlacement", () => {
     await act(async () => view.rerender(<Toggle open />));
 
     expect(screen.getByRole("menu").dataset.up).toBe("false");
+  });
+
+  it("leaves a narrower CSS max-width alone, and caps a wider or missing one to the padded viewport", async () => {
+    const style = document.createElement("style");
+    style.textContent = '[role="menu"] { max-width: 352px; }';
+    document.head.append(style);
+    onTestFinished(() => style.remove());
+    mockLayout({ anchor: { left: 50, top: 100, width: 100, height: 30 }, panel: { width: 200, height: 100 } });
+    // 352px is narrower than 1024 - 16: the panel's own limit stays.
+    expect((await renderOpen({})).style.maxWidth).toBe("");
+    cleanup();
+
+    // A phone: 352px no longer fits 320 - 16, so the viewport cap takes over.
+    mockLayout({ anchor: { left: 50, top: 100, width: 100, height: 30 }, panel: { width: 200, height: 100 }, innerWidth: 320 });
+    expect((await renderOpen({})).style.maxWidth).toBe("304px");
   });
 
   it("hangs from the reference rect when one is given, not from the anchor's own", async () => {
