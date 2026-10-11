@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PaginationFooter, paginationHandlers } from "../../src/components/PaginationFooter.js";
 
@@ -172,7 +172,7 @@ describe("paginationHandlers", () => {
     expect(updater(3)).toBe(4);
   });
 
-  it("keeps the rows-per-page menu as narrow as its short numeric options", () => {
+  it("keeps the rows-per-page menu as narrow as its short numeric options", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const base = { top: 100, bottom: 130, height: 30, x: 0, y: 0, toJSON() {} };
       if (this.tagName === "BUTTON") return { ...base, left: 100, right: 167, width: 67 };
@@ -195,6 +195,9 @@ describe("paginationHandlers", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Rows per page, 25" }));
 
-    expect(document.querySelector<HTMLElement>(".searchable-select__panel")?.style.width).toBe("72px");
+    // Placement settles a microtask after the panel mounts.
+    await waitFor(() =>
+      expect(document.querySelector<HTMLElement>(".searchable-select__panel")?.style.width).toBe("72px"),
+    );
   });
 });
