@@ -25,6 +25,17 @@ describe("placement-standard scanner: inline fixed position", () => {
     expect(scan('const [s] = useState<CSSProperties>({ position: "fixed" });')["inline-fixed-position"]).toEqual(only(1));
   });
 
+  it("counts a bare position fixed typed with a qualified CSSProperties, as React.CSSProperties is written", () => {
+    expect(scan('const s: React.CSSProperties = { position: "fixed" };')["inline-fixed-position"]).toEqual(only(1));
+    expect(scan('const s = { position: "fixed" } as React.CSSProperties;')["inline-fixed-position"]).toEqual(only(1));
+    expect(scan('const [s] = useState<React.CSSProperties>({ position: "fixed" });')["inline-fixed-position"]).toEqual(only(1));
+  });
+
+  it("does not count a bare position fixed typed as something else", () => {
+    expect(scan('const s: Config = { position: "fixed" };')["inline-fixed-position"]).toEqual({});
+    expect(scan('const s: Other.CSSPropertiesLike = { position: "fixed" };')["inline-fixed-position"]).toEqual({});
+  });
+
   it("does not count an object that is data, not a style", () => {
     expect(scan('const mode = { position: "fixed" };')["inline-fixed-position"]).toEqual({});
     expect(scan('const toolbar = { position: "fixed", label: "Sticky" };')["inline-fixed-position"]).toEqual({});
@@ -63,6 +74,17 @@ describe("placement-standard scanner: measuring an element and reading the windo
     expect(scan("const f = () => { el.getBoundingClientRect(); return panel.innerHeight; };")["viewport-math-in-component"]).toEqual({});
     expect(scan("const f = () => { el.getBoundingClientRect(); return { innerWidth: 5 }; };")["viewport-math-in-component"]).toEqual({});
     expect(scan("const f = () => { el.getBoundingClientRect(); const innerHeight = 5; };")["viewport-math-in-component"]).toEqual({});
+  });
+
+  it("does not count a parameter or a variable that is called the same as a window size", () => {
+    expect(scan("const f = (innerHeight) => { el.getBoundingClientRect(); return innerHeight; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const f = () => { const innerWidth = 5; el.getBoundingClientRect(); return innerWidth - 1; };")["viewport-math-in-component"]).toEqual({});
+    expect(scan("const visualViewport = null;\nconst f = () => { el.getBoundingClientRect(); return visualViewport; };")["viewport-math-in-component"]).toEqual({});
+  });
+
+  it("still counts the global when only another function has a variable of that name", () => {
+    const source = "const g = (innerHeight) => innerHeight;\nconst f = () => { el.getBoundingClientRect(); return innerHeight; };";
+    expect(scan(source)["viewport-math-in-component"]).toEqual(only(1));
   });
 
   it("counts placement math written inside a template interpolation", () => {

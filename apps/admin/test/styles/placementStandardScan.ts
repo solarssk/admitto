@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@typescript-eslint/parser";
+import { analyze } from "@typescript-eslint/scope-manager";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 /** Where staff UI code lives: the admin app and the shared kit it renders. */
@@ -87,16 +88,11 @@ function stringValue(node: unknown): string | undefined {
   return undefined;
 }
 
-/** `window.innerWidth`, `visualViewport`, `document.documentElement.clientHeight` and the like. */
-function readsViewportSize(node: Node, parent: Node | undefined): boolean {
-  // A bare `innerHeight` or `visualViewport` is the same global. It has to be a reference: not the property
-  // of another object (`panel.innerHeight`) and not the key of an object literal.
-  if (node.type === "Identifier") {
-    if (!WINDOW_SIZE.has(node.name as string) || !parent) return false;
-    if (parent.type === "MemberExpression" && parent.property === node && parent.computed !== true) return false;
-    if (parent.type === "Property" && parent.key === node && parent.computed !== true && parent.shorthand !== true) return false;
-    return !["VariableDeclarator", "FunctionDeclaration", "ImportSpecifier", "ExportSpecifier"].includes(parent.type) || parent.id !== node;
-  }
+/** `window.innerWidth`, `document.documentElement.clientHeight` and the like. A bare `innerHeight` is the
+ * same global, but only when nothing in scope is called that: `globalViewportReads` holds the identifiers
+ * that scope analysis could not resolve to a parameter or a variable. */
+function readsViewportSize(node: Node, globalViewportReads: ReadonlySet<unknown>): boolean {
+  if (node.type === "Identifier") return globalViewportReads.has(node);
   if (node.type !== "MemberExpression" || node.computed === true) return false;
   const property = identifierName(node.property);
   if (!property) return false;
@@ -112,6 +108,16 @@ function readsViewportSize(node: Node, parent: Node | undefined): boolean {
   );
 }
 
+/** The identifiers `innerWidth`, `innerHeight` and `visualViewport` that refer to the browser's global. */
+function findGlobalViewportReads(ast: unknown): Set<unknown> {
+  const scopeManager = analyze(ast as Parameters<typeof analyze>[0], { sourceType: "module", jsxPragma: null });
+  const reads = new Set<unknown>();
+  for (const reference of scopeManager.globalScope?.through ?? []) {
+    if (WINDOW_SIZE.has(reference.identifier.name)) reads.add(reference.identifier);
+  }
+  return reads;
+}
+
 /** Whether an object literal is a style: it sits in a JSX `style` attribute, is typed `CSSProperties`, or has
  * a CSS key next to its `position`. A `{ position: "fixed" }` that is data of some other kind is not. */
 function isStyleObject(object: Node, ancestors: Node[]): boolean {
@@ -123,7 +129,7 @@ function isStyleObject(object: Node, ancestors: Node[]): boolean {
     return true;
   }
   // `const s: CSSProperties = {...}`, `{...} as CSSProperties`, `useState<CSSProperties>({...})`
-  return ancestors.slice(-3).some((ancestor) => JSON.stringify(typeNames(ancestor)).includes("CSSProperties"));
+  return ancestors.slice(-3).some((ancestor) => typeNames(ancestor).includes("CSSProperties"));
 }
 
 function jsxName(attribute: Node): string | undefined {
@@ -138,7 +144,9 @@ function typeNames(node: Node): string[] {
     if (Array.isArray(value)) value.forEach(collect);
     else if (isNode(value)) {
       if (value.type === "TSTypeReference") {
-        const name = identifierName(value.typeName);
+        // `CSSProperties` or `React.CSSProperties`: the name that counts is the last one.
+        const typeName = value.typeName;
+        const name = identifierName(typeName) ?? (isNode(typeName) && typeName.type === "TSQualifiedName" ? identifierName(typeName.right) : undefined);
         if (name) names.push(name);
       }
       for (const [key, child] of Object.entries(value)) if (!NOT_CHILDREN.has(key)) collect(child);
@@ -183,6 +191,7 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
     } catch (error) {
       throw new Error(`placement-standard scanner could not parse ${file}: ${String(error)}`, { cause: error });
     }
+    const globalViewportReads = findGlobalViewportReads(ast);
     walk(ast, null, [], (node, enclosing, ancestors) => {
       const name = identifierName(node);
       // An import specifier names the helper twice (`imported` and `local`, at the same place).
@@ -195,7 +204,7 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
         }
       }
       if (callsGetBoundingClientRect(node)) note(enclosing).measures = true;
-      if (readsViewportSize(node, ancestors.at(-1))) note(enclosing).readsViewport = true;
+      if (readsViewportSize(node, globalViewportReads)) note(enclosing).readsViewport = true;
     });
     counts["overlay-lifecycle-outside-hook"] = helperSpots.size;
     counts["viewport-math-in-component"] = [...functions.values()].filter((f) => f.measures && f.readsViewport).length;
