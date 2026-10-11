@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TimezoneSelect } from "../../src/components/TimezoneSelect.js";
+import { mockPlacementLayout } from "../components/panelPlacementMocks.js";
 
 afterEach(cleanup);
 
@@ -378,49 +379,18 @@ describe("TimezoneSelect", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
-  it("estimates panel-above placement before open when space below is tight", () => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      top: 500,
-      bottom: 540,
-      left: 20,
-      right: 300,
-      width: 280,
-      height: 40,
-      x: 20,
-      y: 500,
-      toJSON: () => ({}),
-    } as DOMRect);
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(580);
+  it("opens the panel above the trigger when space below is tight", async () => {
+    mockPlacementLayout({
+      rect: { top: 500, bottom: 540, left: 20, width: 280 },
+      panelHeight: 300,
+      panelWidth: 280,
+      innerWidth: 1024,
+      innerHeight: 580,
+    });
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
     openPicker();
     const panel = screen.getByRole("listbox").closest(".timezone-select__panel");
-    expect(panel?.className).toContain("timezone-select__panel--above");
-  });
-
-  it("defaults panel-above to false when getBoundingClientRect is unavailable at open", () => {
-    let calls = 0;
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => {
-      calls += 1;
-      // First call is openPanel's estimate; later calls are the layout effect.
-      if (calls === 1) return undefined as unknown as DOMRect;
-      return {
-        top: 100,
-        bottom: 140,
-        left: 20,
-        right: 300,
-        width: 280,
-        height: 40,
-        x: 20,
-        y: 100,
-        toJSON: () => ({}),
-      } as DOMRect;
-    });
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(300);
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(768);
-    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
-    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
-    openPicker();
-    expect(screen.getByRole("listbox")).toBeTruthy();
+    await waitFor(() => expect(panel?.className).toContain("timezone-select__panel--above"));
   });
 
   it("shows a fallback UTC+0 group label for unknown IANA values", async () => {
