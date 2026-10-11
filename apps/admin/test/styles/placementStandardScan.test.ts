@@ -67,7 +67,7 @@ describe("placement-standard scanner: comments", () => {
 
   it("does not mistake a comment-looking text inside a string for a comment", () => {
     expect(toCode('const u = "https://example.com"; // gone')).toBe('const u = "                   "; ');
-    expect(toCode("const t = `a // b ${x}`; /* gone */ const c = 1;")).toBe("const t = `           `;  const c = 1;");
+    expect(toCode("const t = `a // b ${x}`; /* gone */ const c = 1;")).toBe("const t = `       ${x}`;  const c = 1;");
     expect(toCode("const q = 'it\\'s // not'; // gone")).toBe(`const q = '${" ".repeat(12)}'; `);
   });
 
@@ -105,5 +105,31 @@ describe("placement-standard scanner: strings", () => {
   it("does not count a viewport read that is only text", () => {
     const source = "const r = el.getBoundingClientRect();\nconst note = 'compare with window.innerHeight';";
     expect(scan(source)["viewport-math-in-component"]).toEqual({});
+  });
+});
+
+describe("placement-standard scanner: template literals", () => {
+  it("counts placement math written inside a template interpolation", () => {
+    const source =
+      "const style = { transform: `translateX(${window.innerWidth - el.getBoundingClientRect().right}px)` };";
+    expect(scan(source)["viewport-math-in-component"]).toEqual({ "apps/admin/src/components/Panel.tsx": 1 });
+    expect(scan("const s = `${attachFixedOverlayLifecycle(a, b, c)}`;")["overlay-lifecycle-outside-hook"]).toEqual({
+      "apps/admin/src/components/Panel.tsx": 1,
+    });
+  });
+
+  it("blanks the text of a template but not its expressions, also when they nest", () => {
+    expect(toCode("`a ${b + `c ${d}`} e`")).toBe("`  ${b + `  ${d}`}  `");
+    expect(toCode("`x ${ {a: 1}.a } y`")).toBe("`  ${ {a: 1}.a }  `");
+  });
+
+  it("does not count a rule's pattern that is only text in a template", () => {
+    expect(scan("const s = `use position: 'fixed' and getFixedOverlayViewport`;")["inline-fixed-position"]).toEqual({});
+    expect(scan("const s = `use getFixedOverlayViewport`;")["overlay-lifecycle-outside-hook"]).toEqual({});
+  });
+
+  it("keeps the line breaks of a multi-line template and survives an unclosed one", () => {
+    expect(toCode("`a\nb ${c}`")).toBe("` \n  ${c}`");
+    expect(toCode("`never closed ${x")).toBe("`             ${x");
   });
 });

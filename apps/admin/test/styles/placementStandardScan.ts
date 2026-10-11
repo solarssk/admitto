@@ -49,12 +49,19 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /** What is left of the source when only code counts: comments (whole-line, block and trailing) are gone and
- * the inside of every string and template literal is blanked, so `'position: "fixed"'` in a message or a
- * helper's name in a sentence is not mistaken for placement code. The one string kept is the literal
- * "fixed" itself, because `position: "fixed"` is code with a quote in it. */
+ * the text inside every string and template literal is blanked, so `'position: "fixed"'` in a message or a
+ * helper's name in a sentence is not mistaken for placement code. Two things are kept: the literal "fixed"
+ * itself, because `position: "fixed"` is code with a quote in it, and the expressions inside a template
+ * literal's `${...}`, which are code. */
 export function toCode(source: string): string {
+  return scanCode(source, 0, false).out;
+}
+
+/** Scans from `start`; with `untilBrace` it stops after the `}` that closes the `${` it was started in. */
+function scanCode(source: string, start: number, untilBrace: boolean): { out: string; end: number } {
   let out = "";
-  let i = 0;
+  let i = start;
+  let depth = 0;
   while (i < source.length) {
     const ch = source[i]!;
     const next = source[i + 1];
@@ -63,21 +70,41 @@ export function toCode(source: string): string {
     } else if (ch === "/" && next === "*") {
       const end = source.indexOf("*/", i + 2);
       i = end === -1 ? source.length : end + 2;
-    } else if (ch === '"' || ch === "'" || ch === "`") {
+    } else if (ch === '"' || ch === "'") {
       let j = i + 1;
-      while (j < source.length && source[j] !== ch && (source[j] !== "\n" || ch === "`")) {
-        j += source[j] === "\\" ? 2 : 1;
-      }
+      while (j < source.length && source[j] !== ch && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
       const closed = source[j] === ch;
       const content = source.slice(i + 1, Math.min(j, source.length));
       out += ch + (content === "fixed" ? content : " ".repeat(content.length)) + (closed ? ch : "");
       i = closed ? j + 1 : Math.min(j, source.length);
+    } else if (ch === "`") {
+      out += ch;
+      i += 1;
+      while (i < source.length && source[i] !== "`") {
+        if (source[i] === "$" && source[i + 1] === "{") {
+          const inner = scanCode(source, i + 2, true);
+          out += "${" + inner.out;
+          i = inner.end;
+        } else {
+          const width = source[i] === "\\" ? 2 : 1;
+          out += source.slice(i, i + width).replaceAll(/[^\n]/g, " ");
+          i += width;
+        }
+      }
+      if (source[i] === "`") {
+        out += "`";
+        i += 1;
+      }
+    } else if (untilBrace && ch === "}" && depth === 0) {
+      return { out: out + "}", end: i + 1 };
     } else {
+      if (ch === "{") depth += 1;
+      else if (ch === "}") depth -= 1;
       out += ch;
       i += 1;
     }
   }
-  return out;
+  return { out, end: source.length };
 }
 
 /** Findings per rule and file (repo-relative, `/`-separated) for the given sources. */
