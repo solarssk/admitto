@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scanPlacement, stripComments } from "./placementStandardScan.js";
+import { scanPlacement, toCode } from "./placementStandardScan.js";
 
 const scan = (source: string, file = "apps/admin/src/components/Panel.tsx") => scanPlacement({ [file]: source });
 
@@ -65,10 +65,10 @@ describe("placement-standard scanner: comments", () => {
     expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
   });
 
-  it("keeps what is inside a string or a template literal, even when it looks like a comment", () => {
-    expect(stripComments('const u = "https://example.com"; // gone')).toBe('const u = "https://example.com"; ');
-    expect(stripComments("const t = `a // b ${x}`; /* gone */ const c = 1;")).toBe("const t = `a // b ${x}`;  const c = 1;");
-    expect(stripComments("const q = 'it\\'s // not a comment'; // gone")).toBe("const q = 'it\\'s // not a comment'; ");
+  it("does not mistake a comment-looking text inside a string for a comment", () => {
+    expect(toCode('const u = "https://example.com"; // gone')).toBe('const u = "                   "; ');
+    expect(toCode("const t = `a // b ${x}`; /* gone */ const c = 1;")).toBe("const t = `           `;  const c = 1;");
+    expect(toCode("const q = 'it\\'s // not'; // gone")).toBe(`const q = '${" ".repeat(12)}'; `);
   });
 
   it("still counts a violation that comes before a trailing comment", () => {
@@ -78,7 +78,32 @@ describe("placement-standard scanner: comments", () => {
   });
 
   it("handles an unclosed block comment and a line that ends inside a quote", () => {
-    expect(stripComments("a /* never closed")).toBe("a ");
-    expect(stripComments("const s = 'oops\nconst b = 1; // c")).toBe("const s = 'oops\nconst b = 1; ");
+    expect(toCode("a /* never closed")).toBe("a ");
+    expect(toCode("const s = 'oops\nconst b = 1; // c")).toBe("const s = '    \nconst b = 1; ");
+  });
+});
+
+describe("placement-standard scanner: strings", () => {
+  it("does not count a rule's pattern that is only text inside a string", () => {
+    const found = scan(
+      [
+        "const a = 'position: \"fixed\"';",
+        'const b = "use attachFixedOverlayLifecycle instead";',
+        "const c = `getFixedOverlayViewport ${x}`;",
+      ].join("\n"),
+    );
+    expect(found["inline-fixed-position"]).toEqual({});
+    expect(found["overlay-lifecycle-outside-hook"]).toEqual({});
+  });
+
+  it("still counts the literal fixed value, in either quote style, and in a style written without spaces", () => {
+    for (const source of ['{ position: "fixed" }', "{ position: 'fixed' }", '{position:"fixed"}']) {
+      expect(scan(source)["inline-fixed-position"]).toEqual({ "apps/admin/src/components/Panel.tsx": 1 });
+    }
+  });
+
+  it("does not count a viewport read that is only text", () => {
+    const source = "const r = el.getBoundingClientRect();\nconst note = 'compare with window.innerHeight';";
+    expect(scan(source)["viewport-math-in-component"]).toEqual({});
   });
 });

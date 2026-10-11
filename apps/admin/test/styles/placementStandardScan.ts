@@ -48,31 +48,31 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** The source without its comments (whole-line, block and trailing), with strings and template literals
- * left as they are: what a rule looks for, such as `position: "fixed"`, is itself code with quotes in it. */
-export function stripComments(source: string): string {
+/** What is left of the source when only code counts: comments (whole-line, block and trailing) are gone and
+ * the inside of every string and template literal is blanked, so `'position: "fixed"'` in a message or a
+ * helper's name in a sentence is not mistaken for placement code. The one string kept is the literal
+ * "fixed" itself, because `position: "fixed"` is code with a quote in it. */
+export function toCode(source: string): string {
   let out = "";
   let i = 0;
-  let quote: string | null = null;
   while (i < source.length) {
     const ch = source[i]!;
     const next = source[i + 1];
-    if (quote) {
-      out += ch;
-      if (ch === "\\" && next !== undefined) {
-        out += next;
-        i += 2;
-        continue;
-      }
-      if (ch === quote || (ch === "\n" && quote !== "`")) quote = null;
-      i += 1;
-    } else if (ch === "/" && next === "/") {
+    if (ch === "/" && next === "/") {
       while (i < source.length && source[i] !== "\n") i += 1;
     } else if (ch === "/" && next === "*") {
       const end = source.indexOf("*/", i + 2);
       i = end === -1 ? source.length : end + 2;
+    } else if (ch === '"' || ch === "'" || ch === "`") {
+      let j = i + 1;
+      while (j < source.length && source[j] !== ch && (source[j] !== "\n" || ch === "`")) {
+        j += source[j] === "\\" ? 2 : 1;
+      }
+      const closed = source[j] === ch;
+      const content = source.slice(i + 1, Math.min(j, source.length));
+      out += ch + (content === "fixed" ? content : " ".repeat(content.length)) + (closed ? ch : "");
+      i = closed ? j + 1 : Math.min(j, source.length);
     } else {
-      if (ch === '"' || ch === "'" || ch === "`") quote = ch;
       out += ch;
       i += 1;
     }
@@ -88,7 +88,7 @@ export function scanPlacement(files: Record<string, string>): Record<Rule, Count
     "viewport-math-in-component": {},
   };
   for (const [file, raw] of Object.entries(files)) {
-    const source = stripComments(raw);
+    const source = toCode(raw);
     const count = (rule: Rule, n: number) => {
       if (n > 0 && !IMPLEMENTS_PLACEMENT[rule].has(file)) found[rule][file] = n;
     };
