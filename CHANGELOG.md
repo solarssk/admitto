@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-10-11
+
 ### Added
 
 - The emergency CLI can now erase attendees' personal data when the admin UI and API are unreachable: `admitto attendees erase --event <id> --attendee-ids <id[,id...]> --operator-email <email>` (`--dry-run` only counts, `--yes` skips the question, up to 500 ids). It does what the erase API does, including the audit entries (marked `source: "cli"`, ids and counts only), the files the event's exports and imports left in storage, and the wallet passes at the provider, and exits with code 2 when a pass is still there so that running it again retries. `admitto attendees find --query "<name or email>" [--event <id>]` finds the ids to give it: read-only, up to 20 people with the event's id and title and their own id and address (people who are already erased are not listed), in every event unless `--event` is given, and it also works for an archived event, which `checkin lookup` refuses. The DSAR procedure now points to both instead of a manual SQL delete, which bypassed both audit writers and the wallet provider.
@@ -1693,7 +1695,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/solarssk/admitto/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/solarssk/admitto/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/solarssk/admitto/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/solarssk/admitto/compare/v0.7.1...v0.7.2
