@@ -9,7 +9,7 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export function Select({ label, hint, id, children, className, ...rest }: Readonly<SelectProps>) {
   const uid = useId();
-  const autoId = id ?? (label ? `f-${uid}` : undefined);
+  const autoId = id ?? `f-${uid}`;
   const hintId = hint ? `${uid}-hint` : undefined;
   return (
     <div className="at-field">

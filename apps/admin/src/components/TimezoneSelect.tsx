@@ -410,6 +410,7 @@ export function TimezoneSelect({
           <input
             ref={searchRef}
             type="search"
+            name="timezone-search"
             className="at-input timezone-select__search"
             placeholder="Search city, country or offset (e.g. Moscow, India, +5:30)…"
             value={query}

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Input } from "../src/components/Input.js";
+import { Select } from "../src/components/Select.js";
 
 describe("Input", () => {
   it("renders an optional hint and wires it to the input", () => {
@@ -41,5 +42,47 @@ describe("Input", () => {
     const button = screen.getByRole("button", { name: "Copy" });
     button.click();
     expect(onIconClick).toHaveBeenCalledOnce();
+  });
+
+  it("gives an unlabeled input its own unique id, and keeps an explicit one", () => {
+    render(
+      <>
+        <Input aria-label="First" />
+        <Input aria-label="Second" />
+        <Input aria-label="Third" id="custom-id" />
+      </>,
+    );
+
+    const first = screen.getByLabelText("First").id;
+    const second = screen.getByLabelText("Second").id;
+    expect(first).not.toBe("");
+    expect(second).not.toBe("");
+    expect(first).not.toBe(second);
+    expect(screen.getByLabelText("Third").id).toBe("custom-id");
+  });
+});
+
+describe("Select", () => {
+  it("gives an unlabeled select its own unique id, and keeps an explicit one", () => {
+    render(
+      <>
+        <Select aria-label="First" />
+        <Select aria-label="Second" />
+        <Select aria-label="Third" id="custom-id" />
+      </>,
+    );
+
+    const first = screen.getByLabelText("First").id;
+    const second = screen.getByLabelText("Second").id;
+    expect(first).not.toBe("");
+    expect(second).not.toBe("");
+    expect(first).not.toBe(second);
+    expect(screen.getByLabelText("Third").id).toBe("custom-id");
+  });
+
+  it("points a visible label at the select's id", () => {
+    render(<Select label="Role" />);
+
+    expect(screen.getByLabelText("Role").tagName).toBe("SELECT");
   });
 });
