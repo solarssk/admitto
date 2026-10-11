@@ -86,6 +86,14 @@ test('the editor rule files are checked too', () => {
   assert.deepEqual(problems, ['.cursor/rules/x.mdc: link to ../../standards/gone.md does not resolve.'])
 })
 
+test('a skill file is checked too', () => {
+  const problems = check({
+    ...good,
+    '.claude/skills/s/SKILL.md': '[a](../../../standards/gone.md) and [b](../../../standards/README.md)\n',
+  })
+  assert.deepEqual(problems, ['.claude/skills/s/SKILL.md: link to ../../../standards/gone.md does not resolve.'])
+})
+
 test('a sub-index that the main index does not link is reported, and so are its pages', () => {
   const problems = check({
     ...good,
