@@ -206,6 +206,7 @@ export type {
 export {
   redactAttendeeListFiltersForStorage,
   scrubExportJobResultJson,
+  isExportInvalidated,
 } from "./export-job-privacy.js";
 export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
 export type {

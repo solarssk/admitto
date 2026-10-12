@@ -42,6 +42,7 @@ import {
   ATTENDEE_MAIL_STATUS_FILTERS,
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
+  isExportInvalidated,
   countFilteredAttendees,
   findFilteredAttendeesForList,
   findSelectedAttendeesForExport,
@@ -1323,7 +1324,10 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
   const loaded = await loadEventAdminJob(c, db, "export");
   if (loaded instanceof Response) return loaded;
   const { job } = loaded;
-  if (job.status !== "succeeded" || !job.storage_key) return c.json({ error: "not_ready" }, 404);
+  c.header("Cache-Control", "no-store");
+  if (job.status !== "succeeded" || !job.storage_key || isExportInvalidated(job.result_json)) {
+    return c.json({ error: "not_ready" }, 404);
+  }
 
   const { getDefaultStorage, StoragePathError } = await import("@admitto/storage");
   let bytes: Buffer;
@@ -1334,6 +1338,11 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
     // deletion): the same answer as a job whose file is already gone.
     if (err instanceof StoragePathError && err.message === "not_found") return c.json({ error: "not_ready" }, 404);
     throw err;
+  }
+  // Storage IO can overlap an erasure. Do not serve a snapshot invalidated while the file was read.
+  const current = await db.adminJob.findUnique({ where: { id: job.id }, select: { result_json: true, storage_key: true } });
+  if (!current || current.storage_key !== job.storage_key || isExportInvalidated(current.result_json)) {
+    return c.json({ error: "not_ready" }, 404);
   }
   const meta =
     job.result_json && typeof job.result_json === "object" && !Array.isArray(job.result_json)

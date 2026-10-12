@@ -72,6 +72,8 @@ Where an Administrator or Superadmin reaches the removal (`apps/admin`):
 
 ## Files left in storage
 
+Erasure and removal logically invalidate every existing export of the event inside their database transaction (`invalidateEventExports`, called by `scrubAttendeeTraces`). The `result_json.invalidated` marker blocks download with `404 not_ready`, independently of physical deletion. Completed jobs keep their status, counts and file key; the key is cleared only after deletion succeeds, so cleanup remains retryable. Download checks again after storage IO to detect invalidation during the read. A response already handed out cannot be recalled. API, bulk actions and CLI share this contract. Jobs created after the commit remain available, and a repeated erasure that changes nobody leaves them alone.
+
 Two kinds of job leave a file in storage that holds attendees: an **export** (the CSV, XLSX or PDF of the attendee list, `AdminJob` of type `export`, the file at `storage_key`) and an **import** (the staged CSV of an `import_commit` job, which a commit that works deletes at once, so what stays is the CSV of a job that failed or whose cleanup failed). Both are copies of personal data that nothing reads once the job is done, and the job row itself (counts, filename) is history, so only the file goes and `storage_key` is cleared ([`purgeJobFiles.ts`](../../packages/storage/src/gc/purgeJobFiles.ts)).
 
 A file has a life: it is written, then named on its job row (`storage_key`), then deleted. Everything below is about the three moments where it can be left with nobody who knows it: written but not yet named, named by a row that is then deleted, and deleted by a step that fails.
