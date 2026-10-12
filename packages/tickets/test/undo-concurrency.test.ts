@@ -264,6 +264,71 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(1);
   });
 
+  it("refuses a revoked selection with equal times and a synthetically higher original ID", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-12T12:00:00Z"));
+    const f = await fixture();
+    const initialClient = connection();
+    const transaction = initialClient.$transaction.bind(initialClient);
+    const seededClient = new Proxy(initialClient, {
+      get(target, key, receiver) {
+        if (key !== "$transaction") return Reflect.get(target, key, receiver);
+        return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) => transaction(async (tx) => {
+          const checkIn = new Proxy(tx.checkIn, {
+            get(delegate, method, delegateReceiver) {
+              if (method !== "create") return Reflect.get(delegate, method, delegateReceiver);
+              return async (args: Prisma.CheckInCreateArgs) => {
+                const created = await delegate.create(args);
+                const { data: _data, ...selection } = args;
+                return delegate.update({
+                  ...selection, where: { id: created.id },
+                  data: { id: created.id.slice(0, 9) + "zzzz" + created.id.slice(13) },
+                });
+              };
+            },
+          });
+          return operation(new Proxy(tx, {
+            get(actual, property, actualReceiver) {
+              return property === "checkIn" ? checkIn : Reflect.get(actual, property, actualReceiver);
+            },
+          }));
+        });
+      },
+    });
+    await f.admit(seededClient);
+    const firstAdmission = await db.checkIn.findFirstOrThrow({
+      where: { attendee_id: f.attendee.id, status: "VALID" },
+    });
+    const seededId = firstAdmission.id;
+    const paused = pauseUndo("selection");
+    const stale = Promise.allSettled([f.undo(paused.client)]);
+    await paused.reached;
+    let newer: Date | undefined;
+    try {
+      await revokeCheckIn({ eventId: f.event.id, attendeeId: f.attendee.id, audit: f.audit }, db);
+      newer = admissionTime(await f.admit(db, "another-device"));
+      const replacement = await db.checkIn.findFirstOrThrow({
+        where: { attendee_id: f.attendee.id, status: "VALID", id: { not: seededId } },
+      });
+      expect(firstAdmission.checked_in_at).toBeInstanceOf(Date);
+      expect(replacement.checked_in_at).toBeInstanceOf(Date);
+      expect(replacement.checked_in_at.getTime()).toBe(firstAdmission.checked_in_at.getTime());
+      expect(replacement.id < seededId).toBe(true);
+    } finally { paused.release(); }
+    const [result] = await stale;
+    expect.soft(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toBeInstanceOf(UndoNotAllowedError);
+    expect.soft((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toEqual(newer);
+    expect.soft(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(1);
+    expect.soft(await db.attendeeActionLog.count({ where: { attendee_id: f.attendee.id, action_type: "check_in_undo" } })).toBe(0);
+    expect.soft(await db.attendeeItemState.count({ where: { attendee_id: f.attendee.id, state: "issued" } })).toBe(1);
+    expect.soft((await f.admit(db, "post-stale-device")).status).toBe("ALREADY_CHECKED_IN");
+    // The replacement can still be undone from the device that admitted it.
+    await undoLastCheckIn({ eventId: f.event.id, audit: { ...f.audit, deviceId: "another-device" } }, db);
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toBeNull();
+    expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(2);
+  });
+
   it("admits exactly once when concurrent scan/manual requests wait on the same real row", async () => {
     const f = await fixture();
     const ready = gate();

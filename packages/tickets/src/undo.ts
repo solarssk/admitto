@@ -93,16 +93,30 @@ export async function undoLastCheckIn(
       throw new UndoNotAllowedError("Attendee is not currently admitted");
     }
 
+    // A timestamp (even with an ID tie-breaker) is not an admission revision. An admin
+    // revoke and re-admission on another device can commit before the attendee lock,
+    // with the same timestamp. Both reversal paths record the exact admission ID.
+    // Read that causal record under the row lock before touching the current admission.
+    const reversed = await tx.attendeeActionLog.findFirst({
+      where: {
+        event_id: params.eventId,
+        attendee_id: lastValid.attendee_id,
+        action_type: { in: ["check_in_undo", "check_in_revoked"] },
+        metadata: { path: ["undone_check_in_id"], equals: lastValid.id },
+      },
+      select: { id: true },
+    });
+    if (reversed || attendee.admitted_at.getTime() !== lastValid.checked_in_at.getTime()) {
+      throw new UndoNotAllowedError("The selected check-in is no longer the current admission");
+    }
+
     const newerValid = await tx.checkIn.findFirst({
       where: {
         event_id: params.eventId,
         attendee_id: lastValid.attendee_id,
         status: "VALID",
         source: { in: ["scan", "manual"] },
-        OR: [
-          { checked_in_at: { gt: lastValid.checked_in_at } },
-          { checked_in_at: lastValid.checked_in_at, id: { gt: lastValid.id } },
-        ],
+        checked_in_at: { gt: lastValid.checked_in_at },
       },
     });
     if (newerValid) {
