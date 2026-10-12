@@ -27,7 +27,7 @@
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "@admitto/wallet": "*",
-    "pg": "^8.23.0",
+    "pg": "^8.23.1",
     "redis": "^6.2.1"
   },
   "devDependencies": {
