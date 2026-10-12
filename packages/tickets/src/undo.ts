@@ -46,6 +46,16 @@ export async function undoLastCheckIn(
       throw new UndoNotAllowedError("No check-in to undo on this device");
     }
 
+    // Serialize admission changes before validating the selected check-in. KEY SHARE alone
+    // allows another undo and re-admission between validation and the clear. Take this lock
+    // before KEY SHARE to avoid competing undo transactions upgrading shared locks.
+    // NO KEY UPDATE still allows foreign-key/erasure guards held by item and note writes.
+    await tx.$queryRaw`
+      SELECT "id" FROM "Attendee"
+      WHERE "id" = ${lastValid.attendee_id} AND "event_id" = ${params.eventId}
+      FOR NO KEY UPDATE
+    `;
+
     // Refuse rather than skip to an older check-in when the newest one is an erased attendee's.
     // The lock keeps an erasure from starting before this transaction ends.
     const locked = await lockAttendeeRow(tx, lastValid.attendee_id, params.eventId);
@@ -100,7 +110,7 @@ export async function undoLastCheckIn(
       where: {
         id: lastValid.attendee_id,
         event_id: params.eventId,
-        admitted_at: { not: null },
+        admitted_at: attendee.admitted_at,
       },
       data: { admitted_at: null, admitted_by: null },
     });

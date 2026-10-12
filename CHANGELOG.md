@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Undo check-in now serializes changes to the selected attendee before validation, so an overlapping undo cannot clear a newer admission or record a second reversal of the same admission. Badge rollback and the audit remain in the same transaction.
+
 - Chrome DevTools no longer reports "Incorrect use of <label for=FORM_ELEMENT>" on the Communication templates tab (the MJML/HTML body caption pointed at the editor's contenteditable, which is not a form field) or "A form field element should have an id or name attribute" on the attendee Notes tab, the Overview pinned note, the check-in note, and on any `Input` or `Select` without a visible label.
 - The arrows on a scrolling tab strip (Event settings, Organisation settings) cover the clipped tab names again: the strip had grown 4px past its box for the focus ring, so a sliver of the first or last name showed beside each arrow.
 - Menus and pickers (the kebab menu in Two-factor authentication, More actions, filters, the searchable selects and the like) are now placed by the Floating UI library instead of our own measuring code. They no longer flash in the wrong place for a frame when they open next to the right edge of the window (they used to be measured while squeezed against the edge, so long hints wrapped and the menu was placed too far right), they stay inside the window with a margin on narrow screens and when the page is zoomed, open above the button when there is not enough room below, and keep following the button when their content changes size.

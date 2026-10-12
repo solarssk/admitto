@@ -22,7 +22,7 @@ On the day of your event, Admitto keeps you signed in by itself (unless your ins
 4. If confirmation is enabled, confirm only after checking the attendee.
 5. Issue each required item shown by Admitto.
 6. Wait until the result is complete before scanning the next ticket.
-7. Use **Undo check-in** only to reverse the latest valid admission made on that device.
+7. Use **Undo check-in** only to reverse the latest valid admission made on that device. If another request has already undone it or a newer admission exists, Admitto refuses the outdated undo; check the current state before trying again.
 
 Use manual lookup only when the event has enabled it and scanning is not possible.
 

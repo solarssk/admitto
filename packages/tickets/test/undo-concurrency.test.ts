@@ -1,0 +1,306 @@
+import { performance } from "node:perf_hooks";
+import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { setTimeout as pollDelay } from "node:timers/promises";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { Prisma, PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
+import { admitAttendee } from "../src/admit.js";
+import { undoLastCheckIn, UndoNotAllowedError } from "../src/undo.js";
+import { eraseAttendees } from "../src/erase-attendees.js";
+import { removeAttendees } from "../src/remove-attendees.js";
+import { addAttendeeNote } from "../src/notes.js";
+import type { AdmitResult } from "../src/types.js";
+
+// A fresh migrated schema preserves real constraints without resetting another suite's tables.
+const schema = `undo_revision_${randomUUID().replaceAll("-", "")}`;
+const clients: PrismaClient[] = [];
+let db: PrismaClient;
+let admin: PrismaClient;
+let url: string;
+let sequence = 0;
+
+function connection() {
+  const client = createTestPrismaClient(url, schema);
+  clients.push(client);
+  return client;
+}
+
+function gate() {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  return { waiting, release };
+}
+
+beforeAll(() => {
+  url = process.env.DATABASE_URL ?? "";
+  assertTestDatabaseUrl(url);
+  const migratedUrl = new URL(url);
+  migratedUrl.searchParams.set("schema", schema);
+  execFileSync("npx", ["prisma", "migrate", "deploy"], {
+    cwd: resolve(dirname(fileURLToPath(import.meta.url)), "../../db"),
+    env: { ...process.env, DATABASE_URL: migratedUrl.toString() }, stdio: "pipe",
+  });
+  admin = createTestPrismaClient(url);
+  db = connection();
+}, 30_000);
+
+afterEach(() => vi.useRealTimers());
+
+afterAll(async () => {
+  await Promise.all(clients.map((client) => client.$disconnect()));
+  if (admin) {
+    // The identifier is generated above, never derived from request or fixture data.
+    await admin.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await admin.$disconnect();
+  }
+});
+
+function admissionTime(result: AdmitResult): Date {
+  expect(result.status).toBe("VALID");
+  if (result.status !== "VALID") throw new Error("Expected a new admission");
+  return result.admittedAt;
+}
+
+async function fixture() {
+  const n = ++sequence;
+  const org = await db.organization.create({ data: { name: "Undo Test", slug: `undo-org-${n}` } });
+  const event = await db.event.create({ data: {
+    organization_id: org.id, title: "Undo Test", slug: `undo-event-${n}`,
+    date: new Date("2026-10-12T10:00:00Z"),
+    ops_config: { badge_at_entry: true, require_confirm_on_scan: false },
+  } });
+  await db.eventItem.create({ data: { event_id: event.id, key: "badge", label: "Badge", config: { issue_on_checkin: true } } });
+  const attendee = await db.attendee.create({ data: {
+    event_id: event.id, email: `undo-${n}@example.com`, name: "Synthetic Guest", status: "confirmed",
+  } });
+  const audit = { operator: "synthetic-operator", deviceId: `undo-device-${n}` };
+  const admit = (client = db, deviceId = audit.deviceId, method: "scan" | "manual" = "manual") => admitAttendee({
+    eventId: event.id, attendeeId: attendee.id, method, audit: { ...audit, deviceId },
+  }, client);
+  const undo = (client = db) => undoLastCheckIn({ eventId: event.id, audit }, client);
+  return { event, attendee, audit, admit, undo };
+}
+
+/** Pause a real query's dispatch/result; every query and transaction still uses PostgreSQL. */
+function pauseUndo(point: "selection" | "clear") {
+  const reached = gate();
+  const release = gate();
+  const client = connection();
+  const transaction = client.$transaction.bind(client);
+  let paused = false;
+  const wrapped = new Proxy(client, {
+    get(target, key, receiver) {
+      if (key !== "$transaction") return Reflect.get(target, key, receiver);
+      return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) => transaction(async (tx) => {
+        const checkIn = new Proxy(tx.checkIn, {
+          get(delegate, method, delegateReceiver) {
+            if (point === "selection" && method === "findFirst") {
+              return async (args: Prisma.CheckInFindFirstArgs) => {
+                const result = await delegate.findFirst(args);
+                if (!paused) { paused = true; reached.release(); await release.waiting; }
+                return result;
+              };
+            }
+            return Reflect.get(delegate, method, delegateReceiver);
+          },
+        });
+        const attendee = new Proxy(tx.attendee, {
+          get(delegate, method, delegateReceiver) {
+            if (point === "clear" && method === "updateMany") {
+              return async (args: Prisma.AttendeeUpdateManyArgs) => {
+                reached.release(); await release.waiting;
+                return delegate.updateMany(args);
+              };
+            }
+            return Reflect.get(delegate, method, delegateReceiver);
+          },
+        });
+        return operation(new Proxy(tx, {
+          get(actual, property, actualReceiver) {
+            if (property === "checkIn") return checkIn;
+            if (property === "attendee") return attendee;
+            return Reflect.get(actual, property, actualReceiver);
+          },
+        }));
+      }, { timeout: 20_000 });
+    },
+  });
+  return { client: wrapped, reached: reached.waiting, release: release.release };
+}
+
+/** Poll database lock state, not elapsed time, to establish the actual interleaving. */
+async function completionOrLock(completed: () => boolean, minimum = 1) {
+  const deadline = performance.now() + 10_000;
+  while (performance.now() < deadline) {
+    if (completed()) return "completed";
+    const rows = await db.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*)::bigint AS count FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND position('Attendee' IN query) > 0
+    `;
+    if (Number(rows[0]?.count ?? 0) >= minimum) return "blocked";
+    await pollDelay(20);
+  }
+  throw new Error("No real PostgreSQL waiter or completed operation observed");
+}
+
+describe("undo admission serialization (real migrated PostgreSQL)", () => {
+  it.each([false, true])("keeps one reversal and a fresh admission despite overlapping undo (fixed clock: %s)", async (fixedClock) => {
+    if (fixedClock) { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-12T12:00:00Z")); }
+    const f = await fixture();
+    expect((await f.admit()).status).toBe("VALID");
+    const paused = pauseUndo("clear");
+    const first = Promise.allSettled([f.undo(paused.client)]);
+    await paused.reached;
+    let finished = false;
+    const second = Promise.allSettled([f.undo(connection())]).then((result) => { finished = true; return result; });
+    let interleaving: string;
+    let newer: Date | undefined;
+    try {
+      interleaving = await completionOrLock(() => finished);
+      // On vulnerable code the second undo commits before the old dispatch resumes.
+      if (interleaving === "completed") newer = admissionTime(await f.admit(db, "newer-device"));
+    } finally {
+      paused.release();
+    }
+    const [firstResult] = await first;
+    const [secondResult] = await second;
+    if (!newer) newer = admissionTime(await f.admit(db, "newer-device"));
+    expect(firstResult.status).toBe("fulfilled");
+    expect.soft(interleaving!).toBe("blocked");
+    expect.soft(secondResult.status).toBe("rejected");
+    if (secondResult.status === "rejected") expect(secondResult.reason).toBeInstanceOf(UndoNotAllowedError);
+    expect.soft((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toEqual(newer);
+    expect.soft(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(1);
+    expect((await f.admit()).status).toBe("ALREADY_CHECKED_IN");
+    expect(await db.attendeeActionLog.count({ where: { attendee_id: f.attendee.id, action_type: "check_in_undo" } })).toBe(1);
+    expect(await db.attendeeItemState.count({ where: { attendee_id: f.attendee.id, state: "issued" } })).toBe(1);
+  });
+
+  it("refuses a selected old admission when undo and re-admission commit before it locks", async () => {
+    const f = await fixture();
+    await f.admit();
+    const paused = pauseUndo("selection");
+    const stale = Promise.allSettled([f.undo(paused.client)]);
+    await paused.reached;
+    let newer: Date | undefined;
+    try {
+      await f.undo();
+      newer = admissionTime(await f.admit(db, "another-device"));
+    } finally { paused.release(); }
+    const [result] = await stale;
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toBeInstanceOf(UndoNotAllowedError);
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toEqual(newer);
+    expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(1);
+  });
+
+  it("admits exactly once when concurrent scan/manual requests wait on the same real row", async () => {
+    const f = await fixture();
+    const ready = gate();
+    const release = gate();
+    const holding = connection().$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Attendee" WHERE "id" = ${f.attendee.id} FOR UPDATE`;
+      ready.release(); await release.waiting;
+    }, { timeout: 20_000 });
+    await ready.waiting;
+    const admissions = Promise.allSettled(Array.from({ length: 4 }, (_, n) =>
+      f.admit(connection(), `scan-device-${n}`, n % 2 ? "scan" : "manual")));
+    try { expect(await completionOrLock(() => false, 4)).toBe("blocked"); }
+    finally { release.release(); await holding; }
+    const results = await admissions;
+    const statuses = results.map((result) => result.status === "fulfilled" ? result.value.status : "FAILED");
+    expect(statuses.filter((status) => status === "VALID")).toHaveLength(1);
+    expect(statuses.filter((status) => status === "ALREADY_CHECKED_IN")).toHaveLength(3);
+    expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "VALID" } })).toBe(1);
+    expect(await db.attendeeActionLog.count({ where: { attendee_id: f.attendee.id, action_type: "check_in" } })).toBe(1);
+    expect(await db.attendeeItemState.count({ where: { attendee_id: f.attendee.id, state: "issued" } })).toBe(1);
+  });
+
+  it("allows undo to finish while a note transaction holds the erasure guard", async () => {
+    const f = await fixture();
+    await f.admit();
+    const ready = gate();
+    const release = gate();
+    const client = connection();
+    const transaction = client.$transaction.bind(client);
+    const held = new Proxy(client, {
+      get(target, key, receiver) {
+        if (key !== "$transaction") return Reflect.get(target, key, receiver);
+        return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) => transaction(async (tx) => {
+          const result = await operation(tx);
+          ready.release(); await release.waiting;
+          return result;
+        }, { timeout: 20_000 });
+      },
+    });
+    const note = addAttendeeNote({ eventId: f.event.id, attendeeId: f.attendee.id, audit: f.audit, body: "Synthetic note" }, held);
+    await ready.waiting;
+    let finished = false;
+    const undo = Promise.allSettled([f.undo(connection())]).then((result) => { finished = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completionOrLock(() => finished); }
+    finally { release.release(); await note; }
+    const [result] = await undo;
+    expect(interleaving!).toBe("completed");
+    expect(result.status).toBe("fulfilled");
+    expect(await db.attendeeNote.count({ where: { attendee_id: f.attendee.id } })).toBe(1);
+  });
+
+  it("supports ordinary undo, rejects a repeated undo and allows re-admission", async () => {
+    const f = await fixture();
+    await f.admit();
+    expect((await f.undo()).card.check_in_status).toBe("not_admitted");
+    await expect(f.undo()).rejects.toBeInstanceOf(UndoNotAllowedError);
+    expect((await f.admit()).status).toBe("VALID");
+  });
+
+  it("does not undo another device's admission", async () => {
+    const f = await fixture();
+    await f.admit(db, "other-device");
+    await expect(f.undo()).rejects.toBeInstanceOf(UndoNotAllowedError);
+    expect((await f.admit()).status).toBe("ALREADY_CHECKED_IN");
+  });
+
+  it.each(["erase", "remove"] as const)("refuses a selected attendee after %s commits", async (action) => {
+    const f = await fixture();
+    await f.admit();
+    const paused = pauseUndo("selection");
+    const stale = Promise.allSettled([f.undo(paused.client)]);
+    await paused.reached;
+    try {
+      if (action === "erase") await db.$transaction((tx) => eraseAttendees(tx, { eventId: f.event.id, attendeeIds: [f.attendee.id] }));
+      else await db.$transaction((tx) => removeAttendees(tx, { eventId: f.event.id, attendeeIds: [f.attendee.id] }));
+    } finally { paused.release(); }
+    const [result] = await stale;
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toBeInstanceOf(UndoNotAllowedError);
+    expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(0);
+  });
+
+  it("rolls back the admission, badge and audit changes if undo fails before commit", async () => {
+    const f = await fixture();
+    await f.admit();
+    const before = await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } });
+    const client = connection();
+    const transaction = client.$transaction.bind(client);
+    const failing = new Proxy(client, {
+      get(target, key, receiver) {
+        if (key !== "$transaction") return Reflect.get(target, key, receiver);
+        return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) => transaction(async (tx) => {
+          await operation(tx);
+          throw new Error("Synthetic failure before commit");
+        });
+      },
+    });
+    await expect(f.undo(failing)).rejects.toThrow("Synthetic failure before commit");
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toEqual(before.admitted_at);
+    expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(0);
+    expect(await db.attendeeActionLog.count({ where: { attendee_id: f.attendee.id, action_type: "check_in_undo" } })).toBe(0);
+    expect(await db.attendeeItemState.count({ where: { attendee_id: f.attendee.id, state: "issued" } })).toBe(1);
+  });
+});
