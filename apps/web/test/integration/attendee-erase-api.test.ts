@@ -27,7 +27,7 @@ import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
 import { drainExportJobs, EXPORT_STOPPED_BY_ERASURE_ERROR, IMPORT_STOPPED_BY_ERASURE_ERROR, stopOpenAttendeeJobs } from "@admitto/tickets";
 import { drainImportJobs } from "@admitto/import";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
+import { getDefaultStorage, purgeEventJobFiles, resetDefaultStorageForTests } from "@admitto/storage";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { resolveIpLocation } from "../../src/rate-limit/ip-location.js";
 
@@ -1387,6 +1387,74 @@ describe("export files of the event, after an erasure or a removal", () => {
   }
   const present = (key: string) => existsSync(join(uploadDir, key));
   const keyOf = async (jobId: string) => (await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).storage_key;
+
+  const download = (eventId: string, jobId: string) =>
+    app.request(`/api/admin/events/${eventId}/export/jobs/${jobId}/download`, { headers: { Cookie: cookie } });
+
+  it.each(["erase", "bulk-erase", "remove", "bulk-remove"])(
+    "%s invalidates old downloads even when deletion fails, preserves cleanup retry, and permits a fresh export",
+    async (action) => {
+      const a = await createAttendee();
+      const selected = await post(`/api/admin/events/${EVENT_ID}/attendees/export-selected`, {
+        attendee_ids: [a.id], format: "csv",
+      });
+      expect(selected.status).toBe(200);
+      const bytes = Buffer.from(await selected.arrayBuffer());
+      expect(bytes.toString()).toContain(a.email);
+      const old = await seedJobFile(EVENT_ID);
+      const stored = await getDefaultStorage().put(bytes, { orgId: ORG_ID, eventId: EVENT_ID, scope: "event", ext: ".csv" });
+      await getDefaultStorage().delete(old.key);
+      await prisma.adminJob.update({ where: { id: old.jobId }, data: { storage_key: stored.key } });
+      const deletion = vi.spyOn(getDefaultStorage(), "delete").mockRejectedValue(new Error("EBUSY"));
+      expect((await download(EVENT_ID, old.jobId)).status).toBe(200);
+      expect((await download(WALLET_OFF_EVENT_ID, old.jobId)).status).toBe(404);
+
+      const path = `/api/admin/events/${EVENT_ID}/attendees/${action.startsWith("bulk") ? action : `${a.id}/${action}`}`;
+      const response = await post(path, action === "bulk-erase" ? { attendeeIds: [a.id] }
+        : action === "bulk-remove" ? { attendeeIds: [a.id], reason: "duplicate" }
+        : action === "remove" ? { reason: "duplicate" } : {});
+      expect(response.status).toBe(200);
+      const denied = await download(EVENT_ID, old.jobId);
+      expect(denied.status).toBe(404);
+      expect(await denied.json()).toEqual({ error: "not_ready" });
+      expect(denied.headers.get("Cache-Control")).toBe("no-store");
+      expect((await getDefaultStorage().get(stored.key)).toString()).toContain(a.email);
+      expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: old.jobId } })).toMatchObject({
+        status: "succeeded", storage_key: stored.key, result_json: { invalidated: true },
+      });
+
+      const queued = await app.request(`/api/admin/events/${EVENT_ID}/attendees/export?format=csv`, { headers: { Cookie: cookie } });
+      expect(queued.status).toBe(202);
+      const { jobId } = await queued.json() as { jobId: string };
+      jobIds.push(jobId);
+      await drainExportJobs(prisma, getDefaultStorage(), { limit: 50 });
+      if (action === "erase") expect((await post(erasePath(EVENT_ID, a.id))).status).toBe(200);
+      const fresh = await download(EVENT_ID, jobId);
+      expect(fresh.status).toBe(200);
+      expect(await fresh.text()).not.toContain(a.email);
+      expect((await download(EVENT_ID, old.jobId)).status).toBe(404);
+
+      deletion.mockRestore();
+      expect(await purgeEventJobFiles(prisma, getDefaultStorage(), EVENT_ID, [old.jobId])).toEqual({ deleted: 1, failed: 0 });
+      expect(await keyOf(old.jobId)).toBeNull();
+      expect((await download(EVENT_ID, jobId)).status).toBe(200);
+    },
+  );
+
+  it("rechecks invalidation when erasure commits during storage read", async () => {
+    const a = await createAttendee();
+    const old = await seedJobFile(EVENT_ID);
+    vi.spyOn(getDefaultStorage(), "delete").mockRejectedValue(new Error("EBUSY"));
+    const get = getDefaultStorage().get.bind(getDefaultStorage());
+    vi.spyOn(getDefaultStorage(), "get").mockImplementationOnce(async (key) => {
+      const bytes = await get(key);
+      expect((await post(erasePath(EVENT_ID, a.id))).status).toBe(200);
+      return bytes;
+    });
+    const response = await download(EVENT_ID, old.jobId);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not_ready" });
+  });
 
   it("erasing someone deletes the export files and the staged CSV of every import of the event that is finished or was waiting, clears their keys, and leaves another event's files", async () => {
     const a = await createAttendee();
