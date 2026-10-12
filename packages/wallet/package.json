@@ -36,7 +36,7 @@
     "coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@types/node": "^24.13.4",
+    "@types/node": "^24.19.1",
     "typescript": "^7.0.2"
   }
 }

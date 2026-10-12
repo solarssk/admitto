@@ -1,5 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { stopOpenAttendeeJobs } from "./stop-open-jobs.js";
+import { invalidateEventExports } from "./export-job-privacy.js";
 
 export type ScrubAttendeeTracesParams = {
   eventId: string;
@@ -84,6 +85,7 @@ export async function scrubAttendeeTraces(
 ): Promise<void> {
   if (attendeeIds.length === 0) return;
   await stopOpenAttendeeJobs(tx, eventId);
+  await invalidateEventExports(tx, eventId);
   const attendeeList = Prisma.join([...attendeeIds]);
   if (emails.length > 0) {
     await tx.$executeRaw`
