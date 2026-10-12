@@ -181,7 +181,7 @@ describe("voidOneWalletPassAtProvider", () => {
     expect(result).toBe("skipped");
     expect(walletUpdateMany).not.toHaveBeenCalled();
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_void_realign_failed" });
-    expect(entry?.fields).toMatchObject({ event_id: "evt-1", error: "provider down" });
+    expect(entry?.fields).toMatchObject({ event_id: "evt-1", reason: "unknown" });
   });
 
   it("logs a non-Error failure of the realignment by its value", async () => {
@@ -190,7 +190,7 @@ describe("voidOneWalletPassAtProvider", () => {
     await loseTheRace({ status: "active", provider_removed_at: null });
 
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_void_realign_failed" });
-    expect(entry?.fields).toMatchObject({ error: "plain string" });
+    expect(entry?.fields).toMatchObject({ reason: "unknown" });
   });
 
   it("reads the row again before the provider call and matches the state it read in the write", async () => {

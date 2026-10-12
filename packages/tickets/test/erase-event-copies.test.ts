@@ -364,13 +364,23 @@ describe("deleteErasedWalletPasses", () => {
     await attendeeWithPass("copies-wp-code");
     const failing = stubProvider(
       vi.fn(async () => {
-        throw Object.assign(new Error("secret text with an address"), { code: "wallet_provider_unavailable" });
+        throw Object.assign(new Error("secret text with an address"), { code: "wallet_provider_timeout" });
       }),
     );
 
     const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-code"], failing);
 
-    expect(result.failureCodes).toEqual(["wallet_provider_unavailable"]);
+    expect(result.failureCodes).toEqual(["wallet_provider_timeout"]);
+  });
+
+  it("does not publish arbitrary exception codes in erasure failure summaries", async () => {
+    await attendeeWithPass("copies-wp-private-code");
+    const failing = stubProvider(vi.fn(async () => {
+      throw Object.assign(new Error("private@example.com"), { code: "private@example.com" });
+    }));
+    const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-private-code"], failing);
+    expect(result.failureCodes).toEqual(["unknown"]);
+    expect(result.failedAttendeeIds).toEqual(["copies-wp-private-code"]);
   });
 
   it("reports a failure that is not an error object as an unknown code", async () => {

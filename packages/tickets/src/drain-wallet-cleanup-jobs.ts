@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 /**
  * Claim and run pending event-wide wallet clean-up AdminJobs (`wallet_void_active`,
  * `wallet_remove_inactive`): the same action for every pass of one event that the Attendees
@@ -292,7 +293,7 @@ function chunk<T>(items: T[], size: number): T[][] {
  * operator-facing copy, and everything else (an unexpected database, crypto, or provider
  * exception) to one generic fixed message - AdminJob.error is read verbatim by the polling UI, so
  * it must never carry raw exception text (AGENTS.md's "Admin API errors in the UI" convention).
- * The real error is still logged server-side. */
+ * Only safe failure categories are logged server-side. */
 function walletCleanupJobErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     if (err.message === "wallet_cleanup_job_bad_request") return WALLET_CLEANUP_JOB_BAD_REQUEST_ERROR;
@@ -305,7 +306,7 @@ async function markWalletCleanupJobFailed(db: PrismaClient, job: ClaimedWalletCl
   emitSystemLog("wallet", "error", "wallet_cleanup_job_failed", {
     job_id: job.id,
     job_type: job.type,
-    error: err instanceof Error ? err.message : String(err),
+    reason: walletFailureCode(err),
   });
   await db.adminJob.update({
     where: { id: job.id },
@@ -361,7 +362,7 @@ async function finalizeWalletCleanupJob(
  * job failed - discarding done/skipped/errored and telling the admin "did not run" - even though
  * the actual cleanup already succeeded, which could send them to retry an action that already
  * happened (bot review). Falls back to null, the same "no info available" state already used for
- * wallet_void_active (which has no countPending at all), and logs the real error server-side. */
+ * wallet_void_active (which has no countPending at all), and logs a safe failure category server-side. */
 async function safeCountPending(
   db: PrismaClient,
   job: ClaimedWalletCleanupJob,
@@ -375,7 +376,7 @@ async function safeCountPending(
       job_id: job.id,
       job_type: job.type,
       event_id: eventId,
-      error: err instanceof Error ? err.message : String(err),
+      reason: walletFailureCode(err),
     });
     return null;
   }

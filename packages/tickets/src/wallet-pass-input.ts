@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassInput } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
@@ -29,7 +30,7 @@ export async function resolveTicketPageDisplay(
     if (!found) return resolved;
     return { ...resolved, attendee: { ...attendee, ticket_type: found.label } };
   } catch (err) {
-    console.error("loadEventTicketTypes failed for ticket page:", err);
+    console.error("loadEventTicketTypes failed for ticket page:", { reason: walletFailureCode(err) });
     return resolved;
   }
 }

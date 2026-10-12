@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 /**
  * Claim and run pending AdminJob type=wallet_refresh_status - pulls each target attendee's
  * current device-registration status straight from the provider, via the same
@@ -108,7 +109,7 @@ function walletRefreshStatusJobErrorMessage(err: unknown): string {
 async function markWalletRefreshStatusJobFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
   emitSystemLog("wallet", "error", "wallet_refresh_status_job_failed", {
     job_id: jobId,
-    error: err instanceof Error ? err.message : String(err),
+    reason: walletFailureCode(err),
   });
   await db.adminJob.update({
     where: { id: jobId },

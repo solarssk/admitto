@@ -99,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Wallet provider failures now use fixed error messages and safe log categories, so reflected names, email addresses and barcode credentials do not enter routine logs. Retry, duplicate recovery and pass-removal behavior are preserved.
+
 - Import and export failures now store fixed, privacy-safe messages instead of upstream exception text. Job status and import history also hide unknown errors saved earlier, while preserving capacity, erasure and worker-recovery messages.
 
 - Erasing or removing an attendee now immediately makes earlier exports of that event unavailable, even when deleting their stored files fails. File cleanup remains retryable, and a new export made after the change can still be downloaded.
