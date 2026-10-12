@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 /**
  * Claim and run pending AdminJob type=wallet_message - sends one operator-composed message to
  * every target attendee's already-installed wallet pass, via sendWalletMessage. Unlike
@@ -59,8 +60,8 @@ function readRequest(job: { result_json: unknown }): WalletMessageRequest | null
  * operator-facing copy, and everything else (an unexpected database, crypto, or provider
  * exception) to one generic fixed message - AdminJob.error is read verbatim by the polling UI,
  * so it must never carry raw exception text (AGENTS.md's "Admin API errors in the UI" convention,
- * applied here at the point the message is stored, same as wallet_push's own drain). The real
- * error is still logged server-side. */
+ * applied here at the point the message is stored, same as wallet_push's own drain). Only safe failure
+ * categories are logged server-side. */
 function walletMessageJobErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     if (err.message === "wallet_message_job_bad_request") return WALLET_MESSAGE_JOB_BAD_REQUEST_ERROR;
@@ -72,7 +73,7 @@ function walletMessageJobErrorMessage(err: unknown): string {
 async function markWalletMessageFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
   emitSystemLog("wallet", "error", "wallet_message_job_failed", {
     job_id: jobId,
-    error: err instanceof Error ? err.message : String(err),
+    reason: walletFailureCode(err),
   });
   await db.adminJob.update({
     where: { id: jobId },

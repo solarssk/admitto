@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassProvider } from "@admitto/wallet";
 
@@ -13,11 +14,6 @@ export type EraseWalletPassesResult = {
   /** Passes not tried because the time budget ran out: they stay marked "still to delete" too. */
   notTried: number;
 };
-
-function failureCode(err: unknown): string {
-  const code = typeof err === "object" && err !== null ? (err as { code?: unknown }).code : undefined;
-  return typeof code === "string" ? code : "unknown";
-}
 
 /**
  * Deletes, at the wallet provider, the passes of attendees whose personal data has been erased,
@@ -76,7 +72,7 @@ export async function deleteErasedWalletPasses(
           });
           return null;
         } catch (err) {
-          return { failed: pass.attendee_id, code: failureCode(err) };
+          return { failed: pass.attendee_id, code: walletFailureCode(err) };
         }
       }),
     );

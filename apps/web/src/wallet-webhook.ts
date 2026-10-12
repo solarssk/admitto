@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { logRateLimitExceeded } from "@admitto/auth";
@@ -57,7 +58,7 @@ async function resolveCachedPublicKey(
   } catch (err) {
     emitSystemLog("wallet", "error", "wallet_webhook_public_key_fetch_failed", {
       eventId,
-      error: err instanceof Error ? err.message : String(err),
+      reason: walletFailureCode(err),
     });
     return null;
   }

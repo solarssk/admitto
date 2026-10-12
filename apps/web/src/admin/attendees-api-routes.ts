@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
@@ -2163,7 +2164,7 @@ export async function deleteProviderPassesBestEffort(
         deleted.add(batch[index]!.providerPassId);
         continue;
       }
-      console.error("wallet pass delete (erasure) failed:", outcome.reason);
+      console.error("wallet pass delete (erasure) failed:", { reason: walletFailureCode(outcome.reason) });
       recordSystemLog({
         level: "error",
         source: "admin",
@@ -2283,7 +2284,7 @@ async function syncWalletPassOnStatusChangeBestEffort(
   try {
     await commandWalletPassStatusCascade(db, attendeeId, walletPass.provider_pass_id, provider, statusChange);
   } catch (err) {
-    console.error(`wallet pass ${statusChange} cascade failed:`, err);
+    console.error(`wallet pass ${statusChange} cascade failed:`, { reason: walletFailureCode(err) });
     recordSystemLog({
       level: "error",
       source: "admin",
@@ -2410,7 +2411,7 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
       adminAuditFromContext(c),
     );
   } catch (err) {
-    console.error("wallet attendee-change push failed:", err);
+    console.error("wallet attendee-change push failed:", { reason: walletFailureCode(err) });
     recordSystemLog({
       level: "error",
       source: "admin",
@@ -3529,7 +3530,7 @@ async function runBulkWalletAction<K extends string>(
       );
       for (const [index, outcome] of settled.entries()) {
         if (outcome.status === "rejected") {
-          console.error(`bulk wallet ${label}: failed:`, outcome.reason);
+          console.error(`bulk wallet ${label}: failed:`, { reason: walletFailureCode(outcome.reason) });
           recordBulkAttendeeActionFailure(c, eventId, action, {
             attendeeId: batch[index]!.attendeeId,
           });
@@ -3542,7 +3543,7 @@ async function runBulkWalletAction<K extends string>(
 
     return c.json(counts);
   } catch (err) {
-    console.error(`bulk wallet ${label} failed:`, err);
+    console.error(`bulk wallet ${label} failed:`, { reason: walletFailureCode(err) });
     recordBulkAttendeeActionFailure(c, eventId, action, {
       attendeeCount: parsed.data.attendeeIds.length,
     });
@@ -4117,7 +4118,7 @@ function serializeWalletPassAction(pass: WalletPassRow): WalletPassActionDto {
  * for the frontend to map through operatorApiErrorMessage rather than showing a raw message. */
 function walletProviderErrorResponse(c: Context, err: unknown, logContext: string): Response {
   const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
-  console.error(`${logContext} failed:`, err);
+  console.error(`${logContext} failed:`, { reason: walletFailureCode(err) });
   return c.json({ error: code }, 502);
 }
 
@@ -4419,7 +4420,7 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
       // A malformed token_enc, or one written under an ENCRYPTION_KEY version no longer
       // available, must not escape as a bare 500 - same machine-readable response as the
       // "nothing to build a barcode from" case right below.
-      console.error("handleReissueAttendeeWalletPass token decrypt failed:", err);
+      console.error("handleReissueAttendeeWalletPass token decrypt failed:", { reason: walletFailureCode(err) });
       return c.json({ error: "attendee_not_issued" }, 409);
     }
   }

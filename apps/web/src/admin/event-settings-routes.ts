@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 /**
  * Event settings: read/update basic fields and superadmin PII export (prompt 54).
  */
@@ -701,7 +702,7 @@ async function subscribeMissingWalletWebhooks(
     if (outcome.status !== "rejected") return;
     allOk = false;
     const event = toSubscribe[index];
-    console.error(`wallet webhook subscribe (${event}) failed:`, outcome.reason);
+    console.error(`wallet webhook subscribe (${event}) failed:`, { reason: walletFailureCode(outcome.reason) });
     recordSystemLog({
       level: "error",
       source: "admin",
@@ -743,7 +744,7 @@ async function listOwnWebhooksWithRetry(
       if (attempt < RE_CHECK_ATTEMPTS - 1) {
         await sleep(RE_CHECK_RETRY_DELAY_MS); // NOSONAR - backoff: the next attempt must wait for this delay
       } else {
-        console.error("wallet webhook subscribe: post-unsubscribe re-check failed after retries:", err);
+        console.error("wallet webhook subscribe: post-unsubscribe re-check failed after retries:", { reason: walletFailureCode(err) });
       }
     }
   }
@@ -785,7 +786,7 @@ async function migrateOffLegacySharedWebhookUrl(
   try {
     await client.unsubscribeWebhook(registrationUrl);
   } catch (err) {
-    console.error("wallet webhook subscribe: legacy event-URL migration unsubscribe failed:", err);
+    console.error("wallet webhook subscribe: legacy event-URL migration unsubscribe failed:", { reason: walletFailureCode(err) });
   }
 
   const freshHooks = await listOwnWebhooksWithRetry(client, templateId);
@@ -829,14 +830,14 @@ export async function subscribeWalletWebhooksBestEffort(
   try {
     apiKey = decryptFromString(updated.wallet_api_key_enc, SECRET_CONTEXTS.walletApiKey);
   } catch (err) {
-    console.error("wallet webhook subscribe: API key decrypt failed:", err);
+    console.error("wallet webhook subscribe: API key decrypt failed:", { reason: walletFailureCode(err) });
     return;
   }
   let baseUrl: string;
   try {
     baseUrl = await resolveInstanceBaseUrl(db);
   } catch (err) {
-    console.error("wallet webhook subscribe: instance base URL unresolved:", err);
+    console.error("wallet webhook subscribe: instance base URL unresolved:", { reason: walletFailureCode(err) });
     return;
   }
 
@@ -855,7 +856,7 @@ export async function subscribeWalletWebhooksBestEffort(
       (hook) => hook.passTemplate === updated.wallet_template_id,
     );
   } catch (err) {
-    console.error("wallet webhook subscribe: listWebhooks failed, skipping this cycle:", err);
+    console.error("wallet webhook subscribe: listWebhooks failed, skipping this cycle:", { reason: walletFailureCode(err) });
     return;
   }
 
@@ -1372,7 +1373,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       // ever actually reject - .catch is defensive only, matching this file's other best-effort
       // background calls (app.ts's refreshMapsConfigCache).
       void subscribeWalletWebhooksBestEffort(db, eventId, updated).catch((err) => {
-        console.error("wallet webhook subscribe: background best-effort call rejected unexpectedly:", err);
+        console.error("wallet webhook subscribe: background best-effort call rejected unexpectedly:", { reason: walletFailureCode(err) });
       });
     }
     // Awaited (unlike the pre-job-system version): enqueueing is now a single fast AdminJob
@@ -1384,7 +1385,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     try {
       await pushWalletUpdatesBestEffort(db, c, eventId, existing, updated);
     } catch (err) {
-      console.error("wallet event-change push enqueue failed:", err);
+      console.error("wallet event-change push enqueue failed:", { reason: walletFailureCode(err) });
       recordSystemLog({
         level: "error",
         source: "admin",

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { WalletProviderError } from "../src/index.js";
+import { WalletProviderError, walletFailureCode } from "../src/index.js";
 import { createStubWalletProvider } from "./stub-provider.js";
 
 describe("@admitto/wallet", () => {
+  it("allows only fixed failure codes in operational logs and erasure summaries", () => {
+    expect(walletFailureCode(new WalletProviderError("wallet_provider_timeout", "private@example.com"))).toBe("wallet_provider_timeout");
+    expect(walletFailureCode({ code: "wallet_provider_duplicate" })).toBe("wallet_provider_duplicate");
+    for (const error of [null, "private@example.com", new Error("private@example.com"), { code: "private@example.com" }, { code: 401 }]) {
+      expect(walletFailureCode(error)).toBe("unknown");
+    }
+  });
+
   it("exports WalletProviderError as a typed, coded error", () => {
     const error = new WalletProviderError("wallet_provider_rejected", "test");
     expect(error).toBeInstanceOf(Error);

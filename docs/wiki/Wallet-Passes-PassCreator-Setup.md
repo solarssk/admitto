@@ -43,6 +43,8 @@ New and reissued wallet passes for this event's attendees show real data. Passes
 
 ## Common problems
 
+- **A wallet operation fails:** logs contain the operation and a safe failure category, without provider reply text or attendee details. Check the event's API key, template and field mapping, then retry. Rate-limit and connection failures keep their existing retry behavior; a failed remote removal remains pending for cleanup.
+
 - **PassCreator shows a "Non-existent placeholders" warning when saving:** the placeholder token used in a Value box doesn't match any registered Additional Property on this template. Add the missing property (steps 3, 5) or fix the token's spelling.
 - **A field is registered in PassCreator and shows a real value on other passes, but this one field stays blank or shows "no value given":** the Field mapping row for it is missing in Admitto (step 4) - a property existing in PassCreator does nothing on its own, Admitto only sends a value for a property once it's mapped. Check Event Settings → Wallet's Field mapping list for a row with that exact key.
 - **The card still shows a literal field name like `eventPlace` after adding the property:** the Value box still has the plain field name typed as text - replace it with the generated placeholder token (step 7), don't leave both.

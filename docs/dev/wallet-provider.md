@@ -144,7 +144,7 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   `createPass`/`updatePass` call for the same `userProvidedId` must not create a duplicate pass.
 - **Stable error codes, not message strings.** Throw `WalletProviderError` with one of:
   `wallet_provider_unauthorized`, `_rate_limited`, `_duplicate`, `_not_found`, `_timeout`,
-  `_rejected`. Callers branch on `.code`, never on `.message`.
+  `_rejected`. Callers branch on `.code`, never on `.message`. Error messages must be fixed application text: classify any provider reply locally, then discard its text, response body and transport exception detail. Routine caller logs use `walletFailureCode` and operation/job/event identifiers; unrecognized codes become `unknown`. Never log the exception object or stack. PassCreator keeps the existing duplicate classification, rate-limit backoff, timeout category and idempotent delete-404 behavior.
 - **Data minimization.** Send only what `WalletPassInput` actually contains - never reach back
   into Admitto's database for more. Fields are optional for a reason: nothing beyond the
   provider-controlled fields (`templateId`, barcode/QR value, `userProvidedId`, `enforceUniqueUserProvidedId`,

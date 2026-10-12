@@ -51,9 +51,9 @@ export function resolveConfiguredWalletProvider(
   let apiKey: string;
   try {
     apiKey = decryptFromString(event.walletApiKeyEnc, SECRET_CONTEXTS.walletApiKey);
-  } catch (err) {
+  } catch {
     emitSystemLog("wallet", "error", "wallet_api_key_decrypt_failed", {
-      error: err instanceof Error ? err.message : String(err),
+      reason: "wallet_api_key_decrypt_failed",
     });
     return null;
   }

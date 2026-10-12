@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import type { WalletPassProvider } from "@admitto/wallet";
@@ -137,7 +138,7 @@ async function realignRestoredPass(
   } catch (err) {
     emitSystemLog("wallet", "warn", "wallet_void_realign_failed", {
       event_id: eventId,
-      error: err instanceof Error ? err.message : String(err),
+      reason: walletFailureCode(err),
     });
   }
 }

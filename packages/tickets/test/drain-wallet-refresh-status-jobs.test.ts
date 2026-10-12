@@ -4,7 +4,8 @@ import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/sy
 vi.mock("../src/claim-admin-job.js", () => ({
   claimNextAdminJob: vi.fn(),
 }));
-vi.mock("@admitto/wallet", () => ({
+vi.mock("@admitto/wallet", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@admitto/wallet")>(),
   resolveWalletProvider: vi.fn(),
   resolveConfiguredWalletProvider: vi.fn(),
   refreshOneWalletPassStatus: vi.fn(),
@@ -307,7 +308,7 @@ describe("drainWalletRefreshStatusJobs", () => {
     );
     expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_GENERIC_ERROR);
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_refresh_status_job_failed" });
-    expect(entry?.fields).toMatchObject({ job_id: "job-wrs-1", error: "db exploded" });
+    expect(entry?.fields).toMatchObject({ job_id: "job-wrs-1", reason: "unknown" });
   });
 
   it("logs the raw value (not an Error instance) when something throws a non-Error, e.g. a plain string", async () => {
@@ -321,7 +322,7 @@ describe("drainWalletRefreshStatusJobs", () => {
     );
     expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_GENERIC_ERROR);
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_refresh_status_job_failed" });
-    expect(entry?.fields).toMatchObject({ job_id: "job-wrs-1", error: "plain string error" });
+    expect(entry?.fields).toMatchObject({ job_id: "job-wrs-1", reason: "unknown" });
   });
 
   it("claims up to the given limit in one drain call when options.limit is set", async () => {
