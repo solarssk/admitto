@@ -480,7 +480,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       importId,
       eventId,
       step: "preview",
-      error: "import_preview_failed",
+      reason: "import_preview_failed",
       durationMs: Date.now() - startTime,
     });
     return c.json({ error: "server error", importId }, 500);
@@ -583,7 +583,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       importId,
       eventId,
       step: "enqueue",
-      error: "import_enqueue_failed",
+      reason: "import_enqueue_failed",
       durationMs: Date.now() - startTime,
     });
     return c.json({ error: "server error", importId }, 500);

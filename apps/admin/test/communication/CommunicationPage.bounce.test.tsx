@@ -446,11 +446,11 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
     fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Resend" }));
     expect(await screen.findByText("Resend failed.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Dismiss bounce" }));
     expect(await screen.findByText("Failed to dismiss the bounce notice.")).toBeTruthy();
   });
 

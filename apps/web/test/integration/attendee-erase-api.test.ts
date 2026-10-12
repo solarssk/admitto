@@ -1399,7 +1399,7 @@ describe("export files of the event, after an erasure or a removal", () => {
     expect(await response.text()).not.toContain("private@example.com");
     const logs = querySystemLogs({ search: "Import preview failed" });
     expect(logs).toHaveLength(1);
-    expect(logs[0]?.fields).toMatchObject({ error: "import_preview_failed" });
+    expect(logs[0]?.fields).toMatchObject({ reason: "import_preview_failed" });
     expect(JSON.stringify(logs)).not.toContain("private@example.com");
   });
 
@@ -1414,7 +1414,7 @@ describe("export files of the event, after an erasure or a removal", () => {
     expect(await response.text()).not.toContain("private@example.com");
     const logs = querySystemLogs({ search: "Import commit enqueue failed" });
     expect(logs).toHaveLength(1);
-    expect(logs[0]?.fields).toMatchObject({ error: "import_enqueue_failed" });
+    expect(logs[0]?.fields).toMatchObject({ reason: "import_enqueue_failed" });
     expect(JSON.stringify(logs)).not.toContain("private@example.com");
   });
 
