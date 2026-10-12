@@ -1,8 +1,8 @@
 import { CLIENT_ERROR_REPORT_PATH, reportClientError } from "./reportClientError.js";
 
 /** A CSP violation's sourceFile/blockedURI can carry a query string or fragment
- * (e.g. the current page's own URL) - strip those before the value goes into a
- * server log, keeping only origin + path. Falls back to the raw value for the
+ * (e.g. the current page's own URL) - strip those for local development diagnostics,
+ * keeping only origin + path. Falls back to the raw value for the
  * non-URL strings CSP also reports here, like the literal "inline". */
 function withoutQueryAndFragment(value: string): string {
   try {
@@ -32,8 +32,8 @@ function describeFailedResourceLoad(target: EventTarget | null): string {
  * script injection, uncaught rejections) are otherwise invisible in production - no
  * console access, no ErrorBoundary coverage (it only catches render-phase errors).
  * Route them through the same reporting pipeline so a silent crash - e.g. a browser
- * extension's inline script getting blocked by CSP mid-mutation - shows up server-side
- * instead of only in a user's local DevTools.
+ * extension's inline script getting blocked by CSP mid-mutation - shows up as a fixed
+ * category server-side; detailed errors remain in local development DevTools.
  */
 export function installGlobalErrorReporting(): void {
   // capture: true so a failed resource load (e.g. an extension-injected <script src> that

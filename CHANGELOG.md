@@ -99,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Production browser error reports now contain only a fixed error category. Exception text, names, stacks and page URLs stay out of server and System logs; the server independently rejects arbitrary diagnostic fields. Local development diagnostics remain detailed.
+
 - Wallet provider failures now use fixed error messages and safe log categories, so reflected names, email addresses and barcode credentials do not enter routine logs. Retry, duplicate recovery and pass-removal behavior are preserved.
 
 - Import and export failures now store fixed, privacy-safe messages instead of upstream exception text. Job status and import history also hide unknown errors saved earlier, while preserving capacity, erasure and worker-recovery messages.

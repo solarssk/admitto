@@ -4,14 +4,17 @@ import { logger } from "../logger.js";
 
 const clientErrorSchema = z
   .object({
-    source: z.string().trim().min(1).max(64),
-    name: z.string().trim().min(1).max(100),
-    message: z.string().trim().min(1).max(500),
-    path: z.string().trim().min(1).max(256),
+    source: z.enum([
+      "admin-error-boundary",
+      "window-error",
+      "unhandled-rejection",
+      "resource-error",
+      "csp-violation",
+    ]),
   })
   .strict();
 
-/** POST /api/admin/client-errors — structured client-side error reports (no PII). Requires staff session. */
+/** POST /api/admin/client-errors — fixed client-side error categories. Requires a full session. */
 export async function handlePostClientError(c: Context) {
   let raw: unknown;
   try {
@@ -25,7 +28,7 @@ export async function handlePostClientError(c: Context) {
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const { source, name, message, path } = parsed.data;
-  logger.warn("Admin SPA client error", { source, name, message, path });
+  const { source } = parsed.data;
+  logger.warn("Admin SPA client error", { source });
   return c.json({ ok: true });
 }
