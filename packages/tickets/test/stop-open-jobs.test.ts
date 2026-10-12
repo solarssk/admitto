@@ -10,7 +10,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@admitto/db";
-import type { Prisma } from "@admitto/db/client";
+import { Prisma } from "@admitto/db/client";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { eraseAttendees } from "../src/erase-attendees.js";
@@ -288,7 +288,8 @@ describe("an erasure or a removal", () => {
       const waitingImport = await withKey("import_commit", "pending", EVENT_ID, "k/two.csv");
       await job(EVENT_ID, "export", "failed"); // no file
       await withKey("wallet_push", "succeeded", EVENT_ID, "k/three.csv"); // not a job that holds attendees
-      await withKey("export", "succeeded", OTHER_EVENT_ID, "k/four.csv"); // another event
+      const otherEvent = await withKey("export", "succeeded", OTHER_EVENT_ID, "k/four.csv");
+      await prisma.adminJob.update({ where: { id: finishedExport.id }, data: { result_json: { rowCount: 3, contentType: "text/csv" } } });
 
       const result = await prisma.$transaction((tx) => act(tx, EVENT_ID, person.id));
       // An export requested right after the erasure, finished before anything purges: the erasure never saw it.
@@ -296,8 +297,36 @@ describe("an erasure or a removal", () => {
 
       expect(result.jobIdsWithFiles).toEqual([finishedExport.id, waitingImport.id].sort());
       expect(result.jobIdsWithFiles).not.toContain(later.id);
+      expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: finishedExport.id } })).toMatchObject({
+        status: "succeeded", storage_key: "k/one.csv", result_json: { rowCount: 3, contentType: "text/csv", invalidated: true },
+      });
+      for (const id of [otherEvent.id, later.id]) {
+        expect((await prisma.adminJob.findUniqueOrThrow({ where: { id } })).result_json).not.toHaveProperty("invalidated");
+      }
     },
   );
+
+  it("rolls export invalidation back with erasure, including sparse metadata", async () => {
+    const person = await attendeeIn(EVENT_ID);
+    const exports = await Promise.all([null, [], "legacy"].map((result_json) =>
+      prisma.adminJob.create({ data: {
+        ...jobData(EVENT_ID, "export", "succeeded"),
+        result_json: result_json === null ? Prisma.JsonNull : result_json,
+        storage_key: "k/rollback.csv",
+      } }),
+    ));
+    await expect(prisma.$transaction(async (tx) => {
+      await erase(tx, EVENT_ID, person.id);
+      for (const job of exports) {
+        expect((await tx.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json).toEqual({ invalidated: true });
+      }
+      throw new Error("rollback");
+    })).rejects.toThrow("rollback");
+    for (const job of exports) {
+      expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).result_json).toEqual(job.result_json);
+    }
+    expect(await isErased(person.id)).toBe(false);
+  });
 
   it("does not wait for an erasure of another event", async () => {
     const mine = await attendeeIn(EVENT_ID);
