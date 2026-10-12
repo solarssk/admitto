@@ -9,7 +9,7 @@ import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { admitAttendee } from "../src/admit.js";
-import { undoLastCheckIn, UndoNotAllowedError } from "../src/undo.js";
+import { undoLastCheckIn, UndoNotAllowedError, revokeCheckIn } from "../src/undo.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { removeAttendees } from "../src/remove-attendees.js";
 import { addAttendeeNote } from "../src/notes.js";
@@ -140,7 +140,7 @@ async function completionOrLock(completed: () => boolean, minimum = 1) {
     const rows = await db.$queryRaw<{ count: bigint }[]>`
       SELECT count(*)::bigint AS count FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock'
-        AND position('Attendee' IN query) > 0
+        AND (position('Attendee' IN query) > 0 OR position('pg_advisory_xact_lock' IN query) > 0)
     `;
     if (Number(rows[0]?.count ?? 0) >= minimum) return "blocked";
     await pollDelay(20);
@@ -181,7 +181,72 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     expect(await db.attendeeItemState.count({ where: { attendee_id: f.attendee.id, state: "issued" } })).toBe(1);
   });
 
-  it("refuses a selected old admission when undo and re-admission commit before it locks", async () => {
+  it.each(["scan", "manual"] as const)("serializes the device's latest-admission decision with another guest's %s", async (method) => {
+    const f = await fixture();
+    await f.admit();
+    const secondGuest = await db.attendee.create({ data: {
+      event_id: f.event.id, email: `second-${++sequence}@example.com`, name: "Second Synthetic Guest", status: "confirmed",
+    } });
+    const paused = pauseUndo("selection");
+    const first = Promise.allSettled([f.undo(paused.client)]);
+    await paused.reached;
+    let finished = false;
+    const second = Promise.allSettled([admitAttendee({
+      eventId: f.event.id, attendeeId: secondGuest.id, method, audit: f.audit,
+    }, connection())]).then((result) => { finished = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completionOrLock(() => finished); }
+    finally { paused.release(); }
+    expect((await first)[0].status).toBe("fulfilled");
+    const [secondResult] = await second;
+    expect(secondResult.status).toBe("fulfilled");
+    if (secondResult.status !== "fulfilled") throw new Error("Expected the later admission to succeed");
+    expect(secondResult.value.status).toBe("VALID");
+    expect(interleaving!).toBe("blocked");
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: secondGuest.id } })).admitted_at).not.toBeNull();
+    expect(await db.checkIn.count({ where: { attendee_id: secondGuest.id, status: "UNDO" } })).toBe(0);
+    expect((await f.undo()).card.id).toBe(secondGuest.id);
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: secondGuest.id } })).admitted_at).toBeNull();
+  });
+
+  it.each(["another device", "another event"] as const)("allows independent admission on %s while undo holds its device lock", async (scope) => {
+    const f = await fixture();
+    await f.admit();
+    const other = await fixture();
+    const eventId = scope === "another event" ? other.event.id : f.event.id;
+    const guest = await db.attendee.create({ data: {
+      event_id: eventId, email: `independent-${++sequence}@example.com`, name: "Independent Synthetic Guest", status: "confirmed",
+    } });
+    const paused = pauseUndo("selection");
+    const undo = Promise.allSettled([f.undo(paused.client)]);
+    await paused.reached;
+    let finished = false;
+    const admission = Promise.allSettled([admitAttendee({
+      eventId, attendeeId: guest.id, method: "manual",
+      audit: { ...f.audit, deviceId: scope === "another device" ? other.audit.deviceId : f.audit.deviceId },
+    }, connection())]).then((result) => { finished = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completionOrLock(() => finished); }
+    finally { paused.release(); }
+    expect((await undo)[0].status).toBe("fulfilled");
+    const [result] = await admission;
+    expect(result.status).toBe("fulfilled");
+    if (result.status === "fulfilled") expect(result.value.status).toBe("VALID");
+    expect(interleaving!).toBe("completed");
+  });
+
+  it("selects the newer guest when their admission commits before undo starts", async () => {
+    const f = await fixture();
+    await f.admit();
+    const secondGuest = await db.attendee.create({ data: {
+      event_id: f.event.id, email: `latest-${++sequence}@example.com`, name: "Latest Synthetic Guest", status: "confirmed",
+    } });
+    await admitAttendee({ eventId: f.event.id, attendeeId: secondGuest.id, method: "manual", audit: f.audit }, db);
+    expect((await f.undo()).card.id).toBe(secondGuest.id);
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).not.toBeNull();
+  });
+
+  it("refuses a selected old admission when admin revoke and re-admission commit before its row lock", async () => {
     const f = await fixture();
     await f.admit();
     const paused = pauseUndo("selection");
@@ -189,7 +254,7 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     await paused.reached;
     let newer: Date | undefined;
     try {
-      await f.undo();
+      await revokeCheckIn({ eventId: f.event.id, attendeeId: f.attendee.id, audit: f.audit }, db);
       newer = admissionTime(await f.admit(db, "another-device"));
     } finally { paused.release(); }
     const [result] = await stale;

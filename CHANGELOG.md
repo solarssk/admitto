@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Undo check-in now serializes changes to the selected attendee before validation, so an overlapping undo cannot clear a newer admission or record a second reversal of the same admission. Badge rollback and the audit remain in the same transaction.
+- Undo check-in and new admissions now serialize the latest-entry decision per event and device, including admissions of different attendees. Changes to the selected attendee are also serialized before validation, so an overlapping undo cannot clear a newer admission or record a second reversal of the same admission. Badge rollback and the audit remain in the same transaction.
 
 - Chrome DevTools no longer reports "Incorrect use of <label for=FORM_ELEMENT>" on the Communication templates tab (the MJML/HTML body caption pointed at the editor's contenteditable, which is not a form field) or "A form field element should have an id or name attribute" on the attendee Notes tab, the Overview pinned note, the check-in note, and on any `Input` or `Select` without a visible label.
 - The arrows on a scrolling tab strip (Event settings, Organisation settings) cover the clipped tab names again: the strip had grown 4px past its box for the focus ring, so a sliver of the first or last name showed beside each arrow.

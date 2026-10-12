@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
+import { lockDeviceAdmissions } from "./device-admission-lock.js";
 import { lockAttendeeRow } from "./attendee-lock.js";
 import {
   rollbackBadgeForCheckIn,
@@ -32,6 +33,8 @@ export async function undoLastCheckIn(
   }
 
   return await prisma.$transaction(async (tx) => {
+    // Protect the device-wide selection even when the next admission is for another guest.
+    await lockDeviceAdmissions(tx, params.eventId, params.audit.deviceId);
     const lastValid = await tx.checkIn.findFirst({
       where: {
         event_id: params.eventId,
