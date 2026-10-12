@@ -97,6 +97,11 @@ access log (see the Retention table below); it is not auto-purged like `Security
 This does **not** apply to the admin audit trail (`AttendeeActionLog`, `AdminAuditLog`), which is a
 first-class, access-controlled product feature, not an operational log line - see below.
 
+The admin/operator/account SPA's production client-error reports contain only one of five fixed
+source categories (render, uncaught error, unhandled rejection, resource load or CSP violation).
+The server rejects exception messages, names, stacks, page paths, URLs and other arbitrary fields
+rather than writing them to stdout or System logs. Detailed client errors remain local in development.
+
 ## System logs (live tail)
 
 A superadmin-only screen (Organisation settings → **Logs** → **System**) shows a short live tail of
