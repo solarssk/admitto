@@ -43,6 +43,7 @@ import {
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   isExportInvalidated,
+  safeExportJobError,
   countFilteredAttendees,
   findFilteredAttendeesForList,
   findSelectedAttendeesForExport,
@@ -1311,7 +1312,7 @@ export async function handleGetExportJob(c: Context, db: PrismaClient): Promise<
   return c.json({
     jobId: job.id,
     status: job.status,
-    error: job.error,
+    error: job.status === "failed" ? safeExportJobError(job.error) : null,
     filename: job.filename,
     rowCount: job.created_count,
     created_at: job.created_at.toISOString(),

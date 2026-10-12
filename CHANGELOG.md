@@ -99,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Import and export failures now store fixed, privacy-safe messages instead of upstream exception text. Job status and import history also hide unknown errors saved earlier, while preserving capacity, erasure and worker-recovery messages.
+
 - Erasing or removing an attendee now immediately makes earlier exports of that event unavailable, even when deleting their stored files fails. File cleanup remains retryable, and a new export made after the change can still be downloaded.
 
 - Adding a passkey, a security key or an authenticator app to an account that already has a second-factor method now asks to confirm with a code from an existing method, a backup code, or an existing passkey. Before, anyone holding a signed-in session (for example a stolen session cookie) could attach their own second factor to the account without proving anything. The account's first method needs no confirmation. The API takes the proof in a new `step_up` field on `POST /api/account/mfa/totp/confirm` and `POST /api/account/mfa/webauthn/register/finish`.

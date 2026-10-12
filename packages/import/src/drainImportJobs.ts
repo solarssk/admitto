@@ -4,6 +4,7 @@
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
 import { claimNextAdminJob } from "@admitto/tickets";
+import { IMPORT_CAPACITY_ERROR, IMPORT_JOB_FAILED_ERROR, safeImportJobError } from "./import-job-errors.js";
 import {
   executeImportCommit,
   ImportCapacityExceededError,
@@ -29,9 +30,8 @@ export type DrainImportJobsResult = {
 type ClaimedImportJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
 function failureMessage(err: unknown): string {
-  if (err instanceof ImportCapacityExceededError) return err.message;
-  if (err instanceof Error) return err.message;
-  return String(err);
+  if (err instanceof ImportCapacityExceededError) return IMPORT_CAPACITY_ERROR;
+  return err instanceof Error ? (safeImportJobError(err.message) ?? IMPORT_JOB_FAILED_ERROR) : IMPORT_JOB_FAILED_ERROR;
 }
 
 async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
@@ -42,7 +42,7 @@ async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promis
     where: { id: jobId, status: "running" },
     data: {
       status: "failed",
-      error: failureMessage(err).slice(0, 2000),
+      error: failureMessage(err),
       finished_at: new Date(),
     },
   });

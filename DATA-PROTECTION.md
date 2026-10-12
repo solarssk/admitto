@@ -292,6 +292,8 @@ framework:
 | Per-attendee erasure | Admin SPA (single and bulk): **Erase personal data** (anonymises the entry, Reports keep their numbers) and **Remove from event** (deletes the entry, for mistakes); each has an API endpoint for one attendee and one for a selection |
 | Automated purge job | Partial - auth-state, email delivery snapshot and export/import file cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
 
+Import/export job failures store fixed categories, and their status/history APIs suppress unknown historical error text. Earlier raw exceptions may still be present in `AdminJob.error` and database backups; attendee erasure does not remove those historical values. Assess their minimization under the instance DSAR policy before a separately reviewed cleanup; this change does not automatically delete job history. See [Job failure privacy](docs/dev/attendee-erasure.md#job-failure-privacy).
+
 ## Data subject rights
 
 Attendees may have rights of access, rectification, and erasure under applicable law.

@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import {
   parseAttendees,
+  safeImportJobError,
   commitImport,
   dryRunImportCounts,
   loadImportTicketTypes,
@@ -474,12 +475,12 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
     };
 
     return c.json(body);
-  } catch (err) {
+  } catch {
     logger.error("Import preview failed", {
       importId,
       eventId,
       step: "preview",
-      error: err instanceof Error ? err.message : String(err),
+      error: "import_preview_failed",
       durationMs: Date.now() - startTime,
     });
     return c.json({ error: "server error", importId }, 500);
@@ -577,12 +578,12 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       } satisfies ImportCommitQueuedDto,
       202,
     );
-  } catch (err) {
+  } catch {
     logger.error("Import commit enqueue failed", {
       importId,
       eventId,
       step: "enqueue",
-      error: err instanceof Error ? err.message : String(err),
+      error: "import_enqueue_failed",
       durationMs: Date.now() - startTime,
     });
     return c.json({ error: "server error", importId }, 500);
@@ -610,7 +611,7 @@ export async function handleGetImportJob(c: Context, db: PrismaClient): Promise<
     jobId: job.id,
     status: job.status as ImportJobStatusDto["status"],
     importId: job.import_id,
-    error: job.error,
+    error: job.status === "failed" ? safeImportJobError(job.error) : null,
     result,
     created_at: job.created_at.toISOString(),
     started_at: job.started_at ? job.started_at.toISOString() : null,
@@ -752,7 +753,7 @@ export async function loadRecentImportJobs(
       updated: counts.updated,
       skipped: counts.skipped,
       status: job.status === "failed" ? "failed" : "succeeded",
-      error: job.status === "failed" ? job.error : null,
+      error: job.status === "failed" ? safeImportJobError(job.error) : null,
     };
   });
 }
