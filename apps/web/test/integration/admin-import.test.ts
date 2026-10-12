@@ -1400,7 +1400,7 @@ describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
     });
     expect(await failed.json()).toMatchObject({
       status: "failed",
-      error: "boom",
+      error: "Import failed. Upload the file again.",
       result: null,
     });
 

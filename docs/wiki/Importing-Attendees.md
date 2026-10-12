@@ -46,6 +46,8 @@ A committed import changes the attendee list and records an import-history entry
 
 ## Common problems
 
+- **Import failed:** job status and history show a safe failure category, without database or storage exception details. Check that the worker and storage are available, validate the file and upload again. Capacity, erasure and stopped-worker failures keep their specific recovery messages.
+
 - **Invalid row:** correct the displayed data error in the source file.
 - **Warning:** review it; unknown columns are ignored and duplicate headers use the last value.
 - **Skipped attendee:** read the reason, then decide whether overwrite is appropriate.

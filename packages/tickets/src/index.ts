@@ -209,6 +209,7 @@ export {
   isExportInvalidated,
 } from "./export-job-privacy.js";
 export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
+export { safeExportJobError } from "./export-job-errors.js";
 export type {
   AttendeeCustomFieldFilter,
   AttendeeExportRsvpStatus,
