@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getHtmlAttributeContext, isInsideQuotedAttribute } from "../src/htmlContext.js";
+import { createHtmlAttributeContextReader, createHtmlCommentContextReader, getHtmlAttributeContext, isInsideQuotedAttribute, isPlaceholderInHtmlComment } from "../src/htmlContext.js";
 
 const PH = "{{first_name}}";
 
@@ -164,5 +164,28 @@ describe("quoted tag boundary controls", () => {
 
   it("keeps an unquoted value distinguishable after an earlier quoted literal tag", () => {
     expect(ctxAt('<span title="Guest <b>" data-name={{first_name}}>Hi</span>').unquotedAttributeName).toBe("data-name");
+  });
+});
+
+
+describe("ascending context readers", () => {
+  it.each([
+    '<span 0="Earlier <b>" title="{{first_name}} / {{last_name}}">{{email}}</span>',
+    '<img alt={{first_name}} width="{{last_name}}"><p>{{email}}</p>',
+    '<!-- {{first_name}} --><span title="{{last_name}}">{{email}}</span>',
+    '<!-- outer <!-- {{first_name}} -->{{last_name}}<p>{{email}}</p>',
+    '<!DOCTYPE html><p>{{first_name}}</p></span title="{{last_name}}">{{email}}',
+    '<span title="{{first_name}}">{{last_name}}<!-- unclosed {{email}}',
+    '{{first_name}} {{last_name}} {{email}}',
+  ])("keeps incremental contexts consistent in %s", (html) => {
+    const contextAt = createHtmlAttributeContextReader(html);
+    const inComment = createHtmlCommentContextReader(html);
+    for (const match of html.matchAll(/\{\{[a-z_]+\}\}/g)) {
+      expect(contextAt(match.index)).toEqual(getHtmlAttributeContext(html, match.index));
+      const start = html.lastIndexOf("<!--", match.index);
+      const end = start === -1 ? -1 : html.indexOf("-->", start);
+      expect(inComment(match.index)).toBe(start !== -1 && (end === -1 || end + 2 > match.index));
+      expect(inComment(match.index)).toBe(isPlaceholderInHtmlComment(html, match.index));
+    }
   });
 });
