@@ -6,8 +6,7 @@ import type { Prisma, PrismaClient } from "@admitto/db";
 import { assertImportCapacityInTx } from "./event-capacity.js";
 import {
   acquireEventTicketTypesLock,
-  acquireEventCapacityLock,
-  EVENT_CAPACITY_TRANSACTION_OPTIONS,
+  runEventCapacityTransaction,
   loadEventCustomDataFields,
   filterCustomDataAttributeFields,
   writeBulkActionLog,
@@ -92,8 +91,8 @@ export async function executeImportCommit(
   let lockInvalidatedRows: { rowIndex: number; reason: string }[] = [];
   let capacityForcedMeta: { capacity: number; current: number } | null = null;
 
-  const summary = await db.$transaction(
-    async (tx) => {
+  const summary = await runEventCapacityTransaction(
+    db, params.eventId, async (tx) => {
       if (params.adminJobId) {
         // First, before any other lock: the row of the job is held until the import has committed, so an erasure or
         // a removal in the event (which locks the open jobs before it locks an attendee, see lockOpenAttendeeJobs)
@@ -107,10 +106,7 @@ export async function executeImportCommit(
       if (ticketTypes) {
         await acquireEventTicketTypesLock(tx, params.eventId);
       }
-
-      // Catalog before capacity, and capacity before dry-run classification or attendee locks.
-      await acquireEventCapacityLock(tx, params.eventId);
-
+    }, async (tx) => {
       let rowsToCommit = parsed.validRows;
       if (ticketTypes) {
         const freshKeys = new Set((await loadImportTicketTypes(tx, params.eventId)).map((t) => t.key));
@@ -215,7 +211,6 @@ export async function executeImportCommit(
 
       return result;
     },
-    EVENT_CAPACITY_TRANSACTION_OPTIONS,
   );
 
   const allInvalid = [...parsed.invalidRows, ...lockInvalidatedRows];

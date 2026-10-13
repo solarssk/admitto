@@ -17,7 +17,7 @@ function activeAttendeeWhere(eventId: string) {
   };
 }
 
-export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS } from "@admitto/tickets";
+export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "@admitto/tickets";
 
 /** Count attendees that consume event capacity (excludes revoked and cancelled). */
 export function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {

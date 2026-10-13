@@ -3,7 +3,7 @@ import type { Attendee, Prisma, PrismaClient } from "@admitto/db";
 import {
   assertCustomDataMeetsRequirements,
   acquireEventCapacityLock,
-  EVENT_CAPACITY_TRANSACTION_OPTIONS,
+  runEventCapacityTransaction,
   acquireEventTicketTypesLock,
   filterCustomDataAttributeFields,
   type EventItemContent,
@@ -412,10 +412,9 @@ export async function commitImport(
   // Own the whole classification/count/write transaction, including the standalone CLI path.
   // Caller-owned transactions must take any catalog lock before entering this capacity guard.
   if (!dryRun && !ownedTransaction) {
-    return (prisma as PrismaClient).$transaction(async (tx) => {
+    return runEventCapacityTransaction(prisma as PrismaClient, eventId, async (tx) => {
       if (options.ticketTypes) await acquireEventTicketTypesLock(tx, eventId);
-      return commitImport(eventId, rows, { ...options, ownedTransaction: true }, tx);
-    }, EVENT_CAPACITY_TRANSACTION_OPTIONS);
+    }, (tx) => commitImport(eventId, rows, { ...options, ownedTransaction: true }, tx));
   }
   if (!dryRun) await acquireEventCapacityLock(prisma, eventId);
 

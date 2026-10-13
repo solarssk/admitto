@@ -119,15 +119,37 @@ function pauseCapacityRead() {
   });
   return { client: wrapped, reached: reached.waiting, release: release.release };
 }
-async function completedOrBlocked(completed: () => boolean) {
+/** Track only this operation's PostgreSQL backend; preserve production transaction options. */
+function observedConnection(pause?: Promise<void>) {
+  const client = connection();
+  const transaction = client.$transaction.bind(client);
+  let pid: number | undefined;
+  const ready = gate();
+  const wrapped = new Proxy(client, {
+    get(target, key, receiver) {
+      if (key !== "$transaction") return Reflect.get(target, key, receiver);
+      return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, options?: { timeout?: number; maxWait?: number }) => transaction(async (tx) => {
+        const [backend] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!backend) throw new Error("PostgreSQL backend PID unavailable");
+        pid = backend.pid;
+        ready.release();
+        if (pause) await pause;
+        return operation(tx);
+      }, options);
+    },
+  });
+  return { client: wrapped, pid: () => pid, ready: ready.waiting };
+}
+async function completedOrBlocked(completed: () => boolean, pid: () => number | undefined, observed?: () => void) {
   const deadline = performance.now() + 10_000;
   while (performance.now() < deadline) {
     if (completed()) return "completed";
     const rows = await db.$queryRaw<{ count: bigint }[]>`
       SELECT count(*)::bigint AS count FROM pg_stat_activity
-      WHERE datname = current_database() AND wait_event_type = 'Lock'
+      WHERE datname = current_database() AND pid = ${pid() ?? -1} AND wait_event_type = 'Lock'
         AND position('pg_advisory_xact_lock' IN query) > 0
     `;
+    observed?.();
     if (Number(rows[0]?.count ?? 0) > 0) return "blocked";
     await pollDelay(20);
   }
@@ -140,9 +162,10 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     const first = Promise.allSettled([write(firstKind, paused.client)]);
     await paused.reached;
     let completed = false;
-    const second = Promise.allSettled([write(secondKind, connection())]).then((result) => { completed = true; return result; });
+    const observer = observedConnection();
+    const second = Promise.allSettled([write(secondKind, observer.client)]).then((result) => { completed = true; return result; });
     let interleaving: string;
-    try { interleaving = await completedOrBlocked(() => completed); }
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid); }
     finally { paused.release(); }
     const [a] = await first;
     const [b] = await second;
@@ -207,7 +230,8 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     const first = Promise.allSettled([write("import", paused.client)]);
     await paused.reached;
     const app = new Hono();
-    const client = connection();
+    const observer = observedConnection();
+    const client = observer.client;
     app.patch("/events/:eventId/attendees/:id", (c) => {
       c.set("auth", { userId });
       return handlePatchEventAttendee(c, client);
@@ -218,7 +242,7 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
       body: JSON.stringify({ status: "registered", expected_updated_at: attendee.updated_at.toISOString() }),
     })).then((response) => { completed = true; return response; });
     let interleaving: string;
-    try { interleaving = await completedOrBlocked(() => completed); }
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid); }
     finally { paused.release(); }
     expect((await first)[0].status).toBe("fulfilled");
     const response = await restored;
@@ -252,10 +276,18 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     const first = Promise.allSettled([write("manual", paused.client)]);
     await paused.reached;
     let completed = false;
-    const second = Promise.allSettled([write("import", connection(), false, other.id)]).then((result) => { completed = true; return result; });
+    const unrelated = observedConnection();
+    let unrelatedCompleted = false;
+    const unrelatedWaiter = Promise.allSettled([write("manual", unrelated.client)]).then((result) => { unrelatedCompleted = true; return result; });
+    expect(await completedOrBlocked(() => unrelatedCompleted, unrelated.pid)).toBe("blocked");
+    const independentRelease = gate();
+    const observer = observedConnection(independentRelease.waiting);
+    const second = Promise.allSettled([write("import", observer.client, false, other.id)]).then((result) => { completed = true; return result; });
     let interleaving: string;
-    try { interleaving = await completedOrBlocked(() => completed); }
-    finally { paused.release(); }
+    await observer.ready;
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid, independentRelease.release); }
+    finally { independentRelease.release(); paused.release(); }
+    await unrelatedWaiter;
     try {
       expect((await first)[0].status).toBe("fulfilled");
       const [result] = await second;
@@ -277,7 +309,8 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     const paused = pauseCapacityRead();
     const first = Promise.allSettled([write("import", paused.client)]);
     await paused.reached;
-    const client = connection();
+    const observer = observedConnection();
+    const client = observer.client;
     let completed = false;
     let response: Promise<Response> | undefined;
     if (attendee) {
@@ -304,7 +337,7 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     const results = Promise.allSettled([second]);
     let interleaving: string;
     try {
-      interleaving = await completedOrBlocked(() => completed);
+      interleaving = await completedOrBlocked(() => completed, observer.pid);
       await db.$queryRaw`SELECT 1 FROM pg_sleep(6)`;
     } finally { paused.release(); }
     expect(interleaving!).toBe("blocked");
