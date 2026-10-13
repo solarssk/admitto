@@ -85,8 +85,39 @@ async function fixture() {
   return { event, attendee, audit, admit, undo };
 }
 
+/** Rewrites the id of every check-in created through this client so it sorts after any natural id. */
+function highIdAdmissionClient() {
+  const client = connection();
+  const transaction = client.$transaction.bind(client);
+  return new Proxy(client, {
+    get(target, key, receiver) {
+      if (key !== "$transaction") return Reflect.get(target, key, receiver);
+      return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) => transaction(async (tx) => {
+        const checkIn = new Proxy(tx.checkIn, {
+          get(delegate, method, delegateReceiver) {
+            if (method !== "create") return Reflect.get(delegate, method, delegateReceiver);
+            return async (args: Prisma.CheckInCreateArgs) => {
+              const created = await delegate.create(args);
+              const { data: _data, ...selection } = args;
+              return delegate.update({
+                ...selection, where: { id: created.id },
+                data: { id: created.id.slice(0, 9) + "zzzz" + created.id.slice(13) },
+              });
+            };
+          },
+        });
+        return operation(new Proxy(tx, {
+          get(actual, property, actualReceiver) {
+            return property === "checkIn" ? checkIn : Reflect.get(actual, property, actualReceiver);
+          },
+        }));
+      });
+    },
+  });
+}
+
 /** Pause a real query's dispatch/result; every query and transaction still uses PostgreSQL. */
-function pauseUndo(point: "selection" | "clear") {
+function pauseMutation(point: "selection" | "clear") {
   const reached = gate();
   const release = gate();
   const client = connection();
@@ -153,7 +184,7 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     if (fixedClock) { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-12T12:00:00Z")); }
     const f = await fixture();
     expect((await f.admit()).status).toBe("VALID");
-    const paused = pauseUndo("clear");
+    const paused = pauseMutation("clear");
     const first = Promise.allSettled([f.undo(paused.client)]);
     await paused.reached;
     let finished = false;
@@ -187,7 +218,7 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     const secondGuest = await db.attendee.create({ data: {
       event_id: f.event.id, email: `second-${++sequence}@example.com`, name: "Second Synthetic Guest", status: "confirmed",
     } });
-    const paused = pauseUndo("selection");
+    const paused = pauseMutation("selection");
     const first = Promise.allSettled([f.undo(paused.client)]);
     await paused.reached;
     let finished = false;
@@ -217,7 +248,7 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     const guest = await db.attendee.create({ data: {
       event_id: eventId, email: `independent-${++sequence}@example.com`, name: "Independent Synthetic Guest", status: "confirmed",
     } });
-    const paused = pauseUndo("selection");
+    const paused = pauseMutation("selection");
     const undo = Promise.allSettled([f.undo(paused.client)]);
     await paused.reached;
     let finished = false;
@@ -249,7 +280,7 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
   it("refuses a selected old admission when admin revoke and re-admission commit before its row lock", async () => {
     const f = await fixture();
     await f.admit();
-    const paused = pauseUndo("selection");
+    const paused = pauseMutation("selection");
     const stale = Promise.allSettled([f.undo(paused.client)]);
     await paused.reached;
     let newer: Date | undefined;
@@ -268,39 +299,13 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-12T12:00:00Z"));
     const f = await fixture();
-    const initialClient = connection();
-    const transaction = initialClient.$transaction.bind(initialClient);
-    const seededClient = new Proxy(initialClient, {
-      get(target, key, receiver) {
-        if (key !== "$transaction") return Reflect.get(target, key, receiver);
-        return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) => transaction(async (tx) => {
-          const checkIn = new Proxy(tx.checkIn, {
-            get(delegate, method, delegateReceiver) {
-              if (method !== "create") return Reflect.get(delegate, method, delegateReceiver);
-              return async (args: Prisma.CheckInCreateArgs) => {
-                const created = await delegate.create(args);
-                const { data: _data, ...selection } = args;
-                return delegate.update({
-                  ...selection, where: { id: created.id },
-                  data: { id: created.id.slice(0, 9) + "zzzz" + created.id.slice(13) },
-                });
-              };
-            },
-          });
-          return operation(new Proxy(tx, {
-            get(actual, property, actualReceiver) {
-              return property === "checkIn" ? checkIn : Reflect.get(actual, property, actualReceiver);
-            },
-          }));
-        });
-      },
-    });
+    const seededClient = highIdAdmissionClient();
     await f.admit(seededClient);
     const firstAdmission = await db.checkIn.findFirstOrThrow({
       where: { attendee_id: f.attendee.id, status: "VALID" },
     });
     const seededId = firstAdmission.id;
-    const paused = pauseUndo("selection");
+    const paused = pauseMutation("selection");
     const stale = Promise.allSettled([f.undo(paused.client)]);
     await paused.reached;
     let newer: Date | undefined;
@@ -327,6 +332,70 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
     await undoLastCheckIn({ eventId: f.event.id, audit: { ...f.audit, deviceId: "another-device" } }, db);
     expect((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toBeNull();
     expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(2);
+  });
+
+  it.each(["equal times, reversed IDs", "equal times, natural IDs", "real clock"] as const)("second revoke names the live admission and protects its replacement (%s)", async (mode) => {
+    if (mode !== "real clock") {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-12T12:00:00Z"));
+    }
+    const f = await fixture();
+    const validOn = (deviceId: string) => db.checkIn.findFirstOrThrow({
+      where: { attendee_id: f.attendee.id, status: "VALID", device_id: deviceId },
+    });
+    const revoke = () => revokeCheckIn({ eventId: f.event.id, attendeeId: f.attendee.id, audit: f.audit }, db);
+    await f.admit(mode === "equal times, reversed IDs" ? highIdAdmissionClient() : db, "device-a");
+    const a = await validOn("device-a");
+    await revoke();
+    await f.admit(db, "device-b");
+    const b = await validOn("device-b");
+    const paused = pauseMutation("selection");
+    const stale = Promise.allSettled([undoLastCheckIn({ eventId: f.event.id, audit: { ...f.audit, deviceId: "device-b" } }, paused.client)]);
+    await paused.reached;
+    let replacement: Date | undefined;
+    try {
+      await revoke();
+      replacement = admissionTime(await f.admit(db, "device-c"));
+    } finally { paused.release(); }
+    const [result] = await stale;
+    if (mode === "equal times, reversed IDs") {
+      expect(b.id < a.id).toBe(true);
+      expect(b.checked_in_at).toEqual(a.checked_in_at);
+      expect(replacement).toEqual(b.checked_in_at);
+    }
+    const markers = await db.attendeeActionLog.findMany({
+      where: { attendee_id: f.attendee.id, action_type: "check_in_revoked" }, select: { metadata: true },
+    });
+    const named = markers.map((log) => (log.metadata as { undone_check_in_id?: string } | null)?.undone_check_in_id).sort();
+    expect.soft(named).toEqual([a.id, b.id].sort());
+    expect.soft(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toBeInstanceOf(UndoNotAllowedError);
+    expect.soft((await db.attendee.findUniqueOrThrow({ where: { id: f.attendee.id } })).admitted_at).toEqual(replacement);
+    expect.soft(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(2);
+    expect.soft(await db.attendeeActionLog.count({ where: { attendee_id: f.attendee.id, action_type: "check_in_undo" } })).toBe(0);
+    expect.soft(await db.attendeeItemState.count({ where: { attendee_id: f.attendee.id, state: "issued" } })).toBe(1);
+    expect.soft((await f.admit(db, "device-d")).status).toBe("ALREADY_CHECKED_IN");
+  });
+
+  it("serializes concurrent admin revokes and records one reversal", async () => {
+    const f = await fixture();
+    await f.admit();
+    const paused = pauseMutation("clear");
+    const params = { eventId: f.event.id, attendeeId: f.attendee.id, audit: f.audit };
+    const first = Promise.allSettled([revokeCheckIn(params, paused.client)]);
+    await paused.reached;
+    let finished = false;
+    const second = Promise.allSettled([revokeCheckIn(params, connection())]).then((result) => { finished = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completionOrLock(() => finished); }
+    finally { paused.release(); }
+    expect((await first)[0].status).toBe("fulfilled");
+    const [result] = await second;
+    expect(interleaving!).toBe("blocked");
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toBeInstanceOf(UndoNotAllowedError);
+    expect(await db.checkIn.count({ where: { attendee_id: f.attendee.id, status: "UNDO" } })).toBe(1);
+    expect(await db.attendeeActionLog.count({ where: { attendee_id: f.attendee.id, action_type: "check_in_revoked" } })).toBe(1);
   });
 
   it("admits exactly once when concurrent scan/manual requests wait on the same real row", async () => {
@@ -399,7 +468,7 @@ describe("undo admission serialization (real migrated PostgreSQL)", () => {
   it.each(["erase", "remove"] as const)("refuses a selected attendee after %s commits", async (action) => {
     const f = await fixture();
     await f.admit();
-    const paused = pauseUndo("selection");
+    const paused = pauseMutation("selection");
     const stale = Promise.allSettled([f.undo(paused.client)]);
     await paused.reached;
     try {

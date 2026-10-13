@@ -13,6 +13,15 @@ import type { UndoCheckInResult } from "./types.js";
 /** The precision an erasure leaves a check-in time with (see eraseAttendees). */
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+/** Serialize admission mutations before KEY SHARE or child rows, without blocking note guards. */
+async function lockAdmissionRow(tx: Prisma.TransactionClient, eventId: string, attendeeId: string) {
+  await tx.$queryRaw`
+    SELECT "id" FROM "Attendee"
+    WHERE "id" = ${attendeeId} AND "event_id" = ${eventId}
+    FOR NO KEY UPDATE
+  `;
+}
+
 export class UndoNotAllowedError extends Error {
   constructor(message: string) {
     super(message);
@@ -53,11 +62,7 @@ export async function undoLastCheckIn(
     // allows another undo and re-admission between validation and the clear. Take this lock
     // before KEY SHARE to avoid competing undo transactions upgrading shared locks.
     // NO KEY UPDATE still allows foreign-key/erasure guards held by item and note writes.
-    await tx.$queryRaw`
-      SELECT "id" FROM "Attendee"
-      WHERE "id" = ${lastValid.attendee_id} AND "event_id" = ${params.eventId}
-      FOR NO KEY UPDATE
-    `;
+    await lockAdmissionRow(tx, params.eventId, lastValid.attendee_id);
 
     // Refuse rather than skip to an older check-in when the newest one is an erased attendee's.
     // The lock keeps an erasure from starting before this transaction ends.
@@ -205,18 +210,9 @@ export async function revokeCheckInMutation(
 ): Promise<{ undoneCheckInId: string | null }> {
   // IllegalItemTransitionError, not UndoNotAllowedError: callers that only clear a stale
   // admission treat the latter as "nothing to do" and carry on with a status change.
+  await lockAdmissionRow(tx, params.eventId, params.attendeeId);
   const locked = await lockAttendeeRow(tx, params.attendeeId, params.eventId);
   if (locked?.erased) throw new IllegalItemTransitionError("Attendee data has been erased", true);
-
-  const lastValid = await tx.checkIn.findFirst({
-    where: {
-      event_id: params.eventId,
-      attendee_id: params.attendeeId,
-      status: "VALID",
-      source: { in: ["scan", "manual"] },
-    },
-    orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
-  });
 
   const attendee = await tx.attendee.findFirst({
     where: { id: params.attendeeId, event_id: params.eventId },
@@ -225,11 +221,28 @@ export async function revokeCheckInMutation(
     throw new UndoNotAllowedError("Attendee is not currently admitted");
   }
 
+  // Historical VALID rows remain after reversal. Exclude exact admission IDs already
+  // reversed, so equal times and nonchronological IDs cannot make revoke name old history.
+  // The attendee lock keeps admission/reversal state stable for this selection and write.
+  const [lastValid] = await tx.$queryRaw<{ id: string }[]>`
+    SELECT c."id" FROM "CheckIn" c
+    WHERE c."event_id" = ${params.eventId} AND c."attendee_id" = ${params.attendeeId}
+      AND c."status" = 'VALID' AND c."source" IN ('scan', 'manual')
+      AND c."checked_in_at" = ${attendee.admitted_at}
+      AND NOT EXISTS (
+        SELECT 1 FROM "AttendeeActionLog" a
+        WHERE a."event_id" = c."event_id" AND a."attendee_id" = c."attendee_id"
+          AND a."action_type" IN ('check_in_undo', 'check_in_revoked')
+          AND a."metadata" ->> 'undone_check_in_id' = c."id"
+      )
+    ORDER BY c."checked_in_at" DESC, c."id" DESC LIMIT 1
+  `;
+
   const cleared = await tx.attendee.updateMany({
     where: {
       id: params.attendeeId,
       event_id: params.eventId,
-      admitted_at: { not: null },
+      admitted_at: attendee.admitted_at,
     },
     data: { admitted_at: null, admitted_by: null },
   });
