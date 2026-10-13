@@ -110,7 +110,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `BOUNCE_INGEST_INTERVAL_SECONDS` | optional | worker | none | no | Legacy alias of BOUNCE_INGEST_TICK_SECONDS. |
 | `BOUNCE_INGEST_APP_URL` | recommended | worker | none | no | Internal base URL for worker → app System Logs bridge (compose: http://app:3000). |
 | `ADMITTO_INTERNAL_URL` | optional | worker | none | no | Optional alternate internal app URL used by worker integrations (compose sets http://app:3000). |
-| `IMPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail import AdminJobs stuck in running after this many ms (default 15 minutes). |
+| `IMPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail import AdminJobs stuck in running after this many ms (default 15 minutes). Values must parse to a positive finite integer no larger than 62135596800000 (Prisma/PostgreSQL AD date range); unsupported values use the default and emit a fixed warning without the configured value. |
 | `EXPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail export AdminJobs stuck in running after this many ms (default 15 minutes). |
 | `WALLET_PUSH_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail wallet_push AdminJobs stuck in running after this many ms (default 30 minutes). |
 | `WALLET_REFRESH_STATUS_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail wallet_refresh_status AdminJobs stuck in running after this many ms (default 30 minutes). |
