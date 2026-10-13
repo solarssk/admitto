@@ -114,7 +114,7 @@ import { loadAttendeeErasureRecordForViewer, type AttendeeErasureRecord } from "
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation, runEventCapacityTransaction } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -2046,20 +2046,22 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   const updateData = buildPatchUpdateData(profileChanges, rsvpChange, statusChange);
 
   try {
-    const updated = await db.$transaction((tx) =>
-      runPatchAttendeeTransaction(tx, {
-        c,
-        eventId,
-        attendeeId,
-        existing,
-        profileChanges,
-        profilePatchTicketType: profilePatch.ticket_type,
-        rsvpChange,
-        statusChange,
-        expectedUpdatedAt,
-        updateData,
-      }),
-    );
+    const operation = (tx: Prisma.TransactionClient) => runPatchAttendeeTransaction(tx, {
+      c,
+      eventId,
+      attendeeId,
+      existing,
+      profileChanges,
+      profilePatchTicketType: profilePatch.ticket_type,
+      rsvpChange,
+      statusChange,
+      expectedUpdatedAt,
+      updateData,
+    });
+    const updated = isCapacityReactivation(existing.status, statusChange)
+      ? await runEventCapacityTransaction(db, eventId, (tx) =>
+        guardPatchTicketTypeChange(c, tx, eventId, profileChanges, profilePatch.ticket_type), operation)
+      : await db.$transaction(operation);
 
     let walletPass = updated.wallet_pass;
     let walletPassMaybeStale = false;
@@ -3722,7 +3724,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   }
 
   try {
-    const created = await db.$transaction(async (tx) => {
+    const created = await runEventCapacityTransaction(db, eventId, async (tx) => {
       // Catalog membership check (batch 04 / #351) - moved inside the transaction and locked
       // against a concurrent ticket-type DELETE (TOCTOU fix, code review): validating on the bare
       // `db` before this transaction opened let a concurrent delete's in-use recheck pass (it
@@ -3735,7 +3737,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
         if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
       }
 
-      await acquireEventCapacityLock(tx, eventId);
+    }, async (tx) => {
       const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
       if (capacityResult instanceof Response) throw new TransactionResponseError(capacityResult);
       const capacityForced =

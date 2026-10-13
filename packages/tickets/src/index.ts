@@ -243,3 +243,5 @@ export type {
   LookupAttendeeResult,
 } from "./types.js";
 export type { EventOpsConfig } from "./ops-config.js";
+
+export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "./event-capacity.js";

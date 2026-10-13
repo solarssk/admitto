@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { Prisma, type PrismaClient } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 
@@ -17,20 +17,7 @@ function activeAttendeeWhere(eventId: string) {
   };
 }
 
-/** Stable PostgreSQL advisory-lock key for per-event capacity serialization. */
-export function eventCapacityLockKey(eventId: string): string {
-  return `event-capacity:${eventId}`;
-}
-
-/** Serialize manual create, restore, and import commit against the same event capacity. */
-export async function acquireEventCapacityLock(
-  tx: Prisma.TransactionClient,
-  eventId: string,
-): Promise<void> {
-  await tx.$executeRaw(
-    Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${eventCapacityLockKey(eventId)}))`,
-  );
-}
+export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "@admitto/tickets";
 
 /** Count attendees that consume event capacity (excludes revoked and cancelled). */
 export function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {

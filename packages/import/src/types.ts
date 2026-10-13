@@ -55,6 +55,8 @@ export type ImportOptions = {
   dryRun?: boolean;
   /** When true: caller owns the transaction (no nested $transaction wrapper). */
   ownedTransaction?: boolean;
+  /** Trusted caller already authorized an explicit capacity override. Defaults to false. */
+  forceCapacity?: boolean;
   /** Event-item attribute definitions — required for custom_data validation at commit. */
   attributeFields?: ImportAttributeField[];
   /** Same opt-in semantics as ParseAttendeesOptions.ticketTypes — re-validated at commit since

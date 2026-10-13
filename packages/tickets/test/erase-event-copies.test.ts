@@ -293,7 +293,7 @@ describe("scrubImportJobResults", () => {
 });
 
 describe("deleteErasedWalletPasses", () => {
-  const stubProvider = (deletePass = vi.fn(async () => undefined)) =>
+  const stubProvider = (deletePass: ReturnType<typeof vi.fn> = vi.fn(async () => undefined)) =>
     ({ deletePass }) as unknown as WalletPassProvider & { deletePass: ReturnType<typeof vi.fn> };
 
   const attendeeWithPass = async (id: string, eventId = EVENT_ID, erase = true) => {
@@ -400,15 +400,20 @@ describe("deleteErasedWalletPasses", () => {
     // Nine passes, written from the highest id to the lowest: one batch is eight, so one pass is left for the next call.
     const ids = Array.from({ length: 9 }, (_, i) => `copies-wp-ord-${9 - i}`);
     for (const id of ids) await attendeeWithPass(id);
-    const provider = stubProvider(vi.fn(async () => new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 20))));
+    let elapsed = 0;
+    const provider = stubProvider(vi.fn(async () => { elapsed = 2; return undefined; }));
+    // Starting the first batch must not depend on whether the runner preempts us for 1ms.
+    // Advance the budget only when a real provider call begins; database results stay real.
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => 1_700_000_000_000 + elapsed);
+    try {
+      const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [...ids], provider, { budgetMs: 1 });
 
-    const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [...ids], provider, { budgetMs: 1 });
-
-    expect(result).toMatchObject({ deleted: 8, notTried: 1 });
-    expect(provider.deletePass.mock.calls.map((call) => call[0]).sort()).toEqual(
-      [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `pc-copies-wp-ord-${n}`),
-    );
-    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: "copies-wp-ord-9" } })).provider_removed_at).toBeNull();
+      expect(result).toMatchObject({ deleted: 8, notTried: 1 });
+      expect(provider.deletePass.mock.calls.map((call) => call[0]).sort()).toEqual(
+        [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `pc-copies-wp-ord-${n}`),
+      );
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: "copies-wp-ord-9" } })).provider_removed_at).toBeNull();
+    } finally { clock.mockRestore(); }
   });
 
   it("stops starting batches when the time budget is used up and reports what it did not try", async () => {

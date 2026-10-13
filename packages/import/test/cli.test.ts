@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { acquireEventTicketTypesLock } from "@admitto/tickets";
+import { ImportCapacityExceededError } from "../src/executeImportCommit.js";
 import { runImport } from "../src/cli.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
@@ -141,4 +142,24 @@ describe("runImport - concurrent ticket-type delete (TOCTOU)", () => {
       await prisma.ticketType.deleteMany({ where: { id: raceType.id } });
     }
   });
+  it("refuses a committed CLI import when the event has no places, while preserving preview", async () => {
+    const event = await prisma.event.create({ data: {
+      organization_id: ORG_ID, title: "CLI Capacity", slug: `cli-capacity-${Date.now()}`,
+      date: new Date("2026-10-13T10:00:00Z"), capacity: 1,
+    } });
+    const file = writeTempCsv(["first_name,last_name,email", "Synthetic,CLI,cli-capacity-new@example.com"]);
+    try {
+      await prisma.attendee.create({ data: { event_id: event.id, name: "Synthetic Existing", email: "cli-capacity-existing@example.com" } });
+      const preview = await runImport({ eventId: event.id, filePath: file, commit: false, overwrite: false });
+      expect(preview.summary?.toCreate).toBe(1);
+      await expect(runImport({ eventId: event.id, filePath: file, commit: true, overwrite: false }))
+        .rejects.toBeInstanceOf(ImportCapacityExceededError);
+      expect(await prisma.attendee.count({ where: { event_id: event.id } })).toBe(1);
+    } finally {
+      fs.rmSync(path.dirname(file), { recursive: true, force: true });
+      await prisma.attendee.deleteMany({ where: { event_id: event.id } });
+      await prisma.event.delete({ where: { id: event.id } });
+    }
+  });
+
 });

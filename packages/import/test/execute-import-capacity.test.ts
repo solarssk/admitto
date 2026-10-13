@@ -1,0 +1,92 @@
+import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
+import { executeImportCommit, ImportCapacityExceededError, ImportStoppedError } from "../src/executeImportCommit.js";
+import type { ExecuteImportCommitParams } from "../src/executeImportCommit.js";
+
+const schema = `import_execute_capacity_${randomUUID().replaceAll("-", "")}`;
+let db: PrismaClient;
+let admin: PrismaClient;
+let sequence = 0;
+beforeAll(() => {
+  const url = process.env.DATABASE_URL ?? "";
+  assertTestDatabaseUrl(url);
+  const migrated = new URL(url);
+  migrated.searchParams.set("schema", schema);
+  execFileSync("npx", ["prisma", "migrate", "deploy"], {
+    cwd: resolve(dirname(fileURLToPath(import.meta.url)), "../../db"),
+    env: { ...process.env, DATABASE_URL: migrated.toString() }, stdio: "pipe",
+  });
+  db = createTestPrismaClient(url, schema);
+  admin = createTestPrismaClient(url);
+}, 30_000);
+afterAll(async () => {
+  if (db) await db.$disconnect();
+  if (admin) {
+    // Generated identifier, never request or CSV content.
+    await admin.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await admin.$disconnect();
+  }
+});
+async function fixture(capacity = 1) {
+  const n = ++sequence;
+  const org = await db.organization.create({ data: { name: "Execute Capacity", slug: `execute-capacity-${n}` } });
+  const event = await db.event.create({ data: {
+    organization_id: org.id, title: "Execute Capacity", slug: `execute-capacity-${n}`,
+    date: new Date("2026-10-13T10:00:00Z"), capacity,
+  } });
+  const params: ExecuteImportCommitParams = {
+    eventId: event.id, csv: `first_name,last_name,email\nSynthetic,Execute,execute-${n}@example.com`,
+    overwrite: false, forceCapacity: false, actorUserId: null, sessionId: null,
+    timezone: "Europe/Warsaw", filename: "synthetic-capacity.csv", importId: randomUUID(),
+  };
+  return { org, event, params };
+}
+
+describe("import execution's final capacity check (real migrated PostgreSQL)", () => {
+  it("commits a fitting import and its audit", async () => {
+    const f = await fixture();
+    expect(await executeImportCommit(db, f.params)).toMatchObject({ created: 1, toCreate: 1, skippedCount: 0 });
+    expect(await db.attendee.count({ where: { event_id: f.event.id } })).toBe(1);
+    const audit = await db.attendeeActionLog.findFirstOrThrow({ where: { event_id: f.event.id, action_type: "attendees_imported" } });
+    expect(audit.metadata).toMatchObject({ created: 1, importId: f.params.importId });
+  });
+  it("refuses a full event without writing an attendee or import audit", async () => {
+    const f = await fixture();
+    await db.attendee.create({ data: { event_id: f.event.id, email: "existing-full@example.com", name: "Synthetic Existing" } });
+    await expect(executeImportCommit(db, f.params)).rejects.toBeInstanceOf(ImportCapacityExceededError);
+    expect(await db.attendee.count({ where: { event_id: f.event.id } })).toBe(1);
+    expect(await db.attendeeActionLog.count({ where: { event_id: f.event.id } })).toBe(0);
+  });
+  it("carries a trusted force override through the write and records it", async () => {
+    const f = await fixture();
+    await db.attendee.create({ data: { event_id: f.event.id, email: "existing-force@example.com", name: "Synthetic Existing" } });
+    expect((await executeImportCommit(db, { ...f.params, forceCapacity: true })).created).toBe(1);
+    expect(await db.attendee.count({ where: { event_id: f.event.id } })).toBe(2);
+    const audit = await db.attendeeActionLog.findFirstOrThrow({ where: { event_id: f.event.id, action_type: "attendees_imported" } });
+    expect(audit.metadata).toMatchObject({ forced: true, capacity: 1, current: 1 });
+  });
+  it("commits a running worker job's completion together with its attendees", async () => {
+    const f = await fixture();
+    const job = await db.adminJob.create({ data: {
+      organization_id: f.org.id, event_id: f.event.id, type: "import_commit", status: "running", import_id: f.params.importId,
+    } });
+    expect((await executeImportCommit(db, { ...f.params, adminJobId: job.id })).created).toBe(1);
+    expect(await db.adminJob.findUniqueOrThrow({ where: { id: job.id } })).toMatchObject({ status: "succeeded", created_count: 1, to_create: 1 });
+    expect(await db.attendee.count({ where: { event_id: f.event.id } })).toBe(1);
+  });
+  it("refuses a stopped worker job before capacity or attendee writes", async () => {
+    const f = await fixture();
+    const job = await db.adminJob.create({ data: {
+      organization_id: f.org.id, event_id: f.event.id, type: "import_commit", status: "cancelled",
+    } });
+    await expect(executeImportCommit(db, { ...f.params, adminJobId: job.id })).rejects.toBeInstanceOf(ImportStoppedError);
+    expect(await db.attendee.count({ where: { event_id: f.event.id } })).toBe(0);
+    expect((await db.adminJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("cancelled");
+  });
+});
