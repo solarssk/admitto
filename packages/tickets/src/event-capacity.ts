@@ -1,5 +1,8 @@
 import { Prisma } from "@admitto/db";
 
+/** Lock waits and writes share the existing import budget across capacity consumers. */
+export const EVENT_CAPACITY_TRANSACTION_OPTIONS = { timeout: 120_000, maxWait: 30_000 } as const;
+
 /** Stable PostgreSQL advisory-lock key for per-event capacity serialization. */
 export function eventCapacityLockKey(eventId: string): string {
   return `event-capacity:${eventId}`;

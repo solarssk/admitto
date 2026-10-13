@@ -244,4 +244,4 @@ export type {
 } from "./types.js";
 export type { EventOpsConfig } from "./ops-config.js";
 
-export { acquireEventCapacityLock, eventCapacityLockKey } from "./event-capacity.js";
+export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS } from "./event-capacity.js";

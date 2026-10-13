@@ -3,6 +3,7 @@ import type { Attendee, Prisma, PrismaClient } from "@admitto/db";
 import {
   assertCustomDataMeetsRequirements,
   acquireEventCapacityLock,
+  EVENT_CAPACITY_TRANSACTION_OPTIONS,
   acquireEventTicketTypesLock,
   filterCustomDataAttributeFields,
   type EventItemContent,
@@ -414,7 +415,7 @@ export async function commitImport(
     return (prisma as PrismaClient).$transaction(async (tx) => {
       if (options.ticketTypes) await acquireEventTicketTypesLock(tx, eventId);
       return commitImport(eventId, rows, { ...options, ownedTransaction: true }, tx);
-    }, { timeout: 120_000, maxWait: 30_000 });
+    }, EVENT_CAPACITY_TRANSACTION_OPTIONS);
   }
   if (!dryRun) await acquireEventCapacityLock(prisma, eventId);
 

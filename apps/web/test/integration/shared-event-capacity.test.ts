@@ -114,7 +114,7 @@ function pauseCapacityRead() {
             return property === "attendee" ? attendee : Reflect.get(actual, property, actualReceiver);
           },
         }));
-      }, { ...options, timeout: 20_000 });
+      }, options);
     },
   });
   return { client: wrapped, reached: reached.waiting, release: release.release };
@@ -269,5 +269,51 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
       await db.event.delete({ where: { id: other.id } });
     }
   });
+
+  it.each(["manual", "restore"] as const)("returns event_full after a lock wait exceeding the default five-second budget (%s)", async (kind) => {
+    const attendee = kind === "restore"
+      ? await db.attendee.create({ data: { event_id: eventId, email: "long-restore@example.com", name: "Synthetic Restore", status: "revoked" } })
+      : undefined;
+    const paused = pauseCapacityRead();
+    const first = Promise.allSettled([write("import", paused.client)]);
+    await paused.reached;
+    const client = connection();
+    let completed = false;
+    let response: Promise<Response> | undefined;
+    if (attendee) {
+      const app = new Hono();
+      app.patch("/events/:eventId/attendees/:id", (c) => {
+        c.set("auth", { userId });
+        return handlePatchEventAttendee(c, client);
+      });
+      response = Promise.resolve(app.request(`/events/${eventId}/attendees/${attendee.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "registered", expected_updated_at: attendee.updated_at.toISOString() }),
+      }));
+    }
+    const second = response
+      ? response.then(async (answer) => {
+        completed = true;
+        expect(answer.status).toBe(409);
+        expect((await answer.json() as { code: string }).code).toBe("event_full");
+        return "event_full";
+      })
+      : write("manual", client).then((result) => { completed = true; return result; });
+    // Observe the real lock waiter first. A server-side delay then tests the timeout budget,
+    // not the existence of a race; neither query data nor transaction options are replaced.
+    const results = Promise.allSettled([second]);
+    let interleaving: string;
+    try {
+      interleaving = await completedOrBlocked(() => completed);
+      await db.$queryRaw`SELECT 1 FROM pg_sleep(6)`;
+    } finally { paused.release(); }
+    expect(interleaving!).toBe("blocked");
+    const [imported] = await first;
+    expect(imported.status).toBe("fulfilled");
+    const [result] = await results;
+    if (result.status === "rejected") throw result.reason;
+    expect(result.value).toBe("event_full");
+    expect(await db.attendee.count({ where: { event_id: eventId, status: { notIn: ["revoked", "cancelled"] } } })).toBe(1);
+  }, 20_000);
 
 });

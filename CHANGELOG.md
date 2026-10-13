@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Manual attendee creation, restoration and imports now share the final event-capacity lock, so concurrent operations cannot consume the same last place. The standalone importer also checks capacity before committing; authorized force overrides remain available through the existing admin import flow.
+- Manual attendee creation, restoration and imports now share the final event-capacity lock, so concurrent operations cannot consume the same last place. Manual additions and restorations use a compatible transaction budget while waiting for long-running imports. The standalone importer also checks capacity before committing; authorized force overrides remain available through the existing admin import flow.
 
 - Undo check-in and new admissions now serialize the latest-entry decision per event and device, including admissions of different attendees. Changes to the selected attendee are also serialized before validation, so an overlapping undo cannot clear a newer admission or record a second reversal of the same admission. Undo also checks the exact admission ID recorded by an earlier undo or revocation, so equal timestamps and nonchronological IDs cannot make an old request clear a replacement admission. Admin revocation also locks admission state before selecting and skips already reversed entries, so repeated revocations name the live admission. Badge rollback and the audit remain in the same transaction.
 

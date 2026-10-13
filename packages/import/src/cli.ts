@@ -8,19 +8,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "@admitto/db";
-import { acquireEventTicketTypesLock } from "@admitto/tickets";
+import { acquireEventTicketTypesLock, EVENT_CAPACITY_TRANSACTION_OPTIONS } from "@admitto/tickets";
 import { parseAttendees } from "./parser.js";
 import { commitImport } from "./importer.js";
 import { formatSkippedImportRow } from "./cli-output.js";
 import { loadImportTicketTypes } from "./ticket-type-import.js";
 import type { AttendeeRow, ImportSummary } from "./types.js";
-
-/** Lock wait + row writes share this budget - same values as import-api-routes.ts's
- * handleImportCommit (queued concurrent commits), duplicated here since this package can't
- * depend on apps/web (CodeRabbit review: the default $transaction timeout is 5s, too short for a
- * large CSV competing with other imports for the per-event lock). */
-const IMPORT_TX_TIMEOUT_MS = 120_000;
-const IMPORT_TX_MAX_WAIT_MS = 30_000;
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -122,7 +115,7 @@ export async function runImport(options: RunImportOptions): Promise<RunImportRes
       );
       return { summary: result, rowsCommitted: rowsToCommit.length, lockInvalidatedRows: lockInvalidated };
     },
-    { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
+    EVENT_CAPACITY_TRANSACTION_OPTIONS,
   );
 
   return {

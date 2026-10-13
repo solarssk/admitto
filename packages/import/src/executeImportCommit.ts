@@ -7,6 +7,7 @@ import { assertImportCapacityInTx } from "./event-capacity.js";
 import {
   acquireEventTicketTypesLock,
   acquireEventCapacityLock,
+  EVENT_CAPACITY_TRANSACTION_OPTIONS,
   loadEventCustomDataFields,
   filterCustomDataAttributeFields,
   writeBulkActionLog,
@@ -16,8 +17,6 @@ import { loadImportTicketTypes } from "./ticket-type-import.js";
 import { parseAttendees } from "./parser.js";
 import type { AttendeeRow, ImportAttributeField, ImportSummary, SkippedRow } from "./types.js";
 
-const IMPORT_TX_TIMEOUT_MS = 120_000;
-const IMPORT_TX_MAX_WAIT_MS = 30_000;
 const ROW_DETAIL_LIMIT = 20;
 
 export type ExecuteImportCommitParams = {
@@ -216,7 +215,7 @@ export async function executeImportCommit(
 
       return result;
     },
-    { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
+    EVENT_CAPACITY_TRANSACTION_OPTIONS,
   );
 
   const allInvalid = [...parsed.invalidRows, ...lockInvalidatedRows];

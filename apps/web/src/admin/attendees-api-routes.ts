@@ -114,7 +114,7 @@ import { loadAttendeeErasureRecordForViewer, type AttendeeErasureRecord } from "
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation, EVENT_CAPACITY_TRANSACTION_OPTIONS } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -2059,6 +2059,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         expectedUpdatedAt,
         updateData,
       }),
+      isCapacityReactivation(existing.status, statusChange) ? EVENT_CAPACITY_TRANSACTION_OPTIONS : undefined,
     );
 
     let walletPass = updated.wallet_pass;
@@ -3789,7 +3790,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
       });
 
       return row;
-    });
+    }, EVENT_CAPACITY_TRANSACTION_OPTIONS);
 
     publishActivityChanged(eventId);
     // Issue the ticket now, inside this explicit and already-audited create action, so the
