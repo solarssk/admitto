@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { executeImportCommit, ImportCapacityExceededError, ImportStoppedError } from "../src/executeImportCommit.js";
+import { reclaimStaleImportJobs, parseImportJobStaleRunningMs } from "../src/reclaimStaleImportJobs.js";
+import type { StorageAdapter } from "@admitto/storage";
 import type { ExecuteImportCommitParams } from "../src/executeImportCommit.js";
 
 const schema = `import_execute_capacity_${randomUUID().replaceAll("-", "")}`;
@@ -88,5 +90,38 @@ describe("import execution's final capacity check (real migrated PostgreSQL)", (
     await expect(executeImportCommit(db, { ...f.params, adminJobId: job.id })).rejects.toBeInstanceOf(ImportStoppedError);
     expect(await db.attendee.count({ where: { event_id: f.event.id } })).toBe(0);
     expect((await db.adminJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("cancelled");
+  });
+});
+
+
+describe("import reclaim intervals (real migrated PostgreSQL)", () => {
+  it.each([900_000, Infinity, NaN, Number.MAX_VALUE, 0, -1])("reclaims with interval %s using supported cutoffs", async (interval) => {
+    const f = await fixture();
+    const now = new Date("2026-10-13T12:00:00Z");
+    const job = await db.adminJob.create({ data: {
+      organization_id: f.org.id, event_id: f.event.id, type: "import_commit", status: "running",
+      started_at: new Date(now.getTime() - 900_001),
+    } });
+    const storage = { delete: vi.fn() } as unknown as StorageAdapter;
+    expect(await reclaimStaleImportJobs(db, storage, { olderThanMs: interval, heartbeatStaleMs: interval, now })).toMatchObject({ reclaimed: 1 });
+    expect((await db.adminJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
+  });
+
+  it("accepts the Date interval boundary and falls back for oversized env digits", async () => {
+    const f = await fixture();
+    const now = new Date("2026-10-13T12:00:00Z");
+    const job = await db.adminJob.create({ data: {
+      organization_id: f.org.id, event_id: f.event.id, type: "import_commit", status: "running",
+      started_at: new Date(now.getTime() - 900_001),
+    } });
+    const storage = { delete: vi.fn() } as unknown as StorageAdapter;
+    expect(await reclaimStaleImportJobs(db, storage, { olderThanMs: 62_135_596_800_000, now })).toMatchObject({ reclaimed: 0 });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const interval = parseImportJobStaleRunningMs({ IMPORT_JOB_STALE_RUNNING_MS: "9".repeat(400) });
+      expect(await reclaimStaleImportJobs(db, storage, { olderThanMs: interval, now })).toMatchObject({ reclaimed: 1 });
+      expect(warn).toHaveBeenCalledWith("Invalid import stale interval configuration; using default.");
+    } finally { warn.mockRestore(); }
+    expect((await db.adminJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
   });
 });

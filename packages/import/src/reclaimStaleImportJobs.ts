@@ -19,6 +19,7 @@ import {
   DEFAULT_WORKER_HEARTBEAT_STALE_MS,
   isWorkerHeartbeatStale,
   positiveMsOr,
+  MAX_STALE_INTERVAL_MS,
   staleAdminJobOrClauses,
 } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
@@ -75,7 +76,10 @@ export function parseImportJobStaleRunningMs(
   const raw = env.IMPORT_JOB_STALE_RUNNING_MS?.trim();
   if (!raw) return DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_STALE_INTERVAL_MS) {
+    console.warn("Invalid import stale interval configuration; using default.");
+    return DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
+  }
   return n;
 }
 
@@ -210,12 +214,12 @@ export async function reclaimStaleImportJobs(
   storage: StorageAdapter,
   options: ReclaimStaleImportJobsOptions = {},
 ): Promise<ReclaimStaleImportJobsResult> {
-  const olderThanMs = positiveMsOr(options.olderThanMs, DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+  const now = options.now ?? new Date();
+  const olderThanMs = positiveMsOr(options.olderThanMs, DEFAULT_IMPORT_JOB_STALE_RUNNING_MS, now.getTime());
   const heartbeatStaleMs = positiveMsOr(
     options.heartbeatStaleMs,
     DEFAULT_WORKER_HEARTBEAT_STALE_MS,
   );
-  const now = options.now ?? new Date();
   const cutoff = new Date(now.getTime() - olderThanMs);
   const reclaimPending = await isWorkerHeartbeatStale(db, now, heartbeatStaleMs);
 

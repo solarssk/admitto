@@ -1,5 +1,9 @@
 import type { PrismaClient } from "./generated/prisma/client.js";
 
+/** Epoch to 0001-01-01 UTC. Prisma's PostgreSQL adapter formats AD years only
+ * (without a BC suffix), so cutoffs must also stay within that database range. */
+export const MAX_STALE_INTERVAL_MS = 62_135_596_800_000;
+
 /** Singleton heartbeat row id (ADR 0042 / `BackgroundWorkerHeartbeat`). */
 export const WORKER_HEARTBEAT_ID = "default";
 
@@ -11,15 +15,26 @@ export const WORKER_HEARTBEAT_ID = "default";
  */
 export function workerHeartbeatStaleMs(tickSeconds: number): number {
   const tick = Number.isFinite(tickSeconds) && tickSeconds > 0 ? tickSeconds : 60;
-  return Math.max(300_000, tick * 3 * 1000 + 60_000);
+  return positiveMsOr(Math.max(300_000, tick * 3 * 1000 + 60_000), 300_000);
 }
 
 /** Default (= `workerHeartbeatStaleMs(60)`). Used when reclaim has no tick override. */
 export const DEFAULT_WORKER_HEARTBEAT_STALE_MS = workerHeartbeatStaleMs(60);
 
-/** Positive finite ms, else `fallback` (floored). */
-export function positiveMsOr(value: number | undefined, fallback: number): number {
-  return value && value > 0 ? Math.floor(value) : fallback;
+/** Positive finite ms within Date bounds, else fallback; preserve fractional flooring. */
+export function positiveMsOr(
+  value: number | undefined,
+  fallback: number,
+  nowMs = Date.now(),
+): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0 || value > MAX_STALE_INTERVAL_MS) {
+    return fallback;
+  }
+  const interval = Math.floor(value);
+  const cutoff = nowMs - interval;
+  return cutoff >= -MAX_STALE_INTERVAL_MS && Number.isFinite(new Date(cutoff).getTime())
+    ? interval
+    : fallback;
 }
 
 /** True when there is no heartbeat row or last_beat_at is older than `staleMs`. */
