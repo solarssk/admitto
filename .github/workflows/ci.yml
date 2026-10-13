@@ -290,7 +290,7 @@ jobs:
           mkdir -p scripts/coverage
           node --test --experimental-test-coverage --test-coverage-include=scripts/ai-review-outcome.mjs --test-coverage-include=scripts/ai-review-codex.mjs \
             --test-coverage-include=scripts/ai-review-status.mjs --test-coverage-include=scripts/ai-review-command.mjs \
-            --test-coverage-include=scripts/check-agent-docs.mjs \
+            --test-coverage-include=scripts/check-agent-docs.mjs --test-coverage-include=deploy/validate-env.mjs \
             --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout \
             --test-reporter-destination=scripts/coverage/lcov.info scripts/*.test.mjs
       - name: Upload script coverage for SonarCloud
