@@ -65,13 +65,31 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 - **Retry** - same `EmailDelivery` row, frozen `rendered_subject` / `rendered_html`.
 - **Resend** - new row with `purpose = 'resend'`, fresh render.
 
+## Delivery ownership
+
+Each sending path (worker, CLI retry and synchronous delivery) takes a non-blocking PostgreSQL
+session advisory lock for the delivery id, separate from the worker job lock. The dedicated
+connection holds no transaction or row lock during provider IO and closes after the outcome.
+Other delivery ids proceed independently. A competing CLI retry is reported as skipped.
+
+Before sending, the attendee/override-holder erasure check still waits under attendee row locks.
+The delivery's status, `queued_at` revision and attempt count must match the cached snapshot.
+Retry/reclaim claims advance `queued_at` strictly, even with equal clock milliseconds, using a
+compare-and-set. Outcome writes compare revision and attempt count and refuse emptied recipients.
+Cancellation can stop messages not yet handed to the provider; an already handed-off message
+cannot be recalled. A reclaimed revision discards the preceding revision's outcome.
+
+This prevents competing local attempts while ownership is held. It does not provide exactly-once
+remote delivery after ambiguous provider acceptance, process failure or loss of the lock session.
+
 ## Snapshot retention
 
 Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days (override with
 `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) the Admitto **worker** (once at boot, then about every 24h),
 `admitto retention run` and `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject`
 while preserving delivery log metadata. A failed row loses `retryable` at the same time, so it can no
-longer be retried. All three read the same variable.
+longer be retried. Selection and the atomic update both require a still-stale terminal snapshot;
+a reclaim to queued in between preserves its fresh body. All three read the same variable.
 
 ## Tests
 

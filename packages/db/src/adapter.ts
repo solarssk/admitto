@@ -1,4 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 
 /**
  * Bounds how long a single SQL statement may run once it reaches Postgres (enforced server-side,
@@ -66,4 +67,29 @@ export function createPrismaAdapter(
     },
     options?.schema ? { schema: options.schema } : undefined,
   );
+}
+
+/** A dedicated session owns the lock; no transaction or row lock spans external IO. */
+export async function withSessionAdvisoryLock<T>(
+  connectionString: string,
+  key: string,
+  run: (assertOwned: () => void) => Promise<T>,
+): Promise<T | undefined> {
+  const client = new pg.Client({ connectionString, connectionTimeoutMillis: 5_000, statement_timeout: DEFAULT_STATEMENT_TIMEOUT_MS });
+  let lost = false;
+  client.on("error", () => { lost = true; });
+  const assertOwned = () => {
+    if (lost) throw new Error("Delivery ownership connection lost");
+  };
+  try {
+    await client.connect();
+    const result = await client.query<{ owned: boolean }>(
+      "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS owned", [key],
+    );
+    if (result.rows[0]?.owned !== true) return undefined;
+    assertOwned();
+    return await run(assertOwned);
+  } finally {
+    await client.end();
+  }
 }

@@ -95,18 +95,11 @@ function canOpenTransaction(
 async function nullifyDeliverySnapshotBatch(
   prisma: PrismaClient | Prisma.TransactionClient,
   ids: string[],
+  where: Prisma.EmailDeliveryWhereInput,
 ): Promise<number> {
   const updated = await prisma.emailDelivery.updateMany({
-    where: { id: { in: ids } },
-    data: { rendered_html: null, rendered_subject: null },
-  });
-  await prisma.emailDelivery.updateMany({
-    where: {
-      id: { in: ids },
-      status: { in: [...FAILURE_TERMINAL_STATUSES] },
-      retryable: true,
-    },
-    data: { retryable: false },
+    where: { AND: [where, { id: { in: ids } }] },
+    data: { rendered_html: null, rendered_subject: null, retryable: false },
   });
   return updated.count;
 }
@@ -129,8 +122,8 @@ async function nullifyDeliverySnapshotBatches(
 
     const ids = rows.map((row) => row.id);
     const updated = canOpenTransaction(prisma)
-      ? await prisma.$transaction((tx) => nullifyDeliverySnapshotBatch(tx, ids))
-      : await nullifyDeliverySnapshotBatch(prisma, ids);
+      ? await prisma.$transaction((tx) => nullifyDeliverySnapshotBatch(tx, ids, where))
+      : await nullifyDeliverySnapshotBatch(prisma, ids, where);
     count += updated;
 
     if (rows.length < batchSize) return count;

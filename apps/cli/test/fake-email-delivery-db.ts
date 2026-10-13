@@ -72,12 +72,12 @@ export function fakeEmailDeliveryDb(rows: FakeDelivery[]) {
         where,
         data,
       }: {
-        where: { id: { in: string[] } };
+        where: { AND: [unknown, { id: { in: string[] } }] };
         data: Record<string, unknown>;
       }) => {
-        // The second updateMany per batch only flips `retryable` on failed rows; none are seeded.
+        // The atomic write repeats the cutoff selector alongside the selected ids.
         if (!("rendered_html" in data)) return { count: 0 };
-        const cleared = rows.filter((row) => where.id.in.includes(row.id));
+        const cleared = stale(where).filter((row) => where.AND[1].id.in.includes(row.id));
         for (const row of cleared) {
           row.rendered_html = null;
           row.rendered_subject = null;

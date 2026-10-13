@@ -136,3 +136,14 @@ Future test and attendee messages use the newly effective transport. Existing de
 - [Email Templates](Email-Templates)
 - [Email Delivery Statuses](Email-Delivery-Statuses)
 - [Logs and Audit](Logs-and-Audit)
+
+
+### Concurrent retry and cancellation
+
+The worker and CLI coordinate each delivery separately. If another sender is already processing
+a delivery, the CLI counts that retry as **skipped**. Other deliveries can continue.
+A cancelled batch's messages that have not reached the sender are skipped, including when a new
+send has already refreshed that delivery. Only the fresh revision is eligible for the next drain.
+Messages already handed to the mail provider cannot be recalled; ambiguous provider acceptance
+still does not guarantee exactly-once delivery. Snapshot retention rechecks that a message is
+still terminal and old before clearing it, preserving a newly queued message.

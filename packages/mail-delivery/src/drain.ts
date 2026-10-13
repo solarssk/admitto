@@ -17,6 +17,7 @@ import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 import { readDeliveriesBeforeSend } from "./sendable.js";
+import { withDeliveryOwnership } from "./ownership.js";
 import type { MailDeliveryDeps } from "./send.js";
 
 export const DEFAULT_MAIL_DRAIN_LIMIT = 50;
@@ -112,7 +113,7 @@ async function markRowFailed(
   data: { status: "failed"; retryable: boolean; error: string | undefined; attempted_at: Date; failed_at: Date; attempts: number },
 ): Promise<boolean> {
   const result = await prisma.emailDelivery.updateMany({
-    where: { id: rowId, status: { not: "cancelled" }, queued_at: queuedAt },
+    where: { id: rowId, status: { not: "cancelled" }, queued_at: queuedAt, attempts: data.attempts - 1, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
     data,
   });
   return result.count > 0;
@@ -221,7 +222,7 @@ async function recordSendOutcome(
   // erased while the mail was in flight is dropped, so the provider message id and error text
   // are not written back onto it. The mail itself cannot be recalled.
   const applied = await prisma.emailDelivery.updateMany({
-    where: { id: delivery.id, queued_at: delivery.queued_at, recipient_email: { not: null } },
+    where: { id: delivery.id, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
     data: {
       ...update,
       provider: result.provider,
@@ -235,11 +236,12 @@ async function recordSendOutcome(
   return result.status === "accepted" || result.status === "sent" ? "sent" : "failed";
 }
 
-async function sendOneFromSnapshot(
+async function sendOwnedSnapshot(
   delivery: SnapshotRow,
   prisma: PrismaClient,
   mailer: MailerAdapter,
   baseUrl: string,
+  assertOwned: () => void,
 ): Promise<"sent" | "failed" | "skipped"> {
   if (!delivery.recipient_email || !delivery.rendered_subject || !delivery.rendered_html) {
     return "skipped";
@@ -249,6 +251,7 @@ async function sendOneFromSnapshot(
   try {
     links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);
   } catch (err) {
+    assertOwned();
     const applied = await markClaimedRowFailed(prisma, delivery, err);
     return applied ? "failed" : "skipped";
   }
@@ -279,17 +282,20 @@ async function sendOneFromSnapshot(
   const fresh = (
     await readDeliveriesBeforeSend(prisma, [{ deliveryId: delivery.id, attendeeId: delivery.attendee_id }])
   ).get(delivery.id);
-  if (!fresh || fresh.status === "cancelled" || !fresh.recipient_email) {
+  if (!fresh || fresh.status !== delivery.status || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== delivery.queued_at.getTime() || fresh.attempts !== delivery.attempts) {
     return "skipped";
   }
 
   try {
+    assertOwned();
     const summary = await sendBatch(mailer, [message]);
+    assertOwned();
     return await recordSendOutcome(prisma, delivery, summary, nextAttempts, exhausted);
   } catch (err) {
     // sendBatch itself threw (e.g. a transport timeout) - ambiguous whether the message went
     // out, same as the empty-result branch above, so this must not resurrect a cancelled row
     // into the retry pool, or clobber one a reclaim has since put back in the queue, either.
+    assertOwned();
     const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
       ...deliveryUpdateFromBatchError(err, exhausted),
       attempts: nextAttempts,
@@ -320,7 +326,7 @@ async function drainEventBatch(
     let failed = 0;
     let skipped = 0;
     for (const row of rows) {
-      const applied = await markClaimedRowFailed(prisma, row, err); // NOSONAR - rows are marked failed one at a time on purpose, in order
+      const applied = await withDeliveryOwnership(row.id, (owned) => { owned(); return markClaimedRowFailed(prisma, row, err); }); // NOSONAR - rows are marked failed one at a time on purpose, in order
       if (applied) failed += 1;
       else skipped += 1;
     }
@@ -332,7 +338,7 @@ async function drainEventBatch(
   let skipped = 0;
   try {
     for (const row of rows) {
-      const outcome = await sendOneFromSnapshot(row, prisma, mailer, baseUrl); // NOSONAR - rows are sent one at a time on purpose, in order
+      const outcome = await withDeliveryOwnership(row.id, (owned) => sendOwnedSnapshot(row, prisma, mailer, baseUrl, owned)) ?? "skipped"; // NOSONAR - rows are sent one at a time on purpose, in order
       if (outcome === "sent") sent += 1;
       else if (outcome === "failed") failed += 1;
       else skipped += 1;
