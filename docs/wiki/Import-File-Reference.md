@@ -16,6 +16,13 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 | `qr_payload` | No | Existing QR value supplied by an external ticket source. Leave empty for Admitto-generated tickets. |
 | Custom field key | Depends on field | Use the `source_field` key from **Requirements**. Required custom fields must have a valid value. |
 
+## File format and row numbers
+
+- CSV uses comma-separated columns. Wrap a value containing a comma, double quote, or line break in double quotes; write a double quote inside that value as two double quotes. LF and CRLF inside a quoted cell are preserved. XLSX cells with line breaks follow the same import rules; the workbook decoder normalises CRLF to LF.
+- Diagnostic row numbers count non-empty data records, starting at 1 after the header. Blank records are ignored, and a line break inside a quoted cell does not increase the number.
+- The upload accepts at most 50,000 data records. The existing file-size and decoded-text limits still apply, including line breaks inside cells.
+- **Malformed CSV record:** close quoted fields and remove text after the closing quote or cells that have no corresponding header. Missing trailing optional cells are treated as empty.
+
 ## Matching and duplicates
 
 - Rows with an external UUID or QR value are matched by those identifiers first, then by email.

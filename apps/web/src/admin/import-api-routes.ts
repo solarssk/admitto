@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import {
   parseAttendees,
+  csvRecords,
   safeImportJobError,
   commitImport,
   dryRunImportCounts,
@@ -168,12 +169,13 @@ function sanitizeUploadFilename(name: string): string {
 /** Reject CSV that exceeds post-decode row or character limits. */
 function csvWithinLimits(csv: string): string | null {
   if (csv.length > MAX_CSV_CHARS) return "file too large";
-  const lines = csv
-    .replace(/^\uFEFF/, "")
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0);
-  const dataRows = Math.max(0, lines.length - 1);
-  if (dataRows > MAX_IMPORT_ROWS) return "too many rows";
+  let records = 0;
+  const iterator = csvRecords(csv);
+  while (!iterator.next().done) {
+    records++;
+    // The first non-empty record is the header; quoted newlines are not extra rows.
+    if (records > MAX_IMPORT_ROWS + 1) return "too many rows";
+  }
   return null;
 }
 

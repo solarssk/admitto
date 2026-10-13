@@ -372,6 +372,50 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     } finally { warn.mockRestore(); }
   });
 
+  it.each(["csv", "xlsx"])("preserves multiline %s values from preview through commit", async (format) => {
+    const email = `logical-${format}@example.com`;
+    const first = "Synthetic\nFirst";
+    const company = 'Synthetic, "Team"\r\nHeadquarters';
+    const custom = "One\nTwo";
+    const rows = [["first_name", "last_name", "email", "company", "sock_size"], [first, "Person", email, company, custom]];
+    const makeForm = async () => {
+      if (format === "xlsx") return xlsxFormData(rows);
+      const quote = (cell: string) => `"${cell.replaceAll('"', '""')}"`;
+      return csvFormData(rows.map((row) => row.map(quote).join(",")).join("\n"));
+    };
+    let importId: string | undefined;
+    try {
+      const preview = await postImport(`/api/admin/events/${EVENT_A}/import/preview`, await makeForm(), adminCookie);
+      expect(preview.status).toBe(200);
+      const body = await preview.json() as { parse: { validCount: number; invalidCount: number }; summary: { toCreate: number } };
+      expect(body.parse).toMatchObject({ validCount: 1, invalidCount: 0 });
+      expect(body.summary.toCreate).toBe(1);
+      expect(await prisma.attendee.count({ where: { event_id: EVENT_A, email } })).toBe(0);
+      const committed = await postCommitAndDrain(EVENT_A, await makeForm(), adminCookie);
+      importId = String(committed.body.importId);
+      expect(committed.result).toMatchObject({ created: 1, invalidCount: 0 });
+      const attendee = await prisma.attendee.findUniqueOrThrow({ where: { event_id_email: { event_id: EVENT_A, email } } });
+      expect(attendee.name).toBe(`${first} Person`);
+      expect(attendee.company).toBe(format === "xlsx" ? company.replaceAll("\r\n", "\n") : company);
+      expect(attendee.custom_data).toMatchObject({ sock_size: custom });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_A, email } });
+      if (importId) await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_A, metadata: { path: ["importId"], equals: importId } } });
+    }
+  });
+
+  it.each([50_000, 50_001])("enforces the logical-record limit at %i multiline records", async (count) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const csv = "first_name,last_name,email\n" + Array(count).fill('"Synthetic\nRecord",,limit@example.com').join("\n");
+    try {
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/preview`, csvFormData(csv), adminCookie);
+      expect(res.status).toBe(count === 50_000 ? 200 : 400);
+      const body = await res.json() as { error?: string; parse?: { validCount: number; invalidCount: number } };
+      if (count === 50_000) expect(body.parse).toMatchObject({ validCount: 0, invalidCount: count });
+      else expect(body.error).toBe("too many rows");
+    } finally { info.mockRestore(); }
+  });
+
   // PII/log-leak fix (code review): "Unknown ticket type: <value>" had no sanitizePreviewReason
   // case, so groupInvalidByType derived its structured-log key straight from the raw CSV cell
   // value. The client-facing reason must keep showing that value (it's the admin's own upload,
