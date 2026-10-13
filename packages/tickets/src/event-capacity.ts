@@ -56,7 +56,7 @@ export async function runEventCapacityTransaction<Prepared, Result>(
   policy: EventCapacityTransactionPolicy = DEFAULT_CAPACITY_POLICY,
 ): Promise<Result> {
   const deadline = performance.now() + policy.waitTimeout;
-  for (;;) {
+  const attempt = async (): Promise<Result> => {
     let workStarted = false;
     try {
       return await db.$transaction(async (tx) => {
@@ -72,6 +72,8 @@ export async function runEventCapacityTransaction<Prepared, Result>(
       // Prisma's transaction timeout. Only replay cancelled SQL while preparation is read-only.
       if (workStarted || !(error instanceof RetryCapacityAcquisition || isCapacityAcquisitionTimeout(error))) throw error;
       if (performance.now() >= deadline) throw new Error("Event capacity lock acquisition timed out.");
+      return attempt();
     }
-  }
+  };
+  return attempt();
 }
