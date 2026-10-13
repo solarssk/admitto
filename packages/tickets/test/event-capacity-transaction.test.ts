@@ -93,6 +93,40 @@ describe("capacity acquisition reserves the work budget (real migrated PostgreSQ
     expect(writes).toBe(1);
     expect(await db.attendee.count({ where: { event_id: event.id } })).toBe(1);
   });
+  it("retries a server-cancelled advisory wait before starting work", async () => {
+    const event = await fixture();
+    const held = gate();
+    const release = gate();
+    const holder = db.$transaction(async (tx) => {
+      await acquireEventCapacityLock(tx, event.id);
+      held.release();
+      await release.waiting;
+    }, { timeout: 10_000 });
+    await held.waiting;
+    let attempts = 0;
+    let writes = 0;
+    const operation = runEventCapacityTransaction(db, event.id, async (tx) => {
+      if (++attempts === 1) {
+        // Enforce a real server timeout, scaled from the adapter's production 30s limit.
+        await tx.$executeRaw`SET LOCAL statement_timeout = '100ms'`;
+      } else {
+        release.release();
+      }
+    }, async (tx) => {
+      writes++;
+      return tx.attendee.create({ data: { event_id: event.id, email: "server-timeout@example.com", name: "Synthetic Timeout" } });
+    }, policy);
+    let results: PromiseSettledResult<unknown>[];
+    try { results = await Promise.allSettled([operation]); }
+    finally { release.release(); }
+    await holder;
+    const [result] = results;
+    if (!result) throw new Error("Synthetic operation result unavailable");
+    if (result.status === "rejected") throw result.reason;
+    expect(attempts).toBe(2);
+    expect(writes).toBe(1);
+    expect(await db.attendee.count({ where: { event_id: event.id } })).toBe(1);
+  });
   it("retries an expired read-only preparation", async () => {
     const event = await fixture();
     let attempts = 0;
@@ -117,6 +151,27 @@ describe("capacity acquisition reserves the work budget (real migrated PostgreSQ
     }, policy)).rejects.toMatchObject({ code: "P2028" });
     expect(writes).toBe(1);
     expect(await db.attendee.count({ where: { event_id: event.id } })).toBe(0);
+  });
+  it("never replays work after a server timeout, and rolls writes back", async () => {
+    const event = await fixture();
+    let writes = 0;
+    await expect(runEventCapacityTransaction(db, event.id, async () => {}, async (tx) => {
+      writes++;
+      await tx.attendee.create({ data: { event_id: event.id, email: "server-rollback@example.com", name: "Synthetic Rollback" } });
+      await tx.$executeRaw`SET LOCAL statement_timeout = '100ms'`;
+      await tx.$queryRaw`SELECT 1 FROM pg_sleep(0.2)`;
+    }, policy)).rejects.toMatchObject({ code: "P2010", meta: { driverAdapterError: { cause: { code: "57014" } } } });
+    expect(writes).toBe(1);
+    expect(await db.attendee.count({ where: { event_id: event.id } })).toBe(0);
+  });
+  it("does not retry unrelated raw-query failures during preparation", async () => {
+    const event = await fixture();
+    let attempts = 0;
+    await expect(runEventCapacityTransaction(db, event.id, async (tx) => {
+      attempts++;
+      await tx.$queryRaw`SELECT 1 / 0`;
+    }, async () => {}, policy)).rejects.toMatchObject({ code: "P2010", meta: { driverAdapterError: { cause: { code: "22012" } } } });
+    expect(attempts).toBe(1);
   });
   it("bounds repeated acquisition attempts without starting work", async () => {
     const event = await fixture();

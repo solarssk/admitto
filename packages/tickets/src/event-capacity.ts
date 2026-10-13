@@ -35,6 +35,14 @@ const DEFAULT_CAPACITY_POLICY: EventCapacityTransactionPolicy = {
 };
 class RetryCapacityAcquisition extends Error {}
 
+function isCapacityAcquisitionTimeout(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === "P2028") return true;
+  // Prisma 7's pg adapter keeps the PostgreSQL SQLSTATE in its driver error cause.
+  const adapterError = error.meta?.driverAdapterError as { cause?: { code?: unknown } } | undefined;
+  return error.code === "P2010" && adapterError?.cause?.code === "57014";
+}
+
 /**
  * Prepare may only acquire locks and read: it can be replayed after rollback. Preserve the
  * job-row -> catalog -> capacity order. Work is never replayed, even on transaction expiry.
@@ -60,8 +68,9 @@ export async function runEventCapacityTransaction<Prepared, Result>(
         return work(tx, prepared);
       }, { timeout: policy.workTimeout + policy.lockAllowance + policy.grace, maxWait: policy.maxWait });
     } catch (error) {
-      const expired = error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028";
-      if (workStarted || !(error instanceof RetryCapacityAcquisition || expired)) throw error;
+      // The adapter's statement_timeout can cancel an advisory or job/catalog wait before
+      // Prisma's transaction timeout. Only replay cancelled SQL while preparation is read-only.
+      if (workStarted || !(error instanceof RetryCapacityAcquisition || isCapacityAcquisitionTimeout(error))) throw error;
       if (performance.now() >= deadline) throw new Error("Event capacity lock acquisition timed out.");
     }
   }
