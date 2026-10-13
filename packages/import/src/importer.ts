@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { Attendee, Prisma, PrismaClient } from "@admitto/db";
 import {
   assertCustomDataMeetsRequirements,
+  acquireEventCapacityLock,
+  acquireEventTicketTypesLock,
   filterCustomDataAttributeFields,
   type EventItemContent,
 } from "@admitto/tickets";
 import type { AttendeeRow, ImportOptions, ImportSummary, ImportTicketType, SkippedRow } from "./types.js";
+import { assertImportCapacityInTx } from "./event-capacity.js";
 import { importCustomDataSkipReason } from "./custom-data-import.js";
 import { resolveImportTicketType } from "./ticket-type-import.js";
 import { generateToken } from "@admitto/crypto";
@@ -405,6 +408,16 @@ export async function commitImport(
   // Lazy-load to keep the package usable without @admitto/db when dry-running with mocks.
   const prisma = db ?? (await import("@admitto/db")).prisma;
 
+  // Own the whole classification/count/write transaction, including the standalone CLI path.
+  // Caller-owned transactions must take any catalog lock before entering this capacity guard.
+  if (!dryRun && !ownedTransaction) {
+    return (prisma as PrismaClient).$transaction(async (tx) => {
+      if (options.ticketTypes) await acquireEventTicketTypesLock(tx, eventId);
+      return commitImport(eventId, rows, { ...options, ownedTransaction: true }, tx);
+    }, { timeout: 120_000, maxWait: 30_000 });
+  }
+  if (!dryRun) await acquireEventCapacityLock(prisma, eventId);
+
   // Fail fast with a readable error rather than a FK constraint from a later create.
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error(`Event not found: "${eventId}"`);
@@ -439,14 +452,8 @@ export async function commitImport(
   };
 
   if (!dryRun && (creates.length > 0 || updates.length > 0)) {
-    let writeCounts: { created: number; updated: number };
-    if (ownedTransaction) {
-      writeCounts = await writeAttendeeBatches(prisma, creates, updates, skipped);
-    } else {
-      writeCounts = await (prisma as PrismaClient).$transaction(async (tx) =>
-        writeAttendeeBatches(tx, creates, updates, skipped),
-      );
-    }
+    await assertImportCapacityInTx(prisma, eventId, creates.length, options.forceCapacity);
+    const writeCounts = await writeAttendeeBatches(prisma, creates, updates, skipped);
     summary.created = writeCounts.created;
     summary.updated = writeCounts.updated;
     summary.toSkip = skipped.length;

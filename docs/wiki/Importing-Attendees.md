@@ -37,6 +37,7 @@ New attendees are created, permitted fields on matched attendees are updated whe
 - External UUID and QR values are optional and should be used only when an external ticket source already owns them.
 - In an XLSX file, a formula cell is imported as its last calculated value, and an Excel error cell (such as #N/A) as its error text, so the preview shows readable values instead of an unusable object string. Save the workbook in Excel once before uploading so formula results are up to date.
 - Matching uses agency identifiers first when present, then email. Conflicting identifiers are skipped.
+- Validation does not reserve places. The final import checks capacity again while sharing the event's capacity budget with manual creation and attendee restoration. If another operation uses the remaining places first, the import is refused without partially adding attendees.
 - With overwrite off, matching attendees are skipped.
 - With overwrite on, Admitto can update name, ticket type, company, department, and supplied custom fields. It never overwrites pass status, QR payload, external UUID, or the secure ticket token.
 
