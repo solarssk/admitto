@@ -26,8 +26,8 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `BASE_URL` | recommended | app, worker | Settings → General (Instance URL, read-only while set) | no | Public origin browsers use (https://tickets.example.com, no trailing slash). Recommended in production: the app still starts without it and falls back to the Instance URL saved in Settings → General, but the Setup checklist and Health check flag it as missing, and ticket and mail links fail outright when neither is set. While it is set, the Instance URL field in Settings → General is read-only. |
 | `ENCRYPTION_KEY` | required | app, worker, migrate | none | yes | AES-256-GCM master key (openssl rand -base64 32). Required to decrypt mail/OIDC secrets at rest. Losing it loses encrypted config. |
 | `DATABASE_URL` | required | app, worker, migrate | none | yes | Postgres URL. Password must match POSTGRES_PASSWORD when using compose db service. |
-| `REDIS_URL` | required | app, worker | none | yes | Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync. |
-| `REDIS_PASSWORD` | required | redis, compose | none | yes | Redis requirepass. Generate with openssl rand -hex 32. Must appear in REDIS_URL. |
+| `REDIS_URL` | required | app, worker, migrate | none | yes | Redis URL including password. Compose builds it from REDIS_PASSWORD for app, migrate and worker; the .env URL is reference / smoke only. |
+| `REDIS_PASSWORD` | required | redis, compose | none | yes | Redis requirepass. Generate with openssl rand -hex 32. Compose uses it to build REDIS_URL for app, migrate and worker. |
 | `POSTGRES_USER` | required | db, compose | none | no | Postgres role created by the db container. |
 | `POSTGRES_PASSWORD` | required | db, compose | none | yes | Postgres password. Must match the password embedded in DATABASE_URL. |
 | `POSTGRES_DB` | required | db, compose | none | no | Postgres database name. |

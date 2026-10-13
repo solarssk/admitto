@@ -67,10 +67,10 @@
       "name": "REDIS_URL",
       "group": "boot",
       "boot": "required",
-      "consumers": ["app", "worker"],
+      "consumers": ["app", "worker", "migrate"],
       "secret": true,
       "ui": "none",
-      "summary": "Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync."
+      "summary": "Redis URL including password. Compose builds it from REDIS_PASSWORD for app, migrate and worker; the .env URL is reference / smoke only."
     },
     {
       "name": "REDIS_PASSWORD",
@@ -79,7 +79,7 @@
       "consumers": ["redis", "compose"],
       "secret": true,
       "ui": "none",
-      "summary": "Redis requirepass. Generate with openssl rand -hex 32. Must appear in REDIS_URL."
+      "summary": "Redis requirepass. Generate with openssl rand -hex 32. Compose uses it to build REDIS_URL for app, migrate and worker."
     },
     {
       "name": "POSTGRES_USER",
