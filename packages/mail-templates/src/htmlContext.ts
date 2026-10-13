@@ -22,25 +22,6 @@ export function isPlaceholderInHtmlComment(html: string, index: number): boolean
   return commentEnd === -1 || commentEnd + 2 > index;
 }
 
-/** True when `index` is still within the same opening tag (quote-aware `>` handling). */
-function isStillInsideOpeningTag(html: string, tagStart: number, index: number): boolean {
-  let inQuote: '"' | "'" | null = null;
-  for (let i = tagStart + 1; i < index; i++) {
-    const ch = html.charAt(i);
-    if (inQuote) {
-      if (ch === inQuote) inQuote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inQuote = ch;
-      continue;
-    }
-    if (ch === ">") return false;
-    if (ch === "/" && html.charAt(i + 1) === ">") return false;
-  }
-  return true;
-}
-
 /** Mutable scan state tracked while walking the characters of an opening tag. */
 interface AttributeScanState {
   inQuote: '"' | "'" | null;
@@ -56,18 +37,37 @@ interface AttributeScanState {
 function findOpeningTagStart(html: string, index: number): number | null {
   if (isPlaceholderInHtmlComment(html, index)) return null;
 
-  const tagStart = html.lastIndexOf("<", index);
-  if (tagStart === -1) return null;
-
-  // Skip closing tags, comments, doctype, and processing instructions.
-  const tagOpen = html.slice(tagStart, tagStart + 4);
-  if (tagOpen.startsWith("</") || tagOpen.startsWith("<!--") || tagOpen.startsWith("<!")) {
-    return null;
+  let cursor = 0;
+  while (cursor < index) {
+    const tagStart = html.indexOf("<", cursor);
+    if (tagStart === -1 || tagStart >= index) return null;
+    if (html.startsWith("<!--", tagStart)) {
+      const end = html.indexOf("-->", tagStart + 4);
+      if (end === -1 || end + 3 > index) return null;
+      cursor = end + 3;
+      continue;
+    }
+    const end = findTagEnd(html, tagStart, index);
+    if (end !== null) {
+      cursor = end + 1;
+      continue;
+    }
+    // The placeholder is in this tag. Closing tags and declarations are not attributes.
+    const tagOpen = html.slice(tagStart, tagStart + 2);
+    return ["</", "<!"].includes(tagOpen) ? null : tagStart;
   }
+  return null;
+}
 
-  if (!isStillInsideOpeningTag(html, tagStart, index)) return null;
-
-  return tagStart;
+/** Walk real attribute states so literal < and > inside quotes never start/end a tag. */
+function findTagEnd(html: string, tagStart: number, index: number): number | null {
+  const state = newAttributeScanState();
+  let cursor = skipTagName(html, tagStart, index);
+  while (cursor < index) {
+    if (!state.inQuote && html.charAt(cursor) === ">") return cursor;
+    cursor = advanceTagScan(html, cursor, index, state);
+  }
+  return null;
 }
 
 /** Advances past the tag name (e.g. `div` in `<div ...>`) and returns the index right after it. */
@@ -140,10 +140,11 @@ function advanceTagScan(
     return i + 1;
   }
 
-  if (/[A-Za-z]/.test(ch)) {
+  // HTML attribute names can start with digits or punctuation (for example 0 or :name).
+  if (/[^\s/=>"'<>]/.test(ch)) {
     const nameStart = i;
     let j = i;
-    while (j < index && /[\w-]/.test(html.charAt(j))) j++;
+    while (j < index && /[^\s/=>"'<>]/.test(html.charAt(j))) j++;
     state.pendingAttr = html.slice(nameStart, j);
     return j;
   }
@@ -151,14 +152,13 @@ function advanceTagScan(
   return i + 1;
 }
 
+function newAttributeScanState(): AttributeScanState {
+  return { inQuote: null, pendingAttr: null, unquotedAttributeName: null, inUnquotedValue: false };
+}
+
 /** Scans the attribute portion of an opening tag from `start` up to (excluding) `index`. */
 function scanOpeningTagAttributes(html: string, start: number, index: number): AttributeScanState {
-  const state: AttributeScanState = {
-    inQuote: null,
-    pendingAttr: null,
-    unquotedAttributeName: null,
-    inUnquotedValue: false,
-  };
+  const state = newAttributeScanState();
 
   let i = start;
   while (i < index) {

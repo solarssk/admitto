@@ -133,3 +133,36 @@ describe("getHtmlAttributeContext", () => {
     expect(result.inTag).toBe(false);
   });
 });
+
+
+describe("quoted tag boundary controls", () => {
+  it.each([
+    '<span title="Guest <b> {{first_name}}">Hi</span>',
+    "<span title='Guest <b> {{first_name}}'>Hi</span>",
+    '<div><span data-label="Earlier <b>" title="Guest {{first_name}}">Hi</span></div>',
+    '<span title="Line\n<b>\n{{first_name}}">Hi</span>',
+    '<span data-count=100 title="Guest <b> {{first_name}}">Hi</span>',
+    '<span data-count=100" title="Guest <b> {{first_name}}">Hi</span>',
+    '<!-- <fake title="ignored"> --><span title="Guest <b> {{first_name}}">Hi</span>',
+    '<span title="Unclosed <b> {{first_name}}',
+  ])("keeps the real quoted attribute in %s", (html) => {
+    expect(ctxAt(html)).toEqual({ inTag: true, inQuotedAttribute: true, unquotedAttributeName: null, inBareTagMarkup: false });
+  });
+
+  it.each([
+    '<span title="Guest <b>">{{first_name}}</span>',
+    '<span title="Guest <b>"/>{{first_name}}',
+    '<div title="Earlier <b>">Hi</div><p>{{first_name}}</p>',
+    '<!DOCTYPE html><p>{{first_name}}</p>',
+    '<!--[if mso]><span title="Guest">{{first_name}}</span><![endif]-->',
+    '<!-- unclosed <span title="{{first_name}}',
+    '</span title="{{first_name}}">',
+    '<!DOCTYPE html PUBLIC "{{first_name}}">',
+  ])("does not inherit an attribute context in %s", (html) => {
+    expect(ctxAt(html)).toEqual({ inTag: false, inQuotedAttribute: false, unquotedAttributeName: null, inBareTagMarkup: false });
+  });
+
+  it("keeps an unquoted value distinguishable after an earlier quoted literal tag", () => {
+    expect(ctxAt('<span title="Guest <b>" data-name={{first_name}}>Hi</span>').unquotedAttributeName).toBe("data-name");
+  });
+});

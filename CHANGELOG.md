@@ -110,6 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Custom email templates now preserve quoted HTML attribute context when an attribute contains literal angle brackets, so attendee values containing quotes remain data instead of creating another attribute.
+
 - Import upload and queue logs now use identifiers, counts and safe file metadata without recording uploaded filenames; authorized import history keeps the filename.
 
 - Production browser error reports now contain only a fixed error category. Exception text, names, stacks and page URLs stay out of server and System logs; the server independently rejects arbitrary diagnostic fields. Local development diagnostics remain detailed.

@@ -99,5 +99,6 @@ Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/pl
 ## Security
 
 - Placeholder **values** are HTML-escaped (text vs attribute context).
+- Literal angle brackets inside quoted attribute values do not change the escaping context; quotes in attendee values remain attribute data, including in frozen delivery snapshots.
 - Template **content** is admin-authored (trusted, RBAC).
 - Templates are **not encrypted** (not secrets).
