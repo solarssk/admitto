@@ -97,6 +97,21 @@ describe("parseImportJobStaleRunningMs", () => {
     );
   });
 
+  it.each(["Infinity", "NaN", "62135596800001", "9".repeat(400)])(
+    "falls back without exposing unsupported env value", (value) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(parseImportJobStaleRunningMs({ IMPORT_JOB_STALE_RUNNING_MS: value })).toBe(DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+        expect(warn).toHaveBeenCalledWith("Invalid import stale interval configuration; using default.");
+      } finally { warn.mockRestore(); }
+    },
+  );
+
+  it("supports the maximum Date interval and preserves integer parsing", () => {
+    expect(parseImportJobStaleRunningMs({ IMPORT_JOB_STALE_RUNNING_MS: "62135596800000" })).toBe(62_135_596_800_000);
+    expect(parseImportJobStaleRunningMs({ IMPORT_JOB_STALE_RUNNING_MS: "900000.5" })).toBe(900_000);
+  });
+
   it("parses a positive integer", () => {
     expect(parseImportJobStaleRunningMs({ IMPORT_JOB_STALE_RUNNING_MS: "600000" })).toBe(600_000);
   });

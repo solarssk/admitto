@@ -576,7 +576,7 @@
       "consumers": ["worker"],
       "secret": false,
       "ui": "none",
-      "summary": "Fail import AdminJobs stuck in running after this many ms (default 15 minutes)."
+      "summary": "Fail import AdminJobs stuck in running after this many ms (default 15 minutes). Values must parse to a positive finite integer no larger than 62135596800000 (Prisma/PostgreSQL AD date range); unsupported values use the default and emit a fixed warning without the configured value."
     },
     {
       "name": "EXPORT_JOB_STALE_RUNNING_MS",

@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Docker Compose now gives the worker the same Redis credentials as the application and migration service, so a stale reference URL cannot leave background jobs using an old password. Preflight warnings and deployment guidance cover all three services.
+- Invalid or out-of-range import recovery intervals now fall back to the default instead of producing an invalid database cutoff.
 
 - Manual attendee creation, restoration and imports now share the final event-capacity lock, so concurrent operations cannot consume the same last place. Lock acquisition leaves a full work budget for waiting operations; a slow acquisition is retried only before writes begin. The standalone importer also checks capacity before committing; authorized force overrides remain available through the existing admin import flow.
 
