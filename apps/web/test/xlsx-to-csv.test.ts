@@ -1,3 +1,4 @@
+import { parseAttendees } from "@admitto/import";
 import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { buildXlsxBuffer, ImportZipBombError, xlsxBufferToCsv } from "../src/admin/xlsx-to-csv.js";
@@ -157,4 +158,21 @@ describe("xlsxBufferToCsv zip guards", () => {
       "rich text,link,error,formula date,boolean,formula without result\nAda Lovelace,Admitto,#N/A,2026-09-17T12:00:00.000Z,true,",
     );
   });
+});
+
+
+it.each(["\n", "\r\n"])("round-trips XLSX multiline cells with %j through the import parser", async (newline) => {
+  const company = `Synthetic, "Team"${newline}Headquarters`;
+  const first = `Synthetic${newline}First`;
+  const notes = `One${newline}Two`;
+  const csv = await xlsxBufferToCsv(await buildXlsxBuffer([
+    ["first_name", "last_name", "email", "company", "notes"],
+    [first, "Person", "xlsx-multiline@example.com", company, notes],
+  ]));
+  const result = parseAttendees(csv, { attributeFields: [{ source_field: "notes", label: "Notes", type: "text" }] });
+  expect(result.invalidRows).toEqual([]);
+  // Existing ExcelJS decoding normalizes XLSX CRLF to LF before CSV parsing.
+  const decoded = (value: string) => value.replaceAll("\r\n", "\n");
+  expect(csv).toContain(`"${decoded(first)}"`);
+  expect(result.validRows).toEqual([expect.objectContaining({ rowIndex: 1, first_name: decoded(first), company: decoded(company), custom_data: { notes: decoded(notes) } })]);
 });

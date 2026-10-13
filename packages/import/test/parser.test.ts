@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { csvRecords } from "../src/csv-records.js";
 import { parseAttendees } from "../src/parser.js";
 
 const VALID_HEADER = "first_name,last_name,email";
@@ -311,4 +312,79 @@ describe("parseAttendees — edge cases", () => {
     const result = parseAttendees(`${VALID_HEADER}\r\nJan,K,jan@example.com\r\n`);
     expect(result.validRows).toHaveLength(1);
   });
+});
+
+
+describe("logical multiline CSV records", () => {
+  it.each(["\n", "\r\n"])("preserves quoted %j with commas and escaped quotes", (newline) => {
+    const company = `Synthetic, "Team"${newline}Headquarters`;
+    const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const csv = `\uFEFFfirst_name,last_name,email,company,notes${newline}` +
+      [quote(`Synthetic${newline}First`), "Person", "multiline@example.com", quote(company), quote(`One${newline}${newline}Two`)].join(",") +
+      `${newline}${newline}Bad,,bad@example.com${newline}Last,Person,last@example.com`;
+    const parsed = parseAttendees(csv, { attributeFields: [{ source_field: "notes", label: "Notes", type: "text" }] });
+    expect(parsed.validRows).toHaveLength(2);
+    expect(parsed.validRows[0]).toMatchObject({ rowIndex: 1, first_name: `Synthetic${newline}First`, company, custom_data: { notes: `One${newline}${newline}Two` } });
+    expect(parsed.invalidRows).toHaveLength(1);
+    expect(parsed.invalidRows[0]?.rowIndex).toBe(2);
+    expect(parsed.validRows[1]?.rowIndex).toBe(3);
+  });
+
+  it.each([
+    'Synthetic,Person,quoted@example.com,"Unclosed\ncompany',
+    'Synthetic,Person,quoted@example.com,"Closed"garbage',
+    'Synthetic,Person,quoted@example.com,Company,extra',
+  ])("rejects malformed records with a fixed diagnostic", (row) => {
+    const result = parseAttendees(`first_name,last_name,email,company\n${row}`);
+    expect(result.validRows).toHaveLength(0);
+    expect(result.invalidRows).toEqual([{ rowIndex: 1, raw: {}, reason: "Malformed CSV record" }]);
+  });
+
+  it("retains ordinary seeded single-line records and quoted empty optional cells", () => {
+    const rows = Array.from({ length: 100 }, (_, index) => `"Synthetic ${index}","Comma, ""Person""",seed-${index}@example.com,""`);
+    const result = parseAttendees(["first_name,last_name,email,company", ...rows].join("\n"));
+    expect(result.invalidRows).toEqual([]);
+    expect(result.validRows).toHaveLength(100);
+    expect(result.validRows[99]).toMatchObject({ rowIndex: 100, first_name: "Synthetic 99", last_name: 'Comma, "Person"', email: "seed-99@example.com" });
+  });
+});
+
+
+describe("CSV logical-record boundaries", () => {
+  it("keeps blank lines and trailing whitespace inside quoted cells", () => {
+    const result = parseAttendees('first_name,last_name,email,company\nSynthetic,Person,spaces@example.com,"One  \n\nTwo"\n');
+    expect(result.invalidRows).toEqual([]);
+    expect(result.validRows[0]?.company).toBe("One  \n\nTwo");
+  });
+
+  it("reports an unclosed header without treating its contents as attendee rows", () => {
+    expect(parseAttendees('"first_name,last_name,email\nSynthetic,Person,private@example.com')).toEqual({
+      validRows: [], invalidRows: [], warnings: ["Malformed CSV header"],
+    });
+  });
+
+  it.each(['"closed" ,rest', '"closed"\t,rest', '"closed"oops,rest'])("flags trailing quoted-field garbage", (text) => {
+    expect([...csvRecords(text)]).toEqual([{ text, malformed: true }]);
+  });
+
+  it("preserves unquoted literal quotes and allows whitespace only at a record end", () => {
+    const csv = 'first_name,last_name,email,company\nSynthetic,Person,literal@example.com,Team "One"\nSecond,Person,second@example.com,"Team Two"  \r\n';
+    const result = parseAttendees(csv);
+    expect(result.invalidRows).toEqual([]);
+    expect(result.validRows.map((row) => row.company)).toEqual(['Team "One"', 'Team Two']);
+  });
+});
+
+
+it("round-trips bounded seeded quoted records with delimiters, quotes, Unicode and newlines", () => {
+  let seed = 741819;
+  const next = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
+  const parts = ["Synthetic", ",", '"', "\n", "\r\n", " ", "é", "ł", "\t"];
+  const values = Array.from({ length: 200 }, () => "Start" + Array.from({ length: 12 }, () => parts[next() % parts.length]!).join("") + "End");
+  const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
+  const csv = ["first_name,last_name,email,company", ...values.map((value, index) => `Synthetic,Person,property-${index}@example.com,${quote(value)}`)].join("\n");
+  const parsed = parseAttendees(csv);
+  expect(parsed.invalidRows).toEqual([]);
+  expect(parsed.validRows.map((row) => row.company)).toEqual(values);
+  expect(parsed.validRows.map((row) => row.rowIndex)).toEqual(values.map((_, index) => index + 1));
 });

@@ -1,5 +1,5 @@
 export type AttendeeRow = {
-  /** 1-based line index in the parsed CSV (header is line 0; first data row is 1). */
+  /** 1-based non-empty data record index; header is 0, quoted newlines do not increment it. */
   rowIndex: number;
   first_name: string;
   last_name: string;
