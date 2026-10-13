@@ -301,7 +301,6 @@ function rejectUpload(
   error: string,
   fields: {
     fileSizeBytes?: number;
-    filename?: string;
   } = {},
 ): Response {
   logger.warn("Import upload rejected", {
@@ -333,7 +332,6 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
   if (fileField.size > MAX_FILE_BYTES) {
     return rejectUpload(c, ctx, "file_too_large", "file too large", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
 
@@ -342,7 +340,6 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
   if (!fileType) {
     return rejectUpload(c, ctx, "unsupported_file_type", "unsupported file type", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
 
@@ -353,7 +350,6 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
   if (!fileSignatureValid(buf, extDot)) {
     return rejectUpload(c, ctx, "invalid_file_content", "invalid file content", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
 
@@ -364,12 +360,10 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
     if (err instanceof ImportRowLimitError || err instanceof ImportZipBombError) {
       return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
         fileSizeBytes: fileField.size,
-        filename,
       });
     }
     return rejectUpload(c, ctx, "invalid_file_content", "invalid file content", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
 
@@ -377,20 +371,17 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
   if (limitError === "file too large") {
     return rejectUpload(c, ctx, "file_too_large", "file too large", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
   if (limitError === "too many rows") {
     return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
 
   if (!csv.trim()) {
     return rejectUpload(c, ctx, "empty_file", "empty file", {
       fileSizeBytes: fileField.size,
-      filename,
     });
   }
 
@@ -441,7 +432,6 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       importId,
       eventId,
       step: "preview",
-      filename: upload.filename,
       fileSizeBytes: upload.sizeBytes,
       fileType: upload.ext,
       validCount: parsed.validRows.length,
@@ -561,7 +551,6 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       eventId,
       jobId: job.id,
       step: "enqueue",
-      filename: upload.filename,
       fileSizeBytes: upload.sizeBytes,
       fileType: upload.ext,
       toCreate: dry.toCreate,
