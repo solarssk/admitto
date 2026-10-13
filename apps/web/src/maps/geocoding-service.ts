@@ -23,16 +23,15 @@ export class GeocodingService {
     private readonly cacheScope: () => string = () => "",
   ) {}
 
-  private scopedKey(rest: string): string {
+  private scopedKey(operation: "search" | "reverse", rest: string): string {
     const scope = this.cacheScope().trim() || "_";
-    // v2: results include structured `components` (+ label enrichment). Bump when the
-    // cached payload shape changes so a 30-day positive TTL cannot serve stale rows.
-    return `${this.provider.name}:v2:${scope}:${rest}`;
+    // v3 separates operations and tuple fields; never reuse collision-prone v2 entries.
+    return JSON.stringify([this.provider.name, "v3", scope, operation, rest]);
   }
 
   async search(rawQuery: string): Promise<GeocodingResult[]> {
     const query = normalizeQuery(rawQuery);
-    const cacheKey = this.scopedKey(query);
+    const cacheKey = this.scopedKey("search", query);
 
     const cached = await this.cache.get(cacheKey);
     if (cached !== null) return cached;
@@ -43,7 +42,7 @@ export class GeocodingService {
   }
 
   async reverse(latitude: number, longitude: number): Promise<GeocodingResult | null> {
-    const cacheKey = this.scopedKey(`rev:${roundCoord(latitude)},${roundCoord(longitude)}`);
+    const cacheKey = this.scopedKey("reverse", `${roundCoord(latitude)},${roundCoord(longitude)}`);
 
     const cached = await this.cache.get(cacheKey);
     if (cached !== null) return cached[0] ?? null;

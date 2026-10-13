@@ -818,7 +818,7 @@ describe("WeatherService.summarize for ended event days", () => {
     const config = resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" });
     const cache = new InMemoryWeatherCache();
     await cache.set(
-      weatherCacheKey(pin.latitude, pin.longitude, "2026-08-04", weatherConfigCacheScope(config)),
+      weatherCacheKey(pin.latitude, pin.longitude, "2026-08-04", weatherConfigCacheScope(config), "UTC"),
       { date: "2026-08-04", weather_code: 95, temp_max_c: 41, temp_min_c: 30 },
       60_000,
     );
@@ -933,8 +933,8 @@ describe("helpers", () => {
   });
 
   it("builds stable cache keys scoped by provider and host", () => {
-    expect(weatherCacheKey(52.2297, 21.0122, "2026-08-10", "metno")).toBe(
-      "52.23:21.01:2026-08-10:metno:c",
+    expect(weatherCacheKey(52.2297, 21.0122, "2026-08-10", "metno", "UTC")).toBe(
+      JSON.stringify(["v2", "52.23", "21.01", "2026-08-10", "metno", "UTC", "c"]),
     );
     expect(
       weatherCacheKey(
@@ -945,8 +945,9 @@ describe("helpers", () => {
           provider: "openmeteo",
           baseUrl: "https://api.open-meteo.com",
         }),
+        "UTC",
       ),
-    ).toBe("52.23:21.01:2026-08-10:om:https://api.open-meteo.com:c");
+    ).toBe(JSON.stringify(["v2", "52.23", "21.01", "2026-08-10", "om:https://api.open-meteo.com", "UTC", "c"]));
     expect(
       weatherConfigCacheScope({
         provider: "openmeteo",
