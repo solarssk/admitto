@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
+import { lockDeviceAdmissions } from "./device-admission-lock.js";
 import { lockAttendeeRow } from "./attendee-lock.js";
 import { issueBadgeOnCheckIn } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
@@ -32,15 +33,18 @@ export type AdmitAttendeeParams = {
  * Single CAS path for scan and manual check-in (ADR 0010 §4).
  *
  * Transaction order (Lock #1 — required for undo badge rollback):
- *   1. CAS admitted_at + create CheckIn (capture checkIn.id)
- *   2. AttendeeActionLog check_in
- *   3. If badge_at_entry: issue badge + item_issued log with metadata.check_in_id
+ *   1. Device admission lock, then attendee erasure guard
+ *   2. CAS admitted_at + create CheckIn (capture checkIn.id)
+ *   3. AttendeeActionLog check_in
+ *   4. If badge_at_entry: issue badge + item_issued log with metadata.check_in_id
  */
 export function admitAttendee(
   params: AdmitAttendeeParams,
   prisma: PrismaClient,
 ): Promise<AdmitResult> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient): Promise<AdmitResult> => {
+    await lockDeviceAdmissions(tx, params.eventId, params.audit.deviceId);
+
     // An erased attendee cannot be admitted, and an erasure cannot start while this transaction
     // runs: every check-in row written below (including REVOKED / ALREADY_CHECKED_IN, which no
     // update of the attendee row would otherwise serialise against) lands before it.

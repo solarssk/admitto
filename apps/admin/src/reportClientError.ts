@@ -1,5 +1,13 @@
+const CLIENT_ERROR_SOURCES = [
+  "admin-error-boundary",
+  "window-error",
+  "unhandled-rejection",
+  "resource-error",
+  "csp-violation",
+] as const;
+
 type ClientErrorContext = {
-  source: string;
+  source: (typeof CLIENT_ERROR_SOURCES)[number];
   componentStack?: string;
 };
 
@@ -9,22 +17,19 @@ export const CLIENT_ERROR_REPORT_PATH = "/api/admin/client-errors";
 
 /** Report a client-side error: verbose in dev, structured server log in production. */
 export function reportClientError(error: unknown, context: ClientErrorContext): void {
-  const err = error instanceof Error ? error : new Error(String(error));
-
   if (import.meta.env.DEV) {
+    const err = error instanceof Error ? error : new Error(String(error));
     console.error(`[${context.source}]`, err, context.componentStack);
     return;
   }
 
-  const payload = {
-    source: context.source.slice(0, 64),
-    name: err.name.slice(0, 100),
-    message: err.message.slice(0, 500),
-    path: window.location.pathname.slice(0, 256),
-  };
+  // Production reports contain only a fixed category. Do not inspect the error:
+  // its text, name, stack and the current URL can all contain personal data.
+  if (!CLIENT_ERROR_SOURCES.includes(context.source)) return;
+  const payload = { source: context.source };
 
-  // Same-origin POST; browser sets Origin for jsonPostCsrf. Fire-and-forget — a 401 before
-  // session bootstrap (e.g. crash inside AuthProvider) is expected and intentionally ignored.
+  // Same-origin POST; browser sets Origin for jsonPostCsrf. A 401 before
+  // session bootstrap is expected and ignored, with no retries or error reports.
   void fetch(CLIENT_ERROR_REPORT_PATH, {
     method: "POST",
     credentials: "same-origin",

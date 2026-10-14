@@ -1,8 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  isExportInvalidated,
   redactAttendeeListFiltersForStorage,
   scrubExportJobResultJson,
 } from "../src/export-job-privacy.js";
+
+describe("export download availability metadata", () => {
+  it.each([
+    [null, false],
+    [undefined, false],
+    ["invalidated", false],
+    [[{ invalidated: true }], false],
+    [{}, false],
+    [{ invalidated: false }, false],
+    [{ invalidated: "true" }, false],
+    [{ invalidated: true, rowCount: 3 }, true],
+  ])("reads only an explicit root boolean marker from %j", (metadata, unavailable) => {
+    expect(isExportInvalidated(metadata)).toBe(unavailable);
+  });
+
+  it("keeps a download unavailable when terminal metadata is scrubbed", () => {
+    const scrubbed = scrubExportJobResultJson({
+      invalidated: true,
+      request: { filters: { q: "synthetic@example.com" } },
+    });
+    expect(isExportInvalidated(scrubbed)).toBe(true);
+    expect(JSON.stringify(scrubbed)).not.toContain("synthetic@example.com");
+  });
+});
 
 describe("redactAttendeeListFiltersForStorage", () => {
   it("replaces raw q with has_query", () => {

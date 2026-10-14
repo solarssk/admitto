@@ -90,7 +90,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "24.17.0"
       - name: Validate Wiki source
@@ -247,7 +247,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "24.17.0"
           cache: "npm"
@@ -290,11 +290,11 @@ jobs:
           mkdir -p scripts/coverage
           node --test --experimental-test-coverage --test-coverage-include=scripts/ai-review-outcome.mjs --test-coverage-include=scripts/ai-review-codex.mjs \
             --test-coverage-include=scripts/ai-review-status.mjs --test-coverage-include=scripts/ai-review-command.mjs \
-            --test-coverage-include=scripts/check-agent-docs.mjs \
+            --test-coverage-include=scripts/check-agent-docs.mjs --test-coverage-include=deploy/validate-env.mjs \
             --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout \
             --test-reporter-destination=scripts/coverage/lcov.info scripts/*.test.mjs
       - name: Upload script coverage for SonarCloud
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-scripts
           path: scripts/coverage/lcov.info
@@ -347,7 +347,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "24.17.0"
           cache: "npm"
@@ -418,7 +418,7 @@ jobs:
       # this repo's fork PRs never receive secrets - see that job's own comment).
       - name: Upload coverage artifact for SonarCloud
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-web
           path: |
@@ -439,7 +439,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "24.17.0"
           cache: "npm"
@@ -488,7 +488,7 @@ jobs:
           fail_ci_if_error: false
       - name: Upload coverage artifact for SonarCloud
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-admin
           path: |
@@ -539,7 +539,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "24.17.0"
           cache: "npm"
@@ -606,7 +606,7 @@ jobs:
           fail_ci_if_error: false
       - name: Upload coverage artifact for SonarCloud
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-rest
           path: |
@@ -644,12 +644,12 @@ jobs:
         with:
           fetch-depth: 0 # required for accurate SCM/blame data - shallow clones degrade analysis
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: coverage-*
           merge-multiple: true
       # A single-file artifact has no directory prefix; restore the script report explicitly.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: coverage-scripts
           path: scripts/coverage
@@ -704,7 +704,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "24.17.0"
           cache: "npm"
@@ -720,7 +720,7 @@ jobs:
         run: npm run e2e -w @admitto/admin
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: playwright-report-pr
           path: |
@@ -980,7 +980,7 @@ jobs:
           exit-code: 0
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
         if: always()
         with:
           sarif_file: trivy-results.sarif

@@ -7,6 +7,7 @@ import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { drainImportJobs } from "@admitto/import";
+import { querySystemLogs } from "@admitto/shared/system-log";
 import { lockAttendeeJobQueue } from "@admitto/tickets";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
@@ -296,6 +297,123 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.invalidRows[0]!.reason).toBe("Duplicate email in file");
     expect(body.parse.invalidRows[0]!.reason).not.toContain("dup@example.com");
     expect(body.parse.invalidRows[0]!.reason).not.toMatch(/@/);
+  });
+
+  it.each(["Synthetic Private 5550100 private@example.com.csv", "batch.csv"])(
+    "keeps %s in import history without exposing it in routine logs",
+    async (filename) => {
+      const csv = "first_name,last_name,email\nSynthetic,Privacy,filename-privacy@example.com";
+      let committedImportId: string | undefined;
+      const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const sinceId = querySystemLogs().at(-1)?.id ?? 0;
+      try {
+        const preview = await postImport(
+          `/api/admin/events/${EVENT_A}/import/preview`, csvFormData(csv, filename), adminCookie,
+        );
+        expect(preview.status).toBe(200);
+        const committed = await postCommitAndDrain(EVENT_A, csvFormData(csv, filename), adminCookie);
+        committedImportId = String(committed.body.importId);
+        expect(committed.status).toBe(202);
+        expect(committed.result?.created).toBe(1);
+        const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: String(committed.body.jobId) } });
+        expect(job.filename).toBe(filename);
+        const audit = await prisma.attendeeActionLog.findFirstOrThrow({
+          where: { event_id: EVENT_A, action_type: "attendees_imported" },
+        });
+        expect((audit.metadata as Record<string, unknown>).filename).toBe(filename);
+        const history = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+          headers: { Cookie: adminCookie },
+        });
+        expect(history.status).toBe(200);
+        const historyBody = await history.json() as { items: { filename: string }[] };
+        expect(historyBody.items.some((item) => item.filename === filename)).toBe(true);
+        const logs = querySystemLogs({ sinceId });
+        expect(logs.find((entry) => entry.message === "Import preview complete")?.fields).toMatchObject({
+          eventId: EVENT_A, fileType: "csv", fileSizeBytes: new Blob([csv]).size, validCount: 1,
+        });
+        expect(logs.find((entry) => entry.message === "Import commit queued")?.fields).toMatchObject({
+          jobId: committed.body.jobId, importId: committed.body.importId, toCreate: 1,
+        });
+        expect(JSON.stringify(logs)).not.toContain(filename);
+        expect(JSON.stringify(logs)).not.toContain("private@example.com");
+        expect(JSON.stringify(logs)).not.toContain("5550100");
+        expect(JSON.stringify([...info.mock.calls, ...warn.mock.calls, ...error.mock.calls])).not.toContain(filename);
+      } finally {
+        info.mockRestore(); warn.mockRestore(); error.mockRestore();
+        await prisma.attendee.deleteMany({ where: { event_id: EVENT_A, email: "filename-privacy@example.com" } });
+        if (committedImportId) {
+          await prisma.attendeeActionLog.deleteMany({ where: {
+            event_id: EVENT_A, action_type: "attendees_imported",
+            metadata: { path: ["importId"], equals: committedImportId },
+          } });
+        }
+      }
+    },
+  );
+
+  it.each([
+    { filename: "Synthetic Private private@example.com.txt", content: VALID_CSV, reason: "unsupported_file_type" },
+    { filename: "Synthetic Private private@example.com.csv", content: "   ", reason: "empty_file" },
+    { filename: "Synthetic Private private@example.com.xlsx", content: "not a workbook", reason: "invalid_file_content" },
+  ])("omits filenames from rejected upload logs ($reason)", async ({ filename, content, reason }) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sinceId = querySystemLogs().at(-1)?.id ?? 0;
+    try {
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/preview`, csvFormData(content, filename), adminCookie);
+      expect(res.status).toBe(400);
+      const logs = querySystemLogs({ sinceId });
+      expect(logs.find((entry) => entry.message === "Import upload rejected")?.fields).toMatchObject({
+        eventId: EVENT_A, reason, fileSizeBytes: new Blob([content]).size,
+      });
+      expect(JSON.stringify(logs)).not.toContain(filename);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(filename);
+    } finally { warn.mockRestore(); }
+  });
+
+  it.each(["csv", "xlsx"])("preserves multiline %s values from preview through commit", async (format) => {
+    const email = `logical-${format}@example.com`;
+    const first = "Synthetic\nFirst";
+    const company = 'Synthetic, "Team"\r\nHeadquarters';
+    const custom = "One\nTwo";
+    const rows = [["first_name", "last_name", "email", "company", "sock_size"], [first, "Person", email, company, custom]];
+    const makeForm = async () => {
+      if (format === "xlsx") return xlsxFormData(rows);
+      const quote = (cell: string) => `"${cell.replaceAll('"', '""')}"`;
+      return csvFormData(rows.map((row) => row.map(quote).join(",")).join("\n"));
+    };
+    let importId: string | undefined;
+    try {
+      const preview = await postImport(`/api/admin/events/${EVENT_A}/import/preview`, await makeForm(), adminCookie);
+      expect(preview.status).toBe(200);
+      const body = await preview.json() as { parse: { validCount: number; invalidCount: number }; summary: { toCreate: number } };
+      expect(body.parse).toMatchObject({ validCount: 1, invalidCount: 0 });
+      expect(body.summary.toCreate).toBe(1);
+      expect(await prisma.attendee.count({ where: { event_id: EVENT_A, email } })).toBe(0);
+      const committed = await postCommitAndDrain(EVENT_A, await makeForm(), adminCookie);
+      importId = String(committed.body.importId);
+      expect(committed.result).toMatchObject({ created: 1, invalidCount: 0 });
+      const attendee = await prisma.attendee.findUniqueOrThrow({ where: { event_id_email: { event_id: EVENT_A, email } } });
+      expect(attendee.name).toBe(`${first} Person`);
+      expect(attendee.company).toBe(format === "xlsx" ? company.replaceAll("\r\n", "\n") : company);
+      expect(attendee.custom_data).toMatchObject({ sock_size: custom });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_A, email } });
+      if (importId) await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_A, metadata: { path: ["importId"], equals: importId } } });
+    }
+  });
+
+  it.each([50_000, 50_001])("enforces the logical-record limit at %i multiline records", async (count) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const csv = "first_name,last_name,email\n" + Array(count).fill('"Synthetic\nRecord",,limit@example.com').join("\n");
+    try {
+      const res = await postImport(`/api/admin/events/${EVENT_A}/import/preview`, csvFormData(csv), adminCookie);
+      expect(res.status).toBe(count === 50_000 ? 200 : 400);
+      const body = await res.json() as { error?: string; parse?: { validCount: number; invalidCount: number } };
+      if (count === 50_000) expect(body.parse).toMatchObject({ validCount: 0, invalidCount: count });
+      else expect(body.error).toBe("too many rows");
+    } finally { info.mockRestore(); }
   });
 
   // PII/log-leak fix (code review): "Unknown ticket type: <value>" had no sanitizePreviewReason
@@ -1400,7 +1518,7 @@ describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
     });
     expect(await failed.json()).toMatchObject({
       status: "failed",
-      error: "boom",
+      error: "Import failed. Upload the file again.",
       result: null,
     });
 

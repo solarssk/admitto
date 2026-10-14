@@ -51,6 +51,8 @@ describe("applyBounceResult", () => {
       expect.objectContaining({
         where: {
           id: "del_1",
+          queued_at: expect.any(Date),
+          attempts: 1,
           status: { in: [...NON_TERMINAL] },
           recipient_email: { not: null },
         },

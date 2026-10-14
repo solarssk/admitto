@@ -27,7 +27,7 @@ import { ATTENDEE_REMOVAL_REASONS } from "@admitto/shared";
 import { drainExportJobs, EXPORT_STOPPED_BY_ERASURE_ERROR, IMPORT_STOPPED_BY_ERASURE_ERROR, stopOpenAttendeeJobs } from "@admitto/tickets";
 import { drainImportJobs } from "@admitto/import";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
+import { getDefaultStorage, purgeEventJobFiles, resetDefaultStorageForTests } from "@admitto/storage";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { resolveIpLocation } from "../../src/rate-limit/ip-location.js";
 
@@ -1387,6 +1387,164 @@ describe("export files of the event, after an erasure or a removal", () => {
   }
   const present = (key: string) => existsSync(join(uploadDir, key));
   const keyOf = async (jobId: string) => (await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).storage_key;
+
+  it("keeps preview failures out of routine logs and API errors", async () => {
+    const form = new FormData();
+    form.append("file", new Blob(["first_name,last_name,email\nSynthetic,Person,private@example.com\n"]), "synthetic.csv");
+    vi.spyOn(prisma.attendee, "findMany").mockRejectedValueOnce(new Error("reflected private@example.com"));
+    const response = await app.request(`/api/admin/events/${EVENT_ID}/import/preview`, {
+      method: "POST", headers: { Cookie: cookie, ...sameOrigin }, body: form,
+    });
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("private@example.com");
+    const logs = querySystemLogs({ search: "Import preview failed" });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.fields).toMatchObject({ reason: "import_preview_failed" });
+    expect(JSON.stringify(logs)).not.toContain("private@example.com");
+  });
+
+  it("keeps enqueue failures out of routine logs and API errors", async () => {
+    const form = new FormData();
+    form.append("file", new Blob(["first_name,last_name,email\nSynthetic,Person,private@example.com\n"]), "synthetic.csv");
+    vi.spyOn(getDefaultStorage(), "put").mockRejectedValueOnce(new Error("reflected private@example.com"));
+    const response = await app.request(`/api/admin/events/${EVENT_ID}/import/commit`, {
+      method: "POST", headers: { Cookie: cookie, ...sameOrigin }, body: form,
+    });
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("private@example.com");
+    const logs = querySystemLogs({ search: "Import commit enqueue failed" });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.fields).toMatchObject({ reason: "import_enqueue_failed" });
+    expect(JSON.stringify(logs)).not.toContain("private@example.com");
+  });
+
+  describe.each(["export", "import_commit"] as const)("private %s failures", (type) => {
+    it.each([false, true])("keeps storage failures private before and after erasure (identifying fault: %s)", async (identifying) => {
+      const a = await createAttendee();
+      let queued: Response;
+      if (type === "export") {
+        queued = await app.request(`/api/admin/events/${EVENT_ID}/attendees/export?format=csv`, { headers: { Cookie: cookie } });
+      } else {
+        const form = new FormData();
+        form.append("file", new Blob([`first_name,last_name,email\nSynthetic,Person,${a.email}\n`], { type: "text/csv" }), "synthetic.csv");
+        queued = await app.request(`/api/admin/events/${EVENT_ID}/import/commit`, {
+          method: "POST", headers: { Cookie: cookie, ...sameOrigin }, body: form,
+        });
+      }
+      expect(queued.status).toBe(202);
+      const { jobId } = await queued.json() as { jobId: string };
+      jobIds.push(jobId);
+      const fault = new Error(identifying ? `storage unavailable: ${a.email}` : "storage unavailable");
+      const io = vi.spyOn(getDefaultStorage(), type === "export" ? "put" : "get").mockRejectedValueOnce(fault);
+      const drained = type === "export"
+        ? await drainExportJobs(prisma, getDefaultStorage(), { limit: 1 })
+        : await drainImportJobs(prisma, getDefaultStorage(), { limit: 1 });
+      expect(io).toHaveBeenCalledOnce();
+      expect(drained).toMatchObject({ claimed: 1, succeeded: 0, failed: 1 });
+      const expectedError = type === "export" ? "Export failed. Run the export again." : "Import failed. Upload the file again.";
+      expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).error).toBe(expectedError);
+      expect((await post(erasePath(EVENT_ID, a.id))).status).toBe(200);
+      const pathType = type === "export" ? "export" : "import";
+      const response = await app.request(`/api/admin/events/${EVENT_ID}/${pathType}/jobs/${jobId}`, { headers: { Cookie: cookie } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ status: "failed", error: expectedError });
+      expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } })).error).toBe(expectedError);
+      if (type === "import_commit") {
+        const history = await app.request(`/api/admin/events/${EVENT_ID}/import/history`, { headers: { Cookie: cookie } });
+        expect(await history.json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: jobId, error: expectedError })]) });
+      }
+      expect(JSON.stringify(querySystemLogs({}))).not.toContain(a.email);
+    });
+
+    it.each(["failed", "succeeded"])("does not publish historical raw errors on a %s job", async (status) => {
+      const privateText = "old storage failure for synthetic@example.com";
+      const job = await prisma.adminJob.create({ data: {
+        type, status, organization_id: ORG_ID, event_id: EVENT_ID,
+        error: privateText, finished_at: new Date(), result_json: { created: 2, updated: 0, skippedCount: 0 },
+      } });
+      jobIds.push(job.id);
+      const pathType = type === "export" ? "export" : "import";
+      const response = await app.request(`/api/admin/events/${EVENT_ID}/${pathType}/jobs/${job.id}`, { headers: { Cookie: cookie } });
+      expect(response.status).toBe(200);
+      const body = await response.json() as { error: string | null; result?: { created: number } };
+      expect(body.error).toBe(status === "succeeded" ? null : type === "export" ? "Export failed. Run the export again." : "Import failed. Upload the file again.");
+      if (type === "import_commit") {
+        if (status === "succeeded") expect(body.result?.created).toBe(2);
+        const history = await app.request(`/api/admin/events/${EVENT_ID}/import/history`, { headers: { Cookie: cookie } });
+        expect(await history.text()).not.toContain(privateText);
+      }
+      // Existing stored history is retained; only its public projection is minimized.
+      expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).error).toBe(privateText);
+    });
+  });
+
+  const download = (eventId: string, jobId: string) =>
+    app.request(`/api/admin/events/${eventId}/export/jobs/${jobId}/download`, { headers: { Cookie: cookie } });
+
+  it.each(["erase", "bulk-erase", "remove", "bulk-remove"])(
+    "%s invalidates old downloads even when deletion fails, preserves cleanup retry, and permits a fresh export",
+    async (action) => {
+      const a = await createAttendee();
+      const selected = await post(`/api/admin/events/${EVENT_ID}/attendees/export-selected`, {
+        attendee_ids: [a.id], format: "csv",
+      });
+      expect(selected.status).toBe(200);
+      const bytes = Buffer.from(await selected.arrayBuffer());
+      expect(bytes.toString()).toContain(a.email);
+      const old = await seedJobFile(EVENT_ID);
+      const stored = await getDefaultStorage().put(bytes, { orgId: ORG_ID, eventId: EVENT_ID, scope: "event", ext: ".csv" });
+      await getDefaultStorage().delete(old.key);
+      await prisma.adminJob.update({ where: { id: old.jobId }, data: { storage_key: stored.key } });
+      const deletion = vi.spyOn(getDefaultStorage(), "delete").mockRejectedValue(new Error("EBUSY"));
+      expect((await download(EVENT_ID, old.jobId)).status).toBe(200);
+      expect((await download(WALLET_OFF_EVENT_ID, old.jobId)).status).toBe(404);
+
+      const path = `/api/admin/events/${EVENT_ID}/attendees/${action.startsWith("bulk") ? action : `${a.id}/${action}`}`;
+      const response = await post(path, action === "bulk-erase" ? { attendeeIds: [a.id] }
+        : action === "bulk-remove" ? { attendeeIds: [a.id], reason: "duplicate" }
+        : action === "remove" ? { reason: "duplicate" } : {});
+      expect(response.status).toBe(200);
+      const denied = await download(EVENT_ID, old.jobId);
+      expect(denied.status).toBe(404);
+      expect(await denied.json()).toEqual({ error: "not_ready" });
+      expect(denied.headers.get("Cache-Control")).toBe("no-store");
+      expect((await getDefaultStorage().get(stored.key)).toString()).toContain(a.email);
+      expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: old.jobId } })).toMatchObject({
+        status: "succeeded", storage_key: stored.key, result_json: { invalidated: true },
+      });
+
+      const queued = await app.request(`/api/admin/events/${EVENT_ID}/attendees/export?format=csv`, { headers: { Cookie: cookie } });
+      expect(queued.status).toBe(202);
+      const { jobId } = await queued.json() as { jobId: string };
+      jobIds.push(jobId);
+      await drainExportJobs(prisma, getDefaultStorage(), { limit: 50 });
+      if (action === "erase") expect((await post(erasePath(EVENT_ID, a.id))).status).toBe(200);
+      const fresh = await download(EVENT_ID, jobId);
+      expect(fresh.status).toBe(200);
+      expect(await fresh.text()).not.toContain(a.email);
+      expect((await download(EVENT_ID, old.jobId)).status).toBe(404);
+
+      deletion.mockRestore();
+      expect(await purgeEventJobFiles(prisma, getDefaultStorage(), EVENT_ID, [old.jobId])).toEqual({ deleted: 1, failed: 0 });
+      expect(await keyOf(old.jobId)).toBeNull();
+      expect((await download(EVENT_ID, jobId)).status).toBe(200);
+    },
+  );
+
+  it("rechecks invalidation when erasure commits during storage read", async () => {
+    const a = await createAttendee();
+    const old = await seedJobFile(EVENT_ID);
+    vi.spyOn(getDefaultStorage(), "delete").mockRejectedValue(new Error("EBUSY"));
+    const get = getDefaultStorage().get.bind(getDefaultStorage());
+    vi.spyOn(getDefaultStorage(), "get").mockImplementationOnce(async (key) => {
+      const bytes = await get(key);
+      expect((await post(erasePath(EVENT_ID, a.id))).status).toBe(200);
+      return bytes;
+    });
+    const response = await download(EVENT_ID, old.jobId);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not_ready" });
+  });
 
   it("erasing someone deletes the export files and the staged CSV of every import of the event that is finished or was waiting, clears their keys, and leaves another event's files", async () => {
     const a = await createAttendee();

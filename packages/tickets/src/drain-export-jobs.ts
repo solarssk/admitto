@@ -6,6 +6,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
+import { EXPORT_JOB_FAILED_ERROR, safeExportJobError } from "./export-job-errors.js";
 import { buildAttendeesExportArtifact } from "./attendees-export-artifact.js";
 import {
   countFilteredAttendees,
@@ -87,20 +88,19 @@ async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): 
     data: {
       status: "failed",
       finished_at: new Date(),
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
+      error: err instanceof Error ? safeExportJobError(err.message) : EXPORT_JOB_FAILED_ERROR,
       ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
     },
   });
 }
 
 /**
- * What went wrong deleting a file, in a word: the code of a file system error (ENOSPC, EACCES), else the name of
- * the error. It carries the key path at most, never a person's data.
+ * Only recognized filesystem categories are safe; upstream codes and names can contain private input too.
  */
 function deleteFailureReason(err: unknown): string {
   const code = (err as { code?: unknown } | null)?.code;
-  if (typeof code === "string") return code;
-  return err instanceof Error ? err.name : "unknown";
+  if (typeof code === "string" && ["ENOSPC", "EACCES", "EPERM", "EBUSY", "ENOENT", "EROFS"].includes(code)) return code;
+  return "storage_delete_failed";
 }
 
 /**

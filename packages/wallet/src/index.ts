@@ -9,7 +9,7 @@ export type {
   WalletProviderSnapshot,
   WalletProviderValidity,
 } from "./types.js";
-export { WalletProviderError } from "./types.js";
+export { WalletProviderError, walletFailureCode } from "./types.js";
 export type { WalletPassProvider } from "./provider.js";
 export {
   PassCreatorClient,

@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 /**
  * Claim and run pending AdminJob type=wallet_push - rebuilds each target attendee's already-
  * issued wallet pass from their current data (name/ticket type/event details), via the same
@@ -170,7 +171,7 @@ async function loadEventWideTargets(
  * exception) to one generic fixed message - AdminJob.error is read verbatim by both the polling
  * toast and the Wallet push history table, so it must never carry raw exception text (AGENTS.md's
  * "Admin API errors in the UI" convention, applied here at the point the message is stored rather
- * than where it's displayed; bot review, Codex). The real error is still logged server-side. */
+ * than where it's displayed; bot review, Codex). Only safe failure categories are logged server-side. */
 function walletPushJobErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     if (err.message === "wallet_push_job_bad_request") return WALLET_PUSH_JOB_BAD_REQUEST_ERROR;
@@ -182,7 +183,7 @@ function walletPushJobErrorMessage(err: unknown): string {
 async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
   emitSystemLog("wallet", "error", "wallet_push_job_failed", {
     job_id: jobId,
-    error: err instanceof Error ? err.message : String(err),
+    reason: walletFailureCode(err),
   });
   await db.adminJob.update({
     where: { id: jobId },

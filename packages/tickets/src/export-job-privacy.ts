@@ -7,6 +7,25 @@ import type {
   AttendeeListFilterParams,
   AttendeeMailStatusFilter,
 } from "./attendees-list-filters.js";
+import type { Prisma } from "@admitto/db";
+
+/** Called under the event's exclusive attendee-job queue lock, in the erasure/removal transaction. */
+export async function invalidateEventExports(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+  // Keep completed-job history and the storage key: physical deletion can fail and must remain retryable.
+  // Normalize sparse/non-object metadata too, so every old export carries the same explicit marker.
+  await tx.$executeRaw`
+    UPDATE "AdminJob" SET "result_json" =
+      (CASE WHEN jsonb_typeof("result_json") = 'object' THEN "result_json" ELSE '{}'::jsonb END)
+      || '{"invalidated":true}'::jsonb
+    WHERE "event_id" = ${eventId} AND "type" = 'export'
+  `;
+}
+
+/** Logical download availability is independent of the file's physical cleanup. */
+export function isExportInvalidated(resultJson: unknown): boolean {
+  return resultJson !== null && typeof resultJson === "object" && !Array.isArray(resultJson)
+    && (resultJson as Record<string, unknown>).invalidated === true;
+}
 
 /** Same shape as AttendeeCustomFieldFilter, minus the free-text `text` value itself - a custom
  * text field can hold arbitrary organiser-defined content (dietary notes, etc.), so it gets the

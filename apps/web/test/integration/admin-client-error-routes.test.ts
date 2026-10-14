@@ -15,9 +15,6 @@ const PASSWORD = "client-error-test-pass-123";
 
 const VALID_PAYLOAD = {
   source: "csp-violation",
-  name: "Error",
-  message: "connect-src blocked https://admitto.example.com/api/admin/client-errors",
-  path: "/admin",
 };
 
 let prisma: PrismaClient;
@@ -80,14 +77,23 @@ describe("POST /api/admin/client-errors", () => {
   });
 
   it("returns 400 for an invalid payload", async () => {
-    const res = await postClientError(adminCookie, { source: "csp-violation" });
+    const res = await postClientError(adminCookie, { source: "person@example.com" });
     expect(res.status).toBe(400);
   });
 
-  it("accepts a valid report from an authenticated session", async () => {
+  it("accepts a valid report from a full session without an admin role", async () => {
     const res = await postClientError(adminCookie, VALID_PAYLOAD);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it.each([undefined, "https://other.example.com"])("rejects a missing or foreign Origin (%s)", async (origin) => {
+    const res = await app.request("/api/admin/client-errors", {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}) },
+      body: JSON.stringify(VALID_PAYLOAD),
+    });
+    expect(res.status).toBe(403);
   });
 
   describe("rate limiting", () => {

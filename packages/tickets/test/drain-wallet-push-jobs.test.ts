@@ -7,7 +7,8 @@ vi.mock("../src/claim-admin-job.js", () => ({
 vi.mock("../src/reissue-wallet-pass.js", () => ({
   reissueOneWalletPass: vi.fn(),
 }));
-vi.mock("@admitto/wallet", () => ({
+vi.mock("@admitto/wallet", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@admitto/wallet")>(),
   resolveWalletProvider: vi.fn(),
 }));
 

@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { PrismaClient } from "@admitto/db";
 import { decryptFromString } from "@admitto/crypto";
 import { eventEndsAtUtc } from "@admitto/shared";
@@ -70,7 +71,7 @@ export async function reissueOneWalletPass(
       });
     } catch (updateErr) {
       // Bookkeeping only - must not replace the real provider error below (bot review).
-      console.error("reissueOneWalletPass: failed to record last_error_code:", updateErr);
+      console.error("reissueOneWalletPass: failed to record last_error_code:", { reason: walletFailureCode(updateErr) });
     }
     throw err;
   }

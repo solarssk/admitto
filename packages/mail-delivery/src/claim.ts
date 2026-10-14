@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient, EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
+import { nextDeliveryRevision, withDeliveryOwnership } from "./ownership.js";
 import { lockAttendeeRow } from "@admitto/tickets";
 
 export interface FrozenMessage {
@@ -8,9 +9,9 @@ export interface FrozenMessage {
 }
 
 export type ClaimResult =
-  | { action: "send"; deliveryId: string; message: FrozenMessage }
+  | { action: "send"; deliveryId: string; queuedAt: Date; message: FrozenMessage }
   | { action: "skip"; reason: "already_sent" | "in_flight" | "erased" }
-  | { action: "retry_existing"; deliveryId: string; message: FrozenMessage };
+  | { action: "retry_existing"; deliveryId: string; queuedAt: Date; message: FrozenMessage };
 
 export interface ClaimInitialInput {
   organizationId: string;
@@ -138,18 +139,21 @@ async function resolveLostRace(
 async function claimRetryExisting(
   input: ClaimInitialInput,
   existingId: string,
+  queuedAt: Date,
   message: FrozenMessage,
   prisma: PrismaClient,
 ): Promise<ClaimResult> {
+  const revision = nextDeliveryRevision(queuedAt);
   const claimed = await prisma.emailDelivery.updateMany({
     where: {
       id: existingId,
+      queued_at: queuedAt,
       status: "failed",
       retryable: true,
     },
     data: {
       status: "queued",
-      queued_at: new Date(),
+      queued_at: revision,
       batch_id: input.batchId,
       client_timezone: input.timezone ?? null,
       actor_user_id: input.actorUserId ?? null,
@@ -162,6 +166,7 @@ async function claimRetryExisting(
   return {
     action: "retry_existing",
     deliveryId: existingId,
+    queuedAt: revision,
     message,
   };
 }
@@ -169,6 +174,7 @@ async function claimRetryExisting(
 async function claimReclaimCancelled(
   input: ClaimInitialInput,
   existingId: string,
+  queuedAt: Date,
   now: Date,
   prisma: PrismaClient,
 ): Promise<ClaimResult> {
@@ -182,7 +188,7 @@ async function claimReclaimCancelled(
   // actually completed.
   const data = {
     status: "queued" as const,
-    queued_at: now,
+    queued_at: nextDeliveryRevision(queuedAt, now),
     created_at: now,
     batch_id: input.batchId,
     template_id: input.templateId,
@@ -206,7 +212,7 @@ async function claimReclaimCancelled(
   // An erased attendee's cancelled row stays cancelled.
   const claimed = await prisma.$transaction(async (tx) => {
     if ((await lockAttendeeRow(tx, input.attendeeId))?.erased) return "erased" as const;
-    return tx.emailDelivery.updateMany({ where: { id: existingId, status: "cancelled" }, data });
+    return tx.emailDelivery.updateMany({ where: { id: existingId, status: "cancelled", queued_at: queuedAt }, data });
   });
   if (claimed === "erased") return { action: "skip", reason: "erased" };
   if (claimed.count === 0) {
@@ -215,6 +221,7 @@ async function claimReclaimCancelled(
   return {
     action: "send",
     deliveryId: existingId,
+    queuedAt: data.queued_at,
     message: {
       to: input.recipientEmail,
       subject: input.renderedSubject,
@@ -244,6 +251,7 @@ export async function claimInitialDelivery(
     return {
       action: "send",
       deliveryId: created.id,
+      queuedAt: created.queued_at,
       message: {
         to: input.recipientEmail,
         subject: input.renderedSubject,
@@ -269,10 +277,11 @@ export async function claimInitialDelivery(
 
   const result = classifyExisting(existing);
   if (result.action === "retry_existing") {
-    return claimRetryExisting(input, existing.id, result.message, prisma);
+    return await withDeliveryOwnership(existing.id, async (owned) => { await owned(); return claimRetryExisting(input, existing.id, existing.queued_at, result.message, prisma); })
+      ?? { action: "skip", reason: "in_flight" };
   }
   if (result.action === "reclaim_cancelled") {
-    return claimReclaimCancelled(input, existing.id, now, prisma);
+    return claimReclaimCancelled(input, existing.id, existing.queued_at, now, prisma);
   }
   return result;
 }
@@ -282,7 +291,7 @@ export async function claimInitialDelivery(
 export async function createResendDelivery(
   input: ClaimInitialInput,
   prisma: PrismaClient,
-): Promise<{ deliveryId: string; message: FrozenMessage } | null> {
+): Promise<{ deliveryId: string; queuedAt: Date; message: FrozenMessage } | null> {
   const now = new Date();
   const created = await prisma.$transaction(async (tx) => {
     if ((await lockAttendeeRow(tx, input.attendeeId))?.erased) return null;
@@ -291,6 +300,7 @@ export async function createResendDelivery(
   if (!created) return null;
   return {
     deliveryId: created.id,
+    queuedAt: created.queued_at,
     message: {
       to: input.recipientEmail,
       subject: input.renderedSubject,

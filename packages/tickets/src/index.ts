@@ -206,8 +206,10 @@ export type {
 export {
   redactAttendeeListFiltersForStorage,
   scrubExportJobResultJson,
+  isExportInvalidated,
 } from "./export-job-privacy.js";
 export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
+export { safeExportJobError } from "./export-job-errors.js";
 export type {
   AttendeeCustomFieldFilter,
   AttendeeExportRsvpStatus,
@@ -241,3 +243,5 @@ export type {
   LookupAttendeeResult,
 } from "./types.js";
 export type { EventOpsConfig } from "./ops-config.js";
+
+export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "./event-capacity.js";

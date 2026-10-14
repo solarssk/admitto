@@ -9,7 +9,8 @@ vi.mock("../src/send-wallet-message.js", () => ({
   loadWalletMessageTargets: vi.fn(),
   sendWalletMessage: vi.fn(),
 }));
-vi.mock("@admitto/wallet", () => ({
+vi.mock("@admitto/wallet", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@admitto/wallet")>(),
   resolveWalletProvider: vi.fn(),
 }));
 

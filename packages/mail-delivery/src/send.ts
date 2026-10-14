@@ -36,6 +36,7 @@ import {
 import { mapSendResultToDelivery, type DeliveryStatusUpdate } from "./mapSendResult.js";
 import { splitDisplayName } from "./name.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
+import { withDeliveryOwnership } from "./ownership.js";
 import { readDeliveriesBeforeSend } from "./sendable.js";
 import type { SendTicketEmailsResult } from "./types.js";
 
@@ -68,6 +69,7 @@ export interface MailDeliveryDeps {
 
 interface PendingSend {
   deliveryId: string;
+  queuedAt: Date;
   attendeeId: string;
   to: string;
   frozenSubject: string;
@@ -378,6 +380,7 @@ async function claimOrResendPending(
     kind: "pending",
     pending: {
       deliveryId: claim.deliveryId,
+      queuedAt: claim.queuedAt,
       attendeeId,
       to: claim.message.to,
       frozenSubject: claim.message.subject,
@@ -400,6 +403,7 @@ async function createResendPending(
   if (!created) return null;
   return {
     deliveryId: created.deliveryId,
+    queuedAt: created.queuedAt,
     attendeeId,
     to: created.message.to,
     frozenSubject: created.message.subject,
@@ -426,66 +430,64 @@ function isMailDestinationFailure(err: unknown): boolean {
  * Returns the number of messages accepted by the provider (0 when the whole batch send throws).
  * Exported for unit tests of destination-error rethrow behaviour.
  */
-export async function deliverPendingBatch(
-  mailer: MailerAdapter,
-  pending: PendingSend[],
-  prisma: PrismaClient,
-): Promise<number> {
-  // The messages were frozen when their deliveries were claimed, and every attendee of the request
-  // is processed before the batch goes out: leave out the ones whose delivery was cancelled or
-  // emptied since (what an erasure does). Read under the attendees' row locks, so an erasure that
-  // is still open is waited for.
-  const current = await readDeliveriesBeforeSend(prisma, pending);
-  const toSend = pending.filter((item) => {
-    const row = current.get(item.deliveryId);
-    return row !== undefined && row.status !== "cancelled" && row.recipient_email !== null;
-  });
-  if (toSend.length === 0) return 0;
-
+async function sendOwnedPending(
+  item: PendingSend, message: MailMessage, prisma: PrismaClient, mailer: MailerAdapter, assertOwned: () => Promise<void>,
+) {
+  const fresh = (await readDeliveriesBeforeSend(prisma, [item])).get(item.deliveryId);
+  if (fresh?.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady ||
+    fresh.queued_at.getTime() !== item.queuedAt.getTime()) return undefined;
+  const where = { id: item.deliveryId, queued_at: item.queuedAt, attempts: fresh.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } };
   try {
-    const batchResult = await sendBatch(
-      mailer,
-      toSend.map((item) => materializePendingMessage(item)),
-    );
-
-    await Promise.all(
-      batchResult.results.map((result, index) => {
-        const item = toSend.at(index);
-        if (!item) return Promise.resolve();
-        const update = mapSendResultToDelivery(result);
-        // recipient_email: an erased attendee's delivery is emptied, and stays that way.
-        return prisma.emailDelivery.updateMany({
-          where: { id: item.deliveryId, recipient_email: { not: null } },
-          data: {
-            ...update,
-            provider: result.provider,
-            ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
-          },
-        });
-      }),
-    );
-
-    return batchResult.sent;
+    await assertOwned();
+    const sent = await mailer.send(message);
+    await assertOwned();
+    await prisma.emailDelivery.updateMany({
+      where, data: { ...mapSendResultToDelivery(sent), provider: sent.provider,
+        ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },
+    });
+    return sent;
   } catch (err) {
-    const failureUpdate = deliveryUpdateFromBatchError(err);
-    await Promise.all(
-      toSend.map((item) =>
-        prisma.emailDelivery.updateMany({
-          where: { id: item.deliveryId, recipient_email: { not: null } },
-          data: {
-            ...failureUpdate,
-            ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
-          },
-        }),
-      ),
-    );
-    // Destination SSRF/DNS failures must surface to API mappers (422), not look like a
-    // soft batch failure with only failed EmailDelivery rows.
-    // Duck-type on name/code (not instanceof): Vitest and some dual package graphs can
-    // load two copies of MailDestinationError, so identity checks alone miss the rethrow.
-    if (isMailDestinationFailure(err)) {
-      throw err;
+    await assertOwned();
+    await prisma.emailDelivery.updateMany({
+      where: { ...where, status: { not: "cancelled" } },
+      data: { ...deliveryUpdateFromBatchError(err),
+        ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },
+    });
+    if (isMailDestinationFailure(err)) throw err;
+    return undefined;
+  }
+}
+
+async function failQueuedPending(item: PendingSend, prisma: PrismaClient, err: unknown, owned: () => Promise<void>) {
+  const fresh = (await readDeliveriesBeforeSend(prisma, [item])).get(item.deliveryId);
+  if (fresh?.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== item.queuedAt.getTime()) return;
+  await owned();
+  await prisma.emailDelivery.updateMany({
+    where: { id: item.deliveryId, status: "queued", queued_at: item.queuedAt, attempts: fresh.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
+    data: { ...deliveryUpdateFromBatchError(err), ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },
+  });
+}
+
+export async function deliverPendingBatch(mailer: MailerAdapter, pending: PendingSend[], prisma: PrismaClient): Promise<number> {
+  const messages = pending.map(materializePendingMessage);
+  const byMessage = new Map(messages.map((message, index) => [message, pending.at(index)!]));
+  const ownedMailer: MailerAdapter = {
+    ...mailer,
+    send: async (message) => {
+      const item = byMessage.get(message);
+      if (!item) throw new Error("Missing pending delivery identity");
+      const result = await withDeliveryOwnership(item.deliveryId, (owned) => sendOwnedPending(item, message, prisma, mailer, owned));
+      // A skipped contender is not a provider failure and never updates the delivery.
+      return result ?? { status: "rejected", provider: mailer.provider };
+    },
+  };
+  try {
+    return (await sendBatch(ownedMailer, messages)).sent;
+  } catch (err) {
+    for (const item of pending) {
+      await withDeliveryOwnership(item.deliveryId, (owned) => failQueuedPending(item, prisma, err, owned)); // NOSONAR - failed rows are handled sequentially
     }
+    if (isMailDestinationFailure(err)) throw err;
     return 0;
   }
 }

@@ -7,20 +7,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { prisma } from "@admitto/db";
-import { acquireEventTicketTypesLock } from "@admitto/tickets";
+import { prisma, type Prisma } from "@admitto/db";
+import { acquireEventTicketTypesLock, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "@admitto/tickets";
 import { parseAttendees } from "./parser.js";
 import { commitImport } from "./importer.js";
 import { formatSkippedImportRow } from "./cli-output.js";
 import { loadImportTicketTypes } from "./ticket-type-import.js";
 import type { AttendeeRow, ImportSummary } from "./types.js";
-
-/** Lock wait + row writes share this budget - same values as import-api-routes.ts's
- * handleImportCommit (queued concurrent commits), duplicated here since this package can't
- * depend on apps/web (CodeRabbit review: the default $transaction timeout is 5s, too short for a
- * large CSV competing with other imports for the per-event lock). */
-const IMPORT_TX_TIMEOUT_MS = 120_000;
-const IMPORT_TX_MAX_WAIT_MS = 30_000;
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -87,43 +80,46 @@ export async function runImport(options: RunImportOptions): Promise<RunImportRes
     };
   }
 
-  const { summary, rowsCommitted, lockInvalidatedRows } = await prisma.$transaction(
-    async (tx) => {
-      let rowsToCommit = parsed.validRows;
-      let freshTicketTypes = ticketTypes;
-      const lockInvalidated: { rowIndex: number; reason: string }[] = [];
+  const prepare = async (tx: Prisma.TransactionClient) => {
+    let rowsToCommit = parsed.validRows;
+    let freshTicketTypes = ticketTypes;
+    const lockInvalidated: { rowIndex: number; reason: string }[] = [];
 
-      // Only taken when the import actually validates against a catalog - guarded the same way
-      // import-api-routes.ts's handleImportCommit guards it, in case a future caller opts out.
-      if (ticketTypes) {
-        await acquireEventTicketTypesLock(tx, eventId);
+    // Only taken when the import actually validates against a catalog - guarded the same way
+    // import-api-routes.ts's handleImportCommit guards it, in case a future caller opts out.
+    if (ticketTypes) {
+      await acquireEventTicketTypesLock(tx, eventId);
 
-        freshTicketTypes = await loadImportTicketTypes(tx, eventId);
-        const freshKeys = new Set(freshTicketTypes.map((t) => t.key));
-        const stillValid: AttendeeRow[] = [];
-        for (const row of parsed.validRows) {
-          if (row.ticket_type !== undefined && !freshKeys.has(row.ticket_type)) {
-            lockInvalidated.push({
-              rowIndex: row.rowIndex,
-              reason: `Unknown ticket type: "${row.ticket_type}"`,
-            });
-          } else {
-            stillValid.push(row);
-          }
+      freshTicketTypes = await loadImportTicketTypes(tx, eventId);
+      const freshKeys = new Set(freshTicketTypes.map((t) => t.key));
+      const stillValid: AttendeeRow[] = [];
+      for (const row of parsed.validRows) {
+        if (row.ticket_type !== undefined && !freshKeys.has(row.ticket_type)) {
+          lockInvalidated.push({
+            rowIndex: row.rowIndex,
+            reason: `Unknown ticket type: "${row.ticket_type}"`,
+          });
+        } else {
+          stillValid.push(row);
         }
-        rowsToCommit = stillValid;
       }
+      rowsToCommit = stillValid;
+    }
 
-      const result = await commitImport(
-        eventId,
-        rowsToCommit,
-        { overwrite, dryRun: !commit, ownedTransaction: true, ticketTypes: freshTicketTypes },
-        tx,
-      );
-      return { summary: result, rowsCommitted: rowsToCommit.length, lockInvalidatedRows: lockInvalidated };
-    },
-    { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
-  );
+    return { rowsToCommit, freshTicketTypes, lockInvalidated };
+  };
+  const work = async (tx: Prisma.TransactionClient, { rowsToCommit, freshTicketTypes, lockInvalidated }: Awaited<ReturnType<typeof prepare>>) => {
+    const result = await commitImport(
+      eventId,
+      rowsToCommit,
+      { overwrite, dryRun: !commit, ownedTransaction: true, ticketTypes: freshTicketTypes },
+      tx,
+    );
+    return { summary: result, rowsCommitted: rowsToCommit.length, lockInvalidatedRows: lockInvalidated };
+  };
+  const { summary, rowsCommitted, lockInvalidatedRows } = commit
+    ? await runEventCapacityTransaction(prisma, eventId, prepare, work)
+    : await prisma.$transaction(async (tx) => work(tx, await prepare(tx)), EVENT_CAPACITY_TRANSACTION_OPTIONS);
 
   return {
     warnings: parsed.warnings,

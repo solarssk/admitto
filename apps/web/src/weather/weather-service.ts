@@ -206,6 +206,7 @@ export class WeatherService {
       lon,
       eventYmd,
       weatherConfigCacheScope(this.config),
+      tz,
     );
     const cached = await this.cache.get(key);
     if (cached) {

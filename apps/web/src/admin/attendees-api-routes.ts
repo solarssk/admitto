@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
@@ -42,6 +43,8 @@ import {
   ATTENDEE_MAIL_STATUS_FILTERS,
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
+  isExportInvalidated,
+  safeExportJobError,
   countFilteredAttendees,
   findFilteredAttendeesForList,
   findSelectedAttendeesForExport,
@@ -111,7 +114,7 @@ import { loadAttendeeErasureRecordForViewer, type AttendeeErasureRecord } from "
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation, runEventCapacityTransaction } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -1310,7 +1313,7 @@ export async function handleGetExportJob(c: Context, db: PrismaClient): Promise<
   return c.json({
     jobId: job.id,
     status: job.status,
-    error: job.error,
+    error: job.status === "failed" ? safeExportJobError(job.error) : null,
     filename: job.filename,
     rowCount: job.created_count,
     created_at: job.created_at.toISOString(),
@@ -1323,7 +1326,10 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
   const loaded = await loadEventAdminJob(c, db, "export");
   if (loaded instanceof Response) return loaded;
   const { job } = loaded;
-  if (job.status !== "succeeded" || !job.storage_key) return c.json({ error: "not_ready" }, 404);
+  c.header("Cache-Control", "no-store");
+  if (job.status !== "succeeded" || !job.storage_key || isExportInvalidated(job.result_json)) {
+    return c.json({ error: "not_ready" }, 404);
+  }
 
   const { getDefaultStorage, StoragePathError } = await import("@admitto/storage");
   let bytes: Buffer;
@@ -1334,6 +1340,11 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
     // deletion): the same answer as a job whose file is already gone.
     if (err instanceof StoragePathError && err.message === "not_found") return c.json({ error: "not_ready" }, 404);
     throw err;
+  }
+  // Storage IO can overlap an erasure. Do not serve a snapshot invalidated while the file was read.
+  const current = await db.adminJob.findUnique({ where: { id: job.id }, select: { result_json: true, storage_key: true } });
+  if (!current || current.storage_key !== job.storage_key || isExportInvalidated(current.result_json)) {
+    return c.json({ error: "not_ready" }, 404);
   }
   const meta =
     job.result_json && typeof job.result_json === "object" && !Array.isArray(job.result_json)
@@ -2035,20 +2046,22 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   const updateData = buildPatchUpdateData(profileChanges, rsvpChange, statusChange);
 
   try {
-    const updated = await db.$transaction((tx) =>
-      runPatchAttendeeTransaction(tx, {
-        c,
-        eventId,
-        attendeeId,
-        existing,
-        profileChanges,
-        profilePatchTicketType: profilePatch.ticket_type,
-        rsvpChange,
-        statusChange,
-        expectedUpdatedAt,
-        updateData,
-      }),
-    );
+    const operation = (tx: Prisma.TransactionClient) => runPatchAttendeeTransaction(tx, {
+      c,
+      eventId,
+      attendeeId,
+      existing,
+      profileChanges,
+      profilePatchTicketType: profilePatch.ticket_type,
+      rsvpChange,
+      statusChange,
+      expectedUpdatedAt,
+      updateData,
+    });
+    const updated = isCapacityReactivation(existing.status, statusChange)
+      ? await runEventCapacityTransaction(db, eventId, (tx) =>
+        guardPatchTicketTypeChange(c, tx, eventId, profileChanges, profilePatch.ticket_type), operation)
+      : await db.$transaction(operation);
 
     let walletPass = updated.wallet_pass;
     let walletPassMaybeStale = false;
@@ -2153,7 +2166,7 @@ export async function deleteProviderPassesBestEffort(
         deleted.add(batch[index]!.providerPassId);
         continue;
       }
-      console.error("wallet pass delete (erasure) failed:", outcome.reason);
+      console.error("wallet pass delete (erasure) failed:", { reason: walletFailureCode(outcome.reason) });
       recordSystemLog({
         level: "error",
         source: "admin",
@@ -2273,7 +2286,7 @@ async function syncWalletPassOnStatusChangeBestEffort(
   try {
     await commandWalletPassStatusCascade(db, attendeeId, walletPass.provider_pass_id, provider, statusChange);
   } catch (err) {
-    console.error(`wallet pass ${statusChange} cascade failed:`, err);
+    console.error(`wallet pass ${statusChange} cascade failed:`, { reason: walletFailureCode(err) });
     recordSystemLog({
       level: "error",
       source: "admin",
@@ -2400,7 +2413,7 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
       adminAuditFromContext(c),
     );
   } catch (err) {
-    console.error("wallet attendee-change push failed:", err);
+    console.error("wallet attendee-change push failed:", { reason: walletFailureCode(err) });
     recordSystemLog({
       level: "error",
       source: "admin",
@@ -3519,7 +3532,7 @@ async function runBulkWalletAction<K extends string>(
       );
       for (const [index, outcome] of settled.entries()) {
         if (outcome.status === "rejected") {
-          console.error(`bulk wallet ${label}: failed:`, outcome.reason);
+          console.error(`bulk wallet ${label}: failed:`, { reason: walletFailureCode(outcome.reason) });
           recordBulkAttendeeActionFailure(c, eventId, action, {
             attendeeId: batch[index]!.attendeeId,
           });
@@ -3532,7 +3545,7 @@ async function runBulkWalletAction<K extends string>(
 
     return c.json(counts);
   } catch (err) {
-    console.error(`bulk wallet ${label} failed:`, err);
+    console.error(`bulk wallet ${label} failed:`, { reason: walletFailureCode(err) });
     recordBulkAttendeeActionFailure(c, eventId, action, {
       attendeeCount: parsed.data.attendeeIds.length,
     });
@@ -3711,7 +3724,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   }
 
   try {
-    const created = await db.$transaction(async (tx) => {
+    const created = await runEventCapacityTransaction(db, eventId, async (tx) => {
       // Catalog membership check (batch 04 / #351) - moved inside the transaction and locked
       // against a concurrent ticket-type DELETE (TOCTOU fix, code review): validating on the bare
       // `db` before this transaction opened let a concurrent delete's in-use recheck pass (it
@@ -3724,7 +3737,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
         if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
       }
 
-      await acquireEventCapacityLock(tx, eventId);
+    }, async (tx) => {
       const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
       if (capacityResult instanceof Response) throw new TransactionResponseError(capacityResult);
       const capacityForced =
@@ -4107,7 +4120,7 @@ function serializeWalletPassAction(pass: WalletPassRow): WalletPassActionDto {
  * for the frontend to map through operatorApiErrorMessage rather than showing a raw message. */
 function walletProviderErrorResponse(c: Context, err: unknown, logContext: string): Response {
   const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
-  console.error(`${logContext} failed:`, err);
+  console.error(`${logContext} failed:`, { reason: walletFailureCode(err) });
   return c.json({ error: code }, 502);
 }
 
@@ -4409,7 +4422,7 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
       // A malformed token_enc, or one written under an ENCRYPTION_KEY version no longer
       // available, must not escape as a bare 500 - same machine-readable response as the
       // "nothing to build a barcode from" case right below.
-      console.error("handleReissueAttendeeWalletPass token decrypt failed:", err);
+      console.error("handleReissueAttendeeWalletPass token decrypt failed:", { reason: walletFailureCode(err) });
       return c.json({ error: "attendee_not_issued" }, 409);
     }
   }

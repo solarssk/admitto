@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassProvider } from "@admitto/wallet";
 import { liveAttendeeIds } from "./lock-check.js";
@@ -125,7 +126,7 @@ export async function sendWalletMessage(
       // re-sending a notification that already reached its recipients.
       await onProgress?.(sent + skipped + erroredAttendeeIds.length);
     } catch (err) {
-      console.error("wallet message progress update failed:", err);
+      console.error("wallet message progress update failed:", { reason: walletFailureCode(err) });
     }
     await sendFrom(index + 1);
   };

@@ -380,7 +380,7 @@ describe("drainExportJobs", () => {
     });
     expect(db.adminJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ error: "boom-string" }),
+        data: expect.objectContaining({ error: "Export failed. Run the export again." }),
       }),
     );
   });
@@ -450,7 +450,7 @@ describe("drainExportJobs", () => {
       expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
           where: { id: "job-export-1", status: "running" },
-          data: expect.objectContaining({ status: "failed", error: "database is down" }),
+          data: expect.objectContaining({ status: "failed", error: "Export failed. Run the export again." }),
         }),
       );
     });
@@ -468,7 +468,7 @@ describe("drainExportJobs", () => {
       });
       expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ status: "failed", error: "database is down" }),
+          data: expect.objectContaining({ status: "failed", error: "Export failed. Run the export again." }),
         }),
       );
     });
@@ -509,8 +509,21 @@ describe("drainExportJobs", () => {
         "worker",
         "error",
         "export_file_left_in_storage",
-        expect.objectContaining({ key: "org/evt/export.csv", reason: "Error" }),
+        expect.objectContaining({ key: "org/evt/export.csv", reason: "storage_delete_failed" }),
       );
+    });
+
+    it.each([
+      Object.assign(new Error("private@example.com"), { code: "private@example.com", name: "private@example.com" }),
+      "private@example.com",
+    ])("does not publish arbitrary cleanup error codes, names or thrown values", async (fault) => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+      db.adminJob.updateMany.mockResolvedValue(notRunning);
+      storage.delete.mockRejectedValue(fault);
+      await drainExportJobs(db as never, storage);
+      expect(emitSystemLog).toHaveBeenCalledWith("worker", "error", "export_file_left_in_storage",
+        expect.objectContaining({ reason: "storage_delete_failed" }));
+      expect(JSON.stringify(vi.mocked(emitSystemLog).mock.calls)).not.toContain("private@example.com");
     });
 
     it("says nothing of a file it took back", async () => {
@@ -580,7 +593,7 @@ describe("drainExportJobs", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           status: "failed",
-          error: "render boom",
+          error: "Export failed. Run the export again.",
           result_json: {
             request: {
               kind: "attendees_filtered",

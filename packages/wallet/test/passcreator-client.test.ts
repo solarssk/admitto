@@ -32,6 +32,45 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe("PassCreatorClient.createPass", () => {
+  it.each([
+    [400, "refused", "wallet_provider_rejected"],
+    [400, "duplicate", "wallet_provider_duplicate"],
+    [401, "refused", "wallet_provider_unauthorized"],
+    [404, "refused", "wallet_provider_not_found"],
+  ])("keeps reflected private fields out of errors for HTTP %s (%s)", async (status, detail, code) => {
+    const markers = ["Synthetic Private Guest", "private@example.com", "private-barcode-credential"];
+    const client = new PassCreatorClient(CONFIG, async () => jsonResponse(status as number, {
+      success: false, errors: [`${detail}: ${markers.join("; ")}`],
+    }));
+    const error = await client.createPass(INPUT).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WalletProviderError);
+    expect(error).toMatchObject({ code });
+    for (const marker of markers) {
+      expect(String(error)).not.toContain(marker);
+      expect((error as Error).stack).not.toContain(marker);
+    }
+  });
+
+  it("keeps reflected transport failures out of logs and escaping errors", async () => {
+    resetSystemLogBufferForTest();
+    const marker = "Synthetic Private Guest private@example.com private-barcode-credential";
+    const client = new PassCreatorClient(CONFIG, async () => { throw new Error(marker); });
+    const error = await client.createPass(INPUT).catch((err: unknown) => err);
+    expect(error).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(String(error)).not.toContain(marker);
+    expect(JSON.stringify(querySystemLogs({ source: "wallet" }))).not.toContain(marker);
+  });
+
+  it.each(["private@example.com", { reflected: "private@example.com" }])("normalizes malformed error fields without leaking a parse exception", async (errors) => {
+    const client = new PassCreatorClient(CONFIG, async () => jsonResponse(400, { success: false, errors }));
+    await expect(client.createPass(INPUT)).rejects.toMatchObject({ code: "wallet_provider_rejected", message: "PassCreator request rejected." });
+  });
+
+  it("discards public-key response text", async () => {
+    const client = new PassCreatorClient(CONFIG, async () => new Response("Synthetic Guest private@example.com private-barcode", { status: 502 }));
+    await expect(client.getWebhookPublicKey()).rejects.toMatchObject({ code: "wallet_provider_rejected", message: "PassCreator request rejected." });
+  });
+
   it("sends templateId/userProvidedId/enforceUniqueUserProvidedId inside data, no Bearer prefix", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(url).toBe("https://pc.test/api/v3/pass?async=false");
@@ -157,7 +196,7 @@ describe("PassCreatorClient.createPass", () => {
 
     await expect(client.createPass(INPUT)).rejects.toMatchObject({
       code: "wallet_provider_timeout",
-      message: expect.stringContaining("connection reset"),
+      message: "PassCreator request failed.",
     });
   });
 
@@ -660,7 +699,7 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.findByUserProvidedId("admitto:event1:attendee1");
     expect(result).toBeNull();
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("no row matching"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith("PassCreator query-language search returned no matching row", { rowCount: 1 });
     consoleErrorSpy.mockRestore();
   });
 
@@ -804,7 +843,7 @@ describe("PassCreatorClient.getPassSnapshot", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.getPassSnapshot(REF);
     expect(result).toBeNull();
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("no row matching"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith("PassCreator query-language search returned no matching row", { rowCount: 1 });
     consoleErrorSpy.mockRestore();
   });
 

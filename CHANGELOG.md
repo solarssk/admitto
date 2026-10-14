@@ -44,6 +44,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Email retries and worker sends now share per-delivery ownership: concurrent attempts are skipped, cancelled/reclaimed snapshots and stale outcomes cannot replace the current revision, and retention preserves newly queued message bodies and in-flight retries while their provider outcomes are recorded.
+
+- CSV and XLSX imports now preserve quoted multiline fields as one attendee record. Upload limits and diagnostic row numbers count non-empty data records; malformed CSV records receive a fixed validation error.
+
+- Address search and map-pin lookup now use separate cache entries. Daily forecasts also keep each event time zone separate, so one event cannot reuse another time zone's temperature range.
+
+- Docker Compose now gives the worker the same Redis credentials as the application and migration service, so a stale reference URL cannot leave background jobs using an old password. Preflight warnings and deployment guidance cover all three services.
+- Invalid or out-of-range import recovery intervals now fall back to the default instead of producing an invalid database cutoff.
+
+- Manual attendee creation, restoration and imports now share the final event-capacity lock, so concurrent operations cannot consume the same last place. Lock acquisition leaves a full work budget for waiting operations; a slow acquisition is retried only before writes begin. The standalone importer also checks capacity before committing; authorized force overrides remain available through the existing admin import flow.
+
+- Undo check-in and new admissions now serialize the latest-entry decision per event and device, including admissions of different attendees. Changes to the selected attendee are also serialized before validation, so an overlapping undo cannot clear a newer admission or record a second reversal of the same admission. Undo also checks the exact admission ID recorded by an earlier undo or revocation, so equal timestamps and nonchronological IDs cannot make an old request clear a replacement admission. Admin revocation also locks admission state before selecting and skips already reversed entries, so repeated revocations name the live admission. Badge rollback and the audit remain in the same transaction.
+
 - Chrome DevTools no longer reports "Incorrect use of <label for=FORM_ELEMENT>" on the Communication templates tab (the MJML/HTML body caption pointed at the editor's contenteditable, which is not a form field) or "A form field element should have an id or name attribute" on the attendee Notes tab, the Overview pinned note, the check-in note, and on any `Input` or `Select` without a visible label.
 - The arrows on a scrolling tab strip (Event settings, Organisation settings) cover the clipped tab names again: the strip had grown 4px past its box for the focus ring, so a sliver of the first or last name showed beside each arrow.
 - Menus and pickers (the kebab menu in Two-factor authentication, More actions, filters, the searchable selects and the like) are now placed by the Floating UI library instead of our own measuring code. They no longer flash in the wrong place for a frame when they open next to the right edge of the window (they used to be measured while squeezed against the edge, so long hints wrapped and the menu was placed too far right), they stay inside the window with a margin on narrow screens and when the page is zoomed, open above the button when there is not enough room below, and keep following the button when their content changes size.
@@ -100,6 +113,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The topbar **System status** no longer says "All systems normal" before it knows. For a superadmin it showed a green dot and "All systems normal" for as long as the health checks were still being read, which on a slow or failing server is exactly when it should not; it now says "Checking systems…" with a neutral dot (nothing is drawn for the first moment, so a quick answer shows only the result), and a failure that is already known is shown at once. With an event open, the Email sending row waits for that event's own mail settings too (the organization's status could be "Connected" while the event overrides it with a transport that never delivers), and if the checks (or the event's settings) do not answer within 30 seconds the menu stops saying "Checking…": the checks show as Unavailable with a **Check again** item in the menu (reachable with the arrow keys, and said aloud to a screen reader), and the event's row falls back to the organization's status.
 
 ### Security
+
+- Custom email templates now preserve quoted HTML attribute context when an attribute contains literal angle brackets, so attendee values containing quotes remain data instead of creating another attribute.
+
+- Import upload and queue logs now use identifiers, counts and safe file metadata without recording uploaded filenames; authorized import history keeps the filename.
+
+- Production browser error reports now contain only a fixed error category. Exception text, names, stacks and page URLs stay out of server and System logs; the server independently rejects arbitrary diagnostic fields. Local development diagnostics remain detailed.
+
+- Wallet provider failures now use fixed error messages and safe log categories, so reflected names, email addresses and barcode credentials do not enter routine logs. Retry, duplicate recovery and pass-removal behavior are preserved.
+
+- Import and export failures now store fixed, privacy-safe messages instead of upstream exception text. Job status and import history also hide unknown errors saved earlier, while preserving capacity, erasure and worker-recovery messages.
+
+- Erasing or removing an attendee now immediately makes earlier exports of that event unavailable, even when deleting their stored files fails. File cleanup remains retryable, and a new export made after the change can still be downloaded.
 
 - Adding a passkey, a security key or an authenticator app to an account that already has a second-factor method now asks to confirm with a code from an existing method, a backup code, or an existing passkey. Before, anyone holding a signed-in session (for example a stolen session cookie) could attach their own second factor to the account without proving anything. The account's first method needs no confirmation. The API takes the proof in a new `step_up` field on `POST /api/account/mfa/totp/confirm` and `POST /api/account/mfa/webauthn/register/finish`.
 - "Remember this device" can no longer be set by a session that did not itself pass two-factor sign-in a moment ago. Before, any signed-in session (for example a stolen session cookie, or a session that came from single sign-on or a passkey sign-in) could mark a browser as trusted and then skip two-factor on later password sign-ins, even after that session ended. The offer after a passkey check still works; it now also records an audit entry like the checkbox does. Removing an authenticator app or a passkey now also forgets every remembered device on the account. Sessions get a new `mfa_verified_at` column (migration is additive; existing sessions simply cannot remember a device until they sign in again).
