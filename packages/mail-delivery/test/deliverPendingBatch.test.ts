@@ -7,6 +7,7 @@ import {
 } from "@admitto/mailer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SMTP_CAPABILITIES } from "../../mailer/src/capabilities.js";
+import { SNAPSHOT_UNUSABLE_ERROR } from "../src/snapshot-unusable.js";
 import { deliverPendingBatch } from "../src/send.js";
 
 afterEach(() => {
@@ -231,5 +232,48 @@ describe("deliverPendingBatch", () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "att-2:initial" }));
     });
+  });
+
+  it("fails a snapshot the renderer refuses on its own, for good, and still sends the rest", async () => {
+    const update = vi.fn(async () => ({}));
+    const prisma = fakePrisma(update);
+    const send = vi.fn(async (message: MailMessage): Promise<SendResult> => ({
+      status: "accepted",
+      provider: "smtp",
+      providerMessageId: message.idempotencyKey,
+    }));
+    const adapter: MailerAdapter = {
+      provider: "smtp",
+      capabilities: SMTP_CAPABILITIES,
+      send,
+      close: vi.fn(async () => undefined),
+    };
+    const poisoned = { ...pendingFixture("del-poison"), frozenHtml: "<a href={{ticket_url}}>Open</a>" };
+
+    const sent = await deliverPendingBatch(adapter, [poisoned, pendingFixture("del-ok")], prisma);
+
+    expect(sent).toBe(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "del-poison" }),
+        data: expect.objectContaining({ status: "failed", retryable: false, error: SNAPSHOT_UNUSABLE_ERROR }),
+      }),
+    );
+  });
+
+  it("sends nothing when every snapshot is refused", async () => {
+    const update = vi.fn(async () => ({}));
+    const adapter: MailerAdapter = {
+      provider: "smtp",
+      capabilities: SMTP_CAPABILITIES,
+      send: vi.fn(),
+      close: vi.fn(async () => undefined),
+    };
+    const poisoned = { ...pendingFixture("del-poison-only"), frozenHtml: "<a href={{ticket_url}}>Open</a>" };
+
+    await expect(deliverPendingBatch(adapter, [poisoned], fakePrisma(update))).resolves.toBe(0);
+    expect(adapter.send).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
   });
 });

@@ -900,7 +900,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Nominatim/geocoding HTTP timeout (ms). No UI field."
+      "summary": "Nominatim/geocoding HTTP timeout (ms) for one upstream request, counted from when it starts; time spent in the one-request-per-second queue before it is not included. No UI field."
     },
     {
       "name": "MAPS_CONFIG_CACHE_TTL_MS",

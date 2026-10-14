@@ -3,7 +3,6 @@
  * Used by the Admitto worker `mail_delivery` job (ADR 0042).
  */
 import type { PrismaClient } from "@admitto/db";
-import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch, type BatchSummary, type MailerAdapter } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
@@ -15,6 +14,7 @@ import {
 } from "./drain-retry.js";
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
+import { snapshotUnusableUpdate, tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 import { readDeliveriesBeforeSend } from "./sendable.js";
 import { withDeliveryOwnership } from "./ownership.js";
@@ -256,10 +256,19 @@ async function sendOwnedSnapshot(
     return applied ? "failed" : "skipped";
   }
 
-  const materialized = materializeStoredDeliveryMessage(
+  const materialized = tryMaterializeStoredMessage(
     { subject: delivery.rendered_subject, html: delivery.rendered_html },
     links,
   );
+  if (!materialized) {
+    // Only this row fails, and for good: the rest of the batch and the next tick carry on.
+    await assertOwned();
+    const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
+      ...snapshotUnusableUpdate(),
+      attempts: nextMailDrainAttempts(delivery.attempts),
+    });
+    return applied ? "failed" : "skipped";
+  }
 
   const isRetry = delivery.status === "failed";
   const nextAttempts = nextMailDrainAttempts(delivery.attempts);
