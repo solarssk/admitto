@@ -35,6 +35,7 @@ let superCookie = "";
 function stubProvider(): WalletPassProvider & {
   createPass: ReturnType<typeof vi.fn>;
   updatePass: ReturnType<typeof vi.fn>;
+  deletePass: ReturnType<typeof vi.fn>;
   findByUserProvidedId: ReturnType<typeof vi.fn>;
 } {
   return {
@@ -59,7 +60,7 @@ function stubProvider(): WalletPassProvider & {
     sendPushMessage: vi.fn(),
     voidPass: vi.fn(),
     restorePass: vi.fn(),
-    deletePass: vi.fn(),
+    deletePass: vi.fn(async (_providerPassId: string): Promise<void> => undefined),
     deletePassByUserProvidedId: vi.fn(async () => false),
     findByUserProvidedId: vi.fn(async () => null),
     getPassSnapshot: vi.fn(async () => null),
@@ -906,8 +907,12 @@ describe("On-demand wallet routes", () => {
   // change landing in the window between that snapshot and this pass actually persisting would
   // otherwise let it save as "active" under a template the event no longer points at, permanently
   // orphaning it (sync, void/restore, push would all target the wrong template from then on).
-  it("marks failed, not active, when the event's Template ID changes while this request's own createPass call is in flight", async () => {
-    const provider = stubProvider();
+  //
+  // The pass this request made under the old Template ID is deleted by this same request, with the client it made it
+  // with: the admin may have replaced the API key with one of another PassCreator account too, and an erasure's
+  // follow-up only asks the account the event uses now. The row keeps no failure then; only a delete that fails is
+  // recorded (below), so that the follow-up never takes "no pass" from the new account for an answer.
+  function changeTemplateWhileCreating(provider: ReturnType<typeof stubProvider>): void {
     provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
       // Simulates an admin's Event Settings save landing in the exact window between this
       // request resolving its wallet provider and its own createPass call returning.
@@ -922,6 +927,11 @@ describe("On-demand wallet routes", () => {
         androidUrl: "https://pc.test/android/x",
       };
     });
+  }
+
+  it("deletes the pass it made, and keeps none, when the event's Template ID changes while this request's own createPass call is in flight", async () => {
+    const provider = stubProvider();
+    changeTemplateWhileCreating(provider);
     const app = makeApp(provider);
 
     try {
@@ -929,9 +939,50 @@ describe("On-demand wallet routes", () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      const reserved = `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`;
+      expect(provider.deletePass).toHaveBeenCalledTimes(1);
+      expect(provider.deletePass).toHaveBeenCalledWith(`pc-${reserved}`);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
-      expect(saved?.status).toBe("failed");
-      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+      // Never active, no provider id, and no failure left on the row: the pass is gone, the next tap makes a new one.
+      expect(saved).toMatchObject({
+        status: "pending",
+        provider_pass_id: null,
+        issued_at: null,
+        last_error_code: null,
+        user_provided_id: reserved,
+      });
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
+  it("records the credential change on the row when the pass made under the old Template ID cannot be deleted", async () => {
+    const provider = stubProvider();
+    provider.deletePass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_timeout", "PassCreator request failed."));
+    changeTemplateWhileCreating(provider);
+    const app = makeApp(provider);
+    resetSystemLogBufferForTest();
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      expect(provider.deletePass).toHaveBeenCalledTimes(1);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved).toMatchObject({
+        status: "failed",
+        provider_pass_id: null,
+        last_error_code: "wallet_credential_changed",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+      });
+      // The failed delete is logged with ids only: the pass has to be deleted by hand in the old account.
+      const entry = querySystemLogs({ source: "api" }).find((e) => e.message === "wallet_pass_changed_credentials_delete_failed");
+      expect(entry?.fields).toEqual({
+        eventId: EVENT_ID,
+        attendeeId: ATTENDEE_MODE_A_ID,
+        providerPassId: `pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+      });
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
     }
@@ -1143,8 +1194,9 @@ describe("On-demand wallet routes", () => {
         // own, separately-locked transaction) must then have seen the new template and refused to
         // persist the pass as active under the old one.
         expect(row.wallet_template_id).toBe("tmpl-race-b");
-        expect(saved?.status).toBe("failed");
-        expect(saved?.last_error_code).toBe("wallet_credential_changed");
+        expect(saved?.status).toBe("pending");
+        expect(saved?.provider_pass_id).toBeNull();
+        expect(provider.deletePass).toHaveBeenCalledTimes(1);
       } else {
         // Issuance won the lock race and committed first - the admin's own recheck must then have
         // seen the freshly-issued pass and refused the Template ID change outright.
@@ -1245,8 +1297,9 @@ describe("On-demand wallet routes", () => {
       expect(patchRes.status).toBe(200);
       expect(walletRes.status).toBe(302);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
-      expect(saved?.status).toBe("failed");
-      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+      expect(saved?.status).toBe("pending");
+      expect(saved?.provider_pass_id).toBeNull();
+      expect(provider.deletePass).toHaveBeenCalledTimes(1);
       const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
       expect(row.wallet_template_id).toBe("tmpl-gate-b");
     } finally {
