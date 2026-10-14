@@ -71,7 +71,9 @@ flowchart TD
        `wallet_pass_untracked_deleted` with the event id and how many. For about ten minutes after the
        erasure the dialog can say that such a pass is still there although the provider has none: a pass
        that was being made at that moment can still reach the provider, so Admitto asks again later
-       (**Try again**, the same command, or the daily retention run). A pass made before that id was
+       (**Try again**, the same command, or the daily retention run). If the provider says the id also
+       belongs to another pass (as its barcode value), Admitto deletes nothing and keeps reporting the
+       pass as still there: remove it in the provider's own console. A pass made before that id was
        written, by a request that died without leaving anything on the row, is not found: delete it in
        the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>`.
      - **Audit:** the event action log and the central admin audit log record who erased how many
@@ -114,7 +116,9 @@ flowchart TD
        may have left. Where the provider could not answer before the local delete, Admitto asks once more
        after it, and writes one entry for the whole removal, not one for each pass: it names the
        attendee ids (`attendeeIds`) of the passes that are still at the provider, which you find in
-       the provider's own console by their User provided ID, `admitto:<event id>:<attendee id>`.
+       the provider's own console by their User provided ID, `admitto:<event id>:<attendee id>`. If the
+       provider says the id also belongs to another pass (as its barcode value), Admitto deletes nothing
+       for that attendee and the entry names them: remove that pass in the provider's own console.
        **Nothing is sent, and no failure entry is written,** when the event's wallet template or
        API key is no longer configured (for example removed after the pass was issued). In that
        case restore the credentials in Event Settings → Wallet before removing, or delete the
