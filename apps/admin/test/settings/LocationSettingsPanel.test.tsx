@@ -1644,7 +1644,7 @@ describe("LocationSettingsPanel — archived event", () => {
     await screen.findByDisplayValue("Springfield Hall");
     expect(screen.queryByRole("button", { name: "Save" })).toBeFalsy();
     expect(screen.queryByRole("button", { name: "Remove pin" })).toBeFalsy();
-    expect(screen.getByText(/location settings cannot be changed/)).toBeTruthy();
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
   });
 
   it("disables map, fields, and copied links for an archived event", async () => {

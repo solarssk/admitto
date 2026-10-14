@@ -880,13 +880,41 @@ describe("EventMailSettingsCard — SMTP Test connection", () => {
   });
 });
 
+describe("EventMailSettingsCard — footer", () => {
+  it("renders its own Save footer on an active event only when it is not embedded in a page that owns one", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    const { unmount } = renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard eventId="evt-1" isArchived={false} embeddedFooter />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    // Its Save is wired to the card's own save: an incomplete dedicated SMTP draft is refused there.
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByText("SMTP host is required.")).toBeTruthy());
+    expect(mockSave).not.toHaveBeenCalled();
+    unmount();
+
+    renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard eventId="evt-1" isArchived={false} embeddedFooter={false} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  });
+});
+
 describe("EventMailSettingsCard — archived event", () => {
-  it("shows an archived note instead of the validation error area", async () => {
+  it("shows no archived note and no footer", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard(true);
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    expect(screen.getByText(/This event is archived - mail settings cannot be changed/)).toBeTruthy();
+    expect(screen.queryByText(/mail settings cannot be changed/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
 
   it("disables the mode toggle and test-send", async () => {

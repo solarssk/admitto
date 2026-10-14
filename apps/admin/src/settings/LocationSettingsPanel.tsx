@@ -896,11 +896,7 @@ function LocationSettingsPanelBody({
         </div>
       </Card>
 
-      {isArchived ? (
-        <p className="field-hint event-settings-archived-note">
-          This event is archived - location settings cannot be changed.
-        </p>
-      ) : (
+      {!isArchived && (
         <SettingsFooter
           validationErrors={[]}
           validationErrorsRef={validationErrorsRef}

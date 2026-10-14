@@ -414,12 +414,6 @@
   }
 }
 
-/* Branding tab ----------------------------------------------------------- */
-
-.event-settings-archived-note {
-  margin-top: var(--space-3) !important;
-}
-
 /* Danger zone - the JSX puts `at-card` / `at-card__header` / `at-card__title`
    on these elements alongside the classes below, so the panel is built
    directly on the same base as every other card and can't quietly drift out

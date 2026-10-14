@@ -59,11 +59,6 @@ export function EventImagesPanel({
           uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
           onUploadingChange={onUploadingChange}
         />
-        {isArchived && (
-          <p className="field-hint event-settings-archived-note">
-            This event is archived - images cannot be changed.
-          </p>
-        )}
       </Card>
 
       <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
