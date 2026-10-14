@@ -16,6 +16,14 @@ const DELETE_CONCURRENCY = 8;
  */
 export const CREATION_SETTLE_WINDOW_MS = 10 * 60_000;
 
+/**
+ * The `last_error_code` the creating request leaves on a pass row (`markFailed` in `handleWalletRedirect`) when the
+ * event's wallet credentials changed while the pass was being made and that request could not delete the pass it made
+ * with the old ones. The pass may then be in an account the event no longer uses, which the answer "no pass under that
+ * id" of the account it uses now says nothing about: such a row is never settled on that answer.
+ */
+const CREDENTIALS_CHANGED_CODE = "wallet_credential_changed";
+
 export type EraseWalletPassesResult = {
   /** Passes deleted at the provider (or already gone there) and marked as removed. */
   deleted: number;
@@ -77,13 +85,15 @@ type PassToDelete = {
   attendee_id: string;
   provider_pass_id: string | null;
   user_provided_id: string | null;
+  last_error_code: string | null;
   attendee: { erased_at: Date | null };
 };
 
 /** What the provider said about one pass: it deleted a pass it held under the reserved id ("found"), the pass is gone
- * ("gone": deleted by its own id, or none under the reserved id and the erasure is old enough to rely on that), or
- * there is none yet but one may still turn up ("undecided"). */
-type Settled = "gone" | "found" | "undecided";
+ * ("gone": deleted by its own id, or none under the reserved id and the erasure is old enough to rely on that), there
+ * is none yet but one may still turn up ("undecided"), or there is none in the account the event uses now, but the
+ * pass may be in another one ("elsewhere", see {@link CREDENTIALS_CHANGED_CODE}). */
+type Settled = "gone" | "found" | "undecided" | "elsewhere";
 
 /** What became of one pass: gone (and whether Admitto had no id for it, yet the provider held it), not yet decided, or failed. */
 type Outcome =
@@ -100,7 +110,8 @@ function erasureIsSettled(erasedAt: Date | null): boolean {
  * Deletes one pass at the provider. A row with the provider's id is deleted by it. A row without one is deleted by the
  * id reserved for it, which the provider answers from its own record: a pass was deleted ("found"), or there was none,
  * which settles the row ("gone") only once the erasure is old enough, because a pass whose creation was already under
- * way can still reach the provider after that answer ("undecided").
+ * way can still reach the provider after that answer ("undecided"), and never when the row says the pass may be in an
+ * account the event no longer uses ("elsewhere").
  */
 async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<Settled> {
   if (pass.provider_pass_id !== null) {
@@ -111,6 +122,7 @@ async function deleteAtProvider(provider: WalletPassProvider, eventId: string, p
     pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id),
   );
   if (found) return "found";
+  if (pass.last_error_code === CREDENTIALS_CHANGED_CODE) return "elsewhere";
   return erasureIsSettled(pass.attendee.erased_at) ? "gone" : "undecided";
 }
 
@@ -123,6 +135,7 @@ async function deleteOne(
   try {
     const settled = await deleteAtProvider(provider, eventId, pass);
     if (settled === "undecided") return { kind: "undecided" };
+    if (settled === "elsewhere") return { kind: "failed", attendeeId: pass.attendee_id, code: CREDENTIALS_CHANGED_CODE };
     await db.walletPass.updateMany({
       // The provider's id as it was read: a row that was given one meanwhile (a creating request that finished after
       // this read) holds another pass, which is still to be deleted.
@@ -189,7 +202,13 @@ export async function deleteErasedWalletPasses(
   if (attendeeIds.length === 0) return result;
   const passes = await db.walletPass.findMany({
     where: erasedPassToDeleteWhere(eventId, attendeeIds),
-    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true, attendee: { select: { erased_at: true } } },
+    select: {
+      attendee_id: true,
+      provider_pass_id: true,
+      user_provided_id: true,
+      last_error_code: true,
+      attendee: { select: { erased_at: true } },
+    },
     // In attendee id order, so that what was not tried (`notTried`) is the last of the ids, and a caller that
     // walks the passes in that order knows where it stopped.
     orderBy: { attendee_id: "asc" },

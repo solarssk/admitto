@@ -1119,15 +1119,7 @@ export function createApp(options: CreateAppOptions = {}) {
         await deleteOrphanPassOfGoneAttendee(userProvidedId, result.providerPassId);
         return WALLET_PASS_UNAVAILABLE;
       }
-      if (templateChanged) {
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_template_changed_mid_issuance",
-          fields: { eventId: event.id, attendeeId: attendee.id },
-        });
-        return markFailed("wallet_credential_changed");
-      }
+      if (templateChanged) return dropPassMadeUnderChangedCredentials(result.providerPassId);
       if (expirationChanged) {
         recordSystemLog({
           level: "error",
@@ -1241,6 +1233,36 @@ export function createApp(options: CreateAppOptions = {}) {
           message: "wallet_pass_erased_delete_failed",
           fields: { eventId: event.id, attendeeId: attendee.id, providerPassId },
         });
+      }
+    }
+
+    /** markActive's answer to a pass made under a Template ID the event no longer has: an admin changed it (and may
+     * have replaced the API key with one of another PassCreator account) while this request was creating the pass.
+     * The pass is not kept. This request still holds the client it made the pass with, so it deletes the pass there at
+     * once, which an erasure's follow-up could not do: it asks the account the event uses now. Nothing is recorded when
+     * that works (the row stays as reservePassId left it, and the attendee's next tap makes a pass under the current
+     * template). When it does not, the pass may be left in the old account and the row says so
+     * ("wallet_credential_changed"), so that the follow-up does not take "no pass" from the new account for an answer
+     * (deleteErasedWalletPasses). Never throws. */
+    async function dropPassMadeUnderChangedCredentials(providerPassId: string): Promise<null> {
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "wallet_pass_template_changed_mid_issuance",
+        fields: { eventId: event.id, attendeeId: attendee.id },
+      });
+      try {
+        await provider.deletePass(providerPassId);
+        return null;
+      } catch (err) {
+        console.error("PassCreator deletePass (credentials changed mid-issuance) failed:", { reason: walletFailureCode(err) });
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_changed_credentials_delete_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id, providerPassId },
+        });
+        return markFailed("wallet_credential_changed");
       }
     }
 

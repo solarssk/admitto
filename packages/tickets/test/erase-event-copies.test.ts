@@ -447,10 +447,10 @@ describe("deleteErasedWalletPasses", () => {
   describe("a pass the creating request could not record", () => {
     /** An attendee, erased unless `erase` is false, whose pass row holds only what a creating request wrote before it
      * called the provider: the id reserved for the pass (`reserved`, a different one than the deterministic id when
-     * a string is given), no provider id. */
+     * a string is given), no provider id, and `lastErrorCode` when the creating request left one. */
     const attendeeWithReservedId = async (
       id: string,
-      options: { reserved?: string | false; status?: string; erase?: boolean; eventId?: string } = {},
+      options: { reserved?: string | false; status?: string; erase?: boolean; eventId?: string; lastErrorCode?: string } = {},
     ) => {
       const eventId = options.eventId ?? EVENT_ID;
       await prisma.attendee.create({ data: { id, event_id: eventId, email: `${id}@example.com`, name: id } });
@@ -460,6 +460,7 @@ describe("deleteErasedWalletPasses", () => {
           attendee_id: id,
           status: options.status ?? "pending",
           ...(reserved === false ? {} : { user_provided_id: reserved }),
+          ...(options.lastErrorCode === undefined ? {} : { last_error_code: options.lastErrorCode }),
         },
       });
       if (options.erase !== false) await prisma.$transaction((tx) => eraseAttendees(tx, { eventId, attendeeIds: [id] }));
@@ -562,6 +563,87 @@ describe("deleteErasedWalletPasses", () => {
         exactly.mockRestore();
       }
       expect(await removedAt("copies-wp-res-edge")).not.toBeNull();
+    });
+
+    describe("when the creating request left 'credentials changed' on the row (the pass may be in an account the event no longer uses)", () => {
+      const YEAR_MS = 365 * 24 * 3_600_000;
+
+      it("never settles on 'there is none', however old the erasure is: the person stays still to delete, with that code", async () => {
+        await attendeeWithReservedId("copies-wp-cred-1", { status: "failed", lastErrorCode: "wallet_credential_changed" });
+        const none = stubProvider(undefined, vi.fn(async (_userProvidedId: string) => false));
+        const clock = await clockAfterErasure("copies-wp-cred-1", YEAR_MS);
+
+        try {
+          const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-cred-1"], none);
+
+          expect(result).toEqual({
+            deleted: 0,
+            untrackedDeleted: 0,
+            undecided: 0,
+            failedAttendeeIds: ["copies-wp-cred-1"],
+            failureCodes: ["wallet_credential_changed"],
+            notTried: 0,
+          });
+        } finally {
+          clock.mockRestore();
+        }
+        expect(none.deletePassByUserProvidedId).toHaveBeenCalledTimes(1);
+        expect(await removedAt("copies-wp-cred-1")).toBeNull();
+        expect(await prisma.walletPass.count({ where: erasedPassToDeleteWhere(EVENT_ID, ["copies-wp-cred-1"]) })).toBe(1);
+      });
+
+      it("still deletes the pass when the account the event uses now holds it (only the template changed), which settles the row", async () => {
+        await attendeeWithReservedId("copies-wp-cred-2", { status: "failed", lastErrorCode: "wallet_credential_changed" });
+        const provider = stubProvider();
+
+        const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-cred-2"], provider);
+
+        expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1, failedAttendeeIds: [] });
+        expect(await removedAt("copies-wp-cred-2")).not.toBeNull();
+      });
+
+      it("keeps asking on every run and settles once the pass is found, however many runs that takes", async () => {
+        await attendeeWithReservedId("copies-wp-cred-3", { status: "failed", lastErrorCode: "wallet_credential_changed" });
+        const found = vi.fn(async (_userProvidedId: string) => false);
+        const provider = stubProvider(undefined, found);
+        const clock = await clockAfterErasure("copies-wp-cred-3", YEAR_MS);
+
+        try {
+          for (let run = 0; run < 3; run += 1) {
+            expect(await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-cred-3"], provider)).toMatchObject({
+              deleted: 0,
+              failedAttendeeIds: ["copies-wp-cred-3"],
+            });
+          }
+          // The previous credentials are back (or the pass was moved): the account the event uses now holds it.
+          found.mockResolvedValueOnce(true);
+          expect(await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-cred-3"], provider)).toMatchObject({
+            deleted: 1,
+            untrackedDeleted: 1,
+            failedAttendeeIds: [],
+          });
+        } finally {
+          clock.mockRestore();
+        }
+        expect(found).toHaveBeenCalledTimes(4);
+        expect(await removedAt("copies-wp-cred-3")).not.toBeNull();
+      });
+
+      it("is the only failure code that keeps a row open: 'there is none' settles a row that failed for any other reason", async () => {
+        await attendeeWithReservedId("copies-wp-cred-4", { status: "failed", lastErrorCode: "wallet_provider_timeout" });
+        const none = stubProvider(undefined, vi.fn(async (_userProvidedId: string) => false));
+        const clock = await clockAfterErasure("copies-wp-cred-4", CREATION_SETTLE_WINDOW_MS);
+
+        try {
+          expect(await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-cred-4"], none)).toMatchObject({
+            deleted: 1,
+            failedAttendeeIds: [],
+          });
+        } finally {
+          clock.mockRestore();
+        }
+        expect(await removedAt("copies-wp-cred-4")).not.toBeNull();
+      });
     });
 
     it("finds a failed creation from before ids were reserved (no id of any kind on the row) and deletes by the id built from the event and the attendee", async () => {

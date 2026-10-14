@@ -607,20 +607,44 @@ describe("the id reserved for a pass before the provider is called", () => {
     expect((await rowOf(attendee.id)).provider_removed_at).not.toBeNull();
   });
 
-  it("also finds a pass made under a template the event no longer uses: the template changed while it was being made", async () => {
-    const { attendee, token } = await createAttendee();
-    const provider = stubProvider();
+  /** The event's template changes while the request is still creating the pass: the pass is made under the old one. */
+  async function requestWhileTemplateChanges(provider: Stub, token: string): Promise<Response> {
     provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-changed-midway" } });
       return providerPass(input);
     });
-
-    let res: Response;
     try {
-      res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+      return await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-erased" } });
     }
+  }
+
+  it("deletes a pass made under a template the event no longer uses itself, with the client it made it with, so the erasure has nothing of it to look for", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+
+    const res = await requestWhileTemplateChanges(provider, token);
+
+    expect(res.headers.get("location")).toBe(`/t/${token}?walletError=1`);
+    expect(provider.deletePass).toHaveBeenCalledTimes(1);
+    expect(provider.deletePass).toHaveBeenCalledWith(`pc-${reservedId(attendee.id)}`);
+    expect(await rowOf(attendee.id)).toMatchObject({
+      status: "pending",
+      last_error_code: null,
+      provider_pass_id: null,
+      user_provided_id: reservedId(attendee.id),
+    });
+  });
+
+  it("never takes 'there is none' from the account the event uses now for an answer when the request could not delete the pass it made under the old template", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.deletePass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_timeout", "PassCreator request failed."));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await requestWhileTemplateChanges(provider, token);
+    errSpy.mockRestore();
 
     expect(res.headers.get("location")).toBe(`/t/${token}?walletError=1`);
     expect(await rowOf(attendee.id)).toMatchObject({
@@ -631,10 +655,29 @@ describe("the id reserved for a pass before the provider is called", () => {
     });
 
     await erase([attendee.id]);
-    const { provider: holder, result } = await followUp(attendee.id);
+    // Another PassCreator account now: nothing under that id there, however old the erasure is. That says nothing
+    // about the account the pass was made in, so the person stays still to delete.
+    const elsewhere = stubProvider();
+    elsewhere.deletePassByUserProvidedId.mockResolvedValue(false);
+    const erasedAt = (await prisma.attendee.findUniqueOrThrow({ where: { id: attendee.id } })).erased_at!;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(erasedAt.getTime() + 365 * 24 * 3_600_000);
+    try {
+      expect(await deleteErasedWalletPasses(prisma, EVENT_ID, [attendee.id], elsewhere)).toMatchObject({
+        deleted: 0,
+        undecided: 0,
+        failedAttendeeIds: [attendee.id],
+        failureCodes: ["wallet_credential_changed"],
+      });
+    } finally {
+      clock.mockRestore();
+    }
+    expect((await rowOf(attendee.id)).provider_removed_at).toBeNull();
 
-    expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1 });
+    // The same account (only the template changed), or the old credentials put back: the pass is found and deleted.
+    const { provider: holder, result } = await followUp(attendee.id);
+    expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1, failedAttendeeIds: [] });
     expect(holder.deletePassByUserProvidedId).toHaveBeenCalledWith(reservedId(attendee.id));
+    expect((await rowOf(attendee.id)).provider_removed_at).not.toBeNull();
   });
 
   it("sends nothing to the provider for an attendee erased after the ticket was read and before the id was reserved", async () => {
