@@ -5,7 +5,7 @@ import {
   BRANDING_ASSET_FIELDS,
   resolveBrandingAssetUrlForRender,
 } from "./escape.js";
-import { isInsideQuotedAttribute } from "./htmlContext.js";
+import { createHtmlAttributeContextReader, type HtmlAttributeContext } from "./htmlContext.js";
 import {
   REQUIRED_URL_PLACEHOLDERS,
   URL_PLACEHOLDERS,
@@ -163,14 +163,23 @@ function substituteSubjectPlaceholdersDeferred(
   });
 }
 
+/** Trusted paths skip whitelist checks, but data cannot form markup or an unquoted value. */
+function quotedAttributeForPlaceholder(context: HtmlAttributeContext, name: string): boolean {
+  if (context.inBareTagMarkup || context.unquotedAttributeName) {
+    throw new UnquotedAttributePlaceholderError([context.unquotedAttributeName ?? `{{${name}}}`]);
+  }
+  return context.inQuotedAttribute;
+}
+
 function substituteHtmlPlaceholders(
   template: string,
   vars: TemplateVars,
   baseUrl?: string,
   customAssetPlaceholders?: ReadonlySet<string>,
 ): string {
+  const contextAt = createHtmlAttributeContextReader(template);
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
-    const inAttribute = isInsideQuotedAttribute(template, offset);
+    const inAttribute = quotedAttributeForPlaceholder(contextAt(offset), name);
     const value = resolveVarValue(name, vars);
     return formatPlaceholderValue(name, value, inAttribute, baseUrl, customAssetPlaceholders);
   });
@@ -182,9 +191,10 @@ function substituteHtmlPlaceholdersDeferred(
   baseUrl?: string,
   customAssetPlaceholders?: ReadonlySet<string>,
 ): string {
+  const contextAt = createHtmlAttributeContextReader(template);
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
+    const inAttribute = quotedAttributeForPlaceholder(contextAt(offset), name);
     if (STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
-    const inAttribute = isInsideQuotedAttribute(template, offset);
     const value = resolveVarValue(name, vars);
     return formatPlaceholderValue(name, value, inAttribute, baseUrl, customAssetPlaceholders);
   });
@@ -201,13 +211,14 @@ function applyDeferredLinkPlaceholders(
   mode: "html" | "subject",
   baseUrl?: string,
 ): string {
+  const contextAt = createHtmlAttributeContextReader(text);
   return text.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
     if (!STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
     const value = links[name as keyof DeferredLinkVars] ?? "";
     if (mode === "subject") {
       return formatSubjectPlaceholderValue(name, value, baseUrl);
     }
-    const inAttribute = isInsideQuotedAttribute(text, offset);
+    const inAttribute = quotedAttributeForPlaceholder(contextAt(offset), name);
     return formatPlaceholderValue(name, value, inAttribute, baseUrl);
   });
 }

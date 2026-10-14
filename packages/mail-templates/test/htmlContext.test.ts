@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getHtmlAttributeContext, isInsideQuotedAttribute } from "../src/htmlContext.js";
+import { createHtmlAttributeContextReader, createHtmlCommentContextReader, getHtmlAttributeContext, isInsideQuotedAttribute, isPlaceholderInHtmlComment } from "../src/htmlContext.js";
 
 const PH = "{{first_name}}";
 
@@ -131,5 +131,61 @@ describe("getHtmlAttributeContext", () => {
   ])("$name", ({ html }) => {
     const result = ctxAt(html);
     expect(result.inTag).toBe(false);
+  });
+});
+
+
+describe("quoted tag boundary controls", () => {
+  it.each([
+    '<span title="Guest <b> {{first_name}}">Hi</span>',
+    "<span title='Guest <b> {{first_name}}'>Hi</span>",
+    '<div><span data-label="Earlier <b>" title="Guest {{first_name}}">Hi</span></div>',
+    '<span title="Line\n<b>\n{{first_name}}">Hi</span>',
+    '<span data-count=100 title="Guest <b> {{first_name}}">Hi</span>',
+    '<span data-count=100" title="Guest <b> {{first_name}}">Hi</span>',
+    '<!-- <fake title="ignored"> --><span title="Guest <b> {{first_name}}">Hi</span>',
+    '<span title="Unclosed <b> {{first_name}}',
+  ])("keeps the real quoted attribute in %s", (html) => {
+    expect(ctxAt(html)).toEqual({ inTag: true, inQuotedAttribute: true, unquotedAttributeName: null, inBareTagMarkup: false });
+  });
+
+  it.each([
+    '<span title="Guest <b>">{{first_name}}</span>',
+    '<span title="Guest <b>"/>{{first_name}}',
+    '<div title="Earlier <b>">Hi</div><p>{{first_name}}</p>',
+    '<!DOCTYPE html><p>{{first_name}}</p>',
+    '<!--[if mso]><span title="Guest">{{first_name}}</span><![endif]-->',
+    '<!-- unclosed <span title="{{first_name}}',
+    '</span title="{{first_name}}">',
+    '<!DOCTYPE html PUBLIC "{{first_name}}">',
+  ])("does not inherit an attribute context in %s", (html) => {
+    expect(ctxAt(html)).toEqual({ inTag: false, inQuotedAttribute: false, unquotedAttributeName: null, inBareTagMarkup: false });
+  });
+
+  it("keeps an unquoted value distinguishable after an earlier quoted literal tag", () => {
+    expect(ctxAt('<span title="Guest <b>" data-name={{first_name}}>Hi</span>').unquotedAttributeName).toBe("data-name");
+  });
+});
+
+
+describe("ascending context readers", () => {
+  it.each([
+    '<span 0="Earlier <b>" title="{{first_name}} / {{last_name}}">{{email}}</span>',
+    '<img alt={{first_name}} width="{{last_name}}"><p>{{email}}</p>',
+    '<!-- {{first_name}} --><span title="{{last_name}}">{{email}}</span>',
+    '<!-- outer <!-- {{first_name}} -->{{last_name}}<p>{{email}}</p>',
+    '<!DOCTYPE html><p>{{first_name}}</p></span title="{{last_name}}">{{email}}',
+    '<span title="{{first_name}}">{{last_name}}<!-- unclosed {{email}}',
+    '{{first_name}} {{last_name}} {{email}}',
+  ])("keeps incremental contexts consistent in %s", (html) => {
+    const contextAt = createHtmlAttributeContextReader(html);
+    const inComment = createHtmlCommentContextReader(html);
+    for (const match of html.matchAll(/\{\{[a-z_]+\}\}/g)) {
+      expect(contextAt(match.index)).toEqual(getHtmlAttributeContext(html, match.index));
+      const start = html.lastIndexOf("<!--", match.index);
+      const end = start === -1 ? -1 : html.indexOf("-->", start);
+      expect(inComment(match.index)).toBe(start !== -1 && (end === -1 || end + 2 > match.index));
+      expect(inComment(match.index)).toBe(isPlaceholderInHtmlComment(html, match.index));
+    }
   });
 });
