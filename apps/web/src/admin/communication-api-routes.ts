@@ -739,6 +739,36 @@ export async function handleGetEventDelivery(c: Context, db: PrismaClient): Prom
   return c.json(dto);
 }
 
+/**
+ * The stored message of a delivery with its real ticket links filled in, or `null` when it cannot
+ * be shown: the attendee has no ticket to link to yet, or the stored text no longer passes the
+ * renderer (saved before a stricter check). Both are "not available" like an expired preview,
+ * not a server error; anything else (a decryption failure, a DB error) is rethrown.
+ */
+async function materializeStoredPreview(
+  rendered: { attendee_id: string; rendered_subject: string | null; rendered_html: string | null },
+  db: PrismaClient,
+  baseUrl: string,
+) {
+  try {
+    const links = await resolveAttendeeMailLinks(rendered.attendee_id, db, baseUrl);
+    return tryMaterializeStoredMessage(
+      { subject: rendered.rendered_subject ?? "", html: rendered.rendered_html ?? "" },
+      links,
+    );
+  } catch (err) {
+    // Only the specific "nothing to build a link from yet" shape is a genuine "not available"
+    // response, same distinction handleGetAttendeeTicketLink makes - a decryption failure or a
+    // DB error hitting this same call is a real server error and must not be swallowed into the
+    // same response used for expired retention.
+    const notIssued =
+      err instanceof Error &&
+      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
+    if (!notIssued) throw err;
+    return null;
+  }
+}
+
 /** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered: rendered message for the
  * "View sent message" preview, with the recipient's real ticket link and QR code materialized in
  * (same admin/superadmin gate as "Copy ticket link", which already exposes the same ticket_url).
@@ -775,27 +805,8 @@ export async function handleGetRenderedEventDelivery(
   // committed the message is gone (the snapshot is nulled), so that is what is answered here too.
   if (!(await attendeeIsLive(db, rendered.attendee_id))) return c.json({ subject: null, html: null });
 
-  let materialized;
-  try {
-    const links = await resolveAttendeeMailLinks(rendered.attendee_id, db, baseUrlOrRes);
-    // null: the stored text no longer passes the renderer (saved before a stricter check). The
-    // preview is "not available" like an expired one, not a server error.
-    materialized = tryMaterializeStoredMessage(
-      { subject: rendered.rendered_subject ?? "", html: rendered.rendered_html ?? "" },
-      links,
-    );
-    if (!materialized) return c.json({ subject: null, html: null });
-  } catch (err) {
-    // Only the specific "nothing to build a link from yet" shape is a genuine "not available"
-    // response, same distinction handleGetAttendeeTicketLink makes - a decryption failure or a
-    // DB error hitting this same call is a real server error and must not be swallowed into the
-    // same response used for expired retention.
-    const notIssued =
-      err instanceof Error &&
-      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
-    if (!notIssued) throw err;
-    return c.json({ subject: null, html: null });
-  }
+  const materialized = await materializeStoredPreview(rendered, db, baseUrlOrRes);
+  if (!materialized) return c.json({ subject: null, html: null });
 
   // Logged under the attendee's lock: an erasure that committed since the check above is seen here,
   // and the message with the link, which the erasure has just invalidated, is not handed out.
