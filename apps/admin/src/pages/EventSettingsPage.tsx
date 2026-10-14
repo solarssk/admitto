@@ -543,8 +543,8 @@ interface LoadEventSettingsDeps {
 /** Reads the event's settings again after an action that changed them (archive, restore, the bulk Danger Zone actions):
  * the page is already on screen then, so a failure is a toast and what is there stays. The first read of the page goes
  * through `usePanelLoad` in `EventSettingsPageBody`, with its own placeholder and error. Extracted out of the `load`
- * callback (SonarCloud S3776). */
-async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
+ * callback (SonarCloud S3776). Resolves to false when the read failed and what is on screen is the old snapshot. */
+async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<boolean> {
   const { eventId, setNotFound, setEvent, setForm, setOriginal, addToast } = deps;
   setNotFound(false);
   try {
@@ -553,12 +553,14 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
     const f = toForm(data);
     setForm(f);
     setOriginal(f);
+    return true;
   } catch (err) {
     if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
       setNotFound(true);
-    } else {
-      addToast(operatorApiErrorMessage(err, "Could not load event settings"), "error");
+      return true;
     }
+    addToast(operatorApiErrorMessage(err, "Could not load event settings"), "error");
+    return false;
   }
 }
 
@@ -633,6 +635,9 @@ async function saveEventSettings(deps: SaveEventSettingsDeps): Promise<void> {
   }
 }
 
+/** How long the page waits before it tries once more to read the event after the archived bar changed it. */
+const RECONCILE_RETRY_MS = 2000;
+
 interface ArchiveToggleDeps {
   eventId: string;
   archiveMode: "archive" | "unarchive";
@@ -644,7 +649,7 @@ interface ArchiveToggleDeps {
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
-  load: () => Promise<void>;
+  load: () => Promise<unknown>;
   /** Resolves to false when the layout's read failed and it still shows the old archived state. */
   refreshLayoutEvent?: () => Promise<unknown>;
 }
@@ -772,7 +777,7 @@ interface RevokeCheckinsDeps {
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
-  load: () => Promise<void>;
+  load: () => Promise<unknown>;
   refreshLayoutEvent?: () => Promise<unknown>;
 }
 
@@ -826,7 +831,7 @@ interface RevokeItemsDeps {
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
-  load: () => Promise<void>;
+  load: () => Promise<unknown>;
   refreshLayoutEvent?: () => Promise<unknown>;
 }
 
@@ -1217,9 +1222,10 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   });
 
   // Reads the event again after an action that changed it (the page is on screen then, so a failure is a toast).
-  const load = useCallback(async () => {
-    await loadEventSettings({ eventId, setNotFound, setEvent, setForm, setOriginal, addToast });
-  }, [eventId, addToast]);
+  const load = useCallback(
+    () => loadEventSettings({ eventId, setNotFound, setEvent, setForm, setOriginal, addToast }),
+    [eventId, addToast],
+  );
 
   // The archived bar restores (or archives) the event from outside this page: whenever the layout's state
   // and this page's snapshot disagree, read the event again and start the cards over (as archiving from
@@ -1231,10 +1237,17 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // This page's own Archive / Restore (Danger zone) reads the event first and refreshes the layout after, so for a
   // moment the two disagree on purpose: that sequence settles the layout itself and must not start a second read.
   const ownArchiveToggleRef = useRef(false);
+  // A read that failed is not recorded as done: it is tried once more after a pause (a lost connection or a
+  // restarting server is usually over by then), and after that the error toast is what the user has.
+  const reconcileRetriedRef = useRef(false);
+  const reconcileRetryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [reconcileTick, setReconcileTick] = useState(0);
+  useEffect(() => () => clearTimeout(reconcileRetryTimerRef.current), []);
   useEffect(() => {
     if (layoutArchived === undefined || event === null) return;
     if (layoutArchived === (event.status === "archived")) {
       reconciledLayoutArchivedRef.current = undefined;
+      reconcileRetriedRef.current = false;
       return;
     }
     if (ownArchiveToggleRef.current) return;
@@ -1244,8 +1257,14 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
     setCheckinBehaviourCardResetKey((n) => n + 1);
-    void load();
-  }, [layoutArchived, event, load]);
+    void load().then((read) => {
+      if (read) return;
+      reconciledLayoutArchivedRef.current = undefined;
+      if (reconcileRetriedRef.current) return;
+      reconcileRetriedRef.current = true;
+      reconcileRetryTimerRef.current = setTimeout(() => setReconcileTick((n) => n + 1), RECONCILE_RETRY_MS);
+    });
+  }, [layoutArchived, event, load, reconcileTick]);
 
   // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
   // on every :eventId change (in addition to each refresh call bumping it) so an in-flight

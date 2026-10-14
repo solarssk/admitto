@@ -116,6 +116,7 @@ const mapTileConfig = {
 Element.prototype.scrollIntoView = vi.fn();
 
 afterEach(() => {
+  vi.useRealTimers();
   mockLayoutEvent = undefined;
   cleanup();
   vi.clearAllMocks();
@@ -349,6 +350,50 @@ describe("EventSettingsPage when the archived bar restores the event", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
 
     expect(await screen.findByText(/archived, but this page could not refresh/)).toBeTruthy();
+  });
+
+  it("tries once more after a pause when the read that follows the bar's restore fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    const view = render(tree());
+    expect(((await screen.findByLabelText("Event title")) as HTMLInputElement).disabled).toBe(true);
+
+    // The bar restores, and the page's read of the event fails once, then works.
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    view.rerender(tree());
+    await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
+    expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+
+    await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up after that one more try, so a server that stays down is not asked in a loop", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    const view = render(tree());
+    await screen.findByLabelText("Event title");
+
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockRejectedValue(new Error("network down"));
+    view.rerender(tree());
+    await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
+    // In steps: React runs the effect that a timer's state change asks for only when the act scope ends.
+    for (let step = 0; step < 6; step += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+    }
+
+    expect(fetchEventSettings).toHaveBeenCalledTimes(3);
   });
 
   it("does not read the event again when the layout still agrees with the page", async () => {
