@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Check-in tab of Event settings no longer shows the note "This event is archived - check-in behaviour cannot be changed." on an archived event (the greyed switches and the missing Save already say so), and its four switches now sit at the vertical middle of their label and description instead of next to the first line.
+
 ## [0.7.5] - 2026-10-11
 
 ### Added

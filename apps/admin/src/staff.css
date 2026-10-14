@@ -3260,6 +3260,12 @@ html:not(.icons-ready) .ti {
   align-items: center;
 }
 
+/* A label+description row with one Switch (Check-in behaviour): the Switch sits at the vertical
+   middle of the text block, as in the Wallet platform rows and Theme-by-surface, not on its first line. */
+.settings-row--switch {
+  align-items: center;
+}
+
 .settings-row__text strong {
   display: block;
   margin-bottom: var(--space-1);
