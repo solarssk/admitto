@@ -113,10 +113,11 @@ export function rowIdentity(
   return { erased: true, name: ERASED_ATTENDEE_LABEL, detail: erasedOnLabel(row.erased_at, eventTimezone) };
 }
 
-/** The wallet chip of an erased attendee's status strip: what became of the pass at the provider. */
+/** The wallet chip of an erased attendee's status strip: what became of the pass at the provider. A pass that is still
+ * to be deleted says so even when the recorded pass was removed: a pass left in another account keeps the row open. */
 export function erasedWalletChipLabel(detail: Pick<AttendeeDetailDto, "wallet_pass" | "wallet_pass_delete_pending">): string {
-  if (detail.wallet_pass?.provider_removed_at) return "Pass removed";
-  return detail.wallet_pass_delete_pending ? "To be deleted" : "No pass";
+  if (detail.wallet_pass_delete_pending) return "To be deleted";
+  return detail.wallet_pass?.provider_removed_at ? "Pass removed" : "No pass";
 }
 
 /**

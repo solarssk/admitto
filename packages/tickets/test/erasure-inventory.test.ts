@@ -42,8 +42,9 @@ const INVENTORY: Record<string, ModelInventory> = {
   },
   WalletPass: {
     cleared: "download_url apple_url android_url samsung_url user_agent user_agent_captured_at pass_type_id serial_number auth_token pass_url",
-    // The provider ids stay until the pass is deleted at the provider, so a failed delete can be retried.
-    kept: "id attendee_id provider provider_pass_id user_provided_id status last_error_code last_synced_at issued_at voided_at expires_at first_confirmed_at apple_active_registrations apple_inactive_registrations google_active_registrations google_inactive_registrations samsung_active_registrations samsung_inactive_registrations first_downloaded_at registration_checked_at registration_sync_attempted_at lifecycle_observed_at provider_removed_at provider_commanded_at created_at updated_at",
+    // The provider ids stay until the pass is deleted at the provider, so a failed delete can be retried; so does the id
+    // of a pass that was left in an account the event no longer uses (an opaque id, the follow-up must keep seeing it).
+    kept: "id attendee_id provider provider_pass_id user_provided_id left_behind_pass_id status last_error_code last_synced_at issued_at voided_at expires_at first_confirmed_at apple_active_registrations apple_inactive_registrations google_active_registrations google_inactive_registrations samsung_active_registrations samsung_inactive_registrations first_downloaded_at registration_checked_at registration_sync_attempted_at lifecycle_observed_at provider_removed_at provider_commanded_at created_at updated_at",
   },
   AttendeeItemState: { kept: "id attendee_id event_item_id state updated_at updated_by" },
   AttendeeNote: { deleted: "id attendee_id event_id author_user_id body created_at" },

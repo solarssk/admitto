@@ -75,11 +75,17 @@ flowchart TD
        belongs to another pass (as its barcode value), Admitto deletes nothing and keeps reporting the
        pass as still there: remove it in the provider's own console. The same holds for the code
        `wallet_credential_changed`: the pass was made under an earlier Template ID or API key of the event
-       and could not be deleted then, and Admitto does not take "no pass" from the account that is
-       configured now for an answer. Put the earlier credentials back and run the erasure again, or delete
-       the pass in the earlier account's console and ask whoever runs the database to mark the pass row as
-       removed. A pass that reaches the provider after Admitto settled on "no pass" is found by the daily
-       retention run within a week and deleted; **System logs** shows `wallet_pass_found_after_settling`.
+       and could not be deleted then, and Admitto never marks such a pass as removed on its own, because it
+       cannot tell which account a pass is in. Delete the pass in the earlier account's console, by its
+       User provided ID, `admitto:<event id>:<attendee id>`, then ask whoever runs the database to clear
+       the marker on the pass row (`UPDATE "WalletPass" SET left_behind_pass_id = NULL WHERE attendee_id
+       = '<attendee id>'`) and run the erasure again: Admitto settles the row as usual. Do not use **Remove from
+       event** for such a person before that: it deletes the row, and with it the mark and the only record
+       of the pass. A row that a version up to
+       0.7.5 marked `wallet_credential_changed` carries the mark `unknown` after the upgrade; treat it the same
+       way. A pass that reaches
+       the provider after Admitto settled on "no pass" is found by the daily retention run within a week
+       and deleted; **System logs** shows `wallet_pass_found_after_settling`.
        A pass made before that id was
        written, by a request that died without leaving anything on the row, is not found: delete it in
        the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>`.

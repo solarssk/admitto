@@ -306,8 +306,13 @@ describe("admitto attendees erase", () => {
 
     expect(raw.walletPass.findMany).toHaveBeenCalledWith({
       where: {
-        provider_removed_at: null,
-        OR: [{ provider_pass_id: { not: null } }, { user_provided_id: { not: null } }, { status: "failed" }],
+        OR: [
+          { left_behind_pass_id: { not: null } },
+          {
+            provider_removed_at: null,
+            OR: [{ provider_pass_id: { not: null } }, { user_provided_id: { not: null } }, { status: "failed" }],
+          },
+        ],
         attendee: { event_id: "evt-1", erased_at: { not: null } },
         attendee_id: { in: ["att-1"] },
       },

@@ -3,7 +3,11 @@ import type { PrismaClient } from "@admitto/db";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { SETTLED_RECHECK_HORIZON_MS } from "@admitto/tickets";
 import type { WalletPassProvider } from "@admitto/wallet";
-import { recheckSettledWalletPassesOfEvents, type SettledRecheckDeps } from "../src/lib/retention-settled-wallet-passes.js";
+import {
+  RECHECK_CURSOR_KEY,
+  recheckSettledWalletPassesOfEvents,
+  type SettledRecheckDeps,
+} from "../src/lib/retention-settled-wallet-passes.js";
 
 type EventRow = { id: string; wallet_template_id: string | null; wallet_api_key_enc: string | null; wallet_field_mapping: unknown };
 
@@ -11,20 +15,41 @@ const eventRow = (id: string): EventRow => ({ id, wallet_template_id: `tmpl-${id
 const provider = { name: "provider" } as unknown as WalletPassProvider;
 const NOW = 1_800_000_000_000;
 
+/** What a second look answers when it got through the rows it was given, the last of which was `last`. */
+const through = (last: string | null = "att-9") => ({ checked: 3, found: 0, failed: 0, incomplete: false, last });
+
 describe("recheckSettledWalletPassesOfEvents", () => {
   let findMany: ReturnType<typeof vi.fn>;
   let db: PrismaClient;
   let recheck: ReturnType<typeof vi.fn>;
   let resolveProvider: ReturnType<typeof vi.fn>;
+  let settings: { findUnique: ReturnType<typeof vi.fn>; upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+  let kept: { value_json: string } | null;
   let clock: number;
   let deps: SettledRecheckDeps;
+
+  /** The place the previous run kept, as it is stored. */
+  const keptPlace = (eventId: string, attendeeId: string) => {
+    kept = { value_json: JSON.stringify({ eventId, attendeeId }) };
+  };
+  const placeWritten = (eventId: string, attendeeId: string) => ({
+    where: { key: RECHECK_CURSOR_KEY },
+    create: { key: RECHECK_CURSOR_KEY, value_json: JSON.stringify({ eventId, attendeeId }) },
+    update: { value_json: JSON.stringify({ eventId, attendeeId }) },
+  });
 
   beforeEach(() => {
     resetSystemLogBufferForTest();
     clock = NOW;
+    kept = null;
     findMany = vi.fn(async () => [eventRow("evt-1"), eventRow("evt-2")]);
-    db = { event: { findMany } } as unknown as PrismaClient;
-    recheck = vi.fn(async () => ({ checked: 3, found: 0, failed: 0, incomplete: false }));
+    settings = {
+      findUnique: vi.fn(async () => kept),
+      upsert: vi.fn(async () => undefined),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    };
+    db = { event: { findMany }, systemSettings: settings } as unknown as PrismaClient;
+    recheck = vi.fn(async () => through());
     resolveProvider = vi.fn(() => provider);
     deps = {
       resolveProvider: resolveProvider as SettledRecheckDeps["resolveProvider"],
@@ -73,7 +98,7 @@ describe("recheckSettledWalletPassesOfEvents", () => {
   });
 
   it("warns once per event, with the event id and how many, when a pass turned up after the row was settled", async () => {
-    recheck.mockResolvedValueOnce({ checked: 5, found: 2, failed: 0, incomplete: false });
+    recheck.mockResolvedValueOnce({ ...through(), checked: 5, found: 2 });
 
     await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
 
@@ -83,7 +108,7 @@ describe("recheckSettledWalletPassesOfEvents", () => {
   });
 
   it("warns once per event, with the event id and how many, when the provider could not answer", async () => {
-    recheck.mockResolvedValueOnce({ checked: 1, found: 0, failed: 4, incomplete: false });
+    recheck.mockResolvedValueOnce({ ...through(), checked: 1, failed: 4 });
 
     await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
 
@@ -92,8 +117,8 @@ describe("recheckSettledWalletPassesOfEvents", () => {
     expect(logs[0]).toMatchObject({ level: "warn", message: "wallet_pass_recheck_failed", fields: { eventId: "evt-1", failed: 4 } });
   });
 
-  it("warns once per event, with the event id, when rows were left unasked (more than the limit, or no time left)", async () => {
-    recheck.mockResolvedValueOnce({ checked: 1000, found: 0, failed: 0, incomplete: true });
+  it("warns once per event, with the event id, when the run was cut short (a full page, or no time left)", async () => {
+    recheck.mockResolvedValueOnce({ ...through(), checked: 1000, incomplete: true });
 
     await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
 
@@ -122,6 +147,8 @@ describe("recheckSettledWalletPassesOfEvents", () => {
 
     expect(recheck).toHaveBeenCalledTimes(1);
     expect(recheck.mock.calls[0]![1]).toBe("evt-1");
+    // What it did get through is not asked about again first thing tomorrow.
+    expect(settings.upsert).toHaveBeenCalledWith(placeWritten("evt-1", "att-9"));
   });
 
   it("does not even read the events when there is no time left", async () => {
@@ -130,5 +157,89 @@ describe("recheckSettledWalletPassesOfEvents", () => {
 
     expect(findMany).not.toHaveBeenCalled();
     expect(recheck).not.toHaveBeenCalled();
+  });
+
+  it("starts where the last run that was cut short stopped, and wraps round to the part it had not reached", async () => {
+    findMany.mockResolvedValue([eventRow("evt-1"), eventRow("evt-2"), eventRow("evt-3")]);
+    keptPlace("evt-2", "att-5");
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(settings.findUnique).toHaveBeenCalledWith({ where: { key: RECHECK_CURSOR_KEY } });
+    expect(recheck.mock.calls.map((call) => [call[1], call[3]])).toEqual([
+      ["evt-2", { budgetMs: 60_000, after: "att-5" }],
+      ["evt-3", { budgetMs: 60_000 }],
+      ["evt-1", { budgetMs: 60_000 }],
+      ["evt-2", { budgetMs: 60_000, upTo: "att-5" }],
+    ]);
+  });
+
+  it("starts from the beginning when the kept place is not readable", async () => {
+    kept = { value_json: "not json" };
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(recheck.mock.calls.map((call) => [call[1], call[3]])).toEqual([
+      ["evt-1", { budgetMs: 60_000 }],
+      ["evt-2", { budgetMs: 60_000 }],
+    ]);
+  });
+
+  it("keeps the place of the last row it asked about, and asks no further, when an event has more rows than one page or the time ran out in it", async () => {
+    findMany.mockResolvedValue([eventRow("evt-1"), eventRow("evt-2"), eventRow("evt-3")]);
+    recheck.mockResolvedValueOnce(through("att-3"));
+    recheck.mockResolvedValueOnce({ ...through("att-7"), incomplete: true });
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(recheck.mock.calls.map((call) => call[1])).toEqual(["evt-1", "evt-2"]);
+    expect(settings.upsert).toHaveBeenCalledTimes(1);
+    expect(settings.upsert).toHaveBeenCalledWith(placeWritten("evt-2", "att-7"));
+    expect(settings.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("forgets the place when a run got through every event, so the next one starts from the beginning", async () => {
+    keptPlace("evt-1", "att-2");
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(settings.deleteMany).toHaveBeenCalledWith({ where: { key: RECHECK_CURSOR_KEY } });
+    expect(settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when a run that kept no place got through everything", async () => {
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(settings.upsert).not.toHaveBeenCalled();
+    expect(settings.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves the kept place as it was when the time was gone before it asked about anything", async () => {
+    keptPlace("evt-1", "att-2");
+    deps.nowMs = () => {
+      const now = clock;
+      clock += 30_000;
+      return now;
+    };
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 20_000 }, deps);
+
+    expect(recheck).not.toHaveBeenCalled();
+    expect(settings.upsert).not.toHaveBeenCalled();
+    expect(settings.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("does not move the place for an event it skipped, and finishes when the place cannot be saved, saying so", async () => {
+    findMany.mockResolvedValue([eventRow("evt-1"), eventRow("evt-2"), eventRow("evt-3")]);
+    resolveProvider.mockReturnValueOnce(null);
+    recheck.mockResolvedValueOnce(through("att-4"));
+    recheck.mockResolvedValueOnce({ ...through("att-8"), incomplete: true });
+    settings.upsert.mockRejectedValue(new Error("settings table is locked"));
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(recheck.mock.calls.map((call) => call[1])).toEqual(["evt-2", "evt-3"]);
+    expect(settings.upsert).toHaveBeenCalledWith(placeWritten("evt-3", "att-8"));
+    expect(querySystemLogs({ search: "wallet_pass_sweep_cursor_not_saved" })).toHaveLength(1);
   });
 });
