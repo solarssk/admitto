@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -8,8 +8,8 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { drainImportJobs } from "@admitto/import";
 import { querySystemLogs } from "@admitto/shared/system-log";
-import { lockAttendeeJobQueue } from "@admitto/tickets";
-import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
+import { createUnderAttendeeJobQueueLock, lockAttendeeJobQueue } from "@admitto/tickets";
+import { getDefaultStorage, resetDefaultStorageForTests, sweepOrphanedJobFiles } from "@admitto/storage";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
@@ -17,6 +17,12 @@ import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+
+// Passes through to the real function; a test replaces it once to stop the enqueue where a killed process would.
+vi.mock("@admitto/tickets", async (importActual) => {
+  const actual = await importActual<typeof import("@admitto/tickets")>();
+  return { ...actual, createUnderAttendeeJobQueueLock: vi.fn(actual.createUnderAttendeeJobQueueLock) };
+});
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -904,6 +910,11 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       return walk(uploadDir);
     };
 
+    /** The staged files left under the upload root that were not there in `before`, as storage keys. */
+    const newKeysSince = async (before: string[]) =>
+      (await stagedFilesOf()).filter((file) => !before.includes(file)).map((file) => relative(uploadDir, file).split(sep).join("/"));
+    const aDayAndAnHourLater = () => Date.now() + 25 * 60 * 60 * 1000;
+
     /**
      * Makes the creation of the job fail once, inside the transaction that creates it (under the queue lock of the
      * event), and leaves every other transaction alone.
@@ -949,7 +960,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       expect(await stagedFilesOf()).toHaveLength(before);
     });
 
-    it("reports the key of the staged file on stdout when it cannot be deleted either, since nothing else knows of it", async () => {
+    it("reports the key of the staged file on stdout when it cannot be deleted either, and the sweep deletes that file a day later", async () => {
       failJobCreationOnce();
       const storage = getDefaultStorage();
       vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("disk is read only"));
@@ -966,6 +977,36 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       const { key } = JSON.parse(reported as string) as { key: string };
       expect(key).toMatch(/\.csv$/);
       expect(await stagedFilesOf()).toContainEqual(expect.stringContaining(key));
+
+      // No job names the file, so only the sweep reaches it: not while a job could still be about to name it, a day later.
+      expect(await sweepOrphanedJobFiles(prisma, storage, { dryRun: false })).toMatchObject({ deleted: 0 });
+      expect(await stagedFilesOf()).toContainEqual(expect.stringContaining(key));
+      await sweepOrphanedJobFiles(prisma, storage, { dryRun: false, nowMs: aDayAndAnHourLater() });
+      expect(await stagedFilesOf()).not.toContainEqual(expect.stringContaining(key));
+    });
+
+    it("leaves the staged file in storage when the process is killed before the job exists, and the sweep takes it a day later", async () => {
+      const before = await stagedFilesOf();
+      // The process dies right after the file is written: nothing after the write runs, so the request never
+      // answers and neither the job nor the clean-up of the file ever happens.
+      vi.mocked(createUnderAttendeeJobQueueLock).mockImplementationOnce(() => new Promise<never>(() => undefined));
+      void postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+      try {
+        await vi.waitFor(async () => expect(await newKeysSince(before)).toHaveLength(1), { timeout: 10_000, interval: 25 });
+      } finally {
+        // Back to the real function, also when the file never appeared and the stand-in was not used.
+        vi.mocked(createUnderAttendeeJobQueueLock).mockReset();
+      }
+      const [key] = await newKeysSince(before);
+      expect(await prisma.adminJob.count({ where: { event_id: EVENT_A, type: "import_commit" } })).toBe(0);
+
+      const storage = getDefaultStorage();
+      expect(await sweepOrphanedJobFiles(prisma, storage, { dryRun: false })).toMatchObject({ deleted: 0 });
+      expect(await storage.exists(key!)).toBe(true);
+      const swept = await sweepOrphanedJobFiles(prisma, storage, { dryRun: false, nowMs: aDayAndAnHourLater() });
+
+      expect(swept.deleted).toBeGreaterThanOrEqual(1);
+      expect(await storage.exists(key!)).toBe(false);
     });
   });
 

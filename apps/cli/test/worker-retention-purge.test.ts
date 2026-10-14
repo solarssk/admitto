@@ -23,7 +23,7 @@ const purgeSecurityAuditLog = vi.fn(async () => ({ deleted: 0 }));
 const nullifyDeliverySnapshots = vi.fn();
 const purgeNotifications = vi.fn(async () => ({ deleted: 0 }));
 const resolveNotificationRetentionDays = vi.fn(() => 30);
-const purgeJobFilesForRetention = vi.fn(async () => ({ exportFiles: 0, stagedImportFiles: 0, failures: 0 }));
+const purgeJobFilesForRetention = vi.fn(async () => ({ exportFiles: 0, stagedImportFiles: 0, orphanedFiles: 0, failures: 0 }));
 const touchWorkerHeartbeat = vi.fn(async () => undefined);
 const sweepErasedWalletPasses = vi.fn(async (..._args: unknown[]) => ({
   pending: 0,
@@ -135,12 +135,12 @@ describe("runWorkerTick — scheduled retention pass", () => {
 
   it("says how many export files and staged import CSVs it deleted, and warns when one could not be", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 3, stagedImportFiles: 2, failures: 1 });
+    purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 3, stagedImportFiles: 2, orphanedFiles: 4, failures: 1 });
 
     await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
 
     const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
-    expect(line).toContain("export_files=3 staged_import_files=2 erased_wallet_passes=0 failed=1");
+    expect(line).toContain("export_files=3 staged_import_files=2 orphaned_job_files=4 erased_wallet_passes=0 failed=1");
     expect(logLevel(line!)).toBe("warn");
     log.mockRestore();
   });
@@ -151,7 +151,7 @@ describe("runWorkerTick — scheduled retention pass", () => {
     await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
 
     const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes("[worker:retention]") && text.includes("export_files="));
-    expect(line).toContain("export_files=0 staged_import_files=0 erased_wallet_passes=0 failed=0");
+    expect(line).toContain("export_files=0 staged_import_files=0 orphaned_job_files=0 erased_wallet_passes=0 failed=0");
     expect(logLevel(line!)).toBe("info");
     log.mockRestore();
   });
@@ -159,7 +159,7 @@ describe("runWorkerTick — scheduled retention pass", () => {
   it("says how many wallet passes of erased attendees it deleted at the provider, and warns for each that stays", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 8, deleted: 4, failed: 1, noProvider: 2, notTried: 1 });
-    purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 0, stagedImportFiles: 0, failures: 1 });
+    purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 0, stagedImportFiles: 0, orphanedFiles: 0, failures: 1 });
 
     await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
 

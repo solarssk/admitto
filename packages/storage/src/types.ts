@@ -35,4 +35,10 @@ export interface StorageAdapter {
    * Non-managed files are skipped so GC never deletes arbitrary junk.
    */
   list(): AsyncIterable<StorageListEntry>;
+  /**
+   * Yield the files that export and import jobs leave under the upload root (`{org}/events/{event}/{uuid}.csv`,
+   * `.xlsx` or `.pdf`), which `list()` skips because they are not branding uploads. Anything else is skipped
+   * too, so a sweep over this listing never deletes arbitrary junk.
+   */
+  listJobFiles(): AsyncIterable<StorageListEntry>;
 }

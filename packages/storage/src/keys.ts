@@ -8,14 +8,21 @@ const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const EVENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const UPLOAD_FILENAME_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp|woff2|woff|ttf|otf)$/;
+const JOB_FILENAME_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(csv|xlsx|pdf)$/;
+
+/** The parts of a key that is a plain relative path (no escape, empty part or trailing slash); null for anything else. */
+function splitSafeKey(key: string): string[] | null {
+  if (!key || key.includes("\\") || key.includes("..") || key.startsWith("/") || key.endsWith("/")) {
+    return null;
+  }
+  const parts = key.split("/");
+  return parts.some((p) => p === "" || p === "." || p === "..") ? null : parts;
+}
 
 /** True when `key` is a managed branding upload path (org / theme / event layouts). */
 export function isManagedUploadKey(key: string): boolean {
-  if (!key || key.includes("\\") || key.includes("..") || key.startsWith("/") || key.endsWith("/")) {
-    return false;
-  }
-  const parts = key.split("/");
-  if (parts.some((p) => p === "" || p === "." || p === "..")) return false;
+  const parts = splitSafeKey(key);
+  if (!parts) return false;
 
   if (parts.length === 2) {
     const [orgId, filename] = parts as [string, string];
@@ -34,6 +41,19 @@ export function isManagedUploadKey(key: string): boolean {
     );
   }
   return false;
+}
+
+/**
+ * True when `key` is a file that an export or an import job leaves in storage: `{org}/events/{event}/{uuid}`
+ * with the extension `.csv`, `.xlsx` or `.pdf`, which is where the export worker and the import enqueue
+ * put it. No branding upload has this shape (their extensions are images and fonts), so a sweep over it
+ * cannot reach one.
+ */
+export function isJobFileKey(key: string): boolean {
+  const parts = splitSafeKey(key);
+  if (!parts || parts.length !== 4 || parts[1] !== "events") return false;
+  const [orgId, , eventId, filename] = parts as [string, string, string, string];
+  return ORG_ID_PATTERN.test(orgId) && EVENT_ID_PATTERN.test(eventId) && JOB_FILENAME_PATTERN.test(filename);
 }
 
 /**
