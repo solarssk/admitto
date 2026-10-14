@@ -1193,7 +1193,11 @@ export function createApp(options: CreateAppOptions = {}) {
     /** For a pass just created at the provider for an attendee who has been erased or removed in
      * the meantime: records only the provider's ids (no install links), so the pass stays findable
      * as "still to delete at the provider" (an erased attendee's pass with provider ids and no
-     * provider_removed_at), then deletes it there and stamps it removed. A row that already holds
+     * provider_removed_at), then deletes it there. The row is not marked removed: another creation
+     * of the same attendee (a tap that was given up on, or a second instance) may still be on its way
+     * to the provider, and only the erasure's follow-up settles a row (deleteErasedWalletPasses: it
+     * deletes by the provider's id again, which is idempotent, asks for the reserved id and marks the
+     * row removed once no creation can still land). A row that already holds
      * another pass keeps its ids. A removed attendee has no row to keep the ids on (the insert
      * fails on its foreign key, P2003) and nobody to look for them later: the pass is only
      * deleted at the provider. Best effort and never throws: a failed delete leaves an erased
@@ -1226,10 +1230,6 @@ export function createApp(options: CreateAppOptions = {}) {
           }
         }
         await provider.deletePass(providerPassId);
-        await db.walletPass.updateMany({
-          where: { attendee_id: attendee.id, provider_pass_id: providerPassId, provider_removed_at: null },
-          data: { provider_removed_at: new Date() },
-        });
       } catch (err) {
         console.error("wallet pass delete (erased attendee) failed:", { reason: walletFailureCode(err) });
         recordSystemLog({
@@ -1385,7 +1385,9 @@ export function createApp(options: CreateAppOptions = {}) {
           // any other unrecoverable createPass error - a reconcile Admitto can't confirm must not
           // be treated as a successful activation.
           try {
-            const reconciled = await provider.updatePass(recovered.providerPassId, input);
+            // The same deadline as the creation that was rejected: this call carries the person's data too, and comes after
+            // two searches and a pause, which can be long.
+            const reconciled = await provider.updatePass(recovered.providerPassId, input, { checkedAt });
             return await markActive(input.userProvidedId, reconciled, input.expirationDate);
           } catch (reconcileErr) {
             console.error("PassCreator updatePass (duplicate recovery reconcile) failed:", { reason: walletFailureCode(reconcileErr) });

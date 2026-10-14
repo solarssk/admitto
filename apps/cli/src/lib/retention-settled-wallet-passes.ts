@@ -15,8 +15,8 @@ export type SettledRecheckDeps = {
  * The second look of the daily sweep: for every event that has unrecorded passes of erased attendees which were marked
  * removed within {@link SETTLED_RECHECK_HORIZON_MS}, asks the provider again for the ids reserved for them and deletes
  * a pass that has turned up since (recheckSettledWalletPasses). Best effort and silent when all is well: one warning per
- * event and run when a pass was found (the sign that an answer of "none" came too early, with the event's id only), and
- * one when the provider could not answer. An event without credentials the sweep can use is skipped (the sweep over
+ * event and run when a pass was found (the sign that an answer of "none" came too early, with the event's id only), one
+ * when the provider could not answer, and one when rows were left unasked. An event without credentials the sweep can use is skipped (the sweep over
  * pending passes already reports those). `budgetMs` is what is left of the sweep's time.
  */
 export async function recheckSettledWalletPassesOfEvents(
@@ -46,5 +46,7 @@ export async function recheckSettledWalletPassesOfEvents(
     const run = await deps.recheck(db, event.id, provider, { budgetMs: remainingMs }); // NOSONAR - one event at a time on purpose: the events share one time budget and the provider must not be burst
     if (run.found > 0) emitSystemLog("wallet", "warn", "wallet_pass_found_after_settling", { eventId: event.id, deleted: run.found });
     if (run.failed > 0) emitSystemLog("wallet", "warn", "wallet_pass_recheck_failed", { eventId: event.id, failed: run.failed });
+    // Rows left unasked (more than the limit, or no time) are asked about tomorrow or never: the horizon is closing on them.
+    if (run.incomplete) emitSystemLog("wallet", "warn", "wallet_pass_recheck_incomplete", { eventId: event.id });
   }
 }

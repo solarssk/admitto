@@ -301,19 +301,44 @@ describe("scrubImportJobResults", () => {
 });
 
 describe("deleteErasedWalletPasses", () => {
+  /** What the provider answers when it is asked for an id: it holds `count` passes under each of the given ids (a delete
+   * takes one away, so the next question finds one less) and none under any other id. */
+  const holding = (ids: Record<string, number> = {}) => {
+    const left = new Map(Object.entries(ids));
+    return vi.fn(async (userProvidedId: string) => {
+      const count = left.get(userProvidedId) ?? 0;
+      if (count > 0) left.set(userProvidedId, count - 1);
+      return count > 0;
+    });
+  };
+
   const stubProvider = (
     deletePass: ReturnType<typeof vi.fn> = vi.fn(async () => undefined),
-    deletePassByUserProvidedId: ReturnType<typeof vi.fn> = vi.fn(async (_userProvidedId: string) => true),
+    deletePassByUserProvidedId: ReturnType<typeof vi.fn> = holding(),
   ) =>
     ({ deletePass, deletePassByUserProvidedId }) as unknown as WalletPassProvider & {
       deletePass: ReturnType<typeof vi.fn>;
       deletePassByUserProvidedId: ReturnType<typeof vi.fn>;
     };
 
-  const attendeeWithPass = async (id: string, eventId = EVENT_ID, erase = true) => {
+  const DAY_MS = 24 * 3_600_000;
+  /** Sets the clock to `ms` after the person was erased (restore it with `mockRestore`): the erasure date cannot be moved. */
+  const clockAfterErasureOf = async (attendeeId: string, ms: number) => {
+    const erasedAt = (await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } })).erased_at!;
+    return vi.spyOn(Date, "now").mockReturnValue(erasedAt.getTime() + ms);
+  };
+  /** An attendee with a recorded pass, erased unless `erase` is false; the pass was issued `issuedAgo` ms ago (`null`: no issuing time). */
+  const attendeeWithPass = async (id: string, eventId = EVENT_ID, erase = true, issuedAgo: number | null = 3 * DAY_MS) => {
     await prisma.attendee.create({ data: { id, event_id: eventId, email: `${id}@example.com`, name: id } });
     await prisma.walletPass.create({
-      data: { attendee_id: id, status: "active", provider_pass_id: `pc-${id}`, user_provided_id: `u-${id}`, apple_url: "https://pc/a" },
+      data: {
+        attendee_id: id,
+        status: "active",
+        provider_pass_id: `pc-${id}`,
+        user_provided_id: `u-${id}`,
+        apple_url: "https://pc/a",
+        issued_at: issuedAgo === null ? null : new Date(Date.now() - issuedAgo),
+      },
     });
     if (erase) await prisma.$transaction((tx) => eraseAttendees(tx, { eventId, attendeeIds: [id] }));
   };
@@ -329,8 +354,8 @@ describe("deleteErasedWalletPasses", () => {
     expect(first).toMatchObject({ deleted: 2, failedAttendeeIds: [] });
     expect(second).toMatchObject({ deleted: 0, failedAttendeeIds: [] });
     expect(provider.deletePass.mock.calls.map((call) => call[0]).sort()).toEqual(["pc-copies-wp-1", "pc-copies-wp-2"]);
-    // A row with the provider's id is deleted by it, also when it holds the reserved id too.
-    expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
+    // A row with the provider's id is deleted by it, and the id reserved for it is asked about as well (once each: none held).
+    expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0]).sort()).toEqual(["u-copies-wp-1", "u-copies-wp-2"]);
     for (const id of ["copies-wp-1", "copies-wp-2"]) {
       expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).provider_removed_at).not.toBeNull();
     }
@@ -353,6 +378,112 @@ describe("deleteErasedWalletPasses", () => {
     const retry = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-3", "copies-wp-4"], stubProvider());
     expect(retry).toMatchObject({ deleted: 1, failedAttendeeIds: [] });
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: "copies-wp-3" } })).provider_removed_at).not.toBeNull();
+  });
+
+  describe("a second pass under the id of a recorded pass (two creations at once can both succeed)", () => {
+    const removedAtOf = async (id: string) =>
+      (await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).provider_removed_at;
+
+    it("deletes the recorded pass by its id and then every pass the provider holds under the reserved id, and counts what it found", async () => {
+      await attendeeWithPass("copies-wp-dup-1");
+      const provider = stubProvider(undefined, holding({ "u-copies-wp-dup-1": 2 }));
+
+      const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-1"], provider);
+
+      expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1, undecided: 0, failedAttendeeIds: [] });
+      expect(provider.deletePass.mock.calls).toEqual([["pc-copies-wp-dup-1"]]);
+      expect(provider.deletePassByUserProvidedId.mock.calls).toEqual([["u-copies-wp-dup-1"], ["u-copies-wp-dup-1"], ["u-copies-wp-dup-1"]]);
+      expect(await removedAtOf("copies-wp-dup-1")).not.toBeNull();
+    });
+
+    it("gives up on the row, and leaves it still to delete, when the provider keeps answering with a pass", async () => {
+      await attendeeWithPass("copies-wp-dup-2");
+      const provider = stubProvider(undefined, vi.fn(async (_userProvidedId: string) => true));
+
+      const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-2"], provider);
+
+      expect(result).toMatchObject({ deleted: 0, failedAttendeeIds: ["copies-wp-dup-2"], failureCodes: ["wallet_provider_rejected"] });
+      // Five deletions, and the sixth question that still finds one.
+      expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(6);
+      expect(await removedAtOf("copies-wp-dup-2")).toBeNull();
+    });
+
+    it("settles a recorded pass at once when it was issued long ago, and holds it back when it was issued a minute before the erasure", async () => {
+      await attendeeWithPass("copies-wp-dup-old");
+      await attendeeWithPass("copies-wp-dup-new", EVENT_ID, true, 60_000);
+      const provider = stubProvider();
+
+      const first = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-old", "copies-wp-dup-new"], provider);
+
+      expect(first).toMatchObject({ deleted: 1, undecided: 1, failedAttendeeIds: [] });
+      expect(await removedAtOf("copies-wp-dup-old")).not.toBeNull();
+      expect(await removedAtOf("copies-wp-dup-new")).toBeNull();
+      // Both were deleted at the provider by their ids; the held back one is asked again and settles once its creation is old enough.
+      expect(provider.deletePass.mock.calls.map((call) => call[0]).sort()).toEqual(["pc-copies-wp-dup-new", "pc-copies-wp-dup-old"]);
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + CREATION_SETTLE_WINDOW_MS);
+      try {
+        expect(await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-new"], stubProvider())).toMatchObject({ deleted: 1, undecided: 0 });
+      } finally {
+        clock.mockRestore();
+      }
+      expect(await removedAtOf("copies-wp-dup-new")).not.toBeNull();
+    });
+
+    it("counts a recorded pass as settled from the moment its issuing is as old as the window, and not a moment before", async () => {
+      await attendeeWithPass("copies-wp-dup-edge-a");
+      await attendeeWithPass("copies-wp-dup-edge-b");
+      const base = Date.now();
+      await prisma.walletPass.update({ where: { attendee_id: "copies-wp-dup-edge-a" }, data: { issued_at: new Date(base - CREATION_SETTLE_WINDOW_MS) } });
+      await prisma.walletPass.update({ where: { attendee_id: "copies-wp-dup-edge-b" }, data: { issued_at: new Date(base - CREATION_SETTLE_WINDOW_MS + 1) } });
+      const clock = vi.spyOn(Date, "now").mockReturnValue(base);
+
+      try {
+        const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-edge-a", "copies-wp-dup-edge-b"], stubProvider());
+
+        expect(result).toMatchObject({ deleted: 1, undecided: 1 });
+      } finally {
+        clock.mockRestore();
+      }
+      expect(await removedAtOf("copies-wp-dup-edge-a")).not.toBeNull();
+      expect(await removedAtOf("copies-wp-dup-edge-b")).toBeNull();
+    });
+
+    it("goes by the age of the erasure for a recorded pass that has no issuing time", async () => {
+      await attendeeWithPass("copies-wp-dup-null", EVENT_ID, true, null);
+
+      expect(await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-null"], stubProvider())).toMatchObject({ deleted: 0, undecided: 1 });
+      expect(await removedAtOf("copies-wp-dup-null")).toBeNull();
+      const clock = await clockAfterErasureOf("copies-wp-dup-null", CREATION_SETTLE_WINDOW_MS);
+      try {
+        expect(await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-null"], stubProvider())).toMatchObject({ deleted: 1, undecided: 0 });
+      } finally {
+        clock.mockRestore();
+      }
+      expect(await removedAtOf("copies-wp-dup-null")).not.toBeNull();
+    });
+
+    it("does not settle an unrecorded pass by an issuing time: only a recorded pass has one that says when its creation ended", async () => {
+      await prisma.attendee.create({ data: { id: "copies-wp-dup-unrecorded", event_id: EVENT_ID, email: "copies-wp-dup-unrecorded@example.com", name: "x" } });
+      await prisma.walletPass.create({
+        data: { attendee_id: "copies-wp-dup-unrecorded", status: "pending", user_provided_id: "u-copies-wp-dup-unrecorded", issued_at: new Date(Date.now() - 3 * DAY_MS) },
+      });
+      await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: ["copies-wp-dup-unrecorded"] }));
+
+      const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-unrecorded"], stubProvider());
+
+      expect(result).toMatchObject({ deleted: 0, undecided: 1 });
+      expect(await removedAtOf("copies-wp-dup-unrecorded")).toBeNull();
+    });
+
+    it("counts a second pass it deleted even when the row is held back, so that it is reported once", async () => {
+      await attendeeWithPass("copies-wp-dup-held", EVENT_ID, true, 60_000);
+      const provider = stubProvider(undefined, holding({ "u-copies-wp-dup-held": 1 }));
+
+      const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-dup-held"], provider);
+
+      expect(result).toMatchObject({ deleted: 0, undecided: 1, untrackedDeleted: 1 });
+      expect(await removedAtOf("copies-wp-dup-held")).toBeNull();
+    });
   });
 
   it("never touches the pass of an attendee who is not erased, or of another event", async () => {
@@ -422,7 +553,8 @@ describe("deleteErasedWalletPasses", () => {
     const provider = stubProvider(vi.fn(async () => { elapsed = 2; return undefined; }));
     // Starting the first batch must not depend on whether the runner preempts us for 1ms.
     // Advance the budget only when a real provider call begins; database results stay real.
-    const clock = vi.spyOn(Date, "now").mockImplementation(() => 1_700_000_000_000 + elapsed);
+    const base = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => base + elapsed);
     try {
       const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [...ids], provider, { budgetMs: 1 });
 
@@ -477,15 +609,15 @@ describe("deleteErasedWalletPasses", () => {
 
     it("deletes it by the id reserved on the row, marks the row removed, and does nothing the second time", async () => {
       await attendeeWithReservedId("copies-wp-res-1", { reserved: "reserved-id-copies-wp-res-1" });
-      const provider = stubProvider();
+      const provider = stubProvider(undefined, holding({ "reserved-id-copies-wp-res-1": 1 }));
 
       const first = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-res-1"], provider);
       const second = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-res-1"], provider);
 
       expect(first).toMatchObject({ deleted: 1, untrackedDeleted: 1, failedAttendeeIds: [], notTried: 0 });
       expect(second).toMatchObject({ deleted: 0, untrackedDeleted: 0 });
-      // The id that was written on the row is the one asked for, and the provider's own delete is not called for it.
-      expect(provider.deletePassByUserProvidedId.mock.calls).toEqual([["reserved-id-copies-wp-res-1"]]);
+      // The id that was written on the row is the one asked for, until the provider has none (the second question), and the provider's own delete is not called for it.
+      expect(provider.deletePassByUserProvidedId.mock.calls).toEqual([["reserved-id-copies-wp-res-1"], ["reserved-id-copies-wp-res-1"]]);
       expect(provider.deletePass).not.toHaveBeenCalled();
       expect(await removedAt("copies-wp-res-1")).not.toBeNull();
     });
@@ -510,11 +642,12 @@ describe("deleteErasedWalletPasses", () => {
       await attendeeWithPass("copies-wp-und-b");
       await attendeeWithReservedId("copies-wp-und-c");
       await attendeeWithReservedId("copies-wp-und-d");
+      const held = holding({ [`admitto:${EVENT_ID}:copies-wp-und-d`]: 1 });
       const provider = stubProvider(
         undefined,
         vi.fn(async (userProvidedId: string) => {
           if (userProvidedId.endsWith("copies-wp-und-c")) throw Object.assign(new Error("down"), { code: "wallet_provider_timeout" });
-          return userProvidedId.endsWith("copies-wp-und-d");
+          return held(userProvidedId);
         }),
       );
       const ids = ["copies-wp-und-a", "copies-wp-und-b", "copies-wp-und-c", "copies-wp-und-d"];
@@ -596,7 +729,7 @@ describe("deleteErasedWalletPasses", () => {
 
       it("still deletes the pass when the account the event uses now holds it (only the template changed), which settles the row", async () => {
         await attendeeWithReservedId("copies-wp-cred-2", { status: "failed", lastErrorCode: "wallet_credential_changed" });
-        const provider = stubProvider();
+        const provider = stubProvider(undefined, holding({ [`admitto:${EVENT_ID}:copies-wp-cred-2`]: 1 }));
 
         const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-cred-2"], provider);
 
@@ -627,7 +760,7 @@ describe("deleteErasedWalletPasses", () => {
         } finally {
           clock.mockRestore();
         }
-        expect(found).toHaveBeenCalledTimes(4);
+        expect(found).toHaveBeenCalledTimes(5); // three runs with none, the fourth finds the pass, and asks once more
         expect(await removedAt("copies-wp-cred-3")).not.toBeNull();
       });
 
@@ -672,12 +805,13 @@ describe("deleteErasedWalletPasses", () => {
 
       it("asks the provider for the reserved id again and deletes a pass that turned up after the row was settled, without touching the row", async () => {
         await settledRow("copies-wp-look-1", 2 * HOUR_MS, { reserved: "reserved-id-look-1" });
-        const provider = stubProvider();
+        const provider = stubProvider(undefined, holding({ "reserved-id-look-1": 1 }));
 
         const result = await recheckSettledWalletPasses(prisma, EVENT_ID, provider);
 
-        expect(result).toEqual({ checked: 1, found: 1, failed: 0 });
-        expect(asked(provider)).toEqual(["reserved-id-look-1"]);
+        expect(result).toEqual({ checked: 1, found: 1, failed: 0, incomplete: false });
+        // Found, then asked again until the provider has none.
+        expect(asked(provider)).toEqual(["reserved-id-look-1", "reserved-id-look-1"]);
         expect(provider.deletePass).not.toHaveBeenCalled();
         const row = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: "copies-wp-look-1" } });
         expect(row.provider_removed_at).not.toBeNull();
@@ -688,16 +822,17 @@ describe("deleteErasedWalletPasses", () => {
         await settledRow("copies-wp-look-2", HOUR_MS);
         const provider = stubProvider(undefined, vi.fn(async (_userProvidedId: string) => false));
 
-        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toEqual({ checked: 1, found: 0, failed: 0 });
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toEqual({ checked: 1, found: 0, failed: 0, incomplete: false });
         expect(asked(provider)).toEqual([`admitto:${EVENT_ID}:copies-wp-look-2`]);
       });
 
       it("builds the id from the event and the attendee for a failed creation from before ids were reserved", async () => {
         await settledRow("copies-wp-look-3", HOUR_MS, { reserved: false, status: "failed" });
-        const provider = stubProvider();
+        const builtId = `admitto:${EVENT_ID}:copies-wp-look-3`;
+        const provider = stubProvider(undefined, holding({ [builtId]: 1 }));
 
         expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toMatchObject({ checked: 1, found: 1 });
-        expect(asked(provider)).toEqual([`admitto:${EVENT_ID}:copies-wp-look-3`]);
+        expect(asked(provider)).toEqual([builtId, builtId]);
       });
 
       it("asks only about unrecorded passes of erased attendees of this event that were settled within the horizon", async () => {
@@ -710,12 +845,15 @@ describe("deleteErasedWalletPasses", () => {
         await attendeeWithReservedId("copies-wp-look-bare", { reserved: false }); // no id and not failed: nothing was ever reserved
         await settledRow("copies-wp-look-tracked", HOUR_MS);
         await prisma.walletPass.update({ where: { attendee_id: "copies-wp-look-tracked" }, data: { provider_pass_id: "pc-copies-wp-look-tracked" } });
-        const provider = stubProvider();
+        const provider = stubProvider(
+          undefined,
+          holding({ [`admitto:${EVENT_ID}:copies-wp-look-edge`]: 1, [`admitto:${EVENT_ID}:copies-wp-look-in`]: 1 }),
+        );
 
         const result = await recheckSettledWalletPasses(prisma, EVENT_ID, provider);
 
-        expect(result).toEqual({ checked: 2, found: 2, failed: 0 });
-        expect(asked(provider).sort()).toEqual(
+        expect(result).toEqual({ checked: 2, found: 2, failed: 0, incomplete: false });
+        expect([...new Set(asked(provider))].sort()).toEqual(
           [`admitto:${EVENT_ID}:copies-wp-look-edge`, `admitto:${EVENT_ID}:copies-wp-look-in`].sort(),
         );
       });
@@ -728,7 +866,7 @@ describe("deleteErasedWalletPasses", () => {
 
         const result = await recheckSettledWalletPasses(prisma, EVENT_ID, provider, { limit: 2 });
 
-        expect(result.checked).toBe(2);
+        expect(result).toMatchObject({ checked: 2, incomplete: true }); // a full page: there may be more
         expect(asked(provider).sort()).toEqual(
           [`admitto:${EVENT_ID}:copies-wp-look-b`, `admitto:${EVENT_ID}:copies-wp-look-c`].sort(),
         );
@@ -745,7 +883,7 @@ describe("deleteErasedWalletPasses", () => {
           }),
         );
 
-        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toEqual({ checked: 1, found: 0, failed: 1 });
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toEqual({ checked: 1, found: 0, failed: 1, incomplete: false });
         expect(await removedAt("copies-wp-look-f1")).not.toBeNull();
       });
 
@@ -753,19 +891,20 @@ describe("deleteErasedWalletPasses", () => {
         await settledRow("copies-wp-look-budget", HOUR_MS);
         const provider = stubProvider();
 
-        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider, { budgetMs: 0 })).toEqual({ checked: 0, found: 0, failed: 0 });
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider, { budgetMs: 0 })).toEqual({ checked: 0, found: 0, failed: 0, incomplete: true });
         expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
       });
     });
 
     it("finds a failed creation from before ids were reserved (no id of any kind on the row) and deletes by the id built from the event and the attendee", async () => {
       await attendeeWithReservedId("copies-wp-res-3", { reserved: false, status: "failed" });
-      const provider = stubProvider();
+      const builtId = `admitto:${EVENT_ID}:copies-wp-res-3`;
+      const provider = stubProvider(undefined, holding({ [builtId]: 1 }));
 
       const result = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-res-3"], provider);
 
       expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1 });
-      expect(provider.deletePassByUserProvidedId.mock.calls).toEqual([[`admitto:${EVENT_ID}:copies-wp-res-3`]]);
+      expect(provider.deletePassByUserProvidedId.mock.calls).toEqual([[builtId], [builtId]]);
       expect(await removedAt("copies-wp-res-3")).not.toBeNull();
     });
 
@@ -774,7 +913,10 @@ describe("deleteErasedWalletPasses", () => {
       await attendeeWithPass("copies-wp-mix-c");
       await attendeeWithReservedId("copies-wp-mix-b");
       await attendeeWithPass("copies-wp-mix-a");
-      const provider = stubProvider();
+      const provider = stubProvider(
+        undefined,
+        holding({ [`admitto:${EVENT_ID}:copies-wp-mix-b`]: 1, [`admitto:${EVENT_ID}:copies-wp-mix-d`]: 1 }),
+      );
 
       const result = await deleteErasedWalletPasses(
         prisma,
@@ -785,9 +927,13 @@ describe("deleteErasedWalletPasses", () => {
 
       expect(result).toMatchObject({ deleted: 4, untrackedDeleted: 2, failedAttendeeIds: [] });
       expect(provider.deletePass.mock.calls.map((call) => call[0]).sort()).toEqual(["pc-copies-wp-mix-a", "pc-copies-wp-mix-c"]);
-      expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0]).sort()).toEqual([
+      // Every row is asked for its reserved id: the two recorded passes for theirs (none held), the two others for the
+      // id that is held (found, then asked again).
+      expect([...new Set(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0]))].sort()).toEqual([
         `admitto:${EVENT_ID}:copies-wp-mix-b`,
         `admitto:${EVENT_ID}:copies-wp-mix-d`,
+        "u-copies-wp-mix-a",
+        "u-copies-wp-mix-c",
       ]);
     });
 
@@ -810,7 +956,12 @@ describe("deleteErasedWalletPasses", () => {
       });
       expect(await removedAt("copies-wp-res-4")).toBeNull();
 
-      const retry = await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-res-4"], stubProvider());
+      const retry = await deleteErasedWalletPasses(
+        prisma,
+        EVENT_ID,
+        ["copies-wp-res-4"],
+        stubProvider(undefined, holding({ [`admitto:${EVENT_ID}:copies-wp-res-4`]: 1 })),
+      );
       expect(retry).toMatchObject({ deleted: 1, failedAttendeeIds: [] });
       expect(await removedAt("copies-wp-res-4")).not.toBeNull();
     });
@@ -858,7 +1009,12 @@ describe("deleteErasedWalletPasses", () => {
       });
       // That pass is a tracked one now, and the next run deletes it by its own id.
       const next = stubProvider();
-      await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-res-race"], next);
+      const later = await clockAfterErasure("copies-wp-res-race", CREATION_SETTLE_WINDOW_MS);
+      try {
+        await deleteErasedWalletPasses(prisma, EVENT_ID, ["copies-wp-res-race"], next);
+      } finally {
+        later.mockRestore();
+      }
       expect(next.deletePass.mock.calls).toEqual([["pc-late"]]);
       expect(await removedAt("copies-wp-res-race")).not.toBeNull();
     });

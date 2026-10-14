@@ -445,10 +445,10 @@
       "name": "PASSCREATOR_BASE_URL",
       "group": "wallet",
       "boot": "optional",
-      "consumers": ["app"],
+      "consumers": ["app", "worker", "cli"],
       "secret": false,
       "ui": "none",
-      "summary": "Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint."
+      "summary": "Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint. Set it the same for every service: the worker's wallet jobs and retention run and the erase command read it too, and a different endpoint there answers 404 for passes that exist."
     },
     {
       "name": "BOUNCE_INGEST_TICK_SECONDS",

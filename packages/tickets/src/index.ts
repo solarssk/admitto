@@ -16,6 +16,7 @@ export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
   ERASED_EMAIL_DOMAIN,
+  ERASE_TRANSACTION_TIMEOUT_MS,
   erasedAttendeeEmail,
   eraseAttendees,
   isErasedPlaceholderEmail,

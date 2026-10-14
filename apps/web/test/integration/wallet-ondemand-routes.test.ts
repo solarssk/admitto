@@ -845,7 +845,14 @@ describe("On-demand wallet routes", () => {
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
     expect(res.status).toBe(302);
-    expect(provider.updatePass).toHaveBeenCalledWith("pc-winner", expect.objectContaining({ userProvidedId: expect.any(String) }));
+    // The update carries the person's data too: it is given the same check as the creation that was rejected, so that it is
+    // dropped, like the creation, when it comes too late.
+    const createOptions = provider.createPass.mock.calls[0]![1] as { checkedAt: number };
+    expect(provider.updatePass).toHaveBeenCalledWith(
+      "pc-winner",
+      expect.objectContaining({ userProvidedId: expect.any(String) }),
+      { checkedAt: createOptions.checkedAt },
+    );
     expect(res.headers.get("location")).toBe("https://pc.test/apple/winner-reconciled");
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("active");
@@ -1155,6 +1162,7 @@ describe("On-demand wallet routes", () => {
       expect(provider.updatePass).toHaveBeenCalledWith(
         `pc-${ATTENDEE_MODE_A_ID}`,
         expect.objectContaining({ expirationDate: undefined }),
+        { checkedAt: expect.any(Number) },
       );
       expect(second.headers.get("location")).toBe("https://pc.test/apple/reconciled");
       const afterSecond = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });

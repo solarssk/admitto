@@ -24,7 +24,7 @@ describe("recheckSettledWalletPassesOfEvents", () => {
     clock = NOW;
     findMany = vi.fn(async () => [eventRow("evt-1"), eventRow("evt-2")]);
     db = { event: { findMany } } as unknown as PrismaClient;
-    recheck = vi.fn(async () => ({ checked: 3, found: 0, failed: 0 }));
+    recheck = vi.fn(async () => ({ checked: 3, found: 0, failed: 0, incomplete: false }));
     resolveProvider = vi.fn(() => provider);
     deps = {
       resolveProvider: resolveProvider as SettledRecheckDeps["resolveProvider"],
@@ -73,7 +73,7 @@ describe("recheckSettledWalletPassesOfEvents", () => {
   });
 
   it("warns once per event, with the event id and how many, when a pass turned up after the row was settled", async () => {
-    recheck.mockResolvedValueOnce({ checked: 5, found: 2, failed: 0 });
+    recheck.mockResolvedValueOnce({ checked: 5, found: 2, failed: 0, incomplete: false });
 
     await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
 
@@ -83,13 +83,23 @@ describe("recheckSettledWalletPassesOfEvents", () => {
   });
 
   it("warns once per event, with the event id and how many, when the provider could not answer", async () => {
-    recheck.mockResolvedValueOnce({ checked: 1, found: 0, failed: 4 });
+    recheck.mockResolvedValueOnce({ checked: 1, found: 0, failed: 4, incomplete: false });
 
     await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
 
     const logs = querySystemLogs({ source: "wallet" });
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ level: "warn", message: "wallet_pass_recheck_failed", fields: { eventId: "evt-1", failed: 4 } });
+  });
+
+  it("warns once per event, with the event id, when rows were left unasked (more than the limit, or no time left)", async () => {
+    recheck.mockResolvedValueOnce({ checked: 1000, found: 0, failed: 0, incomplete: true });
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    const logs = querySystemLogs({ source: "wallet" });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ level: "warn", message: "wallet_pass_recheck_incomplete", fields: { eventId: "evt-1" } });
   });
 
   it("skips an event whose credentials give no provider, and goes on with the next", async () => {

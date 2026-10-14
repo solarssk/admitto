@@ -7,7 +7,7 @@ import type {
   WalletProviderPassRef,
   WalletProviderSnapshot,
 } from "./types.js";
-import { CREATE_PASS_DEADLINE_MS, type CreatePassOptions, type WalletPassProvider } from "./provider.js";
+import { CREATE_PASS_DEADLINE_MS, type PassSendOptions, type WalletPassProvider } from "./provider.js";
 import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY } from "./capabilities.js";
 import { parseOffsetInstant } from "./offset-instant.js";
 import { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
@@ -31,7 +31,7 @@ const RETRY_BASE_DELAY_MS = 500;
 /** Same timeout every other outbound HTTP client in this codebase uses for a third-party call
  * (OIDC discovery/token, Cloudflare Access, Graph mailer) - a request PassCreator never responds
  * to would otherwise hang this client's caller forever, since fetch() has no default timeout. */
-const REQUEST_TIMEOUT_MS = 15_000;
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Minimum spacing enforced between the *start* of any two outbound PassCreator calls from THIS
@@ -201,7 +201,7 @@ export class PassCreatorClient implements WalletPassProvider {
     this.fetchFn = fetchFn;
   }
 
-  async createPass(input: WalletPassInput, options: CreatePassOptions = {}): Promise<WalletPassResult> {
+  async createPass(input: WalletPassInput, options: PassSendOptions = {}): Promise<WalletPassResult> {
     const envelope = await this.request<PassCreatorPassData>(
       "POST",
       "/api/v3/pass?async=false",
@@ -212,12 +212,14 @@ export class PassCreatorClient implements WalletPassProvider {
     return toResult(envelope);
   }
 
-  async updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult> {
+  async updatePass(providerPassId: string, input: WalletPassInput, options: PassSendOptions = {}): Promise<WalletPassResult> {
     const envelope = await this.request<PassCreatorPassData>(
       "PATCH",
       `/api/v3/pass/${encodeURIComponent(providerPassId)}`,
       { data: toPassCreatorData(input, this.templateId, this.fieldMapping, false) },
       "/api/v3/pass/{id}",
+      // No deadline unless the caller says when it last checked: the other callers read the person right before.
+      options.checkedAt === undefined ? undefined : options.checkedAt + CREATE_PASS_DEADLINE_MS,
     );
     return toResult(envelope);
   }

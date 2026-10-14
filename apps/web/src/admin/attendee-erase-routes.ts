@@ -4,6 +4,7 @@ import { z } from "zod";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { resolveConfiguredWalletProvider } from "@admitto/wallet";
 import {
+  ERASE_TRANSACTION_TIMEOUT_MS,
   deleteErasedWalletPasses,
   eraseAttendees,
   erasedPassToDeleteWhere,
@@ -17,10 +18,6 @@ import { assertWalletBulkSelectionWithinLimit, writeAttendeeLifecycleAuditLog } 
 import { BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 import { publishActivityChanged } from "./checkin-sse-publish.js";
 import { purgeEventJobFilesBestEffort } from "./purge-export-files.js";
-
-/** An erasure touches a handful of tables per attendee; a large selection needs more than
- * Prisma's default 5 s transaction. */
-const ERASE_TX_TIMEOUT_MS = 60_000;
 
 /** How long the wallet follow-up may run: shorter than the reverse proxy's read timeout, so a slow
  * provider cannot turn a committed erasure into a gateway error. What it did not reach is reported
@@ -143,7 +140,7 @@ async function runErasure(
       }
       return erased;
     },
-    { timeout: ERASE_TX_TIMEOUT_MS },
+    { timeout: ERASE_TRANSACTION_TIMEOUT_MS },
   );
 
   // The files that exports and finished imports wrote before the erasure still hold the person: they go too

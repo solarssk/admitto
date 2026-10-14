@@ -100,7 +100,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `PASSCREATOR_BASE_URL` | optional | app | none | no | Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint. |
+| `PASSCREATOR_BASE_URL` | optional | app, worker, cli | none | no | Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint. Set it the same for every service: the worker's wallet jobs and retention run and the erase command read it too, and a different endpoint there answers 404 for passes that exist. |
 
 ## Background worker
 

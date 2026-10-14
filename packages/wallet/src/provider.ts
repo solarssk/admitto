@@ -8,8 +8,8 @@ import type {
 } from "./types.js";
 
 /**
- * How long after the caller's last check (see {@link CreatePassOptions}) a `createPass` may still send its request to
- * the provider. A call that has not sent by then (it queued behind other calls in the pacing gate, was retried after a
+ * How long after the caller's last check (see {@link PassSendOptions}) a `createPass` may still send its request to
+ * the provider (and an `updatePass` that is given a check, see there). A call that has not sent by then (it queued behind other calls in the pacing gate, was retried after a
  * rate limit, or the process was suspended) gives up without sending and fails with `wallet_provider_timeout`.
  * Erasing an attendee relies on it: a pass that was being made when the person was erased can reach the provider only
  * within this limit plus the request's own timeout, so the answer "no pass under that id" is final once the erasure is
@@ -19,12 +19,12 @@ import type {
  */
 export const CREATE_PASS_DEADLINE_MS = 2 * 60_000;
 
-/** What a caller can tell `createPass` about the time it has. */
-export type CreatePassOptions = {
+/** What a caller can tell `createPass`, and an `updatePass` that sends a person's data, about the time it has. */
+export type PassSendOptions = {
   /** When the caller last confirmed that the pass may be made, in epoch milliseconds (for Admitto: the attendee read as
    * not erased, under their row lock, as the id for the pass was reserved). The call counts {@link CREATE_PASS_DEADLINE_MS}
    * from then, not from the moment it is made, so that a pause in between (a suspended process) cannot stretch it.
-   * Defaults to the moment of the call. */
+   * `createPass` defaults to the moment of the call; `updatePass` has no deadline unless it is given one. */
   checkedAt?: number;
 };
 
@@ -53,8 +53,11 @@ export interface WalletPassProvider {
   /** Creates the pass. Never sends its request later than {@link CREATE_PASS_DEADLINE_MS} after
    * `options.checkedAt` (the moment of the call when that is not given), whatever it waited for: past that it fails with
    * `wallet_provider_timeout` and nothing reaches the provider. */
-  createPass(input: WalletPassInput, options?: CreatePassOptions): Promise<WalletPassResult>;
-  updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult>;
+  createPass(input: WalletPassInput, options?: PassSendOptions): Promise<WalletPassResult>;
+  /** Updates the pass with `input`. Given `options.checkedAt` it never sends its request later than
+   * {@link CREATE_PASS_DEADLINE_MS} after it, like `createPass`: for an update that carries a person's data and comes
+   * after other provider calls that can take long (the recovery after a duplicate rejection). Without it there is no deadline. */
+  updatePass(providerPassId: string, input: WalletPassInput, options?: PassSendOptions): Promise<WalletPassResult>;
   /** Sends a custom, attendee-visible push notification/message to already-installed passes
    * (e.g. an Apple Wallet lock-screen banner, a Google Wallet notification) - distinct from
    * updatePass, which only silently refreshes field values with no guaranteed visible signal.
