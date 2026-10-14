@@ -63,17 +63,28 @@ describe("a stored snapshot the renderer refuses", () => {
     expect(second).toMatchObject({ claimed: 0, sent: 0, failed: 0 });
   });
 
+  it("clears a provider error code left by an earlier attempt when the drain rejects the snapshot", async () => {
+    await prisma.emailDelivery.updateMany({
+      where: { event_id: EVENT_ID, attendee_id: BAD },
+      data: { status: "failed", retryable: true, attempts: 1, error_code: "smtp_connect", attempted_at: new Date(0) },
+    });
+
+    await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, OPTIONS);
+
+    expect(await rowOf(BAD)).toMatchObject({ status: "failed", retryable: false, error: SNAPSHOT_UNUSABLE_ERROR, error_code: null });
+  });
+
   it("is answered by a retry without a thrown error and without another attempt later", async () => {
     await prisma.emailDelivery.updateMany({
       where: { event_id: EVENT_ID, attendee_id: BAD },
-      data: { status: "failed", retryable: true, attempts: 1 },
+      data: { status: "failed", retryable: true, attempts: 1, error_code: "smtp_connect" },
     });
     const bad = await rowOf(BAD);
 
     const result = await retryDelivery(bad.id, prisma, TEST_ENV, NOOP_DEPS, { baseUrl: OPTIONS.baseUrl });
 
     expect(result).toEqual({ ok: false, reason: "snapshot_unusable" });
-    expect(await rowOf(BAD)).toMatchObject({ status: "failed", retryable: false, error: SNAPSHOT_UNUSABLE_ERROR, attempts: 2 });
+    expect(await rowOf(BAD)).toMatchObject({ status: "failed", retryable: false, error: SNAPSHOT_UNUSABLE_ERROR, error_code: null, attempts: 2 });
     expect(await retryDelivery(bad.id, prisma, TEST_ENV, NOOP_DEPS, { baseUrl: OPTIONS.baseUrl })).toEqual({
       ok: false,
       reason: "not_retryable",

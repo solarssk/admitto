@@ -34,6 +34,7 @@ describe("snapshotUnusableUpdate", () => {
       status: "failed",
       retryable: false,
       error: SNAPSHOT_UNUSABLE_ERROR,
+      error_code: null,
     });
   });
 });

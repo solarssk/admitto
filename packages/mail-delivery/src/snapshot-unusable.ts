@@ -20,13 +20,18 @@ export function tryMaterializeStoredMessage(
   }
 }
 
-/** Row update for a snapshot that cannot be rendered: failed, not retryable (a retry cannot change the text), fixed error. */
+/**
+ * Row update for a snapshot that cannot be rendered: failed, not retryable (a retry cannot change
+ * the text), fixed error. `error_code` is cleared so a code left by an earlier provider attempt
+ * is not shown next to this failure.
+ */
 export function snapshotUnusableUpdate() {
   const now = new Date();
   return {
     status: "failed" as const,
     retryable: false,
     error: SNAPSHOT_UNUSABLE_ERROR,
+    error_code: null,
     attempted_at: now,
     failed_at: now,
   };
