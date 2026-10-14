@@ -136,10 +136,16 @@ describe("sweepErasedWalletPasses", () => {
     await sweepErasedWalletPasses(db, { dryRun: false }, deps);
 
     // What it asks for is what stands between a pass and its deletion: a live attendee's pass must never match,
-    // and a row that holds only the id reserved for a pass (or says a creation failed) is still to be deleted.
+    // and a row that holds only the id reserved for a pass (or says a creation failed) is still to be deleted, as is
+    // one that says a pass may be left in an account the event no longer uses, whatever else is on it.
     const passRow = {
-      provider_removed_at: null,
-      OR: [{ provider_pass_id: { not: null } }, { user_provided_id: { not: null } }, { status: "failed" }],
+      OR: [
+        { left_behind_pass_id: { not: null } },
+        {
+          provider_removed_at: null,
+          OR: [{ provider_pass_id: { not: null } }, { user_provided_id: { not: null } }, { status: "failed" }],
+        },
+      ],
     };
     const pending = { ...passRow, attendee: { event_id: "evt-1", erased_at: { not: null } } };
     expect(db.event.findMany).toHaveBeenCalledWith(

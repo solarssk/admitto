@@ -1322,7 +1322,7 @@ describe("removing attendees from an event", () => {
     const readOf = (id: string) => `GET /api/pass/${encodeURIComponent(id)}`;
     /** What the provider is asked for a pass it holds: the read of the id, then the delete of the pass the read found. */
     const askedFor = (id: string) => [readOf(id), `DELETE /api/v3/pass/${encodeURIComponent(`pc-uid-${id}`)}`];
-    const withRow = async (row: { status: string; user_provided_id?: string; provider_removed_at?: Date; provider_pass_id?: string }, eventId = EVENT_ID) => {
+    const withRow = async (row: { status: string; user_provided_id?: string; provider_removed_at?: Date; provider_pass_id?: string; left_behind_pass_id?: string }, eventId = EVENT_ID) => {
       const a = await createAttendee(eventId);
       await prisma.walletPass.create({ data: { attendee_id: a.id, ...row } });
       return a;
@@ -1505,6 +1505,19 @@ describe("removing attendees from an event", () => {
       expect(await res.json()).toEqual({ removed: 3, not_found: 0 });
       expect(fetchMock).not.toHaveBeenCalled();
       expect(await rowCount([noRow.id, pendingBare.id, alreadyRemoved.id])).toBe(0);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("is asked about by the id it would have had when the row says a pass was left in an old account, although the row is marked removed", async () => {
+      const a = await withRow({ status: "pending", left_behind_pass_id: "pc-old-account", provider_removed_at: new Date() });
+      const fetchMock = passcreatorHolding(() => false);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      // The account the event uses now answers for the id it would have had; the old account is out of reach.
+      expect(requests(fetchMock)).toEqual([readOf(reservedFor(a.id))]);
       expect(failedLines()).toEqual([]);
     });
 

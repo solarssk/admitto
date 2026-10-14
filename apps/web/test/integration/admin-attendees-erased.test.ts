@@ -194,6 +194,7 @@ describe("the attendee list and detail", () => {
       unissued: "att-admin-erased-unissued",
       reserved: "att-admin-erased-reserved",
       failed: "att-admin-erased-failed",
+      leftBehind: "att-admin-erased-left",
     };
     const passes = {
       [ids.pending]: { provider_pass_id: "pc-pend" },
@@ -204,6 +205,13 @@ describe("the attendee list and detail", () => {
       [ids.reserved]: { provider_pass_id: null, status: "pending" },
       // A failed creation from before ids were reserved, which may also have made a pass.
       [ids.failed]: { provider_pass_id: null, user_provided_id: null, status: "failed" },
+      // The recorded pass was removed (the admin action for a voided pass), but a pass may be left in an account the event
+      // no longer uses: the row stays in the question.
+      [ids.leftBehind]: {
+        provider_pass_id: "pc-left",
+        provider_removed_at: new Date("2026-10-01T10:00:00Z"),
+        left_behind_pass_id: "pc-old-account",
+      },
     };
     try {
       for (const [id, pass] of Object.entries(passes)) {
@@ -217,6 +225,7 @@ describe("the attendee list and detail", () => {
       expect(await pendingOf(ids.pending)).toBe(true);
       expect(await pendingOf(ids.reserved)).toBe(true);
       expect(await pendingOf(ids.failed)).toBe(true);
+      expect(await pendingOf(ids.leftBehind)).toBe(true);
       // Already deleted, or never at the provider: nothing left to do.
       expect(await pendingOf(ids.done)).toBe(false);
       expect(await pendingOf(ids.unissued)).toBe(false);

@@ -960,6 +960,7 @@ describe("On-demand wallet routes", () => {
         provider_pass_id: null,
         issued_at: null,
         last_error_code: null,
+        left_behind_pass_id: null,
         user_provided_id: reserved,
       });
     } finally {
@@ -967,7 +968,7 @@ describe("On-demand wallet routes", () => {
     }
   });
 
-  it("records the credential change on the row when the pass made under the old Template ID cannot be deleted", async () => {
+  it("records the pass left behind, and the credential change, on the row when the pass made under the old Template ID cannot be deleted", async () => {
     const provider = stubProvider();
     provider.deletePass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_timeout", "PassCreator request failed."));
     changeTemplateWhileCreating(provider);
@@ -985,6 +986,7 @@ describe("On-demand wallet routes", () => {
         status: "failed",
         provider_pass_id: null,
         last_error_code: "wallet_credential_changed",
+        left_behind_pass_id: `pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
         user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
       });
       // The failed delete is logged with ids only: the pass has to be deleted by hand in the old account.

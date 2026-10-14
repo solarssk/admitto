@@ -34,12 +34,7 @@ function ProviderPassRow({
   timezone,
   onTryAgain,
 }: Readonly<{ detail: AttendeeDetailDto; timezone: string; onTryAgain: () => void }>) {
-  const removedAt = detail.wallet_pass?.provider_removed_at;
-  if (removedAt) {
-    return (
-      <ErasedRow label="Pass at the wallet provider">{`Deleted on ${formatEventDate(removedAt, timezone)}`}</ErasedRow>
-    );
-  }
+  // Still to be deleted comes first: a pass left in another account keeps the row open although the recorded pass was removed.
   if (detail.wallet_pass_delete_pending) {
     return (
       <div className="attendee-detail-row">
@@ -51,6 +46,12 @@ function ProviderPassRow({
           </Button>
         </span>
       </div>
+    );
+  }
+  const removedAt = detail.wallet_pass?.provider_removed_at;
+  if (removedAt) {
+    return (
+      <ErasedRow label="Pass at the wallet provider">{`Deleted on ${formatEventDate(removedAt, timezone)}`}</ErasedRow>
     );
   }
   return <ErasedRow label="Pass at the wallet provider">None</ErasedRow>;

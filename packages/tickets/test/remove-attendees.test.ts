@@ -180,6 +180,10 @@ describe("removeAttendees", () => {
       { name: "the provider's id and the reserved one", row: { status: "active", provider_pass_id: "pc-both", user_provided_id: "reserved-both" }, list: "tracked", reserved: null },
       { name: "the provider's id only", row: { status: "active", provider_pass_id: "pc-only" }, list: "tracked", reserved: null },
       { name: "the provider's id, marked removed", row: { status: "active", provider_pass_id: "pc-gone", provider_removed_at: removedAt }, list: "none", reserved: null },
+      // The shared question counts a pass left in an old account as still to delete, whatever else the row says.
+      { name: "a pass left in an old account, no other id, marked removed", row: { status: "pending", left_behind_pass_id: "pc-old-account", provider_removed_at: removedAt }, list: "untracked", reserved: null },
+      // Only the recorded pass is asked for: the old account is not the one the event uses now.
+      { name: "the provider's id, marked removed, and a pass left in an old account", row: { status: "active", provider_pass_id: "pc-recorded", left_behind_pass_id: "pc-old-account", provider_removed_at: removedAt }, list: "none", reserved: null },
     ];
 
     it("sorts every kind of row into the provider's id, the id it is deleted by, or neither, and reads the id off the row", async () => {

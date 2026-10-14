@@ -461,6 +461,18 @@ model WalletPass {
   // sync worker bumps on its own writes and so says nothing about a command.
   provider_commanded_at DateTime?
 
+  // The provider's id of a pass that a request made under credentials the event no longer has (an admin changed the
+  // Template ID while the pass was being made, maybe together with the API key, for one of another PassCreator
+  // account) and could not delete there: it may still be in an account that nothing asks any more. Written by that
+  // request, or by the one whose attendee was erased meanwhile (and "unknown" on rows that released versions marked
+  // "wallet_credential_changed"), kept by an
+  // erasure, and not cleared by anything in Admitto (not by a later creation, a failure, a sync, or the removal of
+  // the recorded pass; "Delete wallet pass" re-creates the row with this column alone): while it is set, the row
+  // stays among the passes still to delete and the erasure's follow-up never marks it removed, whatever the account
+  // the event uses now answers (packages/tickets/src/erase-wallet-passes.ts). Cleared by hand once the pass is
+  // deleted in that account (docs/dev/attendee-erasure.md).
+  left_behind_pass_id String?
+
   // Raw request User-Agent captured on Admitto's own /t/:token/wallet/:platform redirect (the
   // attendee's first hop, before PassCreator's own apple_url/android_url) - same
   // store-raw-parse-at-read-time convention as Session.user_agent/ApiKey.user_agent, parsed via

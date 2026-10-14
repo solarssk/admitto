@@ -53,7 +53,8 @@ type EraseResponseBody = {
 
 /**
  * The erased attendees among `attendeeIds` whose wallet pass is still to be deleted at the provider (see
- * erasedPassToDeleteWhere: it has the provider's id, or only the id reserved for it, and is not marked removed).
+ * erasedPassToDeleteWhere: it has the provider's id, or only the id reserved for it, and is not marked removed, or it
+ * says that a pass may be left in an account the event no longer uses).
  */
 async function attendeesWithPassToDelete(db: PrismaClient, eventId: string, attendeeIds: string[]): Promise<string[]> {
   if (attendeeIds.length === 0) return [];

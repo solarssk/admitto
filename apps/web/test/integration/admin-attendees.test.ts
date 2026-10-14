@@ -2016,6 +2016,34 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(audit).not.toBeNull();
     });
 
+    it("keeps the mark of a pass left behind in an account the event no longer uses: the row is replaced by one that holds only it", async () => {
+      const attendeeId = "att-wallet-action-delete-marked";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({ where: { attendee_id: attendeeId }, data: { left_behind_pass_id: "pc-old-account" } });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/delete`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(deleteSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
+        // Never added a pass as far as the attendee is concerned (no ids, no links), and the mark is all that is left.
+        expect(await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } })).toMatchObject({
+          status: "pending",
+          provider_pass_id: null,
+          user_provided_id: null,
+          apple_url: null,
+          provider_removed_at: null,
+          left_behind_pass_id: "pc-old-account",
+        });
+      } finally {
+        // The "wallet_status on GET list" block below expects its own attendees on page 1 of the 25-per-page list.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
     it("returns 404 and does not call the provider when the attendee has no wallet pass", async () => {
       const attendeeId = "att-wallet-action-delete-none";
       await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT);
@@ -3377,6 +3405,37 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(deleteSpy).toHaveBeenCalledWith(`pc-${withPassId}`);
       const row = await prisma.walletPass.findUnique({ where: { attendee_id: withPassId } });
       expect(row).toBeNull();
+    });
+
+    it("keeps the mark of a pass left behind in an account the event no longer uses on the row that is left", async () => {
+      const markedId = "att-bulk-wallet-delete-marked";
+      const plainId = "att-bulk-wallet-delete-plain";
+      await seedActionAttendee(markedId, WALLET_ACTION_EVENT, { withPass: true });
+      await seedActionAttendee(plainId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({ where: { attendee_id: markedId }, data: { left_behind_pass_id: "pc-old-account" } });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [markedId, plainId] }),
+          },
+        );
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ deleted: 2, skipped: 0, errored: 0 });
+        expect(await prisma.walletPass.findUnique({ where: { attendee_id: markedId } })).toMatchObject({
+          status: "pending",
+          provider_pass_id: null,
+          left_behind_pass_id: "pc-old-account",
+        });
+        expect(await prisma.walletPass.findUnique({ where: { attendee_id: plainId } })).toBeNull();
+      } finally {
+        // See the single delete test above: the later list block counts the attendees of this event.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: { in: [markedId, plainId] } } });
+        await prisma.attendee.deleteMany({ where: { id: { in: [markedId, plainId] } } });
+      }
     });
 
     it("returns 409 without calling the provider when the event's wallet isn't configured", async () => {

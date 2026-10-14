@@ -57,8 +57,9 @@ export function isWalletPassInstalled(
 
 /** `status: null` means the attendee has never added this ticket to a wallet - distinct from
  * "pending", which is a pass being made right now: the row is written, with the id the pass will have at
- * the provider, just before the provider is called, and is then active or failed (it stays pending only if
- * the request died in between). `installed` overrides the generic
+ * the provider, just before the provider is called, and is then active or failed (it stays pending if the
+ * request died in between, and on a row that holds only the mark of a pass left in another account, which
+ * "Delete wallet pass" leaves). `installed` overrides the generic
  * "Sent" label to "Added" for a confirmed-registered active pass (see isWalletPassInstalled). */
 export function WalletStatusBadge({
   status,

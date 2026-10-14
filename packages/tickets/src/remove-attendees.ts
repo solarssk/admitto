@@ -29,6 +29,7 @@ type DeletedWalletPass = {
   attendee_id: string;
   provider_pass_id: string | null;
   user_provided_id: string | null;
+  left_behind_pass_id: string | null;
   status: string;
   provider_removed_at: Date | null;
 };
@@ -141,7 +142,7 @@ export async function removeAttendees(
     // pass) of exactly the rows this statement deletes are the ones to delete at the provider afterwards.
     tx.$queryRaw<DeletedWalletPass[]>`
       DELETE FROM "WalletPass" WHERE "attendee_id" IN (${Prisma.join(ids)})
-      RETURNING "attendee_id", "provider_pass_id", "user_provided_id", "status", "provider_removed_at"
+      RETURNING "attendee_id", "provider_pass_id", "user_provided_id", "left_behind_pass_id", "status", "provider_removed_at"
     `,
     tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
   ]);

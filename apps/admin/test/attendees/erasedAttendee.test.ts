@@ -95,6 +95,8 @@ describe("erasedWalletChipLabel", () => {
   it.each([
     [{ wallet_pass: { provider_removed_at: "2026-10-08T12:00:00.000Z" }, wallet_pass_delete_pending: false }, "Pass removed"],
     [{ wallet_pass: { provider_removed_at: null }, wallet_pass_delete_pending: true }, "To be deleted"],
+    // The recorded pass was removed, but a pass may be left in another account: the row stays open.
+    [{ wallet_pass: { provider_removed_at: "2026-10-08T12:00:00.000Z" }, wallet_pass_delete_pending: true }, "To be deleted"],
     [{ wallet_pass: { provider_removed_at: null }, wallet_pass_delete_pending: false }, "No pass"],
     [{ wallet_pass: null, wallet_pass_delete_pending: undefined }, "No pass"],
   ])("%j reads %s", (detail, label) => {
