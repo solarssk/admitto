@@ -1044,8 +1044,13 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // Requirements/Communication/Import/Check-in and, like them, could in
   // principle be reached without that layout (e.g. in isolation in tests) —
   // fall back to a no-op so a missing Outlet context never crashes the page.
-  const outletContext = useOutletContext<{ refreshEvent?: () => Promise<void> } | undefined>();
+  const outletContext = useOutletContext<
+    { event?: { archived_at: string | null }; refreshEvent?: () => Promise<void> } | undefined
+  >();
   const refreshLayoutEvent = outletContext?.refreshEvent;
+  // The layout's own copy of the event: the archived bar above every event page can restore the event
+  // while this page is open, which changes it there and not in this page's own `event` below.
+  const layoutArchived = outletContext?.event ? outletContext.event.archived_at !== null : undefined;
 
   const [event, setEvent] = useState<EventSettingsDto | null>(null);
   const [form, setForm] = useState<SettingsForm | null>(null);
@@ -1207,6 +1212,22 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const load = useCallback(async () => {
     await loadEventSettings({ eventId, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
+
+  // The archived bar restores (or archives) the event from outside this page: when the layout's state
+  // moves to one this page's snapshot does not have, read the event again and start the cards over
+  // (as archiving from the Danger Zone does), so the fields unlock and Save comes back without a reload.
+  const lastLayoutArchivedRef = useRef(layoutArchived);
+  useEffect(() => {
+    const changed = lastLayoutArchivedRef.current !== layoutArchived;
+    lastLayoutArchivedRef.current = layoutArchived;
+    if (!changed || layoutArchived === undefined || event === null) return;
+    if (layoutArchived === (event.status === "archived")) return;
+    setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
+    setCheckinBehaviourCardResetKey((n) => n + 1);
+    void load();
+  }, [layoutArchived, event, load]);
 
   // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
   // on every :eventId change (in addition to each refresh call bumping it) so an in-flight

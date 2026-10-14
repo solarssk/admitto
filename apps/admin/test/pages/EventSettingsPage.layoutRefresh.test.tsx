@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
@@ -22,13 +23,15 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 const refreshEvent = vi.fn().mockResolvedValue(undefined);
+// The layout's own copy of the event (what the archived bar above every page changes); undefined = none.
+let mockLayoutEvent: { archived_at: string | null } | undefined;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
-    useOutletContext: () => ({ refreshEvent }),
+    useOutletContext: () => ({ refreshEvent, event: mockLayoutEvent }),
   };
 });
 
@@ -112,6 +115,7 @@ const mapTileConfig = {
 Element.prototype.scrollIntoView = vi.fn();
 
 afterEach(() => {
+  mockLayoutEvent = undefined;
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
@@ -231,5 +235,51 @@ describe("EventSettingsPage layout refresh after mutations", () => {
     await waitFor(() => {
       expect(refreshEvent).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe("EventSettingsPage when the archived bar restores the event", () => {
+  const archivedAt = "2026-07-02T06:03:00.000Z";
+
+  function tree() {
+    return (
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/admin/events/evt-1/settings"]}>
+          <Routes>
+            <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
+    );
+  }
+
+  it("reads the event again, so the fields unlock without a reload", async () => {
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    const view = render(tree());
+
+    const title = (await screen.findByLabelText("Event title")) as HTMLInputElement;
+    expect(title.disabled).toBe(true);
+    expect(fetchEventSettings).toHaveBeenCalledTimes(1);
+
+    // The bar restores the event: the layout's copy changes, this page's own snapshot does not.
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    view.rerender(tree());
+
+    await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not read the event again when the layout still agrees with the page", async () => {
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const view = render(tree());
+
+    await screen.findByLabelText("Event title");
+    view.rerender(tree());
+    await screen.findByLabelText("Event title");
+
+    expect(fetchEventSettings).toHaveBeenCalledTimes(1);
   });
 });
