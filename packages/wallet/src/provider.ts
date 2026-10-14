@@ -48,6 +48,8 @@ export interface WalletPassProvider {
    * one template, so "there is none" is a real answer. Resolves true when a pass was deleted and false
    * when there was none at that moment (already gone, never created, or a creation still under way that
    * has not reached the provider yet): when that is enough to call the pass gone is the caller's call.
+   * It deletes only a pass whose own userProvidedId is that id: an id that merely resolves to another pass
+   * (PassCreator's path also matches a barcode value) is never deleted, the call throws instead.
    * Only meaningful when `capabilities.remoteDelete`. */
   deletePassByUserProvidedId(userProvidedId: string): Promise<boolean>;
   findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null>;

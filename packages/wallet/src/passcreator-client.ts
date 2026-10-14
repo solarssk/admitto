@@ -150,6 +150,17 @@ function extractErrorStrings(errors: unknown): string[] | undefined {
   return Array.isArray(errors) ? errors.filter((error): error is string => typeof error === "string") : undefined;
 }
 
+/** The identifier and userProvidedId of the pass a v1 read returned (a raw object, or an array holding one), or null
+ * when the body does not carry an identifier. The userProvidedId is whatever the body holds: only a string equal to
+ * the id asked for is accepted by the caller, so a missing or odd one is simply "another pass". */
+function passIdentity(body: unknown): { identifier: string; userProvidedId: unknown } | null {
+  const row: unknown = Array.isArray(body) ? body[0] : body;
+  if (row === null || typeof row !== "object") return null;
+  const { identifier, userProvidedId } = row as { identifier?: unknown; userProvidedId?: unknown };
+  if (typeof identifier !== "string" || identifier === "") return null;
+  return { identifier, userProvidedId };
+}
+
 function toResult(data: PassCreatorPassData): WalletPassResult {
   return {
     providerPassId: data.identifier,
@@ -239,35 +250,69 @@ export class PassCreatorClient implements WalletPassProvider {
 
   /** Idempotent (ADR 0041 §3): a pass already gone (404) counts as deleted, not an error. */
   async deletePass(providerPassId: string): Promise<void> {
-    await this.deleteAt(`/api/v3/pass/${encodeURIComponent(providerPassId)}`, "/api/v3/pass/{id}");
-  }
-
-  /**
-   * Deletes the pass PassCreator holds under `userProvidedId`, for one whose identifier Admitto never saved.
-   * Uses the v1 `DELETE /api/pass/{pass-uid}`, whose path takes the "UID, userProvidedId, or barcode value of the
-   * pass" (developer.passcreator.com/en/api/v1/pass): the v3 delete takes the identifier only (an unknown id there
-   * is a 404, which deletePass counts as deleted, so passing it the userProvidedId would "succeed" without removing
-   * anything), and the v3 search by userProvidedId is scoped to this client's template and can lag, so it cannot say
-   * that no pass exists. This is answered from PassCreator's own record of the id: 200 means a pass was deleted, 404
-   * that there is none at that moment (already gone, never created, or not created yet). The id is unique in the account (createPass sends
-   * enforceUniqueUserProvidedId), so it names this attendee's pass whichever template made it. Documented by
-   * PassCreator, not yet confirmed live (the live checks so far covered the v3 calls).
-   */
-  async deletePassByUserProvidedId(userProvidedId: string): Promise<boolean> {
-    return this.deleteAt(`/api/pass/${encodeURIComponent(userProvidedId)}`, "/api/pass/{id}");
-  }
-
-  /** The DELETE behind both deletes above: true when PassCreator deleted a pass, false for a 404 (none there),
-   * anything else throws. `route` is a static template, never the path: the path carries an id that links the call
-   * to one attendee (logOutcome). */
-  private async deleteAt(path: string, route: string): Promise<boolean> {
+    const path = `/api/v3/pass/${encodeURIComponent(providerPassId)}`;
+    const route = "/api/v3/pass/{id}";
     const res = await this.requestRaw("DELETE", path, undefined, route);
     const ok = res.ok || res.status === 404;
     this.logOutcome("DELETE", route, ok, res.status);
     if (!ok) {
       throw this.toProviderError(res.status);
     }
-    return res.ok;
+  }
+
+  /**
+   * Deletes the pass PassCreator holds under `userProvidedId`, for one whose identifier Admitto never saved. The v3
+   * delete takes the identifier only (an unknown id there is a 404, which deletePass counts as deleted, so passing it
+   * the userProvidedId would "succeed" without removing anything), and the v3 search by userProvidedId is scoped to
+   * this client's template and can lag, so neither can say that no pass exists. The v1 read `GET /api/pass/{pass-uid}`
+   * can: its path takes the "UID, userProvidedId, or barcode value of the pass" (developer.passcreator.com/en/api/v1/pass),
+   * so a 404 means that nothing in the account answers to that id at that moment (already gone, never created, or not
+   * created yet). The same path also matches a pass that merely has that string as its barcode value, and deleting
+   * that one would remove somebody else's pass, so a pass is deleted only when its own userProvidedId is the id asked
+   * for, and then by its UID (the v3 delete). Any other pass the id resolves to is left alone and the call fails: it
+   * cannot be told whether the pass asked for exists as well. The id is unique in the account (createPass sends
+   * enforceUniqueUserProvidedId), so it names this attendee's pass whichever template made it. Documented by
+   * PassCreator, not yet confirmed live (the live checks so far covered the v3 calls).
+   */
+  async deletePassByUserProvidedId(userProvidedId: string): Promise<boolean> {
+    const found = await this.readByAnyId(userProvidedId);
+    if (found === null) return false;
+    if (found.userProvidedId !== userProvidedId) {
+      // Static line only, never an id: it could link the entry back to one attendee (logOutcome).
+      emitSystemLog("wallet", "warn", "passcreator_id_resolved_to_another_pass", {});
+      throw new WalletProviderError("wallet_provider_rejected", "PassCreator resolved the id to another pass.");
+    }
+    await this.deletePass(found.identifier);
+    return true;
+  }
+
+  /** One v1 read of what `id` (a UID, a userProvidedId or a barcode value) resolves to: the pass's own identifier and
+   * userProvidedId, or null for a 404. A body that does not say which pass it is fails like any other error, never as
+   * "none". `route` is a static template: the path carries an id that links the call to one attendee (logOutcome). */
+  private async readByAnyId(id: string): Promise<{ identifier: string; userProvidedId: unknown } | null> {
+    const route = "/api/pass/{id}";
+    const res = await this.requestRaw("GET", `/api/pass/${encodeURIComponent(id)}`, undefined, route);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      this.logOutcome("GET", route, false, res.status);
+      throw this.toProviderError(res.status);
+    }
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch (err) {
+      this.logOutcome("GET", route, false, res.status);
+      if (isTimeoutAbort(err)) {
+        throw new WalletProviderError("wallet_provider_timeout", "PassCreator response body timed out.");
+      }
+      throw this.toProviderError(res.status);
+    }
+    const identity = passIdentity(body);
+    if (identity === null) {
+      this.logOutcome("GET", route, false, res.status);
+      throw this.toProviderError(502);
+    }
+    return identity;
   }
 
   /**
