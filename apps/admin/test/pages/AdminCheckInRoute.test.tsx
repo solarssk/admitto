@@ -94,9 +94,9 @@ describe("AdminCheckInRoute archived event lockdown", () => {
     renderRoute();
 
     expect(screen.getByText("Check-in is disabled")).toBeTruthy();
-    expect(
-      screen.getByText("This event is archived, so check-in is turned off to protect its data."),
-    ).toBeTruthy();
+    expect(screen.getByText("Check-in is turned off for this event.")).toBeTruthy();
+    // The archived bar above every event page says why; this screen does not say it again.
+    expect(screen.queryByText(/archived/i)).toBeNull();
     expect(screen.queryByTestId("checkin-page")).toBeNull();
     expect(screen.queryByRole("link", { name: "Go to Event settings" })).toBeNull();
   });

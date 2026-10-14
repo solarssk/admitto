@@ -22,7 +22,7 @@ export function AdminCheckInRoute() {
         <EmptyState
           icon={<i className="ti ti-archive" aria-hidden="true" />}
           title="Check-in is disabled"
-          description="This event is archived, so check-in is turned off to protect its data."
+          description="Check-in is turned off for this event."
         />
       </>
     );

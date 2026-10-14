@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { deferred, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 // Focused regression coverage for the shared-layout staleness fix: Settings is
 // the only page that mutates `archived_at`/other event fields, but every
@@ -22,13 +23,15 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 const refreshEvent = vi.fn().mockResolvedValue(undefined);
+// The layout's own copy of the event (what the archived bar above every page changes); undefined = none.
+let mockLayoutEvent: { archived_at: string | null } | undefined;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
-    useOutletContext: () => ({ refreshEvent }),
+    useOutletContext: () => ({ refreshEvent, event: mockLayoutEvent }),
   };
 });
 
@@ -62,6 +65,7 @@ import {
   fetchTimezoneForCoordinates,
   patchEvent,
   saveEventLocation,
+  unarchiveEvent,
   searchGeocoding,
   reverseGeocoding,
 } from "../../src/api/client.js";
@@ -112,6 +116,8 @@ const mapTileConfig = {
 Element.prototype.scrollIntoView = vi.fn();
 
 afterEach(() => {
+  vi.useRealTimers();
+  mockLayoutEvent = undefined;
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
@@ -231,5 +237,174 @@ describe("EventSettingsPage layout refresh after mutations", () => {
     await waitFor(() => {
       expect(refreshEvent).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe("EventSettingsPage when the archived bar restores the event", () => {
+  const archivedAt = "2026-07-02T06:03:00.000Z";
+
+  function tree() {
+    return (
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/admin/events/evt-1/settings"]}>
+          <Routes>
+            <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
+    );
+  }
+
+  it("reads the event again, so the fields unlock without a reload", async () => {
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    const view = render(tree());
+
+    const title = (await screen.findByLabelText("Event title")) as HTMLInputElement;
+    expect(title.disabled).toBe(true);
+    expect(fetchEventSettings).toHaveBeenCalledTimes(1);
+
+    // The bar restores the event: the layout's copy changes, this page's own snapshot does not.
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    view.rerender(tree());
+
+    await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("still reads the event again when the restore lands before the first read has finished", async () => {
+    mockLayoutEvent = { archived_at: archivedAt };
+    const firstRead = deferred<typeof activeEvent>();
+    vi.mocked(fetchEventSettings).mockReturnValueOnce(firstRead.promise);
+    const view = render(tree());
+
+    // The bar restores while the page is still waiting for its first read.
+    mockLayoutEvent = { archived_at: null };
+    view.rerender(tree());
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    await act(async () => {
+      firstRead.resolve({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    });
+
+    await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the event again only once when the layout stays out of step with the server", async () => {
+    mockLayoutEvent = { archived_at: null };
+    // A new object on every read, as the real request gives: the same object would not render again.
+    vi.mocked(fetchEventSettings).mockImplementation(async () => ({
+      ...activeEvent,
+      status: "archived",
+      archived_at: archivedAt,
+    }));
+    render(tree());
+
+    await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not read the event a second time during its own Restore from the Danger zone", async () => {
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
+    // The page reads the restored event first; the layout refresh is still pending, so the two disagree for a moment.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const layoutRefresh = deferred<void>();
+    refreshEvent.mockReturnValueOnce(layoutRefresh.promise);
+    render(tree());
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
+
+    await waitFor(() => expect(refreshEvent).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      layoutRefresh.resolve();
+    });
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("says so when its own Archive worked but the layout could not refresh", async () => {
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    // The layout's read failed: it keeps the old state, so the bar would stay missing.
+    refreshEvent.mockResolvedValueOnce(false);
+    render(tree());
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    expect(await screen.findByText(/archived, but this page could not refresh/)).toBeTruthy();
+  });
+
+  it("tries once more after a pause when the read that follows the bar's restore fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    const view = render(tree());
+    expect(((await screen.findByLabelText("Event title")) as HTMLInputElement).disabled).toBe(true);
+
+    // The bar restores, and the page's read of the event fails once, then works.
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    view.rerender(tree());
+    await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
+    expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+
+    await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up after that one more try, so a server that stays down is not asked in a loop", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    const view = render(tree());
+    await screen.findByLabelText("Event title");
+
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockRejectedValue(new Error("network down"));
+    view.rerender(tree());
+    await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
+    // In steps: React runs the effect that a timer's state change asks for only when the act scope ends.
+    for (let step = 0; step < 6; step += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+    }
+
+    expect(fetchEventSettings).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not read the event again when the layout still agrees with the page", async () => {
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const view = render(tree());
+
+    await screen.findByLabelText("Event title");
+    view.rerender(tree());
+    await screen.findByLabelText("Event title");
+
+    expect(fetchEventSettings).toHaveBeenCalledTimes(1);
   });
 });
