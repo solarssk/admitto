@@ -31,7 +31,7 @@ function pendingFixture(deliveryId: string) {
   };
 }
 
-type DeliveryRow = { status: string; recipient_email: string | null };
+type DeliveryRow = { status: string; recipient_email: string | null; queued_at?: Date; rendered_html?: string | null };
 
 const LIVE_ROW: DeliveryRow = { status: "queued", recipient_email: "guest@example.com" };
 
@@ -84,13 +84,13 @@ describe("deliverPendingBatch", () => {
       close: vi.fn(async () => undefined),
     };
 
-    const sent = await deliverPendingBatch(adapter, [pendingFixture("del-soft")], prisma);
+    const sent = await deliverPendingBatch(adapter, [{ ...pendingFixture("del-soft"), incrementAttempts: true }], prisma);
 
     expect(sent).toBe(0);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "del-soft", queued_at: new Date(0), attempts: 1, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null }, status: { not: "cancelled" } },
-        data: expect.objectContaining({ status: "failed" }),
+        data: expect.objectContaining({ status: "failed", attempts: { increment: 1 } }),
       }),
     );
   });
@@ -112,7 +112,7 @@ describe("deliverPendingBatch", () => {
     };
 
     await expect(
-      deliverPendingBatch(adapter, [pendingFixture("del-dest")], prisma),
+      deliverPendingBatch(adapter, [{ ...pendingFixture("del-dest"), incrementAttempts: true }], prisma),
     ).rejects.toBe(destErr);
 
     expect(update).toHaveBeenCalledWith(
@@ -186,13 +186,17 @@ describe("deliverPendingBatch", () => {
         "del-cancelled": { status: "cancelled", recipient_email: "guest@example.com" },
         "del-emptied": { status: "queued", recipient_email: null },
         "del-gone": undefined,
+        "del-new-revision": { ...LIVE_ROW, queued_at: new Date(1) },
+        "del-no-snapshot": { ...LIVE_ROW, rendered_html: null },
       });
       const { adapter, send } = acceptingAdapter();
       const pending = [
         pendingFixture("del-cancelled"),
         pendingFixture("del-emptied"),
         pendingFixture("del-gone"),
-        { ...pendingFixture("del-live"), idempotencyKey: "att-1:live" },
+        pendingFixture("del-new-revision"),
+        pendingFixture("del-no-snapshot"),
+        { ...pendingFixture("del-live"), idempotencyKey: "att-1:live", incrementAttempts: true },
       ];
 
       const sent = await deliverPendingBatch(adapter, pending, prisma);
@@ -202,6 +206,7 @@ describe("deliverPendingBatch", () => {
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "att-1:live" }));
       expect(update).toHaveBeenCalledTimes(1);
       expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "del-live", queued_at: new Date(0), attempts: 1, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } } }));
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ attempts: { increment: 1 } }) }));
     });
 
     it("sends nothing, and writes nothing, when none of them is", async () => {

@@ -277,7 +277,7 @@ export async function claimInitialDelivery(
 
   const result = classifyExisting(existing);
   if (result.action === "retry_existing") {
-    return await withDeliveryOwnership(existing.id, () => claimRetryExisting(input, existing.id, existing.queued_at, result.message, prisma))
+    return await withDeliveryOwnership(existing.id, async (owned) => { await owned(); return claimRetryExisting(input, existing.id, existing.queued_at, result.message, prisma); })
       ?? { action: "skip", reason: "in_flight" };
   }
   if (result.action === "reclaim_cancelled") {

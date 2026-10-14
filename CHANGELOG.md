@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Email retries and worker sends now share per-delivery ownership: concurrent attempts are skipped, cancelled/reclaimed snapshots and stale outcomes cannot replace the current revision, and retention preserves newly queued message bodies.
+- Email retries and worker sends now share per-delivery ownership: concurrent attempts are skipped, cancelled/reclaimed snapshots and stale outcomes cannot replace the current revision, and retention preserves newly queued message bodies and in-flight retries while their provider outcomes are recorded.
 
 - CSV and XLSX imports now preserve quoted multiline fields as one attendee record. Upload limits and diagnostic row numbers count non-empty data records; malformed CSV records receive a fixed validation error.
 

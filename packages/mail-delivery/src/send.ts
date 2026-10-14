@@ -431,23 +431,23 @@ function isMailDestinationFailure(err: unknown): boolean {
  * Exported for unit tests of destination-error rethrow behaviour.
  */
 async function sendOwnedPending(
-  item: PendingSend, message: MailMessage, prisma: PrismaClient, mailer: MailerAdapter, assertOwned: () => void,
+  item: PendingSend, message: MailMessage, prisma: PrismaClient, mailer: MailerAdapter, assertOwned: () => Promise<void>,
 ) {
   const fresh = (await readDeliveriesBeforeSend(prisma, [item])).get(item.deliveryId);
-  if (!fresh || fresh.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady ||
+  if (fresh?.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady ||
     fresh.queued_at.getTime() !== item.queuedAt.getTime()) return undefined;
   const where = { id: item.deliveryId, queued_at: item.queuedAt, attempts: fresh.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } };
   try {
-    assertOwned();
+    await assertOwned();
     const sent = await mailer.send(message);
-    assertOwned();
+    await assertOwned();
     await prisma.emailDelivery.updateMany({
       where, data: { ...mapSendResultToDelivery(sent), provider: sent.provider,
         ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },
     });
     return sent;
   } catch (err) {
-    assertOwned();
+    await assertOwned();
     await prisma.emailDelivery.updateMany({
       where: { ...where, status: { not: "cancelled" } },
       data: { ...deliveryUpdateFromBatchError(err),
@@ -458,10 +458,10 @@ async function sendOwnedPending(
   }
 }
 
-async function failQueuedPending(item: PendingSend, prisma: PrismaClient, err: unknown, owned: () => void) {
+async function failQueuedPending(item: PendingSend, prisma: PrismaClient, err: unknown, owned: () => Promise<void>) {
   const fresh = (await readDeliveriesBeforeSend(prisma, [item])).get(item.deliveryId);
-  if (!fresh || fresh.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== item.queuedAt.getTime()) return;
-  owned();
+  if (fresh?.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== item.queuedAt.getTime()) return;
+  await owned();
   await prisma.emailDelivery.updateMany({
     where: { id: item.deliveryId, status: "queued", queued_at: item.queuedAt, attempts: fresh.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
     data: { ...deliveryUpdateFromBatchError(err), ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },

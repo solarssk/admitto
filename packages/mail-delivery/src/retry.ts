@@ -34,7 +34,7 @@ export async function retryDelivery(
 
 async function retryOwnedDelivery(
   deliveryId: string, prisma: PrismaClient, env: NodeJS.ProcessEnv,
-  deps: MailDeliveryDeps, options: RetryDeliveryOptions, assertOwned: () => void,
+  deps: MailDeliveryDeps, options: RetryDeliveryOptions, assertOwned: () => Promise<void>,
 ): Promise<{ ok: boolean; reason?: string }> {
   const delivery = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
 
@@ -67,7 +67,7 @@ async function retryOwnedDelivery(
       // Stored secret still can't be decrypted — same failure for every attempt until an
       // admin re-enters it in Mail settings. Record it so the delivery detail view reflects
       // why this retry did nothing, instead of leaving the prior attempt's stale error.
-      assertOwned();
+      await assertOwned();
       await prisma.emailDelivery.updateMany({
         where: { id: deliveryId, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
         data: {
@@ -100,9 +100,9 @@ async function retryOwnedDelivery(
       return { ok: false, reason: "not_retryable" };
     }
 
-    assertOwned();
+    await assertOwned();
     const summary = await sendBatch(mailer, [message]);
-    assertOwned();
+    await assertOwned();
     result = summary.results[0];
     if (!result) {
       await prisma.emailDelivery.updateMany({

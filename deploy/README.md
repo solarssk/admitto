@@ -367,6 +367,9 @@ cd deploy
   messages, Remove from provider clean-up, status refresh, registration sync, expiry sweep).
 - Keep exactly one worker replica. The process uses session advisory locks, so a mistaken second
   replica skips overlapping jobs rather than double-running them.
+- `DATABASE_URL` must use direct PostgreSQL or a session-mode pooler that pins each connection
+  to one backend. Transaction/statement-mode pooling does not support the session locks used by
+  worker jobs and per-delivery ownership. See [Delivery ownership](../packages/mail-delivery/README.md#delivery-ownership).
 
 Operator upgrade procedure: see [Upgrading](#upgrading) above.
 

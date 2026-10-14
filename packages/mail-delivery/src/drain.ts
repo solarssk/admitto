@@ -241,7 +241,7 @@ async function sendOwnedSnapshot(
   prisma: PrismaClient,
   mailer: MailerAdapter,
   baseUrl: string,
-  assertOwned: () => void,
+  assertOwned: () => Promise<void>,
 ): Promise<"sent" | "failed" | "skipped"> {
   if (!delivery.recipient_email || !delivery.rendered_subject || !delivery.rendered_html) {
     return "skipped";
@@ -251,7 +251,7 @@ async function sendOwnedSnapshot(
   try {
     links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);
   } catch (err) {
-    assertOwned();
+    await assertOwned();
     const applied = await markClaimedRowFailed(prisma, delivery, err);
     return applied ? "failed" : "skipped";
   }
@@ -282,20 +282,20 @@ async function sendOwnedSnapshot(
   const fresh = (
     await readDeliveriesBeforeSend(prisma, [{ deliveryId: delivery.id, attendeeId: delivery.attendee_id }])
   ).get(delivery.id);
-  if (!fresh || fresh.status !== delivery.status || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== delivery.queued_at.getTime() || fresh.attempts !== delivery.attempts) {
+  if (fresh?.status !== delivery.status || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== delivery.queued_at.getTime() || fresh.attempts !== delivery.attempts) {
     return "skipped";
   }
 
   try {
-    assertOwned();
+    await assertOwned();
     const summary = await sendBatch(mailer, [message]);
-    assertOwned();
+    await assertOwned();
     return await recordSendOutcome(prisma, delivery, summary, nextAttempts, exhausted);
   } catch (err) {
     // sendBatch itself threw (e.g. a transport timeout) - ambiguous whether the message went
     // out, same as the empty-result branch above, so this must not resurrect a cancelled row
     // into the retry pool, or clobber one a reclaim has since put back in the queue, either.
-    assertOwned();
+    await assertOwned();
     const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
       ...deliveryUpdateFromBatchError(err, exhausted),
       attempts: nextAttempts,
@@ -326,7 +326,7 @@ async function drainEventBatch(
     let failed = 0;
     let skipped = 0;
     for (const row of rows) {
-      const applied = await withDeliveryOwnership(row.id, (owned) => { owned(); return markClaimedRowFailed(prisma, row, err); }); // NOSONAR - rows are marked failed one at a time on purpose, in order
+      const applied = await withDeliveryOwnership(row.id, async (owned) => { await owned(); return markClaimedRowFailed(prisma, row, err); }); // NOSONAR - rows are marked failed one at a time on purpose, in order
       if (applied) failed += 1;
       else skipped += 1;
     }

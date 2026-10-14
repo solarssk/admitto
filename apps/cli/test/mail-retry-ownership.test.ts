@@ -15,4 +15,12 @@ describe("CLI retry ownership reporting", () => {
     await runMailRetryFailed(db);
     expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({ retried: 0, skipped: 1, failed: 0, total: 1 });
   });
+  it.each([{ ok: true }, { ok: false }, { ok: false, reason: "links_unavailable" }])("reports non-contention results accurately: %j", async (result) => {
+    process.argv = ["node", "admitto", "mail", "retry-failed", "--event", "synthetic", "--format", "json"];
+    retry.mockResolvedValue(result);
+    const db = { emailDelivery: { findMany: async () => [{ id: "synthetic-delivery" }] } } as unknown as PrismaClient;
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await runMailRetryFailed(db);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({ retried: result.ok ? 1 : 0, skipped: 0, failed: result.ok ? 0 : 1, total: 1 });
+  });
 });

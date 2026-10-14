@@ -67,6 +67,8 @@ describe("delivery lifecycle ownership", () => {
     await entered.waiting;
     const drain = drainPendingDeliveries(db, process.env, { exportSink: sink }, { eventId });
     try {
+      expect(await retryDelivery(row.id, db, process.env, { exportSink: sink })).toEqual({ ok: false, reason: "in_flight" });
+      expect(await reclaim(row)).toEqual({ action: "skip", reason: "in_flight" });
       await Promise.race([drain, new Promise((resolve) => setTimeout(resolve, 150))]);
       expect(sends).toBe(1);
     } finally { release.release(); await Promise.all([retry, drain]); await workerLock.close(); }
@@ -122,7 +124,10 @@ describe("delivery lifecycle ownership", () => {
 
   it.each(["cancelled", "failed"] as const)("clears a stale %s snapshot and its retryability", async (status) => {
     const row = await delivery(status);
-    expect((await nullifyDeliverySnapshots(db, { now: new Date("2026-10-14") })).deliveries).toBe(1);
+    const cleared = status === "failed"
+      ? await db.$transaction((tx) => nullifyDeliverySnapshots(tx, { now: new Date("2026-10-14") }))
+      : await nullifyDeliverySnapshots(db, { now: new Date("2026-10-14") });
+    expect(cleared.deliveries).toBe(1);
     expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ rendered_subject: null, rendered_html: null, retryable: false });
   });
 
@@ -136,17 +141,41 @@ describe("delivery lifecycle ownership", () => {
     expect(sends).toBe(1);
   });
 
-  it("does not send or restore retryability after retention cleared a cached failed snapshot", async () => {
+  it("keeps a cached failed snapshot while its retry owns the delivery", async () => {
     const row = await delivery("failed"); const entered = gate(); const release = gate(); let sends = 0;
     const paused = pauseRead("findUniqueOrThrow", entered, release);
     const retry = retryDelivery(row.id, paused, process.env, { exportSink: () => { sends++; } });
     await entered.waiting;
     try {
-      expect((await nullifyDeliverySnapshots(db)).deliveries).toBe(1);
-      release.release(); expect((await retry).ok).toBe(false);
-      expect(sends).toBe(0);
-      expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ rendered_subject: null, rendered_html: null, retryable: false });
+      expect((await nullifyDeliverySnapshots(db)).deliveries).toBe(0);
+      release.release(); expect((await retry).ok).toBe(true);
+      expect(sends).toBe(1);
+      expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ status: "accepted", rendered_subject: "Old snapshot", rendered_html: "<p>Synthetic</p>" });
     } finally { release.release(); await retry; }
+  });
+
+  it.each(["retry", "drain"] as const)("retention preserves an in-flight %s outcome and continues past a locked batch", async (path) => {
+    const row = await delivery("failed");
+    const other = await delivery("failed");
+    const entered = gate(); const release = gate();
+    let sends = 0;
+    const sink = async () => { sends++; entered.release(); await release.waiting; };
+    const send = path === "retry"
+      ? retryDelivery(row.id, db, process.env, { exportSink: sink })
+      : drainPendingDeliveries(db, process.env, { exportSink: sink }, { eventId, limit: 1 });
+    await entered.waiting;
+    try {
+      // A full first page is held by the sender. Cleanup must still reach other old rows.
+      expect((await nullifyDeliverySnapshots(db, { batchSize: 1 })).deliveries).toBe(1);
+      expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: other.id } })).toMatchObject({ rendered_html: null, rendered_subject: null, retryable: false });
+      release.release();
+      const outcome = await send;
+      expect(path === "retry" ? "ok" in outcome && outcome.ok : "sent" in outcome && outcome.sent === 1).toBe(true);
+      expect(sends).toBe(1);
+      expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ status: "accepted", attempts: row.attempts + 1, rendered_subject: "Old snapshot" });
+      // On a later retention run, the now-terminal message is eligible at a future cutoff.
+      expect((await nullifyDeliverySnapshots(db, { now: new Date("2126-10-14") })).deliveries).toBe(1);
+    } finally { release.release(); await send; }
   });
 
   it("ignores a cached bounce outcome after the delivery has been reclaimed", async () => {

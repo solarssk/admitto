@@ -72,6 +72,13 @@ session advisory lock for the delivery id, separate from the worker job lock. Th
 connection holds no transaction or row lock during provider IO and closes after the outcome.
 Other delivery ids proceed independently. A competing CLI retry is reported as skipped.
 
+`DATABASE_URL` must connect directly to PostgreSQL or use a session-mode pooler that pins the
+backend for the connection's lifetime. Transaction/statement-mode pooling is unsupported for
+delivery ownership. Before protected writes, the lock connection verifies the exact advisory
+key in `pg_locks` and that its backend PID still matches acquisition. A missing lock, changed
+backend or failed connection refuses the write. This detects loss; it cannot prevent a backend
+failure after verification or recall a provider-accepted message.
+
 Before sending, the attendee/override-holder erasure check still waits under attendee row locks.
 The delivery's status, `queued_at` revision and attempt count must match the cached snapshot.
 Retry/reclaim claims advance `queued_at` strictly, even with equal clock milliseconds, using a
@@ -89,7 +96,10 @@ Terminal deliveries keep frozen HTML/subject for retry and support. After 60 day
 `admitto retention run` and `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject`
 while preserving delivery log metadata. A failed row loses `retryable` at the same time, so it can no
 longer be retried. Selection and the atomic update both require a still-stale terminal snapshot;
-a reclaim to queued in between preserves its fresh body. All three read the same variable.
+a reclaim to queued in between preserves its fresh body. The cleanup transaction also tries the
+same delivery advisory key and skips an in-flight sender. A locked batch does not prevent later
+rows from being cleared; skipped rows are reconsidered on the next cleanup run. All three read
+the same variable.
 
 ## Tests
 
