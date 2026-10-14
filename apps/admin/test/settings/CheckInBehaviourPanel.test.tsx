@@ -328,11 +328,12 @@ describe("CheckInBehaviourPanel — badge dependency", () => {
 });
 
 describe("CheckInBehaviourPanel — archived", () => {
-  it("shows an archived note, disables every switch, and hides the footer", async () => {
+  it("disables every switch and hides the footer, without an archived note", async () => {
     mockFetchOpsConfig.mockResolvedValue(makeOpsConfig());
     renderPanel({ isArchived: true });
 
-    await screen.findByText("This event is archived - check-in behaviour cannot be changed.");
+    await screen.findByRole("switch", { name: "Issue badge at entry" });
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
     for (const name of [
       "Issue badge at entry",
       "Require confirmation on scan",

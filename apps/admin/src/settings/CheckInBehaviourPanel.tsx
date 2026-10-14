@@ -139,12 +139,7 @@ function CheckInBehaviourPanelBody({ eventId, isArchived, onDirtyChange, onSavin
   return (
     <div className="settings-sections">
       <Card title={<HintLabel hint={CHECK_IN_BEHAVIOUR_HINT}>Check-in behaviour</HintLabel>}>
-        {isArchived && (
-          <p className="field-hint event-settings-archived-note">
-            This event is archived - check-in behaviour cannot be changed.
-          </p>
-        )}
-        <div className="settings-row">
+        <div className="settings-row settings-row--switch">
           <div className="settings-row__text">
             <strong>Issue badge at entry</strong>
             <p>
@@ -161,7 +156,7 @@ function CheckInBehaviourPanelBody({ eventId, isArchived, onDirtyChange, onSavin
             />
           </Tooltip>
         </div>
-        <div className="settings-row">
+        <div className="settings-row settings-row--switch">
           <div className="settings-row__text">
             <strong>Require confirmation on scan</strong>
             <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
@@ -173,7 +168,7 @@ function CheckInBehaviourPanelBody({ eventId, isArchived, onDirtyChange, onSavin
             aria-label="Require confirmation on scan"
           />
         </div>
-        <div className="settings-row">
+        <div className="settings-row settings-row--switch">
           <div className="settings-row__text">
             <strong>Allow manual lookup</strong>
             <p>
@@ -189,7 +184,7 @@ function CheckInBehaviourPanelBody({ eventId, isArchived, onDirtyChange, onSavin
             aria-label="Allow manual lookup"
           />
         </div>
-        <div className="settings-row">
+        <div className="settings-row settings-row--switch">
           <div className="settings-row__text">
             <strong>Auto-advance after valid check-in</strong>
             <p>
