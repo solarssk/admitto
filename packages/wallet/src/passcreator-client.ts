@@ -249,7 +249,7 @@ export class PassCreatorClient implements WalletPassProvider {
    * is a 404, which deletePass counts as deleted, so passing it the userProvidedId would "succeed" without removing
    * anything), and the v3 search by userProvidedId is scoped to this client's template and can lag, so it cannot say
    * that no pass exists. This is answered from PassCreator's own record of the id: 200 means a pass was deleted, 404
-   * that there is none (already gone, or never created). The id is unique in the account (createPass sends
+   * that there is none at that moment (already gone, never created, or not created yet). The id is unique in the account (createPass sends
    * enforceUniqueUserProvidedId), so it names this attendee's pass whichever template made it. Documented by
    * PassCreator, not yet confirmed live (the live checks so far covered the v3 calls).
    */

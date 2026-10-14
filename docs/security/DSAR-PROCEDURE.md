@@ -68,7 +68,10 @@ flowchart TD
        A pass that Admitto never managed to record (its save failed, or the event's template changed
        while it was being made) is deleted too, by the id Admitto wrote on the attendee's pass row before
        it called the provider; when the retention run or the erasure finds one, **System logs** shows
-       `wallet_pass_untracked_deleted` with the event id and how many. A pass made before that id was
+       `wallet_pass_untracked_deleted` with the event id and how many. For about ten minutes after the
+       erasure the dialog can say that such a pass is still there although the provider has none: a pass
+       that was being made at that moment can still reach the provider, so Admitto asks again later
+       (**Try again**, the same command, or the daily retention run). A pass made before that id was
        written, by a request that died without leaving anything on the row, is not found: delete it in
        the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>`.
      - **Audit:** the event action log and the central admin audit log record who erased how many
@@ -116,8 +119,11 @@ flowchart TD
        API key is no longer configured (for example removed after the pass was issued). In that
        case restore the credentials in Event Settings → Wallet before removing, or delete the
        attendee's pass in the provider's own console yourself: once the local row is gone, Admitto
-       no longer knows which provider pass belonged to the attendee. A pass made before that id was
-       written, by a request that died without leaving anything on the row, is not found either.
+       no longer knows which provider pass belonged to the attendee. A pass that is still being made
+       at the moment of the removal is deleted by the request that makes it; if that request dies
+       first, the pass stays at the provider (an erasure asks again for ten minutes, a removal has no
+       row to ask from). A pass made before that id was written, by a request that died without
+       leaving anything on the row, is not found either.
      - **Direct-API fallback:** if the SPA is unavailable, call
        `POST /api/admin/events/:eventId/attendees/:id/remove` with `{ "reason": "duplicate" }`, or
        `POST /api/admin/events/:eventId/attendees/bulk-remove` with `{ "attendeeIds": [...],

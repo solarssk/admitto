@@ -39,6 +39,7 @@ export type {
   RemoveWalletTarget,
 } from "./remove-attendees.js";
 export {
+  CREATION_SETTLE_WINDOW_MS,
   PASS_ROW_STILL_AT_PROVIDER,
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,

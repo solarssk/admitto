@@ -46,8 +46,9 @@ export interface WalletPassProvider {
    * never saved (the request that created it could not record it). Unlike `findByUserProvidedId`, the
    * answer comes from the provider's own record of the id, not from a search that can lag or be scoped to
    * one template, so "there is none" is a real answer. Resolves true when a pass was deleted and false
-   * when there was none (already gone, or never created): both leave the id free, so a caller may mark
-   * the pass removed on either. Only meaningful when `capabilities.remoteDelete`. */
+   * when there was none at that moment (already gone, never created, or a creation still under way that
+   * has not reached the provider yet): when that is enough to call the pass gone is the caller's call.
+   * Only meaningful when `capabilities.remoteDelete`. */
   deletePassByUserProvidedId(userProvidedId: string): Promise<boolean>;
   findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null>;
   /** One read of the pass's validity, registrations and first-download time. Polled periodically

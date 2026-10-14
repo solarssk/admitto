@@ -29,15 +29,18 @@ export type ErasedWalletSweepResult = {
   deleted: number;
   /** The provider refused or could not be reached: they stay marked "still to delete". */
   failed: number;
+  /** The provider has none, but a creation may still have been under way when the person was erased: they stay marked
+   * "still to delete" and the next sweep asks again, once the erasure is old enough. */
+  undecided: number;
   /** Their event has no wallet credentials the sweep can use, so nothing was tried. */
   noProvider: number;
   /** Not tried because the time budget ran out. */
   notTried: number;
 };
 
-/** Passes of erased attendees that are still at the provider after a sweep: the ones that failed, could not be tried, or had no credentials. */
+/** Passes of erased attendees that are still to be deleted after a sweep: the ones that failed, are not decided yet, could not be tried, or had no credentials. */
 export function erasedWalletPassesLeft(result: ErasedWalletSweepResult): number {
-  return result.failed + result.noProvider + result.notTried;
+  return result.failed + result.undecided + result.noProvider + result.notTried;
 }
 
 /** The columns of an event that say which wallet provider account its passes live in. */
@@ -80,7 +83,7 @@ export function passToDelete(eventId: string, attendeeIds?: readonly string[]): 
   return erasedPassToDeleteWhere(eventId, attendeeIds);
 }
 
-type Tally = { deleted: number; failed: number; exhausted: boolean; last: Cursor | null };
+type Tally = { deleted: number; failed: number; undecided: number; exhausted: boolean; last: Cursor | null };
 
 /** The part of an event's passes to try: after `after` and up to `upTo` (attendee ids), either may be left out. */
 type Range = { after?: string; upTo?: string };
@@ -175,6 +178,7 @@ function recordRun(walk: Walk, eventId: string, attendeeIds: string[], run: Eras
   const { tally } = walk;
   tally.deleted += run.deleted;
   tally.failed += run.failedAttendeeIds.length;
+  tally.undecided += run.undecided;
   failures.untracked += run.untrackedDeleted;
   failures.attendeeIds.push(...run.failedAttendeeIds);
   for (const code of run.failureCodes) failures.codes.add(code);
@@ -300,8 +304,8 @@ export async function sweepErasedWalletPasses(
     orderBy: { id: "asc" },
   });
 
-  const result: ErasedWalletSweepResult = { pending: 0, deleted: 0, failed: 0, noProvider: 0, notTried: 0 };
-  const tally: Tally = { deleted: 0, failed: 0, exhausted: false, last: null };
+  const result: ErasedWalletSweepResult = { pending: 0, deleted: 0, failed: 0, undecided: 0, noProvider: 0, notTried: 0 };
+  const tally: Tally = { deleted: 0, failed: 0, undecided: 0, exhausted: false, last: null };
   const { sweepable, tryable } = await surveyEvents(db, events, options, deps, result);
 
   const before = options.dryRun ? null : await readCursor(db);
@@ -313,6 +317,7 @@ export async function sweepErasedWalletPasses(
   if (!options.dryRun) await keepPlace(db, tally, before);
   result.deleted = tally.deleted;
   result.failed = tally.failed;
-  result.notTried = tally.exhausted ? Math.max(0, tryable - tally.deleted - tally.failed) : 0;
+  result.undecided = tally.undecided;
+  result.notTried = tally.exhausted ? Math.max(0, tryable - tally.deleted - tally.failed - tally.undecided) : 0;
   return result;
 }

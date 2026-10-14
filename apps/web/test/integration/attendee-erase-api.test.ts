@@ -465,15 +465,34 @@ describe("the wallet pass of an erased attendee", () => {
       ]);
     });
 
-    it("is removed, and not said to have been found, when the provider has no pass under that id", async () => {
+    it("stays pending, not removed, when the provider has no pass under that id yet and the person was erased a moment ago", async () => {
       resetSystemLogBufferForTest();
       const a = await withReservedId();
       vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
 
-      const res = await post(erasePath(EVENT_ID, a.id));
+      const first = await post(erasePath(EVENT_ID, a.id));
+      const again = await post(erasePath(EVENT_ID, a.id));
 
-      expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
-      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).not.toBeNull();
+      // A request that was creating the pass when the person was erased can still finish at the provider, so "none" is no answer yet.
+      expect(await first.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect(await again.json()).toMatchObject({ erased: 0, already_erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
+      expect(untrackedLines()).toEqual([]);
+    });
+
+    it("is removed, and not said to have been found, when the provider has no pass under that id and the person was erased long ago", async () => {
+      resetSystemLogBufferForTest();
+      const id = `erase-api-erased-old-${++seq}`;
+      await prisma.attendee.create({
+        data: { id, event_id: EVENT_ID, name: "Erased attendee", email: `erased-${id}@erased.invalid`, erased_at: new Date(Date.now() - 60 * 60_000) },
+      });
+      await prisma.walletPass.create({ data: { attendee_id: id, status: "pending", user_provided_id: reservedId(EVENT_ID, id) } });
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+
+      const res = await post(erasePath(EVENT_ID, id));
+
+      expect(await res.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [id] });
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).provider_removed_at).not.toBeNull();
       expect(untrackedLines()).toEqual([]);
     });
 

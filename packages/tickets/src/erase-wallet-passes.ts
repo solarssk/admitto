@@ -5,12 +5,24 @@ import { walletUserProvidedId } from "./wallet-pass-input.js";
 
 const DELETE_CONCURRENCY = 8;
 
+/**
+ * How old an erasure has to be before a provider's "there is no pass under that id" counts as an answer. A request that
+ * was creating the pass when the person was erased does not stop when the erasure commits, so its pass can still reach
+ * the provider after that answer, and if the request dies or times out nothing clears the mark on the row afterwards.
+ * Once the erasure is older than this, no such request can still be running: it is longer than the client timeouts and
+ * retries of a creation add up to, plus the provider's own lag. A pass the provider does hold is deleted at once.
+ */
+export const CREATION_SETTLE_WINDOW_MS = 10 * 60_000;
+
 export type EraseWalletPassesResult = {
   /** Passes deleted at the provider (or already gone there) and marked as removed. */
   deleted: number;
   /** Of `deleted`, the passes Admitto had no provider id for that the provider did hold: found by the id reserved
    * for them and deleted. The others were gone already, or were never made. */
   untrackedDeleted: number;
+  /** Passes the provider has none of, but whose creation may still have been under way when the person was erased (the
+   * erasure is younger than {@link CREATION_SETTLE_WINDOW_MS}): not marked removed, so the next run asks again. */
+  undecided: number;
   /** Attendees whose pass could not be deleted: it stays marked "still to delete" for a retry. */
   failedAttendeeIds: string[];
   /** Why they failed (the provider's error code, or "unknown"), without repeats. */
@@ -59,7 +71,12 @@ export function erasedPassToDeleteWhere(eventId: string, attendeeIds?: readonly 
   };
 }
 
-type PassToDelete = { attendee_id: string; provider_pass_id: string | null; user_provided_id: string | null };
+type PassToDelete = {
+  attendee_id: string;
+  provider_pass_id: string | null;
+  user_provided_id: string | null;
+  attendee: { erased_at: Date | null };
+};
 
 /**
  * The id a pass is deleted by when Admitto has no provider id for it: the one its creating request reserved on the row
@@ -71,20 +88,36 @@ export function reservedPassId(eventId: string, pass: { attendee_id: string; use
   return pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id);
 }
 
-/** What became of one pass: it is gone (and whether Admitto had no id for it, yet the provider held it), or it failed. */
-type Outcome = { ok: true; untracked: boolean } | { ok: false; attendeeId: string; code: string };
+/** What the provider said about one pass: it deleted a pass it held under the reserved id ("found"), the pass is gone
+ * ("gone": deleted by its own id, or none under the reserved id and the erasure is old enough to rely on that), or
+ * there is none yet but one may still turn up ("undecided"). */
+type Settled = "gone" | "found" | "undecided";
+
+/** What became of one pass: gone (and whether Admitto had no id for it, yet the provider held it), not yet decided, or failed. */
+type Outcome =
+  | { kind: "gone"; untracked: boolean }
+  | { kind: "undecided" }
+  | { kind: "failed"; attendeeId: string; code: string };
+
+/** Whether the erasure is old enough for "there is no pass" to be final (see {@link CREATION_SETTLE_WINDOW_MS}). */
+function erasureIsSettled(erasedAt: Date | null): boolean {
+  return erasedAt !== null && Date.now() - erasedAt.getTime() >= CREATION_SETTLE_WINDOW_MS;
+}
 
 /**
- * Deletes one pass at the provider and says whether it was one Admitto had no id for that the provider held. A row
- * with the provider's id is deleted by it. A row without one is deleted by the id reserved for it, which the provider
- * answers from its own record: a pass was deleted (true) or there was none (false), and either way it is gone.
+ * Deletes one pass at the provider. A row with the provider's id is deleted by it. A row without one is deleted by the
+ * id reserved for it, which the provider answers from its own record: a pass was deleted ("found"), or there was none,
+ * which settles the row ("gone") only once the erasure is old enough, because a pass whose creation was already under
+ * way can still reach the provider after that answer ("undecided").
  */
-async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<boolean> {
+async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<Settled> {
   if (pass.provider_pass_id !== null) {
     await provider.deletePass(pass.provider_pass_id);
-    return false;
+    return "gone";
   }
-  return provider.deletePassByUserProvidedId(reservedPassId(eventId, pass));
+  const found = await provider.deletePassByUserProvidedId(reservedPassId(eventId, pass));
+  if (found) return "found";
+  return erasureIsSettled(pass.attendee.erased_at) ? "gone" : "undecided";
 }
 
 async function deleteOne(
@@ -94,24 +127,29 @@ async function deleteOne(
   pass: PassToDelete,
 ): Promise<Outcome> {
   try {
-    const untracked = await deleteAtProvider(provider, eventId, pass);
+    const settled = await deleteAtProvider(provider, eventId, pass);
+    if (settled === "undecided") return { kind: "undecided" };
     await db.walletPass.updateMany({
       // The provider's id as it was read: a row that was given one meanwhile (a creating request that finished after
       // this read) holds another pass, which is still to be deleted.
       where: { attendee_id: pass.attendee_id, provider_pass_id: pass.provider_pass_id, provider_removed_at: null },
       data: { provider_removed_at: new Date() },
     });
-    return { ok: true, untracked };
+    return { kind: "gone", untracked: settled === "found" };
   } catch (err) {
-    return { ok: false, attendeeId: pass.attendee_id, code: walletFailureCode(err) };
+    return { kind: "failed", attendeeId: pass.attendee_id, code: walletFailureCode(err) };
   }
 }
 
 /** Puts what became of one pass into the result: the count, or the attendee and the failure code. */
 function recordOutcome(result: EraseWalletPassesResult, codes: Set<string>, outcome: Outcome): void {
-  if (!outcome.ok) {
+  if (outcome.kind === "failed") {
     result.failedAttendeeIds.push(outcome.attendeeId);
     codes.add(outcome.code);
+    return;
+  }
+  if (outcome.kind === "undecided") {
+    result.undecided += 1;
     return;
   }
   result.deleted += 1;
@@ -128,7 +166,10 @@ function recordOutcome(result: EraseWalletPassesResult, codes: Set<string>, outc
  *
  * A pass the creating request could not record (see {@link PASS_ROW_STILL_AT_PROVIDER}) has no provider id on its row,
  * only the id reserved for it before the provider was called: it is deleted by that id (one call, answered by the
- * provider's own record, so "there is none" is a real answer and the row is marked removed too).
+ * provider's own record). A pass that was found is deleted and the row marked removed at once. "There is none" marks
+ * the row removed only when the erasure is older than {@link CREATION_SETTLE_WINDOW_MS}: a request that was creating
+ * the pass when the person was erased can still finish at the provider after that answer, so before then the row is
+ * left as it is (`undecided`) and the next call asks again.
  *
  * Deleting at the provider is idempotent (a pass that is already gone counts as deleted), and a
  * failure for one pass never stops the others. `budgetMs` bounds how long the whole run may take:
@@ -146,6 +187,7 @@ export async function deleteErasedWalletPasses(
   const result: EraseWalletPassesResult = {
     deleted: 0,
     untrackedDeleted: 0,
+    undecided: 0,
     failedAttendeeIds: [],
     failureCodes: [],
     notTried: 0,
@@ -153,7 +195,7 @@ export async function deleteErasedWalletPasses(
   if (attendeeIds.length === 0) return result;
   const passes = await db.walletPass.findMany({
     where: erasedPassToDeleteWhere(eventId, attendeeIds),
-    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true },
+    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true, attendee: { select: { erased_at: true } } },
     // In attendee id order, so that what was not tried (`notTried`) is the last of the ids, and a caller that
     // walks the passes in that order knows where it stopped.
     orderBy: { attendee_id: "asc" },

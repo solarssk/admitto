@@ -20,6 +20,6 @@ export async function sweepMock() {
   );
   return {
     ...actual,
-    sweepErasedWalletPasses: vi.fn(async () => ({ pending: 0, deleted: 0, failed: 0, noProvider: 0, notTried: 0 })),
+    sweepErasedWalletPasses: vi.fn(async () => ({ pending: 0, deleted: 0, failed: 0, undecided: 0, noProvider: 0, notTried: 0 })),
   };
 }
