@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useOutletContext } from "react-router";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventDto } from "../../src/api/types.js";
 import { AdminShell } from "../../src/layouts/AdminShell.js";
@@ -52,16 +53,18 @@ function ConsumerProbe() {
 
 function renderShell(event: EventDto = sampleEvent, refreshEvent: () => Promise<void> = vi.fn()) {
   return render(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
-      <Routes>
-        <Route
-          path="/admin/events/:eventId/*"
-          element={<AdminShell event={event} refreshEvent={refreshEvent} />}
-        >
-          <Route path="overview" element={<div>overview page</div>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
+        <Routes>
+          <Route
+            path="/admin/events/:eventId/*"
+            element={<AdminShell event={event} refreshEvent={refreshEvent} />}
+          >
+            <Route path="overview" element={<div>overview page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ToastProvider>,
   );
 }
 
@@ -108,21 +111,33 @@ describe("AdminShell", () => {
   it("threads refreshEvent through to the nested route via Outlet context", () => {
     const refreshEvent = vi.fn().mockResolvedValue(undefined);
     render(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
-        <Routes>
-          <Route
-            path="/admin/events/:eventId/*"
-            element={<AdminShell event={sampleEvent} refreshEvent={refreshEvent} />}
-          >
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
+          <Routes>
             <Route
-              path="overview"
-              element={<ConsumerProbe />}
-            />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
+              path="/admin/events/:eventId/*"
+              element={<AdminShell event={sampleEvent} refreshEvent={refreshEvent} />}
+            >
+              <Route path="overview" element={<ConsumerProbe />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "trigger refresh" }));
     expect(refreshEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the archived notice above the page of an archived event, and not for an active one", () => {
+    renderShell();
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
+
+    cleanup();
+    renderShell({ ...sampleEvent, archived_at: "2026-07-02T06:03:00.000Z" });
+    const notice = screen.getByText(/This event is archived/);
+    const page = screen.getByText("overview page");
+    expect(screen.getByTestId("main").contains(notice)).toBe(true);
+    expect(notice.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Restore event" })).toBeTruthy();
   });
 });

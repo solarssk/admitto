@@ -3,6 +3,7 @@ import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
 import { BrandLink } from "./BrandLink.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
+import { ArchivedEventNotice } from "../components/ArchivedEventNotice.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 type NavItem = {
@@ -109,6 +110,7 @@ export function AdminShell({ event, refreshEvent }: AdminShellProps) {
 
   return (
     <StaffShell sidebar={sidebar} eventId={eventId} brandTo="/admin" brandEnd>
+      <ArchivedEventNotice key={event.id} event={event} refreshEvent={refreshEvent} />
       <Outlet context={{ event, refreshEvent }} />
     </StaffShell>
   );

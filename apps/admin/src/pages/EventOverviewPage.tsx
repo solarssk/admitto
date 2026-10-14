@@ -7,7 +7,6 @@ import {
   EmptyState,
   Input,
   ModalBackdrop,
-  Notice,
   PageHeader,
   useToast,
 } from "@admitto/ui";
@@ -22,11 +21,8 @@ import {
   createEventResource,
   updateEventResource,
   deleteEventResource,
-  unarchiveEvent,
 } from "../api/client.js";
 import { CONTACT_PHONE_ERROR, INVALID_EMAIL_MESSAGE, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import { useAuth } from "../auth/AuthProvider.js";
-import { isSuperadmin } from "../auth/capabilities.js";
 import type {
   EventDto,
   EventOverviewDto,
@@ -40,7 +36,6 @@ import {
   formatEventDate,
   formatEventDateTime,
   formatRelativeTime as formatRelativeTimeShared,
-  formatUtcDateTime,
   getBrowserTimeZone,
 } from "../utils/event-dates.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -1460,15 +1455,9 @@ export function EventOverviewPage() {
 }
 
 function EventOverviewPageBody() {
-  const { event, refreshEvent } = useOutletContext<OverviewOutletContext>();
+  const { event } = useOutletContext<OverviewOutletContext>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
-  const { assignments } = useAuth();
-  // Unarchiving is a superadmin-only API (POST /events/:id/unarchive), so only they get the button.
-  const canRestore = isSuperadmin(assignments);
-  const [restoreOpen, setRestoreOpen] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
   const reconcileTimerRef = useRef<number | null>(null);
   const currentEventIdRef = useRef<string | null>(event.id);
@@ -1672,75 +1661,9 @@ function EventOverviewPageBody() {
     }).getTime();
   const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel, eventEnded);
 
-  const handleRestore = async () => {
-    const restoringId = event.id;
-    const stillHere = () => currentEventIdRef.current === restoringId;
-    setRestoring(true);
-    setRestoreError(null);
-    try {
-      await unarchiveEvent(restoringId);
-      addToast("Event restored.", "success");
-      if (!stillHere()) return;
-      setRestoreOpen(false);
-      await refreshEvent?.();
-    } catch (err) {
-      // Shown inside the still-open dialog (errorMessage), not a toast - the dialog's backdrop
-      // sits above the toast stack, so a toast-only failure would be invisible behind it.
-      if (stillHere()) setRestoreError(operatorApiErrorMessage(err, "Could not restore the event."));
-    } finally {
-      if (stillHere()) setRestoring(false);
-    }
-  };
-
-  // The header, the archived notice and the restore dialog come from the event, not from the read: they are there from the
+  // The header comes from the event, not from the read: they are there from the
   // first frame, whatever the body below is showing.
-  const header = (
-    <>
-      <PageHeader title="Overview" subtitle={OVERVIEW_SUBTITLE} />
-
-      {event.archived_at && (
-        <Notice
-          variant="warning"
-          icon="archive"
-          action={
-            canRestore ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<i className="ti ti-archive-off" aria-hidden="true" />}
-                onClick={() => setRestoreOpen(true)}
-              >
-                Restore event
-              </Button>
-            ) : undefined
-          }
-        >
-          This event is archived. Data is kept, but editing and check-in are locked. Archived on{" "}
-          {event.archived_by_timezone
-            ? formatEventDateTime(event.archived_at, event.archived_by_timezone)
-            : formatUtcDateTime(event.archived_at)}
-          .{canRestore ? "" : " Ask a superadmin to restore it."}
-        </Notice>
-      )}
-
-      <ConfirmDialog
-        open={restoreOpen}
-        icon={<i className="ti ti-archive-off" />}
-        title="Restore this event?"
-        message={`"${event.title}" will become active again. Editing and check-in will be allowed, and it will show up in default event lists.`}
-        confirmLabel="Restore event"
-        loading={restoring}
-        errorMessage={restoreError}
-        onConfirm={() => void handleRestore()}
-        onCancel={() => {
-          if (!restoring) {
-            setRestoreOpen(false);
-            setRestoreError(null);
-          }
-        }}
-      />
-    </>
-  );
+  const header = <PageHeader title="Overview" subtitle={OVERVIEW_SUBTITLE} />;
 
   let body: ReactNode;
   if (!card.gate.showContent) {
