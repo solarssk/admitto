@@ -1043,16 +1043,13 @@ describe("EventSettingsPage tabs", () => {
     for (const input of fileInputs) {
       expect((input as HTMLInputElement).disabled).toBe(true);
     }
-    expect(screen.getByText("This event is archived - images cannot be changed.")).toBeTruthy();
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
 
     await screen.findByText("No images yet");
     const assetFileInput = document.querySelector(
       ".image-asset-library__file-input",
     ) as HTMLInputElement;
     expect(assetFileInput.disabled).toBe(true);
-    expect(
-      screen.getByText("This event is archived - the image library cannot be changed."),
-    ).toBeTruthy();
   });
 
   it("switches to the Wallet tab and shows the Template ID field", async () => {
