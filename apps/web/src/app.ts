@@ -1160,6 +1160,8 @@ export function createApp(options: CreateAppOptions = {}) {
      * provider's is what tells an erasure, and its follow-up (deleteErasedWalletPasses), that a pass may exist which
      * this request never managed to record: the save below failed, the event's template changed meanwhile, the
      * process died. Written first because after the provider call the database may be the thing that is failing.
+     * The call that follows sends nothing later than CREATE_PASS_DEADLINE_MS after it began (createPass drops it
+     * instead), which is what makes the follow-up's 10-minute window safe.
      * Taken under the attendee's row lock, so it waits for an erasure that is still open and sends nothing to the
      * provider for an attendee who is erased or removed. Returns true to go on, "unavailable" for an attendee who is
      * gone, null when the row could not be written (nothing is sent then either).

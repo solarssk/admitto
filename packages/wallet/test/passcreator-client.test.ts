@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PassCreatorClient, WalletProviderError } from "../src/index.js";
+import { CREATE_PASS_DEADLINE_MS, PassCreatorClient, WalletProviderError } from "../src/index.js";
 import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -1336,6 +1336,112 @@ describe("PassCreatorClient call pacing (PR #1064 round 2 - bot review)", () => 
     // own here, so this mainly documents that the gate is inside the retry loop, not bypassed by
     // it - the real value is the earlier "spaces consecutive calls" test, which has no retries.
     expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(145);
+  });
+});
+
+describe("PassCreatorClient.createPass send deadline", () => {
+  // The local gate gives every call the next 150 ms slot, so n calls queued before a creation put its slot n * 150 ms
+  // away. With fake timers the clock stops exactly on each slot, which makes the boundary exact.
+  const SLOT_MS = 150;
+  const LAST_SLOT_IN_TIME = Math.ceil(CREATE_PASS_DEADLINE_MS / SLOT_MS) - 1;
+  const FIRST_SLOT_TOO_LATE = Math.ceil(CREATE_PASS_DEADLINE_MS / SLOT_MS);
+  const CREATED = {
+    success: true,
+    data: {
+      identifier: "pass-1",
+      downloadPage: "https://pc.test/p/pass-1",
+      iPhoneUri: "https://pc.test/passinstance/pkpass/pass-1",
+      androidUri: "https://pc.test/passinstance/googlewallet/pass-1",
+    },
+  };
+
+  beforeEach(() => {
+    // The local gate only: a real Redis would not follow the fake clock.
+    vi.stubEnv("REDIS_URL", "");
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  /** A provider that answers a creation, and every other call with "already gone". */
+  function provider() {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) =>
+      init?.method === "POST" ? jsonResponse(200, CREATED) : new Response(null, { status: 404 }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const creationsSent = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").length;
+    return { client, fetchMock, creationsSent };
+  }
+
+  /** Calls that take their slots before whatever is called next. */
+  function queue(client: PassCreatorClient, calls: number): Promise<void>[] {
+    return Array.from({ length: calls }, (_, i) => client.deletePass(`queued-${i}`));
+  }
+
+  it("is longer than the 75 s that 500 queued calls need, so a call behind such a queue is still sent", () => {
+    expect(CREATE_PASS_DEADLINE_MS).toBeGreaterThan(500 * SLOT_MS);
+  });
+
+  it("sends a creation that waited in the pacing queue and still got its turn before the deadline", async () => {
+    const { client, creationsSent } = provider();
+    const queued = queue(client, LAST_SLOT_IN_TIME);
+    const created = client.createPass(INPUT);
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS);
+    await expect(created).resolves.toMatchObject({ providerPassId: "pass-1" });
+    await Promise.all(queued);
+    expect(creationsSent()).toBe(1);
+  });
+
+  it("drops a creation whose turn in the pacing queue comes at the deadline or later, and sends nothing of it", async () => {
+    const { client, creationsSent } = provider();
+    const queued = queue(client, FIRST_SLOT_TOO_LATE);
+    const outcome = client.createPass(INPUT).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS + 1_000);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(WalletProviderError);
+    expect(error).toMatchObject({ code: "wallet_provider_timeout", message: "PassCreator request was not sent in time." });
+    expect(String(error)).not.toContain(INPUT.userProvidedId);
+    await Promise.all(queued);
+    expect(creationsSent()).toBe(0);
+  });
+
+  it("does not retry a creation past the deadline: every attempt is checked, not only the first", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => {
+      // The first attempt takes until the deadline (a stalled provider), then answers with a rate limit.
+      vi.setSystemTime(Date.now() + CREATE_PASS_DEADLINE_MS);
+      return new Response(null, { status: 429 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const outcome = client.createPass(INPUT).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(2_000); // the 500 ms backoff, then the retry's turn
+    expect(await outcome).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("measures the deadline from the start of the call, so a retry within it is still sent", async () => {
+    let attempts = 0;
+    const fetchMock = vi.fn(async (_input: string | URL) => {
+      attempts += 1;
+      return attempts === 1 ? new Response(null, { status: 429 }) : jsonResponse(200, CREATED);
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const created = client.createPass(INPUT);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(created).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves every other call alone: one queued as far behind as a dropped creation is still sent", async () => {
+    const { client, fetchMock } = provider();
+    const queued = queue(client, FIRST_SLOT_TOO_LATE);
+    const late = client.deletePass("late");
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS + 1_000);
+    await expect(late).resolves.toBeUndefined();
+    await Promise.all(queued);
+    expect(fetchMock).toHaveBeenCalledTimes(FIRST_SLOT_TOO_LATE + 1);
   });
 });
 

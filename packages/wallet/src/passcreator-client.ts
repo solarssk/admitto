@@ -7,7 +7,7 @@ import type {
   WalletProviderPassRef,
   WalletProviderSnapshot,
 } from "./types.js";
-import type { WalletPassProvider } from "./provider.js";
+import { CREATE_PASS_DEADLINE_MS, type WalletPassProvider } from "./provider.js";
 import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY } from "./capabilities.js";
 import { parseOffsetInstant } from "./offset-instant.js";
 import { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
@@ -206,6 +206,8 @@ export class PassCreatorClient implements WalletPassProvider {
       "POST",
       "/api/v3/pass?async=false",
       { data: toPassCreatorData(input, this.templateId, this.fieldMapping, true) },
+      "/api/v3/pass",
+      Date.now() + CREATE_PASS_DEADLINE_MS,
     );
     return toResult(envelope);
   }
@@ -574,8 +576,9 @@ export class PassCreatorClient implements WalletPassProvider {
     path: string,
     body?: unknown,
     route: string = path.split("?")[0]!,
+    sendBy?: number,
   ): Promise<T> {
-    const res = await this.requestRaw(method, path, body, route);
+    const res = await this.requestRaw(method, path, body, route, sendBy);
     let envelope: PassCreatorEnvelope<T>;
     try {
       envelope = (await res.json()) as PassCreatorEnvelope<T>;
@@ -684,16 +687,25 @@ export class PassCreatorClient implements WalletPassProvider {
    * cases are failures regardless of what the caller would have done with a response. `route`
    * defaults to the query-stripped path, but a caller whose path also embeds an attendee-linked
    * identifier (a providerPassId/passUid path segment) must pass an explicit static template
-   * instead - same requirement as logOutcome (bot review). */
+   * instead - same requirement as logOutcome (bot review). `sendBy` (epoch ms) is a time limit for *sending*: see the
+   * check below. */
   private async requestRaw(
     method: string,
     path: string,
     body?: unknown,
     route: string = path.split("?")[0]!,
+    sendBy?: number,
   ): Promise<Response> {
     let lastRes: Response | undefined;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       await reservePassCreatorSlot();
+      // The one place a request leaves this client. A call with a time limit for sending (createPass, see
+      // CREATE_PASS_DEADLINE_MS) that has waited past it, in the pacing gate behind other calls (the distributed gate
+      // has no deadline of its own), in the retry backoff below, or while the process was suspended, is dropped here
+      // instead of sent, so nothing of it can reach the provider later. Checked on every attempt, not only the first.
+      if (sendBy !== undefined && Date.now() >= sendBy) {
+        throw new WalletProviderError("wallet_provider_timeout", "PassCreator request was not sent in time.");
+      }
       let res: Response;
       try {
         res = await this.performFetch(method, path, body);
