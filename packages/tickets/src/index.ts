@@ -36,11 +36,14 @@ export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget }
 export {
   CREATION_SETTLE_WINDOW_MS,
   PASS_ROW_STILL_AT_PROVIDER,
+  SETTLED_RECHECK_HORIZON_MS,
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,
   passIsStillToDelete,
+  recheckSettledWalletPasses,
+  settledUntrackedPassRow,
 } from "./erase-wallet-passes.js";
-export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
+export type { EraseWalletPassesResult, RecheckSettledWalletPassesResult } from "./erase-wallet-passes.js";
 export type {
   EraseAttendeesParams,
   EraseAttendeesResult,

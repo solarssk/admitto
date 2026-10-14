@@ -3,7 +3,7 @@
  * of an import (emails and CSV rows of skipped and unreadable entries) and the wallet pass at the
  * provider.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,9 +16,11 @@ import { scrubImportJobResults } from "../src/erase-job-results.js";
 import {
   CREATION_SETTLE_WINDOW_MS,
   PASS_ROW_STILL_AT_PROVIDER,
+  SETTLED_RECHECK_HORIZON_MS,
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,
   passIsStillToDelete,
+  recheckSettledWalletPasses,
 } from "../src/erase-wallet-passes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -643,6 +645,116 @@ describe("deleteErasedWalletPasses", () => {
           clock.mockRestore();
         }
         expect(await removedAt("copies-wp-cred-4")).not.toBeNull();
+      });
+    });
+
+    describe("the second look at rows that were settled on 'there is none'", () => {
+      const HOUR_MS = 3_600_000;
+      beforeEach(async () => {
+        // The rows the tests before left behind (several of them were settled just now) would be asked about as well.
+        await prisma.walletPass.deleteMany({ where: { attendee: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } } });
+      });
+      /** An erased attendee whose unrecorded pass row was marked removed `ago` ms ago, as a settled answer of 'none' does. */
+      const settledRow = async (
+        id: string,
+        ago: number,
+        options: Parameters<typeof attendeeWithReservedId>[1] = {},
+      ) => {
+        await attendeeWithReservedId(id, options);
+        await prisma.walletPass.update({ where: { attendee_id: id }, data: { provider_removed_at: new Date(Date.now() - ago) } });
+      };
+      const asked = (provider: ReturnType<typeof stubProvider>) =>
+        provider.deletePassByUserProvidedId.mock.calls.map((call: unknown[]) => call[0] as string);
+
+      it("keeps asking for a week after a row was settled", () => {
+        expect(SETTLED_RECHECK_HORIZON_MS).toBe(7 * 24 * HOUR_MS);
+      });
+
+      it("asks the provider for the reserved id again and deletes a pass that turned up after the row was settled, without touching the row", async () => {
+        await settledRow("copies-wp-look-1", 2 * HOUR_MS, { reserved: "reserved-id-look-1" });
+        const provider = stubProvider();
+
+        const result = await recheckSettledWalletPasses(prisma, EVENT_ID, provider);
+
+        expect(result).toEqual({ checked: 1, found: 1, failed: 0 });
+        expect(asked(provider)).toEqual(["reserved-id-look-1"]);
+        expect(provider.deletePass).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: "copies-wp-look-1" } });
+        expect(row.provider_removed_at).not.toBeNull();
+        expect(row.provider_pass_id).toBeNull();
+      });
+
+      it("counts an id the provider has no pass under as checked and leaves everything as it was", async () => {
+        await settledRow("copies-wp-look-2", HOUR_MS);
+        const provider = stubProvider(undefined, vi.fn(async (_userProvidedId: string) => false));
+
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toEqual({ checked: 1, found: 0, failed: 0 });
+        expect(asked(provider)).toEqual([`admitto:${EVENT_ID}:copies-wp-look-2`]);
+      });
+
+      it("builds the id from the event and the attendee for a failed creation from before ids were reserved", async () => {
+        await settledRow("copies-wp-look-3", HOUR_MS, { reserved: false, status: "failed" });
+        const provider = stubProvider();
+
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toMatchObject({ checked: 1, found: 1 });
+        expect(asked(provider)).toEqual([`admitto:${EVENT_ID}:copies-wp-look-3`]);
+      });
+
+      it("asks only about unrecorded passes of erased attendees of this event that were settled within the horizon", async () => {
+        await settledRow("copies-wp-look-in", HOUR_MS);
+        await settledRow("copies-wp-look-edge", SETTLED_RECHECK_HORIZON_MS - HOUR_MS);
+        await settledRow("copies-wp-look-old", SETTLED_RECHECK_HORIZON_MS + HOUR_MS);
+        await settledRow("copies-wp-look-other-event", HOUR_MS, { eventId: OTHER_EVENT_ID });
+        await settledRow("copies-wp-look-live", HOUR_MS, { erase: false });
+        await attendeeWithReservedId("copies-wp-look-pending"); // erased, but still to be deleted: the walk over pending passes has it
+        await attendeeWithReservedId("copies-wp-look-bare", { reserved: false }); // no id and not failed: nothing was ever reserved
+        await settledRow("copies-wp-look-tracked", HOUR_MS);
+        await prisma.walletPass.update({ where: { attendee_id: "copies-wp-look-tracked" }, data: { provider_pass_id: "pc-copies-wp-look-tracked" } });
+        const provider = stubProvider();
+
+        const result = await recheckSettledWalletPasses(prisma, EVENT_ID, provider);
+
+        expect(result).toEqual({ checked: 2, found: 2, failed: 0 });
+        expect(asked(provider).sort()).toEqual(
+          [`admitto:${EVENT_ID}:copies-wp-look-edge`, `admitto:${EVENT_ID}:copies-wp-look-in`].sort(),
+        );
+      });
+
+      it("asks about the newest first and at most as many as the limit says", async () => {
+        await settledRow("copies-wp-look-a", 5 * HOUR_MS);
+        await settledRow("copies-wp-look-b", 1 * HOUR_MS);
+        await settledRow("copies-wp-look-c", 3 * HOUR_MS);
+        const provider = stubProvider();
+
+        const result = await recheckSettledWalletPasses(prisma, EVENT_ID, provider, { limit: 2 });
+
+        expect(result.checked).toBe(2);
+        expect(asked(provider).sort()).toEqual(
+          [`admitto:${EVENT_ID}:copies-wp-look-b`, `admitto:${EVENT_ID}:copies-wp-look-c`].sort(),
+        );
+      });
+
+      it("counts a failure of the provider and goes on with the others, and leaves the rows alone", async () => {
+        await settledRow("copies-wp-look-f1", HOUR_MS);
+        await settledRow("copies-wp-look-f2", 2 * HOUR_MS);
+        const provider = stubProvider(
+          undefined,
+          vi.fn(async (userProvidedId: string) => {
+            if (userProvidedId.endsWith("copies-wp-look-f1")) throw new Error("provider down");
+            return false;
+          }),
+        );
+
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider)).toEqual({ checked: 1, found: 0, failed: 1 });
+        expect(await removedAt("copies-wp-look-f1")).not.toBeNull();
+      });
+
+      it("asks about nothing when the time budget is already used up", async () => {
+        await settledRow("copies-wp-look-budget", HOUR_MS);
+        const provider = stubProvider();
+
+        expect(await recheckSettledWalletPasses(prisma, EVENT_ID, provider, { budgetMs: 0 })).toEqual({ checked: 0, found: 0, failed: 0 });
+        expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
       });
     });
 

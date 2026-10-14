@@ -78,7 +78,9 @@ flowchart TD
        and could not be deleted then, and Admitto does not take "no pass" from the account that is
        configured now for an answer. Put the earlier credentials back and run the erasure again, or delete
        the pass in the earlier account's console and ask whoever runs the database to mark the pass row as
-       removed. A pass made before that id was
+       removed. A pass that reaches the provider after Admitto settled on "no pass" is found by the daily
+       retention run within a week and deleted; **System logs** shows `wallet_pass_found_after_settling`.
+       A pass made before that id was
        written, by a request that died without leaving anything on the row, is not found: delete it in
        the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>`.
      - **Audit:** the event action log and the central admin audit log record who erased how many

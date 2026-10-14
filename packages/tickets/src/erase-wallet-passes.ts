@@ -233,3 +233,84 @@ export async function deleteErasedWalletPasses(
   result.failureCodes = [...codes];
   return result;
 }
+
+/**
+ * How long after a pass row was marked removed the daily sweep keeps asking the provider for the id reserved for it.
+ * "There is none" is an answer about one moment: a creation can reach the provider after it in ways that nothing inside
+ * one process can rule out (a process paused after its last check and before its send, a provider that lags behind its
+ * own record, a clock that is off), and nothing else would look at a row that is marked removed. A week of asking turns
+ * "never found" into "found within a day".
+ */
+export const SETTLED_RECHECK_HORIZON_MS = 7 * 24 * 3_600_000;
+
+/** How many rows of one event a second look asks about in one sweep, the newest first. */
+const RECHECK_LIMIT = 300;
+
+/**
+ * The rows the second look asks about, as far as the row goes: an unrecorded pass (no provider id, only the id reserved
+ * for it, or a failed creation with none) that was marked removed since `since`. The attendee's part (erased, of this
+ * event) is added by {@link recheckSettledWalletPasses}.
+ */
+export function settledUntrackedPassRow(since: Date): Prisma.WalletPassWhereInput {
+  return {
+    provider_pass_id: null,
+    provider_removed_at: { gte: since },
+    OR: [{ user_provided_id: { not: null } }, { status: "failed" }],
+  };
+}
+
+/** What a second look did: how many ids the provider answered for, how many of them held a pass (deleted now), and how many it could not answer. */
+export type RecheckSettledWalletPassesResult = { checked: number; found: number; failed: number };
+
+type PassToRecheck = { attendee_id: string; user_provided_id: string | null };
+
+/** Asks the provider once for a pass of a settled row and deletes it if it is there: "found", "none" or "failed". */
+async function recheckOne(provider: WalletPassProvider, eventId: string, pass: PassToRecheck): Promise<"found" | "none" | "failed"> {
+  try {
+    const found = await provider.deletePassByUserProvidedId(pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id));
+    return found ? "found" : "none";
+  } catch {
+    return "failed";
+  }
+}
+
+/**
+ * The second look at the unrecorded passes of erased attendees of one event that were marked removed within
+ * {@link SETTLED_RECHECK_HORIZON_MS} (the newest first, at most `limit`): asks the provider for each reserved id again
+ * and deletes a pass that has turned up since the row was settled. It writes nothing: the row stays marked removed,
+ * and a pass that is found says that an answer of "none" came too early, which the caller reports. A failure only
+ * counts, since tomorrow's sweep asks again. `budgetMs` bounds the whole run like it does for the deletes.
+ */
+export async function recheckSettledWalletPasses(
+  db: PrismaClient,
+  eventId: string,
+  provider: WalletPassProvider,
+  options: { budgetMs?: number; limit?: number } = {},
+): Promise<RecheckSettledWalletPassesResult> {
+  const result: RecheckSettledWalletPassesResult = { checked: 0, found: 0, failed: 0 };
+  const passes = await db.walletPass.findMany({
+    where: {
+      ...settledUntrackedPassRow(new Date(Date.now() - SETTLED_RECHECK_HORIZON_MS)),
+      attendee: { event_id: eventId, erased_at: { not: null } },
+    },
+    select: { attendee_id: true, user_provided_id: true },
+    orderBy: { provider_removed_at: "desc" },
+    take: options.limit ?? RECHECK_LIMIT,
+  });
+  const startedAt = Date.now();
+  const runFrom = async (i: number): Promise<void> => {
+    if (i >= passes.length) return;
+    if (options.budgetMs !== undefined && Date.now() - startedAt >= options.budgetMs) return;
+    const outcomes = await Promise.all(passes.slice(i, i + DELETE_CONCURRENCY).map((pass) => recheckOne(provider, eventId, pass)));
+    for (const outcome of outcomes) {
+      if (outcome === "failed") result.failed += 1;
+      else {
+        result.checked += 1;
+        if (outcome === "found") result.found += 1;
+      }
+    }
+    await runFrom(i + DELETE_CONCURRENCY);
+  };
+  await runFrom(0);
+  return result;
+}
