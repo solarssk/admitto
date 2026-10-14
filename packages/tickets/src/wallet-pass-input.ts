@@ -11,6 +11,13 @@ type ResolvedTicket = NonNullable<Awaited<ReturnType<typeof resolveTicket>>>;
 
 export { formatDate, formatDateShort };
 
+/** The id a pass has at the provider before the provider has answered: `admitto:<event id>:<attendee id>`, the
+ * idempotency key sent as `userProvidedId` (see {@link buildWalletPassInput}). It is deterministic, so a pass whose
+ * own provider id Admitto never saved can still be found, and deleted, by it. The one place that builds it. */
+export function walletUserProvidedId(eventId: string, attendeeId: string): string {
+  return `admitto:${eventId}:${attendeeId}`;
+}
+
 /**
  * ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
  * resolve it for attendee-facing display; fail open to the raw key on any lookup error, same as
@@ -238,7 +245,7 @@ export function buildWalletPassInput(
     ticketTypeLabel: attendee.ticket_type || "General",
     ticketStatusLabel: computeTicketStatusLabel(attendee.status, attendee.admitted_at),
     customFieldLabels: customFieldPlaceholders,
-    userProvidedId: `admitto:${event.id}:${attendee.id}`,
+    userProvidedId: walletUserProvidedId(event.id, attendee.id),
     barcodeValue,
     relevantDate: computeRelevantDate(event),
     expirationDate: computeExpirationDate(event),

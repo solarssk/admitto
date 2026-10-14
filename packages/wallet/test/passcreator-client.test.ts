@@ -642,6 +642,52 @@ describe("PassCreatorClient.deletePass", () => {
   });
 });
 
+describe("PassCreatorClient.deletePassByUserProvidedId", () => {
+  it("DELETEs the v1 pass endpoint with the userProvidedId in the path, not the v3 one that takes only an identifier", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/pass/admitto%3Aevent1%3Aattendee1");
+      expect(init?.method).toBe("DELETE");
+      expect((init?.headers as Record<string, string>)["Authorization"]).toBe("test-key");
+      expect(init?.body).toBeUndefined();
+      return new Response(null, { status: 200 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers false for a 404: there is no pass under that id, which is an answer and not an error", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).resolves.toBe(false);
+  });
+
+  it.each([
+    [401, "wallet_provider_unauthorized"],
+    [403, "wallet_provider_unauthorized"],
+    [400, "wallet_provider_rejected"],
+    [500, "wallet_provider_rejected"],
+  ])("throws a coded error for HTTP %s, so the caller does not mark the pass removed", async (status, code) => {
+    const fetchMock = vi.fn(async () => new Response(null, { status }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toMatchObject({ code });
+  });
+
+  it("reports a request that never got an answer as a timeout, not as 'no pass'", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toMatchObject({
+      code: "wallet_provider_timeout",
+    });
+  });
+});
+
 describe("PassCreatorClient.findByUserProvidedId", () => {
   it("returns the mapped result when found", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
@@ -1028,6 +1074,30 @@ describe("PassCreatorClient wallet system-log coverage", () => {
       fields: { status: 401, route: "/api/v3/pass/{id}" },
     });
     expect(JSON.stringify(entry)).not.toContain("attendee-linked-pass-id");
+  });
+
+  it("does not log deletePassByUserProvidedId's 404 (no pass under that id) as a rejection", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await client.deletePassByUserProvidedId("admitto:event1:attendee1");
+
+    expect(querySystemLogs({ source: "wallet" })).toEqual([]);
+  });
+
+  it("logs a rejected deletePassByUserProvidedId with a static route template instead of the attendee-linked id", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "passcreator_request_rejected",
+      fields: { status: 401, route: "/api/pass/{id}" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
   });
 
   it("logs a rejected updatePass with a static route template instead of the pass id", async () => {

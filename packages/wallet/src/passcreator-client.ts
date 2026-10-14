@@ -239,14 +239,35 @@ export class PassCreatorClient implements WalletPassProvider {
 
   /** Idempotent (ADR 0041 §3): a pass already gone (404) counts as deleted, not an error. */
   async deletePass(providerPassId: string): Promise<void> {
-    const path = `/api/v3/pass/${encodeURIComponent(providerPassId)}`;
-    const route = "/api/v3/pass/{id}";
+    await this.deleteAt(`/api/v3/pass/${encodeURIComponent(providerPassId)}`, "/api/v3/pass/{id}");
+  }
+
+  /**
+   * Deletes the pass PassCreator holds under `userProvidedId`, for one whose identifier Admitto never saved.
+   * Uses the v1 `DELETE /api/pass/{pass-uid}`, whose path takes the "UID, userProvidedId, or barcode value of the
+   * pass" (developer.passcreator.com/en/api/v1/pass): the v3 delete takes the identifier only (an unknown id there
+   * is a 404, which deletePass counts as deleted, so passing it the userProvidedId would "succeed" without removing
+   * anything), and the v3 search by userProvidedId is scoped to this client's template and can lag, so it cannot say
+   * that no pass exists. This is answered from PassCreator's own record of the id: 200 means a pass was deleted, 404
+   * that there is none (already gone, or never created). The id is unique in the account (createPass sends
+   * enforceUniqueUserProvidedId), so it names this attendee's pass whichever template made it. Documented by
+   * PassCreator, not yet confirmed live (the live checks so far covered the v3 calls).
+   */
+  async deletePassByUserProvidedId(userProvidedId: string): Promise<boolean> {
+    return this.deleteAt(`/api/pass/${encodeURIComponent(userProvidedId)}`, "/api/pass/{id}");
+  }
+
+  /** The DELETE behind both deletes above: true when PassCreator deleted a pass, false for a 404 (none there),
+   * anything else throws. `route` is a static template, never the path: the path carries an id that links the call
+   * to one attendee (logOutcome). */
+  private async deleteAt(path: string, route: string): Promise<boolean> {
     const res = await this.requestRaw("DELETE", path, undefined, route);
     const ok = res.ok || res.status === 404;
     this.logOutcome("DELETE", route, ok, res.status);
     if (!ok) {
       throw this.toProviderError(res.status);
     }
+    return res.ok;
   }
 
   /**

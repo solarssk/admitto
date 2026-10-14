@@ -6,6 +6,7 @@ import { resolveConfiguredWalletProvider } from "@admitto/wallet";
 import {
   deleteErasedWalletPasses,
   eraseAttendees,
+  erasedPassToDeleteWhere,
   parseWalletFieldMapping,
   scrubImportJobResults,
   writeBulkActionLog,
@@ -54,18 +55,13 @@ type EraseResponseBody = {
 };
 
 /**
- * The erased attendees among `attendeeIds` whose wallet pass has a provider id and is not marked removed:
- * what is still to be deleted at the provider.
+ * The erased attendees among `attendeeIds` whose wallet pass is still to be deleted at the provider (see
+ * erasedPassToDeleteWhere: it has the provider's id, or only the id reserved for it, and is not marked removed).
  */
 async function attendeesWithPassToDelete(db: PrismaClient, eventId: string, attendeeIds: string[]): Promise<string[]> {
   if (attendeeIds.length === 0) return [];
   const passes = await db.walletPass.findMany({
-    where: {
-      attendee_id: { in: attendeeIds },
-      provider_pass_id: { not: null },
-      provider_removed_at: null,
-      attendee: { event_id: eventId, erased_at: { not: null } },
-    },
+    where: erasedPassToDeleteWhere(eventId, attendeeIds),
     select: { attendee_id: true },
   });
   return passes.map((pass) => pass.attendee_id);
@@ -176,6 +172,15 @@ async function runErasure(
           source: "admin",
           message: "wallet_pass_erasure_delete_failed",
           fields: { eventId, attendeeId, codes: wallet.failureCodes.join(",") },
+        });
+      }
+      // One line for the request, however many: passes the provider held that Admitto had no id for.
+      if (wallet.untrackedDeleted > 0) {
+        recordSystemLog({
+          level: "warn",
+          source: "admin",
+          message: "wallet_pass_untracked_deleted",
+          fields: { eventId, deleted: wallet.untrackedDeleted },
         });
       }
     } catch (err) {

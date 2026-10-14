@@ -33,7 +33,12 @@ export {
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
 export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
-export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
+export {
+  PASS_ROW_STILL_AT_PROVIDER,
+  deleteErasedWalletPasses,
+  erasedPassToDeleteWhere,
+  passIsStillToDelete,
+} from "./erase-wallet-passes.js";
 export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
 export type {
   EraseAttendeesParams,
@@ -162,7 +167,7 @@ export type {
 export { claimNextAdminJob } from "./claim-admin-job.js";
 export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
-export { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
+export { resolveTicketPageDisplay, buildWalletPassInput, walletUserProvidedId } from "./wallet-pass-input.js";
 export { formatDate, formatDateShort, formatEventHour, formatEventHoursRange } from "@admitto/shared/region-date-format";
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
 export {

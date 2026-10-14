@@ -291,6 +291,59 @@ describe("admitto attendees erase", () => {
     expect(errorLog).toHaveBeenCalledWith("Wallet pass of attendee att-3 could not be deleted (wallet_unauthorized).");
   });
 
+  it("asks what is still to be deleted the way the erase API does: the provider's id, or only the id reserved for the pass, of an erased attendee", async () => {
+    const { db, raw, passes } = fakeDb({
+      attendees: [{ id: "att-1", erased_at: null }],
+      passes: [{ attendee_id: "att-1", pending: true }],
+    });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-1"]));
+    deletePasses.mockImplementationOnce(async () => {
+      passes[0]!.pending = false;
+      return { deleted: 1, untrackedDeleted: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+    });
+
+    await runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1", "--yes"));
+
+    expect(raw.walletPass.findMany).toHaveBeenCalledWith({
+      where: {
+        provider_removed_at: null,
+        OR: [{ provider_pass_id: { not: null } }, { user_provided_id: { not: null } }, { status: "failed" }],
+        attendee: { event_id: "evt-1", erased_at: { not: null } },
+        attendee_id: { in: ["att-1"] },
+      },
+      select: { attendee_id: true },
+    });
+  });
+
+  it("says how many passes it found that Admitto had no record of, names no attendee, and says nothing when it found none", async () => {
+    const { db, passes } = fakeDb({
+      attendees: [{ id: "att-1", erased_at: null }, { id: "att-2", erased_at: null }],
+      passes: [{ attendee_id: "att-1", pending: true }, { attendee_id: "att-2", pending: true }],
+    });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-1", "att-2"]));
+    deletePasses.mockImplementationOnce(async () => {
+      for (const pass of passes) pass.pending = false;
+      return { deleted: 2, untrackedDeleted: 2, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+    });
+
+    await runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1,att-2", "--yes"));
+
+    expect(output()).toContain("2 wallet pass(es) that Admitto had no record of were found at the provider by their id and deleted.");
+    expect(output()).not.toContain("att-");
+
+    log.mockClear();
+    const quiet = fakeDb({ attendees: [{ id: "att-3", erased_at: null }], passes: [{ attendee_id: "att-3", pending: true }] });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-3"]));
+    deletePasses.mockImplementationOnce(async () => {
+      quiet.passes[0]!.pending = false;
+      return { deleted: 1, untrackedDeleted: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+    });
+
+    await runAttendeesErase(quiet.db, deps, argv(...BASE, "--attendee-ids", "att-3", "--yes"));
+
+    expect(output()).not.toContain("had no record of");
+  });
+
   it("leaves the passes where they are, and says so, when the event has no wallet credentials", async () => {
     const { db } = fakeDb({
       attendees: [{ id: "att-1", erased_at: null }],

@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A wallet pass can now read **Pending** on the attendee's page while it is being made (before, it was only ever Sent or Failed): the pass row is written just before the provider is called. If the request dies in between, the row stays Pending and the next tap on Add to Wallet makes the pass as before.
+
 ### Fixed
 
 - The Location, Mail, Images and Ticket types tabs of Event settings, and the image library, no longer show a line saying the event is archived and cannot be changed. The greyed fields and the missing Save already say so, and the line pushed the first row down.
 - The Check-in tab of Event settings no longer shows the note "This event is archived - check-in behaviour cannot be changed." on an archived event (the greyed switches and the missing Save already say so), and its four switches now sit at the vertical middle of their label and description instead of next to the first line.
+
+### Security
+
+- Erasing an attendee now also deletes a wallet pass that exists at the wallet provider but that Admitto never recorded, for instance when saving a new pass failed or the event's template changed while it was being made. Before a pass is created, the id it will have at the provider (`admitto:<event id>:<attendee id>`) is now written on the attendee's pass row, so that the erase API, `admitto attendees erase` and the daily retention run find a pass that its own request could not record and delete it by that id (PassCreator's `DELETE /api/pass/{id}`, answered from its own record of the id, so "there is none" is a real answer and the pass is then marked removed). Until the provider has answered, the person counts as still to delete everywhere the follow-up is reported: `wallet_pending`, the **Personal data erased** dialog and the exit code 2 of the command. Only attendees whose pass creation started are asked about, so a bulk erase makes no extra provider calls for people who never tapped Add to Wallet, and a failed pass creation from before this release is found too. When such a pass is found the worker and the erase API log one line, `wallet_pass_untracked_deleted` (event id and how many, no attendee), and the command prints one. A pass left by a request that died without writing anything before this release is not found, and **Remove from event** does not look for one either; delete such a pass in the provider's own console by its User provided ID.
 
 ## [0.7.5] - 2026-10-11
 

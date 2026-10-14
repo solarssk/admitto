@@ -188,11 +188,22 @@ describe("the attendee list and detail", () => {
   });
 
   it("says whether an erased attendee's pass still has to be deleted at the provider", async () => {
-    const ids = { pending: "att-admin-erased-pend", done: "att-admin-erased-done", unissued: "att-admin-erased-unissued" };
+    const ids = {
+      pending: "att-admin-erased-pend",
+      done: "att-admin-erased-done",
+      unissued: "att-admin-erased-unissued",
+      reserved: "att-admin-erased-reserved",
+      failed: "att-admin-erased-failed",
+    };
     const passes = {
       [ids.pending]: { provider_pass_id: "pc-pend" },
       [ids.done]: { provider_pass_id: "pc-done", provider_removed_at: new Date("2026-10-01T10:00:00Z") },
-      [ids.unissued]: { provider_pass_id: null },
+      // No id of any kind: a creation never started, so there is nothing to look for at the provider.
+      [ids.unissued]: { provider_pass_id: null, user_provided_id: null },
+      // Only the id reserved for a pass the creating request could not record: the pass may exist at the provider.
+      [ids.reserved]: { provider_pass_id: null, status: "pending" },
+      // A failed creation from before ids were reserved, which may also have made a pass.
+      [ids.failed]: { provider_pass_id: null, user_provided_id: null, status: "failed" },
     };
     try {
       for (const [id, pass] of Object.entries(passes)) {
@@ -204,6 +215,8 @@ describe("the attendee list and detail", () => {
       const pendingOf = async (id: string) =>
         ((await (await get(`${base}/${id}`)).json()) as { wallet_pass_delete_pending: boolean }).wallet_pass_delete_pending;
       expect(await pendingOf(ids.pending)).toBe(true);
+      expect(await pendingOf(ids.reserved)).toBe(true);
+      expect(await pendingOf(ids.failed)).toBe(true);
       // Already deleted, or never at the provider: nothing left to do.
       expect(await pendingOf(ids.done)).toBe(false);
       expect(await pendingOf(ids.unissued)).toBe(false);

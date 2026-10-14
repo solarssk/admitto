@@ -65,6 +65,12 @@ flowchart TD
      - **Wallet pass:** if the provider cannot be reached, a dialog says the pass is still there and
        offers **Try again**, which repeats only the wallet step; the attendee's page keeps a **Try
        again** button until it has worked. Everything personal inside Admitto is gone either way.
+       A pass that Admitto never managed to record (its save failed, or the event's template changed
+       while it was being made) is deleted too, by the id Admitto wrote on the attendee's pass row before
+       it called the provider; when the retention run or the erasure finds one, **System logs** shows
+       `wallet_pass_untracked_deleted` with the event id and how many. A pass made before that id was
+       written, by a request that died without leaving anything on the row, is not found: delete it in
+       the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>`.
      - **Audit:** the event action log and the central admin audit log record who erased how many
        people and which ids, never a name or an address. The page of the erased person says who
        erased them and when (a Superadmin also sees the address it was done from).

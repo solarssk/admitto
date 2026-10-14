@@ -60,6 +60,7 @@ function stubProvider(): WalletPassProvider & {
     voidPass: vi.fn(),
     restorePass: vi.fn(),
     deletePass: vi.fn(),
+    deletePassByUserProvidedId: vi.fn(async () => false),
     findByUserProvidedId: vi.fn(async () => null),
     getPassSnapshot: vi.fn(async () => null),
   };
@@ -443,15 +444,15 @@ describe("On-demand wallet routes", () => {
   it("does not fail the redirect when the device-capture write itself throws", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
-    // The device capture runs in its own transaction, after the one that saves the new pass.
-    const transactionSpy = failNthTransaction(2);
+    // The device capture runs in its own transaction, after the one that reserves the id and the one that saves the new pass.
+    const transactionSpy = failNthTransaction(3);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
-    // The save, the failed capture, and the check with the attendee lock alone that follows it.
-    expect(transactionSpy).toHaveBeenCalledTimes(3);
+    // The reservation, the save, the failed capture, and the check with the attendee lock alone that follows it.
+    expect(transactionSpy).toHaveBeenCalledTimes(4);
     transactionSpy.mockRestore();
   });
 
@@ -1414,8 +1415,9 @@ describe("On-demand wallet routes", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     // markActive's recheck + upsert now run inside one transaction (the Template ID lock race
     // fix above) - mocking the transaction itself covers a failure anywhere inside it, same as
-    // mocking the upsert directly did before that recheck and this save were made atomic.
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db down"));
+    // mocking the upsert directly did before that recheck and this save were made atomic. It is
+    // the second transaction of the request: the first reserves the id on the pass row.
+    failNthTransaction(2);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
@@ -1439,8 +1441,9 @@ describe("On-demand wallet routes", () => {
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     // markFailed's DB write runs in one transaction (it locks the attendee row first - see its doc
-    // comment), so failing that transaction is the way to make the failure-path save throw.
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db down"));
+    // comment), so failing that transaction is the way to make the failure-path save throw. It is
+    // the second transaction of the request: the first reserves the id on the pass row.
+    failNthTransaction(2);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
@@ -1494,17 +1497,26 @@ describe("On-demand wallet routes", () => {
     // of that same create() call must still surface through the same catch-and-log every other
     // write failure in this function goes through, not be swallowed alongside P2002.
     const provider = stubProvider();
-    provider.createPass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_rejected", "boom"));
+    // The row the id was reserved on is gone by the time the failure is recorded (deleted by staff), so the
+    // failure marker is inserted by the fallback create.
+    provider.createPass.mockImplementationOnce(async () => {
+      await prisma.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      throw new WalletProviderError("wallet_provider_rejected", "boom");
+    });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    // The create runs inside markFailed's transaction: fail that one call on the transaction's own client.
+    // The create runs inside markFailed's transaction, the second one of the request (the first reserves the id):
+    // fail that one call on the transaction's own client.
     const realTransaction = prisma.$transaction.bind(prisma) as unknown as (
       fn: (tx: PrismaClient) => Promise<unknown>,
     ) => Promise<unknown>;
-    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (fn: (tx: PrismaClient) => Promise<unknown>) =>
-      realTransaction(async (tx) => {
-        vi.spyOn(tx.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
-        return fn(tx);
-      })) as never);
+    let transactions = 0;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (fn: (tx: PrismaClient) => Promise<unknown>) =>
+      ++transactions !== 2
+        ? realTransaction(fn)
+        : realTransaction(async (tx) => {
+            vi.spyOn(tx.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
+            return fn(tx);
+          })) as never);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });

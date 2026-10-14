@@ -30,6 +30,7 @@ interface WalletPassProvider {
   voidPass(providerPassId: string): Promise<void>;
   restorePass(providerPassId: string): Promise<void>;
   deletePass(providerPassId: string): Promise<void>;              // idempotent: already-gone = success
+  deletePassByUserProvidedId(userProvidedId: string): Promise<boolean>; // for a pass whose own id Admitto never saved: true = deleted, false = none there
   findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null>;
   getPassSnapshot(ref: WalletProviderPassRef): Promise<WalletProviderSnapshot | null>;
 }
@@ -49,7 +50,7 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
 
 - **`null` from `getPassSnapshot` is not proof the remote pass is gone.** It only means the
   provider's read side has no such pass right now (PassCreator's is a search whose index can lag).
-  Only a successful `deletePass` (2xx, or 404 for an already-gone pass) confirms removal.
+  Only a successful `deletePass` or `deletePassByUserProvidedId` (2xx, or 404 for an already-gone pass) confirms removal.
 - **`capabilities` are declarative; only `remoteDelete` is enforced today.** Google Wallet's Event
   Ticket API has no delete method for objects and an issuer cannot remove a pass from a user's
   Apple Wallet, so the Remove from provider routes check `remoteDelete` instead of assuming every
@@ -140,7 +141,7 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
 
 ## What Admitto expects from an implementation
 
-- **Idempotency.** `deletePass` on an already-deleted pass must succeed, not throw. A retried
+- **Idempotency.** `deletePass` on an already-deleted pass must succeed, not throw. `deletePassByUserProvidedId` is for a pass whose own id Admitto never saved (the request that created it could not record it, see [attendee-erasure.md](attendee-erasure.md#a-pass-whose-provider-id-was-never-saved)): it must answer from the provider's own record of the id, not from a search that can lag or is scoped to one template, so that "there is none" (false) is a real answer the caller may mark the pass removed on; it succeeds for a pass already gone, like `deletePass`. A retried
   `createPass`/`updatePass` call for the same `userProvidedId` must not create a duplicate pass.
 - **Stable error codes, not message strings.** Throw `WalletProviderError` with one of:
   `wallet_provider_unauthorized`, `_rate_limited`, `_duplicate`, `_not_found`, `_timeout`,

@@ -56,6 +56,7 @@ function stubProvider(publicKey: string): WalletPassProvider & {
     voidPass: vi.fn(),
     restorePass: vi.fn(),
     deletePass: vi.fn(),
+    deletePassByUserProvidedId: vi.fn(async () => false),
     findByUserProvidedId: vi.fn(async () => null),
     getPassSnapshot: vi.fn(async () => null),
     getWebhookPublicKey: vi.fn(async () => publicKey),

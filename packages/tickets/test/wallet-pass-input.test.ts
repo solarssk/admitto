@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
-import { buildWalletPassInput, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
+import { buildWalletPassInput, resolveTicketPageDisplay, walletUserProvidedId } from "../src/wallet-pass-input.js";
 
 function makeResolved(ticketType: string | null) {
   return {
@@ -97,6 +97,22 @@ describe("resolveTicketPageDisplay — ticket type label resolution edge cases",
     const result = await resolveTicketPageDisplay(db, resolved);
 
     expect(result.attendee.ticket_type).toBe("press_pass");
+  });
+});
+
+describe("walletUserProvidedId", () => {
+  it("is admitto:<event id>:<attendee id>, and is what buildWalletPassInput sends as the pass's userProvidedId", () => {
+    expect(walletUserProvidedId("evt-1", "att-1")).toBe("admitto:evt-1:att-1");
+    expect(buildWalletPassInput(fullResolved(), "barcode-123").userProvidedId).toBe(walletUserProvidedId("evt-1", "att-1"));
+  });
+
+  it("differs for another attendee and for another event, so that deleting by it can only reach one person's pass", () => {
+    const ids = new Set([
+      walletUserProvidedId("evt-1", "att-1"),
+      walletUserProvidedId("evt-1", "att-2"),
+      walletUserProvidedId("evt-2", "att-1"),
+    ]);
+    expect(ids.size).toBe(3);
   });
 });
 

@@ -1,6 +1,12 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { deleteErasedWalletPasses, parseWalletFieldMapping, type EraseWalletPassesResult } from "@admitto/tickets";
+import {
+  PASS_ROW_STILL_AT_PROVIDER,
+  deleteErasedWalletPasses,
+  erasedPassToDeleteWhere,
+  parseWalletFieldMapping,
+  type EraseWalletPassesResult,
+} from "@admitto/tickets";
 import { resolveConfiguredWalletProvider, type WalletPassProvider } from "@admitto/wallet";
 
 /** How long one sweep may spend at the provider. The worker's retention job holds up the next drain while it runs. */
@@ -66,16 +72,12 @@ const realDeps: ErasedWalletSweepDeps = {
 };
 
 /**
- * The same question the erase API asks after an erasure: a pass with a provider id, not yet removed, of an erased
- * attendee (of the given ones, when `attendeeIds` is set).
+ * The same question the erase API asks after an erasure: a pass still to be deleted at the provider (it has the
+ * provider's id, or only the id reserved for it, and is not yet removed) of an erased attendee (of the given ones,
+ * when `attendeeIds` is set).
  */
 export function passToDelete(eventId: string, attendeeIds?: readonly string[]): Prisma.WalletPassWhereInput {
-  return {
-    provider_pass_id: { not: null },
-    provider_removed_at: null,
-    attendee: { event_id: eventId, erased_at: { not: null } },
-    ...(attendeeIds ? { attendee_id: { in: [...attendeeIds] } } : {}),
-  };
+  return erasedPassToDeleteWhere(eventId, attendeeIds);
 }
 
 type Tally = { deleted: number; failed: number; exhausted: boolean; last: Cursor | null };
@@ -111,8 +113,9 @@ async function writeCursor(db: PrismaClient, cursor: Cursor | null): Promise<voi
   }
 }
 
-/** The passes of one event that the provider refused in one walk, for the one line that says so. */
-type Failures = { attendeeIds: string[]; codes: Set<string> };
+/** What one walk of an event has to tell in its lines: the passes the provider refused, and how many passes it held
+ * that Admitto had no id for (found by the id reserved for them, and deleted). */
+type Failures = { attendeeIds: string[]; codes: Set<string>; untracked: number };
 
 /**
  * One line for the whole walk of an event, however many passes failed (the worker relays every line to the app in
@@ -130,6 +133,16 @@ function reportFailures(eventId: string, failures: Failures): void {
     attendeeIds: failures.attendeeIds.slice(0, MAX_FAILED_IDS_LOGGED).join(","),
     ...(more > 0 ? { more } : {}),
   });
+}
+
+/**
+ * One line for the whole walk of an event, however many passes it found that Admitto had no record of (a pass whose
+ * creating request could not save it): it is the one sign that this happened, so the operator should be able to see
+ * it, and where. The event's id only, never an attendee's.
+ */
+function reportUntracked(eventId: string, untracked: number): void {
+  if (untracked <= 0) return;
+  emitSystemLog("wallet", "warn", "wallet_pass_untracked_deleted", { eventId, deleted: untracked });
 }
 
 /** What the walk of an event needs, so that the functions below take few parameters. */
@@ -162,6 +175,7 @@ function recordRun(walk: Walk, eventId: string, attendeeIds: string[], run: Eras
   const { tally } = walk;
   tally.deleted += run.deleted;
   tally.failed += run.failedAttendeeIds.length;
+  failures.untracked += run.untrackedDeleted;
   failures.attendeeIds.push(...run.failedAttendeeIds);
   for (const code of run.failureCodes) failures.codes.add(code);
   const tried = attendeeIds.length - run.notTried;
@@ -176,7 +190,7 @@ function recordRun(walk: Walk, eventId: string, attendeeIds: string[], run: Eras
  * stay cannot be read again), until none are left or the budget is gone, and says in one line which failed.
  */
 async function sweepEvent(walk: Walk, eventId: string, range: Range = {}): Promise<void> {
-  const failures: Failures = { attendeeIds: [], codes: new Set() };
+  const failures: Failures = { attendeeIds: [], codes: new Set(), untracked: 0 };
   try {
     let cursor = range.after;
     for (;;) {
@@ -192,8 +206,9 @@ async function sweepEvent(walk: Walk, eventId: string, range: Range = {}): Promi
       cursor = attendeeIds.at(-1);
     }
   } finally {
-    // Also when the walk stops on an error: what failed before it is still worth a line.
+    // Also when the walk stops on an error: what failed, and what was found, before it is still worth a line.
     reportFailures(eventId, failures);
+    reportUntracked(eventId, failures.untracked);
   }
 }
 
@@ -277,7 +292,7 @@ export async function sweepErasedWalletPasses(
       attendees: {
         some: {
           erased_at: { not: null },
-          wallet_pass: { is: { provider_pass_id: { not: null }, provider_removed_at: null } },
+          wallet_pass: { is: PASS_ROW_STILL_AT_PROVIDER },
         },
       },
     },

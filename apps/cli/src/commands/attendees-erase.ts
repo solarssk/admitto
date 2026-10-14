@@ -141,6 +141,9 @@ async function deletePassesAtProvider(
       for (const attendeeId of run.failedAttendeeIds) {
         console.error(`Wallet pass of attendee ${attendeeId} could not be deleted (${run.failureCodes.join(",")}).`);
       }
+      if (run.untrackedDeleted > 0) {
+        console.log(`${run.untrackedDeleted} wallet pass(es) that Admitto had no record of were found at the provider by their id and deleted.`);
+      }
     } catch (err) {
       console.error(`Wallet pass deletion failed: ${err instanceof Error ? err.message : String(err)}`);
     }

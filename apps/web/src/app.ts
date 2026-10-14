@@ -1154,6 +1154,43 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
+    /**
+     * Writes the id the new pass will have at the provider (`user_provided_id`) onto the attendee's pass row before
+     * the provider is called, creating the row as "pending" when there is none. A row that holds that id and not the
+     * provider's is what tells an erasure, and its follow-up (deleteErasedWalletPasses), that a pass may exist which
+     * this request never managed to record: the save below failed, the event's template changed meanwhile, the
+     * process died. Written first because after the provider call the database may be the thing that is failing.
+     * Taken under the attendee's row lock, so it waits for an erasure that is still open and sends nothing to the
+     * provider for an attendee who is erased or removed. Returns true to go on, "unavailable" for an attendee who is
+     * gone, null when the row could not be written (nothing is sent then either).
+     */
+    async function reservePassId(userProvidedId: string): Promise<true | typeof WALLET_PASS_UNAVAILABLE | null> {
+      try {
+        const gone = await db.$transaction(
+          async (tx) => {
+            if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return true;
+            await tx.walletPass.upsert({
+              where: { attendee_id: attendee.id },
+              create: { attendee_id: attendee.id, provider: "passcreator", user_provided_id: userProvidedId, status: "pending" },
+              update: { user_provided_id: userProvidedId },
+            });
+            return false;
+          },
+          { timeout: ERASURE_WAIT_TX_TIMEOUT_MS },
+        );
+        return gone ? WALLET_PASS_UNAVAILABLE : true;
+      } catch (err) {
+        console.error("walletPass upsert (reserve id) failed:", { reason: walletFailureCode(err) });
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_upsert_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return null;
+      }
+    }
+
     /** For a pass just created at the provider for an attendee who has been erased or removed in
      * the meantime: records only the provider's ids (no install links), so the pass stays findable
      * as "still to delete at the provider" (an erased attendee's pass with provider ids and no
@@ -1178,10 +1215,12 @@ export function createApp(options: CreateAppOptions = {}) {
         } catch (createErr) {
           const code = createErr instanceof Prisma.PrismaClientKnownRequestError ? createErr.code : null;
           if (code === "P2002") {
-            // A row exists already (for instance a failed attempt): give it the ids if it has none.
+            // A row exists already (reservePassId's, or a failed attempt): give it the ids if it has none. It may
+            // have been marked removed meanwhile: the erasure's follow-up asked the provider for the reserved id
+            // before this pass existed and found none. It exists now, so it is still to be deleted.
             await db.walletPass.updateMany({
               where: { attendee_id: attendee.id, provider_pass_id: null },
-              data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId },
+              data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId, provider_removed_at: null },
             });
           } else if (code !== "P2003") {
             throw createErr;
@@ -1227,7 +1266,8 @@ export function createApp(options: CreateAppOptions = {}) {
     ): Promise<null> {
       try {
         await db.$transaction(async (tx) => {
-          // Nothing is recorded for an attendee erased or removed meanwhile.
+          // No failure is recorded for an attendee erased or removed meanwhile. For an erased one the id that
+          // reservePassId wrote stays on the row, which is what the erasure's follow-up looks the pass up by.
           if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return;
           const { count } = await tx.walletPass.updateMany({
             where: { attendee_id: attendee.id, status: { not: "active" } },
@@ -1397,6 +1437,8 @@ export function createApp(options: CreateAppOptions = {}) {
           display.event.walletFieldMapping,
         );
         const input = buildWalletPassInput(display, qrPayload, customFieldPlaceholders);
+        const reserved = await reservePassId(input.userProvidedId);
+        if (reserved !== true) return reserved;
         return createOrRecoverPass(input);
       })().finally(() => {
         walletCreateLocks.delete(attendee.id);
