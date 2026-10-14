@@ -4,7 +4,8 @@
  * now also the target of the generic worker-wide relay (apps/cli/src/lib/system-log-publish.ts,
  * installed via @admitto/shared/system-log's setSystemLogPublisher hook).
  */
-import type { Context } from "hono";
+import type { Context, Env } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { isValidOpsToken } from "./readyz.js";
@@ -82,6 +83,14 @@ function sanitizeFields(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Upper bound on an ops log entry: a 200-character message plus a handful of short fields. */
+export const MAX_OPS_LOG_BODY_BYTES = 65_536;
+
+const opsLogBodyLimit = bodyLimit({
+  maxSize: MAX_OPS_LOG_BODY_BYTES,
+  onError: (c) => c.json({ error: "request too large" }, 413),
+});
+
 export type HandleOpsSystemLogIngestOpts = {
   opsHealthToken: string | null;
 };
@@ -97,6 +106,10 @@ export async function handleOpsSystemLogIngest(
   if (!isValidOpsToken(c, opts.opsHealthToken)) {
     return c.json({ error: "unauthorized" }, 401);
   }
+
+  // After the token check: an unauthorized request is answered 401 without reading its body.
+  const tooLarge = await opsLogBodyLimit(c as Context<Env, string>, () => Promise.resolve());
+  if (tooLarge) return tooLarge;
 
   let raw: unknown;
   try {

@@ -112,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- The check-in screen's POST requests (scan, lookup, admit, item, note, undo) now refuse a body larger than 32 KiB with `413 request too large`, and the worker's log relay to `/api/ops/system-logs` one larger than 64 KiB. The check is made before the body is parsed, after the session or token, the same-site check and the rate limit have already answered, so an unauthorized request still gets its 401 or 403 and no body is read for it. Ordinary requests are far below the limits: the largest real field is a note of at most 2,000 characters.
 - Custom email templates now preserve quoted HTML attribute context when an attribute contains literal angle brackets, so attendee values containing quotes remain data instead of creating another attribute.
 
 - Import upload and queue logs now use identifiers, counts and safe file metadata without recording uploaded filenames; authorized import history keeps the filename.
