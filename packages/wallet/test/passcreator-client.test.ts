@@ -144,7 +144,10 @@ describe("PassCreatorClient.createPass", () => {
 
     expect(result.providerPassId).toBe("pass-2");
     expect(calls).toBe(3);
-  });
+    // Real timers, like the test below: two backoff sleeps (500 + 1000 ms) plus the pacing slots
+    // are ~2 s, which left vitest's default 5 s little headroom on a loaded CI runner running with
+    // coverage instrumentation (timed out on main at 5001 ms).
+  }, 15_000);
 
   it("throws wallet_provider_rate_limited after exhausting retries", async () => {
     const fetchMock = vi.fn(async () =>
