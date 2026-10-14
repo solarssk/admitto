@@ -34,6 +34,7 @@ export {
 export { removeAttendees } from "./remove-attendees.js";
 export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
 export {
+  CREATION_SETTLE_WINDOW_MS,
   PASS_ROW_STILL_AT_PROVIDER,
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,

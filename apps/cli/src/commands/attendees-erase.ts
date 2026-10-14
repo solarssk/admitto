@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { getDefaultStorage, purgeEventJobFiles } from "@admitto/storage";
 import {
+  CREATION_SETTLE_WINDOW_MS,
   deleteErasedWalletPasses,
   eraseAttendees,
   scrubImportJobResults,
@@ -143,6 +144,12 @@ async function deletePassesAtProvider(
       }
       if (run.untrackedDeleted > 0) {
         console.log(`${run.untrackedDeleted} wallet pass(es) that Admitto had no record of were found at the provider by their id and deleted.`);
+      }
+      if (run.undecided > 0) {
+        console.error(
+          `${run.undecided} wallet pass(es) cannot be confirmed gone yet: a pass that was being made when the person was erased can still reach the provider. ` +
+            `Run the same command again in ${Math.ceil(CREATION_SETTLE_WINDOW_MS / 60_000)} minutes or more.`,
+        );
       }
     } catch (err) {
       console.error(`Wallet pass deletion failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -2,7 +2,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { encryptToString } from "@admitto/crypto";
-import { deleteErasedWalletPasses, eraseAttendees, generateToken, hashToken, removeAttendees } from "@admitto/tickets";
+import {
+  CREATION_SETTLE_WINDOW_MS,
+  deleteErasedWalletPasses,
+  eraseAttendees,
+  generateToken,
+  hashToken,
+  removeAttendees,
+} from "@admitto/tickets";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
 import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, WalletProviderError } from "@admitto/wallet";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -686,16 +693,50 @@ describe("the id reserved for a pass before the provider is called", () => {
     expect(await prisma.walletPass.findUnique({ where: { attendee_id: attendee.id } })).toBeNull();
   });
 
-  it("is given the provider's id again, and re-opened, when the pass turns up after the follow-up found none and the request's own delete fails", async () => {
+  it("does not settle the row on 'there is none' right after the erasure, so a pass the provider finishes later is still found, even when the request that was creating it times out", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async () => {
+      await erase([attendee.id]);
+      // The follow-up runs while the provider is still making the pass: none yet, and the erasure is a moment old.
+      const none = stubProvider();
+      none.deletePassByUserProvidedId.mockResolvedValueOnce(false);
+      expect(await deleteErasedWalletPasses(prisma, EVENT_ID, [attendee.id], none)).toMatchObject({ deleted: 0, undecided: 1 });
+      // The request gives up on the provider, which then finishes the pass anyway: nothing on its side clears anything.
+      throw new WalletProviderError("wallet_provider_timeout", "timed out");
+    });
+
+    const res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(await rowOf(attendee.id)).toMatchObject({
+      provider_pass_id: null,
+      user_provided_id: reservedId(attendee.id),
+      provider_removed_at: null,
+    });
+    // The pass is there by now, and the same question finds it.
+    const { provider: later, result } = await followUp(attendee.id);
+    expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1, undecided: 0 });
+    expect(later.deletePassByUserProvidedId).toHaveBeenCalledWith(reservedId(attendee.id));
+    expect((await rowOf(attendee.id)).provider_removed_at).not.toBeNull();
+  });
+
+  it("is given the provider's id again, and re-opened, when the pass turns up after the follow-up had settled the row and the request's own delete fails", async () => {
     const { attendee, token } = await createAttendee();
     const provider = stubProvider();
     provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
       await erase([attendee.id]);
-      // The follow-up runs while the provider is still making the pass: it asks for the reserved id, finds none, and
-      // marks the row removed.
+      // The follow-up runs while the provider is still making the pass, as if the erasure were older than the window
+      // that rules this out: it asks for the reserved id, finds none, and marks the row removed.
       const none = stubProvider();
       none.deletePassByUserProvidedId.mockResolvedValueOnce(false);
-      await deleteErasedWalletPasses(prisma, EVENT_ID, [attendee.id], none);
+      const erasedAt = (await prisma.attendee.findUniqueOrThrow({ where: { id: attendee.id } })).erased_at!;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(erasedAt.getTime() + CREATION_SETTLE_WINDOW_MS);
+      try {
+        await deleteErasedWalletPasses(prisma, EVENT_ID, [attendee.id], none);
+      } finally {
+        clock.mockRestore();
+      }
       return providerPass(input);
     });
     provider.deletePass.mockRejectedValueOnce(new Error("provider down"));

@@ -141,7 +141,7 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
 
 ## What Admitto expects from an implementation
 
-- **Idempotency.** `deletePass` on an already-deleted pass must succeed, not throw. `deletePassByUserProvidedId` is for a pass whose own id Admitto never saved (the request that created it could not record it, see [attendee-erasure.md](attendee-erasure.md#a-pass-whose-provider-id-was-never-saved)): it must answer from the provider's own record of the id, not from a search that can lag or is scoped to one template, so that "there is none" (false) is a real answer the caller may mark the pass removed on; it succeeds for a pass already gone, like `deletePass`. A retried
+- **Idempotency.** `deletePass` on an already-deleted pass must succeed, not throw. `deletePassByUserProvidedId` is for a pass whose own id Admitto never saved (the request that created it could not record it, see [attendee-erasure.md](attendee-erasure.md#a-pass-whose-provider-id-was-never-saved)): it must answer from the provider's own record of the id, not from a search that can lag or is scoped to one template, so that "there is none" (false) is a real answer about that moment (the caller waits out a creation that may still be under way before it marks the pass removed on it); it succeeds for a pass already gone, like `deletePass`. A retried
   `createPass`/`updatePass` call for the same `userProvidedId` must not create a duplicate pass.
 - **Stable error codes, not message strings.** Throw `WalletProviderError` with one of:
   `wallet_provider_unauthorized`, `_rate_limited`, `_duplicate`, `_not_found`, `_timeout`,
