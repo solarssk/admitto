@@ -16,6 +16,7 @@
 - [Important decisions](#important-decisions-1)
 - [What changes after this action](#what-changes-after-this-action)
 - [Common problems](#common-problems-1)
+- [Concurrent retry and cancellation](#concurrent-retry-and-cancellation)
 - [Related pages](#related-pages)
 
 ## What this page helps you do
@@ -130,6 +131,18 @@ Future test and attendee messages use the newly effective transport. Existing de
 - **Test fails only for a self-hosted, in-house mail server:** the destination likely resolves to a private network address, which production blocks unless ops added it to `MAIL_PRIVATE_DESTINATION_ALLOWLIST`.
 - **The wrong sender is used:** verify organisation versus event scope and the provider's mailbox/from settings.
 - **Event mail fails while the organisation test works:** inspect the event's dedicated override.
+
+## Concurrent retry and cancellation
+
+The worker and CLI coordinate each delivery separately. If another sender is already processing
+a delivery, the CLI counts that retry as **skipped**. Other deliveries can continue.
+A cancelled batch's messages that have not reached the sender are skipped, including when a new
+send has already refreshed that delivery. Only the fresh revision is eligible for the next drain.
+Messages already handed to the mail provider cannot be recalled; ambiguous provider acceptance
+still does not guarantee exactly-once delivery. Snapshot retention rechecks that a message is
+still terminal and old before clearing it, preserving a newly queued message.
+It also skips a delivery while a retry is sending it, so the provider outcome can be recorded.
+Skipped old snapshots are reconsidered on the next cleanup run.
 
 ## Related pages
 

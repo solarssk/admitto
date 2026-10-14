@@ -6,6 +6,7 @@ import {
   type SendResult,
 } from "@admitto/mailer";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SMTP_CAPABILITIES } from "../../mailer/src/capabilities.js";
 import { deliverPendingBatch } from "../src/send.js";
 
 afterEach(() => {
@@ -15,6 +16,7 @@ afterEach(() => {
 function pendingFixture(deliveryId: string) {
   return {
     deliveryId,
+    queuedAt: new Date(0),
     attendeeId: "att-1",
     to: "guest@example.com",
     frozenSubject: "Your ticket",
@@ -22,12 +24,14 @@ function pendingFixture(deliveryId: string) {
     links: {
       ticket_url: "https://tickets.example.com/t/abc",
       qr_image_url: "https://tickets.example.com/q/abc.png",
+      apple_wallet_url: "",
+      google_wallet_url: "",
     },
     idempotencyKey: "att-1:initial",
   };
 }
 
-type DeliveryRow = { status: string; recipient_email: string | null };
+type DeliveryRow = { status: string; recipient_email: string | null; queued_at?: Date; rendered_html?: string | null };
 
 const LIVE_ROW: DeliveryRow = { status: "queued", recipient_email: "guest@example.com" };
 
@@ -56,7 +60,7 @@ function fakePrisma(
       findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
         where.id.in.flatMap((id) => {
           const row = id in rows ? rows[id] : LIVE_ROW;
-          return row ? [{ id, ...row }] : [];
+          return row ? [{ id, rendered_subject: "Synthetic", rendered_html: "<p>Synthetic</p>", queued_at: new Date(0), attempts: 1, ...row }] : [];
         }),
       ),
     },
@@ -73,19 +77,20 @@ describe("deliverPendingBatch", () => {
     const prisma = fakePrisma(update);
     const adapter: MailerAdapter = {
       provider: "smtp",
+      capabilities: SMTP_CAPABILITIES,
       send: vi.fn(async (_message: MailMessage): Promise<SendResult> => {
         throw new Error("transport down");
       }),
       close: vi.fn(async () => undefined),
     };
 
-    const sent = await deliverPendingBatch(adapter, [pendingFixture("del-soft")], prisma);
+    const sent = await deliverPendingBatch(adapter, [{ ...pendingFixture("del-soft"), incrementAttempts: true }], prisma);
 
     expect(sent).toBe(0);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "del-soft", recipient_email: { not: null } },
-        data: expect.objectContaining({ status: "failed" }),
+        where: { id: "del-soft", queued_at: new Date(0), attempts: 1, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null }, status: { not: "cancelled" } },
+        data: expect.objectContaining({ status: "failed", attempts: { increment: 1 } }),
       }),
     );
   });
@@ -99,6 +104,7 @@ describe("deliverPendingBatch", () => {
     );
     const adapter: MailerAdapter = {
       provider: "smtp",
+      capabilities: SMTP_CAPABILITIES,
       send: vi.fn(async () => {
         throw destErr;
       }),
@@ -106,12 +112,12 @@ describe("deliverPendingBatch", () => {
     };
 
     await expect(
-      deliverPendingBatch(adapter, [pendingFixture("del-dest")], prisma),
+      deliverPendingBatch(adapter, [{ ...pendingFixture("del-dest"), incrementAttempts: true }], prisma),
     ).rejects.toBe(destErr);
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "del-dest", recipient_email: { not: null } },
+        where: { id: "del-dest", queued_at: new Date(0), attempts: 1, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null }, status: { not: "cancelled" } },
         data: expect.objectContaining({ status: "failed" }),
       }),
     );
@@ -126,6 +132,7 @@ describe("deliverPendingBatch", () => {
     });
     const adapter: MailerAdapter = {
       provider: "smtp",
+      capabilities: SMTP_CAPABILITIES,
       send: vi.fn(async () => {
         throw destErr;
       }),
@@ -148,6 +155,7 @@ describe("deliverPendingBatch", () => {
     });
     const adapter: MailerAdapter = {
       provider: "smtp",
+      capabilities: SMTP_CAPABILITIES,
       send: vi.fn(async () => {
         throw weird;
       }),
@@ -168,7 +176,7 @@ describe("deliverPendingBatch", () => {
         providerMessageId: `msg-${message.idempotencyKey}`,
         idempotencyKey: message.idempotencyKey,
       }));
-      const adapter: MailerAdapter = { provider: "smtp", send, close: vi.fn(async () => undefined) };
+      const adapter: MailerAdapter = { provider: "smtp", capabilities: SMTP_CAPABILITIES, send, close: vi.fn(async () => undefined) };
       return { adapter, send };
     };
 
@@ -178,13 +186,17 @@ describe("deliverPendingBatch", () => {
         "del-cancelled": { status: "cancelled", recipient_email: "guest@example.com" },
         "del-emptied": { status: "queued", recipient_email: null },
         "del-gone": undefined,
+        "del-new-revision": { ...LIVE_ROW, queued_at: new Date(1) },
+        "del-no-snapshot": { ...LIVE_ROW, rendered_html: null },
       });
       const { adapter, send } = acceptingAdapter();
       const pending = [
         pendingFixture("del-cancelled"),
         pendingFixture("del-emptied"),
         pendingFixture("del-gone"),
-        { ...pendingFixture("del-live"), idempotencyKey: "att-1:live" },
+        pendingFixture("del-new-revision"),
+        pendingFixture("del-no-snapshot"),
+        { ...pendingFixture("del-live"), idempotencyKey: "att-1:live", incrementAttempts: true },
       ];
 
       const sent = await deliverPendingBatch(adapter, pending, prisma);
@@ -193,7 +205,8 @@ describe("deliverPendingBatch", () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "att-1:live" }));
       expect(update).toHaveBeenCalledTimes(1);
-      expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "del-live", recipient_email: { not: null } } }));
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "del-live", queued_at: new Date(0), attempts: 1, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } } }));
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ attempts: { increment: 1 } }) }));
     });
 
     it("sends nothing, and writes nothing, when none of them is", async () => {

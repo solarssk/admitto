@@ -110,11 +110,12 @@ async function pendingFor(attendee: { id: string }, recipientEmail?: string) {
   const claim = await claimedFor(attendee, recipientEmail);
   return {
     deliveryId: claim.deliveryId,
+    queuedAt: claim.queuedAt,
     attendeeId: attendee.id,
     to: claim.message.to,
     frozenSubject: claim.message.subject,
     frozenHtml: claim.message.html,
-    links: { ticket_url: "https://tickets.example.com/t/abc", qr_image_url: "https://tickets.example.com/q/abc.png" },
+    links: { ticket_url: "https://tickets.example.com/t/abc", qr_image_url: "https://tickets.example.com/q/abc.png", apple_wallet_url: "", google_wallet_url: "" },
     idempotencyKey: `${attendee.id}:initial`,
   };
 }
@@ -353,7 +354,7 @@ describe("mail already on its way", () => {
     await erase([a.id]);
     await prisma.emailDelivery.updateMany({ where: { attendee_id: a.id }, data: { status: "queued" } });
     const sent: unknown[] = [];
-    const result = await drainPendingDeliveries(prisma, ENV, { exportSink: (p) => sent.push(p) }, { eventId: EVENT_ID, baseUrl: ENV.BASE_URL });
+    const result = await drainPendingDeliveries(prisma, ENV, { exportSink: (p) => { sent.push(p); } }, { eventId: EVENT_ID, baseUrl: ENV.BASE_URL });
     expect(result).toMatchObject({ claimed: 0 });
     expect(sent).toHaveLength(0);
   });
@@ -366,7 +367,7 @@ describe("mail already on its way", () => {
     await erase([a.id]);
     await prisma.emailDelivery.update({ where: { id: row!.id }, data: { status: "failed", retryable: true } });
     const sent: unknown[] = [];
-    expect(await retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => sent.push(p) }, { baseUrl: ENV.BASE_URL })).toEqual({
+    expect(await retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => { sent.push(p); } }, { baseUrl: ENV.BASE_URL })).toEqual({
       ok: false,
       reason: "missing_snapshot",
     });
@@ -384,7 +385,7 @@ describe("mail already on its way", () => {
     const spy = vi.spyOn(prisma.emailDelivery, "findUniqueOrThrow").mockResolvedValueOnce(stale);
     const sent: unknown[] = [];
     try {
-      expect(await retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => sent.push(p) }, { baseUrl: ENV.BASE_URL })).toEqual({
+      expect(await retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => { sent.push(p); } }, { baseUrl: ENV.BASE_URL })).toEqual({
         ok: false,
         reason: "not_retryable",
       });
@@ -456,7 +457,7 @@ describe("mail already on its way", () => {
     const held = await holdErasure([a.id]);
 
     const sent: unknown[] = [];
-    const retrying = retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => sent.push(p) }, { baseUrl: ENV.BASE_URL });
+    const retrying = retryDelivery(row!.id, prisma, ENV, { exportSink: (p) => { sent.push(p); } }, { baseUrl: ENV.BASE_URL });
     // A plain read would still show the failed row with its recipient and send it.
     expect(await staysPending(retrying)).toBe(true);
     await held.commit();
@@ -472,7 +473,7 @@ describe("mail already on its way", () => {
     const held = await holdErasure([a.id]);
 
     const sent: unknown[] = [];
-    const draining = drainPendingDeliveries(prisma, ENV, { exportSink: (p) => sent.push(p) }, { eventId: EVENT_ID, baseUrl: ENV.BASE_URL });
+    const draining = drainPendingDeliveries(prisma, ENV, { exportSink: (p) => { sent.push(p); } }, { eventId: EVENT_ID, baseUrl: ENV.BASE_URL });
     expect(await staysPending(draining)).toBe(true);
     await held.commit();
 
@@ -568,7 +569,7 @@ describe("the last check for a delivery sent to another attendee's address (the 
     const { waited, found } = await checkWhileErasing([{ deliveryId, attendeeId: owner.id }], erased.id, HELD_UP_MS);
 
     expect(waited).toBe(true);
-    expect(found.get(deliveryId)).toEqual({ status: "cancelled", recipient_email: null });
+    expect(found.get(deliveryId)).toEqual({ status: "cancelled", recipient_email: null, queued_at: expect.any(Date), attempts: expect.any(Number), snapshotReady: expect.any(Boolean) });
   });
 
   it("finds that person by the address however the delivery writes it", async () => {
@@ -580,7 +581,7 @@ describe("the last check for a delivery sent to another attendee's address (the 
     const { waited, found } = await checkWhileErasing([{ deliveryId, attendeeId: owner.id }], erased.id, HELD_UP_MS);
 
     expect(waited).toBe(true);
-    expect(found.get(deliveryId)).toEqual({ status: "cancelled", recipient_email: null });
+    expect(found.get(deliveryId)).toEqual({ status: "cancelled", recipient_email: null, queued_at: expect.any(Date), attempts: expect.any(Number), snapshotReady: expect.any(Boolean) });
   });
 
   it("does not wait for an erasure that does not concern the address", async () => {
@@ -601,8 +602,8 @@ describe("the last check for a delivery sent to another attendee's address (the 
     );
 
     expect(waited).toBe(false);
-    expect(found.get(toLive.deliveryId)).toEqual({ status: "queued", recipient_email: holder.email });
-    expect(found.get(toOutside.deliveryId)).toEqual({ status: "queued", recipient_email: "outside@example.org" });
+    expect(found.get(toLive.deliveryId)).toEqual({ status: "queued", recipient_email: holder.email, queued_at: expect.any(Date), attempts: expect.any(Number), snapshotReady: true });
+    expect(found.get(toOutside.deliveryId)).toEqual({ status: "queued", recipient_email: "outside@example.org", queued_at: expect.any(Date), attempts: expect.any(Number), snapshotReady: true });
   });
 
   it("does not wait for the erasure of a person in another event who has the same address", async () => {
@@ -620,6 +621,6 @@ describe("the last check for a delivery sent to another attendee's address (the 
     const { waited, found } = await checkWhileErasing([{ deliveryId, attendeeId: owner.id }], namesake.id, NOT_HELD_UP_MS, otherEventId);
 
     expect(waited).toBe(false);
-    expect(found.get(deliveryId)).toEqual({ status: "queued", recipient_email: namesake.email });
+    expect(found.get(deliveryId)).toEqual({ status: "queued", recipient_email: namesake.email, queued_at: expect.any(Date), attempts: expect.any(Number), snapshotReady: true });
   });
 });
