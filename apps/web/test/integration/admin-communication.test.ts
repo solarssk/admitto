@@ -1247,6 +1247,31 @@ describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () =>
     consoleError.mockRestore();
   });
 
+  it("answers null subject/html, not a server error, for a stored snapshot the renderer now refuses", async () => {
+    // Saved before the stricter template check: a link placeholder in an unquoted attribute.
+    const id = "dlv-admin-comm-unusable-snapshot";
+    await prisma.emailDelivery.create({
+      data: {
+        id,
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: ATT_A2,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        recipient_email: "bob@example.com",
+        rendered_subject: "Your ticket",
+        rendered_html: "<a href={{ticket_url}}>Open ticket</a>",
+        sent_at: new Date("2026-09-03T12:00:00Z"),
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/deliveries/${id}/rendered`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ subject: null, html: null });
+  });
+
   it("returns null subject/html once the retention window has nulled the stored snapshot", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/deliveries/${DLV_A4_EXPIRED}/rendered`,

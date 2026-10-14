@@ -1,11 +1,11 @@
 import type { PrismaClient } from "@admitto/db";
-import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { MailConfigError, resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import { readDeliveriesBeforeSend } from "./sendable.js";
+import { snapshotUnusableUpdate, tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 import { withDeliveryOwnership } from "./ownership.js";
 import type { MailDeliveryDeps } from "./send.js";
@@ -53,10 +53,18 @@ async function retryOwnedDelivery(
     return { ok: false, reason: "links_unavailable" };
   }
 
-  const materialized = materializeStoredDeliveryMessage(
+  const materialized = tryMaterializeStoredMessage(
     { subject: delivery.rendered_subject, html: delivery.rendered_html },
     links,
   );
+  if (!materialized) {
+    await assertOwned();
+    await prisma.emailDelivery.updateMany({
+      where: { id: deliveryId, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
+      data: { ...snapshotUnusableUpdate(), attempts: { increment: 1 } },
+    });
+    return { ok: false, reason: "snapshot_unusable" };
+  }
 
   let mailer;
   try {
