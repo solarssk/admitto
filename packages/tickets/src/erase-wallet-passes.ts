@@ -9,8 +9,10 @@ const DELETE_CONCURRENCY = 8;
  * How old an erasure has to be before a provider's "there is no pass under that id" counts as an answer. A request that
  * was creating the pass when the person was erased does not stop when the erasure commits, so its pass can still reach
  * the provider after that answer, and if the request dies or times out nothing clears the mark on the row afterwards.
- * Once the erasure is older than this, no such request can still be running: it is longer than the client timeouts and
- * retries of a creation add up to, plus the provider's own lag. A pass the provider does hold is deleted at once.
+ * Once the erasure is older than this, no such request can still send anything: `createPass` never sends its request
+ * later than CREATE_PASS_DEADLINE_MS (2 minutes) after it was called, whatever it waited for, the request itself ends
+ * within the client's 15 s timeout, and the provider's own lag is seconds, so this is several times what a creation
+ * can take (a test keeps it at least 4 times CREATE_PASS_DEADLINE_MS). A pass the provider does hold is deleted at once.
  */
 export const CREATION_SETTLE_WINDOW_MS = 10 * 60_000;
 
