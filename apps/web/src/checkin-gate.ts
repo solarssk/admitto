@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
-import type { Context, Next } from "hono";
+import type { Context, Env, Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { PrismaClient } from "@admitto/db";
 import {
   canPerformCheckIn,
@@ -239,14 +240,37 @@ export function createCheckinStreamRevalidator(deps: CheckinSessionAuthDeps) {
   };
 }
 
-/** Parse POST /api/checkin/scan JSON body once; store on context for handler reuse. */
+/**
+ * Upper bound on a check-in POST body (scan, lookup, admit, items, notes, undo). The largest
+ * real field is a note of at most MAX_ATTENDEE_NOTE_LENGTH (2000) characters, up to 12 KB even
+ * when every character is escaped in JSON; the rest are ids and short labels.
+ */
+export const MAX_CHECKIN_BODY_BYTES = 32_768;
+
+const checkinBodyLimit = bodyLimit({
+  maxSize: MAX_CHECKIN_BODY_BYTES,
+  onError: (c) => c.json({ error: "request too large" }, 413),
+});
+
+/**
+ * Parse POST /api/checkin/* JSON body once; store on context for handler reuse. Runs after the
+ * session/token gate, the CSRF guard and the rate limit, so an unauthorized request is refused
+ * before any of its body is read; the size cap then applies before the body is parsed.
+ */
 export async function parseScanBodyMiddleware(c: Context, next: Next): Promise<Response | void> {
+  // The read happens inside the limiter's `next`, so the cap holds however `bodyLimit` enforces it
+  // (a declared length is refused before `next` runs, a chunked body while it is read).
   let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid JSON" }, 400);
-  }
+  let unreadable = false;
+  const tooLarge = await checkinBodyLimit(c as Context<Env, string>, async () => {
+    try {
+      body = await c.req.json();
+    } catch {
+      unreadable = true;
+    }
+  });
+  if (tooLarge) return tooLarge;
+  if (unreadable) return c.json({ error: "invalid JSON" }, 400);
   if (!body || typeof body !== "object") {
     return c.json({ error: "body required" }, 400);
   }
