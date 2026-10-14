@@ -601,7 +601,7 @@ interface SaveEventSettingsDeps {
   setForm: (form: SettingsForm) => void;
   setOriginal: (form: SettingsForm) => void;
   addToast: AddToast;
-  refreshLayoutEvent?: () => Promise<void>;
+  refreshLayoutEvent?: () => Promise<unknown>;
 }
 
 /** Extracted out of handleSave (SonarCloud S3776). */
@@ -645,7 +645,8 @@ interface ArchiveToggleDeps {
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
-  refreshLayoutEvent?: () => Promise<void>;
+  /** Resolves to false when the layout's read failed and it still shows the old archived state. */
+  refreshLayoutEvent?: () => Promise<unknown>;
 }
 
 /** Extracted out of handleArchiveConfirm (SonarCloud S3776). */
@@ -680,7 +681,14 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setTicketTypesCardResetKey((n) => n + 1);
     setCheckinBehaviourCardResetKey((n) => n + 1);
     await load();
-    await refreshLayoutEvent?.();
+    // The page's own read is current; the layout's failed, so the bar above every page (and the other pages)
+    // still show the old state and the mismatch effect is paused while this runs: say so rather than leave it.
+    if ((await refreshLayoutEvent?.()) === false) {
+      addToast(
+        `The event is ${archiveMode === "archive" ? "archived" : "restored"}, but this page could not refresh. Reload the page to continue.`,
+        "warning",
+      );
+    }
   } catch (err) {
     // Shown inside the still-open dialog (errorMessage), not a toast - ConfirmDialog sits above
     // the toast stack (--z-modal > --z-toast), so a toast-only failure would render invisibly
@@ -765,7 +773,7 @@ interface RevokeCheckinsDeps {
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
-  refreshLayoutEvent?: () => Promise<void>;
+  refreshLayoutEvent?: () => Promise<unknown>;
 }
 
 /** Extracted out of handleRevokeCheckinsConfirm (SonarCloud S3776). */
@@ -819,7 +827,7 @@ interface RevokeItemsDeps {
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
-  refreshLayoutEvent?: () => Promise<void>;
+  refreshLayoutEvent?: () => Promise<unknown>;
 }
 
 /** Extracted out of handleRevokeItemsConfirm (SonarCloud S3776). */
@@ -1045,7 +1053,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // principle be reached without that layout (e.g. in isolation in tests) —
   // fall back to a no-op so a missing Outlet context never crashes the page.
   const outletContext = useOutletContext<
-    { event?: { archived_at: string | null }; refreshEvent?: () => Promise<void> } | undefined
+    { event?: { archived_at: string | null }; refreshEvent?: () => Promise<unknown> } | undefined
   >();
   const refreshLayoutEvent = outletContext?.refreshEvent;
   // The layout's own copy of the event: the archived bar above every event page can restore the event

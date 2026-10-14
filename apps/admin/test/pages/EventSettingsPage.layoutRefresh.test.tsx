@@ -334,6 +334,23 @@ describe("EventSettingsPage when the archived bar restores the event", () => {
     expect(fetchEventSettings).toHaveBeenCalledTimes(2);
   });
 
+  it("says so when its own Archive worked but the layout could not refresh", async () => {
+    mockLayoutEvent = { archived_at: null };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    // The layout's read failed: it keeps the old state, so the bar would stay missing.
+    refreshEvent.mockResolvedValueOnce(false);
+    render(tree());
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    expect(await screen.findByText(/archived, but this page could not refresh/)).toBeTruthy();
+  });
+
   it("does not read the event again when the layout still agrees with the page", async () => {
     mockLayoutEvent = { archived_at: null };
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
