@@ -14,6 +14,8 @@ const fetchAdminEvent = vi.fn();
 // When set, the mocked shell asks for a refresh from a mount effect, like AttendeesPage does to
 // pick up the active_attendee_count that the event picker's snapshot omits.
 let refreshOnMount = false;
+// What the last refreshEvent resolved to: true when the read was applied (or dropped as stale), false when it failed.
+let lastRefreshResult: boolean | undefined;
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
@@ -26,7 +28,7 @@ vi.mock("../../src/layouts/AdminShell.js", () => ({
     refreshEvent,
   }: {
     event: EventDto;
-    refreshEvent?: () => Promise<void>;
+    refreshEvent?: () => Promise<boolean>;
   }) => {
     useEffect(() => {
       if (refreshOnMount) void refreshEvent?.();
@@ -37,7 +39,14 @@ vi.mock("../../src/layouts/AdminShell.js", () => ({
         <div>shell:{event.title}</div>
         <div data-testid="shell-archived-at">{event.archived_at ?? "active"}</div>
         {refreshEvent && (
-          <button type="button" onClick={() => void refreshEvent()}>
+          <button
+            type="button"
+            onClick={() =>
+              void refreshEvent().then((result) => {
+                lastRefreshResult = result;
+              })
+            }
+          >
             refresh
           </button>
         )}
@@ -88,6 +97,7 @@ function renderRouted(pathname: string) {
 }
 
 afterEach(() => {
+  lastRefreshResult = undefined;
   cleanup();
   vi.useRealTimers();
   vi.resetAllMocks();
@@ -221,6 +231,7 @@ describe("EventLayout (#274)", () => {
       );
     });
     expect(fetchAdminEvent).toHaveBeenCalledWith("evt-1");
+    expect(lastRefreshResult).toBe(true);
   });
 
   it("ignores a stale refreshEvent response that resolves after a newer one (race)", async () => {
@@ -313,6 +324,8 @@ describe("EventLayout (#274)", () => {
     await waitFor(() => expect(fetchAdminEvent).toHaveBeenCalledTimes(1));
     expect(screen.getByText("shell:Spring Gala")).toBeTruthy();
     expect(screen.getByTestId("shell-archived-at").textContent).toBe("active");
+    // It tells the caller the read failed, for one that must not claim the page is current.
+    await waitFor(() => expect(lastRefreshResult).toBe(false));
   });
 });
 

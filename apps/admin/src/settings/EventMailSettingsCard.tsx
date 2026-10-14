@@ -76,14 +76,17 @@ function smtpConnectionBlockedReason(isArchived: boolean, hasUnsavedChanges: boo
   return undefined;
 }
 
+const TEST_SEND_DEFAULT_HINT =
+  "Verifies whichever transport actually resolves for this event (dedicated or inherited).";
+
 function resolveTestSendCopy(args: {
   isArchived: boolean;
   transportConfigured: boolean;
   hasUnsavedChanges: boolean;
 }): { testSendReason: string | undefined; testSendHint: string } {
   if (args.isArchived) {
-    const msg = "This event is archived. Mail settings cannot be tested.";
-    return { testSendReason: msg, testSendHint: msg };
+    // The page's archived notice says why; the hint stays the one every event has, the reason is the button's tooltip.
+    return { testSendReason: "This event is archived.", testSendHint: TEST_SEND_DEFAULT_HINT };
   }
   if (!args.transportConfigured) {
     const msg = "Select and save a transport (SMTP, Graph, or Power Automate) first.";
@@ -98,8 +101,7 @@ function resolveTestSendCopy(args: {
   }
   return {
     testSendReason: undefined,
-    testSendHint:
-      "Verifies whichever transport actually resolves for this event (dedicated or inherited).",
+    testSendHint: TEST_SEND_DEFAULT_HINT,
   };
 }
 
