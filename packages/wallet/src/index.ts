@@ -10,7 +10,7 @@ export type {
   WalletProviderValidity,
 } from "./types.js";
 export { WalletProviderError, walletFailureCode } from "./types.js";
-export type { WalletPassProvider } from "./provider.js";
+export type { CreatePassOptions, WalletPassProvider } from "./provider.js";
 export { CREATE_PASS_DEADLINE_MS } from "./provider.js";
 export {
   PassCreatorClient,

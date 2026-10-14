@@ -7,7 +7,7 @@ import type {
   WalletProviderPassRef,
   WalletProviderSnapshot,
 } from "./types.js";
-import { CREATE_PASS_DEADLINE_MS, type WalletPassProvider } from "./provider.js";
+import { CREATE_PASS_DEADLINE_MS, type CreatePassOptions, type WalletPassProvider } from "./provider.js";
 import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY } from "./capabilities.js";
 import { parseOffsetInstant } from "./offset-instant.js";
 import { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
@@ -201,13 +201,13 @@ export class PassCreatorClient implements WalletPassProvider {
     this.fetchFn = fetchFn;
   }
 
-  async createPass(input: WalletPassInput): Promise<WalletPassResult> {
+  async createPass(input: WalletPassInput, options: CreatePassOptions = {}): Promise<WalletPassResult> {
     const envelope = await this.request<PassCreatorPassData>(
       "POST",
       "/api/v3/pass?async=false",
       { data: toPassCreatorData(input, this.templateId, this.fieldMapping, true) },
       "/api/v3/pass",
-      Date.now() + CREATE_PASS_DEADLINE_MS,
+      (options.checkedAt ?? Date.now()) + CREATE_PASS_DEADLINE_MS,
     );
     return toResult(envelope);
   }

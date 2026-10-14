@@ -1152,27 +1152,32 @@ export function createApp(options: CreateAppOptions = {}) {
      * provider's is what tells an erasure, and its follow-up (deleteErasedWalletPasses), that a pass may exist which
      * this request never managed to record: the save below failed, the event's template changed meanwhile, the
      * process died. Written first because after the provider call the database may be the thing that is failing.
-     * The call that follows sends nothing later than CREATE_PASS_DEADLINE_MS after it began (createPass drops it
-     * instead), which is what makes the follow-up's 10-minute window safe.
      * Taken under the attendee's row lock, so it waits for an erasure that is still open and sends nothing to the
-     * provider for an attendee who is erased or removed. Returns true to go on, "unavailable" for an attendee who is
-     * gone, null when the row could not be written (nothing is sent then either).
+     * provider for an attendee who is erased or removed. Returns `checkedAt`, the moment the attendee was read as still
+     * there under that lock, to go on, "unavailable" for an attendee who is gone, null when the row could not be written
+     * (nothing is sent then either).
+     * The call that follows is given `checkedAt`: createPass sends nothing later than CREATE_PASS_DEADLINE_MS after it
+     * and drops the call instead, however long this process was paused since. That is what makes the follow-up's
+     * 10-minute window safe: an erasure can only come after this transaction, so a creation cannot outlive it.
      */
-    async function reservePassId(userProvidedId: string): Promise<true | typeof WALLET_PASS_UNAVAILABLE | null> {
+    async function reservePassId(
+      userProvidedId: string,
+    ): Promise<{ checkedAt: number } | typeof WALLET_PASS_UNAVAILABLE | null> {
       try {
-        const gone = await db.$transaction(
+        const checkedAt = await db.$transaction(
           async (tx) => {
-            if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return true;
+            if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return null;
+            const readAt = Date.now();
             await tx.walletPass.upsert({
               where: { attendee_id: attendee.id },
               create: { attendee_id: attendee.id, provider: "passcreator", user_provided_id: userProvidedId, status: "pending" },
               update: { user_provided_id: userProvidedId },
             });
-            return false;
+            return readAt;
           },
           { timeout: ERASURE_WAIT_TX_TIMEOUT_MS },
         );
-        return gone ? WALLET_PASS_UNAVAILABLE : true;
+        return checkedAt === null ? WALLET_PASS_UNAVAILABLE : { checkedAt };
       } catch (err) {
         console.error("walletPass upsert (reserve id) failed:", { reason: walletFailureCode(err) });
         recordSystemLog({
@@ -1354,9 +1359,10 @@ export function createApp(options: CreateAppOptions = {}) {
      */
     async function createOrRecoverPass(
       input: WalletPassInput,
+      checkedAt: number,
     ): Promise<WalletPassUrlsOutcome> {
       try {
-        const result = await provider.createPass(input);
+        const result = await provider.createPass(input, { checkedAt });
         // markActive compares input.expirationDate (exact string, or undefined) against the
         // event's *fresh* row to detect a settings save - the mode itself, or the event's own
         // date/hours/timezone while the mode stays "event_end" throughout - landing mid-request
@@ -1462,8 +1468,8 @@ export function createApp(options: CreateAppOptions = {}) {
         );
         const input = buildWalletPassInput(display, qrPayload, customFieldPlaceholders);
         const reserved = await reservePassId(input.userProvidedId);
-        if (reserved !== true) return reserved;
-        return createOrRecoverPass(input);
+        if (reserved === null || reserved === WALLET_PASS_UNAVAILABLE) return reserved;
+        return createOrRecoverPass(input, reserved.checkedAt);
       })().finally(() => {
         walletCreateLocks.delete(attendee.id);
       });

@@ -1434,6 +1434,19 @@ describe("PassCreatorClient.createPass send deadline", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("counts the deadline from the check the caller reports, not from the call: a check as old as the deadline is dropped, a younger one is sent", async () => {
+    const { client, creationsSent } = provider();
+
+    const dropped = await client.createPass(INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS }).catch((err: unknown) => err);
+    expect(dropped).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(creationsSent()).toBe(0);
+
+    const sent = client.createPass(INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS + 1_000 });
+    await vi.advanceTimersByTimeAsync(150); // its turn in the pacing gate
+    await expect(sent).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(creationsSent()).toBe(1);
+  });
+
   it("leaves every other call alone: one queued as far behind as a dropped creation is still sent", async () => {
     const { client, fetchMock } = provider();
     const queued = queue(client, FIRST_SLOT_TOO_LATE);

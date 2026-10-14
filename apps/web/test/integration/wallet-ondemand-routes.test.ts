@@ -285,6 +285,7 @@ describe("On-demand wallet routes", () => {
         userProvidedId: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
         barcodeValue: MODE_A_TOKEN,
       }),
+      { checkedAt: expect.any(Number) },
     );
 
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
@@ -303,6 +304,7 @@ describe("On-demand wallet routes", () => {
       expect(res.status).toBe(302);
       expect(provider.createPass).toHaveBeenCalledWith(
         expect.objectContaining({ attendeeEmailLabel: undefined }),
+        { checkedAt: expect.any(Number) },
       );
     } finally {
       await prisma.attendee.update({
@@ -329,6 +331,7 @@ describe("On-demand wallet routes", () => {
         userProvidedId: `admitto:${EVENT_ID_NO_LOCATION}:${ATTENDEE_NO_LOCATION_ID}`,
         barcodeValue: NO_LOCATION_TOKEN,
       }),
+      { checkedAt: expect.any(Number) },
     );
   });
 
@@ -355,6 +358,7 @@ describe("On-demand wallet routes", () => {
     // Agency mode: barcodeValue is the raw agency payload verbatim, not an internal ticket URL.
     expect(provider.createPass).toHaveBeenCalledWith(
       expect.objectContaining({ barcodeValue: "WALLET-AGENCY-PAYLOAD" }),
+      { checkedAt: expect.any(Number) },
     );
 
     const googleRes = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}/wallet/google`, {

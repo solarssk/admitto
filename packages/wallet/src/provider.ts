@@ -8,16 +8,25 @@ import type {
 } from "./types.js";
 
 /**
- * How long after it was called a `createPass` may still send its request to the provider. A call that has not sent
- * by then (it queued behind other calls in the pacing gate, was retried after a rate limit, or the process was
- * suspended) gives up without sending and fails with `wallet_provider_timeout`. Erasing an attendee relies on it: a
- * pass that was being made when the person was erased can reach the provider only within this limit plus the
- * request's own timeout, so the answer "no pass under that id" is final once the erasure is several times older than
- * that (`CREATION_SETTLE_WINDOW_MS` in `@admitto/tickets`, tied to this value by a test). Two minutes is longer than
- * the 75 s that 500 queued calls take to leave the process at the client's 150 ms spacing, so a call behind such a
- * queue is still sent. A provider's `createPass` must keep to it.
+ * How long after the caller's last check (see {@link CreatePassOptions}) a `createPass` may still send its request to
+ * the provider. A call that has not sent by then (it queued behind other calls in the pacing gate, was retried after a
+ * rate limit, or the process was suspended) gives up without sending and fails with `wallet_provider_timeout`.
+ * Erasing an attendee relies on it: a pass that was being made when the person was erased can reach the provider only
+ * within this limit plus the request's own timeout, so the answer "no pass under that id" is final once the erasure is
+ * several times older than that (`CREATION_SETTLE_WINDOW_MS` in `@admitto/tickets`, tied to this value by a test). Two
+ * minutes is longer than the 75 s that 500 queued calls take to leave the process at the client's 150 ms spacing, so a
+ * call behind such a queue is still sent. A provider's `createPass` must keep to it.
  */
 export const CREATE_PASS_DEADLINE_MS = 2 * 60_000;
+
+/** What a caller can tell `createPass` about the time it has. */
+export type CreatePassOptions = {
+  /** When the caller last confirmed that the pass may be made, in epoch milliseconds (for Admitto: the attendee read as
+   * not erased, under their row lock, as the id for the pass was reserved). The call counts {@link CREATE_PASS_DEADLINE_MS}
+   * from then, not from the moment it is made, so that a pause in between (a suspended process) cannot stretch it.
+   * Defaults to the moment of the call. */
+  checkedAt?: number;
+};
 
 /**
  * Domain boundary for wallet pass delivery (ADR 0009). The rest of Admitto depends only on this
@@ -41,9 +50,10 @@ export interface WalletPassProvider {
   readonly capabilities: WalletProviderCapabilities;
   readonly consistencyPolicy: WalletProviderConsistencyPolicy;
 
-  /** Creates the pass. Never sends its request later than {@link CREATE_PASS_DEADLINE_MS} after it was called,
-   * whatever it waited for: past that it fails with `wallet_provider_timeout` and nothing reaches the provider. */
-  createPass(input: WalletPassInput): Promise<WalletPassResult>;
+  /** Creates the pass. Never sends its request later than {@link CREATE_PASS_DEADLINE_MS} after
+   * `options.checkedAt` (the moment of the call when that is not given), whatever it waited for: past that it fails with
+   * `wallet_provider_timeout` and nothing reaches the provider. */
+  createPass(input: WalletPassInput, options?: CreatePassOptions): Promise<WalletPassResult>;
   updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult>;
   /** Sends a custom, attendee-visible push notification/message to already-installed passes
    * (e.g. an Apple Wallet lock-screen banner, a Google Wallet notification) - distinct from
