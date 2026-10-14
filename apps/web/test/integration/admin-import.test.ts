@@ -988,13 +988,26 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     it("leaves the staged file in storage when the process is killed before the job exists, and the sweep takes it a day later", async () => {
       const before = await stagedFilesOf();
       // The process dies right after the file is written: nothing after the write runs, so the request never
-      // answers and neither the job nor the clean-up of the file ever happens.
-      vi.mocked(createUnderAttendeeJobQueueLock).mockImplementationOnce(() => new Promise<never>(() => undefined));
-      void postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
+      // answers and neither the job nor the clean-up of the file ever happens. The stand-in says when it is reached.
+      let reached!: () => void;
+      const enqueueReached = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      vi.mocked(createUnderAttendeeJobQueueLock).mockImplementationOnce(() => {
+        reached();
+        return new Promise<never>(() => undefined);
+      });
+      const request = postImport(`/api/admin/events/${EVENT_A}/import/commit`, csvFormData(VALID_CSV, "batch.csv"), adminCookie);
       try {
-        await vi.waitFor(async () => expect(await newKeysSince(before)).toHaveLength(1), { timeout: 10_000, interval: 25 });
+        // The stand-in is called after the file is written. If the request answers first, it was never reached.
+        await Promise.race([
+          enqueueReached,
+          request.then((res) => {
+            throw new Error(`the request answered ${res.status} before the enqueue was stopped`);
+          }),
+        ]);
       } finally {
-        // Back to the real function, also when the file never appeared and the stand-in was not used.
+        // Back to the real function, also when the stand-in was not used.
         vi.mocked(createUnderAttendeeJobQueueLock).mockReset();
       }
       const [key] = await newKeysSince(before);

@@ -51,7 +51,7 @@ export function isManagedUploadKey(key: string): boolean {
  */
 export function isJobFileKey(key: string): boolean {
   const parts = splitSafeKey(key);
-  if (!parts || parts.length !== 4 || parts[1] !== "events") return false;
+  if (parts?.length !== 4 || parts[1] !== "events") return false;
   const [orgId, , eventId, filename] = parts as [string, string, string, string];
   return ORG_ID_PATTERN.test(orgId) && EVENT_ID_PATTERN.test(eventId) && JOB_FILENAME_PATTERN.test(filename);
 }
