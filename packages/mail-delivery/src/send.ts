@@ -5,7 +5,6 @@ import {
   buildEventLocationTemplateVars,
   extractPlaceholderNames,
   extractPlaceholderNamesFromHtml,
-  materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
   resolveEventImageAssetVars,
@@ -27,6 +26,7 @@ import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-da
 import { issueTicket, loadEventTicketTypes, parseTicketAddressComponents } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
+import { snapshotUnusableUpdate, tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 import {
   buildAttendeeMailLinks,
   type AttendeeLinkInput,
@@ -120,11 +120,12 @@ export function resolveTicketTypeLabel(
   return ticketTypeLabels.get(ticketType) ?? ticketType;
 }
 
-function materializePendingMessage(item: PendingSend): MailMessage {
-  const rendered = materializeStoredDeliveryMessage(
+function materializePendingMessage(item: PendingSend): MailMessage | null {
+  const rendered = tryMaterializeStoredMessage(
     { subject: item.frozenSubject, html: item.frozenHtml },
     item.links,
   );
+  if (!rendered) return null;
   return {
     to: item.to,
     subject: rendered.subject,
@@ -459,18 +460,35 @@ async function sendOwnedPending(
 }
 
 async function failQueuedPending(item: PendingSend, prisma: PrismaClient, err: unknown, owned: () => Promise<void>) {
+  await failQueuedPendingWith(item, prisma, deliveryUpdateFromBatchError(err), owned);
+}
+
+async function failQueuedPendingWith(item: PendingSend, prisma: PrismaClient, update: DeliveryStatusUpdate, owned: () => Promise<void>) {
   const fresh = (await readDeliveriesBeforeSend(prisma, [item])).get(item.deliveryId);
   if (fresh?.status !== "queued" || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== item.queuedAt.getTime()) return;
   await owned();
   await prisma.emailDelivery.updateMany({
     where: { id: item.deliveryId, status: "queued", queued_at: item.queuedAt, attempts: fresh.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
-    data: { ...deliveryUpdateFromBatchError(err), ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },
+    data: { ...update, ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}) },
   });
 }
 
 export async function deliverPendingBatch(mailer: MailerAdapter, pending: PendingSend[], prisma: PrismaClient): Promise<number> {
-  const messages = pending.map(materializePendingMessage);
-  const byMessage = new Map(messages.map((message, index) => [message, pending.at(index)!]));
+  // A stored message the renderer now refuses fails on its own, for good; it must not stop the
+  // others in the batch.
+  const messages: MailMessage[] = [];
+  const sendable: PendingSend[] = [];
+  for (const item of pending) {
+    const message = materializePendingMessage(item);
+    if (message) {
+      messages.push(message);
+      sendable.push(item);
+    } else {
+      await withDeliveryOwnership(item.deliveryId, (owned) => failQueuedPendingWith(item, prisma, snapshotUnusableUpdate(), owned)); // NOSONAR - failed rows are handled sequentially
+    }
+  }
+  if (messages.length === 0) return 0;
+  const byMessage = new Map(messages.map((message, index) => [message, sendable.at(index)!]));
   const ownedMailer: MailerAdapter = {
     ...mailer,
     send: async (message) => {
@@ -484,7 +502,7 @@ export async function deliverPendingBatch(mailer: MailerAdapter, pending: Pendin
   try {
     return (await sendBatch(ownedMailer, messages)).sent;
   } catch (err) {
-    for (const item of pending) {
+    for (const item of sendable) {
       await withDeliveryOwnership(item.deliveryId, (owned) => failQueuedPending(item, prisma, err, owned)); // NOSONAR - failed rows are handled sequentially
     }
     if (isMailDestinationFailure(err)) throw err;

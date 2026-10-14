@@ -21,7 +21,6 @@ import {
   setMailTemplate,
   updateMailTemplateMetadata,
   validateTemplate,
-  materializeStoredDeliveryMessage,
   UnknownPlaceholdersError,
   MjmlCompileError,
   friendlyMjmlErrorMessage,
@@ -39,6 +38,7 @@ import {
   getDeliveryWithTimeline,
   getRenderedDelivery,
   resolveAttendeeMailLinks,
+  tryMaterializeStoredMessage,
   sendTestEmail,
   toDeliveryDto,
   toDeliveryDetailDto,
@@ -778,10 +778,13 @@ export async function handleGetRenderedEventDelivery(
   let materialized;
   try {
     const links = await resolveAttendeeMailLinks(rendered.attendee_id, db, baseUrlOrRes);
-    materialized = materializeStoredDeliveryMessage(
+    // null: the stored text no longer passes the renderer (saved before a stricter check). The
+    // preview is "not available" like an expired one, not a server error.
+    materialized = tryMaterializeStoredMessage(
       { subject: rendered.rendered_subject ?? "", html: rendered.rendered_html ?? "" },
       links,
     );
+    if (!materialized) return c.json({ subject: null, html: null });
   } catch (err) {
     // Only the specific "nothing to build a link from yet" shape is a genuine "not available"
     // response, same distinction handleGetAttendeeTicketLink makes - a decryption failure or a

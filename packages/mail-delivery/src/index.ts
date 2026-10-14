@@ -56,6 +56,7 @@ export type { DeliveryDto, DeliveryDetailDto } from "./toDeliveryDto.js";
 export { resendTicketEmail } from "./resend.js";
 export type { ResendTicketEmailOptions } from "./resend.js";
 export { retryDelivery } from "./retry.js";
+export { tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 export { recordTicketViewed } from "./viewed.js";
 export { buildAttendeeMailLinks, resolveAttendeeMailLinks } from "./links.js";
 export type { AttendeeMailLinks, AttendeeLinkInput, EventLinkInput } from "./links.js";

@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- One stored email message that can no longer be rendered no longer stops the mail queue. A delivery saved before the stricter template checks (for example a ticket link in an unquoted attribute) made the sending run throw before any mail went out, so every later run stopped on the same row. That row now fails on its own, for good, with the fixed error "The stored message can no longer be rendered." (also on retry, on a resend and in the delivery log preview, which shows no message instead of an error), and the other messages in the run are sent.
 - Email retries and worker sends now share per-delivery ownership: concurrent attempts are skipped, cancelled/reclaimed snapshots and stale outcomes cannot replace the current revision, and retention preserves newly queued message bodies and in-flight retries while their provider outcomes are recorded.
 
 - CSV and XLSX imports now preserve quoted multiline fields as one attendee record. Upload limits and diagnostic row numbers count non-empty data records; malformed CSV records receive a fixed validation error.
