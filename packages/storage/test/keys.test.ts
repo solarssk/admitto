@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractUploadKeysFromText,
+  isJobFileKey,
   isManagedUploadKey,
   tryParseUploadKey,
 } from "../src/index.js";
@@ -62,5 +63,44 @@ describe("extractUploadKeysFromText", () => {
 
     expect(extractUploadKeysFromText(hostile)).toEqual([key]);
     expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe("isJobFileKey", () => {
+  const uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+  it.each([".csv", ".xlsx", ".pdf"])("accepts a file of an export or an import in the event layout (%s)", (ext) => {
+    expect(isJobFileKey(`org-1/events/evt-1/${uuid}${ext}`)).toBe(true);
+  });
+
+  it("rejects branding uploads, other layouts, other names and anything that escapes the upload root", () => {
+    const rejected = [
+      `org-1/events/evt-1/${uuid}.png`,
+      `org-1/events/evt-1/${uuid}.CSV`,
+      `org-1/events/evt-1/${uuid}.csv.bak`,
+      "org-1/events/evt-1/report.csv",
+      `org-1/${uuid}.csv`,
+      `org-1/theme/${uuid}.csv`,
+      `org-1/events/${uuid}.csv`,
+      `org-1/events/evt-1/old/${uuid}.csv`,
+      `org-1/events/evt-1/${uuid}.csv/extra`,
+      `org-1/other/evt-1/${uuid}.csv`,
+      `Org-1/events/evt-1/${uuid}.csv`,
+      `/org-1/events/evt-1/${uuid}.csv`,
+      `org-1/events/evt-1/${uuid}.csv/`,
+      `org-1//events/evt-1/${uuid}.csv`,
+      `org-1/events/../${uuid}.csv`,
+      `org-1\\events\\evt-1\\${uuid}.csv`,
+      "",
+    ];
+    for (const key of rejected) expect(isJobFileKey(key), key).toBe(false);
+  });
+
+  it("never accepts a key that isManagedUploadKey accepts, and the other way round", () => {
+    for (const ext of [".png", ".woff2", ".csv", ".xlsx", ".pdf"]) {
+      const key = `org-1/events/evt-1/${uuid}${ext}`;
+      expect(isJobFileKey(key) && isManagedUploadKey(key), key).toBe(false);
+      expect(isJobFileKey(key) || isManagedUploadKey(key), key).toBe(true);
+    }
   });
 });

@@ -3,6 +3,7 @@ import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
 import { BrandLink } from "./BrandLink.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
+import { ArchivedEventNotice } from "../components/ArchivedEventNotice.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 type NavItem = {
@@ -41,7 +42,8 @@ function mapsUrl(location: string): string {
 
 export interface AdminShellProps {
   readonly event: EventDto;
-  readonly refreshEvent: () => Promise<void>;
+  /** Resolves to false when the read failed and the snapshot is the last-known one. */
+  readonly refreshEvent: () => Promise<boolean>;
 }
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
@@ -109,6 +111,7 @@ export function AdminShell({ event, refreshEvent }: AdminShellProps) {
 
   return (
     <StaffShell sidebar={sidebar} eventId={eventId} brandTo="/admin" brandEnd>
+      <ArchivedEventNotice key={event.id} event={event} refreshEvent={refreshEvent} />
       <Outlet context={{ event, refreshEvent }} />
     </StaffShell>
   );
