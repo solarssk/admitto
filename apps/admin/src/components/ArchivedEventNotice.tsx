@@ -11,7 +11,7 @@ import "./archived-event-notice.css";
 
 interface ArchivedEventNoticeProps {
   event: EventDto;
-  refreshEvent: () => Promise<void>;
+  refreshEvent: () => Promise<boolean>;
 }
 
 /** The one place an archived event says so: a warning bar on top of every page of the event, with
@@ -46,7 +46,11 @@ export function ArchivedEventNotice({ event, refreshEvent }: Readonly<ArchivedEv
       addToast("Event restored.", "success");
       if (!stillHere()) return;
       setRestoreOpen(false);
-      await refreshEvent();
+      // The read after a restore failed: the bar and the locked page are the old snapshot, and a second Restore
+      // would be refused as "not archived". Say so instead of leaving a bar that looks like the restore failed.
+      if (!(await refreshEvent()) && stillHere()) {
+        addToast("The event is restored, but this page could not refresh. Reload the page to continue.", "warning");
+      }
     } catch (err) {
       // Shown inside the still-open dialog (errorMessage), not a toast - the dialog's backdrop
       // sits above the toast stack, so a toast-only failure would be invisible behind it.

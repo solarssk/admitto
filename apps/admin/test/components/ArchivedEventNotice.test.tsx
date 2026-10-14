@@ -59,7 +59,7 @@ async function openRestoreDialog(): Promise<HTMLElement> {
 beforeEach(() => {
   mockUnarchiveEvent.mockReset();
   mockRefreshEvent.mockReset();
-  mockRefreshEvent.mockResolvedValue(undefined);
+  mockRefreshEvent.mockResolvedValue(true);
   mockAssignments = [makeSuperadminAssignment()];
 });
 
@@ -131,6 +131,19 @@ describe("ArchivedEventNotice", () => {
     await waitFor(() => expect(mockRefreshEvent).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await screen.findByText("Event restored.")).toBeTruthy();
+  });
+
+  it("says so when the restore worked but the read after it failed, instead of leaving a bar that looks unchanged", async () => {
+    mockUnarchiveEvent.mockResolvedValue(undefined);
+    mockRefreshEvent.mockResolvedValue(false);
+
+    render(tree(makeEvent()));
+
+    const dialog = await openRestoreDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+
+    await waitFor(() => expect(mockRefreshEvent).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/restored, but this page could not refresh/)).toBeTruthy();
   });
 
   it("keeps the dialog open when dismissed while the restore request is in flight", async () => {

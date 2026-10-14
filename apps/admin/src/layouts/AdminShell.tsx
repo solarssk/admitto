@@ -42,7 +42,8 @@ function mapsUrl(location: string): string {
 
 export interface AdminShellProps {
   readonly event: EventDto;
-  readonly refreshEvent: () => Promise<void>;
+  /** Resolves to false when the read failed and the snapshot is the last-known one. */
+  readonly refreshEvent: () => Promise<boolean>;
 }
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
