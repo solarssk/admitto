@@ -606,11 +606,6 @@ function EventImageAssetLibraryBody({ eventId, disabled = false }: EventImageAss
               {formError}
             </Notice>
           ) : null}
-          {disabled && (
-            <p className="field-hint event-settings-archived-note">
-              This event is archived - the image library cannot be changed.
-            </p>
-          )}
         </div>
         <input
           ref={fileRef}

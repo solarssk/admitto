@@ -541,11 +541,7 @@ function TicketTypesCardBody({ eventId, event, onDirtyChange, onSavingChange, on
         </div>
       </Card>
 
-      {disabled ? (
-        <p className="field-hint event-settings-archived-note">
-          This event is archived - ticket types cannot be changed.
-        </p>
-      ) : (
+      {!disabled && (
         <SettingsFooter
           validationErrors={[]}
           validationErrorsRef={validationErrorsRef}

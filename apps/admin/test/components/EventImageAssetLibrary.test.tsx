@@ -382,7 +382,7 @@ describe("EventImageAssetLibrary", () => {
     expect(
       screen.getByRole("button", { name: "Remove sponsor.png" }).hasAttribute("disabled"),
     ).toBe(true);
-    expect(screen.getByText(/This event is archived/)).toBeTruthy();
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
   });
 
   it("cancels the delete confirm dialog without calling the API", async () => {

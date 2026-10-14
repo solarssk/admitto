@@ -636,19 +636,13 @@ const EventMailSettingsCardBody = forwardRef<
         bounceVerifyBlockedReason={bounceVerifyBlockedReason}
       />
 
-      {isArchived ? (
-        <p className="field-hint event-settings-archived-note">
-          This event is archived - mail settings cannot be changed.
-        </p>
-      ) : (
-        embeddedFooter && (
-          <SettingsFooter
-            hasUnsavedChanges={hasUnsavedChanges}
-            saving={saving}
-            onReset={handleReset}
-            onSave={() => void handleSave()}
-          />
-        )
+      {!isArchived && embeddedFooter && (
+        <SettingsFooter
+          hasUnsavedChanges={hasUnsavedChanges}
+          saving={saving}
+          onReset={handleReset}
+          onSave={() => void handleSave()}
+        />
       )}
 
       <ConfirmDialog

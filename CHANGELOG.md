@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Location, Mail, Images and Ticket types tabs of Event settings, and the image library, no longer show a line saying the event is archived and cannot be changed. The greyed fields and the missing Save already say so, and the line pushed the first row down.
 - The Check-in tab of Event settings no longer shows the note "This event is archived - check-in behaviour cannot be changed." on an archived event (the greyed switches and the missing Save already say so), and its four switches now sit at the vertical middle of their label and description instead of next to the first line.
 
 ### Security
