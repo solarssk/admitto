@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 /**
  * Wallet message HTTP routes: resolve a recipient filter to attendees who currently have an
  * active wallet pass, enqueue the wallet_message AdminJob (drained by packages/tickets'
@@ -135,7 +136,7 @@ async function auditWalletMessageQueued(
       metadata: { filter: meta.filterType, recipient_count: meta.recipientCount },
     });
   } catch (err) {
-    console.error("wallet message send audit log failed:", err);
+    console.error("wallet message send audit log failed:", { reason: walletFailureCode(err) });
   }
 }
 

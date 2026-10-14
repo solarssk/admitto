@@ -1,4 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 
 /**
  * Bounds how long a single SQL statement may run once it reaches Postgres (enforced server-side,
@@ -66,4 +67,48 @@ export function createPrismaAdapter(
     },
     options?.schema ? { schema: options.schema } : undefined,
   );
+}
+
+/** Requires direct Postgres or session-mode pooling; no transaction spans external IO. */
+export async function withSessionAdvisoryLock<T>(
+  connectionString: string,
+  key: string,
+  run: (assertOwned: () => Promise<void>) => Promise<T>,
+): Promise<T | undefined> {
+  const client = new pg.Client({ connectionString, connectionTimeoutMillis: 5_000, statement_timeout: DEFAULT_STATEMENT_TIMEOUT_MS });
+  let lost = false;
+  client.on("error", () => { lost = true; });
+  let backendPid: number;
+  const assertOwned = async (): Promise<void> => {
+    if (lost) throw new Error("Delivery ownership connection lost");
+    try {
+      // hashtextextended yields a bigint key: pg_locks stores its halves with objsubid=1.
+      const check = await client.query<{ owned: boolean }>(`
+        SELECT pg_backend_pid() = $2 AND EXISTS (
+          SELECT 1 FROM pg_locks
+          WHERE locktype = 'advisory' AND granted AND mode = 'ExclusiveLock'
+            AND pid = pg_backend_pid()
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND classid = ((hashtextextended($1, 0) >> 32) & 4294967295)::oid
+            AND objid = (hashtextextended($1, 0) & 4294967295)::oid
+            AND objsubid = 1
+        ) AS owned`, [key, backendPid]);
+      if (lost || check.rows[0]?.owned !== true) throw new Error("Ownership lost");
+    } catch {
+      lost = true;
+      throw new Error("Delivery ownership connection lost");
+    }
+  };
+  try {
+    await client.connect();
+    const result = await client.query<{ owned: boolean; pid: number }>(
+      "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS owned, pg_backend_pid() AS pid", [key],
+    );
+    if (result.rows[0]?.owned !== true) return undefined;
+    backendPid = result.rows[0].pid;
+    await assertOwned();
+    return await run(assertOwned);
+  } finally {
+    await client.end();
+  }
 }

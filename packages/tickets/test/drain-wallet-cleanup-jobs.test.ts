@@ -4,7 +4,8 @@ import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/sy
 vi.mock("../src/claim-admin-job.js", () => ({ claimNextAdminJob: vi.fn() }));
 vi.mock("../src/void-wallet-pass-at-provider.js", () => ({ voidOneWalletPassAtProvider: vi.fn() }));
 vi.mock("../src/remove-wallet-pass-from-provider.js", () => ({ removeOneWalletPassFromProvider: vi.fn() }));
-vi.mock("@admitto/wallet", () => ({ resolveWalletProvider: vi.fn(), resolveConfiguredWalletProvider: vi.fn() }));
+vi.mock("@admitto/wallet", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@admitto/wallet")>(), resolveWalletProvider: vi.fn(), resolveConfiguredWalletProvider: vi.fn() }));
 
 import { resolveConfiguredWalletProvider, resolveWalletProvider } from "@admitto/wallet";
 import { claimNextAdminJob } from "../src/claim-admin-job.js";
@@ -250,7 +251,7 @@ describe("drainWalletCleanupJobs", () => {
 
     expect(terminalWrite()).toMatchObject({ status: "failed", error: WALLET_CLEANUP_JOB_GENERIC_ERROR });
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_cleanup_job_failed" });
-    expect(entry?.fields).toMatchObject({ job_id: "job-1", error: "db exploded" });
+    expect(entry?.fields).toMatchObject({ job_id: "job-1", reason: "unknown" });
   });
 
   it("logs a non-Error throw by its value", async () => {
@@ -260,7 +261,7 @@ describe("drainWalletCleanupJobs", () => {
     await drainWalletCleanupJobs(db as never);
 
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_cleanup_job_failed" });
-    expect(entry?.fields).toMatchObject({ error: "plain string error" });
+    expect(entry?.fields).toMatchObject({ reason: "unknown" });
   });
 
   it("stops claiming a type once its own per-type limit is reached", async () => {
@@ -558,7 +559,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
       result_json: { done: 1, skipped: 0, errored: 0, pendingGraceCount: null },
     });
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_cleanup_pending_count_failed" });
-    expect(entry?.fields).toMatchObject({ job_id: "job-remove-1", event_id: "evt-1", error: "db timeout" });
+    expect(entry?.fields).toMatchObject({ job_id: "job-remove-1", event_id: "evt-1", reason: "unknown" });
   });
 });
 

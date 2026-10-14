@@ -1,3 +1,4 @@
+import { walletFailureCode } from "@admitto/wallet";
 import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { readFile } from "node:fs/promises";
@@ -579,7 +580,7 @@ async function resolveWalletOffer(
     });
     return isWalletPassUnavailable(pass) ? none : visible;
   } catch (err) {
-    console.error("walletPass lookup (ticket page) failed:", err);
+    console.error("walletPass lookup (ticket page) failed:", { reason: walletFailureCode(err) });
     return visible;
   }
 }
@@ -971,7 +972,7 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
     } catch (err) {
-      console.error("walletPass lookup failed:", err);
+      console.error("walletPass lookup failed:", { reason: walletFailureCode(err) });
       recordSystemLog({
         level: "error",
         source: "api",
@@ -1097,7 +1098,7 @@ export function createApp(options: CreateAppOptions = {}) {
           });
         }, { timeout: ERASURE_WAIT_TX_TIMEOUT_MS });
       } catch (err) {
-        console.error("walletPass upsert (active) failed:", err);
+        console.error("walletPass upsert (active) failed:", { reason: walletFailureCode(err) });
         recordSystemLog({
           level: "error",
           source: "api",
@@ -1192,7 +1193,7 @@ export function createApp(options: CreateAppOptions = {}) {
           data: { provider_removed_at: new Date() },
         });
       } catch (err) {
-        console.error("wallet pass delete (erased attendee) failed:", err);
+        console.error("wallet pass delete (erased attendee) failed:", { reason: walletFailureCode(err) });
         recordSystemLog({
           level: "error",
           source: "api",
@@ -1245,7 +1246,7 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch (upsertErr) {
         // A unique violation is a concurrent insert that won: nothing to record.
         if (!(upsertErr instanceof Prisma.PrismaClientKnownRequestError && upsertErr.code === "P2002")) {
-          console.error("walletPass upsert (failed) failed:", upsertErr);
+          console.error("walletPass upsert (failed) failed:", { reason: walletFailureCode(upsertErr) });
           recordSystemLog({
             level: "error",
             source: "api",
@@ -1317,7 +1318,7 @@ export function createApp(options: CreateAppOptions = {}) {
             const reconciled = await provider.updatePass(recovered.providerPassId, input);
             return await markActive(input.userProvidedId, reconciled, input.expirationDate);
           } catch (reconcileErr) {
-            console.error("PassCreator updatePass (duplicate recovery reconcile) failed:", reconcileErr);
+            console.error("PassCreator updatePass (duplicate recovery reconcile) failed:", { reason: walletFailureCode(reconcileErr) });
             recordSystemLog({
               level: "error",
               source: "api",
@@ -1328,7 +1329,7 @@ export function createApp(options: CreateAppOptions = {}) {
           }
         }
 
-        console.error("PassCreator createPass failed:", err);
+        console.error("PassCreator createPass failed:", { reason: walletFailureCode(err) });
         recordSystemLog({
           level: "error",
           source: "api",
@@ -1364,7 +1365,7 @@ export function createApp(options: CreateAppOptions = {}) {
         try {
           latest = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
         } catch (err) {
-          console.error("walletPass recheck failed:", err);
+          console.error("walletPass recheck failed:", { reason: walletFailureCode(err) });
           recordSystemLog({
             level: "error",
             source: "api",
@@ -1454,13 +1455,13 @@ export function createApp(options: CreateAppOptions = {}) {
           return false;
         });
       } catch (err) {
-        console.error("walletPass update (user_agent) failed:", err);
+        console.error("walletPass update (user_agent) failed:", { reason: walletFailureCode(err) });
         // Either the write failed or the wait for the lock gave up, and which is not known: ask
         // again for the lock alone. That is the answer the redirect needs, and it fails closed.
         try {
           erased = isAttendeeGone(await db.$transaction((tx) => lockAttendeeRow(tx, attendee.id)));
         } catch (checkErr) {
-          console.error("wallet redirect erased check failed:", checkErr);
+          console.error("wallet redirect erased check failed:", { reason: walletFailureCode(checkErr) });
           recordSystemLog({
             level: "error",
             source: "api",

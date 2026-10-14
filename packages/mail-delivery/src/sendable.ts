@@ -11,6 +11,9 @@ export interface DeliveryToCheck {
 
 export interface DeliveryBeforeSend {
   status: string;
+  queued_at: Date;
+  attempts: number;
+  snapshotReady: boolean;
   recipient_email: string | null;
 }
 
@@ -76,8 +79,8 @@ export function readDeliveriesBeforeSend(
     if (ids.length === 0) return new Map<string, DeliveryBeforeSend>();
     const rows = await tx.emailDelivery.findMany({
       where: { id: { in: ids } },
-      select: { id: true, status: true, recipient_email: true },
+      select: { id: true, status: true, recipient_email: true, queued_at: true, attempts: true, rendered_subject: true, rendered_html: true },
     });
-    return new Map(rows.map((row) => [row.id, { status: row.status, recipient_email: row.recipient_email }]));
+    return new Map(rows.map((row) => [row.id, { status: row.status, recipient_email: row.recipient_email, queued_at: row.queued_at, attempts: row.attempts, snapshotReady: row.rendered_subject !== null && row.rendered_html !== null }]));
   }, CHECK_TX_OPTIONS);
 }

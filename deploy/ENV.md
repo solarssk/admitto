@@ -26,8 +26,8 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `BASE_URL` | recommended | app, worker | Settings → General (Instance URL, read-only while set) | no | Public origin browsers use (https://tickets.example.com, no trailing slash). Recommended in production: the app still starts without it and falls back to the Instance URL saved in Settings → General, but the Setup checklist and Health check flag it as missing, and ticket and mail links fail outright when neither is set. While it is set, the Instance URL field in Settings → General is read-only. |
 | `ENCRYPTION_KEY` | required | app, worker, migrate | none | yes | AES-256-GCM master key (openssl rand -base64 32). Required to decrypt mail/OIDC secrets at rest. Losing it loses encrypted config. |
 | `DATABASE_URL` | required | app, worker, migrate | none | yes | Postgres URL. Password must match POSTGRES_PASSWORD when using compose db service. |
-| `REDIS_URL` | required | app, worker | none | yes | Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync. |
-| `REDIS_PASSWORD` | required | redis, compose | none | yes | Redis requirepass. Generate with openssl rand -hex 32. Must appear in REDIS_URL. |
+| `REDIS_URL` | required | app, worker, migrate | none | yes | Redis URL including password. Compose builds it from REDIS_PASSWORD for app, migrate and worker; the .env URL is reference / smoke only. |
+| `REDIS_PASSWORD` | required | redis, compose | none | yes | Redis requirepass. Generate with openssl rand -hex 32. Compose uses it to build REDIS_URL for app, migrate and worker. |
 | `POSTGRES_USER` | required | db, compose | none | no | Postgres role created by the db container. |
 | `POSTGRES_PASSWORD` | required | db, compose | none | yes | Postgres password. Must match the password embedded in DATABASE_URL. |
 | `POSTGRES_DB` | required | db, compose | none | no | Postgres database name. |
@@ -110,7 +110,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `BOUNCE_INGEST_INTERVAL_SECONDS` | optional | worker | none | no | Legacy alias of BOUNCE_INGEST_TICK_SECONDS. |
 | `BOUNCE_INGEST_APP_URL` | recommended | worker | none | no | Internal base URL for worker → app System Logs bridge (compose: http://app:3000). |
 | `ADMITTO_INTERNAL_URL` | optional | worker | none | no | Optional alternate internal app URL used by worker integrations (compose sets http://app:3000). |
-| `IMPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail import AdminJobs stuck in running after this many ms (default 15 minutes). |
+| `IMPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail import AdminJobs stuck in running after this many ms (default 15 minutes). Values must parse to a positive finite integer no larger than 62135596800000 (Prisma/PostgreSQL AD date range); unsupported values use the default and emit a fixed warning without the configured value. |
 | `EXPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail export AdminJobs stuck in running after this many ms (default 15 minutes). |
 | `WALLET_PUSH_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail wallet_push AdminJobs stuck in running after this many ms (default 30 minutes). |
 | `WALLET_REFRESH_STATUS_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail wallet_refresh_status AdminJobs stuck in running after this many ms (default 30 minutes). |
@@ -173,7 +173,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `MAP_TILE_MAX_ZOOM` | optional | app | Organisation settings → External services | no | Max zoom for static maps. |
 | `GEOCODING_PROVIDER` | optional | app | Organisation settings → External services | no | Geocoding provider id (Nominatim path by default). |
 | `GEOCODING_BASE_URL` | optional | app | Organisation settings → External services | no | Geocoding API base URL (must not be private). |
-| `GEOCODING_TIMEOUT_MS` | optional | app | none | no | Nominatim/geocoding HTTP timeout (ms). No UI field. |
+| `GEOCODING_TIMEOUT_MS` | optional | app | none | no | Nominatim/geocoding HTTP timeout (ms) for one upstream request, counted from when it starts; time spent in the one-request-per-second queue before it is not included. No UI field. |
 | `MAPS_CONFIG_CACHE_TTL_MS` | optional | app | none | no | In-process maps config cache TTL. |
 | `ADMITTO_DEFAULT_EVENT_TIMEZONE` | optional | app | Event settings | no | Fallback IANA timezone when an event has none. |
 

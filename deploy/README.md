@@ -64,7 +64,7 @@ Without these, containers exit or Health stays red. **None of them are set from 
 | `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). Recommended in production: without it (and without an Instance URL in Settings → General) ticket and mail links fail, and the Setup checklist stays red. |
 | `ENCRYPTION_KEY` | `.env` | `openssl rand -base64 32`. Losing it loses encrypted mail/OIDC secrets. |
 | `POSTGRES_*` + `DATABASE_URL` | `.env` | Passwords must match. |
-| `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |
+| `REDIS_PASSWORD` | `.env` | Compose builds `REDIS_URL` for app, migrate and worker from this password. The `.env` URL is reference / smoke only. |
 | `/backups` on **db-backup** | volume | Nightly SQL dumps (`migration_backups`). Not mounted on `migrate` / `app`. |
 | `/app/uploads` writable by uid **1000** | volume | Branding storage. Health → file storage `not_writable` if wrong ownership. |
 | `worker` service | compose | Mail drain, import/export, bounce, retention, wallet sync, event-wide wallet clean-up and wallet pass expiry. One replica. |
@@ -240,7 +240,7 @@ cd deploy
 cp .env.example .env
 # Edit .env:
 #   POSTGRES_PASSWORD (openssl rand -hex 32)
-#   REDIS_PASSWORD (openssl rand -hex 32) - keep REDIS_URL password in sync
+#   REDIS_PASSWORD (openssl rand -hex 32) - Compose sets REDIS_URL for app, migrate and worker
 #   ENCRYPTION_KEY (openssl rand -base64 32)
 #   DATABASE_URL - same password as POSTGRES_PASSWORD
 #   BASE_URL - production: https://tickets.example.com; local smoke: http://127.0.0.1:8080
@@ -277,7 +277,7 @@ Migrations apply in the one-shot `migrate` service. `docker compose up -d` block
 - `migrate` exits once done and its container shows as stopped, which some UIs (e.g. Portainer) collapse or hide by default - easy to miss unless you look.
 - There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only, not a substitute for the manual backup above.
 
-`validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
+`validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. A missing, passwordless or stale reference `REDIS_URL` produces a warning: Compose overrides it from `REDIS_PASSWORD` for app, migrate and worker. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
 ## Self-hosted SMTP on a private address
 
@@ -367,6 +367,9 @@ cd deploy
   messages, Remove from provider clean-up, status refresh, registration sync, expiry sweep).
 - Keep exactly one worker replica. The process uses session advisory locks, so a mistaken second
   replica skips overlapping jobs rather than double-running them.
+- `DATABASE_URL` must use direct PostgreSQL or a session-mode pooler that pins each connection
+  to one backend. Transaction/statement-mode pooling does not support the session locks used by
+  worker jobs and per-delivery ownership. See [Delivery ownership](../packages/mail-delivery/README.md#delivery-ownership).
 
 Operator upgrade procedure: see [Upgrading](#upgrading) above.
 

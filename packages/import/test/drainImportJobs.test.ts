@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/reclaimStaleImportJobs.js", () => ({
+vi.mock("../src/reclaimStaleImportJobs.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/reclaimStaleImportJobs.js")>(),
   parseImportJobStaleRunningMs: vi.fn(() => 60_000),
   reclaimStaleImportJobs: vi.fn(),
 }));
@@ -140,12 +141,12 @@ describe("drainImportJobs", () => {
     expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
         where: { id: "job-1", status: "running" },
-        data: expect.objectContaining({ status: "failed", error: "boom" }),
+        data: expect.objectContaining({ status: "failed", error: "Import failed. Upload the file again." }),
       }),
     );
   });
 
-  it("uses ImportCapacityExceededError message when marking failed", async () => {
+  it("uses fixed capacity copy even when the exception message is arbitrary", async () => {
     const job = baseJob();
     db.adminJob.findFirst.mockResolvedValueOnce(job).mockResolvedValue(null);
     db.adminJob.findUniqueOrThrow.mockResolvedValue(job);
@@ -158,12 +159,12 @@ describe("drainImportJobs", () => {
     });
     expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ error: "capacity_blocked" }),
+        data: expect.objectContaining({ error: "Import would exceed event capacity. Reduce the attendee count or review event capacity." }),
       }),
     );
   });
 
-  it("stringifies non-Error failures when marking the job failed", async () => {
+  it("uses fixed copy for non-Error failures", async () => {
     const job = baseJob();
     db.adminJob.findFirst.mockResolvedValueOnce(job).mockResolvedValue(null);
     db.adminJob.findUniqueOrThrow.mockResolvedValue(job);
@@ -174,7 +175,7 @@ describe("drainImportJobs", () => {
     });
     expect(db.adminJob.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ error: "plain-fail" }),
+        data: expect.objectContaining({ error: "Import failed. Upload the file again." }),
       }),
     );
   });

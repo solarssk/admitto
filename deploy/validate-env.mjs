@@ -122,7 +122,7 @@ function validateRedisUrl(env) {
   const redisUrl = env.REDIS_URL?.trim();
   if (!redisUrl) {
     warn(
-      "REDIS_URL is unset in .env — docker compose sets redis://:${REDIS_PASSWORD}@redis:6379 on the app service",
+      "REDIS_URL is unset in .env — docker compose sets redis://:${REDIS_PASSWORD}@redis:6379 on the app, migrate and worker services",
     );
     return;
   }
@@ -135,13 +135,13 @@ function validateRedisUrl(env) {
   const urlPass = decodeURIComponent(parsed.password);
   if (!urlPass) {
     warn(
-      "REDIS_URL has no password — compose overrides app REDIS_URL from REDIS_PASSWORD; ensure REDIS_PASSWORD is set",
+      "REDIS_URL has no password — compose overrides REDIS_URL on app, migrate and worker from REDIS_PASSWORD; ensure REDIS_PASSWORD is set",
     );
     return;
   }
   if (redisPassword && urlPass !== redisPassword) {
     warn(
-      "REDIS_URL password differs from REDIS_PASSWORD — compose overrides app REDIS_URL; only REDIS_PASSWORD matters at runtime",
+      "REDIS_URL password differs from REDIS_PASSWORD — compose overrides REDIS_URL on app, migrate and worker; only REDIS_PASSWORD matters at runtime",
     );
   }
 }

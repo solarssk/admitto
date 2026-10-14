@@ -3,9 +3,10 @@
  * worker re-runs this after loading the staged CSV).
  */
 import type { Prisma, PrismaClient } from "@admitto/db";
-import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
+import { assertImportCapacityInTx } from "./event-capacity.js";
 import {
   acquireEventTicketTypesLock,
+  runEventCapacityTransaction,
   loadEventCustomDataFields,
   filterCustomDataAttributeFields,
   writeBulkActionLog,
@@ -15,8 +16,6 @@ import { loadImportTicketTypes } from "./ticket-type-import.js";
 import { parseAttendees } from "./parser.js";
 import type { AttendeeRow, ImportAttributeField, ImportSummary, SkippedRow } from "./types.js";
 
-const IMPORT_TX_TIMEOUT_MS = 120_000;
-const IMPORT_TX_MAX_WAIT_MS = 30_000;
 const ROW_DETAIL_LIMIT = 20;
 
 export type ExecuteImportCommitParams = {
@@ -64,29 +63,7 @@ export class ImportStoppedError extends Error {
   }
 }
 
-export class ImportCapacityExceededError extends Error {
-  readonly code = "event_full" as const;
-  readonly capacity: number;
-  readonly current: number;
-  readonly incoming: number;
-  readonly projected: number;
-
-  constructor(opts: {
-    capacity: number;
-    current: number;
-    incoming: number;
-    projected: number;
-  }) {
-    super(
-      `Import would exceed capacity. ${opts.current} existing + ${opts.incoming} new = ${opts.projected} > ${opts.capacity}.`,
-    );
-    this.name = "ImportCapacityExceededError";
-    this.capacity = opts.capacity;
-    this.current = opts.current;
-    this.incoming = opts.incoming;
-    this.projected = opts.projected;
-  }
-}
+export { ImportCapacityExceededError } from "./event-capacity.js";
 
 async function loadImportAttributeFields(
   db: PrismaClient | Prisma.TransactionClient,
@@ -114,8 +91,8 @@ export async function executeImportCommit(
   let lockInvalidatedRows: { rowIndex: number; reason: string }[] = [];
   let capacityForcedMeta: { capacity: number; current: number } | null = null;
 
-  const summary = await db.$transaction(
-    async (tx) => {
+  const summary = await runEventCapacityTransaction(
+    db, params.eventId, async (tx) => {
       if (params.adminJobId) {
         // First, before any other lock: the row of the job is held until the import has committed, so an erasure or
         // a removal in the event (which locks the open jobs before it locks an attendee, see lockOpenAttendeeJobs)
@@ -129,7 +106,7 @@ export async function executeImportCommit(
       if (ticketTypes) {
         await acquireEventTicketTypesLock(tx, params.eventId);
       }
-
+    }, async (tx) => {
       let rowsToCommit = parsed.validRows;
       if (ticketTypes) {
         const freshKeys = new Set((await loadImportTicketTypes(tx, params.eventId)).map((t) => t.key));
@@ -160,13 +137,14 @@ export async function executeImportCommit(
         tx,
       );
 
-      capacityForcedMeta = await assertCapacityInTx(tx, params, dry.toCreate);
+      capacityForcedMeta = await assertImportCapacityInTx(tx, params.eventId, dry.toCreate, params.forceCapacity);
 
       const result = await commitImport(
         params.eventId,
         rowsToCommit,
         {
           dryRun: false,
+          forceCapacity: params.forceCapacity,
           overwrite: params.overwrite,
           ownedTransaction: true,
           attributeFields,
@@ -233,7 +211,6 @@ export async function executeImportCommit(
 
       return result;
     },
-    { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
   );
 
   const allInvalid = [...parsed.invalidRows, ...lockInvalidatedRows];
@@ -249,40 +226,6 @@ export async function executeImportCommit(
     invalidRows: capRows(allInvalid),
     invalidCount: allInvalid.length,
   };
-}
-
-async function assertCapacityInTx(
-  tx: Prisma.TransactionClient,
-  params: ExecuteImportCommitParams,
-  incomingCount: number,
-): Promise<{ capacity: number; current: number } | null> {
-  if (incomingCount <= 0) return null;
-
-  const event = await tx.event.findUnique({
-    where: { id: params.eventId },
-    select: { capacity: true },
-  });
-  if (event?.capacity == null) return null;
-
-  const current = await tx.attendee.count({
-    where: {
-      event_id: params.eventId,
-      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
-    },
-  });
-  const projected = current + incomingCount;
-  if (projected <= event.capacity) return null;
-
-  if (params.forceCapacity) {
-    return { capacity: event.capacity, current };
-  }
-
-  throw new ImportCapacityExceededError({
-    capacity: event.capacity,
-    current,
-    incoming: incomingCount,
-    projected,
-  });
 }
 
 /** Dry-run counts for enqueue-time capacity checks (no writes). */

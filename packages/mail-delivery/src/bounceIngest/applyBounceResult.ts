@@ -47,6 +47,8 @@ export async function applyBounceResult(
   const updated = await db.emailDelivery.updateMany({
     where: {
       id: delivery.id,
+      queued_at: delivery.queued_at,
+      attempts: delivery.attempts,
       status: { in: [...NON_TERMINAL] },
       // An erased attendee's delivery is emptied (and cancelled): a late bounce must not move its
       // status or put the provider's text, which names the address, back on it.

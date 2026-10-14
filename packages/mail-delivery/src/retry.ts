@@ -1,12 +1,13 @@
 import type { PrismaClient } from "@admitto/db";
-import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { MailConfigError, resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import { readDeliveriesBeforeSend } from "./sendable.js";
+import { snapshotUnusableUpdate, tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
+import { withDeliveryOwnership } from "./ownership.js";
 import type { MailDeliveryDeps } from "./send.js";
 
 export interface RetryDeliveryOptions {
@@ -27,6 +28,14 @@ export async function retryDelivery(
   deps: MailDeliveryDeps = {},
   options: RetryDeliveryOptions = {},
 ): Promise<{ ok: boolean; reason?: string }> {
+  return await withDeliveryOwnership(deliveryId, (owned) => retryOwnedDelivery(deliveryId, prisma, env, deps, options, owned))
+    ?? { ok: false, reason: "in_flight" };
+}
+
+async function retryOwnedDelivery(
+  deliveryId: string, prisma: PrismaClient, env: NodeJS.ProcessEnv,
+  deps: MailDeliveryDeps, options: RetryDeliveryOptions, assertOwned: () => Promise<void>,
+): Promise<{ ok: boolean; reason?: string }> {
   const delivery = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
 
   if (delivery.status !== "failed" || !delivery.retryable) {
@@ -44,10 +53,18 @@ export async function retryDelivery(
     return { ok: false, reason: "links_unavailable" };
   }
 
-  const materialized = materializeStoredDeliveryMessage(
+  const materialized = tryMaterializeStoredMessage(
     { subject: delivery.rendered_subject, html: delivery.rendered_html },
     links,
   );
+  if (!materialized) {
+    await assertOwned();
+    await prisma.emailDelivery.updateMany({
+      where: { id: deliveryId, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
+      data: { ...snapshotUnusableUpdate(), attempts: { increment: 1 } },
+    });
+    return { ok: false, reason: "snapshot_unusable" };
+  }
 
   let mailer;
   try {
@@ -58,8 +75,9 @@ export async function retryDelivery(
       // Stored secret still can't be decrypted — same failure for every attempt until an
       // admin re-enters it in Mail settings. Record it so the delivery detail view reflects
       // why this retry did nothing, instead of leaving the prior attempt's stale error.
+      await assertOwned();
       await prisma.emailDelivery.updateMany({
-        where: { id: deliveryId, recipient_email: { not: null } },
+        where: { id: deliveryId, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
         data: {
           error: sanitizeDeliveryError(err.message),
           attempted_at: new Date(),
@@ -86,15 +104,17 @@ export async function retryDelivery(
     const fresh = (
       await readDeliveriesBeforeSend(prisma, [{ deliveryId, attendeeId: delivery.attendee_id }])
     ).get(deliveryId);
-    if (fresh?.status !== "failed" || !fresh.recipient_email) {
+    if (fresh?.status !== "failed" || !fresh.recipient_email || !fresh.snapshotReady || fresh.queued_at.getTime() !== delivery.queued_at.getTime() || fresh.attempts !== delivery.attempts) {
       return { ok: false, reason: "not_retryable" };
     }
 
+    await assertOwned();
     const summary = await sendBatch(mailer, [message]);
+    await assertOwned();
     result = summary.results[0];
     if (!result) {
       await prisma.emailDelivery.updateMany({
-        where: { id: deliveryId, recipient_email: { not: null } },
+        where: { id: deliveryId, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
         data: { attempts: { increment: 1 } },
       });
       return { ok: false, reason: "no_result" };
@@ -104,7 +124,7 @@ export async function retryDelivery(
     // Written only while the row still has its recipient: an erasure that landed while the mail
     // was in flight keeps the row emptied and cancelled.
     await prisma.emailDelivery.updateMany({
-      where: { id: deliveryId, recipient_email: { not: null } },
+      where: { id: deliveryId, queued_at: delivery.queued_at, attempts: delivery.attempts, recipient_email: { not: null }, rendered_subject: { not: null }, rendered_html: { not: null } },
       data: {
         ...update,
         provider: result.provider,

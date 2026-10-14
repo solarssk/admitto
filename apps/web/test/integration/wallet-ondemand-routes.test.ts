@@ -6,7 +6,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
-import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, WalletProviderError } from "@admitto/wallet";
+import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, PassCreatorClient, WalletProviderError } from "@admitto/wallet";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -227,6 +227,29 @@ function makeApp(walletPassProvider: WalletPassProvider) {
     walletPassProvider,
   });
 }
+
+describe("wallet provider error privacy", () => {
+  it.each([false, true])("keeps real provider failures private (reflected fields: %s)", async (reflect) => {
+    const markers = ["Mode A Guest", "modea@example.com", MODE_A_TOKEN];
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const { data } = JSON.parse(String(init?.body));
+      expect(data).toMatchObject({ private_name: markers[0], private_email: markers[1], barcodeValue: markers[2] });
+      return Response.json({ success: false, errors: [reflect ? [data.private_name, data.private_email, data.barcodeValue].join("; ") : "validation refused"] }, { status: 400 });
+    });
+    const provider = new PassCreatorClient({
+      apiKey: "test-key", templateId: "tmpl-wallet-gala", baseUrl: "https://provider.example.com",
+      fieldMapping: { private_name: "full_name", private_email: "email" },
+    }, fetchMock);
+    const res = await makeApp(provider).request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } })).toMatchObject({ status: "failed", last_error_code: "wallet_provider_rejected" });
+    const transcript = log.mock.calls.map((args) => args.map((arg) => arg instanceof Error ? arg.stack : JSON.stringify(arg)).join(" ")).join("\n") + JSON.stringify(querySystemLogs({}));
+    for (const marker of markers) expect(transcript).not.toContain(marker);
+  });
+});
 
 describe("On-demand wallet routes", () => {
   it("Mode A apple: creates a pass and redirects to appleUrl", async () => {

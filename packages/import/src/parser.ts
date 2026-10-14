@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { csvRecords, type CsvRecord } from "./csv-records.js";
 import { splitCsvLine } from "@admitto/shared";
 import { RESERVED_CUSTOM_DATA_SOURCE_FIELDS, isErasedPlaceholderEmail } from "@admitto/tickets";
 import {
@@ -191,6 +192,13 @@ function buildValidatedRow({
   };
 }
 
+/** Refuse malformed quoting/extra cells before building any attendee data. */
+function recordCells(record: CsvRecord, headerCount: number): string[] | null {
+  if (record.malformed) return null;
+  const cells = splitCsvLine(record.text);
+  return cells.length > headerCount ? null : cells;
+}
+
 export function parseAttendees(csvString: string, options: ParseAttendeesOptions = {}): ParseResult {
   const attributeFields = options.attributeFields ?? [];
   const ticketTypes = options.ticketTypes;
@@ -201,23 +209,31 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
   const invalidRows: InvalidRow[] = [];
   const warnings: string[] = [];
 
-  const lines = csvString.replace(/^\uFEFF/, "").split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim().length > 0);
+  const records = [...csvRecords(csvString)];
 
-  if (lines.length === 0) {
+  if (records.length === 0) {
     warnings.push("CSV is empty");
     return { validRows, invalidRows, warnings };
   }
 
-  const rawHeaders = parseHeaderLine(lines[0]!, attributeHeaderKeys, warnings);
+  if (records[0]!.malformed) {
+    warnings.push("Malformed CSV header");
+    return { validRows, invalidRows, warnings };
+  }
+  const rawHeaders = parseHeaderLine(records[0]!.text, attributeHeaderKeys, warnings);
 
   const seenEmails = new Set<string>();
   const seenUUIDs = new Set<string>();
   const seenQrPayloads = new Set<string>();
   const seenAgencyIdentifiers = new Set<string>();
 
-  for (let rowIdx = 1; rowIdx < lines.length; rowIdx++) {
-    const line = lines.at(rowIdx)!;
-    const cells = splitCsvLine(line);
+  for (let rowIdx = 1; rowIdx < records.length; rowIdx++) {
+    const record = records.at(rowIdx)!;
+    const cells = recordCells(record, rawHeaders.length);
+    if (cells === null) {
+      invalidRows.push({ rowIndex: rowIdx, raw: {}, reason: "Malformed CSV record" });
+      continue;
+    }
     const raw = buildRow(rawHeaders, cells);
 
     const email = (raw["email"] ?? "").trim().toLowerCase();

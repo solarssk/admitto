@@ -109,8 +109,10 @@ export function weatherCacheKey(
   longitude: number,
   dateYmd: string,
   configScope: string,
+  timezone: string,
 ): string {
   const lat = latitude.toFixed(2);
   const lon = longitude.toFixed(2);
-  return `${lat}:${lon}:${dateYmd}:${configScope}:c`;
+  // v2 ignores old entries that omitted the timezone used to aggregate the day.
+  return JSON.stringify(["v2", lat, lon, dateYmd, configScope, timezone, "c"]);
 }

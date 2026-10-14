@@ -67,10 +67,10 @@
       "name": "REDIS_URL",
       "group": "boot",
       "boot": "required",
-      "consumers": ["app", "worker"],
+      "consumers": ["app", "worker", "migrate"],
       "secret": true,
       "ui": "none",
-      "summary": "Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync."
+      "summary": "Redis URL including password. Compose builds it from REDIS_PASSWORD for app, migrate and worker; the .env URL is reference / smoke only."
     },
     {
       "name": "REDIS_PASSWORD",
@@ -79,7 +79,7 @@
       "consumers": ["redis", "compose"],
       "secret": true,
       "ui": "none",
-      "summary": "Redis requirepass. Generate with openssl rand -hex 32. Must appear in REDIS_URL."
+      "summary": "Redis requirepass. Generate with openssl rand -hex 32. Compose uses it to build REDIS_URL for app, migrate and worker."
     },
     {
       "name": "POSTGRES_USER",
@@ -576,7 +576,7 @@
       "consumers": ["worker"],
       "secret": false,
       "ui": "none",
-      "summary": "Fail import AdminJobs stuck in running after this many ms (default 15 minutes)."
+      "summary": "Fail import AdminJobs stuck in running after this many ms (default 15 minutes). Values must parse to a positive finite integer no larger than 62135596800000 (Prisma/PostgreSQL AD date range); unsupported values use the default and emit a fixed warning without the configured value."
     },
     {
       "name": "EXPORT_JOB_STALE_RUNNING_MS",
@@ -900,7 +900,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Nominatim/geocoding HTTP timeout (ms). No UI field."
+      "summary": "Nominatim/geocoding HTTP timeout (ms) for one upstream request, counted from when it starts; time spent in the one-request-per-second queue before it is not included. No UI field."
     },
     {
       "name": "MAPS_CONFIG_CACHE_TTL_MS",

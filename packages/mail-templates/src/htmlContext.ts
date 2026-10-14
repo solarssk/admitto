@@ -1,3 +1,5 @@
+import { collectHtmlSourceRanges, type SourceRange } from "./htmlTokens.js";
+
 export interface HtmlAttributeContext {
   inTag: boolean;
   inQuotedAttribute: boolean;
@@ -14,180 +16,132 @@ const EMPTY_CONTEXT: HtmlAttributeContext = {
   inBareTagMarkup: false,
 };
 
-/** True inside `<!-- ... -->`, including Outlook `<!--[if mso]>...<![endif]-->` blocks. */
-export function isPlaceholderInHtmlComment(html: string, index: number): boolean {
-  const commentStart = html.lastIndexOf("<!--", index);
-  if (commentStart === -1) return false;
-  const commentEnd = html.indexOf("-->", commentStart);
-  return commentEnd === -1 || commentEnd + 2 > index;
-}
-
-/** True when `index` is still within the same opening tag (quote-aware `>` handling). */
-function isStillInsideOpeningTag(html: string, tagStart: number, index: number): boolean {
-  let inQuote: '"' | "'" | null = null;
-  for (let i = tagStart + 1; i < index; i++) {
-    const ch = html.charAt(i);
-    if (inQuote) {
-      if (ch === inQuote) inQuote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inQuote = ch;
-      continue;
-    }
-    if (ch === ">") return false;
-    if (ch === "/" && html.charAt(i + 1) === ">") return false;
-  }
-  return true;
-}
-
-/** Mutable scan state tracked while walking the characters of an opening tag. */
-interface AttributeScanState {
-  inQuote: '"' | "'" | null;
-  pendingAttr: string | null;
-  unquotedAttributeName: string | null;
-  inUnquotedValue: boolean;
-}
-
-/**
- * Returns the start index (the `<`) of the opening tag containing `index`, or `null`
- * if `index` isn't inside a relevant opening tag (comment, closing tag, doctype, etc.).
- */
-function findOpeningTagStart(html: string, index: number): number | null {
-  if (isPlaceholderInHtmlComment(html, index)) return null;
-
-  const tagStart = html.lastIndexOf("<", index);
-  if (tagStart === -1) return null;
-
-  // Skip closing tags, comments, doctype, and processing instructions.
-  const tagOpen = html.slice(tagStart, tagStart + 4);
-  if (tagOpen.startsWith("</") || tagOpen.startsWith("<!--") || tagOpen.startsWith("<!")) {
-    return null;
-  }
-
-  if (!isStillInsideOpeningTag(html, tagStart, index)) return null;
-
-  return tagStart;
-}
-
-/** Advances past the tag name (e.g. `div` in `<div ...>`) and returns the index right after it. */
-function skipTagName(html: string, tagStart: number, index: number): number {
-  let i = tagStart + 1;
-  while (i < index && /[A-Za-z0-9-]/.test(html.charAt(i))) i++;
-  return i;
-}
-
-/** Handles one character while inside a quoted attribute value. */
-function advanceInQuotedValue(ch: string, state: AttributeScanState): void {
-  if (ch === state.inQuote) {
-    state.inQuote = null;
-    state.pendingAttr = null;
-    state.unquotedAttributeName = null;
-    state.inUnquotedValue = false;
-  }
-}
-
-/** Handles one character while inside an unquoted attribute value. */
-function advanceInUnquotedValue(ch: string, state: AttributeScanState): void {
-  if (/\s/.test(ch)) {
-    state.inUnquotedValue = false;
-    state.unquotedAttributeName = null;
-  }
-}
-
-/** Handles the `=` after a pending attribute name: enters a quoted or unquoted value. */
-function enterAttributeValue(html: string, i: number, index: number, state: AttributeScanState): number {
-  let next = i + 1;
-  while (next < index && /\s/.test(html.charAt(next))) next++;
-  if (next < index && (html.charAt(next) === '"' || html.charAt(next) === "'")) {
-    state.inQuote = html.charAt(next) as '"' | "'";
-    state.unquotedAttributeName = null;
-    next++;
-  } else {
-    state.unquotedAttributeName = state.pendingAttr;
-    state.inUnquotedValue = true;
-  }
-  state.pendingAttr = null;
-  return next;
-}
-
-/**
- * Processes the character at `i`, mutating `state` as needed, and returns the next
- * index to resume scanning from.
- */
-function advanceTagScan(
-  html: string,
-  i: number,
-  index: number,
-  state: AttributeScanState,
-): number {
-  const ch = html.charAt(i);
-
-  if (state.inQuote) {
-    advanceInQuotedValue(ch, state);
-    return i + 1;
-  }
-
-  if (state.inUnquotedValue) {
-    advanceInUnquotedValue(ch, state);
-    return i + 1;
-  }
-
-  if (/\s/.test(ch)) return i + 1;
-
-  if (ch === "=") {
-    if (state.pendingAttr) return enterAttributeValue(html, i, index, state);
-    return i + 1;
-  }
-
-  if (/[A-Za-z]/.test(ch)) {
-    const nameStart = i;
-    let j = i;
-    while (j < index && /[\w-]/.test(html.charAt(j))) j++;
-    state.pendingAttr = html.slice(nameStart, j);
-    return j;
-  }
-
-  return i + 1;
-}
-
-/** Scans the attribute portion of an opening tag from `start` up to (excluding) `index`. */
-function scanOpeningTagAttributes(html: string, start: number, index: number): AttributeScanState {
-  const state: AttributeScanState = {
-    inQuote: null,
-    pendingAttr: null,
-    unquotedAttributeName: null,
-    inUnquotedValue: false,
+/** Reads actual HTML comments at ascending offsets, including bogus declarations. */
+export function createHtmlCommentContextReader(html: string): (index: number) => boolean {
+  const comments = collectHtmlSourceRanges(html).comments;
+  let cursor = 0;
+  return (index) => {
+    while (comments.at(cursor) && comments.at(cursor)!.endOffset <= index) cursor++;
+    const comment = comments.at(cursor);
+    return comment !== undefined && comment.startOffset <= index && index < comment.endOffset;
   };
-
-  let i = start;
-  while (i < index) {
-    i = advanceTagScan(html, i, index, state);
-  }
-
-  return state;
 }
 
-/**
- * Parses the opening HTML tag containing `index` and returns whether the position
- * is inside a quoted attribute value or an unquoted one.
- *
- * Ignores `=` sequences inside quoted values (e.g. type="VIP" inside title='...').
- */
-export function getHtmlAttributeContext(html: string, index: number): HtmlAttributeContext {
-  const tagStart = findOpeningTagStart(html, index);
-  if (tagStart === null) return EMPTY_CONTEXT;
+/** True inside `<!-- ... -->`, including Outlook conditional comments. */
+export function isPlaceholderInHtmlComment(html: string, index: number): boolean {
+  return createHtmlCommentContextReader(html)(index);
+}
 
-  const afterTagName = skipTagName(html, tagStart, index);
-  const state = scanOpeningTagAttributes(html, afterTagName, index);
+type AttributePhase = "beforeName" | "name" | "afterName" | "beforeValue" |
+  "doubleQuoted" | "singleQuoted" | "unquoted" | "afterQuoted" | "selfClosing";
+interface AttributeScanState {
+  phase: AttributePhase;
+  name: string;
+}
+const HTML_SPACE = /[\t\n\f\r ]/;
 
+/** Tag names end at HTML whitespace, a slash or > (quotes are not tag-name delimiters). */
+function skipTagName(html: string, tagStart: number, index: number): number {
+  let cursor = tagStart + 1;
+  while (cursor < index && /[^\t\n\f\r />]/.test(html.charAt(cursor))) cursor++;
+  return cursor;
+}
+
+function beginAttribute(ch: string, state: AttributeScanState): void {
+  state.phase = "name";
+  state.name = ch;
+}
+
+function advanceBeforeName(ch: string, state: AttributeScanState): void {
+  if (HTML_SPACE.test(ch)) return;
+  if (ch === "/") state.phase = "selfClosing";
+  else beginAttribute(ch, state);
+}
+
+function advanceName(ch: string, state: AttributeScanState): void {
+  if (HTML_SPACE.test(ch)) state.phase = "afterName";
+  else if (ch === "=") state.phase = "beforeValue";
+  else if (ch === "/") state.phase = "selfClosing";
+  else state.name += ch;
+}
+
+function advanceAfterName(ch: string, state: AttributeScanState): void {
+  if (HTML_SPACE.test(ch)) return;
+  if (ch === "=") state.phase = "beforeValue";
+  else advanceBeforeName(ch, state);
+}
+
+function advanceBeforeValue(ch: string, state: AttributeScanState): void {
+  if (HTML_SPACE.test(ch)) return;
+  if (ch === '"') state.phase = "doubleQuoted";
+  else if (ch === "'") state.phase = "singleQuoted";
+  else state.phase = "unquoted";
+}
+
+/** Attribute states follow HTML tokenization, including malformed but parseable names. */
+function advanceTagScan(html: string, cursor: number, state: AttributeScanState): number {
+  const ch = html.charAt(cursor);
+  switch (state.phase) {
+    case "beforeName": advanceBeforeName(ch, state); break;
+    case "name": advanceName(ch, state); break;
+    case "afterName": advanceAfterName(ch, state); break;
+    case "beforeValue": advanceBeforeValue(ch, state); break;
+    case "doubleQuoted": if (ch === '"') state.phase = "afterQuoted"; break;
+    case "singleQuoted": if (ch === "'") state.phase = "afterQuoted"; break;
+    case "unquoted": if (HTML_SPACE.test(ch)) state.phase = "beforeName"; break;
+    case "afterQuoted":
+    case "selfClosing": state.phase = "beforeName"; return cursor;
+  }
+  return cursor + 1;
+}
+
+function newAttributeScanState(): AttributeScanState {
+  return { phase: "beforeName", name: "" };
+}
+
+function attributeContext(state: AttributeScanState): HtmlAttributeContext {
+  const quoted = state.phase === "doubleQuoted" || state.phase === "singleQuoted";
+  const unquoted = state.phase === "unquoted" || state.phase === "beforeValue";
   return {
     inTag: true,
-    inQuotedAttribute: state.inQuote !== null,
-    unquotedAttributeName: state.unquotedAttributeName,
-    inBareTagMarkup:
-      state.inQuote === null && !state.inUnquotedValue && state.unquotedAttributeName === null,
+    inQuotedAttribute: quoted,
+    unquotedAttributeName: unquoted ? state.name : null,
+    inBareTagMarkup: !quoted && !unquoted,
   };
+}
+
+/**
+ * Reads contexts at ascending placeholder offsets in one template. Each validation or
+ * substitution owns a reader; no template text is retained in a process-wide cache.
+ */
+export function createHtmlAttributeContextReader(html: string): (index: number) => HtmlAttributeContext {
+  const ranges = collectHtmlSourceRanges(html);
+  const tags = ranges.startTags;
+  let tagIndex = 0;
+  let activeTag: SourceRange | undefined;
+  let cursor = 0;
+  let attributes = newAttributeScanState();
+  return (index) => {
+    while (tags.at(tagIndex) && tags.at(tagIndex)!.endOffset <= index) tagIndex++;
+    const tag = tags.at(tagIndex);
+    if (!tag || tag.startOffset >= index) {
+      return ranges.structuralBoundaries.has(index)
+        ? { ...EMPTY_CONTEXT, inTag: true, inBareTagMarkup: true }
+        : EMPTY_CONTEXT;
+    }
+    if (activeTag !== tag) {
+      activeTag = tag;
+      cursor = skipTagName(html, tag.startOffset, index);
+      attributes = newAttributeScanState();
+    }
+    while (cursor < index) cursor = advanceTagScan(html, cursor, attributes);
+    return attributeContext(attributes);
+  };
+}
+
+/** Reads a single offset; repeated placeholder callers should own an ascending reader. */
+export function getHtmlAttributeContext(html: string, index: number): HtmlAttributeContext {
+  return createHtmlAttributeContextReader(html)(index);
 }
 
 export function isInsideQuotedAttribute(html: string, index: number): boolean {

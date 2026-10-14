@@ -1,4 +1,4 @@
-import { getHtmlAttributeContext, isPlaceholderInHtmlComment } from "./htmlContext.js";
+import { createHtmlAttributeContextReader, createHtmlCommentContextReader } from "./htmlContext.js";
 
 /** Closed whitelist of allowed {{snake_case}} placeholders. */
 export const ALLOWED_PLACEHOLDERS = new Set([
@@ -78,10 +78,11 @@ export const VALID_PLACEHOLDER_RE = /\{\{([a-z][a-z0-9_]*)\}\}/g;
 /** Placeholder names inside HTML/Outlook conditional comments (unsafe for attribute context). */
 export function findPlaceholdersInHtmlComments(html: string): string[] {
   const names = new Set<string>();
+  const inComment = createHtmlCommentContextReader(html);
   let match: RegExpExecArray | null;
   const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
-    if (isPlaceholderInHtmlComment(html, match.index)) {
+    if (inComment(match.index)) {
       names.add(match[1]!);
     }
   }
@@ -97,11 +98,12 @@ export function findPlaceholdersInHtmlComments(html: string): string[] {
  * shouldn't count a commented-out one as live. */
 export function extractPlaceholderNamesFromHtml(html: string): string[] {
   const names = new Set<string>();
+  const inComment = createHtmlCommentContextReader(html);
   let match: RegExpExecArray | null;
   const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
     const token = match[1]!;
-    if (ALLOWED_PLACEHOLDERS.has(token) && !isPlaceholderInHtmlComment(html, match.index)) {
+    if (ALLOWED_PLACEHOLDERS.has(token) && !inComment(match.index)) {
       names.add(token);
     }
   }
@@ -111,10 +113,11 @@ export function extractPlaceholderNamesFromHtml(html: string): string[] {
 /** Attribute names that use unquoted placeholder values (invalid / unsafe markup). */
 export function findUnquotedAttributePlaceholders(html: string): string[] {
   const attributes = new Set<string>();
+  const contextAt = createHtmlAttributeContextReader(html);
   let match: RegExpExecArray | null;
   const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
-    const ctx = getHtmlAttributeContext(html, match.index);
+    const ctx = contextAt(match.index);
     if (ctx.unquotedAttributeName) {
       attributes.add(ctx.unquotedAttributeName);
     } else if (ctx.inBareTagMarkup) {

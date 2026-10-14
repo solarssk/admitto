@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -1072,8 +1073,10 @@ export function CheckInPage({
   // door (a keyboard-wedge scanner types into whatever holds it), so it goes there, unless the operator has moved on to another control.
   // Straight away, not through focusScan(), which waits for an animation frame: an operator who tabs or clicks away in that frame would be
   // pulled back to the field by the queued callback. Under the phone's camera view there is no scan field (focusScan does nothing there either).
+  // A layout effect, so the focus moves in the same commit that removes the Retry: a passive effect runs a task later, and keys a scanner
+  // types in that gap are lost (it also made the test that checks "at once" depend on whether that task ran before the assertion).
   const sidebarPreviousStatusRef = useRef(sidebarStatus);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const was = sidebarPreviousStatusRef.current;
     sidebarPreviousStatusRef.current = sidebarStatus;
     if (was === "error" && sidebarStatus === "ready" && !showMobileOverlay && document.activeElement === document.body) inputRef.current?.focus();

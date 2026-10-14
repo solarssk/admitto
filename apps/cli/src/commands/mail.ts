@@ -29,7 +29,7 @@ async function retryOneDelivery(
     if (result.ok) {
       return "retried";
     }
-    if (result.reason === "not_retryable" || result.reason === "missing_snapshot") {
+    if (result.reason === "not_retryable" || result.reason === "missing_snapshot" || result.reason === "in_flight") {
       return "skipped";
     }
     return "failed";

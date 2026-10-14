@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db/client";
 
 /** Runtime controls for email delivery snapshot retention cleanup. */
 export interface NullifyDeliverySnapshotOptions {
@@ -95,18 +95,19 @@ function canOpenTransaction(
 async function nullifyDeliverySnapshotBatch(
   prisma: PrismaClient | Prisma.TransactionClient,
   ids: string[],
+  where: Prisma.EmailDeliveryWhereInput,
 ): Promise<number> {
+  // Session senders and this short transaction contend on the same bigint key.
+  // Skip in-flight rows rather than erase the snapshot before their outcome is recorded.
+  const unlocked = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "EmailDelivery"
+    WHERE id IN (${Prisma.join(ids)})
+      AND pg_try_advisory_xact_lock(hashtextextended('admitto:delivery:' || id, 0))
+  `;
+  if (unlocked.length === 0) return 0;
   const updated = await prisma.emailDelivery.updateMany({
-    where: { id: { in: ids } },
-    data: { rendered_html: null, rendered_subject: null },
-  });
-  await prisma.emailDelivery.updateMany({
-    where: {
-      id: { in: ids },
-      status: { in: [...FAILURE_TERMINAL_STATUSES] },
-      retryable: true,
-    },
-    data: { retryable: false },
+    where: { AND: [where, { id: { in: unlocked.map((row) => row.id) } }] },
+    data: { rendered_html: null, rendered_subject: null, retryable: false },
   });
   return updated.count;
 }
@@ -118,20 +119,26 @@ async function nullifyDeliverySnapshotBatches(
   batchSize: number,
 ): Promise<number> {
   let count = 0;
+  let after: { id: string; created_at: Date } | undefined;
   for (;;) {
     const rows = await prisma.emailDelivery.findMany({
-      where,
-      select: { id: true },
-      orderBy: { created_at: "asc" },
+      where: after ? { AND: [where, { OR: [
+        { created_at: { gt: after.created_at } },
+        { created_at: after.created_at, id: { gt: after.id } },
+      ] }] } : where,
+      select: { id: true, created_at: true },
+      orderBy: [{ created_at: "asc" }, { id: "asc" }],
       take: batchSize,
     });
     if (rows.length === 0) return count;
 
     const ids = rows.map((row) => row.id);
     const updated = canOpenTransaction(prisma)
-      ? await prisma.$transaction((tx) => nullifyDeliverySnapshotBatch(tx, ids))
-      : await nullifyDeliverySnapshotBatch(prisma, ids);
+      ? await prisma.$transaction((tx) => nullifyDeliverySnapshotBatch(tx, ids, where))
+      : await nullifyDeliverySnapshotBatch(prisma, ids, where);
     count += updated;
+    // Advance even when a whole batch is locked; a later retention run can revisit it.
+    after = rows.at(-1);
 
     if (rows.length < batchSize) return count;
   }

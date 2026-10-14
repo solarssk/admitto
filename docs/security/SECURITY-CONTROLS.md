@@ -348,7 +348,7 @@ just gated at the HTTP-route layer - see **Outbound HTTP** below.
 ≤ 0.5 MB, with each attendee id itself capped at 128 characters - see
 `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
 `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
-The pre-authentication routes (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`) are capped at 16 KB and the three wallet webhook routes at 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`); where a route has an IP rate limit it runs before the cap, so oversized requests are counted too. XLSX imports are additionally checked by their real unpacked size (inflated with a hard output cap), not by the sizes the file declares.
+The pre-authentication routes (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`) are capped at 16 KB and the three wallet webhook routes at 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`); where a route has an IP rate limit it runs before the cap, so oversized requests are counted too. XLSX imports are additionally checked by their real unpacked size (inflated with a hard output cap), not by the sizes the file declares. The six check-in POST routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit) and `POST /api/ops/system-logs` at 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check); both answer `413 request too large`.
 
 ---
 

@@ -214,3 +214,14 @@ export class WalletProviderError extends Error {
     this.code = code;
   }
 }
+
+const SAFE_WALLET_ERROR_CODES = new Set<string>([
+  "wallet_provider_unauthorized", "wallet_provider_rate_limited", "wallet_provider_duplicate",
+  "wallet_provider_not_found", "wallet_provider_timeout", "wallet_provider_rejected",
+]);
+
+/** Logs and erasure summaries accept only known categories, never arbitrary exception properties. */
+export function walletFailureCode(error: unknown): WalletProviderErrorCode | "unknown" {
+  const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === "string" && SAFE_WALLET_ERROR_CODES.has(code) ? code as WalletProviderErrorCode : "unknown";
+}

@@ -135,21 +135,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Single-line, length-capped preview of a response body for diagnostic error messages - never
- * the outgoing request (so never the API key), just what PassCreator sent back. */
-function previewBody(text: string): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  return collapsed.length > 300 ? `${collapsed.slice(0, 300)}…` : collapsed;
-}
-
-/** Narrows an `errors` field of unknown shape (from a body we deliberately parse without a fixed
- * schema - see subscribeWebhook/listWebhooks below) down to the string[] toProviderError expects,
- * rather than trusting it and letting a non-array value (e.g. a bare string) throw inside
- * `.join()` instead of surfacing the intended WalletProviderError. */
-function requestErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 /** True when `err` is the rejection AbortSignal.timeout() produces once its timer fires -
  * distinct from a malformed-body SyntaxError. performFetch's signal only aborts the fetch()
  * promise itself if it fires before headers arrive; if PassCreator sends 2xx headers and then
@@ -308,17 +293,17 @@ export class PassCreatorClient implements WalletPassProvider {
       if (isTimeoutAbort(err)) {
         throw new WalletProviderError(
           "wallet_provider_timeout",
-          `PassCreator response body timed out: ${requestErrorMessage(err)}`,
+          "PassCreator response body timed out.",
         );
       }
       // Not previously handled at all - keep the same "let it throw" shape for a genuinely
       // unexpected read failure, just via the documented WalletProviderError contract now
       // (bot review: this method used to leak whatever res.text() itself threw).
-      throw this.toProviderError(res.status, [requestErrorMessage(err)]);
+      throw this.toProviderError(res.status);
     }
     if (!res.ok) {
       this.logOutcome("GET", path, false, res.status);
-      throw this.toProviderError(res.status, [previewBody(text)]);
+      throw this.toProviderError(res.status);
     }
     let pem: unknown;
     try {
@@ -331,9 +316,7 @@ export class PassCreatorClient implements WalletPassProvider {
       return pem.trim();
     }
     this.logOutcome("GET", path, false, res.status);
-    throw this.toProviderError(502, [
-      `Public key missing or unrecognized shape in response: ${previewBody(text)}`,
-    ]);
+    throw this.toProviderError(502);
   }
 
   /** Subscribes `targetUrl` to receive one webhook event type for this template
@@ -500,7 +483,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const row = rows.find((r) => r.userProvidedId === userProvidedId);
     if (!row) {
       console.error(
-        `PassCreator query-language search returned no row matching userProvidedId=${userProvidedId} (received ${rows.length} row(s))`,
+        "PassCreator query-language search returned no matching row", { rowCount: rows.length },
       );
       return null;
     }
@@ -538,7 +521,7 @@ export class PassCreatorClient implements WalletPassProvider {
         // whatever PassCreator sent before stalling (often 200).
         throw new WalletProviderError(
           "wallet_provider_timeout",
-          `PassCreator response body timed out: ${requestErrorMessage(err)}`,
+          "PassCreator response body timed out.",
         );
       }
       // Non-JSON body (e.g. an upstream proxy's HTML 502 page) - map by HTTP status instead of
@@ -547,7 +530,7 @@ export class PassCreatorClient implements WalletPassProvider {
     }
     if (!envelope.success || envelope.data === undefined) {
       this.logOutcome(method, route, false, res.status);
-      throw this.toProviderError(res.status, envelope.errors);
+      throw this.toProviderError(res.status, extractErrorStrings(envelope.errors));
     }
     this.logOutcome(method, route, true, res.status);
     return envelope.data;
@@ -596,7 +579,7 @@ export class PassCreatorClient implements WalletPassProvider {
         this.logOutcome(method, route, false, res.status);
         throw new WalletProviderError(
           "wallet_provider_timeout",
-          `PassCreator response body timed out: ${requestErrorMessage(err)}`,
+          "PassCreator response body timed out.",
         );
       }
       // Any other body-read failure (e.g. no body at all on a 2xx) - unlike request()'s strict
@@ -648,13 +631,13 @@ export class PassCreatorClient implements WalletPassProvider {
       let res: Response;
       try {
         res = await this.performFetch(method, path, body);
-      } catch (err) {
+      } catch {
         emitSystemLog("wallet", "warn", "passcreator_request_failed", {
           method,
           route,
-          error: requestErrorMessage(err),
+          reason: "wallet_provider_timeout",
         });
-        throw new WalletProviderError("wallet_provider_timeout", `PassCreator request failed: ${requestErrorMessage(err)}`);
+        throw new WalletProviderError("wallet_provider_timeout", "PassCreator request failed.");
       }
 
       if (res.status !== 429) return res;
@@ -669,19 +652,19 @@ export class PassCreatorClient implements WalletPassProvider {
   }
 
   private toProviderError(status: number, errors?: string[]): WalletProviderError {
-    const message = errors?.join("; ") || `PassCreator request failed with status ${status}`;
+    const detail = errors?.join("; ") ?? "";
     if (status === 401 || status === 403) {
-      return new WalletProviderError("wallet_provider_unauthorized", message);
+      return new WalletProviderError("wallet_provider_unauthorized", "PassCreator authorization failed.");
     }
     if (status === 429) {
-      return new WalletProviderError("wallet_provider_rate_limited", message);
+      return new WalletProviderError("wallet_provider_rate_limited", "PassCreator rate limit exceeded.");
     }
     if (status === 404) {
-      return new WalletProviderError("wallet_provider_not_found", message);
+      return new WalletProviderError("wallet_provider_not_found", "PassCreator pass not found.");
     }
-    if (status === 400 && /unique|already exists|duplicate/i.test(message)) {
-      return new WalletProviderError("wallet_provider_duplicate", message);
+    if (status === 400 && /unique|already exists|duplicate/i.test(detail)) {
+      return new WalletProviderError("wallet_provider_duplicate", "PassCreator pass already exists.");
     }
-    return new WalletProviderError("wallet_provider_rejected", message);
+    return new WalletProviderError("wallet_provider_rejected", "PassCreator request rejected.");
   }
 }
