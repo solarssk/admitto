@@ -32,12 +32,18 @@ export {
   stopOpenAttendeeJobs,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
-export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
+export type {
+  RemoveAttendeesParams,
+  RemoveAttendeesResult,
+  RemoveUntrackedWalletTarget,
+  RemoveWalletTarget,
+} from "./remove-attendees.js";
 export {
   PASS_ROW_STILL_AT_PROVIDER,
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,
   passIsStillToDelete,
+  reservedPassId,
 } from "./erase-wallet-passes.js";
 export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
 export type {

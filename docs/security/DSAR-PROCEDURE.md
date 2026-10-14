@@ -105,11 +105,19 @@ flowchart TD
        best effort: if a provider call fails, the attendee is still removed locally and a
        `wallet_pass_erasure_delete_failed` entry appears in **System logs** (live tail,
        superadmin). Check that log after a removal and remove any remaining pass by hand in the
-       provider's own console. **Nothing is sent, and no failure entry is written,** when the
-       event's wallet template or API key is no longer configured (for example removed after the
-       pass was issued). In that case restore the credentials in Event Settings → Wallet before
-       removing, or delete the attendee's pass in the provider's own console yourself: once the
-       local row is gone, Admitto no longer knows which provider pass belonged to the attendee.
+       provider's own console. A pass that Admitto never managed to record (its save failed, or the
+       event's template changed while it was being made) is deleted too, by the id Admitto wrote on
+       the attendee's pass row before it called the provider, and so is a pass that a failed creation
+       may have left. Where the provider could not answer before the local delete, Admitto asks once more
+       after it, and writes one entry for the whole removal, not one for each pass: it names the
+       attendee ids (`attendeeIds`) of the passes that are still at the provider, which you find in
+       the provider's own console by their User provided ID, `admitto:<event id>:<attendee id>`.
+       **Nothing is sent, and no failure entry is written,** when the event's wallet template or
+       API key is no longer configured (for example removed after the pass was issued). In that
+       case restore the credentials in Event Settings → Wallet before removing, or delete the
+       attendee's pass in the provider's own console yourself: once the local row is gone, Admitto
+       no longer knows which provider pass belonged to the attendee. A pass made before that id was
+       written, by a request that died without leaving anything on the row, is not found either.
      - **Direct-API fallback:** if the SPA is unavailable, call
        `POST /api/admin/events/:eventId/attendees/:id/remove` with `{ "reason": "duplicate" }`, or
        `POST /api/admin/events/:eventId/attendees/bulk-remove` with `{ "attendeeIds": [...],

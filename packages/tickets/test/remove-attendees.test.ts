@@ -7,12 +7,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@admitto/db";
+import { PrismaClient, type Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "../src/attendee-traces.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { removeAttendees } from "../src/remove-attendees.js";
+import { walletUserProvidedId } from "../src/wallet-pass-input.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -115,6 +116,7 @@ describe("removeAttendees", () => {
       notFoundIds: [],
       counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
       walletTargets: [],
+      untrackedWalletTargets: [],
       previousEmails: [],
       jobIdsWithFiles: [],
     });
@@ -150,6 +152,103 @@ describe("removeAttendees", () => {
 
     expect(result.removedIds).toEqual([erased.id]);
     expect(result.walletTargets).toEqual([{ attendeeId: erased.id, providerPassId: `pc-${erased.id}` }]);
+  });
+
+  describe("a pass the provider may hold although its row has no provider id", () => {
+    const removedAt = new Date("2026-10-01T10:00:00Z");
+    type Shape = {
+      name: string;
+      row: Omit<Prisma.WalletPassUncheckedCreateInput, "attendee_id">;
+      /** Which list the row's pass ends up in: the provider's id (`tracked`), the id it is deleted by (`untracked`), or none. */
+      list: "tracked" | "untracked" | "none";
+      /** The id an untracked pass is deleted by, as the row says it, or null when the row has none (the derived one). */
+      reserved: string | null;
+    };
+    const shapes: Shape[] = [
+      { name: "only the reserved id", row: { status: "pending", user_provided_id: "reserved-pending" }, list: "untracked", reserved: "reserved-pending" },
+      {
+        name: "the reserved id and a failed creation",
+        row: { status: "failed", user_provided_id: "reserved-failed", last_error_code: "wallet_provider_timeout" },
+        list: "untracked",
+        reserved: "reserved-failed",
+      },
+      { name: "a failed creation and no id of any kind", row: { status: "failed" }, list: "untracked", reserved: null },
+      { name: "the reserved id, marked removed", row: { status: "pending", user_provided_id: "reserved-gone", provider_removed_at: removedAt }, list: "none", reserved: null },
+      { name: "a failed creation and no id, marked removed", row: { status: "failed", provider_removed_at: removedAt }, list: "none", reserved: null },
+      { name: "no id of any kind, pending", row: { status: "pending" }, list: "none", reserved: null },
+      { name: "no id of any kind, voided", row: { status: "voided" }, list: "none", reserved: null },
+      { name: "the provider's id and the reserved one", row: { status: "active", provider_pass_id: "pc-both", user_provided_id: "reserved-both" }, list: "tracked", reserved: null },
+      { name: "the provider's id only", row: { status: "active", provider_pass_id: "pc-only" }, list: "tracked", reserved: null },
+      { name: "the provider's id, marked removed", row: { status: "active", provider_pass_id: "pc-gone", provider_removed_at: removedAt }, list: "none", reserved: null },
+    ];
+
+    it("sorts every kind of row into the provider's id, the id it is deleted by, or neither, and reads the id off the row", async () => {
+      const rows: { shape: Shape; id: string }[] = [];
+      for (const shape of shapes) {
+        const attendee = await createAttendee();
+        await prisma.walletPass.create({ data: { attendee_id: attendee.id, ...shape.row } });
+        rows.push({ shape, id: attendee.id });
+      }
+
+      const result = await remove(rows.map((row) => row.id));
+
+      const untracked = rows
+        .filter((row) => row.shape.list === "untracked")
+        .map((row) => ({ attendeeId: row.id, userProvidedId: row.shape.reserved ?? walletUserProvidedId(EVENT_ID, row.id) }));
+      expect(result.untrackedWalletTargets).toHaveLength(untracked.length);
+      expect(result.untrackedWalletTargets).toEqual(expect.arrayContaining(untracked));
+      // The ids are the row's own where it has one: a derived id would also pass for the rows whose id is the derived one.
+      expect(result.untrackedWalletTargets.map((target) => target.userProvidedId).filter((id) => id.startsWith("reserved-")).sort()).toEqual([
+        "reserved-failed",
+        "reserved-pending",
+      ]);
+      expect(result.walletTargets.map((target) => target.attendeeId).sort()).toEqual(
+        rows.filter((row) => row.shape.list === "tracked").map((row) => row.id).sort(),
+      );
+      // Every row is deleted with its attendee, whatever list it is in.
+      expect(result.counts.walletPasses).toBe(rows.length);
+      expect(await prisma.walletPass.count({ where: { attendee_id: { in: rows.map((row) => row.id) } } })).toBe(0);
+    });
+
+    it("names the id the pass would have been sent under when the row has none, never another attendee's or another event's", async () => {
+      const a = await createAttendee();
+      const b = await createAttendee();
+      await prisma.walletPass.create({ data: { attendee_id: a.id, status: "failed" } });
+      await prisma.walletPass.create({ data: { attendee_id: b.id, status: "failed" } });
+
+      const result = await remove([a.id, b.id]);
+
+      expect(result.untrackedWalletTargets).toHaveLength(2);
+      expect(new Set(result.untrackedWalletTargets.map((target) => target.userProvidedId))).toEqual(
+        new Set([`admitto:${EVENT_ID}:${a.id}`, `admitto:${EVENT_ID}:${b.id}`]),
+      );
+    });
+
+    it("returns the pass of an attendee who was erased before, whose row still holds only the reserved id", async () => {
+      const erased = await createAttendee();
+      await prisma.walletPass.create({ data: { attendee_id: erased.id, status: "pending", user_provided_id: "reserved-erased" } });
+      await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_ID, attendeeIds: [erased.id] }));
+
+      const result = await remove([erased.id]);
+
+      expect(result.removedIds).toEqual([erased.id]);
+      expect(result.untrackedWalletTargets).toEqual([{ attendeeId: erased.id, userProvidedId: "reserved-erased" }]);
+      expect(result.walletTargets).toEqual([]);
+    });
+
+    it("returns nothing for an attendee with no pass row, nor for one who stays, whose row is left alone", async () => {
+      const bare = await createAttendee();
+      const stays = await createAttendee();
+      await prisma.walletPass.create({ data: { attendee_id: stays.id, status: "pending", user_provided_id: "reserved-stays" } });
+      const elsewhere = await createAttendee(OTHER_EVENT_ID);
+      await prisma.walletPass.create({ data: { attendee_id: elsewhere.id, status: "pending", user_provided_id: "reserved-elsewhere" } });
+
+      const result = await remove([bare.id, elsewhere.id]);
+
+      expect(result.removedIds).toEqual([bare.id]);
+      expect(result.untrackedWalletTargets).toEqual([]);
+      expect(await prisma.walletPass.count({ where: { attendee_id: { in: [stays.id, elsewhere.id] } } })).toBe(2);
+    });
   });
 
   it("returns the addresses lower-cased and trimmed, and none for an attendee who was erased before", async () => {

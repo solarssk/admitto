@@ -78,7 +78,7 @@ provider facts from the `@admitto/wallet/capabilities` subpath, never the packag
 | Create pass | `POST /api/v3/pass?async=false` | `async=false` to get `iPhoneUri`/`androidUri` back immediately |
 | Update pass | `PATCH /api/v3/pass/{id}` | Never `POST` - v3 `POST` replaces the whole record |
 | Delete pass | `DELETE /api/v3/pass/{id}` | 404 on retry treated as success (idempotent) |
-| Delete pass by userProvidedId | `DELETE /api/pass/{uid}` (no `/v3/`) | For a pass whose identifier Admitto never saved (erasure follow-up). The v1 path takes the pass UID, the userProvidedId or the barcode value; the v3 delete takes the identifier only, so an unknown id there is a 404 that `deletePass` counts as deleted. 200 = a pass was deleted, 404 = none there (not an error). Per PassCreator's docs, not yet confirmed live |
+| Delete pass by userProvidedId | `DELETE /api/pass/{uid}` (no `/v3/`) | For a pass whose identifier Admitto never saved (the erasure follow-up, and Remove from event before it deletes the row). The v1 path takes the pass UID, the userProvidedId or the barcode value; the v3 delete takes the identifier only, so an unknown id there is a 404 that `deletePass` counts as deleted. 200 = a pass was deleted, 404 = none there (not an error). Per PassCreator's docs, not yet confirmed live |
 | Void / restore | `PUT /api/pass/{uid}` (no `/v3/`) | Body `{"voided": true\|false}`; this is the only endpoint that can write `voided` |
 | Push message | `PATCH /api/v3/pass/bulk` | Body `{data:{pushNotificationText}, filter:{identifiers}}`; async (202), only confirms that PassCreator accepted it, not device delivery |
 | Search | `GET /api/v3/pass?query=<base64url query-language>` | Used for idempotency reconciliation and registration-status polling |

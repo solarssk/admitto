@@ -61,6 +61,16 @@ export function erasedPassToDeleteWhere(eventId: string, attendeeIds?: readonly 
 
 type PassToDelete = { attendee_id: string; provider_pass_id: string | null; user_provided_id: string | null };
 
+/**
+ * The id a pass is deleted by when Admitto has no provider id for it: the one its creating request reserved on the row
+ * (`user_provided_id`) or, for a `failed` row written before ids were reserved, the one that request would have sent
+ * (`walletUserProvidedId`). The provider answers from its own record of it. The one place this choice is made, for the
+ * erasure's follow-up and for a removal alike.
+ */
+export function reservedPassId(eventId: string, pass: { attendee_id: string; user_provided_id: string | null }): string {
+  return pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id);
+}
+
 /** What became of one pass: it is gone (and whether Admitto had no id for it, yet the provider held it), or it failed. */
 type Outcome = { ok: true; untracked: boolean } | { ok: false; attendeeId: string; code: string };
 
@@ -74,7 +84,7 @@ async function deleteAtProvider(provider: WalletPassProvider, eventId: string, p
     await provider.deletePass(pass.provider_pass_id);
     return false;
   }
-  return provider.deletePassByUserProvidedId(pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id));
+  return provider.deletePassByUserProvidedId(reservedPassId(eventId, pass));
 }
 
 async function deleteOne(

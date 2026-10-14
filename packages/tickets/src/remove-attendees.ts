@@ -1,5 +1,6 @@
 import { Prisma } from "@admitto/db/client";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
+import { passIsStillToDelete, reservedPassId } from "./erase-wallet-passes.js";
 import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 export type RemoveAttendeesParams = {
@@ -11,6 +12,25 @@ export type RemoveAttendeesParams = {
 export type RemoveWalletTarget = {
   attendeeId: string;
   providerPassId: string;
+};
+
+/**
+ * A wallet pass of a removed attendee that the provider may hold although the row had no provider id for it: the row
+ * held only the id reserved for the pass, or a failed creation with no id at all (see PASS_ROW_STILL_AT_PROVIDER).
+ */
+export type RemoveUntrackedWalletTarget = {
+  attendeeId: string;
+  /** The id the pass has at the provider: the one on the row, or the one its creating request would have sent. */
+  userProvidedId: string;
+};
+
+/** The columns of a wallet pass row that the removal's DELETE ... RETURNING reads back. */
+type DeletedWalletPass = {
+  attendee_id: string;
+  provider_pass_id: string | null;
+  user_provided_id: string | null;
+  status: string;
+  provider_removed_at: Date | null;
 };
 
 export type RemoveAttendeesResult = {
@@ -33,6 +53,16 @@ export type RemoveAttendeesResult = {
    * list is the only place that still knows the provider id.
    */
   walletTargets: RemoveWalletTarget[];
+  /**
+   * The passes of the removed attendees that the provider may hold although the row had no provider id: it held only
+   * the id reserved for the pass (its creating request could not record it, or has not yet: the save failed, the
+   * event's template changed, the process died), or was a failed creation with no id, and was not marked removed (the
+   * same question the erasure's follow-up asks, passIsStillToDelete). Read by the same statement as `walletTargets`,
+   * under the same locks. With the row gone, this list is the only place that still knows the id to delete the pass
+   * by (`deletePassByUserProvidedId`): the caller deletes at the provider those it has not answered for yet, after
+   * the commit, like `walletTargets`.
+   */
+  untrackedWalletTargets: RemoveUntrackedWalletTarget[];
   /**
    * The addresses the removed attendees had, lower-cased: the current one and the one their first
    * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
@@ -61,8 +91,8 @@ export type RemoveAttendeesResult = {
  * check-in that was waiting for the lock then finds the attendee gone.
  *
  * Not done here: deleting the wallet pass at the provider (a network call: the caller does it
- * before the transaction, while the local row still knows the provider id, and after the commit
- * for the passes in `walletTargets` that this missed), saved import results
+ * before the transaction, while the local row still knows the id, and after the commit for the
+ * passes in `walletTargets` and `untrackedWalletTargets` that this missed), saved import results
  * (scrubImportJobResults) and the audit entries.
  */
 export async function removeAttendees(
@@ -76,6 +106,7 @@ export async function removeAttendees(
     notFoundIds: requestedIds,
     counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
     walletTargets: [],
+    untrackedWalletTargets: [],
     previousEmails: [],
     jobIdsWithFiles: [],
   };
@@ -106,11 +137,11 @@ export async function removeAttendees(
 
   const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
     tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
-    // RETURNING, like the attendee delete below: the provider ids of exactly the rows this
-    // statement deletes are the ones to delete at the provider afterwards.
-    tx.$queryRaw<{ attendee_id: string; provider_pass_id: string | null; provider_removed_at: Date | null }[]>`
+    // RETURNING, like the attendee delete below: the ids (the provider's, or the one reserved for the
+    // pass) of exactly the rows this statement deletes are the ones to delete at the provider afterwards.
+    tx.$queryRaw<DeletedWalletPass[]>`
       DELETE FROM "WalletPass" WHERE "attendee_id" IN (${Prisma.join(ids)})
-      RETURNING "attendee_id", "provider_pass_id", "provider_removed_at"
+      RETURNING "attendee_id", "provider_pass_id", "user_provided_id", "status", "provider_removed_at"
     `,
     tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
   ]);
@@ -137,6 +168,11 @@ export async function removeAttendees(
     walletTargets: walletPasses.flatMap((pass) =>
       pass.provider_pass_id && !pass.provider_removed_at
         ? [{ attendeeId: pass.attendee_id, providerPassId: pass.provider_pass_id }]
+        : [],
+    ),
+    untrackedWalletTargets: walletPasses.flatMap((pass) =>
+      pass.provider_pass_id === null && passIsStillToDelete(pass)
+        ? [{ attendeeId: pass.attendee_id, userProvidedId: reservedPassId(eventId, pass) }]
         : [],
     ),
     previousEmails,

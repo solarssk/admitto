@@ -1,0 +1,381 @@
+/**
+ * The wallet passes of removed attendees whose rows hold no provider id (only the id reserved for the pass, or a failed
+ * creation with no id): which rows are asked about, what the provider is asked, how many calls run at once, and what is
+ * said, once, when passes are still at the provider. The provider is a stand-in: no call leaves the process.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { PASS_ROW_STILL_AT_PROVIDER, type RemoveUntrackedWalletTarget } from "@admitto/tickets";
+import { WalletProviderError, type WalletPassProvider } from "@admitto/wallet";
+
+const resolveConfiguredWalletProvider = vi.fn();
+vi.mock("@admitto/wallet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/wallet")>();
+  return {
+    ...actual,
+    resolveConfiguredWalletProvider: (...args: unknown[]) => resolveConfiguredWalletProvider(...args),
+  };
+});
+
+import {
+  deleteUntrackedPassesAfterRemoval,
+  deleteUntrackedPassesAtProvider,
+  deleteUntrackedProviderPassesBestEffort,
+  deleteUntrackedWalletPassesBestEffort,
+  type UntrackedDeleteOutcome,
+} from "../../src/admin/attendees-api-routes.js";
+
+const EVENT_ID = "evt-untracked";
+const CREDENTIALS = { wallet_template_id: "tmpl-1", wallet_api_key_enc: "enc-key", wallet_field_mapping: null };
+/** The number of calls one batch of deletes makes at once: BULK_CHECKIN_CONCURRENCY, which deleteProviderPassesBestEffort uses too. */
+const BATCH = 10;
+
+type StandIn = WalletPassProvider & { deletePass: ReturnType<typeof vi.fn>; deletePassByUserProvidedId: ReturnType<typeof vi.fn> };
+
+function standIn(deletePassByUserProvidedId: (id: string) => Promise<boolean> = async () => true): StandIn {
+  return {
+    deletePass: vi.fn(async () => undefined),
+    deletePassByUserProvidedId: vi.fn(deletePassByUserProvidedId),
+  } as unknown as StandIn;
+}
+
+function fakeDb(options: { event?: unknown; rows?: unknown[] } = {}) {
+  return {
+    event: { findUnique: vi.fn(async () => (options.event === undefined ? CREDENTIALS : options.event)) },
+    walletPass: { findMany: vi.fn(async () => options.rows ?? []) },
+  };
+}
+
+const targets = (count: number): RemoveUntrackedWalletTarget[] =>
+  Array.from({ length: count }, (_, index) => ({ attendeeId: `att-${index}`, userProvidedId: `reserved-${index}` }));
+
+const noOutcome = (): UntrackedDeleteOutcome => ({ answered: new Set(), failed: new Map() });
+const lines = () => querySystemLogs({ search: "wallet_pass_erasure_delete_failed" });
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
+  resolveConfiguredWalletProvider.mockReset();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("deleteUntrackedPassesAtProvider", () => {
+  it("asks for each pass by its own id and counts a pass deleted and none there alike as answered", async () => {
+    const provider = standIn(async (id) => id !== "reserved-1");
+
+    const outcome = await deleteUntrackedPassesAtProvider(provider, targets(3));
+
+    expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual(["reserved-0", "reserved-1", "reserved-2"]);
+    expect(provider.deletePass).not.toHaveBeenCalled();
+    expect([...outcome.answered].sort()).toEqual(["att-0", "att-1", "att-2"]);
+    expect(outcome.failed.size).toBe(0);
+  });
+
+  it("keeps what the provider refused apart, by its failure code and never its message, and goes on with the rest", async () => {
+    const provider = standIn(async (id) => {
+      if (id === "reserved-1") throw new WalletProviderError("wallet_provider_timeout", "timed out for jane@example.com");
+      if (id === "reserved-2") throw new Error("an internal detail that must not be logged");
+      return true;
+    });
+
+    const outcome = await deleteUntrackedPassesAtProvider(provider, targets(4));
+
+    expect([...outcome.answered].sort()).toEqual(["att-0", "att-3"]);
+    expect([...outcome.failed.entries()]).toEqual([
+      ["att-1", "wallet_provider_timeout"],
+      ["att-2", "unknown"],
+    ]);
+  });
+
+  it("makes no call and answers for nobody when there is nothing to delete", async () => {
+    const provider = standIn();
+
+    const outcome = await deleteUntrackedPassesAtProvider(provider, []);
+
+    expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
+    expect(outcome).toEqual(noOutcome());
+  });
+
+  it("runs ten calls at a time and starts the next ten only once those have all answered", async () => {
+    const waiting: Array<{ id: string; answer: () => void }> = [];
+    let inFlight = 0;
+    let mostAtOnce = 0;
+    const provider = standIn(
+      (id) =>
+        new Promise<boolean>((resolve) => {
+          inFlight += 1;
+          mostAtOnce = Math.max(mostAtOnce, inFlight);
+          waiting.push({
+            id,
+            answer: () => {
+              inFlight -= 1;
+              resolve(true);
+            },
+          });
+        }),
+    );
+
+    const run = deleteUntrackedPassesAtProvider(provider, targets(25));
+    await flush();
+    expect(waiting.map((call) => call.id)).toEqual(targets(25).slice(0, BATCH).map((target) => target.userProvidedId));
+
+    // Nine of the ten answered: the next ten do not start while one is still out.
+    waiting.slice(0, BATCH - 1).forEach((call) => call.answer());
+    await flush();
+    expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(BATCH);
+
+    waiting[BATCH - 1]!.answer();
+    await flush();
+    expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(2 * BATCH);
+    waiting.slice(BATCH, 2 * BATCH).forEach((call) => call.answer());
+    await flush();
+    expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(25);
+    waiting.slice(2 * BATCH).forEach((call) => call.answer());
+
+    const outcome = await run;
+    expect(outcome.answered.size).toBe(25);
+    expect(mostAtOnce).toBe(BATCH);
+  });
+});
+
+describe("deleteUntrackedProviderPassesBestEffort", () => {
+  it("reads nothing and calls nobody when there is nothing to delete", async () => {
+    const db = fakeDb();
+
+    const outcome = await deleteUntrackedProviderPassesBestEffort(db as never, EVENT_ID, []);
+
+    expect(outcome).toEqual(noOutcome());
+    expect(db.event.findUnique).not.toHaveBeenCalled();
+    expect(resolveConfiguredWalletProvider).not.toHaveBeenCalled();
+  });
+
+  it("calls nobody for an event that is gone", async () => {
+    const db = fakeDb({ event: null });
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    const outcome = await deleteUntrackedProviderPassesBestEffort(db as never, EVENT_ID, targets(2));
+
+    expect(outcome).toEqual(noOutcome());
+    expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
+  });
+
+  it("calls nobody, and fails nobody, for an event with no credentials it can use", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(null);
+
+    const outcome = await deleteUntrackedProviderPassesBestEffort(db as never, EVENT_ID, targets(2));
+
+    expect(outcome).toEqual(noOutcome());
+    expect(lines()).toEqual([]);
+  });
+
+  it("deletes at the provider of the event's own credentials, whatever its Wallet switch says", async () => {
+    const db = fakeDb();
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    const outcome = await deleteUntrackedProviderPassesBestEffort(db as never, EVENT_ID, targets(2));
+
+    expect(db.event.findUnique).toHaveBeenCalledWith({
+      where: { id: EVENT_ID },
+      select: { wallet_template_id: true, wallet_api_key_enc: true, wallet_field_mapping: true },
+    });
+    expect(resolveConfiguredWalletProvider).toHaveBeenCalledWith({
+      walletTemplateId: "tmpl-1",
+      walletApiKeyEnc: "enc-key",
+      walletFieldMapping: null,
+    });
+    expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(2);
+    expect([...outcome.answered].sort()).toEqual(["att-0", "att-1"]);
+  });
+});
+
+describe("deleteUntrackedWalletPassesBestEffort", () => {
+  it("reads the rows still at the provider that hold no provider id, of these attendees, in this event", async () => {
+    const db = fakeDb();
+
+    await deleteUntrackedWalletPassesBestEffort(db as never, EVENT_ID, ["a", "b"]);
+
+    expect(db.walletPass.findMany).toHaveBeenCalledTimes(1);
+    expect(db.walletPass.findMany).toHaveBeenCalledWith({
+      where: {
+        AND: [PASS_ROW_STILL_AT_PROVIDER, { provider_pass_id: null }],
+        attendee_id: { in: ["a", "b"] },
+        attendee: { event_id: EVENT_ID },
+      },
+      select: { attendee_id: true, user_provided_id: true },
+    });
+  });
+
+  it("deletes by the id on the row, or by the one the creating request would have sent when the row has none", async () => {
+    const db = fakeDb({
+      rows: [
+        { attendee_id: "a", user_provided_id: "reserved-on-the-row" },
+        { attendee_id: "b", user_provided_id: null },
+      ],
+    });
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    const outcome = await deleteUntrackedWalletPassesBestEffort(db as never, EVENT_ID, ["a", "b", "c"]);
+
+    expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual([
+      "reserved-on-the-row",
+      `admitto:${EVENT_ID}:b`,
+    ]);
+    expect([...outcome.answered].sort()).toEqual(["a", "b"]);
+  });
+
+  it("costs no provider call, and not even a read of the event, for attendees with no such row", async () => {
+    const db = fakeDb({ rows: [] });
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    const outcome = await deleteUntrackedWalletPassesBestEffort(db as never, EVENT_ID, ["a", "b", "c"]);
+
+    expect(outcome).toEqual(noOutcome());
+    expect(db.event.findUnique).not.toHaveBeenCalled();
+    expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
+  });
+
+  it("answers what failed too, so that the caller can try it again after the commit", async () => {
+    const db = fakeDb({ rows: [{ attendee_id: "a", user_provided_id: "reserved-a" }] });
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn(async () => {
+        throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
+      }),
+    );
+
+    const outcome = await deleteUntrackedWalletPassesBestEffort(db as never, EVENT_ID, ["a"]);
+
+    expect([...outcome.failed.entries()]).toEqual([["a", "wallet_provider_rate_limited"]]);
+    // Nothing is said yet: the second try may still delete it.
+    expect(lines()).toEqual([]);
+  });
+});
+
+describe("deleteUntrackedPassesAfterRemoval", () => {
+  const answered = (...ids: string[]): UntrackedDeleteOutcome => ({ answered: new Set(ids), failed: new Map() });
+
+  it("does nothing, and resolves no provider, when the first delete answered for every pass", async () => {
+    const db = fakeDb();
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("att-0", "att-1", "att-2"));
+
+    expect(db.event.findUnique).not.toHaveBeenCalled();
+    expect(resolveConfiguredWalletProvider).not.toHaveBeenCalled();
+    expect(lines()).toEqual([]);
+  });
+
+  it("does nothing when no pass was left by the removed rows at all", async () => {
+    const db = fakeDb();
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, [], noOutcome());
+
+    expect(db.event.findUnique).not.toHaveBeenCalled();
+    expect(lines()).toEqual([]);
+  });
+
+  it("asks again only for the passes the first delete did not answer for, and says nothing when that works", async () => {
+    const db = fakeDb();
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("att-1"));
+
+    expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual(["reserved-0", "reserved-2"]);
+    expect(lines()).toEqual([]);
+  });
+
+  it("says in one line which passes are still at the provider, however many, with ids and failure codes only", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn(async (id) => {
+        if (id === "reserved-3") throw new WalletProviderError("wallet_provider_timeout", "timed out");
+        throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
+      }),
+    );
+    const all = targets(30);
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, all, noOutcome());
+
+    const logged = lines();
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ level: "error", source: "admin", message: "wallet_pass_erasure_delete_failed" });
+    expect(logged[0]!.fields).toEqual({
+      eventId: EVENT_ID,
+      failed: 30,
+      codes: "wallet_provider_rate_limited,wallet_provider_timeout",
+      attendeeIds: all.map((target) => target.attendeeId).join(","),
+    });
+  });
+
+  it("also writes that line to the output, which is what outlives a restart", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn(async () => {
+        throw new WalletProviderError("wallet_provider_timeout", "timed out");
+      }),
+    );
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome());
+
+    const written = vi.mocked(console.error).mock.calls.map((call) => String(call[0]));
+    expect(written).toHaveLength(1);
+    expect(JSON.parse(written[0]!)).toMatchObject({ level: "error", msg: "wallet_pass_erasure_delete_failed", eventId: EVENT_ID, failed: 2 });
+  });
+
+  it("names only the passes that are still there when the second try deleted some", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn(async (id) => {
+        if (id === "reserved-1") throw new WalletProviderError("wallet_provider_timeout", "timed out");
+        return true;
+      }),
+    );
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), noOutcome());
+
+    expect(lines().map((line) => line.fields)).toEqual([
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-1" },
+    ]);
+  });
+
+  it("does not say what failed the first time when the second try deletes that pass", async () => {
+    const db = fakeDb();
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+    const failedBefore: UntrackedDeleteOutcome = { answered: new Set(), failed: new Map([["att-0", "wallet_provider_timeout"]]) };
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(1), failedBefore);
+
+    expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(1);
+    expect(lines()).toEqual([]);
+  });
+
+  it("still answers, and says which passes are left, when the second try itself breaks, without the words of the error", async () => {
+    const db = fakeDb();
+    db.event.findUnique.mockRejectedValue(new Error("db hiccup for jane@example.com"));
+
+    await expect(deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome())).resolves.toBeUndefined();
+
+    expect(lines().map((line) => line.fields)).toEqual([
+      { eventId: EVENT_ID, failed: 2, codes: "unknown", attendeeIds: "att-0,att-1" },
+    ]);
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("jane@example.com");
+  });
+
+  it("says nothing when the event has no credentials the second time: nothing was tried", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(null);
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome());
+
+    expect(lines()).toEqual([]);
+  });
+});
