@@ -67,4 +67,16 @@ describe("large repetitive templates", () => {
     });
     expect(searches).toBeLessThanOrEqual(8);
   });
+  it("advances past many literal text openers without replaying the prefix", () => {
+    const repetitions = 2_000;
+    const text = '<p>note < x="open</p><span title="{{first_name}}">Guest</span>'.repeat(repetitions) +
+      '<p>{{ticket_url}} {{qr_image_url}}</p>';
+    expect(text.length).toBeLessThan(200_000);
+    const searches = countTagSearches(() => {
+      const result = renderTemplate({ subject: "Synthetic", compiledHtml: text }, vars);
+      expect(result.html.match(/title="Synthetic&quot; guest"/g)).toHaveLength(repetitions);
+    });
+    expect(searches).toBeLessThanOrEqual(repetitions * 10 + 8);
+  });
+
 });

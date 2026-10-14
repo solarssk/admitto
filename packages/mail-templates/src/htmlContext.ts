@@ -50,6 +50,13 @@ interface HtmlScanState {
   attributes: AttributeScanState;
 }
 
+/** HTML start/end tags begin with an ASCII letter; other literal < characters stay text. */
+function isPlausibleTagOpener(html: string, start: number): boolean {
+  const next = html.charAt(start + 1);
+  return /[A-Za-z]/.test(next) || next === "!" ||
+    (next === "/" && /[A-Za-z]/.test(html.charAt(start + 2)));
+}
+
 /** Starts the next tag or skips a comment; the cursor never walks backwards. */
 function enterNextTag(html: string, index: number, state: HtmlScanState): void {
   const tagStart = html.indexOf("<", state.cursor);
@@ -60,6 +67,10 @@ function enterNextTag(html: string, index: number, state: HtmlScanState): void {
   if (html.startsWith("<!--", tagStart)) {
     const end = html.indexOf("-->", tagStart + 4);
     state.cursor = end === -1 ? html.length : end + 3;
+    return;
+  }
+  if (!isPlausibleTagOpener(html, tagStart)) {
+    state.cursor = tagStart + 1;
     return;
   }
   state.tagStart = tagStart;

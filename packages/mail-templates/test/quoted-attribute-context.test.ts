@@ -190,3 +190,24 @@ describe("compiled and deferred attribute boundaries", () => {
     expect(parsed.querySelector("[data-audit-marker]")).toBeNull();
   });
 });
+
+
+describe("literal text before a real tag", () => {
+  describe.each(QUOTES)("$label", (quote) => {
+    describe.each(RENDERING_PATHS)("$label rendering", (path) => {
+      it.each(["< ", "<\n", "<3 ", "</ ", "<< ", "<é "])("ignores the text opener %s and escapes the real attribute", (textOpener) => {
+        const input = {
+          subject: "Synthetic literal text",
+          compiledHtml: `<p>note ${textOpener}x=${quote.delimiter}open</p><span id="audit-guest" title=${quote.delimiter}{{first_name}}${quote.delimiter}>Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>`,
+        };
+        const rendered = path.render(input, {
+          first_name: quote.rawName, ticket_url: "https://tickets.example.com/t/synthetic", qr_image_url: "https://tickets.example.com/q/synthetic.png",
+        });
+        expect(getHtmlAttributeContext(input.compiledHtml, input.compiledHtml.indexOf("{{first_name}}"))).toMatchObject({ inTag: true, inQuotedAttribute: true, inBareTagMarkup: false });
+        const parsed = new DOMParser().parseFromString(rendered.html, "text/html");
+        expect(parsed.getElementById("audit-guest")?.getAttribute("title")).toBe(quote.rawName);
+        expect(parsed.querySelector("[data-audit-marker]")).toBeNull();
+      });
+    });
+  });
+});
