@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Location, Mail, Images and Ticket types tabs of Event settings, and the image library, no longer show a line saying the event is archived and cannot be changed. The greyed fields and the missing Save already say so, and the line pushed the first row down.
 - The Check-in tab of Event settings no longer shows the note "This event is archived - check-in behaviour cannot be changed." on an archived event (the greyed switches and the missing Save already say so), and its four switches now sit at the vertical middle of their label and description instead of next to the first line.
 
+### Security
+
+- A file that an attendee export or an import left in storage can no longer stay there for good when the process is killed before the file is recorded on its job. An export file whose key was not saved yet, the staged CSV of an import whose job was not created yet, and a file whose delete failed after its job row was gone all hold the attendee list while no job names them, so neither the 7-day cleanup nor an erasure could find them. The worker's daily retention run and `admitto retention run` (`--dry-run` only counts) now delete every export or import file that no job names once it is a day old, and report the count as `orphaned_job_files` in the worker's retention line (`orphanedJobFiles` in the audit entry of `retention run`); a file that a job names is never touched. An erasure still deletes only the files that jobs name, so a person erased while such a file exists stays in it until that run, at most about two days after the process was killed. The upload directory must belong to this database alone: files of another instance that shares it would be seen as unnamed and deleted.
+
 ## [0.7.5] - 2026-10-11
 
 ### Added

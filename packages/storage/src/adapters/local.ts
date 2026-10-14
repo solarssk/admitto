@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as fsp from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { StoragePathError } from "../errors.js";
-import { isManagedUploadKey } from "../keys.js";
+import { isJobFileKey, isManagedUploadKey } from "../keys.js";
 import type { StorageAdapter, StorageListEntry, StoragePutOptions } from "../types.js";
 
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -133,7 +133,12 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async *list(): AsyncIterable<StorageListEntry> {
     const root = resolve(resolveUploadDir(this.env));
-    yield* walkManagedFiles(root, root);
+    yield* walkFiles(root, root, isManagedUploadKey);
+  }
+
+  async *listJobFiles(): AsyncIterable<StorageListEntry> {
+    const root = resolve(resolveUploadDir(this.env));
+    yield* walkFiles(root, root, isJobFileKey);
   }
 }
 
@@ -142,10 +147,11 @@ type WalkDeps = {
   safeStat: typeof safeStatManagedFile;
 };
 
-/** Recursively yield managed upload keys under `dir` (paths relative to `root`). */
-async function* walkManagedFiles(
+/** Recursively yield the keys under `dir` (paths relative to `root`) that `isWanted` accepts. */
+async function* walkFiles(
   root: string,
   dir: string,
+  isWanted: (key: string) => boolean,
   deps?: WalkDeps,
 ): AsyncGenerator<StorageListEntry> {
   // Resolve once per walk (not as a default param object - Sonar S7737).
@@ -167,13 +173,13 @@ async function* walkManagedFiles(
   for (const entry of entries) {
     const abs = join(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walkManagedFiles(root, abs, resolved);
+      yield* walkFiles(root, abs, isWanted, resolved);
       continue;
     }
     if (!entry.isFile()) continue;
 
     const key = relative(root, abs).split(sep).join("/");
-    if (!isManagedUploadKey(key)) continue;
+    if (!isWanted(key)) continue;
 
     const st = await resolved.safeStat(abs); // NOSONAR - async generator: entries are yielded one at a time, in directory order
     if (!st) continue;
@@ -204,5 +210,5 @@ export function listManagedFilesForTests(
   root: string,
   deps: WalkDeps,
 ): AsyncGenerator<StorageListEntry> {
-  return walkManagedFiles(root, root, deps);
+  return walkFiles(root, root, isManagedUploadKey, deps);
 }

@@ -295,6 +295,41 @@ describe("LocalStorageAdapter", () => {
     }
   });
 
+  it("listJobFiles yields the files that jobs leave, which list does not, and the other way round", async () => {
+    const csv = await storage.put(Buffer.from("a,b"), { orgId: "default", eventId: "evt-1", scope: "event", ext: ".csv" });
+    const xlsx = await storage.put(Buffer.from("xlsx"), { orgId: "default", eventId: "evt-2", scope: "event", ext: ".xlsx" });
+    const pdf = await storage.put(Buffer.from("pdf"), { orgId: "default", eventId: "evt-1", scope: "event", ext: ".pdf" });
+    const image = await storage.put(Buffer.from("img"), { orgId: "default", eventId: "evt-1", scope: "event", ext: ".png" });
+    // Not the job layout: a CSV at the organisation level and a text file next to the job files.
+    await storage.put(Buffer.from("org"), { orgId: "default", scope: "org", ext: ".csv" });
+    mkdirSync(join(uploadDir, "default", "events", "evt-1"), { recursive: true });
+    writeFileSync(join(uploadDir, "default", "events", "evt-1", "readme.txt"), "nope");
+
+    const jobFiles: { key: string; sizeBytes: number }[] = [];
+    for await (const entry of storage.listJobFiles()) {
+      jobFiles.push({ key: entry.key, sizeBytes: entry.sizeBytes });
+      expect(entry.mtimeMs).toBeGreaterThan(0);
+    }
+    const branding: string[] = [];
+    for await (const entry of storage.list()) branding.push(entry.key);
+
+    expect(jobFiles.sort((a, b) => a.key.localeCompare(b.key))).toEqual(
+      [
+        { key: csv.key, sizeBytes: 3 },
+        { key: xlsx.key, sizeBytes: 4 },
+        { key: pdf.key, sizeBytes: 3 },
+      ].sort((a, b) => a.key.localeCompare(b.key)),
+    );
+    expect(branding).toEqual([image.key]);
+  });
+
+  it("listJobFiles returns nothing when the upload root is missing", async () => {
+    rmSync(uploadDir, { recursive: true, force: true });
+    const listed: string[] = [];
+    for await (const entry of storage.listJobFiles()) listed.push(entry.key);
+    expect(listed).toEqual([]);
+  });
+
   it("rejects a key that escapes the upload root", () => {
     expect(() => absolutePathUnderUploadRoot("../outside.png", { UPLOAD_DIR: uploadDir })).toThrow(
       StoragePathError,

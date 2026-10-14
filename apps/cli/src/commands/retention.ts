@@ -43,6 +43,7 @@ export async function runRetention(db: PrismaClient): Promise<void> {
         notificationRows: notificationsResult.deleted,
         exportFiles: jobFilesResult.exportFiles,
         stagedImportFiles: jobFilesResult.stagedImportFiles,
+        orphanedJobFiles: jobFilesResult.orphanedFiles,
         erasedWalletPassesDeleted: walletSweep.deleted,
         erasedWalletPassesLeft: walletPassesLeft,
       },
@@ -55,8 +56,8 @@ export async function runRetention(db: PrismaClient): Promise<void> {
         `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
         `security audit log: ${securityAuditResult.deleted} row(s); ` +
         `notifications: ${notificationsResult.deleted} row(s); ` +
-        `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s)` +
-        `${failedFilesNote}; ` +
+        `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s), ` +
+        `${jobFilesResult.orphanedFiles} orphaned file(s)${failedFilesNote}; ` +
         `erased wallet passes: ${walletSweep.deleted} deleted at the provider` +
         `${walletPassesLeftNote}.`,
     );
@@ -81,7 +82,8 @@ export async function runRetention(db: PrismaClient): Promise<void> {
       `mail: ${mailResult.deliveries} delivery snapshot(s); ` +
       `security audit log: ${securityAuditResult.deleted} row(s); ` +
       `notifications: ${notificationsResult.deleted} row(s); ` +
-      `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s); ` +
+      `job files: ${jobFilesResult.exportFiles} export file(s), ${jobFilesResult.stagedImportFiles} staged import CSV(s), ` +
+      `${jobFilesResult.orphanedFiles} orphaned file(s); ` +
       `erased wallet passes: ${walletSweep.pending} still to delete at the provider.`,
   );
 }

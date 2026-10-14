@@ -444,7 +444,7 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
     const walletSweep = await withHeartbeatRefresh(db, "retention", () => sweepErasedWalletPasses(db, { dryRun: false }));
     log(
       "retention",
-      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted} export_files=${jobFilesResult.exportFiles} staged_import_files=${jobFilesResult.stagedImportFiles} erased_wallet_passes=${walletSweep.deleted} failed=${jobFilesResult.failures + erasedWalletPassesLeft(walletSweep)}`,
+      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted} export_files=${jobFilesResult.exportFiles} staged_import_files=${jobFilesResult.stagedImportFiles} orphaned_job_files=${jobFilesResult.orphanedFiles} erased_wallet_passes=${walletSweep.deleted} failed=${jobFilesResult.failures + erasedWalletPassesLeft(walletSweep)}`,
     );
     return true;
   } finally {
