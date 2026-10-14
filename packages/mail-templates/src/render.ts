@@ -5,7 +5,7 @@ import {
   BRANDING_ASSET_FIELDS,
   resolveBrandingAssetUrlForRender,
 } from "./escape.js";
-import { createHtmlAttributeContextReader } from "./htmlContext.js";
+import { createHtmlAttributeContextReader, type HtmlAttributeContext } from "./htmlContext.js";
 import {
   REQUIRED_URL_PLACEHOLDERS,
   URL_PLACEHOLDERS,
@@ -163,6 +163,14 @@ function substituteSubjectPlaceholdersDeferred(
   });
 }
 
+/** Trusted paths skip whitelist checks, but data cannot form markup or an unquoted value. */
+function quotedAttributeForPlaceholder(context: HtmlAttributeContext, name: string): boolean {
+  if (context.inBareTagMarkup || context.unquotedAttributeName) {
+    throw new UnquotedAttributePlaceholderError([context.unquotedAttributeName ?? `{{${name}}}`]);
+  }
+  return context.inQuotedAttribute;
+}
+
 function substituteHtmlPlaceholders(
   template: string,
   vars: TemplateVars,
@@ -171,7 +179,7 @@ function substituteHtmlPlaceholders(
 ): string {
   const contextAt = createHtmlAttributeContextReader(template);
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
-    const inAttribute = contextAt(offset).inQuotedAttribute;
+    const inAttribute = quotedAttributeForPlaceholder(contextAt(offset), name);
     const value = resolveVarValue(name, vars);
     return formatPlaceholderValue(name, value, inAttribute, baseUrl, customAssetPlaceholders);
   });
@@ -185,8 +193,8 @@ function substituteHtmlPlaceholdersDeferred(
 ): string {
   const contextAt = createHtmlAttributeContextReader(template);
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
+    const inAttribute = quotedAttributeForPlaceholder(contextAt(offset), name);
     if (STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
-    const inAttribute = contextAt(offset).inQuotedAttribute;
     const value = resolveVarValue(name, vars);
     return formatPlaceholderValue(name, value, inAttribute, baseUrl, customAssetPlaceholders);
   });
@@ -210,7 +218,7 @@ function applyDeferredLinkPlaceholders(
     if (mode === "subject") {
       return formatSubjectPlaceholderValue(name, value, baseUrl);
     }
-    const inAttribute = contextAt(offset).inQuotedAttribute;
+    const inAttribute = quotedAttributeForPlaceholder(contextAt(offset), name);
     return formatPlaceholderValue(name, value, inAttribute, baseUrl);
   });
 }

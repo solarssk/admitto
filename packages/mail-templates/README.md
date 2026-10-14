@@ -100,6 +100,6 @@ Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/pl
 
 - Placeholder **values** are HTML-escaped (text vs attribute context).
 - Literal angle brackets inside quoted attribute values do not change the escaping context; quotes in attendee values remain attribute data, including in frozen delivery snapshots.
-- Validation and rendering scan contexts forward per template, so repeated placeholders do not rescan earlier markup.
+- Validation and rendering use HTML5 token boundaries from the pinned `parse5` dependency and scan attribute contexts forward per template. Raw-text/RCDATA content and declarations do not become attribute markup; repeated placeholders do not rescan earlier markup. The source is never reserialized and the parser executes no scripts or external IO. Trusted rendering skips whitelist revalidation but still refuses unquoted or structural slots that could construct a tag name or change script text boundaries.
 - Template **content** is admin-authored (trusted, RBAC).
 - Templates are **not encrypted** (not secrets).

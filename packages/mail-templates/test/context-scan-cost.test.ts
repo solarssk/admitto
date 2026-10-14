@@ -1,3 +1,4 @@
+import { Tokenizer } from "parse5";
 import { describe, expect, it, vi } from "vitest";
 import {
   materializeStoredDeliveryMessage,
@@ -77,6 +78,29 @@ describe("large repetitive templates", () => {
       expect(result.html.match(/title="Synthetic&quot; guest"/g)).toHaveLength(repetitions);
     });
     expect(searches).toBeLessThanOrEqual(repetitions * 10 + 8);
+  });
+
+  it("tokenizes a large template a bounded number of times across all placeholders", () => {
+    const write = vi.spyOn(Tokenizer.prototype, "write");
+    try {
+      const result = renderTemplate(input, vars);
+      expect(result.html.match(/Synthetic&quot; guest/g)).toHaveLength(count);
+      const consumed = write.mock.calls.reduce((total, [chunk]) => total + chunk.length, 0);
+      expect(consumed).toBeLessThanOrEqual(html.length * 4);
+    } finally { write.mockRestore(); }
+  });
+
+  it("bounds tokenization for repeated raw-text and bogus declarations", () => {
+    const repetitions = 1_000;
+    const text = '<script>inert <b title="</script><!bogus x="open><span title="{{first_name}}">Guest</span>'.repeat(repetitions) +
+      '<p>{{ticket_url}} {{qr_image_url}}</p>';
+    const write = vi.spyOn(Tokenizer.prototype, "write");
+    try {
+      const result = renderTemplate({ subject: "Synthetic", compiledHtml: text }, vars);
+      expect(result.html.match(/title="Synthetic&quot; guest"/g)).toHaveLength(repetitions);
+      const consumed = write.mock.calls.reduce((total, [chunk]) => total + chunk.length, 0);
+      expect(consumed).toBeLessThanOrEqual(text.length * 4);
+    } finally { write.mockRestore(); }
   });
 
 });

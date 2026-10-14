@@ -2,6 +2,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
+import { UnquotedAttributePlaceholderError } from "../src/errors.js";
 import { compileTemplate } from "../src/compile.js";
 import { getHtmlAttributeContext } from "../src/htmlContext.js";
 import {
@@ -210,4 +211,83 @@ describe("literal text before a real tag", () => {
       });
     });
   });
+});
+
+
+describe("HTML text modes and declarations", () => {
+  describe.each(QUOTES)("$label", (quote) => {
+    describe.each(RENDERING_PATHS)("$label rendering", (path) => {
+      it.each([
+        ...["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"].map((tag) => `<${tag}>inert <b title=${quote.delimiter}</${tag}>`),
+        `<!bogus x=${quote.delimiter}open>`,
+        `<?bogus x=${quote.delimiter}open>`,
+        `<![CDATA[inert <b title=${quote.delimiter}>`,
+        `<!DOCTYPE html PUBLIC ${quote.delimiter}inert > text${quote.delimiter}>`,
+        `<ScRiPt>inert <b title=${quote.delimiter}</sCrIpT >`,
+        `<textarea/>inert <b title=${quote.delimiter}</textarea>`,
+        `<script><!--<script>inert <b title=${quote.delimiter}</script>--></script>`,
+      ])("preserves the following real attribute after %s", (prefix) => {
+        const input = {
+          subject: "Synthetic text-mode test",
+          compiledHtml: `${prefix}<span id="audit-guest" title=${quote.delimiter}{{first_name}}${quote.delimiter}>Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>`,
+        };
+        const rendered = path.render(input, { first_name: quote.rawName, ticket_url: "https://tickets.example.com/t/synthetic", qr_image_url: "https://tickets.example.com/q/synthetic.png" });
+        const parsed = new DOMParser().parseFromString(rendered.html, "text/html");
+        expect(parsed.getElementById("audit-guest")?.getAttribute("title")).toBe(quote.rawName);
+        expect(parsed.querySelector("[data-audit-marker]")).toBeNull();
+      });
+    });
+  });
+});
+
+
+describe("attribute grammar controls", () => {
+  it.each([
+    { name: "=", before: '=="', after: '"' },
+    { name: "'", before: '\'="', after: '"' },
+    { name: "data\u00a0label", before: 'data\u00a0label="', after: '"' },
+    { name: "title", before: 'title="', after: '" title="Ignored duplicate"' },
+    { name: "title", before: 'data-label="before"title="', after: '"' },
+  ])("escapes quote-bearing values in a $name attribute", ({ name, before, after }) => {
+    const input = { subject: "Synthetic grammar", compiledHtml: `<span id="audit-guest" ${before}Guest <b> {{first_name}}${after}>Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>` };
+    const rendered = renderTemplateTrustedForStorage(input, { first_name: QUOTES[0].rawName });
+    const parsed = new DOMParser().parseFromString(rendered.html, "text/html");
+    expect(parsed.getElementById("audit-guest")?.getAttribute(name)).toBe(`Guest <b> ${QUOTES[0].rawName}`);
+    expect(parsed.querySelector("[data-audit-marker]")).toBeNull();
+  });
+
+  it("uses actual comment tokens rather than comment-looking text in an attribute", () => {
+    const input = { subject: "Synthetic comment text", compiledHtml: '<span id="audit-guest" title="Guest <!-- {{first_name}}">Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>' };
+    const rendered = renderTemplate(input, { first_name: QUOTES[0].rawName, ticket_url: "https://tickets.example.com/t/synthetic", qr_image_url: "https://tickets.example.com/q/synthetic.png" });
+    const parsed = new DOMParser().parseFromString(rendered.html, "text/html");
+    expect(parsed.getElementById("audit-guest")?.getAttribute("title")).toBe(`Guest <!-- ${QUOTES[0].rawName}`);
+    expect(parsed.querySelector("[data-audit-marker]")).toBeNull();
+  });
+});
+
+
+describe("structural placeholder boundaries", () => {
+  it.each(RENDERING_PATHS)("$label refuses data that could construct a tag or raw-text end tag", (path) => {
+    for (const html of [
+      '<{{first_name}}><p>{{ticket_url}} {{qr_image_url}}</p>',
+      '<script>inert </{{first_name}}><span title="{{last_name}}">Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>',
+      '<script>inert </scr{{first_name}}><span title="{{last_name}}">Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>',
+      '<span title={{first_name}}>Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>',
+      '<script><!--<script>inert {{first_name}}></script><span title="{{last_name}}">Guest</span></script><p>{{ticket_url}} {{qr_image_url}}</p>',
+    ]) {
+      expect(() => path.render({ subject: "Synthetic", compiledHtml: html }, {
+        first_name: html.includes("<!--<script>") ? "--" : "script", last_name: QUOTES[0].rawName, ticket_url: "https://tickets.example.com/t/synthetic", qr_image_url: "https://tickets.example.com/q/synthetic.png",
+      })).toThrow(UnquotedAttributePlaceholderError);
+    }
+  });
+});
+
+
+it("keeps source offsets after CRLF, supplementary characters and a null character", () => {
+  const html = '🙂\r\n\0<span id="audit-guest" title="{{first_name}}">Guest</span><p>{{ticket_url}} {{qr_image_url}}</p>';
+  const rendered = renderTemplateTrustedForStorage({ subject: "Synthetic", compiledHtml: html }, { first_name: QUOTES[0].rawName });
+  expect(rendered.html.startsWith('🙂\r\n\0<span')).toBe(true);
+  const parsed = new DOMParser().parseFromString(rendered.html, "text/html");
+  expect(parsed.getElementById("audit-guest")?.getAttribute("title")).toBe(QUOTES[0].rawName);
+  expect(parsed.querySelector("[data-audit-marker]")).toBeNull();
 });
