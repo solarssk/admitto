@@ -71,7 +71,7 @@ describe("deleteUntrackedPassesAtProvider", () => {
 
     expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual(["reserved-0", "reserved-1", "reserved-2"]);
     expect(provider.deletePass).not.toHaveBeenCalled();
-    expect([...outcome.answered].sort()).toEqual(["att-0", "att-1", "att-2"]);
+    expect([...outcome.answered].sort()).toEqual(["reserved-0", "reserved-1", "reserved-2"]);
     expect(outcome.failed.size).toBe(0);
   });
 
@@ -84,7 +84,7 @@ describe("deleteUntrackedPassesAtProvider", () => {
 
     const outcome = await deleteUntrackedPassesAtProvider(provider, targets(4));
 
-    expect([...outcome.answered].sort()).toEqual(["att-0", "att-3"]);
+    expect([...outcome.answered].sort()).toEqual(["reserved-0", "reserved-3"]);
     expect([...outcome.failed.entries()]).toEqual([
       ["att-1", "wallet_provider_timeout"],
       ["att-2", "unknown"],
@@ -191,7 +191,7 @@ describe("deleteUntrackedProviderPassesBestEffort", () => {
       walletFieldMapping: null,
     });
     expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(2);
-    expect([...outcome.answered].sort()).toEqual(["att-0", "att-1"]);
+    expect([...outcome.answered].sort()).toEqual(["reserved-0", "reserved-1"]);
   });
 });
 
@@ -228,7 +228,7 @@ describe("deleteUntrackedWalletPassesBestEffort", () => {
       "reserved-on-the-row",
       `admitto:${EVENT_ID}:b`,
     ]);
-    expect([...outcome.answered].sort()).toEqual(["a", "b"]);
+    expect([...outcome.answered].sort()).toEqual([`admitto:${EVENT_ID}:b`, "reserved-on-the-row"]);
   });
 
   it("costs no provider call, and not even a read of the event, for attendees with no such row", async () => {
@@ -260,12 +260,13 @@ describe("deleteUntrackedWalletPassesBestEffort", () => {
 });
 
 describe("deleteUntrackedPassesAfterRemoval", () => {
+  /** What the first delete answered for, by the ids it asked about. */
   const answered = (...ids: string[]): UntrackedDeleteOutcome => ({ answered: new Set(ids), failed: new Map() });
 
   it("does nothing, and resolves no provider, when the first delete answered for every pass", async () => {
     const db = fakeDb();
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("att-0", "att-1", "att-2"));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("reserved-0", "reserved-1", "reserved-2"));
 
     expect(db.event.findUnique).not.toHaveBeenCalled();
     expect(resolveConfiguredWalletProvider).not.toHaveBeenCalled();
@@ -286,10 +287,22 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const provider = standIn();
     resolveConfiguredWalletProvider.mockReturnValue(provider);
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("att-1"));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("reserved-1"));
 
     expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual(["reserved-0", "reserved-2"]);
     expect(lines()).toEqual([]);
+  });
+
+  it("asks again about a pass whose reserved id changed after the first delete answered for the old one", async () => {
+    const db = fakeDb();
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+    // The first delete answered for the id the row held then. A creating request has since written the current one.
+    const rewritten: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, answered("an-older-id-of-att-0"));
+
+    expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual([`admitto:${EVENT_ID}:att-0`]);
   });
 
   it("says in one line which passes are still at the provider, however many, with ids and failure codes only", async () => {

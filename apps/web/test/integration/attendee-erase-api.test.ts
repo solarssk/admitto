@@ -1439,6 +1439,29 @@ describe("removing attendees from an event", () => {
       expect(failedLines()).toEqual([]);
     });
 
+    it("is deleted after the commit by the id a creating request wrote while the first delete was running", async () => {
+      const olderId = "admitto:older-event:older-attendee";
+      const a = await withRow({ status: "pending", user_provided_id: olderId });
+      // The row holds an id that is not the current one. A creating request reserves the current id on it while
+      // the older one is being deleted, which is after the first delete read the row.
+      const fetchMock = vi.fn(async (url: unknown) => {
+        if (String(url).includes(encodeURIComponent(olderId))) {
+          await prisma.walletPass.update({ where: { attendee_id: a.id }, data: { user_provided_id: reservedId(a.id) } });
+        }
+        return new Response(null, { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(calls(fetchMock)).toEqual([
+        expect.stringContaining(byId(olderId)),
+        expect.stringContaining(byId(reservedId(a.id))),
+      ]);
+      expect(failedLines()).toEqual([]);
+    });
+
     it("is deleted when the event has credentials but its Wallet switch is off", async () => {
       const a = await reserved(WALLET_OFF_EVENT_ID);
       const fetchMock = vi.fn(async (_url: unknown) => new Response(null, { status: 200 }));

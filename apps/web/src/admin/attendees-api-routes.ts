@@ -2219,7 +2219,9 @@ export async function deleteWalletPassesBestEffort(
 
 /** What deleting passes by the id reserved for them came to. */
 export type UntrackedDeleteOutcome = {
-  /** The attendees the provider answered for: a pass was deleted, or there was none. Either way nothing is left to delete. */
+  /** The ids the provider answered for: a pass was deleted, or there was none. Either way nothing is left to delete.
+   * Keyed by the id, not by the attendee, like the provider ids of deleteWalletPassesBestEffort: a row whose reserved id
+   * was rewritten after the answer (a creating request wrote the current one) holds another id, and is asked about again. */
   answered: Set<string>;
   /** The attendees it could not answer for, with the failure code of each. */
   failed: Map<string, string>;
@@ -2239,8 +2241,8 @@ export async function deleteUntrackedPassesAtProvider(
   for (const batch of chunk([...targets], BULK_CHECKIN_CONCURRENCY)) {
     const settled = await Promise.allSettled(batch.map((pass) => provider.deletePassByUserProvidedId(pass.userProvidedId))); // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
     for (const [index, result] of settled.entries()) {
-      const { attendeeId } = batch[index]!;
-      if (result.status === "fulfilled") outcome.answered.add(attendeeId);
+      const { attendeeId, userProvidedId } = batch[index]!;
+      if (result.status === "fulfilled") outcome.answered.add(userProvidedId);
       else outcome.failed.set(attendeeId, walletFailureCode(result.reason));
     }
   }
@@ -2299,8 +2301,8 @@ function reportUntrackedDeleteFailures(eventId: string, failed: ReadonlyMap<stri
   });
 }
 
-/** After a removal has committed: asks the provider again for the passes it has not answered for (the first delete
- * failed, or the pass's id was reserved after that delete had read the rows), from the ids `removeAttendees` read off the
+/** After a removal has committed: asks the provider again for the ids it has not answered for (the first delete
+ * failed, or the pass's id was reserved or rewritten after that delete had read the rows), from the ids `removeAttendees` read off the
  * rows it deleted, and says in one line which are still at the provider after that. Passes the first delete failed
  * for whose row this removal did not delete (a request running at the same moment removed the attendee) are that
  * request's. Never throws: the removal is done, and a failure here only leaves passes at the provider. */
@@ -2310,7 +2312,7 @@ export async function deleteUntrackedPassesAfterRemoval(
   removed: readonly RemoveUntrackedWalletTarget[],
   before: UntrackedDeleteOutcome,
 ): Promise<void> {
-  const leftover = removed.filter((target) => !before.answered.has(target.attendeeId));
+  const leftover = removed.filter((target) => !before.answered.has(target.userProvidedId));
   let failed: ReadonlyMap<string, string>;
   try {
     failed = (await deleteUntrackedProviderPassesBestEffort(db, eventId, leftover)).failed;
