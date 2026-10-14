@@ -880,6 +880,28 @@ describe("EventMailSettingsCard — SMTP Test connection", () => {
   });
 });
 
+describe("EventMailSettingsCard — footer", () => {
+  it("renders its own Save footer on an active event only when it is not embedded in a page that owns one", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    const { unmount } = renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard eventId="evt-1" isArchived={false} embeddedFooter />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+    unmount();
+
+    renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard eventId="evt-1" isArchived={false} embeddedFooter={false} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  });
+});
+
 describe("EventMailSettingsCard — archived event", () => {
   it("shows no archived note and no footer", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
