@@ -2,7 +2,7 @@
 
 /* Author display utilities must not override the HTML hidden attribute. */
 [hidden] {
-  display: none !important;
+  display: none !important; /* NOSONAR - the hidden attribute must win over every author display rule, whatever its specificity */
 }
 
 /* Icons are glyphs of the icon font. Until it has loaded they would be drawn as empty boxes, so they
@@ -4969,8 +4969,8 @@ output.mail-field-hint {
     width: 4.75rem;
   }
 
-  .security-settings-row__control .at-input {
-    width: 4.75rem !important;
+  .security-settings-row__control .at-control > .at-input {
+    width: 4.75rem;
     max-width: 4.75rem;
     text-align: right;
     padding-inline: var(--space-2);
@@ -4990,13 +4990,14 @@ output.mail-field-hint {
 }
 
 /* On a touch device, @admitto/ui's own font-scale trick (packages/ui/src/styles/components.css)
-   inflates this input's width by 16/14 then scales it back down - but the fixed `4.75rem
-   !important` above overrides that inflated value outright, so it renders scaled down from
-   4.75rem instead of from the inflated size, ending up ~12.5% narrower than the 640px rule
-   above intends. Same fix, same specificity/!important fight, scoped to this field. */
+   inflates this input's width by 16/14 then scales it back down (`.at-control > .at-input`), so the
+   fixed 4.75rem above would render scaled down from 4.75rem instead of from the inflated size,
+   ending up ~12.5% narrower than the 640px rule above intends. The selector here is one class
+   more specific than the trick's, so it wins without `!important`, and it comes later in the file
+   than the rule above, so the inflated width wins over the plain one on touch devices. */
 @media (max-width: 640px) and (pointer: coarse) {
-  .security-settings-row__control .at-input {
-    width: calc(4.75rem / 0.875) !important;
+  .security-settings-row__control .at-control > .at-input {
+    width: calc(4.75rem / 0.875);
     max-width: calc(4.75rem / 0.875);
   }
 }
