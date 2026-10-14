@@ -889,7 +889,12 @@ describe("EventMailSettingsCard — footer", () => {
       </MemoryRouter>,
     );
     await screen.findByText(SMTP_SUMMARY_TEXT);
-    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+    // Its Save is wired to the card's own save: an incomplete dedicated SMTP draft is refused there.
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByText("SMTP host is required.")).toBeTruthy());
+    expect(mockSave).not.toHaveBeenCalled();
     unmount();
 
     renderWithToast(
