@@ -1220,12 +1220,16 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // is still seen once the (older) snapshot arrives. Each layout state is reconciled once, so a layout
   // that stays out of step with the server (its own refresh failed) cannot make this read in a loop.
   const reconciledLayoutArchivedRef = useRef<boolean | undefined>(undefined);
+  // This page's own Archive / Restore (Danger zone) reads the event first and refreshes the layout after, so for a
+  // moment the two disagree on purpose: that sequence settles the layout itself and must not start a second read.
+  const ownArchiveToggleRef = useRef(false);
   useEffect(() => {
     if (layoutArchived === undefined || event === null) return;
     if (layoutArchived === (event.status === "archived")) {
       reconciledLayoutArchivedRef.current = undefined;
       return;
     }
+    if (ownArchiveToggleRef.current) return;
     if (reconciledLayoutArchivedRef.current === layoutArchived) return;
     reconciledLayoutArchivedRef.current = layoutArchived;
     setMailCardResetKey((n) => n + 1);
@@ -1314,20 +1318,25 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
 
   async function handleArchiveConfirm() {
     if (!eventId) return;
-    await confirmArchiveToggle({
-      eventId,
-      archiveMode,
-      setArchiving,
-      setArchiveOpen,
-      setArchiveError,
-      setMailCardResetKey,
-      setLocationCardResetKey,
-      setTicketTypesCardResetKey,
-      setCheckinBehaviourCardResetKey,
-      addToast,
-      load,
-      refreshLayoutEvent,
-    });
+    ownArchiveToggleRef.current = true;
+    try {
+      await confirmArchiveToggle({
+        eventId,
+        archiveMode,
+        setArchiving,
+        setArchiveOpen,
+        setArchiveError,
+        setMailCardResetKey,
+        setLocationCardResetKey,
+        setTicketTypesCardResetKey,
+        setCheckinBehaviourCardResetKey,
+        addToast,
+        load,
+        refreshLayoutEvent,
+      });
+    } finally {
+      ownArchiveToggleRef.current = false;
+    }
   }
 
   async function handleDeleteConfirm() {

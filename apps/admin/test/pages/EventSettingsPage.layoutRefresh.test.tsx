@@ -65,6 +65,7 @@ import {
   fetchTimezoneForCoordinates,
   patchEvent,
   saveEventLocation,
+  unarchiveEvent,
   searchGeocoding,
   reverseGeocoding,
 } from "../../src/api/client.js";
@@ -302,6 +303,33 @@ describe("EventSettingsPage when the archived bar restores the event", () => {
     await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not read the event a second time during its own Restore from the Danger zone", async () => {
+    mockLayoutEvent = { archived_at: archivedAt };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
+    // The page reads the restored event first; the layout refresh is still pending, so the two disagree for a moment.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const layoutRefresh = deferred<void>();
+    refreshEvent.mockReturnValueOnce(layoutRefresh.promise);
+    render(tree());
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
+
+    await waitFor(() => expect(refreshEvent).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      layoutRefresh.resolve();
     });
     expect(fetchEventSettings).toHaveBeenCalledTimes(2);
   });
