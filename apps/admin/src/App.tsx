@@ -174,18 +174,22 @@ export function EventLayout() {
   // mount-time refresh: child effects run before this component's.
   const routeEventIdRef = useRef(eventId);
   routeEventIdRef.current = eventId;
-  const refreshEvent = useCallback(async () => {
-    if (!eventId) return;
+  // Resolves to false only when the read failed (the snapshot is then the last-known one), for a caller
+  // that must not claim the page is current (the archived bar after a restore); the others ignore it.
+  const refreshEvent = useCallback(async (): Promise<boolean> => {
+    if (!eventId) return true;
     const seq = ++refreshEventSeqRef.current;
     try {
       const fresh = await fetchAdminEvent(eventId);
-      if (refreshEventSeqRef.current !== seq || routeEventIdRef.current !== eventId) return;
+      if (refreshEventSeqRef.current !== seq || routeEventIdRef.current !== eventId) return true;
       setEvent(fresh);
+      return true;
     } catch {
       // Best-effort: the mutation that triggered this already reported its
       // own success/error toast, so a failed background refresh here just
       // keeps showing the last-known-good snapshot instead of surfacing a
       // second, confusing error for a non-critical sync.
+      return false;
     }
   }, [eventId]);
 

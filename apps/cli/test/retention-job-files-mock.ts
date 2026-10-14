@@ -6,7 +6,7 @@ import { vi } from "vitest";
  * `vi.mock("../src/lib/retention-job-files.js", async () => (await import("./retention-job-files-mock.js")).mock)`.
  */
 export const mock = {
-  purgeJobFilesForRetention: vi.fn(async () => ({ exportFiles: 0, stagedImportFiles: 0, failures: 0 })),
+  purgeJobFilesForRetention: vi.fn(async () => ({ exportFiles: 0, stagedImportFiles: 0, orphanedFiles: 0, failures: 0 })),
 };
 
 /**
