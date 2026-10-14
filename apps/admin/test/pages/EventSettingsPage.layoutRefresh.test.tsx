@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { deferred, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 // Focused regression coverage for the shared-layout staleness fix: Settings is
 // the only page that mutates `archived_at`/other event fields, but every
@@ -268,6 +268,41 @@ describe("EventSettingsPage when the archived bar restores the event", () => {
     view.rerender(tree());
 
     await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("still reads the event again when the restore lands before the first read has finished", async () => {
+    mockLayoutEvent = { archived_at: archivedAt };
+    const firstRead = deferred<typeof activeEvent>();
+    vi.mocked(fetchEventSettings).mockReturnValueOnce(firstRead.promise);
+    const view = render(tree());
+
+    // The bar restores while the page is still waiting for its first read.
+    mockLayoutEvent = { archived_at: null };
+    view.rerender(tree());
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    await act(async () => {
+      firstRead.resolve({ ...activeEvent, status: "archived", archived_at: archivedAt });
+    });
+
+    await waitFor(() => expect((screen.getByLabelText("Event title") as HTMLInputElement).disabled).toBe(false));
+    expect(fetchEventSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the event again only once when the layout stays out of step with the server", async () => {
+    mockLayoutEvent = { archived_at: null };
+    // A new object on every read, as the real request gives: the same object would not render again.
+    vi.mocked(fetchEventSettings).mockImplementation(async () => ({
+      ...activeEvent,
+      status: "archived",
+      archived_at: archivedAt,
+    }));
+    render(tree());
+
+    await waitFor(() => expect(fetchEventSettings).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(fetchEventSettings).toHaveBeenCalledTimes(2);
   });
 

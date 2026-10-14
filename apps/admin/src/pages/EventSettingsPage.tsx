@@ -1213,15 +1213,21 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     await loadEventSettings({ eventId, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
-  // The archived bar restores (or archives) the event from outside this page: when the layout's state
-  // moves to one this page's snapshot does not have, read the event again and start the cards over
-  // (as archiving from the Danger Zone does), so the fields unlock and Save comes back without a reload.
-  const lastLayoutArchivedRef = useRef(layoutArchived);
+  // The archived bar restores (or archives) the event from outside this page: whenever the layout's state
+  // and this page's snapshot disagree, read the event again and start the cards over (as archiving from
+  // the Danger Zone does), so the fields unlock and Save comes back without a reload. It compares the two
+  // states, not the moment the layout changed: a restore that lands before the first read has finished
+  // is still seen once the (older) snapshot arrives. Each layout state is reconciled once, so a layout
+  // that stays out of step with the server (its own refresh failed) cannot make this read in a loop.
+  const reconciledLayoutArchivedRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
-    const changed = lastLayoutArchivedRef.current !== layoutArchived;
-    lastLayoutArchivedRef.current = layoutArchived;
-    if (!changed || layoutArchived === undefined || event === null) return;
-    if (layoutArchived === (event.status === "archived")) return;
+    if (layoutArchived === undefined || event === null) return;
+    if (layoutArchived === (event.status === "archived")) {
+      reconciledLayoutArchivedRef.current = undefined;
+      return;
+    }
+    if (reconciledLayoutArchivedRef.current === layoutArchived) return;
+    reconciledLayoutArchivedRef.current = layoutArchived;
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);

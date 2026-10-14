@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import "./archived-event-notice.css";
 
 interface ArchivedEventNoticeProps {
   event: EventDto;

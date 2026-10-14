@@ -8942,9 +8942,3 @@ output.mail-field-hint {
 .event-load-error .at-empty-state {
   padding-bottom: 1.5rem;
 }
-
-/* The archived-event bar sits above the page of every event screen (AdminShell); without this its
-   bottom edge touches the page title. */
-.archived-event-notice {
-  margin-bottom: var(--space-4);
-}
