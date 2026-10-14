@@ -173,7 +173,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `MAP_TILE_MAX_ZOOM` | optional | app | Organisation settings → External services | no | Max zoom for static maps. |
 | `GEOCODING_PROVIDER` | optional | app | Organisation settings → External services | no | Geocoding provider id (Nominatim path by default). |
 | `GEOCODING_BASE_URL` | optional | app | Organisation settings → External services | no | Geocoding API base URL (must not be private). |
-| `GEOCODING_TIMEOUT_MS` | optional | app | none | no | Nominatim/geocoding HTTP timeout (ms). No UI field. |
+| `GEOCODING_TIMEOUT_MS` | optional | app | none | no | Nominatim/geocoding HTTP timeout (ms) for one upstream request, counted from when it starts; time spent in the one-request-per-second queue before it is not included. No UI field. |
 | `MAPS_CONFIG_CACHE_TTL_MS` | optional | app | none | no | In-process maps config cache TTL. |
 | `ADMITTO_DEFAULT_EVENT_TIMEZONE` | optional | app | Event settings | no | Fallback IANA timezone when an event has none. |
 

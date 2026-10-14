@@ -112,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- The weather providers' replies (Open-Meteo and MET Norway) are now read with a 1 MB limit, counted on the bytes as they arrive, so a provider that sends an oversized or never-ending body can no longer fill the app's memory; the forecast is then shown as unavailable, like any other provider failure. Real replies are a few KB (Open-Meteo) to well under 200 KB (MET Norway). `GEOCODING_TIMEOUT_MS` is now documented as the limit of one request to the geocoding service, counted from when the request starts: the one-request-per-second queue in front of it is not part of it.
 - Custom email templates now preserve quoted HTML attribute context when an attribute contains literal angle brackets, so attendee values containing quotes remain data instead of creating another attribute.
 
 - Import upload and queue logs now use identifiers, counts and safe file metadata without recording uploaded filenames; authorized import history keeps the filename.

@@ -7,6 +7,7 @@
 import { NO_COMPRESSION_HEADERS } from "@admitto/shared";
 import { MET_NO_FORECAST_BASE_URL } from "./config.js";
 import { WeatherProviderError } from "./open-meteo-client.js";
+import { readJsonCapped } from "./read-json-capped.js";
 import type { DayForecast } from "./types.js";
 
 export interface MetNoClientOptions {
@@ -208,7 +209,7 @@ export class MetNoClient {
 
     let body: MetNoCompactJson;
     try {
-      body = (await response.json()) as MetNoCompactJson;
+      body = (await readJsonCapped(response)) as MetNoCompactJson;
     } catch (err) {
       throw new WeatherProviderError("unavailable", { cause: err });
     }
