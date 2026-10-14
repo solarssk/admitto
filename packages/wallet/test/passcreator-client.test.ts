@@ -1434,6 +1434,46 @@ describe("PassCreatorClient.createPass send deadline", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("counts the deadline from the check the caller reports, not from the call: a check as old as the deadline is dropped, a younger one is sent", async () => {
+    const { client, creationsSent } = provider();
+
+    const dropped = await client.createPass(INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS }).catch((err: unknown) => err);
+    expect(dropped).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(creationsSent()).toBe(0);
+
+    const sent = client.createPass(INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS + 1_000 });
+    await vi.advanceTimersByTimeAsync(150); // its turn in the pacing gate
+    await expect(sent).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(creationsSent()).toBe(1);
+  });
+
+  it("gives an update that is given a check the same deadline: dropped when the check is as old as the deadline, sent when it is younger", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(200, CREATED));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    const dropped = await client.updatePass("pass-1", INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS }).catch((err: unknown) => err);
+    expect(dropped).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const sent = client.updatePass("pass-1", INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS + 1_000 });
+    await vi.advanceTimersByTimeAsync(150); // its turn in the pacing gate
+    await expect(sent).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives an update that is not given a check no deadline, however far behind it is queued", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) =>
+      init?.method === "PATCH" ? jsonResponse(200, CREATED) : new Response(null, { status: 404 }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const queued = queue(client, FIRST_SLOT_TOO_LATE);
+    const late = client.updatePass("pass-1", INPUT);
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS + 1_000);
+    await expect(late).resolves.toBeDefined();
+    await Promise.all(queued);
+    expect(fetchMock).toHaveBeenCalledTimes(FIRST_SLOT_TOO_LATE + 1);
+  });
+
   it("leaves every other call alone: one queued as far behind as a dropped creation is still sent", async () => {
     const { client, fetchMock } = provider();
     const queued = queue(client, FIRST_SLOT_TOO_LATE);

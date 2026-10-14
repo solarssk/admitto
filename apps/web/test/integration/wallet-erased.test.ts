@@ -11,7 +11,7 @@ import {
   removeAttendees,
 } from "@admitto/tickets";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
-import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, WalletProviderError } from "@admitto/wallet";
+import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, PassCreatorClient, WalletProviderError } from "@admitto/wallet";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -47,7 +47,7 @@ function stubProvider(): Stub {
     voidPass: vi.fn(),
     restorePass: vi.fn(),
     deletePass: vi.fn(async () => undefined),
-    deletePassByUserProvidedId: vi.fn(async () => true),
+    deletePassByUserProvidedId: vi.fn(async () => false),
     findByUserProvidedId: vi.fn(async () => null),
     getPassSnapshot: vi.fn(async () => null),
   } as unknown as Stub;
@@ -164,6 +164,31 @@ async function staysPending(promise: Promise<unknown>, ms = 300): Promise<boolea
   return !settled;
 }
 
+/** The follow-up of an erasure with a provider that holds one pass under the reserved id (`held`) or none. */
+async function followUp(attendeeId: string, held = true) {
+  const provider = stubProvider();
+  if (held) provider.deletePassByUserProvidedId.mockResolvedValueOnce(true);
+  const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [attendeeId], provider);
+  return { provider, result };
+}
+
+/**
+ * The follow-up run when the erasure is old enough for "there is none" to be final. The creating request that raced the
+ * erasure does not mark the row removed (another creation of the same attendee may still be on its way); this is the
+ * run that does: it deletes by the recorded id again (idempotent), asks for the reserved id and settles the row.
+ */
+async function settleLater(attendeeId: string) {
+  const erasedAt = (await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } })).erased_at!;
+  const clock = vi.spyOn(Date, "now").mockReturnValue(erasedAt.getTime() + CREATION_SETTLE_WINDOW_MS);
+  try {
+    const run = await followUp(attendeeId, false);
+    expect(run.result).toMatchObject({ deleted: 1, undecided: 0, failedAttendeeIds: [] });
+    return run;
+  } finally {
+    clock.mockRestore();
+  }
+}
+
 describe("wallet pass creation racing an erasure", () => {
   it("waits for an erasure that is still open before saving, then saves no links and deletes the new pass", async () => {
     const { attendee, token } = await createAttendee();
@@ -186,7 +211,10 @@ describe("wallet pass creation racing an erasure", () => {
     expect(provider.deletePass).toHaveBeenCalledTimes(1);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
     expect(pass.apple_url).toBeNull();
-    expect(pass.provider_removed_at).not.toBeNull();
+    // The request deleted its pass but leaves the row for the follow-up: another creation may still be on its way.
+    expect(pass.provider_removed_at).toBeNull();
+    await settleLater(attendee.id);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).provider_removed_at).not.toBeNull();
   });
 
   it("deletes the new pass when the save fails while an erasure is still open, by waiting for that erasure", async () => {
@@ -218,7 +246,9 @@ describe("wallet pass creation racing an erasure", () => {
     expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
     expect(pass.apple_url).toBeNull();
-    expect(pass.provider_removed_at).not.toBeNull();
+    expect(pass.provider_removed_at).toBeNull();
+    await settleLater(attendee.id);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).provider_removed_at).not.toBeNull();
   });
 
   it("still saves the new pass when the erasure it waited longer than 5 s for is rolled back", async () => {
@@ -267,7 +297,9 @@ describe("wallet pass creation racing an erasure", () => {
     expect(provider.deletePass).toHaveBeenCalledWith(`pc-admitto:${EVENT_ID}:${attendee.id}`);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
     expect(pass).toMatchObject({ apple_url: null, provider_pass_id: `pc-admitto:${EVENT_ID}:${attendee.id}` });
-    expect(pass.provider_removed_at).not.toBeNull();
+    expect(pass.provider_removed_at).toBeNull();
+    await settleLater(attendee.id);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).provider_removed_at).not.toBeNull();
   });
 
   it("gives the provider ids to a pass row that exists already (a failed attempt), then deletes the new pass", async () => {
@@ -289,7 +321,9 @@ describe("wallet pass creation racing an erasure", () => {
       provider_pass_id: `pc-admitto:${EVENT_ID}:${attendee.id}`,
       user_provided_id: `admitto:${EVENT_ID}:${attendee.id}`,
     });
-    expect(pass.provider_removed_at).not.toBeNull();
+    expect(pass.provider_removed_at).toBeNull();
+    await settleLater(attendee.id);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).provider_removed_at).not.toBeNull();
   });
 
   it("does not send an attendee erased after the ticket was resolved to the provider", async () => {
@@ -428,7 +462,9 @@ describe("wallet pass creation racing an erasure", () => {
       user_agent: null,
       provider_pass_id: `pc-admitto:${EVENT_ID}:${attendee.id}`,
     });
-    expect(pass.provider_removed_at).not.toBeNull();
+    expect(pass.provider_removed_at).toBeNull();
+    await settleLater(attendee.id);
+    expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).provider_removed_at).not.toBeNull();
   });
 
   it("keeps the provider ids, not yet marked removed, when deleting the new pass fails", async () => {
@@ -468,10 +504,9 @@ describe("wallet pass creation racing an erasure", () => {
       user_provided_id: `admitto:${EVENT_ID}:${attendee.id}`,
       provider_removed_at: null,
     });
-    const followUp = stubProvider();
-    const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [attendee.id], followUp);
+    const { provider: holder, result } = await followUp(attendee.id);
     expect(result).toMatchObject({ deleted: 1, untrackedDeleted: 1, failedAttendeeIds: [] });
-    expect(followUp.deletePassByUserProvidedId).toHaveBeenCalledWith(`admitto:${EVENT_ID}:${attendee.id}`);
+    expect(holder.deletePassByUserProvidedId).toHaveBeenCalledWith(`admitto:${EVENT_ID}:${attendee.id}`);
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } })).provider_removed_at).not.toBeNull();
   });
 
@@ -500,12 +535,6 @@ describe("the id reserved for a pass before the provider is called", () => {
   const rowOf = (attendeeId: string) => prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
 
   /** The follow-up an erasure runs after it commits, against a stand-in provider that holds the pass. */
-  async function followUp(attendeeId: string) {
-    const provider = stubProvider();
-    const result = await deleteErasedWalletPasses(prisma, EVENT_ID, [attendeeId], provider);
-    return { provider, result };
-  }
-
   it("is on a pending pass row when the provider is called, and the row is the active pass afterwards", async () => {
     const { attendee, token } = await createAttendee();
     const provider = stubProvider();
@@ -545,6 +574,73 @@ describe("the id reserved for a pass before the provider is called", () => {
     await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
 
     expect(seen).toEqual({ status: "failed", last_error_code: "wallet_provider_rejected", user_provided_id: reservedId(attendee.id) });
+  });
+
+  /** The process is paused for three minutes right after the transaction that reserves the id (the first one of the
+   * request) has committed: `Date.now` stands still until then and jumps afterwards. Returns the moment the pause
+   * began and restores everything with `resume`. */
+  function pauseAfterReservation() {
+    const start = Date.now();
+    let now = start;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const realTransaction = prisma.$transaction.bind(prisma) as unknown as (...args: unknown[]) => Promise<unknown>;
+    let calls = 0;
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+      realTransaction(...args).then((result) => {
+        if (++calls === 1) now += 3 * 60_000;
+        return result;
+      })) as never);
+    return {
+      start,
+      resume: () => {
+        spy.mockRestore();
+        clock.mockRestore();
+      },
+    };
+  }
+
+  it("tells the provider when the attendee was read as not erased, as the id was reserved, and not when it is called", async () => {
+    const { attendee, token } = await createAttendee();
+    const provider = stubProvider();
+    const pause = pauseAfterReservation();
+
+    try {
+      await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    } finally {
+      pause.resume();
+    }
+
+    expect(provider.createPass).toHaveBeenCalledTimes(1);
+    expect(provider.createPass).toHaveBeenCalledWith(
+      expect.objectContaining({ userProvidedId: reservedId(attendee.id) }),
+      { checkedAt: pause.start },
+    );
+  });
+
+  it("sends nothing to the provider when the process was paused after the id was reserved for longer than a creation may take", async () => {
+    const { attendee, token } = await createAttendee();
+    const fetchMock = vi.fn(async (_input: string | URL | Request) => Response.json({ success: false }, { status: 500 }));
+    const provider = new PassCreatorClient({ apiKey: "test-key", templateId: "tmpl-wallet-erased", baseUrl: "https://provider.example.com" }, fetchMock);
+    const pause = pauseAfterReservation();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    let res: Response;
+    try {
+      res = await makeApp(provider).request(`/t/${token}/wallet/apple`, { redirect: "manual" });
+    } finally {
+      pause.resume();
+      errSpy.mockRestore();
+    }
+
+    expect(res.headers.get("location")).toBe(`/t/${token}?walletError=1`);
+    expect(fetchMock).not.toHaveBeenCalled();
+    // The id stays on the row: the follow-up of an erasure is what looks for a pass that may exist.
+    expect(await rowOf(attendee.id)).toMatchObject({
+      status: "failed",
+      last_error_code: "wallet_provider_timeout",
+      provider_pass_id: null,
+      user_provided_id: reservedId(attendee.id),
+    });
   });
 
   it("waits longer than 5 s for an erasure that is then rolled back, reserves the id and carries on", async () => {
@@ -794,7 +890,7 @@ describe("the id reserved for a pass before the provider is called", () => {
       provider_pass_id: `pc-${reservedId(attendee.id)}`,
       provider_removed_at: null,
     });
-    const { provider: next } = await followUp(attendee.id);
+    const { provider: next } = await settleLater(attendee.id);
     expect(next.deletePass).toHaveBeenCalledWith(`pc-${reservedId(attendee.id)}`);
     expect((await rowOf(attendee.id)).provider_removed_at).not.toBeNull();
   });

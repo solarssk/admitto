@@ -16,6 +16,7 @@ export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
   ERASED_EMAIL_DOMAIN,
+  ERASE_TRANSACTION_TIMEOUT_MS,
   erasedAttendeeEmail,
   eraseAttendees,
   isErasedPlaceholderEmail,
@@ -41,12 +42,15 @@ export type {
 export {
   CREATION_SETTLE_WINDOW_MS,
   PASS_ROW_STILL_AT_PROVIDER,
+  SETTLED_RECHECK_HORIZON_MS,
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,
   passIsStillToDelete,
+  recheckSettledWalletPasses,
   reservedPassId,
+  settledUntrackedPassRow,
 } from "./erase-wallet-passes.js";
-export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
+export type { EraseWalletPassesResult, RecheckSettledWalletPassesResult } from "./erase-wallet-passes.js";
 export type {
   EraseAttendeesParams,
   EraseAttendeesResult,

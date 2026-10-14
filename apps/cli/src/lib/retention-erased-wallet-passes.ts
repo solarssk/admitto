@@ -5,9 +5,11 @@ import {
   deleteErasedWalletPasses,
   erasedPassToDeleteWhere,
   parseWalletFieldMapping,
+  recheckSettledWalletPasses,
   type EraseWalletPassesResult,
 } from "@admitto/tickets";
 import { resolveConfiguredWalletProvider, type WalletPassProvider } from "@admitto/wallet";
+import { recheckSettledWalletPassesOfEvents } from "./retention-settled-wallet-passes.js";
 
 /** How long one sweep may spend at the provider. The worker's retention job holds up the next drain while it runs. */
 const DEFAULT_BUDGET_MS = 60_000;
@@ -65,12 +67,20 @@ type EventToSweep = EventWalletCredentials & { id: string };
 export type ErasedWalletSweepDeps = {
   resolveProvider: (event: EventToSweep) => WalletPassProvider | null;
   deletePasses: typeof deleteErasedWalletPasses;
+  /** The second look at passes that were settled on "there is none" (retention-settled-wallet-passes.ts), with the time the sweep has left. */
+  recheckSettled: (db: PrismaClient, options: { budgetMs: number }) => Promise<void>;
   nowMs: () => number;
 };
 
 const realDeps: ErasedWalletSweepDeps = {
   resolveProvider: resolveEventWalletProvider,
   deletePasses: deleteErasedWalletPasses,
+  recheckSettled: (db, options) =>
+    recheckSettledWalletPassesOfEvents(db, options, {
+      resolveProvider: resolveEventWalletProvider,
+      recheck: recheckSettledWalletPasses,
+      nowMs: () => Date.now(),
+    }),
   nowMs: () => Date.now(),
 };
 
@@ -315,6 +325,9 @@ export async function sweepErasedWalletPasses(
     await sweepEvent({ db, provider, budget, deps, tally }, event.id, range); // NOSONAR - one event at a time on purpose, see surveyEvents
   }
   if (!options.dryRun) await keepPlace(db, tally, before);
+  // Whatever time is left goes to the second look at passes that were settled on "there is none", which the walk above
+  // does not see: they are marked removed. After the walk, so that a pass still to delete always comes first.
+  if (!options.dryRun) await deps.recheckSettled(db, { budgetMs: budget.ms - (deps.nowMs() - budget.startedAt) });
   result.deleted = tally.deleted;
   result.failed = tally.failed;
   result.undecided = tally.undecided;

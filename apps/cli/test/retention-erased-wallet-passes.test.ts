@@ -68,6 +68,7 @@ describe("sweepErasedWalletPasses", () => {
   let passes: Pass[];
   let deletePasses: ReturnType<typeof vi.fn>;
   let resolveProvider: ReturnType<typeof vi.fn>;
+  let recheckSettled: ReturnType<typeof vi.fn>;
   let clock: number;
   let deps: ErasedWalletSweepDeps;
 
@@ -81,9 +82,11 @@ describe("sweepErasedWalletPasses", () => {
       return { deleted: attendeeIds.length, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
     });
     resolveProvider = vi.fn(() => provider);
+    recheckSettled = vi.fn(async () => undefined);
     deps = {
       resolveProvider: resolveProvider as ErasedWalletSweepDeps["resolveProvider"],
       deletePasses: deletePasses as unknown as ErasedWalletSweepDeps["deletePasses"],
+      recheckSettled: recheckSettled as ErasedWalletSweepDeps["recheckSettled"],
       nowMs: () => clock,
     };
   });
@@ -365,6 +368,46 @@ describe("sweepErasedWalletPasses", () => {
     expect(deletePasses.mock.calls[0]![4]).toEqual({ budgetMs: 15_000 });
     expect(result).toEqual({ pending: 255, deleted: 100, failed: 0, undecided: 0, noProvider: 0, notTried: 155 });
     expect(erasedWalletPassesLeft(result)).toBe(155);
+  });
+
+  describe("the second look at passes that were settled on 'there is none'", () => {
+    it("comes after the walk over the pending passes, with the time the walk left", async () => {
+      passes.push(...passesOf("evt-1", 2));
+      const order: string[] = [];
+      deletePasses.mockImplementationOnce(async (_db: unknown, _eventId: string, attendeeIds: string[]) => {
+        order.push("walk");
+        clock += 20_000;
+        for (const pass of passes) if (attendeeIds.includes(pass.attendee_id)) pass.removed = true;
+        return { deleted: attendeeIds.length, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+      });
+      recheckSettled.mockImplementationOnce(async () => {
+        order.push("look");
+      });
+      const db = fakeDb([eventRow("evt-1")], passes);
+
+      await sweepErasedWalletPasses(db, { dryRun: false, budgetMs: 60_000 }, deps);
+
+      expect(order).toEqual(["walk", "look"]);
+      expect(recheckSettled).toHaveBeenCalledTimes(1);
+      expect(recheckSettled).toHaveBeenCalledWith(db, { budgetMs: 40_000 });
+    });
+
+    it("also runs when nothing is pending, because the passes it looks at are marked removed", async () => {
+      const db = fakeDb([eventRow("evt-1")], passes);
+
+      const result = await sweepErasedWalletPasses(db, { dryRun: false }, deps);
+
+      expect(result).toEqual({ pending: 0, deleted: 0, failed: 0, undecided: 0, noProvider: 0, notTried: 0 });
+      expect(recheckSettled).toHaveBeenCalledWith(db, { budgetMs: 60_000 });
+    });
+
+    it("does not run in a dry run, which only counts", async () => {
+      passes.push(...passesOf("evt-1", 2));
+
+      await sweepErasedWalletPasses(fakeDb([eventRow("evt-1")], passes), { dryRun: true }, deps);
+
+      expect(recheckSettled).not.toHaveBeenCalled();
+    });
   });
 
   it("stops when a page reports passes it did not get to, and counts them as not tried", async () => {

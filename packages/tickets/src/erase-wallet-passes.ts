@@ -1,4 +1,4 @@
-import { walletFailureCode } from "@admitto/wallet";
+import { WalletProviderError, walletFailureCode } from "@admitto/wallet";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import type { WalletPassProvider } from "@admitto/wallet";
 import { walletUserProvidedId } from "./wallet-pass-input.js";
@@ -10,9 +10,10 @@ const DELETE_CONCURRENCY = 8;
  * was creating the pass when the person was erased does not stop when the erasure commits, so its pass can still reach
  * the provider after that answer, and if the request dies or times out nothing clears the mark on the row afterwards.
  * Once the erasure is older than this, no such request can still send anything: `createPass` never sends its request
- * later than CREATE_PASS_DEADLINE_MS (2 minutes) after it was called, whatever it waited for, the request itself ends
- * within the client's 15 s timeout, and the provider's own lag is seconds, so this is several times what a creation
- * can take (a test keeps it at least 4 times CREATE_PASS_DEADLINE_MS). A pass the provider does hold is deleted at once.
+ * later than CREATE_PASS_DEADLINE_MS (2 minutes) after the check that the attendee was not erased, whatever it waited
+ * for and however long the process was paused, the request itself ends within the client's 15 s timeout, and the
+ * provider's own lag is seconds, so this is several times what a creation can take (a test keeps it at least 4 times
+ * CREATE_PASS_DEADLINE_MS). A pass the provider does hold is deleted at once.
  */
 export const CREATION_SETTLE_WINDOW_MS = 10 * 60_000;
 
@@ -27,8 +28,9 @@ const CREDENTIALS_CHANGED_CODE = "wallet_credential_changed";
 export type EraseWalletPassesResult = {
   /** Passes deleted at the provider (or already gone there) and marked as removed. */
   deleted: number;
-  /** Of `deleted`, the passes Admitto had no provider id for that the provider did hold: found by the id reserved
-   * for them and deleted. The others were gone already, or were never made. */
+  /** Passes the provider held under the id reserved for a pass that Admitto had not recorded (the only pass of a row,
+   * or a second one beside the recorded pass: two creations at once can both succeed), found by that id and deleted.
+   * Counted when found, also for a row that is not settled yet. */
   untrackedDeleted: number;
   /** Passes the provider has none of, but whose creation may still have been under way when the person was erased (the
    * erasure is younger than {@link CREATION_SETTLE_WINDOW_MS}): not marked removed, so the next run asks again. */
@@ -86,6 +88,7 @@ type PassToDelete = {
   provider_pass_id: string | null;
   user_provided_id: string | null;
   last_error_code: string | null;
+  issued_at: Date | null;
   attendee: { erased_at: Date | null };
 };
 
@@ -99,17 +102,22 @@ export function reservedPassId(eventId: string, pass: { attendee_id: string; use
   return pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id);
 }
 
-/** What the provider said about one pass: it deleted a pass it held under the reserved id ("found"), the pass is gone
- * ("gone": deleted by its own id, or none under the reserved id and the erasure is old enough to rely on that), there
- * is none yet but one may still turn up ("undecided"), or there is none in the account the event uses now, but the
- * pass may be in another one ("elsewhere", see {@link CREDENTIALS_CHANGED_CODE}). */
-type Settled = "gone" | "found" | "undecided" | "elsewhere";
+/** What a pass came to: the verdict on its row, and whether the provider held a pass under the reserved id that Admitto
+ * had not recorded (the only one of an unrecorded row, or a second one beside the recorded pass), found and deleted. The
+ * verdict is "gone" (the row can be marked removed), "undecided" (there is none now, but a creation may still be on its
+ * way, so the row stays as it is and the next run asks again) or "elsewhere" (there is none in the account the event uses
+ * now, but the pass may be in another one, see {@link CREDENTIALS_CHANGED_CODE}). */
+type Answer = { verdict: "gone" | "undecided" | "elsewhere"; found: boolean };
 
-/** What became of one pass: gone (and whether Admitto had no id for it, yet the provider held it), not yet decided, or failed. */
+/** What became of one pass: gone, not yet decided (each with whether an unrecorded pass was found), or failed. */
 type Outcome =
   | { kind: "gone"; untracked: boolean }
-  | { kind: "undecided" }
+  | { kind: "undecided"; untracked: boolean }
   | { kind: "failed"; attendeeId: string; code: string };
+
+/** How many passes under one reserved id a run deletes before it gives up on the row. The provider does not enforce the
+ * uniqueness of that id strictly under concurrent creations, so there can be a second pass (two taps at once), but not many. */
+const MAX_PASSES_UNDER_ONE_ID = 5;
 
 /** Whether the erasure is old enough for "there is no pass" to be final (see {@link CREATION_SETTLE_WINDOW_MS}). */
 function erasureIsSettled(erasedAt: Date | null): boolean {
@@ -117,21 +125,49 @@ function erasureIsSettled(erasedAt: Date | null): boolean {
 }
 
 /**
- * Deletes one pass at the provider. A row with the provider's id is deleted by it. A row without one is deleted by the
- * id reserved for it, which the provider answers from its own record: a pass was deleted ("found"), or there was none,
- * which settles the row ("gone") only once the erasure is old enough, because a pass whose creation was already under
- * way can still reach the provider after that answer ("undecided"), and never when the row says the pass may be in an
- * account the event no longer uses ("elsewhere").
+ * Whether nothing of this row can still be on its way to the provider: the erasure is old enough, or, for a recorded
+ * pass, so is the creation that recorded it (a creation that overlapped it, and was given up on, lands within the same
+ * window after it). A recorded pass of a person who was erased long after they got it is settled at once.
  */
-async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<Settled> {
-  if (pass.provider_pass_id !== null) {
-    await provider.deletePass(pass.provider_pass_id);
-    return "gone";
+function creationsAreSettled(pass: PassToDelete): boolean {
+  if (erasureIsSettled(pass.attendee.erased_at)) return true;
+  return pass.provider_pass_id !== null && pass.issued_at !== null && Date.now() - pass.issued_at.getTime() >= CREATION_SETTLE_WINDOW_MS;
+}
+
+/**
+ * Deletes every pass the provider holds under `id`, one after the other, until it has none, and says how many there were.
+ * Throws when it still finds one after {@link MAX_PASSES_UNDER_ONE_ID} deletions (a delete that does not take, or the same
+ * pass answered again), so that the row stays still to delete with the failure code of the provider.
+ */
+async function deletePassesUnder(provider: WalletPassProvider, id: string, deleted = 0): Promise<number> {
+  if (!(await provider.deletePassByUserProvidedId(id))) return deleted;
+  if (deleted >= MAX_PASSES_UNDER_ONE_ID) {
+    throw new WalletProviderError("wallet_provider_rejected", "The provider still holds a pass under the reserved id.");
   }
-  const found = await provider.deletePassByUserProvidedId(reservedPassId(eventId, pass));
-  if (found) return "found";
-  if (pass.last_error_code === CREDENTIALS_CHANGED_CODE) return "elsewhere";
-  return erasureIsSettled(pass.attendee.erased_at) ? "gone" : "undecided";
+  return deletePassesUnder(provider, id, deleted + 1);
+}
+
+/**
+ * The verdict on a row once its passes are deleted. An unrecorded pass that turned up settles its row at once (the
+ * second look asks about the id again). Otherwise "there is none" settles it only when no creation can still be on its
+ * way ({@link creationsAreSettled}), and never when the row says the pass may be in an account the event no longer uses.
+ */
+function verdictOf(pass: PassToDelete, found: boolean): Answer["verdict"] {
+  if (found && pass.provider_pass_id === null) return "gone";
+  if (!found && pass.last_error_code === CREDENTIALS_CHANGED_CODE) return "elsewhere";
+  return creationsAreSettled(pass) ? "gone" : "undecided";
+}
+
+/**
+ * Deletes one pass at the provider: a row with the provider's id by it, then, for every row, whatever the provider holds
+ * under the id reserved for it, which it answers from its own record. The second step is what finds an unrecorded pass,
+ * and a second pass beside a recorded one.
+ */
+async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<Answer> {
+  if (pass.provider_pass_id !== null) await provider.deletePass(pass.provider_pass_id);
+  const reservedId = reservedPassId(eventId, pass);
+  const found = (await deletePassesUnder(provider, reservedId)) > 0;
+  return { found, verdict: verdictOf(pass, found) };
 }
 
 async function deleteOne(
@@ -141,16 +177,16 @@ async function deleteOne(
   pass: PassToDelete,
 ): Promise<Outcome> {
   try {
-    const settled = await deleteAtProvider(provider, eventId, pass);
-    if (settled === "undecided") return { kind: "undecided" };
-    if (settled === "elsewhere") return { kind: "failed", attendeeId: pass.attendee_id, code: CREDENTIALS_CHANGED_CODE };
+    const { verdict, found } = await deleteAtProvider(provider, eventId, pass);
+    if (verdict === "undecided") return { kind: "undecided", untracked: found };
+    if (verdict === "elsewhere") return { kind: "failed", attendeeId: pass.attendee_id, code: CREDENTIALS_CHANGED_CODE };
     await db.walletPass.updateMany({
       // The provider's id as it was read: a row that was given one meanwhile (a creating request that finished after
       // this read) holds another pass, which is still to be deleted.
       where: { attendee_id: pass.attendee_id, provider_pass_id: pass.provider_pass_id, provider_removed_at: null },
       data: { provider_removed_at: new Date() },
     });
-    return { kind: "gone", untracked: settled === "found" };
+    return { kind: "gone", untracked: found };
   } catch (err) {
     return { kind: "failed", attendeeId: pass.attendee_id, code: walletFailureCode(err) };
   }
@@ -163,12 +199,12 @@ function recordOutcome(result: EraseWalletPassesResult, codes: Set<string>, outc
     codes.add(outcome.code);
     return;
   }
+  if (outcome.untracked) result.untrackedDeleted += 1;
   if (outcome.kind === "undecided") {
     result.undecided += 1;
     return;
   }
   result.deleted += 1;
-  if (outcome.untracked) result.untrackedDeleted += 1;
 }
 
 /**
@@ -179,12 +215,14 @@ function recordOutcome(result: EraseWalletPassesResult, codes: Set<string>, outc
  * same attendees retries only what failed. The pass row is re-read here rather than taken from the
  * erasure's own result, so a pass created by a request that raced the erasure is found too.
  *
- * A pass the creating request could not record (see {@link PASS_ROW_STILL_AT_PROVIDER}) has no provider id on its row,
- * only the id reserved for it before the provider was called: it is deleted by that id (one call, answered by the
- * provider's own record). A pass that was found is deleted and the row marked removed at once. "There is none" marks
- * the row removed only when the erasure is older than {@link CREATION_SETTLE_WINDOW_MS}: a request that was creating
- * the pass when the person was erased can still finish at the provider after that answer, so before then the row is
- * left as it is (`undecided`) and the next call asks again.
+ * Every row is then asked for the id reserved for its pass before the provider was called, which the provider answers
+ * from its own record, and whatever it holds under that id is deleted, until it has none. That is how a pass the
+ * creating request could not record (see {@link PASS_ROW_STILL_AT_PROVIDER}: no provider id on the row, only that id)
+ * is found, and also a second pass beside a recorded one (two creations at once can both succeed). A row of an
+ * unrecorded pass that was found is marked removed at once (the sweep asks again, see
+ * {@link recheckSettledWalletPasses}). "There is none" marks a row removed only when no creation can still be on its
+ * way: the erasure is older than {@link CREATION_SETTLE_WINDOW_MS}, or, for a recorded pass, so is the creation that
+ * recorded it. Before then the row is left as it is (`undecided`) and the next call asks again.
  *
  * Deleting at the provider is idempotent (a pass that is already gone counts as deleted), and a
  * failure for one pass never stops the others. `budgetMs` bounds how long the whole run may take:
@@ -215,6 +253,7 @@ export async function deleteErasedWalletPasses(
       provider_pass_id: true,
       user_provided_id: true,
       last_error_code: true,
+      issued_at: true,
       attendee: { select: { erased_at: true } },
     },
     // In attendee id order, so that what was not tried (`notTried`) is the last of the ids, and a caller that
@@ -238,5 +277,93 @@ export async function deleteErasedWalletPasses(
   };
   await runFrom(0);
   result.failureCodes = [...codes];
+  return result;
+}
+
+/**
+ * How long after a pass row was marked removed the daily sweep keeps asking the provider for the id reserved for it.
+ * "There is none" is an answer about one moment: a creation can reach the provider after it in ways that nothing inside
+ * one process can rule out (a process paused after its last check and before its send, a provider that lags behind its
+ * own record, a clock that is off), and nothing else would look at a row that is marked removed. A week of asking turns
+ * "never found" into "found within a day".
+ */
+export const SETTLED_RECHECK_HORIZON_MS = 7 * 24 * 3_600_000;
+
+/** How many rows of one event a second look asks about in one sweep, the newest first. */
+const RECHECK_LIMIT = 1000;
+
+/**
+ * The rows the second look asks about, as far as the row goes: an unrecorded pass (no provider id, only the id reserved
+ * for it, or a failed creation with none) that was marked removed since `since`. The attendee's part (erased, of this
+ * event) is added by {@link recheckSettledWalletPasses}.
+ */
+export function settledUntrackedPassRow(since: Date): Prisma.WalletPassWhereInput {
+  return {
+    provider_pass_id: null,
+    provider_removed_at: { gte: since },
+    OR: [{ user_provided_id: { not: null } }, { status: "failed" }],
+  };
+}
+
+/** What a second look did: how many ids the provider answered for, how many of them held a pass (deleted now), how many it
+ * could not answer, and whether rows were left unasked (there were more than the limit, or the time ran out). */
+export type RecheckSettledWalletPassesResult = { checked: number; found: number; failed: number; incomplete: boolean };
+
+type PassToRecheck = { attendee_id: string; user_provided_id: string | null };
+
+/** Asks the provider once for a pass of a settled row and deletes it if it is there: "found", "none" or "failed". */
+async function recheckOne(provider: WalletPassProvider, eventId: string, pass: PassToRecheck): Promise<"found" | "none" | "failed"> {
+  try {
+    const found = await deletePassesUnder(provider, reservedPassId(eventId, pass));
+    return found > 0 ? "found" : "none";
+  } catch {
+    return "failed";
+  }
+}
+
+/**
+ * The second look at the unrecorded passes of erased attendees of one event that were marked removed within
+ * {@link SETTLED_RECHECK_HORIZON_MS} (the newest first, at most `limit`): asks the provider for each reserved id again
+ * and deletes a pass that has turned up since the row was settled. It writes nothing: the row stays marked removed,
+ * and a pass that is found says that an answer of "none" came too early, which the caller reports. A failure only
+ * counts, since tomorrow's sweep asks again. `budgetMs` bounds the whole run like it does for the deletes.
+ */
+export async function recheckSettledWalletPasses(
+  db: PrismaClient,
+  eventId: string,
+  provider: WalletPassProvider,
+  options: { budgetMs?: number; limit?: number } = {},
+): Promise<RecheckSettledWalletPassesResult> {
+  const result: RecheckSettledWalletPassesResult = { checked: 0, found: 0, failed: 0, incomplete: false };
+  const limit = options.limit ?? RECHECK_LIMIT;
+  const passes = await db.walletPass.findMany({
+    where: {
+      ...settledUntrackedPassRow(new Date(Date.now() - SETTLED_RECHECK_HORIZON_MS)),
+      attendee: { event_id: eventId, erased_at: { not: null } },
+    },
+    select: { attendee_id: true, user_provided_id: true },
+    orderBy: { provider_removed_at: "desc" },
+    take: limit,
+  });
+  // A full page says that there may be more rows than were read.
+  result.incomplete = passes.length === limit;
+  const startedAt = Date.now();
+  const runFrom = async (i: number): Promise<void> => {
+    if (i >= passes.length) return;
+    if (options.budgetMs !== undefined && Date.now() - startedAt >= options.budgetMs) {
+      result.incomplete = true;
+      return;
+    }
+    const outcomes = await Promise.all(passes.slice(i, i + DELETE_CONCURRENCY).map((pass) => recheckOne(provider, eventId, pass)));
+    for (const outcome of outcomes) {
+      if (outcome === "failed") result.failed += 1;
+      else {
+        result.checked += 1;
+        if (outcome === "found") result.found += 1;
+      }
+    }
+    await runFrom(i + DELETE_CONCURRENCY);
+  };
+  await runFrom(0);
   return result;
 }

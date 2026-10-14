@@ -49,7 +49,9 @@ export type EraseAttendeesResult = {
     checkIns: number;
     walletPasses: number;
   };
-  /** Provider passes of the erased attendees that are not deleted at the provider yet. */
+  /** Provider passes of the erased attendees that are not deleted at the provider yet: the ones that hold the provider's id
+   * only. Not the question "what is still to delete" (an unrecorded pass has only its reserved id): the follow-up reads
+   * the rows itself, with `erasedPassToDeleteWhere` (erase-wallet-passes.ts), which is what the callers go by. */
   walletTargets: EraseWalletTarget[];
   /**
    * The addresses the erased attendees had, lower-cased: the current one and the one their first
@@ -76,6 +78,9 @@ function truncatedToLocalHour(column: Prisma.Sql, timeZone: string): Prisma.Sql 
   return Prisma.sql`${column} - (${local} - DATE_TRUNC('hour', ${local}))`;
 }
 
+/** How long the transaction of an erasure may run (the callers pass it to `$transaction`). */
+export const ERASE_TRANSACTION_TIMEOUT_MS = 60_000;
+
 /**
  * Erase personal data of attendees in place (GDPR "Erase personal data"): the row, its id, ticket
  * type, status history, admission and RSVP state stay, so the Reports totals keep their numbers,
@@ -97,6 +102,10 @@ function truncatedToLocalHour(column: Prisma.Sql, timeZone: string): Prisma.Sql 
  * - The wallet pass keeps its provider ids (to delete it at the provider, retryably) and loses
  *   every link, device and token.
  * - The "created manually" entry in the central audit log loses the name and email it recorded.
+ *
+ * The transaction an erasure runs in is aborted after {@link ERASE_TRANSACTION_TIMEOUT_MS}. `erased_at` is Postgres's
+ * NOW(), the moment that transaction started, so the commit can come that long after it: the window of
+ * `CREATION_SETTLE_WINDOW_MS` (erase-wallet-passes.ts) counts from `erased_at` and has to cover it.
  *
  * Not done here: deleting the pass at the provider (network call, the caller does it from
  * `walletTargets` after commit), clearing event-level job results, and making every code path
