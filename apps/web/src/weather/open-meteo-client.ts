@@ -13,6 +13,7 @@ import {
   unbracketHostname,
 } from "@admitto/shared/ssrf-guard";
 import { FORECAST_HORIZON_DAYS_OPENMETEO, type WeatherConfig } from "./config.js";
+import { readJsonCapped } from "./read-json-capped.js";
 import type { DayForecast } from "./types.js";
 
 export class WeatherProviderError extends Error {
@@ -127,7 +128,7 @@ export class OpenMeteoClient {
       }
       let body: ForecastDailyJson;
       try {
-        body = (await response.json()) as ForecastDailyJson;
+        body = (await readJsonCapped(response)) as ForecastDailyJson;
       } catch (err) {
         throw new WeatherProviderError("unavailable", { cause: err });
       }
