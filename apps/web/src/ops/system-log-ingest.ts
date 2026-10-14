@@ -107,16 +107,19 @@ export async function handleOpsSystemLogIngest(
     return c.json({ error: "unauthorized" }, 401);
   }
 
-  // After the token check: an unauthorized request is answered 401 without reading its body.
-  const tooLarge = await opsLogBodyLimit(c as Context<Env, string>, () => Promise.resolve());
-  if (tooLarge) return tooLarge;
-
+  // After the token check: an unauthorized request is answered 401 without reading its body. The
+  // read happens inside the limiter's `next`, so the cap holds however `bodyLimit` enforces it.
   let raw: unknown;
-  try {
-    raw = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid_json" }, 400);
-  }
+  let unreadable = false;
+  const tooLarge = await opsLogBodyLimit(c as Context<Env, string>, async () => {
+    try {
+      raw = await c.req.json();
+    } catch {
+      unreadable = true;
+    }
+  });
+  if (tooLarge) return tooLarge;
+  if (unreadable) return c.json({ error: "invalid_json" }, 400);
 
   const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) {

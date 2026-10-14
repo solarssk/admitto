@@ -258,14 +258,19 @@ const checkinBodyLimit = bodyLimit({
  * before any of its body is read; the size cap then applies before the body is parsed.
  */
 export async function parseScanBodyMiddleware(c: Context, next: Next): Promise<Response | void> {
-  const tooLarge = await checkinBodyLimit(c as Context<Env, string>, () => Promise.resolve());
-  if (tooLarge) return tooLarge;
+  // The read happens inside the limiter's `next`, so the cap holds however `bodyLimit` enforces it
+  // (a declared length is refused before `next` runs, a chunked body while it is read).
   let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid JSON" }, 400);
-  }
+  let unreadable = false;
+  const tooLarge = await checkinBodyLimit(c as Context<Env, string>, async () => {
+    try {
+      body = await c.req.json();
+    } catch {
+      unreadable = true;
+    }
+  });
+  if (tooLarge) return tooLarge;
+  if (unreadable) return c.json({ error: "invalid JSON" }, 400);
   if (!body || typeof body !== "object") {
     return c.json({ error: "body required" }, 400);
   }
