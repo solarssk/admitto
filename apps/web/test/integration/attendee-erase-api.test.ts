@@ -35,6 +35,7 @@ const ORG_ID = "org-erase-api";
 const EVENT_ID = "evt-erase-api";
 const ARCHIVED_EVENT_ID = "evt-erase-api-archived";
 const WALLET_OFF_EVENT_ID = "evt-erase-api-wallet-off";
+const NO_WALLET_EVENT_ID = "evt-erase-api-no-wallet";
 const OTHER_ORG_ID = "org-erase-api-other";
 const OTHER_ADMIN_EMAIL = "erase-api-other-admin@example.com";
 const SUPER_EMAIL = "erase-api-super@example.com";
@@ -73,7 +74,7 @@ async function createAttendee(eventId = EVENT_ID, extra: Record<string, unknown>
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
-  for (const id of [EVENT_ID, ARCHIVED_EVENT_ID, WALLET_OFF_EVENT_ID]) {
+  for (const id of [EVENT_ID, ARCHIVED_EVENT_ID, WALLET_OFF_EVENT_ID, NO_WALLET_EVENT_ID]) {
     await prisma.adminJob.deleteMany({ where: { event_id: id } });
     await prisma.attendeeActionLog.deleteMany({ where: { event_id: id } });
     await prisma.walletPass.deleteMany({ where: { attendee: { event_id: id } } });
@@ -108,6 +109,10 @@ beforeAll(async () => {
       wallet_api_key_enc: encryptToString("erase-api-key-off"),
       ...base,
     },
+  });
+  // No credentials at all, and not archived: a removal is allowed and has no provider to call.
+  await prisma.event.create({
+    data: { id: NO_WALLET_EVENT_ID, title: "No Wallet", slug: "erase-api-no-wallet", ...base },
   });
 
   for (const email of [OTHER_ADMIN_EMAIL]) {
@@ -343,11 +348,18 @@ const reservedId = (eventId: string, attendeeId: string) => `admitto:${eventId}:
 const ISSUED_LONG_AGO = () => new Date(Date.now() - 3 * 24 * 3_600_000);
 
 /** PassCreator as the follow-up meets it: the v1 read resolves a reserved id to the pass that has it (while `held` says
- * so, and the pass has not been deleted), or answers 404; the v3 delete deletes a pass by its UID; anything else is a 200. */
-const passcreatorHolding = (held: (userProvidedId: string) => boolean = () => false) => {
+ * so, and the pass has not been deleted), or answers 404; the v3 delete deletes a pass by its UID; anything else is a 200.
+ * `refuse` makes it answer 500 to the requests it says yes to (each written "METHOD /path", as `requests` lists them),
+ * and `beforeRequest` runs before each request is answered. */
+const passcreatorHolding = (
+  held: (userProvidedId: string) => boolean = () => false,
+  options: { refuse?: (request: string) => boolean; beforeRequest?: (request: string) => Promise<void> } = {},
+) => {
   const deleted = new Set<string>();
   return vi.fn(async (url: unknown, init?: RequestInit) => {
     const { pathname } = new URL(String(url));
+    await options.beforeRequest?.(`${init?.method} ${pathname}`);
+    if (options.refuse?.(`${init?.method} ${pathname}`)) return new Response("down", { status: 500 });
     if (init?.method === "GET" && pathname.startsWith("/api/pass/")) {
       const id = decodeURIComponent(pathname.slice("/api/pass/".length));
       if (!held(id) || deleted.has(id)) return new Response(null, { status: 404 });
@@ -1303,6 +1315,460 @@ describe("removing attendees from an event", () => {
       (entry) => entry.message === "wallet_pass_erasure_delete_failed" && entry.fields?.attendeeId === a.id,
     );
     expect(logged).toHaveLength(2);
+  });
+
+  describe("a wallet pass whose row holds no provider id", () => {
+    const reservedFor = (attendeeId: string, eventId = EVENT_ID) => `admitto:${eventId}:${attendeeId}`;
+    const readOf = (id: string) => `GET /api/pass/${encodeURIComponent(id)}`;
+    /** What the provider is asked for a pass it holds: the read of the id, the delete of the pass the read found, and a
+     * read that finds none (more than one pass can sit under one id, so an id is asked about until the provider has none). */
+    const askedFor = (id: string) => [readOf(id), `DELETE /api/v3/pass/${encodeURIComponent(`pc-uid-${id}`)}`, readOf(id)];
+    const withRow = async (row: { status: string; user_provided_id?: string; provider_removed_at?: Date; provider_pass_id?: string; left_behind_pass_id?: string }, eventId = EVENT_ID) => {
+      const a = await createAttendee(eventId);
+      await prisma.walletPass.create({ data: { attendee_id: a.id, ...row } });
+      return a;
+    };
+    const reserved = async (eventId = EVENT_ID) => {
+      const a = await createAttendee(eventId);
+      await prisma.walletPass.create({ data: { attendee_id: a.id, status: "pending", user_provided_id: reservedFor(a.id, eventId) } });
+      return a;
+    };
+    const failedLines = () => querySystemLogs({ search: "wallet_pass_erasure_delete_failed" });
+    const rowCount = (ids: string[]) => prisma.walletPass.count({ where: { attendee_id: { in: ids } } });
+
+    beforeEach(() => {
+      resetSystemLogBufferForTest();
+    });
+
+    it("is deleted at the provider by the id reserved for it, while its row is still there, and the person is removed", async () => {
+      const a = await reserved();
+      const rowThen: number[] = [];
+      const fetchMock = passcreatorHolding(() => true, {
+        beforeRequest: async () => {
+          rowThen.push(await prisma.walletPass.count({ where: { attendee_id: a.id } }));
+        },
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual(askedFor(reservedFor(a.id)));
+      expect(rowThen).toEqual([1, 1, 1]);
+      expect(await rowCount([a.id])).toBe(0);
+      expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("is deleted by the id on the row, which is not always the deterministic one", async () => {
+      const a = await withRow({ status: "pending", user_provided_id: "admitto:older-event:older-attendee" });
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(requests(fetchMock)).toEqual(askedFor("admitto:older-event:older-attendee"));
+    });
+
+    it("is deleted by the id it would have been sent under when the row of a failed creation holds none", async () => {
+      const a = await withRow({ status: "failed" });
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual(askedFor(reservedFor(a.id)));
+      expect(await rowCount([a.id])).toBe(0);
+    });
+
+    it("is deleted by the reserved id when a failed creation holds it", async () => {
+      const a = await withRow({ status: "failed", user_provided_id: "reserved-on-a-failed-row" });
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(requests(fetchMock)).toEqual(askedFor("reserved-on-a-failed-row"));
+    });
+
+    it("takes the provider's answer that there is none as an answer: one read, no delete, no second try, no line", async () => {
+      const a = await reserved();
+      const fetchMock = passcreatorHolding(() => false);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual([readOf(reservedFor(a.id))]);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("removes the person although the provider cannot be reached, asks again after the commit, and says in one line what is left", async () => {
+      const a = await reserved();
+      const fetchMock = passcreatorHolding(() => true, { refuse: () => true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+      expect(requests(fetchMock)).toEqual([readOf(reservedFor(a.id)), readOf(reservedFor(a.id))]);
+      expect(failedLines().map((line) => ({ level: line.level, source: line.source, fields: line.fields }))).toEqual([
+        {
+          level: "error",
+          source: "admin",
+          fields: { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rejected", attendeeIds: a.id },
+        },
+      ]);
+    });
+
+    it("says nothing when the second try deletes the pass", async () => {
+      const a = await reserved();
+      let asked = 0;
+      const fetchMock = passcreatorHolding(() => true, { refuse: () => (asked += 1) === 1 });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual([readOf(reservedFor(a.id)), ...askedFor(reservedFor(a.id))]);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("says in one line, not one for each, which passes of a selection are left, and names no name or address", async () => {
+      // Eleven: one more than a batch, so that the second batch of each round is exercised too.
+      const people = [];
+      for (let i = 0; i < 11; i += 1) people.push(await reserved());
+      const fetchMock = passcreatorHolding(() => true, { refuse: () => true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: people.map((a) => a.id), reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 11, not_found: 0 });
+      // One read each before the commit and one after.
+      expect(requests(fetchMock)).toHaveLength(22);
+      const lines = failedLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.fields).toMatchObject({ eventId: EVENT_ID, failed: 11, codes: "wallet_provider_rejected" });
+      expect(String(lines[0]!.fields?.attendeeIds).split(",").sort()).toEqual(people.map((a) => a.id).sort());
+      const text = JSON.stringify(lines[0]).toLowerCase();
+      for (const a of people) {
+        expect(text).not.toContain(a.name.toLowerCase());
+        expect(text).not.toContain(a.email.toLowerCase());
+      }
+    }, 30_000);
+
+    it("names only the passes of a selection that are still there", async () => {
+      const [a, b, c] = [await reserved(), await reserved(), await reserved()];
+      const fetchMock = passcreatorHolding(() => true, { refuse: (request) => request.includes(encodeURIComponent(reservedFor(b.id))) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id, b.id, c.id], reason: REASON });
+
+      // A and C: a read, a delete and a read each. B: its read, twice.
+      expect(requests(fetchMock)).toHaveLength(8);
+      expect(failedLines().map((line) => line.fields)).toEqual([
+        { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rejected", attendeeIds: b.id },
+      ]);
+    });
+
+    it("never deletes the pass of somebody else whose barcode is the reserved id: the person is removed and the pass is named in the line", async () => {
+      const a = await reserved();
+      // The v1 path resolves the id to another pass: one that has the reserved id as its barcode value.
+      const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+        new Response(JSON.stringify({ identifier: "pc-uid-other", userProvidedId: "somebody-else", barcodeValue: reservedFor(a.id) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      // Only the read, before the commit and after it: nothing is deleted.
+      expect(requests(fetchMock)).toEqual([readOf(reservedFor(a.id)), readOf(reservedFor(a.id))]);
+      expect(failedLines().map((line) => line.fields)).toEqual([
+        { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rejected", attendeeIds: a.id },
+      ]);
+    });
+
+    it("costs a person with no such row no call at all: no row, a pending row with no id, a pass already removed", async () => {
+      const noRow = await createAttendee();
+      const pendingBare = await withRow({ status: "pending" });
+      const alreadyRemoved = await withRow({ status: "pending", user_provided_id: "reserved-removed", provider_removed_at: new Date() });
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [noRow.id, pendingBare.id, alreadyRemoved.id], reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 3, not_found: 0 });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await rowCount([noRow.id, pendingBare.id, alreadyRemoved.id])).toBe(0);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("deletes every pass under the reserved id when two creations at once both succeeded and neither was recorded", async () => {
+      const a = await reserved();
+      let held = 2;
+      const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+        const { pathname } = new URL(String(url));
+        if (init?.method === "GET" && pathname.startsWith("/api/pass/")) {
+          if (held === 0) return new Response(null, { status: 404 });
+          const row = { identifier: `pc-uid-${held}`, userProvidedId: decodeURIComponent(pathname.slice("/api/pass/".length)), barcodeValue: "token" };
+          return new Response(JSON.stringify(row), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        if (init?.method === "DELETE") held -= 1;
+        return new Response(null, { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(held).toBe(0);
+      // A read and a delete for each of the two passes, and the read that found none.
+      expect(requests(fetchMock)).toHaveLength(5);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("asks again about the older id that the first delete failed for, when a creating request replaced it on the row", async () => {
+      const olderId = "admitto:older-event:older-attendee";
+      const a = await withRow({ status: "pending", user_provided_id: olderId });
+      let refused = 0;
+      const fetchMock = passcreatorHolding(() => true, {
+        // The row gets the current id while the older one is being asked about, and that first question fails.
+        beforeRequest: async (request) => {
+          if (request === readOf(olderId) && refused === 0) {
+            await prisma.walletPass.update({ where: { attendee_id: a.id }, data: { user_provided_id: reservedFor(a.id) } });
+          }
+        },
+        refuse: (request) => request === readOf(olderId) && (refused += 1) === 1,
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      // The failed read, then both ids drained after the commit: the current one, and the older one the row no longer names.
+      expect(requests(fetchMock)).toHaveLength(7);
+      expect(requests(fetchMock)).toEqual(expect.arrayContaining([...askedFor(reservedFor(a.id)), ...askedFor(olderId)]));
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("asks again about the older id the first delete failed for when the row became a recorded pass meanwhile", async () => {
+      const olderId = "admitto:older-event:older-attendee";
+      const a = await withRow({ status: "pending", user_provided_id: olderId });
+      let refused = 0;
+      const fetchMock = passcreatorHolding(() => true, {
+        // While the older id is first asked about, and fails, a creating request records its pass on the row.
+        beforeRequest: async (request) => {
+          if (request === readOf(olderId) && refused === 0) {
+            await prisma.walletPass.update({
+              where: { attendee_id: a.id },
+              data: { user_provided_id: reservedFor(a.id), provider_pass_id: "pc-recorded-meanwhile", status: "active" },
+            });
+          }
+        },
+        refuse: (request) => request === readOf(olderId) && (refused += 1) === 1,
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      // The recorded pass goes by its own id, and the older id is asked about again after the commit: the row, which
+      // is no longer one of the untracked ones, was still deleted by this removal.
+      expect(requests(fetchMock)).toEqual(expect.arrayContaining(["DELETE /api/v3/pass/pc-recorded-meanwhile", ...askedFor(olderId)]));
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("names the attendee when the older id keeps failing, although the current id was deleted", async () => {
+      const olderId = "admitto:older-event:older-attendee";
+      const a = await withRow({ status: "pending", user_provided_id: olderId });
+      let rewritten = false;
+      const fetchMock = passcreatorHolding(() => true, {
+        beforeRequest: async (request) => {
+          if (request === readOf(olderId) && !rewritten) {
+            rewritten = true;
+            await prisma.walletPass.update({ where: { attendee_id: a.id }, data: { user_provided_id: reservedFor(a.id) } });
+          }
+        },
+        refuse: (request) => request === readOf(olderId),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual(expect.arrayContaining(askedFor(reservedFor(a.id))));
+      // The older id is named too: the row that held it is gone, and the usual id would not find that pass.
+      expect(failedLines().map((line) => line.fields)).toEqual([
+        { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rejected", attendeeIds: a.id, reservedIds: olderId },
+      ]);
+    });
+
+    it("is asked about by the id it would have had when the row says a pass was left in an old account, although the row is marked removed", async () => {
+      const a = await withRow({ status: "pending", left_behind_pass_id: "pc-old-account", provider_removed_at: new Date() });
+      const fetchMock = passcreatorHolding(() => false);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      // The account the event uses now answers for the id it would have had; the old account is out of reach.
+      expect(requests(fetchMock)).toEqual([readOf(reservedFor(a.id))]);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("is deleted next to a pass that has the provider's id, which keeps its own delete", async () => {
+      const tracked = await withRow({ status: "active", provider_pass_id: "pc-tracked-mixed", user_provided_id: "reserved-of-a-tracked-pass" });
+      const onlyReserved = await reserved();
+      const failed = await withRow({ status: "failed" });
+      const noRow = await createAttendee();
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [tracked.id, onlyReserved.id, failed.id, noRow.id], reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 4, not_found: 0 });
+      // One delete for the pass that has the provider's id, a read, a delete and a read for each of the others.
+      expect(requests(fetchMock)).toHaveLength(7);
+      expect(requests(fetchMock)).toEqual(
+        expect.arrayContaining([
+          "DELETE /api/v3/pass/pc-tracked-mixed",
+          ...askedFor(reservedFor(onlyReserved.id)),
+          ...askedFor(reservedFor(failed.id)),
+        ]),
+      );
+    });
+
+    it("leaves another event's pass alone even when its attendee is in the list", async () => {
+      const mine = await reserved();
+      const elsewhere = await reserved(WALLET_OFF_EVENT_ID);
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [mine.id, elsewhere.id], reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 1 });
+      expect(requests(fetchMock)).toEqual(askedFor(reservedFor(mine.id)));
+      expect(await rowCount([elsewhere.id])).toBe(1);
+    });
+
+    it("is deleted after the commit when its id was reserved after the first delete had read the rows", async () => {
+      const a = await reserved();
+      const b = await createAttendee();
+      // B has no row when the removal starts. The id of a pass that an Add to Wallet request is creating is
+      // reserved while A's pass is being deleted, which is after the first delete read the rows.
+      let reservedB = false;
+      const fetchMock = passcreatorHolding(() => true, {
+        beforeRequest: async (request) => {
+          if (request === readOf(reservedFor(a.id)) && !reservedB) {
+            reservedB = true;
+            await prisma.walletPass.create({ data: { attendee_id: b.id, status: "pending", user_provided_id: reservedFor(b.id) } });
+          }
+        },
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(bulkRemovePath(EVENT_ID), { attendeeIds: [a.id, b.id], reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 2, not_found: 0 });
+      expect(requests(fetchMock)).toEqual([...askedFor(reservedFor(a.id)), ...askedFor(reservedFor(b.id))]);
+      expect(await rowCount([a.id, b.id])).toBe(0);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("is deleted after the commit by the id a creating request wrote while the first delete was running", async () => {
+      const olderId = "admitto:older-event:older-attendee";
+      const a = await withRow({ status: "pending", user_provided_id: olderId });
+      // The row holds an id that is not the current one. A creating request reserves the current id on it while
+      // the older one is being deleted, which is after the first delete read the row.
+      const fetchMock = passcreatorHolding(() => true, {
+        beforeRequest: async (request) => {
+          if (request === readOf(olderId)) {
+            await prisma.walletPass.update({ where: { attendee_id: a.id }, data: { user_provided_id: reservedFor(a.id) } });
+          }
+        },
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual([...askedFor(olderId), ...askedFor(reservedFor(a.id))]);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("is deleted when the event has credentials but its Wallet switch is off", async () => {
+      const a = await reserved(WALLET_OFF_EVENT_ID);
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(WALLET_OFF_EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual(askedFor(reservedFor(a.id, WALLET_OFF_EVENT_ID)));
+    });
+
+    it("calls nobody, and says nothing, when the event has no wallet credentials: the person is removed all the same", async () => {
+      const a = await reserved(NO_WALLET_EVENT_ID);
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(NO_WALLET_EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(failedLines()).toEqual([]);
+      expect(await rowCount([a.id])).toBe(0);
+    });
+
+    it("is deleted for someone who was erased before, whose row still held only the reserved id", async () => {
+      const a = await reserved();
+      vi.stubGlobal("fetch", passcreatorHolding(() => true, { refuse: () => true }));
+      await post(erasePath(EVENT_ID, a.id));
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
+      resetSystemLogBufferForTest();
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(requests(fetchMock)).toEqual(askedFor(reservedFor(a.id)));
+      expect(await rowCount([a.id])).toBe(0);
+      expect(failedLines()).toEqual([]);
+    });
+
+    it("still answers, and says in one line which pass is left, when the clean-up after the commit itself breaks", async () => {
+      const a = await reserved();
+      vi.stubGlobal("fetch", passcreatorHolding(() => true, { refuse: () => true }));
+      // The first delete fails, so the pass is left for the clean-up, whose read of the event's
+      // credentials (the one that happens once the attendee is gone) then breaks.
+      const realFindUnique = prisma.event.findUnique.bind(prisma.event);
+      let brokenReads = 0;
+      vi.spyOn(prisma.event, "findUnique").mockImplementation(((args: Parameters<typeof realFindUnique>[0]) => {
+        if (!args?.select || !("wallet_api_key_enc" in args.select)) return realFindUnique(args);
+        return prisma.attendee.count({ where: { id: a.id } }).then((still) => {
+          if (still > 0) return realFindUnique(args);
+          brokenReads += 1;
+          return Promise.reject(new Error("db hiccup"));
+        });
+      }) as never);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      expect(await prisma.attendee.count({ where: { id: a.id } })).toBe(0);
+      expect(brokenReads).toBe(1);
+      expect(failedLines().map((line) => line.fields)).toEqual([
+        { eventId: EVENT_ID, failed: 1, codes: "unknown", attendeeIds: a.id },
+      ]);
+    });
   });
 
   it("removes a selection: the ones that exist, counts the rest, and audits the ids once", async () => {

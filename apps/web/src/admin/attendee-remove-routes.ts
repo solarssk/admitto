@@ -13,6 +13,8 @@ import { adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 import {
   assertWalletBulkSelectionWithinLimit,
   deleteProviderPassesBestEffort,
+  deleteUntrackedPassesAfterRemoval,
+  deleteUntrackedWalletPassesBestEffort,
   deleteWalletPassesBestEffort,
   writeAttendeeLifecycleAuditLog,
 } from "./attendees-api-routes.js";
@@ -47,11 +49,13 @@ type RemoveResponseBody = {
  * entries: the event's activity log and the central admin audit log, with the reason code, the ids
  * and the counts, never a name or an address (nor a note: the reason is a fixed list). Their wallet
  * passes are deleted at the provider first, best effort, because the local row is the only place
- * that knows the provider id. The ids of the passes the transaction then deleted are read under
- * the attendee locks, so a pass saved after that first delete (an Add to Wallet request that was
- * running) is deleted after the commit, and so is one the first delete could not delete. A pass
- * that is created at the provider after the commit finds the attendee gone and deletes itself (see
- * handleWalletRedirect).
+ * that knows the id: by the provider's id when the row has one, and by the id reserved for the pass
+ * when it has only that (its creating request could not record the pass), or is a failed creation
+ * with no id at all; an attendee with no such row costs no provider call. The ids of the passes
+ * the transaction then deleted are read under the attendee locks, so a pass saved or reserved
+ * after that first delete (an Add to Wallet request that was running) is deleted after the commit,
+ * and so is one the first delete could not delete. A pass that is created at the provider after
+ * the commit finds the attendee gone and deletes itself (see handleWalletRedirect).
  *
  * The audit entries reuse the action names of an erasure (`attendee_erased`,
  * `attendees_bulk_erased`) and tell the two apart with `metadata.method` (`"remove"` here,
@@ -69,6 +73,7 @@ async function runRemoval(
   if (!event) return null;
 
   const deletedBeforehand = await deleteWalletPassesBestEffort(db, eventId, attendeeIds);
+  const untrackedBeforehand = await deleteUntrackedWalletPassesBestEffort(db, eventId, attendeeIds);
 
   const audit = adminAuditFromContext(c);
   const actionType = mode === "single" ? "attendee_erased" : "attendees_bulk_erased";
@@ -121,6 +126,7 @@ async function runRemoval(
       });
     }
   }
+  await deleteUntrackedPassesAfterRemoval(db, eventId, result, untrackedBeforehand);
 
   c.header("Cache-Control", "no-store");
   return { result, body: { removed: result.removedIds.length, not_found: result.notFoundIds.length } };

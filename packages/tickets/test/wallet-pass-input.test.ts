@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
+import { reservedPassId } from "../src/erase-wallet-passes.js";
 import { buildWalletPassInput, resolveTicketPageDisplay, walletUserProvidedId } from "../src/wallet-pass-input.js";
 
 function makeResolved(ticketType: string | null) {
@@ -113,6 +114,19 @@ describe("walletUserProvidedId", () => {
       walletUserProvidedId("evt-2", "att-1"),
     ]);
     expect(ids.size).toBe(3);
+  });
+});
+
+describe("reservedPassId", () => {
+  it("is the id on the row when it has one, even when it is not the deterministic one", () => {
+    expect(reservedPassId("evt-1", { attendee_id: "att-1", user_provided_id: "older-id" })).toBe("older-id");
+    expect(reservedPassId("evt-1", { attendee_id: "att-1", user_provided_id: walletUserProvidedId("evt-1", "att-1") })).toBe("admitto:evt-1:att-1");
+  });
+
+  it("is the id the pass would have been sent under when the row has none, for this attendee and this event only", () => {
+    expect(reservedPassId("evt-1", { attendee_id: "att-1", user_provided_id: null })).toBe(walletUserProvidedId("evt-1", "att-1"));
+    expect(reservedPassId("evt-1", { attendee_id: "att-2", user_provided_id: null })).toBe("admitto:evt-1:att-2");
+    expect(reservedPassId("evt-2", { attendee_id: "att-1", user_provided_id: null })).toBe("admitto:evt-2:att-1");
   });
 });
 

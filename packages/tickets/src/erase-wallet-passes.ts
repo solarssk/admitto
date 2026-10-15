@@ -101,6 +101,16 @@ type PassToDelete = {
   attendee: { erased_at: Date | null };
 };
 
+/**
+ * The id a pass is deleted by when Admitto has no provider id for it: the one its creating request reserved on the row
+ * (`user_provided_id`) or, for a `failed` row written before ids were reserved, the one that request would have sent
+ * (`walletUserProvidedId`). The provider answers from its own record of it. The one place this choice is made, for the
+ * erasure's follow-up and for a removal alike.
+ */
+export function reservedPassId(eventId: string, pass: { attendee_id: string; user_provided_id: string | null }): string {
+  return pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id);
+}
+
 /** What a pass came to: the verdict on its row, and how many passes the provider held under the reserved id that Admitto
  * had not recorded (the only one of an unrecorded row, or a second one beside the recorded pass), found and deleted. The
  * verdict is "gone" (the row can be marked removed), "undecided" (there is none now, but a creation may still be on its
@@ -138,7 +148,7 @@ function creationsAreSettled(pass: PassToDelete): boolean {
  * Throws when it still finds one after {@link MAX_PASSES_UNDER_ONE_ID} deletions (a delete that does not take, or the same
  * pass answered again), so that the row stays still to delete with the failure code of the provider.
  */
-async function deletePassesUnder(provider: WalletPassProvider, id: string, deleted = 0): Promise<number> {
+export async function deletePassesUnder(provider: WalletPassProvider, id: string, deleted = 0): Promise<number> {
   if (!(await provider.deletePassByUserProvidedId(id))) return deleted;
   if (deleted >= MAX_PASSES_UNDER_ONE_ID) {
     throw new WalletProviderError("wallet_provider_rejected", "The provider still holds a pass under the reserved id.");
@@ -167,7 +177,7 @@ function verdictOf(pass: PassToDelete, found: boolean): Answer["verdict"] {
  */
 async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<Answer> {
   if (pass.provider_pass_id !== null) await provider.deletePass(pass.provider_pass_id);
-  const reservedId = pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id);
+  const reservedId = reservedPassId(eventId, pass);
   const found = await deletePassesUnder(provider, reservedId);
   return { found, verdict: verdictOf(pass, found > 0) };
 }
@@ -337,7 +347,7 @@ function attendeeIdBetween(after: string | undefined, upTo: string | undefined):
 /** Asks the provider for the passes of a settled row and deletes what it holds: how many there were, or "failed". */
 async function recheckOne(provider: WalletPassProvider, eventId: string, pass: PassToRecheck): Promise<number | "failed"> {
   try {
-    return await deletePassesUnder(provider, pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id));
+    return await deletePassesUnder(provider, reservedPassId(eventId, pass));
   } catch {
     return "failed";
   }

@@ -4,7 +4,7 @@ import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { WALLET_RELEVANT_ATTENDEE_FIELDS, eventEndsAtUtc, isWalletAddClosed, type EventEndInput } from "@admitto/shared";
-import { recordSystemLog } from "@admitto/shared/system-log";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
   resendTicketEmail,
@@ -97,6 +97,12 @@ import {
   issueTicket,
   createUnderAttendeeJobQueueLock,
   passIsStillToDelete,
+  PASS_ROW_STILL_AT_PROVIDER,
+  deletePassesUnder,
+  reservedPassId,
+  walletUserProvidedId,
+  type RemoveAttendeesResult,
+  type RemoveUntrackedWalletTarget,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -2126,6 +2132,26 @@ export async function writeAttendeeLifecycleAuditLog(
 /** A wallet pass at the provider: whose it is and the provider's id for it. */
 export type ProviderPassTarget = { attendeeId: string; providerPassId: string };
 
+/** The wallet provider an event's passes are deleted at: resolved from the event's credentials alone, never gated on
+ * its wallet_enabled toggle (see deleteProviderPassesBestEffort). Null when the event is gone or has no credentials
+ * that can be used. */
+async function resolveEventProviderForDelete(db: PrismaClient, eventId: string): Promise<WalletPassProvider | null> {
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: {
+      wallet_template_id: true,
+      wallet_api_key_enc: true,
+      wallet_field_mapping: true,
+    },
+  });
+  if (!event) return null;
+  return resolveConfiguredWalletProvider({
+    walletTemplateId: event.wallet_template_id,
+    walletApiKeyEnc: event.wallet_api_key_enc,
+    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+  });
+}
+
 /** Deletes the given passes at the event's wallet provider (e.g. PassCreator), best effort, and
  * returns the provider ids it deleted. An external network call has no place inside a Prisma
  * transaction, so callers run it before or after theirs; a provider failure here is logged (ids
@@ -2144,20 +2170,7 @@ export async function deleteProviderPassesBestEffort(
 ): Promise<Set<string>> {
   const deleted = new Set<string>();
   if (targets.length === 0) return deleted;
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: {
-      wallet_template_id: true,
-      wallet_api_key_enc: true,
-      wallet_field_mapping: true,
-    },
-  });
-  if (!event) return deleted;
-  const provider = resolveConfiguredWalletProvider({
-    walletTemplateId: event.wallet_template_id,
-    walletApiKeyEnc: event.wallet_api_key_enc,
-    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
-  });
+  const provider = await resolveEventProviderForDelete(db, eventId);
   if (!provider) return deleted;
 
   for (const batch of chunk([...targets], BULK_CHECKIN_CONCURRENCY)) {
@@ -2206,6 +2219,142 @@ export async function deleteWalletPassesBestEffort(
     eventId,
     passes.map((pass) => ({ attendeeId: pass.attendee_id, providerPassId: pass.provider_pass_id! })),
   );
+}
+
+/** What deleting passes by the id reserved for them came to. */
+export type UntrackedDeleteOutcome = {
+  /** The ids the provider answered for: every pass under the id was deleted, and there is none left. Keyed by the id,
+   * not by the attendee, like the provider ids of deleteWalletPassesBestEffort: a row whose reserved id was rewritten
+   * after the answer (a creating request wrote the current one) holds another id, and is asked about again. */
+  answered: Set<string>;
+  /** The ids it could not answer for, each with its attendee and the failure code. Also keyed by the id: the id a
+   * failed delete asked about may no longer be on the row when the removal commits, and is still asked about. */
+  failed: Map<string, UntrackedFailure>;
+};
+
+/** An id the provider could not answer for: the attendee it belongs to, and why. */
+export type UntrackedFailure = { attendeeId: string; code: string };
+
+const noUntrackedOutcome = (): UntrackedDeleteOutcome => ({ answered: new Set(), failed: new Map() });
+
+/** Asks the provider to delete each pass by the id reserved for it, in batches of BULK_CHECKIN_CONCURRENCY, one batch
+ * after the other (the cap of deleteProviderPassesBestEffort, so a bulk removal makes no more calls at a time than it
+ * did). More than one pass can sit under one id (two creations at once can both succeed), so each id is asked about
+ * until the provider has none (deletePassesUnder, the loop of the erasure's follow-up): an id with no pass costs one call,
+ * one pass three. A provider failure never throws and is not logged here: it lands in `failed`, and the caller says what
+ * is still there, once (see reportUntrackedDeleteFailures). */
+export async function deleteUntrackedPassesAtProvider(
+  provider: WalletPassProvider,
+  targets: readonly RemoveUntrackedWalletTarget[],
+): Promise<UntrackedDeleteOutcome> {
+  const outcome = noUntrackedOutcome();
+  for (const batch of chunk([...targets], BULK_CHECKIN_CONCURRENCY)) {
+    const settled = await Promise.allSettled(batch.map((pass) => deletePassesUnder(provider, pass.userProvidedId))); // NOSONAR - batches run one after another on purpose: concurrency is capped by BULK_CHECKIN_CONCURRENCY
+    for (const [index, result] of settled.entries()) {
+      const { attendeeId, userProvidedId } = batch[index]!;
+      if (result.status === "fulfilled") outcome.answered.add(userProvidedId);
+      else outcome.failed.set(userProvidedId, { attendeeId, code: walletFailureCode(result.reason) });
+    }
+  }
+  return outcome;
+}
+
+/** deleteUntrackedPassesAtProvider at the event's own provider, best effort like deleteProviderPassesBestEffort: no
+ * call, and nothing answered or failed, when there is nothing to delete or the event has no credentials to use. */
+export async function deleteUntrackedProviderPassesBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  targets: readonly RemoveUntrackedWalletTarget[],
+): Promise<UntrackedDeleteOutcome> {
+  if (targets.length === 0) return noUntrackedOutcome();
+  const provider = await resolveEventProviderForDelete(db, eventId);
+  if (!provider) return noUntrackedOutcome();
+  return deleteUntrackedPassesAtProvider(provider, targets);
+}
+
+/** The passes of the given attendees that the provider may hold although their rows have no provider id, deleted at
+ * the provider by the id reserved for them (see PASS_ROW_STILL_AT_PROVIDER: a row with only that id, or a failed
+ * creation with no id), before the removal's transaction takes the rows away. deleteWalletPassesBestEffort does the
+ * rows that have the provider's id. An attendee with no such row costs no provider call. The same relation filter as
+ * there keeps it scoped to the event. */
+export async function deleteUntrackedWalletPassesBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: readonly string[],
+): Promise<UntrackedDeleteOutcome> {
+  const passes = await db.walletPass.findMany({
+    where: {
+      AND: [PASS_ROW_STILL_AT_PROVIDER, { provider_pass_id: null }],
+      attendee_id: { in: attendeeIds as string[] },
+      attendee: { event_id: eventId },
+    },
+    select: { attendee_id: true, user_provided_id: true },
+  });
+  return deleteUntrackedProviderPassesBestEffort(
+    db,
+    eventId,
+    passes.map((pass) => ({ attendeeId: pass.attendee_id, userProvidedId: reservedPassId(eventId, pass) })),
+  );
+}
+
+/** One line for a whole removal, however many passes are still at the provider (a bulk removal carries up to 100
+ * attendees when the event has wallet credentials, and a line for each would push the rest out of the System logs). A
+ * removed attendee leaves no row, so this line is the only record of whose pass stands: every id is named, and the pass
+ * is found at the provider by its User provided ID, `admitto:<event id>:<attendee id>` (or the id in `reservedIds`, for
+ * a row that held another). Ids and failure codes only. */
+function reportUntrackedDeleteFailures(eventId: string, failed: ReadonlyMap<string, UntrackedFailure>): void {
+  if (failed.size === 0) return;
+  // An attendee is named once, whichever of their ids failed, but every failure code is kept: the ids of one attendee
+  // can fail for different reasons, and this line is the record of why.
+  const attendeeIds = [...new Set([...failed.values()].map(({ attendeeId }) => attendeeId))];
+  const codes = [...new Set([...failed.values()].map(({ code }) => code))];
+  // The attendee ids give the usual id, `admitto:<event id>:<attendee id>`. An id that a row held and that is not that one
+  // is the only way to find its pass once the row is gone, so it is named too.
+  const otherIds = [...failed.entries()]
+    .filter(([id, { attendeeId }]) => id !== walletUserProvidedId(eventId, attendeeId))
+    .map(([id]) => id);
+  emitSystemLog("admin", "error", "wallet_pass_erasure_delete_failed", {
+    eventId,
+    failed: attendeeIds.length,
+    codes: codes.join(","),
+    attendeeIds: attendeeIds.join(","),
+    ...(otherIds.length > 0 ? { reservedIds: otherIds.join(",") } : {}),
+  });
+}
+
+/** After a removal has committed: asks the provider again for the ids it has not answered for, and says in one line which
+ * are still at the provider after that. Those are the ids `removeAttendees` read off the rows it deleted that the first
+ * delete did not answer for (it failed, or the id was reserved or rewritten after that delete had read the rows), and
+ * the ids the first delete failed for that a creating request has since replaced on a row this removal deleted (the
+ * pass under the old id is still the person's). An id of an attendee this removal did not delete (a request running at
+ * the same moment removed them) is that request's. Never throws: the removal is done, and a failure here only leaves
+ * passes at the provider. */
+export async function deleteUntrackedPassesAfterRemoval(
+  db: PrismaClient,
+  eventId: string,
+  removal: Pick<RemoveAttendeesResult, "removedIds" | "untrackedWalletTargets">,
+  before: UntrackedDeleteOutcome,
+): Promise<void> {
+  const retry = new Map<string, RemoveUntrackedWalletTarget>();
+  for (const target of removal.untrackedWalletTargets) {
+    if (!before.answered.has(target.userProvidedId)) retry.set(target.userProvidedId, target);
+  }
+  // The attendees this removal deleted, whatever their rows had become by then: a row that a creating request has since
+  // given a provider id of its own is no longer one of the untracked targets, and the id the first delete failed for is
+  // still asked about.
+  const removedAttendees = new Set(removal.removedIds);
+  for (const [userProvidedId, { attendeeId }] of before.failed) {
+    if (removedAttendees.has(attendeeId)) retry.set(userProvidedId, { attendeeId, userProvidedId });
+  }
+  const leftover = [...retry.values()];
+  let failed: ReadonlyMap<string, UntrackedFailure>;
+  try {
+    failed = (await deleteUntrackedProviderPassesBestEffort(db, eventId, leftover)).failed;
+  } catch (err) {
+    const code = walletFailureCode(err);
+    failed = new Map(leftover.map((target) => [target.userProvidedId, { attendeeId: target.attendeeId, code }]));
+  }
+  reportUntrackedDeleteFailures(eventId, failed);
 }
 
 /** isWalletAddClosed for an event row as Prisma returns it. */
