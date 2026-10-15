@@ -278,6 +278,17 @@ describe("audit", () => {
       });
     });
 
+    it("still records an attempt whose email holds U+0000 or a lone surrogate, with those characters replaced so the database accepts the row", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logLoginFailure(fakeDb(create), { email: "x\u0000@example.com", ip: "1.2.3.4" }, "invalid_credentials");
+      await logLoginFailure(fakeDb(create), { email: "\ud800x@example.com", ip: "1.2.3.4" }, "invalid_credentials");
+      const emails = create.mock.calls.map(
+        ([arg]) => (arg as { data: { metadata: { email: string } } }).data.metadata.email,
+      );
+      expect(emails).toEqual(["x\ufffd@example.com", "\ufffdx@example.com"]);
+    });
+
     it("distinguishes a deactivated account from invalid credentials via the reason field, without changing the event shape otherwise", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
@@ -769,6 +780,28 @@ describe("audit", () => {
           metadata: { path: "/api/admin/users", reason: "no_superadmin_role", authSource: "session" },
         },
       });
+    });
+
+    it("keeps at most 200 characters of the request path, in the durable row and in the stdout emit", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      const longPath = `/api/admin/events/${"a".repeat(7000)}/settings`;
+      await logAccessDenied(fakeDb(create), { path: longPath, reason: "no_admin_access", userId: "user-1" });
+      const stored = (create.mock.calls[0]?.[0] as { data: { metadata: { path: string } } }).data.metadata.path;
+      expect(stored).toBe(longPath.slice(0, 200));
+      expect(JSON.parse(String(spy.mock.calls[0]?.[0])).path).toBe(longPath.slice(0, 200));
+    });
+
+    it("replaces U+0000 in the request path, and a surrogate pair the cut splits, so the row is storable", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logAccessDenied(fakeDb(create), { path: "/api/admin/events/a\u0000b", reason: "no_session" });
+      const split = `${"a".repeat(199)}\ud83d\ude00tail`;
+      await logAccessDenied(fakeDb(create), { path: split, reason: "no_session" });
+      const paths = create.mock.calls.map(
+        ([arg]) => (arg as { data: { metadata: { path: string } } }).data.metadata.path,
+      );
+      expect(paths).toEqual(["/api/admin/events/a\ufffdb", `${"a".repeat(199)}\ufffd`]);
     });
 
     it("persists user_id null when there is no resolvable session", async () => {

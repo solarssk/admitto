@@ -324,7 +324,16 @@ export async function handleDeleteEventTicketType(c: Context, db: PrismaClient):
         throw new TypeInUseError();
       }
 
-      await tx.ticketType.delete({ where: { id: typeId } });
+      try {
+        await tx.ticketType.delete({ where: { id: typeId } });
+      } catch (err) {
+        // An attendee written after the count above (by a path that does not take the lock above)
+        // still hits the restrictive foreign key: the same conflict the count reports.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+          throw new TypeInUseError();
+        }
+        throw err;
+      }
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "ticket_type_deleted",

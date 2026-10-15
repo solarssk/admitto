@@ -344,9 +344,9 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const template = await resolveEventTemplateForEditor(db, eventId);
-  const { names: customAssetNames } = await resolveEventImageAssetVars(eventId, db);
-  const brandingEvent = await db.event.findUniqueOrThrow({
+  // First, so an event that does not exist (a superadmin passes the access check for any id) is a
+  // 404 before the template lookups below.
+  const brandingEvent = await db.event.findUnique({
     where: { id: eventId },
     select: {
       logo_url: true,
@@ -355,6 +355,10 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
       ...WALLET_PLACEHOLDER_SELECT,
     },
   });
+  if (!brandingEvent) return c.json({ error: "not_found" }, 404);
+
+  const template = await resolveEventTemplateForEditor(db, eventId);
+  const { names: customAssetNames } = await resolveEventImageAssetVars(eventId, db);
   const branding = resolveBrandingFromEvent(brandingEvent);
   const disallowedWallet = disallowedWalletPlaceholders(brandingEvent);
 
