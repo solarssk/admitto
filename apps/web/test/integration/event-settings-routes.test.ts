@@ -3506,4 +3506,146 @@ describe("event context routes", () => {
       if (resourceId) await prisma.eventResource.deleteMany({ where: { id: resourceId } });
     }
   });
+
+  describe("a body of the wrong shape", () => {
+    const send = (method: "PATCH" | "POST" | "PUT", path: string, body: string) =>
+      app.request(`/api/admin/events/${EVENT_SET}${path}`, {
+        method,
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body,
+      });
+
+    it("keeps the pinned note when the body does not say what the note should be", async () => {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { pinned_note: "Keep this note" } });
+      const auditCount = () =>
+        prisma.adminAuditLog.count({
+          where: {
+            organization_id: ORG_SET,
+            action_type: { in: ["event_pinned_note_set", "event_pinned_note_cleared"] },
+          },
+        });
+      const before = await auditCount();
+      try {
+        const bodies = [
+          "{}",
+          '{"notes":"typo"}',
+          '{"note":5}',
+          '{"note":"x","extra":1}',
+          "null",
+          '"text"',
+          "[]",
+          "{not json",
+          "",
+          JSON.stringify({ note: "x".repeat(5001) }),
+        ];
+        for (const body of bodies) {
+          expect((await send("PATCH", "/note", body)).status, body).toBe(400);
+        }
+        expect(await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } })).toMatchObject({
+          pinned_note: "Keep this note",
+        });
+        expect(await auditCount()).toBe(before);
+
+        // Saying so explicitly still clears it.
+        expect((await send("PATCH", "/note", '{"note":null}')).status).toBe(200);
+        expect(await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } })).toMatchObject({
+          pinned_note: null,
+        });
+        expect(await auditCount()).toBe(before + 1);
+      } finally {
+        await prisma.event.update({ where: { id: EVENT_SET }, data: { pinned_note: null } });
+      }
+    });
+
+    it("rejects a contact that is not an object, has a wrong field type or an unknown field, and changes nothing", async () => {
+      const contact = await prisma.eventContact.create({
+        data: { event_id: EVENT_SET, name: "Shape contact", role: "Keeper" },
+      });
+      try {
+        const bodies = [
+          "null",
+          "[]",
+          '"text"',
+          "{not json",
+          "",
+          '{"name":5}',
+          '{"name":"Shape","role":5}',
+          '{"name":"Shape","note":{}}',
+          '{"name":"Shape","sort_order":"1"}',
+          '{"name":"Shape","sort_order":1.5}',
+          '{"name":"Shape","extra":true}',
+          JSON.stringify({ name: "x".repeat(501) }),
+          JSON.stringify({ name: "Shape", note: "x".repeat(5001) }),
+        ];
+        for (const body of bodies) {
+          expect((await send("POST", "/contacts", body)).status, `POST ${body}`).toBe(400);
+          expect((await send("PUT", `/contacts/${contact.id}`, body)).status, `PUT ${body}`).toBe(400);
+        }
+        expect(await prisma.eventContact.count({ where: { event_id: EVENT_SET, name: "Shape" } })).toBe(0);
+        expect(await prisma.eventContact.findUniqueOrThrow({ where: { id: contact.id } })).toMatchObject({
+          name: "Shape contact",
+          role: "Keeper",
+        });
+        expect(await (await send("POST", "/contacts", "{not json")).json()).toEqual({ error: "invalid json" });
+        expect(await (await send("POST", "/contacts", "null")).json()).toEqual({ error: "validation_failed" });
+      } finally {
+        await prisma.eventContact.deleteMany({ where: { event_id: EVENT_SET, name: { in: ["Shape contact", "Shape"] } } });
+      }
+    });
+
+    it("accepts values exactly at the length limits", async () => {
+      const longName = "c".repeat(500);
+      const longTitle = "t".repeat(500);
+      try {
+        const note = await send("PATCH", "/note", JSON.stringify({ note: "n".repeat(5000) }));
+        expect(note.status).toBe(200);
+        const contact = await send("POST", "/contacts", JSON.stringify({ name: longName, sort_order: 2147483647 }));
+        expect(contact.status).toBe(201);
+        const url = `https://example.com/${"u".repeat(4096 - "https://example.com/".length)}`;
+        const resource = await send("POST", "/resources", JSON.stringify({ title: longTitle, url }));
+        expect(resource.status).toBe(201);
+      } finally {
+        await prisma.event.update({ where: { id: EVENT_SET }, data: { pinned_note: null } });
+        await prisma.eventContact.deleteMany({ where: { event_id: EVENT_SET, name: longName } });
+        await prisma.eventResource.deleteMany({ where: { event_id: EVENT_SET, title: longTitle } });
+      }
+    });
+
+    it("rejects a link or file that is not an object, has a wrong field type or an unknown field, and changes nothing", async () => {
+      const resource = await prisma.eventResource.create({
+        data: { event_id: EVENT_SET, title: "Shape resource", url: "https://example.com/shape" },
+      });
+      const url = "https://example.com/doc";
+      try {
+        const bodies = [
+          "null",
+          "[]",
+          "{not json",
+          JSON.stringify({ title: 5, url }),
+          JSON.stringify({ title: "Shape", url: 5 }),
+          JSON.stringify({ title: "Shape", url, type: 5 }),
+          JSON.stringify({ title: "Shape", url, description: 5 }),
+          JSON.stringify({ title: "Shape", url, sort_order: "1" }),
+          JSON.stringify({ title: "Shape", url, extra: true }),
+          JSON.stringify({ title: "x".repeat(501), url }),
+          JSON.stringify({ title: "Shape", url: `https://example.com/${"x".repeat(4100)}` }),
+        ];
+        for (const body of bodies) {
+          expect((await send("POST", "/resources", body)).status, `POST ${body}`).toBe(400);
+          expect((await send("PUT", `/resources/${resource.id}`, body)).status, `PUT ${body}`).toBe(400);
+        }
+        expect(await prisma.eventResource.count({ where: { event_id: EVENT_SET, title: "Shape" } })).toBe(0);
+        expect(await prisma.eventResource.findUniqueOrThrow({ where: { id: resource.id } })).toMatchObject({
+          title: "Shape resource",
+          url: "https://example.com/shape",
+        });
+        expect(await (await send("POST", "/resources", "{not json")).json()).toEqual({ error: "invalid json" });
+        expect(await (await send("POST", "/resources", "null")).json()).toEqual({ error: "validation_failed" });
+      } finally {
+        await prisma.eventResource.deleteMany({
+          where: { event_id: EVENT_SET, title: { in: ["Shape resource", "Shape"] } },
+        });
+      }
+    });
+  });
 });
