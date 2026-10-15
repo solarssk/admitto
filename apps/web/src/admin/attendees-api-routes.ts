@@ -2303,9 +2303,10 @@ export async function deleteUntrackedWalletPassesBestEffort(
  * a row that held another). Ids and failure codes only. */
 function reportUntrackedDeleteFailures(eventId: string, failed: ReadonlyMap<string, UntrackedFailure>): void {
   if (failed.size === 0) return;
-  // One entry for an attendee, whichever of their ids failed.
-  const byAttendee = new Map<string, string>();
-  for (const { attendeeId, code } of failed.values()) byAttendee.set(attendeeId, code);
+  // An attendee is named once, whichever of their ids failed, but every failure code is kept: the ids of one attendee
+  // can fail for different reasons, and this line is the record of why.
+  const attendeeIds = [...new Set([...failed.values()].map(({ attendeeId }) => attendeeId))];
+  const codes = [...new Set([...failed.values()].map(({ code }) => code))];
   // The attendee ids give the usual id, `admitto:<event id>:<attendee id>`. An id that a row held and that is not that one
   // is the only way to find its pass once the row is gone, so it is named too.
   const otherIds = [...failed.entries()]
@@ -2313,9 +2314,9 @@ function reportUntrackedDeleteFailures(eventId: string, failed: ReadonlyMap<stri
     .map(([id]) => id);
   emitSystemLog("admin", "error", "wallet_pass_erasure_delete_failed", {
     eventId,
-    failed: byAttendee.size,
-    codes: [...new Set(byAttendee.values())].join(","),
-    attendeeIds: [...byAttendee.keys()].join(","),
+    failed: attendeeIds.length,
+    codes: codes.join(","),
+    attendeeIds: attendeeIds.join(","),
     ...(otherIds.length > 0 ? { reservedIds: otherIds.join(",") } : {}),
   });
 }

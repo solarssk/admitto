@@ -490,6 +490,29 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     ]);
   });
 
+  it("keeps the failure code of every id of an attendee, although the attendee is named once", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn((id) => {
+        if (id === "an-older-id-of-att-0") throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
+        throw new WalletProviderError("wallet_provider_timeout", "timed out");
+      }),
+    );
+    const current: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, current, failedFirst(["an-older-id-of-att-0", "att-0"]));
+
+    expect(lines().map((line) => line.fields)).toEqual([
+      {
+        eventId: EVENT_ID,
+        failed: 1,
+        codes: "wallet_provider_timeout,wallet_provider_rate_limited",
+        attendeeIds: "att-0",
+        reservedIds: "an-older-id-of-att-0",
+      },
+    ]);
+  });
+
   it("names a failed id that is not the usual one next to the attendee, and no id that the attendee id already gives", async () => {
     const db = fakeDb();
     resolveConfiguredWalletProvider.mockReturnValue(
