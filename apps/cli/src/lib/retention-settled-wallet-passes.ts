@@ -28,11 +28,15 @@ function reportRecheck(eventId: string, run: RecheckSettledWalletPassesResult): 
   if (run.incomplete) emitSystemLog("wallet", "warn", "wallet_pass_recheck_incomplete", { eventId });
 }
 
+/** How one run of the second look went: the last row it asked about (null while it has asked about none) and whether it
+ * was cut short, by the time or by a full page. */
+type RecheckWalk = { last: Cursor | null; cutShort: boolean };
+
 /** Keeps the place where a run that was cut short stopped, or forgets it when a run got through everything. A run that
  * was cut short before it asked about anything leaves the place as it was. */
-async function keepRecheckPlace(db: PrismaClient, cutShort: boolean, last: Cursor | null, before: Cursor | null): Promise<void> {
-  if (cutShort) {
-    if (last) await writeCursor(db, RECHECK_CURSOR_KEY, last);
+async function keepRecheckPlace(db: PrismaClient, walk: RecheckWalk, before: Cursor | null): Promise<void> {
+  if (walk.cutShort) {
+    if (walk.last) await writeCursor(db, RECHECK_CURSOR_KEY, walk.last);
   } else if (before) {
     await writeCursor(db, RECHECK_CURSOR_KEY, null);
   }
@@ -71,23 +75,22 @@ export async function recheckSettledWalletPassesOfEvents(
     orderBy: { id: "asc" },
   });
   const before = await readCursor(db, RECHECK_CURSOR_KEY);
-  let last: Cursor | null = null;
-  let cutShort = false;
+  const walk: RecheckWalk = { last: null, cutShort: false };
   for (const { event, range } of inSweepOrder(events.map((event) => ({ event })), before)) {
     const remainingMs = options.budgetMs - (deps.nowMs() - startedAt);
     if (remainingMs <= 0) {
-      cutShort = true;
+      walk.cutShort = true;
       break;
     }
     const provider = deps.resolveProvider(event);
     if (!provider) continue;
     const run = await deps.recheck(db, event.id, provider, { budgetMs: remainingMs, ...range }); // NOSONAR - one event at a time on purpose: the events share one time budget and the provider must not be burst
-    if (run.last !== null) last = { eventId: event.id, attendeeId: run.last };
+    if (run.last !== null) walk.last = { eventId: event.id, attendeeId: run.last };
     reportRecheck(event.id, run);
     if (run.incomplete) {
-      cutShort = true;
+      walk.cutShort = true;
       break;
     }
   }
-  await keepRecheckPlace(db, cutShort, last, before);
+  await keepRecheckPlace(db, walk, before);
 }
