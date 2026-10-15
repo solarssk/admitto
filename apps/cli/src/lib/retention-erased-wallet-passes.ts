@@ -1,19 +1,30 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { deleteErasedWalletPasses, parseWalletFieldMapping, type EraseWalletPassesResult } from "@admitto/tickets";
+import {
+  PASS_ROW_STILL_AT_PROVIDER,
+  deleteErasedWalletPasses,
+  erasedPassToDeleteWhere,
+  parseWalletFieldMapping,
+  recheckSettledWalletPasses,
+  type EraseWalletPassesResult,
+} from "@admitto/tickets";
 import { resolveConfiguredWalletProvider, type WalletPassProvider } from "@admitto/wallet";
+import { recheckSettledWalletPassesOfEvents } from "./retention-settled-wallet-passes.js";
+import { inSweepOrder, readCursor, writeCursor, type Cursor, type Range } from "./retention-sweep-cursor.js";
 
 /** How long one sweep may spend at the provider. The worker's retention job holds up the next drain while it runs. */
 const DEFAULT_BUDGET_MS = 60_000;
 const PAGE_SIZE = 100;
+/** The share of a sweep's time that the walk over pending passes leaves alone for the second look. Without it, a backlog of
+ * passes that keep failing (a pass left in another account is retried every day, for good) could use all the time, day after
+ * day, until the settled rows the second look is for age out of the week unasked. The second look also gets whatever the
+ * walk does not use. */
+const RECHECK_RESERVE_SHARE = 1 / 6;
 /** How many attendee ids one log line of failures names. The worker relays each line to the app in a request of its own,
  * and that endpoint takes 120 a minute, so a run with hundreds of failures must not write a line for each. */
 const MAX_FAILED_IDS_LOGGED = 15;
 /** Where the last sweep that ran out of time stopped (a SystemSettings row), so that the next one goes on from there. */
 export const SWEEP_CURSOR_KEY = "retention.erased_wallet_sweep_cursor";
-
-/** The last pass a sweep tried: the sweep goes by event id, then attendee id. */
-type Cursor = { eventId: string; attendeeId: string };
 
 /** What one sweep over the wallet passes of erased attendees did (or, in a dry run, found). */
 export type ErasedWalletSweepResult = {
@@ -23,15 +34,18 @@ export type ErasedWalletSweepResult = {
   deleted: number;
   /** The provider refused or could not be reached: they stay marked "still to delete". */
   failed: number;
+  /** The provider has none, but a creation may still have been under way when the person was erased: they stay marked
+   * "still to delete" and the next sweep asks again, once the erasure is old enough. */
+  undecided: number;
   /** Their event has no wallet credentials the sweep can use, so nothing was tried. */
   noProvider: number;
   /** Not tried because the time budget ran out. */
   notTried: number;
 };
 
-/** Passes of erased attendees that are still at the provider after a sweep: the ones that failed, could not be tried, or had no credentials. */
+/** Passes of erased attendees that are still to be deleted after a sweep: the ones that failed, are not decided yet, could not be tried, or had no credentials. */
 export function erasedWalletPassesLeft(result: ErasedWalletSweepResult): number {
-  return result.failed + result.noProvider + result.notTried;
+  return result.failed + result.undecided + result.noProvider + result.notTried;
 }
 
 /** The columns of an event that say which wallet provider account its passes live in. */
@@ -56,63 +70,37 @@ type EventToSweep = EventWalletCredentials & { id: string };
 export type ErasedWalletSweepDeps = {
   resolveProvider: (event: EventToSweep) => WalletPassProvider | null;
   deletePasses: typeof deleteErasedWalletPasses;
+  /** The second look at passes that were settled on "there is none" (retention-settled-wallet-passes.ts), with the time the sweep has left. */
+  recheckSettled: (db: PrismaClient, options: { budgetMs: number }) => Promise<void>;
   nowMs: () => number;
 };
 
 const realDeps: ErasedWalletSweepDeps = {
   resolveProvider: resolveEventWalletProvider,
   deletePasses: deleteErasedWalletPasses,
+  recheckSettled: (db, options) =>
+    recheckSettledWalletPassesOfEvents(db, options, {
+      resolveProvider: resolveEventWalletProvider,
+      recheck: recheckSettledWalletPasses,
+      nowMs: () => Date.now(),
+    }),
   nowMs: () => Date.now(),
 };
 
 /**
- * The same question the erase API asks after an erasure: a pass with a provider id, not yet removed, of an erased
- * attendee (of the given ones, when `attendeeIds` is set).
+ * The same question the erase API asks after an erasure: a pass still to be deleted at the provider (it has the
+ * provider's id, or only the id reserved for it, and is not yet removed) of an erased attendee (of the given ones,
+ * when `attendeeIds` is set).
  */
 export function passToDelete(eventId: string, attendeeIds?: readonly string[]): Prisma.WalletPassWhereInput {
-  return {
-    provider_pass_id: { not: null },
-    provider_removed_at: null,
-    attendee: { event_id: eventId, erased_at: { not: null } },
-    ...(attendeeIds ? { attendee_id: { in: [...attendeeIds] } } : {}),
-  };
+  return erasedPassToDeleteWhere(eventId, attendeeIds);
 }
 
-type Tally = { deleted: number; failed: number; exhausted: boolean; last: Cursor | null };
+type Tally = { deleted: number; failed: number; undecided: number; exhausted: boolean; last: Cursor | null };
 
-/** The part of an event's passes to try: after `after` and up to `upTo` (attendee ids), either may be left out. */
-type Range = { after?: string; upTo?: string };
-
-async function readCursor(db: PrismaClient): Promise<Cursor | null> {
-  try {
-    const row = await db.systemSettings.findUnique({ where: { key: SWEEP_CURSOR_KEY } });
-    if (!row) return null;
-    const parsed = JSON.parse(row.value_json) as Partial<Cursor>;
-    return typeof parsed.eventId === "string" && typeof parsed.attendeeId === "string"
-      ? { eventId: parsed.eventId, attendeeId: parsed.attendeeId }
-      : null;
-  } catch {
-    // Without it the sweep starts from the beginning, which is what it did before it kept a place.
-    return null;
-  }
-}
-
-/** Keeps the place (or forgets it, with null). A failure to do so only costs the next sweep its head start. */
-async function writeCursor(db: PrismaClient, cursor: Cursor | null): Promise<void> {
-  try {
-    if (cursor === null) {
-      await db.systemSettings.deleteMany({ where: { key: SWEEP_CURSOR_KEY } });
-      return;
-    }
-    const value_json = JSON.stringify(cursor);
-    await db.systemSettings.upsert({ where: { key: SWEEP_CURSOR_KEY }, create: { key: SWEEP_CURSOR_KEY, value_json }, update: { value_json } });
-  } catch {
-    emitSystemLog("wallet", "warn", "wallet_pass_sweep_cursor_not_saved", {});
-  }
-}
-
-/** The passes of one event that the provider refused in one walk, for the one line that says so. */
-type Failures = { attendeeIds: string[]; codes: Set<string> };
+/** What one walk of an event has to tell in its lines: the passes the provider refused, and how many passes it held
+ * that Admitto had no id for (found by the id reserved for them, and deleted). */
+type Failures = { attendeeIds: string[]; codes: Set<string>; untracked: number };
 
 /**
  * One line for the whole walk of an event, however many passes failed (the worker relays every line to the app in
@@ -130,6 +118,16 @@ function reportFailures(eventId: string, failures: Failures): void {
     attendeeIds: failures.attendeeIds.slice(0, MAX_FAILED_IDS_LOGGED).join(","),
     ...(more > 0 ? { more } : {}),
   });
+}
+
+/**
+ * One line for the whole walk of an event, however many passes it found that Admitto had no record of (a pass whose
+ * creating request could not save it): it is the one sign that this happened, so the operator should be able to see
+ * it, and where. The event's id only, never an attendee's.
+ */
+function reportUntracked(eventId: string, untracked: number): void {
+  if (untracked <= 0) return;
+  emitSystemLog("wallet", "warn", "wallet_pass_untracked_deleted", { eventId, deleted: untracked });
 }
 
 /** What the walk of an event needs, so that the functions below take few parameters. */
@@ -162,6 +160,8 @@ function recordRun(walk: Walk, eventId: string, attendeeIds: string[], run: Eras
   const { tally } = walk;
   tally.deleted += run.deleted;
   tally.failed += run.failedAttendeeIds.length;
+  tally.undecided += run.undecided;
+  failures.untracked += run.untrackedDeleted;
   failures.attendeeIds.push(...run.failedAttendeeIds);
   for (const code of run.failureCodes) failures.codes.add(code);
   const tried = attendeeIds.length - run.notTried;
@@ -176,7 +176,7 @@ function recordRun(walk: Walk, eventId: string, attendeeIds: string[], run: Eras
  * stay cannot be read again), until none are left or the budget is gone, and says in one line which failed.
  */
 async function sweepEvent(walk: Walk, eventId: string, range: Range = {}): Promise<void> {
-  const failures: Failures = { attendeeIds: [], codes: new Set() };
+  const failures: Failures = { attendeeIds: [], codes: new Set(), untracked: 0 };
   try {
     let cursor = range.after;
     for (;;) {
@@ -192,30 +192,13 @@ async function sweepEvent(walk: Walk, eventId: string, range: Range = {}): Promi
       cursor = attendeeIds.at(-1);
     }
   } finally {
-    // Also when the walk stops on an error: what failed before it is still worth a line.
+    // Also when the walk stops on an error: what failed, and what was found, before it is still worth a line.
     reportFailures(eventId, failures);
+    reportUntracked(eventId, failures.untracked);
   }
 }
 
 type Sweepable = { event: EventToSweep; provider: WalletPassProvider };
-
-/**
- * The events and the parts of them to try, in the order of this sweep: after `cursor` (the last pass the sweep
- * before it tried), to the end, then from the beginning up to it. A sweep that ran out of time therefore goes on
- * where it stopped instead of trying the same first passes again, and a pass that keeps failing cannot keep the
- * ones behind it from being tried. Without a cursor it is the order by event id, then attendee id.
- */
-function inSweepOrder(items: Sweepable[], cursor: Cursor | null): Array<Sweepable & { range: Range }> {
-  const whole = (item: Sweepable) => ({ ...item, range: {} });
-  if (!cursor) return items.map(whole);
-  const own = items.find((item) => item.event.id === cursor.eventId);
-  return [
-    ...(own ? [{ ...own, range: { after: cursor.attendeeId } }] : []),
-    ...items.filter((item) => item.event.id > cursor.eventId).map(whole),
-    ...items.filter((item) => item.event.id < cursor.eventId).map(whole),
-    ...(own ? [{ ...own, range: { upTo: cursor.attendeeId } }] : []),
-  ];
-}
 
 /** Counts what is pending in each event and picks the ones the sweep can try (a dry run counts only). */
 async function surveyEvents(
@@ -247,9 +230,9 @@ async function surveyEvents(
 /** Keeps the place where the sweep ran out of time, or forgets it when the sweep got through everything. */
 async function keepPlace(db: PrismaClient, tally: Tally, before: Cursor | null): Promise<void> {
   if (tally.exhausted) {
-    if (tally.last) await writeCursor(db, tally.last);
+    if (tally.last) await writeCursor(db, SWEEP_CURSOR_KEY, tally.last);
   } else if (before) {
-    await writeCursor(db, null);
+    await writeCursor(db, SWEEP_CURSOR_KEY, null);
   }
 }
 
@@ -264,20 +247,23 @@ async function keepPlace(db: PrismaClient, tally: Tally, before: Cursor | null):
  * One sweep has a time budget. When it runs out, the place where it stopped is kept (SWEEP_CURSOR_KEY) and the
  * next sweep goes on after it, wrapping round to the beginning, so that a long or failing run of passes at the
  * start cannot keep the rest, and the events after it, from ever being tried. A sweep that gets through
- * everything forgets the place.
+ * everything forgets the place. The walk may use only five sixths of the budget: the rest, and whatever the walk
+ * leaves, is the second look's, so that a backlog of passes that keep failing cannot starve it.
  */
 export async function sweepErasedWalletPasses(
   db: PrismaClient,
   options: { dryRun: boolean; budgetMs?: number },
   deps: ErasedWalletSweepDeps = realDeps,
 ): Promise<ErasedWalletSweepResult> {
-  const budget = { startedAt: deps.nowMs(), ms: options.budgetMs ?? DEFAULT_BUDGET_MS };
+  const totalMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+  const startedAt = deps.nowMs();
+  const budget = { startedAt, ms: totalMs - Math.floor(totalMs * RECHECK_RESERVE_SHARE) };
   const events = await db.event.findMany({
     where: {
       attendees: {
         some: {
           erased_at: { not: null },
-          wallet_pass: { is: { provider_pass_id: { not: null }, provider_removed_at: null } },
+          wallet_pass: { is: PASS_ROW_STILL_AT_PROVIDER },
         },
       },
     },
@@ -285,19 +271,24 @@ export async function sweepErasedWalletPasses(
     orderBy: { id: "asc" },
   });
 
-  const result: ErasedWalletSweepResult = { pending: 0, deleted: 0, failed: 0, noProvider: 0, notTried: 0 };
-  const tally: Tally = { deleted: 0, failed: 0, exhausted: false, last: null };
+  const result: ErasedWalletSweepResult = { pending: 0, deleted: 0, failed: 0, undecided: 0, noProvider: 0, notTried: 0 };
+  const tally: Tally = { deleted: 0, failed: 0, undecided: 0, exhausted: false, last: null };
   const { sweepable, tryable } = await surveyEvents(db, events, options, deps, result);
 
-  const before = options.dryRun ? null : await readCursor(db);
+  const before = options.dryRun ? null : await readCursor(db, SWEEP_CURSOR_KEY);
   for (const { event, provider, range } of inSweepOrder(sweepable, before)) {
     // Once the budget is gone the remaining events are not tried either.
     if (tally.exhausted) break;
     await sweepEvent({ db, provider, budget, deps, tally }, event.id, range); // NOSONAR - one event at a time on purpose, see surveyEvents
   }
   if (!options.dryRun) await keepPlace(db, tally, before);
+  // The time that was kept back, and whatever the walk left of its own, goes to the second look at passes that were settled
+  // on "there is none", which the walk above does not see: they are marked removed. After the walk, so that a pass still
+  // to delete comes first, but never so late that the walk can leave it no time at all.
+  if (!options.dryRun) await deps.recheckSettled(db, { budgetMs: totalMs - (deps.nowMs() - startedAt) });
   result.deleted = tally.deleted;
   result.failed = tally.failed;
-  result.notTried = tally.exhausted ? Math.max(0, tryable - tally.deleted - tally.failed) : 0;
+  result.undecided = tally.undecided;
+  result.notTried = tally.exhausted ? Math.max(0, tryable - tally.deleted - tally.failed - tally.undecided) : 0;
   return result;
 }

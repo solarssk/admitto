@@ -36,6 +36,7 @@ const sweepErasedWalletPasses = vi.fn(async (_db: unknown, _options: { dryRun: b
   pending: 0,
   deleted: 0,
   failed: 0,
+  undecided: 0,
   noProvider: 0,
   notTried: 0,
 }));
@@ -137,7 +138,7 @@ describe("admitto retention run - wallet passes of erased attendees", () => {
   it("deletes the ones still at the provider, and records how many went and how many are left", async () => {
     process.argv = ["node", "admitto"];
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 9, deleted: 5, failed: 2, noProvider: 1, notTried: 1 });
+    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 9, deleted: 5, failed: 2, undecided: 0, noProvider: 1, notTried: 1 });
     vi.mocked(writeAdminAuditLog).mockClear();
     const db = fakeEmailDeliveryDb([]) as never;
 
@@ -158,7 +159,7 @@ describe("admitto retention run - wallet passes of erased attendees", () => {
   it("says nothing is left when every one was deleted", async () => {
     process.argv = ["node", "admitto"];
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 3, deleted: 3, failed: 0, noProvider: 0, notTried: 0 });
+    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 3, deleted: 3, failed: 0, undecided: 0, noProvider: 0, notTried: 0 });
 
     await runRetention(fakeEmailDeliveryDb([]) as never);
 
@@ -168,7 +169,7 @@ describe("admitto retention run - wallet passes of erased attendees", () => {
   it("only counts them with --dry-run", async () => {
     process.argv = ["node", "admitto", "--dry-run"];
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 6, deleted: 0, failed: 0, noProvider: 0, notTried: 0 });
+    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 6, deleted: 0, failed: 0, undecided: 0, noProvider: 0, notTried: 0 });
     const db = fakeEmailDeliveryDb([]) as never;
 
     await runRetention(db);

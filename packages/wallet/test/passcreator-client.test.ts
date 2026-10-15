@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PassCreatorClient, WalletProviderError } from "../src/index.js";
+import { CREATE_PASS_DEADLINE_MS, PassCreatorClient, WalletProviderError } from "../src/index.js";
 import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -642,6 +642,142 @@ describe("PassCreatorClient.deletePass", () => {
   });
 });
 
+describe("PassCreatorClient.deletePassByUserProvidedId", () => {
+  const ID = "admitto:event1:attendee1";
+  const ENCODED = "admitto%3Aevent1%3Aattendee1";
+  /** What PassCreator's v1 read returns for a pass: a raw object (developer.passcreator.com/en/api/v1/pass). */
+  const passRow = (over: Record<string, unknown> = {}) => ({ identifier: "pc-uid-1", userProvidedId: ID, barcodeValue: "tok-1", ...over });
+  const calls = (fetchMock: ReturnType<typeof vi.fn>) =>
+    fetchMock.mock.calls.map(([url, init]) => `${(init as RequestInit | undefined)?.method} ${String(url)}`);
+
+  /** A fetch that answers the read with `read` and everything else (the delete) with `remove`. */
+  const pc = (read: () => Response, remove: () => Response = () => new Response(null, { status: 200 })) =>
+    vi.fn(async (_url: string | URL, init?: RequestInit) => (init?.method === "GET" ? read() : remove()));
+
+  it("reads what the v1 path resolves the id to, then deletes that pass by its own UID with the v3 delete", async () => {
+    const fetchMock = pc(() => jsonResponse(200, passRow()));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).resolves.toBe(true);
+
+    expect(calls(fetchMock)).toEqual([`GET https://pc.test/api/pass/${ENCODED}`, "DELETE https://pc.test/api/v3/pass/pc-uid-1"]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({ Authorization: "test-key" });
+    }
+  });
+
+  it("answers false for a 404 of the read: nothing in the account answers to that id, and no delete is sent", async () => {
+    const fetchMock = pc(() => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).resolves.toBe(false);
+
+    expect(calls(fetchMock)).toEqual([`GET https://pc.test/api/pass/${ENCODED}`]);
+  });
+
+  it("takes a body that is an array holding the pass, as the page's own text describes it", async () => {
+    const fetchMock = pc(() => jsonResponse(200, [passRow()]));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).resolves.toBe(true);
+
+    expect(calls(fetchMock)).toContain("DELETE https://pc.test/api/v3/pass/pc-uid-1");
+  });
+
+  it.each([
+    ["has the id as its barcode value", { userProvidedId: "admitto:event1:someone-else", barcodeValue: ID }],
+    ["has no userProvidedId of its own", { userProvidedId: "", barcodeValue: ID }],
+    ["has the id as its UID", { identifier: ID, userProvidedId: "" }],
+  ])("never deletes a pass that merely %s: the v1 path matches those too, so it fails, and nothing is deleted", async (_name, over) => {
+    const fetchMock = pc(() => jsonResponse(200, passRow(over)));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code: "wallet_provider_rejected" });
+
+    expect(calls(fetchMock)).toEqual([`GET https://pc.test/api/pass/${ENCODED}`]);
+  });
+
+  it.each([
+    ["an empty object", {}],
+    ["an empty array", []],
+    ["a string", "text"],
+    ["null", null],
+    ["a row without an identifier", { userProvidedId: ID }],
+    ["a row with an empty identifier", { identifier: "", userProvidedId: ID }],
+    ["a row whose identifier is not a string", { identifier: 7, userProvidedId: ID }],
+    ["a row without a userProvidedId", { identifier: "pc-uid-1" }],
+    ["a row whose userProvidedId is not a string", { identifier: "pc-uid-1", userProvidedId: 7 }],
+  ])("fails closed, deleting nothing, for %s instead of a pass", async (_name, body) => {
+    const fetchMock = pc(() => jsonResponse(200, body));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code: "wallet_provider_rejected" });
+
+    expect(calls(fetchMock)).toEqual([`GET https://pc.test/api/pass/${ENCODED}`]);
+  });
+
+  it("fails closed, deleting nothing, for a body that is not JSON", async () => {
+    const fetchMock = pc(() => new Response("<html>bad gateway</html>", { status: 200 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code: "wallet_provider_rejected" });
+
+    expect(calls(fetchMock)).toHaveLength(1);
+  });
+
+  it.each([
+    [401, "wallet_provider_unauthorized"],
+    [403, "wallet_provider_unauthorized"],
+    [400, "wallet_provider_rejected"],
+    [500, "wallet_provider_rejected"],
+  ])("throws a coded error for HTTP %s on the read, so the caller does not mark the pass removed, and deletes nothing", async (status, code) => {
+    const fetchMock = pc(() => new Response(null, { status }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code });
+
+    expect(calls(fetchMock)).toHaveLength(1);
+  });
+
+  it("reports a request that never got an answer as a timeout, not as 'no pass'", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code: "wallet_provider_timeout" });
+  });
+
+  it("reports a body that stalls past the timeout as a timeout, not as 'no pass'", async () => {
+    const fetchMock = pc(
+      () => ({ ok: true, status: 200, json: () => Promise.reject(new DOMException("The operation timed out.", "TimeoutError")) }) as unknown as Response,
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code: "wallet_provider_timeout" });
+  });
+
+  it("fails when the delete after the read fails, and does not say the pass was deleted", async () => {
+    const fetchMock = pc(
+      () => jsonResponse(200, passRow()),
+      () => new Response(null, { status: 401 }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).rejects.toMatchObject({ code: "wallet_provider_unauthorized" });
+  });
+
+  it("counts a pass that vanishes between the read and the delete (a 404 of the delete) as deleted", async () => {
+    const fetchMock = pc(
+      () => jsonResponse(200, passRow()),
+      () => new Response(null, { status: 404 }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId(ID)).resolves.toBe(true);
+  });
+});
+
 describe("PassCreatorClient.findByUserProvidedId", () => {
   it("returns the mapped result when found", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
@@ -1030,6 +1166,66 @@ describe("PassCreatorClient wallet system-log coverage", () => {
     expect(JSON.stringify(entry)).not.toContain("attendee-linked-pass-id");
   });
 
+  it("does not log the 404 of deletePassByUserProvidedId's read (no pass under that id) as a rejection", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await client.deletePassByUserProvidedId("admitto:event1:attendee1");
+
+    expect(querySystemLogs({ source: "wallet" })).toEqual([]);
+  });
+
+  it("logs a rejected read of deletePassByUserProvidedId with a static route template instead of the attendee-linked id", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "passcreator_request_rejected",
+      fields: { status: 401, route: "/api/pass/{id}" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
+  });
+
+  it("logs an id that resolves to another pass as one static warning, naming no id", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { identifier: "pc-uid-other", userProvidedId: "somebody-else", barcodeValue: "admitto:event1:attendee1" }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_id_resolved_to_another_pass" });
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
+    expect(JSON.stringify(entry)).not.toContain("somebody-else");
+  });
+
+  it("logs a read that never got an answer with the static route too, never the attendee-linked id", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_failed", fields: { method: "GET", route: "/api/pass/{id}" } });
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
+  });
+
+  it("logs a read that does not say which pass it is as a rejection, with the same static route", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { barcodeValue: "admitto:event1:attendee1" }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePassByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_rejected", fields: { status: 200, route: "/api/pass/{id}" } });
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
+  });
+
   it("logs a rejected updatePass with a static route template instead of the pass id", async () => {
     const fetchMock = vi.fn(async () => jsonResponse(404, { success: false, errors: ["Not found"] }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
@@ -1140,6 +1336,152 @@ describe("PassCreatorClient call pacing (PR #1064 round 2 - bot review)", () => 
     // own here, so this mainly documents that the gate is inside the retry loop, not bypassed by
     // it - the real value is the earlier "spaces consecutive calls" test, which has no retries.
     expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(145);
+  });
+});
+
+describe("PassCreatorClient.createPass send deadline", () => {
+  // The local gate gives every call the next 150 ms slot, so n calls queued before a creation put its slot n * 150 ms
+  // away. With fake timers the clock stops exactly on each slot, which makes the boundary exact.
+  const SLOT_MS = 150;
+  const LAST_SLOT_IN_TIME = Math.ceil(CREATE_PASS_DEADLINE_MS / SLOT_MS) - 1;
+  const FIRST_SLOT_TOO_LATE = Math.ceil(CREATE_PASS_DEADLINE_MS / SLOT_MS);
+  const CREATED = {
+    success: true,
+    data: {
+      identifier: "pass-1",
+      downloadPage: "https://pc.test/p/pass-1",
+      iPhoneUri: "https://pc.test/passinstance/pkpass/pass-1",
+      androidUri: "https://pc.test/passinstance/googlewallet/pass-1",
+    },
+  };
+
+  beforeEach(() => {
+    // The local gate only: a real Redis would not follow the fake clock.
+    vi.stubEnv("REDIS_URL", "");
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  /** A provider that answers a creation, and every other call with "already gone". */
+  function provider() {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) =>
+      init?.method === "POST" ? jsonResponse(200, CREATED) : new Response(null, { status: 404 }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const creationsSent = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").length;
+    return { client, fetchMock, creationsSent };
+  }
+
+  /** Calls that take their slots before whatever is called next. */
+  function queue(client: PassCreatorClient, calls: number): Promise<void>[] {
+    return Array.from({ length: calls }, (_, i) => client.deletePass(`queued-${i}`));
+  }
+
+  it("is longer than the 75 s that 500 queued calls need, so a call behind such a queue is still sent", () => {
+    expect(CREATE_PASS_DEADLINE_MS).toBeGreaterThan(500 * SLOT_MS);
+  });
+
+  it("sends a creation that waited in the pacing queue and still got its turn before the deadline", async () => {
+    const { client, creationsSent } = provider();
+    const queued = queue(client, LAST_SLOT_IN_TIME);
+    const created = client.createPass(INPUT);
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS);
+    await expect(created).resolves.toMatchObject({ providerPassId: "pass-1" });
+    await Promise.all(queued);
+    expect(creationsSent()).toBe(1);
+  });
+
+  it("drops a creation whose turn in the pacing queue comes at the deadline or later, and sends nothing of it", async () => {
+    const { client, creationsSent } = provider();
+    const queued = queue(client, FIRST_SLOT_TOO_LATE);
+    const outcome = client.createPass(INPUT).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS + 1_000);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(WalletProviderError);
+    expect(error).toMatchObject({ code: "wallet_provider_timeout", message: "PassCreator request was not sent in time." });
+    expect(String(error)).not.toContain(INPUT.userProvidedId);
+    await Promise.all(queued);
+    expect(creationsSent()).toBe(0);
+  });
+
+  it("does not retry a creation past the deadline: every attempt is checked, not only the first", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => {
+      // The first attempt takes until the deadline (a stalled provider), then answers with a rate limit.
+      vi.setSystemTime(Date.now() + CREATE_PASS_DEADLINE_MS);
+      return new Response(null, { status: 429 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const outcome = client.createPass(INPUT).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(2_000); // the 500 ms backoff, then the retry's turn
+    expect(await outcome).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("measures the deadline from the start of the call, so a retry within it is still sent", async () => {
+    let attempts = 0;
+    const fetchMock = vi.fn(async (_input: string | URL) => {
+      attempts += 1;
+      return attempts === 1 ? new Response(null, { status: 429 }) : jsonResponse(200, CREATED);
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const created = client.createPass(INPUT);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(created).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts the deadline from the check the caller reports, not from the call: a check as old as the deadline is dropped, a younger one is sent", async () => {
+    const { client, creationsSent } = provider();
+
+    const dropped = await client.createPass(INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS }).catch((err: unknown) => err);
+    expect(dropped).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(creationsSent()).toBe(0);
+
+    const sent = client.createPass(INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS + 1_000 });
+    await vi.advanceTimersByTimeAsync(150); // its turn in the pacing gate
+    await expect(sent).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(creationsSent()).toBe(1);
+  });
+
+  it("gives an update that is given a check the same deadline: dropped when the check is as old as the deadline, sent when it is younger", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(200, CREATED));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    const dropped = await client.updatePass("pass-1", INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS }).catch((err: unknown) => err);
+    expect(dropped).toMatchObject({ code: "wallet_provider_timeout" });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const sent = client.updatePass("pass-1", INPUT, { checkedAt: Date.now() - CREATE_PASS_DEADLINE_MS + 1_000 });
+    await vi.advanceTimersByTimeAsync(150); // its turn in the pacing gate
+    await expect(sent).resolves.toMatchObject({ providerPassId: "pass-1" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives an update that is not given a check no deadline, however far behind it is queued", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) =>
+      init?.method === "PATCH" ? jsonResponse(200, CREATED) : new Response(null, { status: 404 }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const queued = queue(client, FIRST_SLOT_TOO_LATE);
+    const late = client.updatePass("pass-1", INPUT);
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS + 1_000);
+    await expect(late).resolves.toBeDefined();
+    await Promise.all(queued);
+    expect(fetchMock).toHaveBeenCalledTimes(FIRST_SLOT_TOO_LATE + 1);
+  });
+
+  it("leaves every other call alone: one queued as far behind as a dropped creation is still sent", async () => {
+    const { client, fetchMock } = provider();
+    const queued = queue(client, FIRST_SLOT_TOO_LATE);
+    const late = client.deletePass("late");
+    await vi.advanceTimersByTimeAsync(CREATE_PASS_DEADLINE_MS + 1_000);
+    await expect(late).resolves.toBeUndefined();
+    await Promise.all(queued);
+    expect(fetchMock).toHaveBeenCalledTimes(FIRST_SLOT_TOO_LATE + 1);
   });
 });
 

@@ -58,7 +58,7 @@ import {
 ```
 
 `WalletPassProvider` operations: `createPass`, `updatePass`, `voidPass`, `restorePass`,
-`deletePass`, `sendPushMessage`, `findByUserProvidedId`, `getPassSnapshot`, plus the declarative
+`deletePass`, `deletePassByUserProvidedId`, `sendPushMessage`, `findByUserProvidedId`, `getPassSnapshot`, plus the declarative
 `capabilities` and `consistencyPolicy`. `WalletProviderError` carries a stable `code` (`wallet_provider_unauthorized` /
 `_rate_limited` / `_duplicate` / `_not_found` / `_timeout` / `_rejected`) - callers branch on
 `code`, never on `.message`.
@@ -78,6 +78,7 @@ provider facts from the `@admitto/wallet/capabilities` subpath, never the packag
 | Create pass | `POST /api/v3/pass?async=false` | `async=false` to get `iPhoneUri`/`androidUri` back immediately |
 | Update pass | `PATCH /api/v3/pass/{id}` | Never `POST` - v3 `POST` replaces the whole record |
 | Delete pass | `DELETE /api/v3/pass/{id}` | 404 on retry treated as success (idempotent) |
+| Delete pass by userProvidedId | `GET /api/pass/{uid}` (no `/v3/`), then `DELETE /api/v3/pass/{identifier}` | For a pass whose identifier Admitto never saved (erasure follow-up). The v1 path takes the pass UID, the userProvidedId or the barcode value, and the read returns a raw object with `identifier`, `userProvidedId` and `barcodeValue`; the v3 delete takes the identifier only, so an unknown id there is a 404 that `deletePass` counts as deleted. A 404 of the read = none there (not an error). The pass is deleted only when its own `userProvidedId` equals the id asked for (a pass that merely has it as its barcode value is never deleted: the call throws), and then by its identifier. Per PassCreator's docs, not yet confirmed live |
 | Void / restore | `PUT /api/pass/{uid}` (no `/v3/`) | Body `{"voided": true\|false}`; this is the only endpoint that can write `voided` |
 | Push message | `PATCH /api/v3/pass/bulk` | Body `{data:{pushNotificationText}, filter:{identifiers}}`; async (202), only confirms that PassCreator accepted it, not device delivery |
 | Search | `GET /api/v3/pass?query=<base64url query-language>` | Used for idempotency reconciliation and registration-status polling |
@@ -104,7 +105,7 @@ Arriving on that URL is itself the only voided signal there is (`isVoidedRoute` 
 `apps/web/src/wallet-webhook.ts`).
 
 - **Auth:** `Authorization: <api_key>` header, no `Bearer` prefix.
-- **Rate limit:** PassCreator allows 600 requests per minute per account. The client paces itself: at least 150 ms between call starts per process, plus, when `REDIS_URL` is set, a shared Redis gate of at most 6 calls per second across the app and the worker (it fails open to per-process pacing if Redis is unreachable). A 429 is retried 3 times with exponential backoff (500 ms base) before it surfaces as `wallet_provider_rate_limited`; each request has a 15 s timeout (`wallet_provider_timeout`). `PASSCREATOR_BASE_URL` (must start with `https://`) overrides the default `https://app.passcreator.com`.
+- **Rate limit:** PassCreator allows 600 requests per minute per account. The client paces itself: at least 150 ms between call starts per process, plus, when `REDIS_URL` is set, a shared Redis gate of at most 6 calls per second across the app and the worker (it fails open to per-process pacing if Redis is unreachable). A 429 is retried 3 times with exponential backoff (500 ms base) before it surfaces as `wallet_provider_rate_limited`; each request has a 15 s timeout (`wallet_provider_timeout`). A pass creation (`createPass`) that has waited more than 2 minutes (`CREATE_PASS_DEADLINE_MS`, counted from the caller's check, `options.checkedAt`), for instance behind a long queue of other calls, is dropped without being sent and fails with `wallet_provider_timeout`, so nothing of it can reach PassCreator later. `PASSCREATOR_BASE_URL` (must start with `https://`) overrides the default `https://app.passcreator.com`.
 - **Config scope:** API key, template ID, and field mapping are stored per-event, not per-instance,
   so a leaked or rotated key's blast radius in Admitto's own logs/audit trail is scoped to one event.
 - **Key-scope caveat:** this does not limit the key itself. PassCreator API keys inherit the

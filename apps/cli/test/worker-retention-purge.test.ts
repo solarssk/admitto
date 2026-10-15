@@ -29,6 +29,7 @@ const sweepErasedWalletPasses = vi.fn(async (..._args: unknown[]) => ({
   pending: 0,
   deleted: 0,
   failed: 0,
+  undecided: 0,
   noProvider: 0,
   notTried: 0,
 }));
@@ -158,7 +159,7 @@ describe("runWorkerTick — scheduled retention pass", () => {
 
   it("says how many wallet passes of erased attendees it deleted at the provider, and warns for each that stays", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 8, deleted: 4, failed: 1, noProvider: 2, notTried: 1 });
+    sweepErasedWalletPasses.mockResolvedValueOnce({ pending: 8, deleted: 4, failed: 1, undecided: 0, noProvider: 2, notTried: 1 });
     purgeJobFilesForRetention.mockResolvedValueOnce({ exportFiles: 0, stagedImportFiles: 0, orphanedFiles: 0, failures: 1 });
 
     await runWorkerTick(fakeEmailDeliveryDb([]) as never, fakeLocks() as never, createRetentionSchedule());
@@ -185,7 +186,7 @@ describe("runWorkerTick — scheduled retention pass", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(touchWorkerHeartbeat).toHaveBeenCalledTimes(1);
 
-    finishSweep({ pending: 0, deleted: 0, failed: 0, noProvider: 0, notTried: 0 });
+    finishSweep({ pending: 0, deleted: 0, failed: 0, undecided: 0, noProvider: 0, notTried: 0 });
     await tick;
     // Stopped with the sweep: no more refreshes once it is over.
     touchWorkerHeartbeat.mockClear();

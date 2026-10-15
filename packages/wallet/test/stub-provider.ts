@@ -42,6 +42,9 @@ export function createStubWalletProvider(): WalletPassProvider {
         if (result.providerPassId === providerPassId) passes.delete(userProvidedId);
       }
     },
+    async deletePassByUserProvidedId(userProvidedId) {
+      return passes.delete(userProvidedId);
+    },
     async findByUserProvidedId(userProvidedId) {
       return passes.get(userProvidedId) ?? null;
     },

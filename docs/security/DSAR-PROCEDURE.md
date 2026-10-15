@@ -65,6 +65,30 @@ flowchart TD
      - **Wallet pass:** if the provider cannot be reached, a dialog says the pass is still there and
        offers **Try again**, which repeats only the wallet step; the attendee's page keeps a **Try
        again** button until it has worked. Everything personal inside Admitto is gone either way.
+       A pass that Admitto never managed to record (its save failed, or the event's template changed
+       while it was being made) is deleted too, by the id Admitto wrote on the attendee's pass row before
+       it called the provider; when the retention run or the erasure finds one, **System logs** shows
+       `wallet_pass_untracked_deleted` with the event id and how many. For about ten minutes after the
+       erasure the dialog can say that such a pass is still there although the provider has none: a pass
+       that was being made at that moment can still reach the provider, so Admitto asks again later
+       (**Try again**, the same command, or the daily retention run). If the provider says the id also
+       belongs to another pass (as its barcode value), Admitto deletes nothing and keeps reporting the
+       pass as still there: remove it in the provider's own console. The same holds for the code
+       `wallet_credential_changed`: the pass was made under an earlier Template ID or API key of the event
+       and could not be deleted then, and Admitto never marks such a pass as removed on its own, because it
+       cannot tell which account a pass is in. Delete the pass in the earlier account's console, by its
+       User provided ID, `admitto:<event id>:<attendee id>`, then ask whoever runs the database to clear
+       the marker on the pass row (`UPDATE "WalletPass" SET left_behind_pass_id = NULL WHERE attendee_id
+       = '<attendee id>'`) and run the erasure again: Admitto settles the row as usual. Do not use **Remove from
+       event** for such a person before that: it deletes the row, and with it the mark and the only record
+       of the pass. A row that a version up to
+       0.7.5 marked `wallet_credential_changed` carries the mark `unknown` after the upgrade; treat it the same
+       way. A pass that reaches
+       the provider after Admitto settled on "no pass" is found by the daily retention run within a week
+       and deleted; **System logs** shows `wallet_pass_found_after_settling`.
+       A pass made before that id was
+       written, by a request that died without leaving anything on the row, is not found: delete it in
+       the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>`.
      - **Audit:** the event action log and the central admin audit log record who erased how many
        people and which ids, never a name or an address. The page of the erased person says who
        erased them and when (a Superadmin also sees the address it was done from).

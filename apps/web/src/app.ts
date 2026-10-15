@@ -1119,15 +1119,7 @@ export function createApp(options: CreateAppOptions = {}) {
         await deleteOrphanPassOfGoneAttendee(userProvidedId, result.providerPassId);
         return WALLET_PASS_UNAVAILABLE;
       }
-      if (templateChanged) {
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_template_changed_mid_issuance",
-          fields: { eventId: event.id, attendeeId: attendee.id },
-        });
-        return markFailed("wallet_credential_changed");
-      }
+      if (templateChanged) return dropPassMadeUnderChangedCredentials(result.providerPassId);
       if (expirationChanged) {
         recordSystemLog({
           level: "error",
@@ -1154,14 +1146,65 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
+    /**
+     * Writes the id the new pass will have at the provider (`user_provided_id`) onto the attendee's pass row before
+     * the provider is called, creating the row as "pending" when there is none. A row that holds that id and not the
+     * provider's is what tells an erasure, and its follow-up (deleteErasedWalletPasses), that a pass may exist which
+     * this request never managed to record: the save below failed, the event's template changed meanwhile, the
+     * process died. Written first because after the provider call the database may be the thing that is failing.
+     * Taken under the attendee's row lock, so it waits for an erasure that is still open and sends nothing to the
+     * provider for an attendee who is erased or removed. Returns `checkedAt`, the moment the attendee was read as still
+     * there under that lock, to go on, "unavailable" for an attendee who is gone, null when the row could not be written
+     * (nothing is sent then either).
+     * The call that follows is given `checkedAt`: createPass sends nothing later than CREATE_PASS_DEADLINE_MS after it
+     * and drops the call instead, however long this process was paused since. That is what makes the follow-up's
+     * 10-minute window safe: an erasure can only come after this transaction, so a creation cannot outlive it.
+     */
+    async function reservePassId(
+      userProvidedId: string,
+    ): Promise<{ checkedAt: number } | typeof WALLET_PASS_UNAVAILABLE | null> {
+      try {
+        const checkedAt = await db.$transaction(
+          async (tx) => {
+            if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return null;
+            const readAt = Date.now();
+            await tx.walletPass.upsert({
+              where: { attendee_id: attendee.id },
+              create: { attendee_id: attendee.id, provider: "passcreator", user_provided_id: userProvidedId, status: "pending" },
+              update: { user_provided_id: userProvidedId },
+            });
+            return readAt;
+          },
+          { timeout: ERASURE_WAIT_TX_TIMEOUT_MS },
+        );
+        return checkedAt === null ? WALLET_PASS_UNAVAILABLE : { checkedAt };
+      } catch (err) {
+        console.error("walletPass upsert (reserve id) failed:", { reason: walletFailureCode(err) });
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_upsert_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return null;
+      }
+    }
+
     /** For a pass just created at the provider for an attendee who has been erased or removed in
      * the meantime: records only the provider's ids (no install links), so the pass stays findable
      * as "still to delete at the provider" (an erased attendee's pass with provider ids and no
-     * provider_removed_at), then deletes it there and stamps it removed. A row that already holds
+     * provider_removed_at), then deletes it there. The row is not marked removed: another creation
+     * of the same attendee (a tap that was given up on, or a second instance) may still be on its way
+     * to the provider, and only the erasure's follow-up settles a row (deleteErasedWalletPasses: it
+     * deletes by the provider's id again, which is idempotent, asks for the reserved id and marks the
+     * row removed once no creation can still land). A row that already holds
      * another pass keeps its ids. A removed attendee has no row to keep the ids on (the insert
      * fails on its foreign key, P2003) and nobody to look for them later: the pass is only
      * deleted at the provider. Best effort and never throws: a failed delete leaves an erased
-     * attendee's row for the erasure's own retry, and a removed one's pass at the provider. */
+     * attendee's row for the erasure's own retry, and a removed one's pass at the provider. When the event's
+     * Template ID or API key is not the one this request made the pass under any more, the pass may be in another
+     * PassCreator account, which that retry would not ask: the row then keeps the mark that says so
+     * (rememberLeftBehindPass). */
     async function deleteOrphanPassOfGoneAttendee(userProvidedId: string, providerPassId: string): Promise<void> {
       try {
         try {
@@ -1178,20 +1221,18 @@ export function createApp(options: CreateAppOptions = {}) {
         } catch (createErr) {
           const code = createErr instanceof Prisma.PrismaClientKnownRequestError ? createErr.code : null;
           if (code === "P2002") {
-            // A row exists already (for instance a failed attempt): give it the ids if it has none.
+            // A row exists already (reservePassId's, or a failed attempt): give it the ids if it has none. It may
+            // have been marked removed meanwhile: the erasure's follow-up asked the provider for the reserved id
+            // before this pass existed and found none. It exists now, so it is still to be deleted.
             await db.walletPass.updateMany({
               where: { attendee_id: attendee.id, provider_pass_id: null },
-              data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId },
+              data: { provider_pass_id: providerPassId, user_provided_id: userProvidedId, provider_removed_at: null },
             });
           } else if (code !== "P2003") {
             throw createErr;
           }
         }
         await provider.deletePass(providerPassId);
-        await db.walletPass.updateMany({
-          where: { attendee_id: attendee.id, provider_pass_id: providerPassId, provider_removed_at: null },
-          data: { provider_removed_at: new Date() },
-        });
       } catch (err) {
         console.error("wallet pass delete (erased attendee) failed:", { reason: walletFailureCode(err) });
         recordSystemLog({
@@ -1199,6 +1240,75 @@ export function createApp(options: CreateAppOptions = {}) {
           source: "api",
           message: "wallet_pass_erased_delete_failed",
           fields: { eventId: event.id, attendeeId: attendee.id, providerPassId },
+        });
+        if (await credentialsChangedMeanwhile()) await rememberLeftBehindPass(providerPassId);
+      }
+    }
+
+    /** markActive's answer to a pass made under a Template ID the event no longer has: an admin changed it (and may
+     * have replaced the API key with one of another PassCreator account) while this request was creating the pass.
+     * The pass is not kept. This request still holds the client it made the pass with, so it deletes the pass there at
+     * once, which an erasure's follow-up could not do: it asks the account the event uses now. Nothing is recorded when
+     * that works (the row stays as reservePassId left it, and the attendee's next tap makes a pass under the current
+     * template). When it does not, the pass may be left in the old account and the row says so, so that the follow-up
+     * does not take "no pass" from the new account for an answer (deleteErasedWalletPasses): the id of the pass goes into
+     * `left_behind_pass_id`, which nothing else writes, and the usual failure ("wallet_credential_changed") is recorded as
+     * well, for the attendee's page. Never throws. */
+    async function dropPassMadeUnderChangedCredentials(providerPassId: string): Promise<null> {
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "wallet_pass_template_changed_mid_issuance",
+        fields: { eventId: event.id, attendeeId: attendee.id },
+      });
+      try {
+        await provider.deletePass(providerPassId);
+        return null;
+      } catch (err) {
+        console.error("PassCreator deletePass (credentials changed mid-issuance) failed:", { reason: walletFailureCode(err) });
+        // To stdout as well as to the System logs: the pass id may be on no row (rememberLeftBehindPass can fail too).
+        emitSystemLog("api", "error", "wallet_pass_changed_credentials_delete_failed", {
+          eventId: event.id,
+          attendeeId: attendee.id,
+          providerPassId,
+        });
+        await rememberLeftBehindPass(providerPassId);
+        return markFailed("wallet_credential_changed");
+      }
+    }
+
+    /** Whether the event's Template ID or API key is not the one this request made its pass under any more, read now
+     * without the lock markActive takes: then the pass may be in another PassCreator account. The settings guard checks a
+     * new key against the template only once a pass is issued, and an attendee erased while the first pass is made is
+     * exactly when none is. A key that was only rotated within the same account reads as a change too, and so does a read
+     * that fails: that only keeps a row open that a person then has to look at. */
+    async function credentialsChangedMeanwhile(): Promise<boolean> {
+      try {
+        const current = await db.event.findUnique({
+          where: { id: event.id },
+          select: { wallet_template_id: true, wallet_api_key_enc: true },
+        });
+        return current?.wallet_template_id !== event.walletTemplateId || current.wallet_api_key_enc !== event.walletApiKeyEnc;
+      } catch {
+        return true;
+      }
+    }
+
+    /** Writes the id of the pass that could not be deleted under the old credentials on the attendee's row, in the column
+     * that no other write touches: a later creation under the new credentials clears `last_error_code`, and this stays, so
+     * that an erasure's follow-up still knows a pass may be left in the old account. Not under the attendee's row lock: it
+     * also has to be written for an attendee who was erased meanwhile (deleteOrphanPassOfGoneAttendee), whose row the
+     * erasure keeps. A removed attendee has no row, and nobody to look the pass up for. Best effort and never throws. */
+    async function rememberLeftBehindPass(providerPassId: string): Promise<void> {
+      try {
+        await db.walletPass.updateMany({ where: { attendee_id: attendee.id }, data: { left_behind_pass_id: providerPassId } });
+      } catch (err) {
+        console.error("walletPass update (left-behind pass) failed:", { reason: walletFailureCode(err) });
+        // The pass id is on no row now, so this line is the only record of it: stdout as well as the System logs.
+        emitSystemLog("api", "error", "wallet_pass_left_behind_not_recorded", {
+          eventId: event.id,
+          attendeeId: attendee.id,
+          providerPassId,
         });
       }
     }
@@ -1227,7 +1337,8 @@ export function createApp(options: CreateAppOptions = {}) {
     ): Promise<null> {
       try {
         await db.$transaction(async (tx) => {
-          // Nothing is recorded for an attendee erased or removed meanwhile.
+          // No failure is recorded for an attendee erased or removed meanwhile. For an erased one the id that
+          // reservePassId wrote stays on the row, which is what the erasure's follow-up looks the pass up by.
           if (isAttendeeGone(await lockAttendeeRow(tx, attendee.id))) return;
           const { count } = await tx.walletPass.updateMany({
             where: { attendee_id: attendee.id, status: { not: "active" } },
@@ -1290,9 +1401,10 @@ export function createApp(options: CreateAppOptions = {}) {
      */
     async function createOrRecoverPass(
       input: WalletPassInput,
+      checkedAt: number,
     ): Promise<WalletPassUrlsOutcome> {
       try {
-        const result = await provider.createPass(input);
+        const result = await provider.createPass(input, { checkedAt });
         // markActive compares input.expirationDate (exact string, or undefined) against the
         // event's *fresh* row to detect a settings save - the mode itself, or the event's own
         // date/hours/timezone while the mode stays "event_end" throughout - landing mid-request
@@ -1315,7 +1427,9 @@ export function createApp(options: CreateAppOptions = {}) {
           // any other unrecoverable createPass error - a reconcile Admitto can't confirm must not
           // be treated as a successful activation.
           try {
-            const reconciled = await provider.updatePass(recovered.providerPassId, input);
+            // The same deadline as the creation that was rejected: this call carries the person's data too, and comes after
+            // two searches and a pause, which can be long.
+            const reconciled = await provider.updatePass(recovered.providerPassId, input, { checkedAt });
             return await markActive(input.userProvidedId, reconciled, input.expirationDate);
           } catch (reconcileErr) {
             console.error("PassCreator updatePass (duplicate recovery reconcile) failed:", { reason: walletFailureCode(reconcileErr) });
@@ -1397,7 +1511,9 @@ export function createApp(options: CreateAppOptions = {}) {
           display.event.walletFieldMapping,
         );
         const input = buildWalletPassInput(display, qrPayload, customFieldPlaceholders);
-        return createOrRecoverPass(input);
+        const reserved = await reservePassId(input.userProvidedId);
+        if (reserved === null || reserved === WALLET_PASS_UNAVAILABLE) return reserved;
+        return createOrRecoverPass(input, reserved.checkedAt);
       })().finally(() => {
         walletCreateLocks.delete(attendee.id);
       });

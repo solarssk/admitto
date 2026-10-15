@@ -115,7 +115,7 @@ describe("admitto attendees erase", () => {
     confirm = vi.fn(async (_prompt: string) => true);
     purgeJobFiles = vi.fn(async (..._args: unknown[]) => ({ deleted: 2, failed: 0 }));
     resolveProvider = vi.fn(() => provider);
-    deletePasses = vi.fn(async () => ({ deleted: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 }));
+    deletePasses = vi.fn(async () => ({ deleted: 0, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 }));
     deps = {
       confirm: confirm as unknown as AttendeesEraseDeps["confirm"],
       purgeJobFiles: purgeJobFiles as unknown as AttendeesEraseDeps["purgeJobFiles"],
@@ -247,7 +247,7 @@ describe("admitto attendees erase", () => {
     eraseAttendees.mockResolvedValueOnce(erasedResult([], ["att-1"]));
     deletePasses.mockImplementationOnce(async (_db: unknown, _event: string, ids: string[]) => {
       for (const pass of passes) if (ids.includes(pass.attendee_id)) pass.pending = false;
-      return { deleted: ids.length, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+      return { deleted: ids.length, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
     });
 
     await runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1"));
@@ -277,7 +277,7 @@ describe("admitto attendees erase", () => {
     eraseAttendees.mockResolvedValueOnce(erasedResult(["att-1", "att-2", "att-3"]));
     deletePasses.mockImplementationOnce(async () => {
       passes[0]!.pending = false;
-      return { deleted: 1, failedAttendeeIds: ["att-2", "att-3"], failureCodes: ["wallet_unauthorized"], notTried: 0 };
+      return { deleted: 1, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: ["att-2", "att-3"], failureCodes: ["wallet_unauthorized"], notTried: 0 };
     });
 
     const run = runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1,att-2,att-3", "--yes"));
@@ -289,6 +289,93 @@ describe("admitto attendees erase", () => {
     expect(output()).toContain("Wallet passes deleted at the provider: 1.");
     expect(errorLog).toHaveBeenCalledWith("Wallet pass of attendee att-2 could not be deleted (wallet_unauthorized).");
     expect(errorLog).toHaveBeenCalledWith("Wallet pass of attendee att-3 could not be deleted (wallet_unauthorized).");
+  });
+
+  it("asks what is still to be deleted the way the erase API does: the provider's id, or only the id reserved for the pass, of an erased attendee", async () => {
+    const { db, raw, passes } = fakeDb({
+      attendees: [{ id: "att-1", erased_at: null }],
+      passes: [{ attendee_id: "att-1", pending: true }],
+    });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-1"]));
+    deletePasses.mockImplementationOnce(async () => {
+      passes[0]!.pending = false;
+      return { deleted: 1, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+    });
+
+    await runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1", "--yes"));
+
+    expect(raw.walletPass.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { left_behind_pass_id: { not: null } },
+          {
+            provider_removed_at: null,
+            OR: [{ provider_pass_id: { not: null } }, { user_provided_id: { not: null } }, { status: "failed" }],
+          },
+        ],
+        attendee: { event_id: "evt-1", erased_at: { not: null } },
+        attendee_id: { in: ["att-1"] },
+      },
+      select: { attendee_id: true },
+    });
+  });
+
+  it("says how many passes it found that Admitto had no record of, names no attendee, and says nothing when it found none", async () => {
+    const { db, passes } = fakeDb({
+      attendees: [{ id: "att-1", erased_at: null }, { id: "att-2", erased_at: null }],
+      passes: [{ attendee_id: "att-1", pending: true }, { attendee_id: "att-2", pending: true }],
+    });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-1", "att-2"]));
+    deletePasses.mockImplementationOnce(async () => {
+      for (const pass of passes) pass.pending = false;
+      return { deleted: 2, untrackedDeleted: 2, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+    });
+
+    await runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1,att-2", "--yes"));
+
+    expect(output()).toContain("2 wallet pass(es) that Admitto had no record of were found at the provider by their id and deleted.");
+    expect(output()).not.toContain("att-");
+
+    log.mockClear();
+    const quiet = fakeDb({ attendees: [{ id: "att-3", erased_at: null }], passes: [{ attendee_id: "att-3", pending: true }] });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-3"]));
+    deletePasses.mockImplementationOnce(async () => {
+      quiet.passes[0]!.pending = false;
+      return { deleted: 1, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: [], failureCodes: [], notTried: 0 };
+    });
+
+    await runAttendeesErase(quiet.db, deps, argv(...BASE, "--attendee-ids", "att-3", "--yes"));
+
+    expect(output()).not.toContain("had no record of");
+    // Nothing undecided either: no word about passes that cannot be confirmed gone yet.
+    expect(errorLog.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("cannot be confirmed gone yet");
+  });
+
+  it("says when a pass cannot be confirmed gone yet, because it may still be being made, and exits with 2", async () => {
+    const { db } = fakeDb({
+      attendees: [{ id: "att-1", erased_at: null }],
+      passes: [{ attendee_id: "att-1", pending: true }],
+    });
+    eraseAttendees.mockResolvedValueOnce(erasedResult(["att-1"]));
+    // The provider has none under the reserved id, but the erasure is a moment old: the row stays marked.
+    deletePasses.mockImplementationOnce(async () => ({
+      deleted: 0,
+      untrackedDeleted: 0,
+      undecided: 1,
+      failedAttendeeIds: [],
+      failureCodes: [],
+      notTried: 0,
+    }));
+
+    const run = runAttendeesErase(db, deps, argv(...BASE, "--attendee-ids", "att-1", "--yes"));
+
+    await expect(run).rejects.toMatchObject({
+      message: "1 wallet pass(es) are still at the provider. Run the same command again to try them again.",
+      exitCode: 2,
+    });
+    expect(errorLog).toHaveBeenCalledWith(
+      "1 wallet pass(es) cannot be confirmed gone yet: a pass that was being made when the person was erased can still reach the provider. Run the same command again in 10 minutes or more.",
+    );
   });
 
   it("leaves the passes where they are, and says so, when the event has no wallet credentials", async () => {

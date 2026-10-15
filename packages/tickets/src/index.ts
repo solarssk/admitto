@@ -16,6 +16,7 @@ export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
   ERASED_EMAIL_DOMAIN,
+  ERASE_TRANSACTION_TIMEOUT_MS,
   erasedAttendeeEmail,
   eraseAttendees,
   isErasedPlaceholderEmail,
@@ -33,8 +34,17 @@ export {
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
 export type { RemoveAttendeesParams, RemoveAttendeesResult, RemoveWalletTarget } from "./remove-attendees.js";
-export { deleteErasedWalletPasses } from "./erase-wallet-passes.js";
-export type { EraseWalletPassesResult } from "./erase-wallet-passes.js";
+export {
+  CREATION_SETTLE_WINDOW_MS,
+  PASS_ROW_STILL_AT_PROVIDER,
+  SETTLED_RECHECK_HORIZON_MS,
+  deleteErasedWalletPasses,
+  erasedPassToDeleteWhere,
+  passIsStillToDelete,
+  recheckSettledWalletPasses,
+  settledUntrackedPassRow,
+} from "./erase-wallet-passes.js";
+export type { EraseWalletPassesResult, RecheckSettledWalletPassesResult } from "./erase-wallet-passes.js";
 export type {
   EraseAttendeesParams,
   EraseAttendeesResult,
@@ -162,7 +172,7 @@ export type {
 export { claimNextAdminJob } from "./claim-admin-job.js";
 export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
-export { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
+export { resolveTicketPageDisplay, buildWalletPassInput, walletUserProvidedId } from "./wallet-pass-input.js";
 export { formatDate, formatDateShort, formatEventHour, formatEventHoursRange } from "@admitto/shared/region-date-format";
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
 export {

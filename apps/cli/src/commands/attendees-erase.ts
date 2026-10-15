@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { getDefaultStorage, purgeEventJobFiles } from "@admitto/storage";
 import {
+  CREATION_SETTLE_WINDOW_MS,
+  ERASE_TRANSACTION_TIMEOUT_MS,
   deleteErasedWalletPasses,
   eraseAttendees,
   scrubImportJobResults,
@@ -20,8 +22,6 @@ import {
 /** The same cap as the bulk erase API: one transaction, and one provider call per pass after it. */
 const MAX_ATTENDEES = 500;
 const MAX_ID_LENGTH = 128;
-/** An erasure touches a handful of tables per attendee; a large selection needs more than Prisma's default 5 s. */
-const ERASE_TX_TIMEOUT_MS = 60_000;
 /** Nothing waits for this command but the operator, so the provider gets longer than the API's 90 s. */
 const WALLET_BUDGET_MS = 10 * 60_000;
 
@@ -141,6 +141,15 @@ async function deletePassesAtProvider(
       for (const attendeeId of run.failedAttendeeIds) {
         console.error(`Wallet pass of attendee ${attendeeId} could not be deleted (${run.failureCodes.join(",")}).`);
       }
+      if (run.untrackedDeleted > 0) {
+        console.log(`${run.untrackedDeleted} wallet pass(es) that Admitto had no record of were found at the provider by their id and deleted.`);
+      }
+      if (run.undecided > 0) {
+        console.error(
+          `${run.undecided} wallet pass(es) cannot be confirmed gone yet: a pass that was being made when the person was erased can still reach the provider. ` +
+            `Run the same command again in ${Math.ceil(CREATION_SETTLE_WINDOW_MS / 60_000)} minutes or more.`,
+        );
+      }
     } catch (err) {
       console.error(`Wallet pass deletion failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -204,7 +213,7 @@ export async function runAttendeesErase(
       }
       return result;
     },
-    { timeout: ERASE_TX_TIMEOUT_MS },
+    { timeout: ERASE_TRANSACTION_TIMEOUT_MS },
   );
 
   // Files written before the erasure still hold the person: they go too (nothing for an erasure that erased nobody new).

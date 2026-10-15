@@ -96,6 +96,7 @@ import {
   resolveEventWalletProvider,
   issueTicket,
   createUnderAttendeeJobQueueLock,
+  passIsStillToDelete,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -161,9 +162,11 @@ const ATTENDEE_DETAIL_SELECT = {
       user_agent: true,
       user_agent_captured_at: true,
       provider_removed_at: true,
-      // Never sent to the client: only tells buildAttendeeDetailDto whether an erased attendee's
+      // Never sent to the client: only tell buildAttendeeDetailDto whether an erased attendee's
       // pass is still to be deleted at the provider (wallet_pass_delete_pending).
       provider_pass_id: true,
+      user_provided_id: true,
+      left_behind_pass_id: true,
     },
   },
 } as const;
@@ -405,8 +408,9 @@ export type AttendeeDetailDto = {
   wallet_pass: WalletPassActionDto | null;
   /** True for an erased attendee whose pass still has to be deleted at the wallet provider (the
    * provider was unreachable, or no connection was set up when the erasure ran): repeating the
-   * erasure request is the retry. False for everyone else, and for a pass that never reached the
-   * provider. */
+   * erasure request is the retry. Also true when the row holds only the id reserved for a pass that
+   * may exist at the provider (a request that could not record it). False for everyone else, and for
+   * a pass that never reached the provider. */
   wallet_pass_delete_pending: boolean;
   /** Same on-demand /t/.../wallet/:platform redirect routes the ticket page's own buttons and
    * ticket emails use (create-or-reuse the pass, then 302 to the provider) - null when wallet
@@ -1140,10 +1144,7 @@ async function buildAttendeeDetailDto(
     rsvp_source: row.rsvp_source,
     wallet_pass: row.wallet_pass ? serializeWalletPassAction(row.wallet_pass) : null,
     wallet_pass_delete_pending:
-      row.erased_at !== null &&
-      row.wallet_pass !== null &&
-      row.wallet_pass.provider_pass_id !== null &&
-      row.wallet_pass.provider_removed_at === null,
+      row.erased_at !== null && row.wallet_pass !== null && passIsStillToDelete(row.wallet_pass),
     wallet_apple_link: walletLinks.apple,
     wallet_google_link: walletLinks.google,
     wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
@@ -3582,6 +3583,19 @@ export async function handleBulkRefreshAttendeeWalletStatus(c: Context, db: Pris
   });
 }
 
+/** Deletes the attendee's WalletPass row, so that they read as never having added a pass. A row that records a pass
+ * left behind in an account the event no longer uses (`left_behind_pass_id`) is replaced by one that holds only that
+ * mark: erasing the person later has to find it, and the follow-up keeps the row open until a person has dealt with
+ * that pass. */
+async function deleteWalletPassRow(tx: Prisma.TransactionClient, attendeeId: string): Promise<void> {
+  const { left_behind_pass_id } = await tx.walletPass.delete({
+    where: { attendee_id: attendeeId },
+    select: { left_behind_pass_id: true },
+  });
+  if (left_behind_pass_id === null) return;
+  await tx.walletPass.create({ data: { attendee_id: attendeeId, provider: "passcreator", status: "pending", left_behind_pass_id } });
+}
+
 /** Permanently removes one attendee's wallet pass at the provider and deletes the WalletPass row,
  * same core logic as handleDeleteAttendeeWalletPass's single-attendee path - the attendee reads as
  * never having added a pass afterward. */
@@ -3604,7 +3618,7 @@ async function deleteOneWalletPass(
     // An erasure keeps the row (see handleDeleteAttendeeWalletPass).
     const locked = await lockAttendeeRow(tx, target.attendeeId);
     if (!locked || locked.erased) return false;
-    await tx.walletPass.delete({ where: { attendee_id: target.attendeeId } });
+    await deleteWalletPassRow(tx, target.attendeeId);
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: target.attendeeId,
@@ -4089,6 +4103,8 @@ type WalletPassRow = {
   user_agent_captured_at: Date | null;
   provider_removed_at: Date | null;
   provider_pass_id: string | null;
+  user_provided_id: string | null;
+  left_behind_pass_id: string | null;
 };
 
 function serializeWalletPassAction(pass: WalletPassRow): WalletPassActionDto {
@@ -4530,7 +4546,8 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
  * the provider (skipped if PR 3's own "Remove from provider" already did, no point calling an
  * idempotent method twice), distinct from void (which leaves the pass installed but marked
  * invalid). The WalletPass row itself is deleted rather than updated, so the attendee reads as
- * never having added a pass - a later "Add to Wallet" click creates a fresh one. Irreversible; the
+ * never having added a pass - a later "Add to Wallet" click creates a fresh one (deleteWalletPassRow says what a row that
+ * carries the left-behind mark leaves). Irreversible; the
  * frontend gates this behind its own confirm dialog. Works on an archived event and with the
  * event's Wallet switch off, same as Void and Remove - deleting the local record is exactly the
  * kind of wind-down an operator needs after an event has ended.
@@ -4559,7 +4576,7 @@ export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClien
     // has to delete): an attendee erased since the check above leaves it alone.
     const locked = await lockAttendeeRow(tx, ctx.attendeeId);
     if (!locked || locked.erased) return false;
-    await tx.walletPass.delete({ where: { attendee_id: ctx.attendeeId } });
+    await deleteWalletPassRow(tx, ctx.attendeeId);
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,

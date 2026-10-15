@@ -4,8 +4,10 @@ import { z } from "zod";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { resolveConfiguredWalletProvider } from "@admitto/wallet";
 import {
+  ERASE_TRANSACTION_TIMEOUT_MS,
   deleteErasedWalletPasses,
   eraseAttendees,
+  erasedPassToDeleteWhere,
   parseWalletFieldMapping,
   scrubImportJobResults,
   writeBulkActionLog,
@@ -16,10 +18,6 @@ import { assertWalletBulkSelectionWithinLimit, writeAttendeeLifecycleAuditLog } 
 import { BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 import { publishActivityChanged } from "./checkin-sse-publish.js";
 import { purgeEventJobFilesBestEffort } from "./purge-export-files.js";
-
-/** An erasure touches a handful of tables per attendee; a large selection needs more than
- * Prisma's default 5 s transaction. */
-const ERASE_TX_TIMEOUT_MS = 60_000;
 
 /** How long the wallet follow-up may run: shorter than the reverse proxy's read timeout, so a slow
  * provider cannot turn a committed erasure into a gateway error. What it did not reach is reported
@@ -54,18 +52,14 @@ type EraseResponseBody = {
 };
 
 /**
- * The erased attendees among `attendeeIds` whose wallet pass has a provider id and is not marked removed:
- * what is still to be deleted at the provider.
+ * The erased attendees among `attendeeIds` whose wallet pass is still to be deleted at the provider (see
+ * erasedPassToDeleteWhere: it has the provider's id, or only the id reserved for it, and is not marked removed, or it
+ * says that a pass may be left in an account the event no longer uses).
  */
 async function attendeesWithPassToDelete(db: PrismaClient, eventId: string, attendeeIds: string[]): Promise<string[]> {
   if (attendeeIds.length === 0) return [];
   const passes = await db.walletPass.findMany({
-    where: {
-      attendee_id: { in: attendeeIds },
-      provider_pass_id: { not: null },
-      provider_removed_at: null,
-      attendee: { event_id: eventId, erased_at: { not: null } },
-    },
+    where: erasedPassToDeleteWhere(eventId, attendeeIds),
     select: { attendee_id: true },
   });
   return passes.map((pass) => pass.attendee_id);
@@ -147,7 +141,7 @@ async function runErasure(
       }
       return erased;
     },
-    { timeout: ERASE_TX_TIMEOUT_MS },
+    { timeout: ERASE_TRANSACTION_TIMEOUT_MS },
   );
 
   // The files that exports and finished imports wrote before the erasure still hold the person: they go too
@@ -176,6 +170,15 @@ async function runErasure(
           source: "admin",
           message: "wallet_pass_erasure_delete_failed",
           fields: { eventId, attendeeId, codes: wallet.failureCodes.join(",") },
+        });
+      }
+      // One line for the request, however many: passes the provider held that Admitto had no id for.
+      if (wallet.untrackedDeleted > 0) {
+        recordSystemLog({
+          level: "warn",
+          source: "admin",
+          message: "wallet_pass_untracked_deleted",
+          fields: { eventId, deleted: wallet.untrackedDeleted },
         });
       }
     } catch (err) {

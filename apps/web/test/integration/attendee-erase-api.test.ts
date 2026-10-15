@@ -338,25 +338,57 @@ describe("erasing one attendee", () => {
   });
 });
 
+const reservedId = (eventId: string, attendeeId: string) => `admitto:${eventId}:${attendeeId}`;
+/** A recorded pass was issued long before anybody asks to erase the person (the follow-up settles it at once then). */
+const ISSUED_LONG_AGO = () => new Date(Date.now() - 3 * 24 * 3_600_000);
+
+/** PassCreator as the follow-up meets it: the v1 read resolves a reserved id to the pass that has it (while `held` says
+ * so, and the pass has not been deleted), or answers 404; the v3 delete deletes a pass by its UID; anything else is a 200. */
+const passcreatorHolding = (held: (userProvidedId: string) => boolean = () => false) => {
+  const deleted = new Set<string>();
+  return vi.fn(async (url: unknown, init?: RequestInit) => {
+    const { pathname } = new URL(String(url));
+    if (init?.method === "GET" && pathname.startsWith("/api/pass/")) {
+      const id = decodeURIComponent(pathname.slice("/api/pass/".length));
+      if (!held(id) || deleted.has(id)) return new Response(null, { status: 404 });
+      const row = { identifier: `pc-uid-${id}`, userProvidedId: id, barcodeValue: "token" };
+      return new Response(JSON.stringify(row), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (init?.method === "DELETE" && pathname.startsWith("/api/v3/pass/pc-uid-")) {
+      deleted.add(decodeURIComponent(pathname.slice("/api/v3/pass/pc-uid-".length)));
+    }
+    return new Response(null, { status: 200 });
+  });
+};
+const requests = (fetchMock: ReturnType<typeof vi.fn>) =>
+  fetchMock.mock.calls.map(([url, init]) => `${(init as RequestInit | undefined)?.method} ${new URL(String(url)).pathname}`);
+
 describe("the wallet pass of an erased attendee", () => {
   const withPass = async () => {
     const a = await createAttendee();
     await prisma.walletPass.create({
-      data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, apple_url: "https://pc.test/a", user_agent: "UA/1.0" },
+      data: {
+        attendee_id: a.id,
+        status: "active",
+        provider_pass_id: `pc-${a.id}`,
+        apple_url: "https://pc.test/a",
+        user_agent: "UA/1.0",
+        issued_at: ISSUED_LONG_AGO(),
+      },
     });
     return a;
   };
 
   it("is deleted at the provider and marked removed", async () => {
     const a = await withPass();
-    const fetchMock = vi.fn(async (_url: unknown) => new Response(null, { status: 200 }));
+    const fetchMock = passcreatorHolding();
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await post(erasePath(EVENT_ID, a.id));
 
     expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(`pc-${a.id}`);
+    // The pass is deleted by its own id, and the id reserved for it is asked about: the provider has no second pass under it.
+    expect(requests(fetchMock)).toEqual([`DELETE /api/v3/pass/pc-${a.id}`, `GET /api/pass/${encodeURIComponent(reservedId(EVENT_ID, a.id))}`]);
     const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } });
     expect(pass).toMatchObject({ apple_url: null, user_agent: null });
     expect(pass.provider_removed_at).not.toBeNull();
@@ -371,7 +403,7 @@ describe("the wallet pass of an erased attendee", () => {
     expect(await first.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
 
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", passcreatorHolding());
     const retry = await post(erasePath(EVENT_ID, a.id));
 
     expect(await retry.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [a.id] });
@@ -380,14 +412,14 @@ describe("the wallet pass of an erased attendee", () => {
 
   it("is deleted when the credentials are there although the event's Wallet switch is off", async () => {
     const a = await createAttendee(WALLET_OFF_EVENT_ID);
-    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
-    const fetchMock = vi.fn(async (_url: unknown) => new Response(null, { status: 200 }));
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, issued_at: ISSUED_LONG_AGO() } });
+    const fetchMock = passcreatorHolding();
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await post(erasePath(WALLET_OFF_EVENT_ID, a.id));
 
     expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // the delete by the pass's id, and the question for the reserved id
   });
 
   it("stays pending, without calling anyone, when the event has no wallet credentials", async () => {
@@ -430,6 +462,156 @@ describe("the wallet pass of an erased attendee", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toEqual(removedBefore);
   });
+
+  describe("when the creating request could not record it, and only the id reserved for it is on the row", () => {
+    const withReservedId = async (eventId = EVENT_ID) => {
+      const a = await createAttendee(eventId);
+      await prisma.walletPass.create({
+        data: { attendee_id: a.id, status: "pending", user_provided_id: reservedId(eventId, a.id) },
+      });
+      return a;
+    };
+    const untrackedLines = () => querySystemLogs({ search: "wallet_pass_untracked_deleted" });
+
+    it("is deleted at the provider by that id, reported as removed now, and said in one line", async () => {
+      resetSystemLogBufferForTest();
+      const a = await withReservedId();
+      const fetchMock = passcreatorHolding(() => true);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(erasePath(EVENT_ID, a.id));
+
+      expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
+      // The id is read first (the v1 path), the pass it resolves to is deleted by its own UID (the v3 delete), and the id is
+      // asked about again until the provider has no pass under it.
+      expect(requests(fetchMock)).toEqual([
+        `GET /api/pass/${encodeURIComponent(reservedId(EVENT_ID, a.id))}`,
+        `DELETE /api/v3/pass/${encodeURIComponent(`pc-uid-${reservedId(EVENT_ID, a.id)}`)}`,
+        `GET /api/pass/${encodeURIComponent(reservedId(EVENT_ID, a.id))}`,
+      ]);
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).not.toBeNull();
+      expect(untrackedLines().map((line) => ({ level: line.level, source: line.source, fields: line.fields }))).toEqual([
+        { level: "warn", source: "admin", fields: { eventId: EVENT_ID, deleted: 1 } },
+      ]);
+    });
+
+    it("stays pending, not removed, when the provider has no pass under that id yet and the person was erased a moment ago", async () => {
+      resetSystemLogBufferForTest();
+      const a = await withReservedId();
+      const fetchMock = passcreatorHolding(() => false);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const first = await post(erasePath(EVENT_ID, a.id));
+      const again = await post(erasePath(EVENT_ID, a.id));
+
+      // A request that was creating the pass when the person was erased can still finish at the provider, so "none" is no answer yet.
+      expect(await first.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect(await again.json()).toMatchObject({ erased: 0, already_erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
+      expect(untrackedLines()).toEqual([]);
+      // Both times only the read was made: there was nothing to delete.
+      expect(requests(fetchMock).every((line) => line.startsWith("GET /api/pass/"))).toBe(true);
+    });
+
+    it("is removed, and not said to have been found, when the provider has no pass under that id and the person was erased long ago", async () => {
+      resetSystemLogBufferForTest();
+      const id = `erase-api-erased-old-${++seq}`;
+      await prisma.attendee.create({
+        data: { id, event_id: EVENT_ID, name: "Erased attendee", email: `erased-${id}@erased.invalid`, erased_at: new Date(Date.now() - 60 * 60_000) },
+      });
+      await prisma.walletPass.create({ data: { attendee_id: id, status: "pending", user_provided_id: reservedId(EVENT_ID, id) } });
+      vi.stubGlobal("fetch", passcreatorHolding(() => false));
+
+      const res = await post(erasePath(EVENT_ID, id));
+
+      expect(await res.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [id] });
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).provider_removed_at).not.toBeNull();
+      expect(untrackedLines()).toEqual([]);
+    });
+
+    it("is reported as pending when the provider fails, and repeating the request finishes it", async () => {
+      const a = await withReservedId();
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })));
+
+      const first = await post(erasePath(EVENT_ID, a.id));
+
+      expect(await first.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
+
+      vi.stubGlobal("fetch", passcreatorHolding(() => true));
+      const retry = await post(erasePath(EVENT_ID, a.id));
+
+      expect(await retry.json()).toEqual({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: [a.id] });
+    });
+
+    it("never deletes the pass of somebody else whose barcode is the reserved id: it is reported as still to delete, and nothing is deleted", async () => {
+      const a = await withReservedId();
+      // The v1 path resolves the id to another pass: one that has the reserved id as its barcode value.
+      const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+        new Response(JSON.stringify({ identifier: "pc-uid-other", userProvidedId: "somebody-else", barcodeValue: reservedId(EVENT_ID, a.id) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(erasePath(EVENT_ID, a.id));
+
+      expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect(requests(fetchMock)).toHaveLength(1);
+      expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: a.id } })).provider_removed_at).toBeNull();
+    });
+
+    it("stays pending, without calling anyone, when the event has no wallet credentials", async () => {
+      const a = await withReservedId(ARCHIVED_EVENT_ID);
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(erasePath(ARCHIVED_EVENT_ID, a.id));
+
+      expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 1, wallet_removed_ids: [] });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("also deletes a second pass the provider holds under the id of a recorded pass (two creations at once can both succeed)", async () => {
+      resetSystemLogBufferForTest();
+      const a = await createAttendee();
+      const id = reservedId(EVENT_ID, a.id);
+      await prisma.walletPass.create({
+        data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, user_provided_id: id, issued_at: ISSUED_LONG_AGO() },
+      });
+      const fetchMock = passcreatorHolding((asked) => asked === id);
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(erasePath(EVENT_ID, a.id));
+
+      expect(await res.json()).toMatchObject({ erased: 1, wallet_pending: 0, wallet_removed_ids: [a.id] });
+      // The recorded pass by its own id, then the id is asked about: it still resolves to a pass, which is deleted by its UID, and asked about again.
+      expect(requests(fetchMock)).toEqual([
+        `DELETE /api/v3/pass/pc-${a.id}`,
+        `GET /api/pass/${encodeURIComponent(id)}`,
+        `DELETE /api/v3/pass/${encodeURIComponent(`pc-uid-${id}`)}`,
+        `GET /api/pass/${encodeURIComponent(id)}`,
+      ]);
+      expect(untrackedLines().map((line) => line.fields)).toEqual([{ eventId: EVENT_ID, deleted: 1 }]);
+    });
+
+    it("says in one line how many passes a selection found, and names no attendee", async () => {
+      resetSystemLogBufferForTest();
+      const reserved = [await withReservedId(), await withReservedId(), await withReservedId()];
+      const tracked = await createAttendee();
+      await prisma.walletPass.create({ data: { attendee_id: tracked.id, status: "active", provider_pass_id: `pc-${tracked.id}`, issued_at: ISSUED_LONG_AGO() } });
+      const reservedIds = new Set(reserved.map((a) => reservedId(EVENT_ID, a.id)));
+      vi.stubGlobal("fetch", passcreatorHolding((id) => reservedIds.has(id)));
+
+      const res = await post(bulkPath(EVENT_ID), { attendeeIds: [...reserved.map((a) => a.id), tracked.id] });
+
+      const body = (await res.json()) as { wallet_pending: number; wallet_removed_ids: string[] };
+      expect(body.wallet_pending).toBe(0);
+      expect([...body.wallet_removed_ids].sort()).toEqual([...reserved.map((a) => a.id), tracked.id].sort());
+      expect(untrackedLines().map((line) => line.fields)).toEqual([{ eventId: EVENT_ID, deleted: 3 }]);
+    });
+  });
 });
 
 describe("erasing a selection", () => {
@@ -437,16 +619,17 @@ describe("erasing a selection", () => {
     const a = await createAttendee();
     const b = await createAttendee();
     for (const x of [a, b]) {
-      await prisma.walletPass.create({ data: { attendee_id: x.id, status: "active", provider_pass_id: `pc-${x.id}` } });
+      await prisma.walletPass.create({ data: { attendee_id: x.id, status: "active", provider_pass_id: `pc-${x.id}`, issued_at: ISSUED_LONG_AGO() } });
     }
-    vi.stubGlobal("fetch", vi.fn(async (url: unknown) =>
-      String(url).includes(a.id) ? new Response("down", { status: 500 }) : new Response(null, { status: 200 }),
+    const healthy = passcreatorHolding();
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown, init?: RequestInit) =>
+      String(url).includes(a.id) ? new Response("down", { status: 500 }) : healthy(url, init),
     ));
 
     const first = await post(bulkPath(EVENT_ID), { attendeeIds: [a.id, b.id] });
     expect(await first.json()).toMatchObject({ erased: 2, wallet_pending: 1, wallet_removed_ids: [b.id] });
 
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", passcreatorHolding());
     const retry = await post(bulkPath(EVENT_ID), { attendeeIds: [a.id, b.id] });
     expect(await retry.json()).toMatchObject({ erased: 0, already_erased: 2, wallet_pending: 0, wallet_removed_ids: [a.id] });
   });
@@ -498,7 +681,7 @@ describe("erasing a selection", () => {
 
   it("still answers, with the pass pending, when the provider follow-up itself breaks", async () => {
     const a = await createAttendee();
-    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, issued_at: ISSUED_LONG_AGO() } });
     // The first read of the passes is the snapshot taken before the follow-up, the second is the follow-up's own.
     const realFindMany = prisma.walletPass.findMany.bind(prisma.walletPass);
     let reads = 0;
@@ -517,15 +700,16 @@ describe("erasing a selection", () => {
 
   it("runs one provider follow-up at a time per user and event: a second request leaves the pass pending", async () => {
     const a = await createAttendee();
-    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}` } });
+    await prisma.walletPass.create({ data: { attendee_id: a.id, status: "active", provider_pass_id: `pc-${a.id}`, issued_at: ISSUED_LONG_AGO() } });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     let started!: () => void;
     const startedPromise = new Promise<void>((resolve) => (started = resolve));
-    const fetchMock = vi.fn(async (_url: unknown) => {
+    const healthy = passcreatorHolding();
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
       started();
       await gate;
-      return new Response(null, { status: 200 });
+      return healthy(url, init);
     });
     vi.stubGlobal("fetch", fetchMock);
 

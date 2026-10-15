@@ -7,7 +7,7 @@ import type {
   WalletProviderPassRef,
   WalletProviderSnapshot,
 } from "./types.js";
-import type { WalletPassProvider } from "./provider.js";
+import { CREATE_PASS_DEADLINE_MS, type PassSendOptions, type WalletPassProvider } from "./provider.js";
 import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY } from "./capabilities.js";
 import { parseOffsetInstant } from "./offset-instant.js";
 import { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
@@ -31,7 +31,7 @@ const RETRY_BASE_DELAY_MS = 500;
 /** Same timeout every other outbound HTTP client in this codebase uses for a third-party call
  * (OIDC discovery/token, Cloudflare Access, Graph mailer) - a request PassCreator never responds
  * to would otherwise hang this client's caller forever, since fetch() has no default timeout. */
-const REQUEST_TIMEOUT_MS = 15_000;
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Minimum spacing enforced between the *start* of any two outbound PassCreator calls from THIS
@@ -150,6 +150,17 @@ function extractErrorStrings(errors: unknown): string[] | undefined {
   return Array.isArray(errors) ? errors.filter((error): error is string => typeof error === "string") : undefined;
 }
 
+/** The identifier and userProvidedId of the pass a v1 read returned (a raw object, or an array holding one), or null
+ * when the body does not carry an identifier. The userProvidedId is whatever the body holds: only a string equal to
+ * the id asked for is accepted by the caller, so a missing or odd one is simply "another pass". */
+function passIdentity(body: unknown): { identifier: string; userProvidedId: unknown } | null {
+  const row: unknown = Array.isArray(body) ? body[0] : body;
+  if (row === null || typeof row !== "object") return null;
+  const { identifier, userProvidedId } = row as { identifier?: unknown; userProvidedId?: unknown };
+  if (typeof identifier !== "string" || identifier === "") return null;
+  return { identifier, userProvidedId };
+}
+
 function toResult(data: PassCreatorPassData): WalletPassResult {
   return {
     providerPassId: data.identifier,
@@ -190,21 +201,25 @@ export class PassCreatorClient implements WalletPassProvider {
     this.fetchFn = fetchFn;
   }
 
-  async createPass(input: WalletPassInput): Promise<WalletPassResult> {
+  async createPass(input: WalletPassInput, options: PassSendOptions = {}): Promise<WalletPassResult> {
     const envelope = await this.request<PassCreatorPassData>(
       "POST",
       "/api/v3/pass?async=false",
       { data: toPassCreatorData(input, this.templateId, this.fieldMapping, true) },
+      "/api/v3/pass",
+      (options.checkedAt ?? Date.now()) + CREATE_PASS_DEADLINE_MS,
     );
     return toResult(envelope);
   }
 
-  async updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult> {
+  async updatePass(providerPassId: string, input: WalletPassInput, options: PassSendOptions = {}): Promise<WalletPassResult> {
     const envelope = await this.request<PassCreatorPassData>(
       "PATCH",
       `/api/v3/pass/${encodeURIComponent(providerPassId)}`,
       { data: toPassCreatorData(input, this.templateId, this.fieldMapping, false) },
       "/api/v3/pass/{id}",
+      // No deadline unless the caller says when it last checked: the other callers read the person right before.
+      options.checkedAt === undefined ? undefined : options.checkedAt + CREATE_PASS_DEADLINE_MS,
     );
     return toResult(envelope);
   }
@@ -247,6 +262,61 @@ export class PassCreatorClient implements WalletPassProvider {
     if (!ok) {
       throw this.toProviderError(res.status);
     }
+  }
+
+  /**
+   * Deletes the pass PassCreator holds under `userProvidedId`, for one whose identifier Admitto never saved. The v3
+   * delete takes the identifier only (an unknown id there is a 404, which deletePass counts as deleted, so passing it
+   * the userProvidedId would "succeed" without removing anything), and the v3 search by userProvidedId is scoped to
+   * this client's template and can lag, so neither can say that no pass exists. The v1 read `GET /api/pass/{pass-uid}`
+   * can: its path takes the "UID, userProvidedId, or barcode value of the pass" (developer.passcreator.com/en/api/v1/pass),
+   * so a 404 means that nothing in the account answers to that id at that moment (already gone, never created, or not
+   * created yet). The same path also matches a pass that merely has that string as its barcode value, and deleting
+   * that one would remove somebody else's pass, so a pass is deleted only when its own userProvidedId is the id asked
+   * for, and then by its UID (the v3 delete). Any other pass the id resolves to is left alone and the call fails: it
+   * cannot be told whether the pass asked for exists as well. The id is unique in the account (createPass sends
+   * enforceUniqueUserProvidedId), so it names this attendee's pass whichever template made it. Documented by
+   * PassCreator, not yet confirmed live (the live checks so far covered the v3 calls).
+   */
+  async deletePassByUserProvidedId(userProvidedId: string): Promise<boolean> {
+    const found = await this.readByAnyId(userProvidedId);
+    if (found === null) return false;
+    if (found.userProvidedId !== userProvidedId) {
+      // Static line only, never an id: it could link the entry back to one attendee (logOutcome).
+      emitSystemLog("wallet", "warn", "passcreator_id_resolved_to_another_pass", {});
+      throw new WalletProviderError("wallet_provider_rejected", "PassCreator resolved the id to another pass.");
+    }
+    await this.deletePass(found.identifier);
+    return true;
+  }
+
+  /** One v1 read of what `id` (a UID, a userProvidedId or a barcode value) resolves to: the pass's own identifier and
+   * userProvidedId, or null for a 404. A body that does not say which pass it is fails like any other error, never as
+   * "none". `route` is a static template: the path carries an id that links the call to one attendee (logOutcome). */
+  private async readByAnyId(id: string): Promise<{ identifier: string; userProvidedId: unknown } | null> {
+    const route = "/api/pass/{id}";
+    const res = await this.requestRaw("GET", `/api/pass/${encodeURIComponent(id)}`, undefined, route);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      this.logOutcome("GET", route, false, res.status);
+      throw this.toProviderError(res.status);
+    }
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch (err) {
+      this.logOutcome("GET", route, false, res.status);
+      if (isTimeoutAbort(err)) {
+        throw new WalletProviderError("wallet_provider_timeout", "PassCreator response body timed out.");
+      }
+      throw this.toProviderError(res.status);
+    }
+    const identity = passIdentity(body);
+    if (identity === null) {
+      this.logOutcome("GET", route, false, res.status);
+      throw this.toProviderError(502);
+    }
+    return identity;
   }
 
   /**
@@ -508,8 +578,9 @@ export class PassCreatorClient implements WalletPassProvider {
     path: string,
     body?: unknown,
     route: string = path.split("?")[0]!,
+    sendBy?: number,
   ): Promise<T> {
-    const res = await this.requestRaw(method, path, body, route);
+    const res = await this.requestRaw(method, path, body, route, sendBy);
     let envelope: PassCreatorEnvelope<T>;
     try {
       envelope = (await res.json()) as PassCreatorEnvelope<T>;
@@ -618,16 +689,25 @@ export class PassCreatorClient implements WalletPassProvider {
    * cases are failures regardless of what the caller would have done with a response. `route`
    * defaults to the query-stripped path, but a caller whose path also embeds an attendee-linked
    * identifier (a providerPassId/passUid path segment) must pass an explicit static template
-   * instead - same requirement as logOutcome (bot review). */
+   * instead - same requirement as logOutcome (bot review). `sendBy` (epoch ms) is a time limit for *sending*: see the
+   * check below. */
   private async requestRaw(
     method: string,
     path: string,
     body?: unknown,
     route: string = path.split("?")[0]!,
+    sendBy?: number,
   ): Promise<Response> {
     let lastRes: Response | undefined;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       await reservePassCreatorSlot();
+      // The one place a request leaves this client. A call with a time limit for sending (createPass, see
+      // CREATE_PASS_DEADLINE_MS) that has waited past it, in the pacing gate behind other calls (the distributed gate
+      // has no deadline of its own), in the retry backoff below, or while the process was suspended, is dropped here
+      // instead of sent, so nothing of it can reach the provider later. Checked on every attempt, not only the first.
+      if (sendBy !== undefined && Date.now() >= sendBy) {
+        throw new WalletProviderError("wallet_provider_timeout", "PassCreator request was not sent in time.");
+      }
       let res: Response;
       try {
         res = await this.performFetch(method, path, body);

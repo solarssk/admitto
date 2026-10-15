@@ -8,6 +8,27 @@ import type {
 } from "./types.js";
 
 /**
+ * How long after the caller's last check (see {@link PassSendOptions}) a `createPass` may still send its request to
+ * the provider (and an `updatePass` that is given a check, see there). A call that has not sent by then (it queued behind other calls in the pacing gate, was retried after a
+ * rate limit, or the process was suspended) gives up without sending and fails with `wallet_provider_timeout`.
+ * Erasing an attendee relies on it: a pass that was being made when the person was erased can reach the provider only
+ * within this limit plus the request's own timeout, so the answer "no pass under that id" is final once the erasure is
+ * several times older than that (`CREATION_SETTLE_WINDOW_MS` in `@admitto/tickets`, tied to this value by a test). Two
+ * minutes is longer than the 75 s that 500 queued calls take to leave the process at the client's 150 ms spacing, so a
+ * call behind such a queue is still sent. A provider's `createPass` must keep to it.
+ */
+export const CREATE_PASS_DEADLINE_MS = 2 * 60_000;
+
+/** What a caller can tell `createPass`, and an `updatePass` that sends a person's data, about the time it has. */
+export type PassSendOptions = {
+  /** When the caller last confirmed that the pass may be made, in epoch milliseconds (for Admitto: the attendee read as
+   * not erased, under their row lock, as the id for the pass was reserved). The call counts {@link CREATE_PASS_DEADLINE_MS}
+   * from then, not from the moment it is made, so that a pause in between (a suspended process) cannot stretch it.
+   * `createPass` defaults to the moment of the call; `updatePass` has no deadline unless it is given one. */
+  checkedAt?: number;
+};
+
+/**
  * Domain boundary for wallet pass delivery (ADR 0009). The rest of Admitto depends only on this
  * interface — never on a concrete provider (e.g. PassCreator, see ADR 0041).
  *
@@ -29,8 +50,14 @@ export interface WalletPassProvider {
   readonly capabilities: WalletProviderCapabilities;
   readonly consistencyPolicy: WalletProviderConsistencyPolicy;
 
-  createPass(input: WalletPassInput): Promise<WalletPassResult>;
-  updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult>;
+  /** Creates the pass. Never sends its request later than {@link CREATE_PASS_DEADLINE_MS} after
+   * `options.checkedAt` (the moment of the call when that is not given), whatever it waited for: past that it fails with
+   * `wallet_provider_timeout` and nothing reaches the provider. */
+  createPass(input: WalletPassInput, options?: PassSendOptions): Promise<WalletPassResult>;
+  /** Updates the pass with `input`. Given `options.checkedAt` it never sends its request later than
+   * {@link CREATE_PASS_DEADLINE_MS} after it, like `createPass`: for an update that carries a person's data and comes
+   * after other provider calls that can take long (the recovery after a duplicate rejection). Without it there is no deadline. */
+  updatePass(providerPassId: string, input: WalletPassInput, options?: PassSendOptions): Promise<WalletPassResult>;
   /** Sends a custom, attendee-visible push notification/message to already-installed passes
    * (e.g. an Apple Wallet lock-screen banner, a Google Wallet notification) - distinct from
    * updatePass, which only silently refreshes field values with no guaranteed visible signal.
@@ -42,6 +69,16 @@ export interface WalletPassProvider {
    * pass that's already gone (404) is treated as success. Only meaningful when
    * `capabilities.remoteDelete`. */
   deletePass(providerPassId: string): Promise<void>;
+  /** Permanently removes the pass the provider holds under `userProvidedId`, for one whose own id Admitto
+   * never saved (the request that created it could not record it). Unlike `findByUserProvidedId`, the
+   * answer comes from the provider's own record of the id, not from a search that can lag or be scoped to
+   * one template, so "there is none" is a real answer. Resolves true when a pass was deleted and false
+   * when there was none at that moment (already gone, never created, or a creation still under way that
+   * has not reached the provider yet): when that is enough to call the pass gone is the caller's call.
+   * It deletes only a pass whose own userProvidedId is that id: an id that merely resolves to another pass
+   * (PassCreator's path also matches a barcode value) is never deleted, the call throws instead.
+   * Only meaningful when `capabilities.remoteDelete`. */
+  deletePassByUserProvidedId(userProvidedId: string): Promise<boolean>;
   findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null>;
   /** One read of the pass's validity, registrations and first-download time. Polled periodically
    * by the wallet-sync worker job and on demand by the admin "Refresh status" action, not called

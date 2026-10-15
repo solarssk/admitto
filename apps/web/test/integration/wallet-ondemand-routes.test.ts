@@ -35,6 +35,7 @@ let superCookie = "";
 function stubProvider(): WalletPassProvider & {
   createPass: ReturnType<typeof vi.fn>;
   updatePass: ReturnType<typeof vi.fn>;
+  deletePass: ReturnType<typeof vi.fn>;
   findByUserProvidedId: ReturnType<typeof vi.fn>;
 } {
   return {
@@ -59,7 +60,8 @@ function stubProvider(): WalletPassProvider & {
     sendPushMessage: vi.fn(),
     voidPass: vi.fn(),
     restorePass: vi.fn(),
-    deletePass: vi.fn(),
+    deletePass: vi.fn(async (_providerPassId: string): Promise<void> => undefined),
+    deletePassByUserProvidedId: vi.fn(async () => false),
     findByUserProvidedId: vi.fn(async () => null),
     getPassSnapshot: vi.fn(async () => null),
   };
@@ -283,6 +285,7 @@ describe("On-demand wallet routes", () => {
         userProvidedId: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
         barcodeValue: MODE_A_TOKEN,
       }),
+      { checkedAt: expect.any(Number) },
     );
 
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
@@ -301,6 +304,7 @@ describe("On-demand wallet routes", () => {
       expect(res.status).toBe(302);
       expect(provider.createPass).toHaveBeenCalledWith(
         expect.objectContaining({ attendeeEmailLabel: undefined }),
+        { checkedAt: expect.any(Number) },
       );
     } finally {
       await prisma.attendee.update({
@@ -327,6 +331,7 @@ describe("On-demand wallet routes", () => {
         userProvidedId: `admitto:${EVENT_ID_NO_LOCATION}:${ATTENDEE_NO_LOCATION_ID}`,
         barcodeValue: NO_LOCATION_TOKEN,
       }),
+      { checkedAt: expect.any(Number) },
     );
   });
 
@@ -353,6 +358,7 @@ describe("On-demand wallet routes", () => {
     // Agency mode: barcodeValue is the raw agency payload verbatim, not an internal ticket URL.
     expect(provider.createPass).toHaveBeenCalledWith(
       expect.objectContaining({ barcodeValue: "WALLET-AGENCY-PAYLOAD" }),
+      { checkedAt: expect.any(Number) },
     );
 
     const googleRes = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}/wallet/google`, {
@@ -443,15 +449,15 @@ describe("On-demand wallet routes", () => {
   it("does not fail the redirect when the device-capture write itself throws", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
-    // The device capture runs in its own transaction, after the one that saves the new pass.
-    const transactionSpy = failNthTransaction(2);
+    // The device capture runs in its own transaction, after the one that reserves the id and the one that saves the new pass.
+    const transactionSpy = failNthTransaction(3);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
-    // The save, the failed capture, and the check with the attendee lock alone that follows it.
-    expect(transactionSpy).toHaveBeenCalledTimes(3);
+    // The reservation, the save, the failed capture, and the check with the attendee lock alone that follows it.
+    expect(transactionSpy).toHaveBeenCalledTimes(4);
     transactionSpy.mockRestore();
   });
 
@@ -839,7 +845,14 @@ describe("On-demand wallet routes", () => {
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
 
     expect(res.status).toBe(302);
-    expect(provider.updatePass).toHaveBeenCalledWith("pc-winner", expect.objectContaining({ userProvidedId: expect.any(String) }));
+    // The update carries the person's data too: it is given the same check as the creation that was rejected, so that it is
+    // dropped, like the creation, when it comes too late.
+    const createOptions = provider.createPass.mock.calls[0]![1] as { checkedAt: number };
+    expect(provider.updatePass).toHaveBeenCalledWith(
+      "pc-winner",
+      expect.objectContaining({ userProvidedId: expect.any(String) }),
+      { checkedAt: createOptions.checkedAt },
+    );
     expect(res.headers.get("location")).toBe("https://pc.test/apple/winner-reconciled");
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("active");
@@ -905,8 +918,12 @@ describe("On-demand wallet routes", () => {
   // change landing in the window between that snapshot and this pass actually persisting would
   // otherwise let it save as "active" under a template the event no longer points at, permanently
   // orphaning it (sync, void/restore, push would all target the wrong template from then on).
-  it("marks failed, not active, when the event's Template ID changes while this request's own createPass call is in flight", async () => {
-    const provider = stubProvider();
+  //
+  // The pass this request made under the old Template ID is deleted by this same request, with the client it made it
+  // with: the admin may have replaced the API key with one of another PassCreator account too, and an erasure's
+  // follow-up only asks the account the event uses now. The row keeps no failure then; only a delete that fails is
+  // recorded (below), so that the follow-up never takes "no pass" from the new account for an answer.
+  function changeTemplateWhileCreating(provider: ReturnType<typeof stubProvider>): void {
     provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
       // Simulates an admin's Event Settings save landing in the exact window between this
       // request resolving its wallet provider and its own createPass call returning.
@@ -921,6 +938,11 @@ describe("On-demand wallet routes", () => {
         androidUrl: "https://pc.test/android/x",
       };
     });
+  }
+
+  it("deletes the pass it made, and keeps none, when the event's Template ID changes while this request's own createPass call is in flight", async () => {
+    const provider = stubProvider();
+    changeTemplateWhileCreating(provider);
     const app = makeApp(provider);
 
     try {
@@ -928,9 +950,52 @@ describe("On-demand wallet routes", () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      const reserved = `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`;
+      expect(provider.deletePass).toHaveBeenCalledTimes(1);
+      expect(provider.deletePass).toHaveBeenCalledWith(`pc-${reserved}`);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
-      expect(saved?.status).toBe("failed");
-      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+      // Never active, no provider id, and no failure left on the row: the pass is gone, the next tap makes a new one.
+      expect(saved).toMatchObject({
+        status: "pending",
+        provider_pass_id: null,
+        issued_at: null,
+        last_error_code: null,
+        left_behind_pass_id: null,
+        user_provided_id: reserved,
+      });
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
+  it("records the pass left behind, and the credential change, on the row when the pass made under the old Template ID cannot be deleted", async () => {
+    const provider = stubProvider();
+    provider.deletePass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_timeout", "PassCreator request failed."));
+    changeTemplateWhileCreating(provider);
+    const app = makeApp(provider);
+    resetSystemLogBufferForTest();
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      expect(provider.deletePass).toHaveBeenCalledTimes(1);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved).toMatchObject({
+        status: "failed",
+        provider_pass_id: null,
+        last_error_code: "wallet_credential_changed",
+        left_behind_pass_id: `pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+      });
+      // The failed delete is logged with ids only: the pass has to be deleted by hand in the old account.
+      const entry = querySystemLogs({ source: "api" }).find((e) => e.message === "wallet_pass_changed_credentials_delete_failed");
+      expect(entry?.fields).toEqual({
+        eventId: EVENT_ID,
+        attendeeId: ATTENDEE_MODE_A_ID,
+        providerPassId: `pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+      });
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
     }
@@ -1099,6 +1164,7 @@ describe("On-demand wallet routes", () => {
       expect(provider.updatePass).toHaveBeenCalledWith(
         `pc-${ATTENDEE_MODE_A_ID}`,
         expect.objectContaining({ expirationDate: undefined }),
+        { checkedAt: expect.any(Number) },
       );
       expect(second.headers.get("location")).toBe("https://pc.test/apple/reconciled");
       const afterSecond = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
@@ -1142,8 +1208,9 @@ describe("On-demand wallet routes", () => {
         // own, separately-locked transaction) must then have seen the new template and refused to
         // persist the pass as active under the old one.
         expect(row.wallet_template_id).toBe("tmpl-race-b");
-        expect(saved?.status).toBe("failed");
-        expect(saved?.last_error_code).toBe("wallet_credential_changed");
+        expect(saved?.status).toBe("pending");
+        expect(saved?.provider_pass_id).toBeNull();
+        expect(provider.deletePass).toHaveBeenCalledTimes(1);
       } else {
         // Issuance won the lock race and committed first - the admin's own recheck must then have
         // seen the freshly-issued pass and refused the Template ID change outright.
@@ -1244,8 +1311,9 @@ describe("On-demand wallet routes", () => {
       expect(patchRes.status).toBe(200);
       expect(walletRes.status).toBe(302);
       const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
-      expect(saved?.status).toBe("failed");
-      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+      expect(saved?.status).toBe("pending");
+      expect(saved?.provider_pass_id).toBeNull();
+      expect(provider.deletePass).toHaveBeenCalledTimes(1);
       const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
       expect(row.wallet_template_id).toBe("tmpl-gate-b");
     } finally {
@@ -1414,8 +1482,9 @@ describe("On-demand wallet routes", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     // markActive's recheck + upsert now run inside one transaction (the Template ID lock race
     // fix above) - mocking the transaction itself covers a failure anywhere inside it, same as
-    // mocking the upsert directly did before that recheck and this save were made atomic.
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db down"));
+    // mocking the upsert directly did before that recheck and this save were made atomic. It is
+    // the second transaction of the request: the first reserves the id on the pass row.
+    failNthTransaction(2);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
@@ -1439,8 +1508,9 @@ describe("On-demand wallet routes", () => {
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     // markFailed's DB write runs in one transaction (it locks the attendee row first - see its doc
-    // comment), so failing that transaction is the way to make the failure-path save throw.
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db down"));
+    // comment), so failing that transaction is the way to make the failure-path save throw. It is
+    // the second transaction of the request: the first reserves the id on the pass row.
+    failNthTransaction(2);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
@@ -1494,17 +1564,26 @@ describe("On-demand wallet routes", () => {
     // of that same create() call must still surface through the same catch-and-log every other
     // write failure in this function goes through, not be swallowed alongside P2002.
     const provider = stubProvider();
-    provider.createPass.mockRejectedValueOnce(new WalletProviderError("wallet_provider_rejected", "boom"));
+    // The row the id was reserved on is gone by the time the failure is recorded (deleted by staff), so the
+    // failure marker is inserted by the fallback create.
+    provider.createPass.mockImplementationOnce(async () => {
+      await prisma.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      throw new WalletProviderError("wallet_provider_rejected", "boom");
+    });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    // The create runs inside markFailed's transaction: fail that one call on the transaction's own client.
+    // The create runs inside markFailed's transaction, the second one of the request (the first reserves the id):
+    // fail that one call on the transaction's own client.
     const realTransaction = prisma.$transaction.bind(prisma) as unknown as (
       fn: (tx: PrismaClient) => Promise<unknown>,
     ) => Promise<unknown>;
-    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (fn: (tx: PrismaClient) => Promise<unknown>) =>
-      realTransaction(async (tx) => {
-        vi.spyOn(tx.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
-        return fn(tx);
-      })) as never);
+    let transactions = 0;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (fn: (tx: PrismaClient) => Promise<unknown>) =>
+      ++transactions !== 2
+        ? realTransaction(fn)
+        : realTransaction(async (tx) => {
+            vi.spyOn(tx.walletPass, "create").mockRejectedValueOnce(new Error("db down"));
+            return fn(tx);
+          })) as never);
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });

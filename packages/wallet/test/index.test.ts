@@ -47,4 +47,22 @@ describe("@admitto/wallet", () => {
       await provider.getPassSnapshot({ providerPassId: "stub-missing", userProvidedId: "admitto:event1:missing" }),
     ).toBeNull();
   });
+
+  it("stub provider deletes by userProvidedId: true for a pass that was there, false for none, and the pass is gone afterwards", async () => {
+    const provider = createStubWalletProvider();
+    await provider.createPass({
+      attendeeName: "Jane Doe",
+      eventDateLabel: "12 August 2026",
+      eventDateShortLabel: "12 Aug 2026",
+      ticketTypeLabel: "General",
+      ticketStatusLabel: "Valid",
+      customFieldLabels: {},
+      userProvidedId: "admitto:event1:attendee1",
+      barcodeValue: "https://tickets.example.com/t/tok-jane",
+    });
+
+    expect(await provider.deletePassByUserProvidedId("admitto:event1:attendee1")).toBe(true);
+    expect(await provider.findByUserProvidedId("admitto:event1:attendee1")).toBeNull();
+    expect(await provider.deletePassByUserProvidedId("admitto:event1:attendee1")).toBe(false);
+  });
 });

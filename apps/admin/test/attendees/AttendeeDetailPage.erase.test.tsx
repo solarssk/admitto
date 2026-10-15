@@ -423,6 +423,25 @@ describe("AttendeeDetailPage: Erase personal data", () => {
     expect(within(row).getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("says a pass is not deleted yet, with the retry, when the server holds the row open although the recorded pass was removed", async () => {
+    eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
+    mockLoad(baseDetail({ wallet_pass: pass({ provider_removed_at: "2026-08-01T09:00:00.000Z" }) }));
+    loadAttendeeDetailData.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    const dialog = await openEraseDialog();
+    typeName(dialog);
+    confirmErase(dialog);
+
+    const warning = await screen.findByRole("dialog", { name: "Personal data erased" });
+    fireEvent.click(within(warning).getByRole("button", { name: "Close" }));
+    expect(await screen.findByText("Could not load attendee.")).toBeTruthy();
+    const row = screen.getByText("Pass at the wallet provider").parentElement as HTMLElement;
+    expect(within(row).getByText(/Not deleted yet/)).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByText(/^Deleted on/)).toBeNull();
+    expect(screen.getByText("To be deleted")).toBeTruthy();
+  });
+
   it("keeps the newest read when an older one answers last: a pass that was deleted stays deleted", async () => {
     eraseAttendee.mockResolvedValueOnce({ erased: 1, already_erased: 0, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
     mockLoad(baseDetail({ wallet_pass: pass() }));
