@@ -444,6 +444,7 @@ import {
 } from "./admin/identity-api-routes.js";
 import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
+import { rejectNulInRequestTarget, requestRejectionForError } from "./malformed-input.js";
 import { isSecureRequest } from "./is-secure-request.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
@@ -673,17 +674,26 @@ export function createApp(options: CreateAppOptions = {}) {
   app.onError((err, c) => {
     if (err instanceof HTTPException) return err.getResponse();
 
-    console.error("unhandled_exception:", err);
     // Hono only invokes onError for Error instances (non-Error throws bypass it).
     const errorName = err.name;
     const errorCode =
       "code" in err && typeof err.code === "string" ? err.code : undefined;
-    emitSystemLog("api", "error", "unhandled_exception", {
+    const logFields = {
       method: c.req.method,
       path: c.req.routePath || "/[unmatched]",
       error_name: errorName,
       ...(errorCode ? { error_code: errorCode } : {}),
-    });
+    };
+    // A database error the request itself caused (a missing record, a value Postgres refuses to
+    // store) is the caller's mistake, not an outage: a 4xx, logged as a warning.
+    const rejection = requestRejectionForError(err);
+    if (rejection) {
+      emitSystemLog("api", "warn", "request_rejected", logFields);
+      return c.json({ error: rejection.error }, rejection.status);
+    }
+
+    console.error("unhandled_exception:", err);
+    emitSystemLog("api", "error", "unhandled_exception", logFields);
     return c.json({ error: "internal_error" }, 500);
   });
   // First middleware so the access log also covers 404s and rate-limited requests.
@@ -697,6 +707,8 @@ export function createApp(options: CreateAppOptions = {}) {
     await next();
     applyBaselineSecurityHeaders((name, value) => c.header(name, value));
   });
+  // After the header middleware above, so its 400 still gets those headers on /api.
+  app.use("*", rejectNulInRequestTarget);
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
   const readyzRateLimit = rateLimit(rateLimitStore, "ops:readyz");
