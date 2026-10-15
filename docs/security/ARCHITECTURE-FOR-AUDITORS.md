@@ -128,7 +128,7 @@ There is currently **no date-triggered automation of attendee-facing messages** 
 | Area | Typical exposure | Mitigation approach |
 |------|------------------|---------------------|
 | Public ticket links | Internet | Opaque tokens; throttling; minimal data on page |
-| Staff UIs | Restricted by customer network and/or app auth | RBAC; MFA required for admin/superadmin by default; optional perimeter gateway |
+| Staff UIs | Restricted by customer network and/or app auth | RBAC; MFA required for admin/superadmin by default on local sign-in (an SSO sign-in relies on the identity provider's own MFA, see [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md#sso-and-two-factor-authentication)); optional perimeter gateway |
 | Admin APIs | Authenticated staff only | Scope checks on event/org; per-user throttling on heavy ops (import, template preview) |
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Wallet provider webhook | Internet (provider servers) | Signature verified against the provider's public key before any write; per-event and per-IP throttling; failures return no detail |

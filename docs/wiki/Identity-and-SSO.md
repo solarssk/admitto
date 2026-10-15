@@ -178,6 +178,7 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
   the hostname or IP literal is on `SSO_PRIVATE_DESTINATION_ALLOWLIST` (app). When using a
   hostname, also confirm that Docker DNS resolves it.
 - **Sign-in works but the role is wrong:** check the groups claim and every mapping.
+- **Sign-in can fail right after your identity provider changed its signing key:** the app container log shows `no applicable key found in the JSON Web Key Set`. Admitto fetches the provider's keys again after a short cooldown, so in a test sign-in worked again after about 35 seconds. No restart is needed.
 - **Sign-in redirects to an error at the identity provider ("redirect URI mismatch" or similar):** the callback registered at the provider must exactly match the **Redirect URI** shown in the provider editor (Instance URL + `/api/auth/oidc/<provider-id>/callback`). Check for a trailing slash, `http` vs `https`, or the wrong provider id. If Redirect URI is missing in the editor, set Instance URL under Organisation settings → General first. On the Add provider form, the URI appears only after the first save (the pattern is shown as a hint before then).
 - **Issuer rejected as private / link-local:** production blocks private destinations unless the exact hostname or IP literal is listed in `SSO_PRIVATE_DESTINATION_ALLOWLIST`. This is separate from the mail allowlist.
 - **Cloudflare test fails:** check the team URL and audience without copying tokens into support messages.

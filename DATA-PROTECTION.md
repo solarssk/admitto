@@ -14,6 +14,7 @@
 - [Durable security audit trail (`SecurityAuditLog`)](#durable-security-audit-trail-securityauditlog)
 - [Admin audit trail (`AttendeeActionLog`)](#admin-audit-trail-attendeeactionlog)
 - [Central admin audit log (`AdminAuditLog`)](#central-admin-audit-log-adminauditlog)
+- [Redis](#redis)
 - [Retention](#retention)
   - [By data category](#by-data-category)
   - [Compliance checklist](#compliance-checklist)
@@ -262,6 +263,13 @@ This is a narrower, more deliberate exception than it looks:
   An automated version of this (or of the broader attendee-PII purge already listed below) is
   v1.0-planned work, not shipped today.
 
+## Redis
+
+Redis is used for rate-limit counters, live updates between the worker and the app, small caches and the pacing of wallet provider calls (see [CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md)). Sessions are stored in PostgreSQL, not in Redis. These are the parts that relate to people:
+
+- **Rate-limit key names.** A counter is named after what it counts. The password sign-in limit counts per e-mail address, so the address typed into the sign-in form is part of the key name: `rl:auth:login:email:<e-mail>:<window start>`, with the address trimmed and in lower case. The key is created for every address that is typed together with a password, whether or not an account has that address. With the default settings it expires at the end of its 60 second window, so it lives at most 60 seconds (`RATE_LIMIT_OVERRIDES` can change the window). Limits per client address put the IP address in the key name in the same way, and every counter expires at the end of its own window.
+- **Live check-in updates.** When a check-in succeeds, the app publishes a message for the event's live screens. It holds the attendee's name and id, the ticket type, the time, the operator's id and the device label. Redis does not keep these messages: it hands each one to the processes that are subscribed at that moment and forgets it.
+
 ## Retention
 
 Retention uses two responsibility layers: **product-automated** cleanup (best-effort on the Admitto
@@ -279,6 +287,7 @@ policy). Different retention periods for different categories are intentional - 
 | In-app security alert inbox (`Notification` - a personal copy of alerts like "your password changed", shown via My Account's own notification bell; the underlying event is separately durable in `SecurityAuditLog` above regardless of this table) | Operator (primary) / Product (fallback) | A staff member can permanently clear their own notification history at any time (My Account's bell → **Clear all**); anything never cleared is auto-purged by the worker (boot + ~24h), default **30 days** (`NOTIFICATION_RETENTION_DAYS`) |
 | IP addresses in admin audit log and the `http_request` access log (every request, staff or anonymous) | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP logged this way is never itself persisted in a purgeable table - it lives in the System logs live tail below (in-memory only) and wherever your container log driver keeps stdout.) |
 | Wallet pass at the provider (PassCreator) | Operator | Stays at the provider after the event, even once voided or expired, until you run **Attendees → More actions → Remove inactive passes**, **Remove from provider** on the attendee, **Delete wallet pass** (which also deletes the pass at the provider and the local record), or erase the attendee (the delete is tried when the erasure commits, and again by the worker's retention run about once a day for as long as it fails). |
+| Rate-limit counters and live check-in updates in Redis | Product - automatic | Each counter expires at the end of its window (60 seconds for password sign-in with the default settings); live updates are not kept after they are delivered. See [Redis](#redis) |
 | System logs live tail (in-memory only) | Product - automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Erase personal data** (single) or the Attendees list's row-selection bulk bar (several at once), the erase API directly, or `attendees erase` in the emergency CLI when the UI is unreachable; a mistake (duplicate, test person) is taken out with **Remove from event** in the same places - see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
