@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, fetchMe } from "../api/client.js";
+import { isSignOutInProgress } from "../auth/sign-out-in-progress.js";
 import type { ConnectionContextValue, ConnectionState } from "./types.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -17,6 +18,9 @@ const TIMEOUT_MS = 5_000;
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);
 
 function loginRedirect(reason: string): void {
+  // The user's own Sign out revokes the session, so a request already under way is answered 401: that must
+  // not take the browser to the sign-in page ahead of the identity provider's logout page.
+  if (isSignOutInProgress()) return;
   const next = encodeURIComponent(window.location.pathname + window.location.search);
   window.location.assign(`/login?reason=${reason}&next=${next}`);
 }

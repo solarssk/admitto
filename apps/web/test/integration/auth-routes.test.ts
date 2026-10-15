@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { hashPassword } from "@admitto/auth";
+import { AUTH_METHOD, SESSION_STAGE, createSession, hashPassword } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookie } from "../helpers/session-cookie.js";
@@ -11,6 +11,10 @@ const EVENT_ID = "event-web-auth-routes";
 const ORG_ID = "org-web-auth-routes";
 const OPERATOR_EMAIL = "auth-routes-operator@example.com";
 const OPERATOR_PASSWORD = "login-pass-123";
+const SSO_PROVIDER_ID = "idp-web-auth-routes-with-logout";
+const SSO_PROVIDER_NO_LOGOUT_ID = "idp-web-auth-routes-no-logout";
+const SSO_PROVIDER_BROKEN_LOGOUT_ID = "idp-web-auth-routes-broken-logout";
+const SSO_PROVIDER_IDS = [SSO_PROVIDER_ID, SSO_PROVIDER_NO_LOGOUT_ID, SSO_PROVIDER_BROKEN_LOGOUT_ID];
 
 /** Hono `app.request()` uses `http://localhost` as the request URL. */
 const sameOrigin = { Origin: "http://localhost" };
@@ -33,6 +37,7 @@ async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
   });
   await client.session.deleteMany({ where: { user: { email: OPERATOR_EMAIL } } });
   await client.user.deleteMany({ where: { email: OPERATOR_EMAIL } });
+  await client.identityProvider.deleteMany({ where: { id: { in: SSO_PROVIDER_IDS } } });
   await client.event.deleteMany({ where: { id: EVENT_ID } });
   await client.organization.deleteMany({ where: { id: ORG_ID } });
 
@@ -64,6 +69,26 @@ async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
       scope_id: EVENT_ID,
     },
   });
+
+  // Three SSO providers: one that advertised a logout endpoint, one that did not, and one whose
+  // stored endpoint is not a usable address (the column is free text, so a bad row can exist).
+  const provider = (id: string, slug: string, endSession: string | null) => ({
+    id,
+    issuer: `https://idp.example.test/auth-routes/${slug}/`,
+    client_id: `admitto-auth-routes-${slug}`,
+    authorization_endpoint: `https://idp.example.test/auth-routes/${slug}/authorize`,
+    token_endpoint: `https://idp.example.test/auth-routes/${slug}/token`,
+    jwks_uri: `https://idp.example.test/auth-routes/${slug}/jwks`,
+    end_session_endpoint: endSession,
+    display_name: `Auth routes SSO (${slug})`,
+  });
+  await client.identityProvider.createMany({
+    data: [
+      provider(SSO_PROVIDER_ID, "with-logout", "https://idp.example.test/auth-routes/with-logout/end-session"),
+      provider(SSO_PROVIDER_NO_LOGOUT_ID, "no-logout", null),
+      provider(SSO_PROVIDER_BROKEN_LOGOUT_ID, "broken-logout", "not a url"),
+    ],
+  });
 }
 
 beforeAll(async () => {
@@ -81,6 +106,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await prisma?.identityProvider.deleteMany({ where: { id: { in: SSO_PROVIDER_IDS } } });
   await prisma?.$disconnect();
 });
 
@@ -193,6 +219,32 @@ describe("GET /api/auth/me", () => {
 });
 
 describe("POST /api/auth/logout", () => {
+  async function operatorId(): Promise<string> {
+    return (await prisma.user.findUniqueOrThrow({ where: { email: OPERATOR_EMAIL } })).id;
+  }
+
+  /** A signed-in session as it would exist after SSO sign-in through `providerId`. */
+  async function ssoCookie(providerId: string): Promise<string> {
+    const { rawToken } = await createSession(prisma, {
+      userId: await operatorId(),
+      stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
+      oidcProviderId: providerId,
+    });
+    return `admitto_session=${rawToken}`;
+  }
+
+  async function signOut(cookie: string): Promise<Response> {
+    return app.request("/api/auth/logout", {
+      method: "POST",
+      headers: { Cookie: cookie, ...sameOrigin },
+    });
+  }
+
+  async function isSignedIn(cookie: string): Promise<boolean> {
+    return (await app.request("/api/auth/me", { headers: { Cookie: cookie } })).status === 200;
+  }
+
   it("revokes session and clears cookie", async () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
@@ -205,8 +257,62 @@ describe("POST /api/auth/logout", () => {
       headers: { Cookie: cookie, ...sameOrigin },
     });
     expect(logoutRes.status).toBe(200);
+    expect(await logoutRes.json()).toEqual({ ok: true, end_session_url: null });
     const meRes = await app.request("/api/auth/me", { headers: { Cookie: cookie } });
     expect(meRes.status).toBe(401);
+  });
+
+  it("answers with the identity provider's end-session URL for an SSO session, and signs it out", async () => {
+    const cookie = await ssoCookie(SSO_PROVIDER_ID);
+    expect(await isSignedIn(cookie)).toBe(true);
+
+    const res = await signOut(cookie);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; end_session_url: string | null };
+    expect(body.ok).toBe(true);
+    const url = new URL(body.end_session_url ?? "");
+    expect(`${url.origin}${url.pathname}`).toBe("https://idp.example.test/auth-routes/with-logout/end-session");
+    expect(url.searchParams.get("client_id")).toBe("admitto-auth-routes-with-logout");
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe("https://tickets.example.com/login");
+    expect(await isSignedIn(cookie)).toBe(false);
+  });
+
+  it("answers with no end-session URL when the provider did not advertise one, and still signs out", async () => {
+    const cookie = await ssoCookie(SSO_PROVIDER_NO_LOGOUT_ID);
+
+    const res = await signOut(cookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+    expect(await isSignedIn(cookie)).toBe(false);
+  });
+
+  it("still signs out, with no end-session URL, when the provider's stored logout address cannot be used", async () => {
+    const cookie = await ssoCookie(SSO_PROVIDER_BROKEN_LOGOUT_ID);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await signOut(cookie);
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+      expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect:", expect.any(String));
+      expect(await isSignedIn(cookie)).toBe(false);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("rejects a cross-site POST and leaves the session signed in", async () => {
+    const cookie = await ssoCookie(SSO_PROVIDER_ID);
+
+    const res = await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: { Cookie: cookie, Origin: "https://evil.example" },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await isSignedIn(cookie)).toBe(true);
   });
 });
 

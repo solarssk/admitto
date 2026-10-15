@@ -1736,7 +1736,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, preAuthBodyLimit, (c) =>
     handleLogin(c, db, rateLimitStore),
   );
-  app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
+  app.post("/api/auth/logout", jsonPostCsrf, async (c) =>
+    handleLogout(c, db, await resolveOidcPublicBaseUrlOrNull(db, mailInjectedBaseUrl)),
+  );
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
   app.post("/api/auth/session/device-label", jsonPostCsrf, requireSession, (c) =>
     handlePostSessionDeviceLabel(c, db),
