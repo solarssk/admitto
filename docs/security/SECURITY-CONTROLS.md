@@ -137,7 +137,13 @@ character-composition rules.
 account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts
 would itself be a denial-of-service vector on a self-hosted internal tool.
 
-**The per-email sign-in limit is a temporary block.** Password sign-in accepts 10 attempts a minute for one e-mail address, from any client address, and counts every attempt before the password is checked (see **Rate limiting**). Anyone who knows an address can use up that allowance, and then even the account's owner is refused with "Too many requests" until the minute is over. The block lasts about a minute at a time and can be repeated. It applies to password sign-in only (`POST /login` and `POST /api/auth/login`). Passkey sign-in and SSO use other limits, per client address, so they stay available while password sign-in is blocked.
+**The per-email sign-in limit is a temporary block.**
+
+- Password sign-in accepts 10 attempts a minute for one e-mail address, from any client address.
+- Every attempt is counted before the password is checked (see **Rate limiting**).
+- After 10 attempts, even the account owner is refused with "Too many requests" until the minute is over.
+- Anyone who knows an address can use up that allowance, and can repeat it.
+- It applies to password sign-in only (`POST /login` and `POST /api/auth/login`). Passkey sign-in and SSO use other limits, per client address, so they stay available.
 
 Brute-force is mitigated instead by:
 
@@ -178,9 +184,14 @@ list in Settings → Security). Confirm your deployment runbook matches your sec
 
 ### SSO and two-factor authentication
 
-An SSO sign-in is a full session straight away. When the identity provider sends the person back, Admitto creates the session at once, without a second factor of its own, whatever `MFA_REQUIRED_ROLES` says, and it does not ask the person to enrol one. Admitto checks the ID token's signature, issuer, audience and nonce, and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number). It does not read `acr`, `amr`, `auth_time` or `email_verified`.
+An SSO sign-in is a full session straight away. Admitto does not ask for a second factor of its own after it.
 
-So whether administrators who sign in with SSO use a second factor is enforced only by the identity provider, for example by a policy there, and Admitto cannot tell whether it happened. The two-factor requirement described above applies to local accounts that sign in with a password.
+| | Local password sign-in | SSO sign-in |
+|---|---|---|
+| Second factor asked by Admitto for admin and superadmin | Yes, by default (`MFA_REQUIRED_ROLES`) | No |
+| Who decides whether a second factor is used | Admitto | Your identity provider |
+
+Admitto validates the ID token and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number). It does **not** read `acr`, `amr`, `auth_time` or `email_verified`. So Admitto cannot tell whether the identity provider asked for a second factor. Whether administrators who sign in with SSO use one is enforced only by the identity provider, for example by a policy there.
 
 ---
 

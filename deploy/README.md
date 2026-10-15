@@ -237,22 +237,30 @@ We have not tested or documented Synology ARM vs Intel paths separately - pick t
 
 ## Memory for the app container
 
-The compose file sets no memory limit for `app`. Node.js sets the limit for its heap (the room for JavaScript objects) from the memory the container may use, or from the memory of the host when there is no limit. The heap limit is about 55 percent of that memory and never more than about 2.2 GB. You can set a limit as `mem_limit` in the compose file, or in a container manager such as Portainer. Measured with the official Node 24 image:
+**Give `app` at least 1 GB of memory. 2 GB is comfortable.**
 
-| Memory limit of the container | Heap limit of the Node.js process |
+The compose file sets no memory limit, so `app` can use all the memory of the host. To set a limit, use `mem_limit` in the compose file or the memory setting of a container manager such as Portainer.
+
+| What | Memory | Source |
+|---|---|---|
+| `app` doing nothing | about 0.37 GB | one lab run in a 640 MiB container (reported) |
+| Reading an XLSX file with 50,000 rows and 5 columns | adds about 0.3 to 0.4 GB | a test (measured) |
+| `app` during such an import | about 0.55 GB in total | the same lab run (reported) |
+
+- An import is limited to 50,000 data rows and 5 MB. A file with more columns needs more memory.
+- `worker` was not measured.
+- `app` has `restart: unless-stopped`. If it runs out of memory and stops, Docker starts it again. A request that was running at that moment fails and has to be repeated.
+
+### How much memory Node.js uses for its heap
+
+Node.js keeps its working data in a heap. It sets the heap limit to about 55 percent of the memory it may use, and never more than about 2.2 GB. Without a limit, it counts the memory of the host. Measured with the official Node 24 image:
+
+| Memory limit of the container | Heap limit |
 |---|---|
 | 640 MB | 368 MiB |
 | 1 GB | 560 MiB |
 | 2 GB | 1120 MiB |
 | 4 GB or more | 2240 MiB |
-
-What `app` uses:
-
-- An import is limited to 50,000 data rows and 5 MB. In a test, parsing an XLSX file of 50,000 rows with five columns added roughly 0.3 to 0.4 GB of process memory. A file with more columns needs more.
-- A lab run in a container limited to 640 MiB saw the idle app at about 0.37 GB and about 0.55 GB during such an import. That is one reported run, not measured again.
-- `worker` was not measured.
-
-Give `app` at least 1 GB. 2 GB is comfortable. `app` has `restart: unless-stopped` in the compose file, so an app that runs out of memory and stops comes back by itself. A request that was running at that moment fails and has to be repeated.
 
 ## Quick start
 
@@ -303,9 +311,32 @@ Migrations apply in the one-shot `migrate` service. `docker compose up -d` block
 
 ### After a P3009 error
 
-Prisma records every migration in the `_prisma_migrations` table. When a migration stops halfway, Prisma keeps its row as unfinished and applies nothing more, so `migrate` fails and `app` is not started or updated. The `migrate` log says `failed migrations detected` and lists the migration (`Following migration have failed`). Running `prisma migrate deploy` by hand shows the error code **P3009**. One way to get here is to run more than one `migrate` at the same moment (see [Container startup](#container-startup-entrypoint)).
+Prisma is the tool that changes the database in each release. It records every migration in the `_prisma_migrations` table. If a migration stops halfway, Prisma keeps it as unfinished and refuses to run anything else. Then `migrate` fails, and `app` is not started or updated.
 
-The steps below repair the one case seen in a lab test: the failed migration is `20260807110000_add_webauthn_credential_columns`, and the unique index it ends with, `UserMfaMethod_webauthn_credential_id_key`, was left invalid. They worked once, on a lab database, and are not part of the automated tests. They change the database by hand, so **take a backup first** (see [PostgreSQL backups](#postgresql-backups-adr-0012-adr-0027)). If the log names another migration, or step 1 lists no invalid index, do not use them. Go back to your backup and the previous image instead ([Rollback runbook](#rollback-runbook), case B).
+**What you see**
+
+- `docker compose logs migrate` says `failed migrations detected` and lists the migration (`Following migration have failed`).
+- Running `prisma migrate deploy` by hand prints the error code **P3009**.
+
+One way to get here is to run more than one `migrate` at the same moment (see [Container startup](#container-startup-entrypoint)).
+
+**Use the steps below only in this case**
+
+- The failed migration is `20260807110000_add_webauthn_credential_columns`.
+- Its unique index, `UserMfaMethod_webauthn_credential_id_key`, was left invalid.
+
+This is the one case seen in a lab test. The steps worked once there. The automated tests do not cover them. The steps change the database by hand, so **take a backup first** (see [PostgreSQL backups](#postgresql-backups-adr-0012-adr-0027)).
+
+```mermaid
+flowchart TD
+    A["migrate stops with<br/>'failed migrations detected'"] --> B{"Is the failed migration<br/>20260807110000?"}
+    B -- no --> R["Do not use these steps.<br/>Go back to your backup<br/>and the previous image"]
+    B -- yes --> C{"Does step 1 list<br/>an invalid index?"}
+    C -- no --> R
+    C -- yes --> D["Do steps 2 to 4"]
+```
+
+If you are not in this case, go back to your backup and the previous image instead ([Rollback runbook](#rollback-runbook), case B).
 
 1. **Check the state.** Both commands only read. The log names `20260807110000_add_webauthn_credential_columns`, and the query lists `UserMfaMethod_webauthn_credential_id_key`.
 
@@ -319,7 +350,7 @@ The steps below repair the one case seen in a lab test: the failed migration is 
    SQL
    ```
 
-2. **Build the index again by hand.** Send the two statements one at a time, as below. PostgreSQL does not allow `CONCURRENTLY` inside a transaction block, and one `-c "...; ..."` string with both statements would run as one.
+2. **Build the index again by hand.** Send the two statements one at a time, as below. One `-c "...; ..."` string with both would fail, because PostgreSQL does not allow `CONCURRENTLY` inside a transaction block.
 
    ```bash
    docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' <<'SQL'
@@ -337,7 +368,7 @@ The steps below repair the one case seen in a lab test: the failed migration is 
      --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts
    ```
 
-4. **Run `migrate` again.** It applies the migrations that are still pending, and `app` starts when it succeeds. Its log ends with `migrate: startup tasks complete`.
+4. **Run `migrate` again.** It applies the migrations that are still pending, and `app` starts when it succeeds. The log ends with `migrate: startup tasks complete`.
 
    ```bash
    docker compose up -d
@@ -407,7 +438,22 @@ Migration and serving are two separate compose services, both running
 `migrate` exits 0** (`depends_on: condition: service_completed_successfully`), so the web server
 never runs migration logic itself.
 
-**Run one `migrate` at a time.** The compose file has a single `migrate` service and `app` waits for it, which is the supported shape. Do not start several `migrate` containers against the same database at the same moment, for example an init step in every replica of an orchestrator, two stacks that share one database, or a CI step that runs twice. In a lab test on a fresh database, three `migrate` containers started together failed on migration `20260807110000_add_webauthn_credential_columns`, which ends with `CREATE UNIQUE INDEX CONCURRENTLY`. Prisma kept the migration recorded as unfinished and the index stayed invalid, so every later `migrate` stopped at that failed migration (Prisma error P3009). With two at once, one of them failed with a deadlock and the database was still complete. This comes from a lab test and is not covered by the automated tests. If it happens, see [After a P3009 error](#after-a-p3009-error).
+**Run one `migrate` at a time.**
+
+The compose file has one `migrate` service, and `app` waits for it. This is the supported setup.
+
+Do not start several `migrate` containers on the same database at the same moment. Examples:
+
+- an init container in every replica of an orchestrator
+- two stacks that share one database
+- a CI step that runs twice
+
+In a lab test on a fresh database, this went wrong:
+
+- **2 at once:** one of them failed with a deadlock. The database was still complete.
+- **3 at once:** migration `20260807110000_add_webauthn_credential_columns` failed. It ends with `CREATE UNIQUE INDEX CONCURRENTLY`. Prisma kept it as unfinished and the index stayed invalid, so every later `migrate` stopped at that migration (Prisma error P3009).
+
+This comes from one lab test. The automated tests do not cover it. If it happens to you, see [After a P3009 error](#after-a-p3009-error).
 
 **Every service runs as the unprivileged `node` user** (UID 1000 in the official Node image).
 
@@ -447,7 +493,9 @@ checking that `EMERGENCY_EXPORT_DIR` is writable - see below. `npm`/`npx` are no
 
 ## Optional container hardening
 
-The compose file starts `app` with Docker's default settings. For a deployment that faces the internet you can make the container stricter. This is optional, and the shipped compose file does not do it. Add the keys to the `app` service of your stack, or put them in a `docker-compose.override.yml` next to `docker-compose.yml`:
+For a deployment that faces the internet, you can make the `app` container stricter. This is optional. The shipped compose file does not do it.
+
+Add these keys to the `app` service of your stack, or put them in a `docker-compose.override.yml` next to `docker-compose.yml`:
 
 ```yaml
 services:
@@ -461,13 +509,21 @@ services:
       - /tmp
 ```
 
-What was tried and what was not:
+**Tried once, on the 0.7.5 image**
 
-- **Tried once, on the 0.7.5 image:** `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true` and `tmpfs` mounts for `/tmp`, `/app/emergency-exports`, `/app/uploads` and `/app/data/geoip-custom`, with no volumes. The container stayed healthy: `/healthz`, password sign-in, the staff app and the worker loops worked.
-- **Not tried:** the `migrate` service, uploading a branding image (it uses the `sharp` library) and exports written to real volumes.
-- **Different from the test:** in the shipped compose file those three directories are bind mounts. A read-only root filesystem leaves bind mounts writable, so the example does not list them as `tmpfs`. That combination was not tried either.
+- `read_only: true`, `cap_drop: [ALL]` and `no-new-privileges:true`
+- `tmpfs` for `/tmp`, `/app/emergency-exports`, `/app/uploads` and `/app/data/geoip-custom` (the test had no volumes)
+- Result: the container stayed healthy. `/healthz`, password sign-in, the staff app and the worker loops worked.
 
-Test it on a stack that is not in production first, and read `docker compose logs app` after the first start.
+**Not tried**
+
+- the `migrate` service
+- uploading a branding image (it uses the `sharp` library)
+- exports written to real volumes
+
+**Different from the test.** In the shipped compose file, those three directories are bind mounts. A read-only root filesystem leaves bind mounts writable, so the example does not list them as `tmpfs`. That combination was not tried either.
+
+Test it on a stack that is not in production first. After the first start, read `docker compose logs app`.
 
 ## Container logs (what to expect where)
 

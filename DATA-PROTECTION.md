@@ -265,10 +265,15 @@ This is a narrower, more deliberate exception than it looks:
 
 ## Redis
 
-Redis is used for rate-limit counters, live updates between the worker and the app, small caches and the pacing of wallet provider calls (see [CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md)). Sessions are stored in PostgreSQL, not in Redis. These are the parts that relate to people:
+Redis is used for rate-limit counters, live updates between the worker and the app, small caches and the pacing of wallet provider calls (see [CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md)). Sessions are stored in PostgreSQL, not in Redis.
 
-- **Rate-limit key names.** A counter is named after what it counts. The password sign-in limit counts per e-mail address, so the address typed into the sign-in form is part of the key name: `rl:auth:login:email:<e-mail>:<window start>`, with the address trimmed and in lower case. The key is created for every address that is typed together with a password, whether or not an account has that address. With the default settings it expires at the end of its 60 second window, so it lives at most 60 seconds (`RATE_LIMIT_OVERRIDES` can change the window). Limits per client address put the IP address in the key name in the same way, and every counter expires at the end of its own window.
-- **Live check-in updates.** When a check-in succeeds, the app publishes a message for the event's live screens. It holds the attendee's name and id, the ticket type, the time, the operator's id and the device label. Redis does not keep these messages: it hands each one to the processes that are subscribed at that moment and forgets it.
+These are the parts that relate to people:
+
+| What | What it holds about people | How long |
+|---|---|---|
+| Password sign-in limit | The e-mail address typed into the form, in the key name `rl:auth:login:email:<e-mail>:<window start>` (trimmed, in lower case). The key exists for every address typed with a password, whether or not an account has it. | At most 60 seconds with the default settings (`RATE_LIMIT_OVERRIDES` can change the window) |
+| Limits per client address | The IP address, in the key name | Until the end of the window of that limit |
+| Live check-in updates | The attendee's name and id, the ticket type, the time, the operator's id and the device label | Not kept. Redis hands each message to the processes that are subscribed at that moment and forgets it. |
 
 ## Retention
 
