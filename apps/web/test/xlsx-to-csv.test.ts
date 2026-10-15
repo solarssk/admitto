@@ -6,6 +6,7 @@ import {
   buildXlsxBuffer,
   ImportRowLimitError,
   ImportZipBombError,
+  MAX_CSV_CHARS,
   MAX_IMPORT_ROWS,
   xlsxBufferToCsv,
 } from "../src/admin/xlsx-to-csv.js";
@@ -96,6 +97,15 @@ function workbookParts(sheetData: readonly string[]): Record<string, string> {
 /** A `<sheetData>` of `count` empty rows: the smallest worksheet that still has that many `<row>`s. */
 function emptyRows(count: number): string {
   return `<sheetData>${Array.from({ length: count }, (_, i) => `<row r="${i + 1}"/>`).join("")}</sheetData>`;
+}
+
+/** A `<sheetData>` of `count` rows with one value each, in XFD, the last column a worksheet has. */
+function lastColumnRows(count: number): string {
+  const rows = Array.from(
+    { length: count },
+    (_, i) => `<row r="${i + 1}"><c r="XFD${i + 1}" t="inlineStr"><is><t>x</t></is></c></row>`,
+  );
+  return `<sheetData>${rows.join("")}</sheetData>`;
 }
 
 /**
@@ -342,6 +352,44 @@ describe("xlsxBufferToCsv row limit", () => {
   });
 });
 
+
+describe("xlsxBufferToCsv text limit", () => {
+  // The text is built in memory from the rows of the first sheet, so the limit on its length has to
+  // apply while it is built, not after all of it exists.
+  const LAST_COLUMN_LINE_CHARS = 16_384; // 16,383 commas and the one value
+
+  it("stops building text for rows that are mostly empty columns once it passes the limit", async () => {
+    const rowsAtLimit = MAX_CSV_CHARS / LAST_COLUMN_LINE_CHARS;
+    const under = buildZip(workbookParts([lastColumnRows(rowsAtLimit - 40)]));
+    const over = buildZip(workbookParts([lastColumnRows(rowsAtLimit)]));
+
+    await expect(xlsxBufferToCsv(under)).resolves.toHaveLength(
+      (rowsAtLimit - 40) * LAST_COLUMN_LINE_CHARS + (rowsAtLimit - 41),
+    );
+    await expect(xlsxBufferToCsv(over)).rejects.toBeInstanceOf(ImportRowLimitError);
+  });
+
+  it("counts a large text once for every cell that shows it", async () => {
+    const shared = "x".repeat(1024 * 1024);
+    const cellsAtLimit = MAX_CSV_CHARS / shared.length;
+    const sharedByCells = (cells: number) => buildXlsxBuffer([Array.from({ length: cells }, () => shared)]);
+
+    await expect(xlsxBufferToCsv(await sharedByCells(cellsAtLimit - 1))).resolves.toHaveLength(
+      (cellsAtLimit - 1) * shared.length + (cellsAtLimit - 2),
+    );
+    await expect(xlsxBufferToCsv(await sharedByCells(cellsAtLimit))).rejects.toBeInstanceOf(ImportRowLimitError);
+  });
+
+  it("takes text of exactly MAX_CSV_CHARS characters and refuses one character more", async () => {
+    const first = "a".repeat(MAX_CSV_CHARS / 2);
+    const second = "b".repeat(MAX_CSV_CHARS / 2 - 1);
+
+    await expect(xlsxBufferToCsv(await buildXlsxBuffer([[first], [second]]))).resolves.toHaveLength(MAX_CSV_CHARS);
+    await expect(xlsxBufferToCsv(await buildXlsxBuffer([[first], [`${second}b`]]))).rejects.toBeInstanceOf(
+      ImportRowLimitError,
+    );
+  });
+});
 
 it.each(["\n", "\r\n"])("round-trips XLSX multiline cells with %j through the import parser", async (newline) => {
   const company = `Synthetic, "Team"${newline}Headquarters`;

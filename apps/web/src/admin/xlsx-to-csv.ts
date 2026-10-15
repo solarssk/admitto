@@ -4,7 +4,10 @@ import ExcelJS from "exceljs";
 /** Cap rows materialized from XLSX/CSV to limit decompression-bomb memory use. */
 export const MAX_IMPORT_ROWS = 50_000;
 
-/** Max CSV text length after decode/conversion (post-decompression guard). */
+/**
+ * Max CSV text length after decode/conversion (post-decompression guard). xlsxBufferToCsv stops
+ * building the text as soon as it passes this, not after all of it exists.
+ */
 export const MAX_CSV_CHARS = 10 * 1024 * 1024;
 
 /**
@@ -233,6 +236,12 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
 
   const lines: string[] = [];
   let dataRows = 0;
+  // Length the joined text has so far: no newline comes before the first line.
+  let chars = -1;
+  const addChars = (count: number): void => {
+    chars += count;
+    if (chars > MAX_CSV_CHARS) throw new ImportRowLimitError();
+  };
   sheet.eachRow((row, rowNumber) => {
     // Row 1 is the header — only count data rows against the limit.
     if (rowNumber > 1) {
@@ -242,7 +251,14 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
       }
     }
     const values = row.values as ExcelJS.CellValue[];
-    const cells = values.slice(1).map((v) => csvEscape(cellToString(v)));
+    // The text is counted cell by cell, so a row over the limit is refused while it is built and
+    // not after all of it exists. A row with empty columns adds their separators too.
+    const cells = values.slice(1).map((v) => {
+      const cell = csvEscape(cellToString(v));
+      addChars(cell.length);
+      return cell;
+    });
+    addChars(cells.length); // the commas between the cells and the newline after the line
     lines.push(cells.join(","));
   });
   return lines.join("\n");
