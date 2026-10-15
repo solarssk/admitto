@@ -661,6 +661,21 @@ html:not(.icons-ready) .ti {
   }
 }
 
+/* Phone (up to 480px): the trigger shows the dot and the chevron only. With its word it was 70px (OK) to 120px
+   (Checking…) wide, and a Superadmin's or an Administrator's top bar then ran past a 390px screen (shell.css). The
+   word is hidden like .sr-only hides text (clipped, not display:none), so it stays the button's name for a screen
+   reader; the dot's colour carries the verdict on screen. */
+@media (max-width: 480px) {
+  .sys-status__label--short {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 .sys-status__row {
   display: flex;
   align-items: center;

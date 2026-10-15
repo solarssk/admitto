@@ -1092,3 +1092,30 @@ describe("SystemStatus trigger label weight", () => {
     expect(trigger.querySelector(".sys-status__label--degraded")).toBeTruthy();
   });
 });
+
+// staff.css hides the short word on a phone (up to 480px) and the full sentence below 1200px, by these two class names: the top bar fits
+// a 360px screen only while the word that is wide stays in its own span (test/styles/topbar-fit-css.test.ts).
+describe("SystemStatus trigger words", () => {
+  it("holds the short word and the full sentence in a span of their own each", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
+
+    renderStatus(SUPERADMIN);
+    const trigger = await screen.findByRole("button", { name: /All systems normal/ });
+
+    expect(trigger.querySelector(".sys-status__label--short")?.textContent).toBe("OK");
+    expect(trigger.querySelector(".sys-status__label--full")?.textContent).toBe("All systems normal");
+  });
+
+  it("does the same when a check is down, the verdict whose word was wide enough to push the bar off a 390px screen", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({
+      checks: { ...OK_CHECKS, database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
+      worker: OK_WORKER,
+    });
+
+    renderStatus(SUPERADMIN);
+    const trigger = await screen.findByRole("button", { name: /Action needed/ });
+
+    expect(trigger.querySelector(".sys-status__label--short")?.textContent).toBe("Alert");
+    expect(trigger.querySelector(".sys-status__label--full")?.textContent).toBe("Action needed");
+  });
+});
