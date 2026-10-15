@@ -695,15 +695,27 @@ html:has(.shell), body:has(.shell) {
   }
 }
 
-/* Phone (up to 480px): the menu button, the brand and the three right-hand triggers (status, bell, account) must fit
-   the screen, down to 360px, for every role and every status. .main is overflow:hidden but can still be scrolled
+/* Phone (up to 480px): the menu button, the brand and the three right-hand triggers (status, bell, account) must fit the
+   screen for every role and every status, down to 320px. The main area clips what sticks out but can still be scrolled
    sideways when the bar is wider than the screen: in Chrome the click that opens the account menu does it, and that
-   scroll closes the menu (useFloatingPlacement), so Sign out could not be reached. The status word goes away in
-   staff.css (.sys-status__label--short); the gaps shrink here. */
+   scroll closes the menu (useFloatingPlacement), so Sign out could not be reached. The status shrinks to one icon in
+   staff.css, and here the side padding and the gaps shrink. */
 @media (max-width: 480px) {
+  .topbar {
+    padding: 0 var(--space-4);
+  }
+
   .topbar,
   .topbar__right {
     gap: var(--space-2);
+  }
+}
+
+/* Narrow phone (up to 359px): with the Admitto name beside the logo the bar above needs about 347px, so below 360px only the
+   logo stays, as in the collapsed rail of the tablet. */
+@media (max-width: 359px) {
+  .topbar__brand .brand-link__wordmark {
+    display: none;
   }
 }
 

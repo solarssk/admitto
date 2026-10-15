@@ -661,11 +661,26 @@ html:not(.icons-ready) .ti {
   }
 }
 
-/* Phone (up to 480px): the trigger shows the dot and the chevron only. With its word it was 70px (OK) to 120px
-   (Checking…) wide, and a Superadmin's or an Administrator's top bar then ran past a 390px screen (shell.css). The
-   word is hidden like .sr-only hides text (clipped, not display:none), so it stays the button's name for a screen
-   reader; the dot's colour carries the verdict on screen. */
+/* The icon the phone shows in place of the dot (the phone block below). */
+.sys-status__cue {
+  display: none;
+}
+
+/* Phone (up to 480px). The trigger is an icon and the chevron. The icon is the one of the panel's row for that verdict (a
+   check, a warning triangle, a cross, a spinner), so the states differ by shape and not only by colour, and it is 16px wide
+   for every state, so the bell and the account button stay where they are whatever the verdict. With its word the trigger
+   was 70px (OK) to 120px (Checking…) wide, and a Superadmin's or an Administrator's top bar then ran past a 390px screen
+   (shell.css). The word is clipped away the way this app hides text for screen readers, not removed, so it stays the
+   button's name. */
 @media (max-width: 480px) {
+  .sys-status__dot {
+    display: none;
+  }
+
+  .sys-status__cue {
+    display: inline-flex;
+  }
+
   .sys-status__label--short {
     position: absolute;
     width: 1px;

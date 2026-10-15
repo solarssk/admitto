@@ -1119,3 +1119,46 @@ describe("SystemStatus trigger words", () => {
     expect(trigger.querySelector(".sys-status__label--full")?.textContent).toBe("Action needed");
   });
 });
+
+// staff.css shows this icon on a phone (up to 480px) in place of the dot, so that the verdicts differ by shape and not only by colour
+// (WCAG 1.4.1), and it is 16px wide for every verdict, so that the bell and the account button stay where they are.
+describe("SystemStatus trigger cue", () => {
+  const cue = () => document.querySelector(".sys-status__trigger .sys-status__cue");
+
+  const VERDICTS: ReadonlyArray<{ when: string; checks: Record<string, unknown>; name: RegExp; icon: string }> = [
+    { when: "every check is fine", checks: {}, name: /All systems normal/, icon: "ti-circle-check" },
+    {
+      when: "a check is degraded",
+      checks: { redis: { ok: true, warn: true, detail: "Redis unreachable, using in-memory fallback" } },
+      name: /Degraded performance/,
+      icon: "ti-alert-triangle",
+    },
+    {
+      when: "a check is down",
+      checks: { database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
+      name: /Action needed/,
+      icon: "ti-circle-x",
+    },
+  ];
+
+  it.each(VERDICTS)("is the icon of that verdict's row in the panel when $when", async ({ checks, name, icon }) => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: { ...OK_CHECKS, ...checks }, worker: OK_WORKER });
+
+    renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name });
+
+    const mark = cue()?.querySelector("i");
+    expect(mark?.classList.contains(icon)).toBe(true);
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("is the kit's spinner, hidden from assistive tech, while the checks have not answered", () => {
+    fetchSetupChecks.mockReturnValueOnce(new Promise(() => {}));
+
+    renderStatus(SUPERADMIN);
+
+    const spinner = cue()?.querySelector(".at-spinner");
+    expect(spinner).not.toBeNull();
+    expect(spinner?.getAttribute("aria-hidden")).toBe("true");
+  });
+});

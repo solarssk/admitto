@@ -493,6 +493,10 @@ export function SystemStatus({
         ref={triggerRef}
       >
         <span className={`sys-status__dot ${TRIGGER_META[worst].dot}`} />
+        {/* Shown instead of the dot on a phone (staff.css): the icon of the panel's row for this verdict, a shape that differs by state, not only a colour. */}
+        <span className="sys-status__cue">
+          <RowCheck state={worst} />
+        </span>
         <span className={triggerLabelClassName("sys-status__label--short", worst)}>
           {TRIGGER_META[worst].shortLabel}
         </span>
