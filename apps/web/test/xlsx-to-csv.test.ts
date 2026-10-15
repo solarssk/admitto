@@ -368,6 +368,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
   /** `rows` rows of 20 cells, the last one with `lastRowCells` instead. */
   const sheetOfRows = (rows: number, lastRowCells: number): string =>
     `<sheetData>${rowOf(20).repeat(rows - 1)}${rowOf(lastRowCells)}</sheetData>`;
+  const textCell = (ref: string, text: string): string => `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -464,6 +465,46 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
 
     await expect(xlsxBufferToCsv(buildZip(parts))).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
+  });
+
+  it("does not let ExcelJS read the rules and the column definitions of a worksheet", async () => {
+    // A rule for a whole column makes ExcelJS build an object for each cell of that column.
+    const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
+
+    await xlsxBufferToCsv(buildZip(workbookParts([emptyRows(1)])));
+
+    expect(load).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ignoreNodes: expect.arrayContaining(["cols", "dataValidations"]) }),
+    );
+  });
+
+  it("still reads the values of a sheet with drop-down lists on whole columns", async () => {
+    const lists = Array.from(
+      "ABCDEF",
+      (column) =>
+        `<dataValidation type="list" sqref="${column}2:${column}1048576"><formula1>"yes,no"</formula1></dataValidation>`,
+    ).join("");
+    const sheet =
+      '<cols><col min="1" max="16384" width="12" customWidth="1"/></cols>' +
+      `<sheetData><row r="1">${textCell("A1", "email")}</row><row r="2">${textCell("A2", "ann@example.com")}</row></sheetData>` +
+      `<dataValidations count="6">${lists}</dataValidations>`;
+
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheet])))).resolves.toBe("email\nann@example.com");
+  });
+
+  it("keeps the value of a merged cell on every row of the merge", async () => {
+    const rows = [
+      `<row r="1">${textCell("A1", "company")}${textCell("B1", "email")}</row>`,
+      `<row r="2">${textCell("A2", "Acme Ltd")}${textCell("B2", "ann@example.com")}</row>`,
+      `<row r="3">${textCell("B3", "bob@example.com")}</row>`,
+      `<row r="4">${textCell("B4", "cid@example.com")}</row>`,
+    ];
+    const sheet = `<sheetData>${rows.join("")}</sheetData><mergeCells count="1"><mergeCell ref="A2:A4"/></mergeCells>`;
+
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheet])))).resolves.toBe(
+      "company,email\nAcme Ltd,ann@example.com\nAcme Ltd,bob@example.com\nAcme Ltd,cid@example.com",
+    );
   });
 });
 

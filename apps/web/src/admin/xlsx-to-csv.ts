@@ -262,12 +262,20 @@ function csvEscape(value: string): string {
   return value;
 }
 
+/**
+ * Worksheet parts the import does not read: the rules for what may be typed into cells and the
+ * width and format of columns. They hold no attendee data, and ExcelJS builds an object for every
+ * cell or column they name, which a rule for a whole column makes very expensive.
+ * Merged ranges are not on this list: they decide which value each cell of a merge shows.
+ */
+const UNREAD_WORKSHEET_NODES = ["cols", "dataValidations"];
+
 /** Convert the first worksheet of an XLSX buffer to a CSV string (in memory). */
 export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
   assertZipWithinUncompressedLimits(buf);
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buf);
+  await workbook.xlsx.load(buf, { ignoreNodes: UNREAD_WORKSHEET_NODES });
   const sheet = workbook.worksheets[0];
   if (!sheet) return "";
 
