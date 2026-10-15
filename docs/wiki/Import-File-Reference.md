@@ -21,6 +21,7 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 - CSV uses comma-separated columns. Wrap a value containing a comma, double quote, or line break in double quotes; write a double quote inside that value as two double quotes. LF and CRLF inside a quoted cell are preserved. XLSX cells with line breaks follow the same import rules; the workbook decoder normalises CRLF to LF.
 - Diagnostic row numbers count non-empty data records, starting at 1 after the header. Blank records are ignored, and a line break inside a quoted cell does not increase the number.
 - The upload accepts at most 50,000 data records. The existing file-size and decoded-text limits still apply, including line breaks inside cells.
+- An XLSX file counts the rows of the whole workbook against that limit, blank rows and the rows of other sheets included, because the file is read as a whole. If a file that looks shorter is refused for too many rows, delete the sheets you do not need and the blank rows below the data, save it and upload it again.
 - **Malformed CSV record:** close quoted fields and remove text after the closing quote or cells that have no corresponding header. Missing trailing optional cells are treated as empty.
 
 ## Matching and duplicates

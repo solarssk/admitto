@@ -20,6 +20,14 @@ const MAX_XLSX_UNCOMPRESSED_TOTAL = 50 * 1024 * 1024;
 /** Reject a single ZIP entry whose declared uncompressed size exceeds this. */
 const MAX_XLSX_UNCOMPRESSED_ENTRY = 20 * 1024 * 1024;
 
+/**
+ * Most `<row>` elements a workbook may hold, counted over every worksheet: the header row plus
+ * MAX_IMPORT_ROWS data rows, the same bound csvWithinLimits puts on a CSV. ExcelJS builds an
+ * object for each one while it loads the workbook, blank rows included, so the row limit inside
+ * xlsxBufferToCsv only applies after that memory is spent.
+ */
+const MAX_XLSX_ROW_ELEMENTS = MAX_IMPORT_ROWS + 1;
+
 const EOCD_SIGNATURE = 0x06054b50;
 const CD_SIGNATURE = 0x02014b50;
 
@@ -64,13 +72,32 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
 }
 
 /**
- * Scan the ZIP central directory and enforce entry count plus the real (measured, not declared)
- * uncompressed sizes before ExcelJS inflates the archive.
+ * Reject an end record that does not describe the directory the way a ZIP reader will find it: one
+ * disk, the declared entry count held on it, and a directory that ends where this record begins.
+ * ExcelJS's reader moves its offsets when the declared size stops short of this record and switches
+ * to ZIP64 on a sentinel in any of these fields, so it could open another directory than this scan.
+ */
+function assertPlainEndRecord(bytes: Uint8Array, eocd: number): void {
+  const diskNumber = readUint16LE(bytes, eocd + 4);
+  const directoryDisk = readUint16LE(bytes, eocd + 6);
+  const entriesOnDisk = readUint16LE(bytes, eocd + 8);
+  const entryCount = readUint16LE(bytes, eocd + 10);
+  const directorySize = readUint32LE(bytes, eocd + 12);
+  const directoryOffset = readUint32LE(bytes, eocd + 16);
+  if (diskNumber !== 0 || directoryDisk !== 0 || entriesOnDisk !== entryCount || directoryOffset + directorySize !== eocd) {
+    throw new ImportZipBombError();
+  }
+}
+
+/**
+ * Scan the ZIP central directory and enforce entry count, the real (measured, not declared)
+ * uncompressed sizes and the number of rows before ExcelJS inflates and parses the archive.
  */
 function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
   const bytes = new Uint8Array(buf);
   const eocd = findEndOfCentralDirectory(bytes);
   if (eocd < 0) throw new ImportZipBombError();
+  assertPlainEndRecord(bytes, eocd);
 
   const entryCount = readUint16LE(bytes, eocd + 10);
   if (entryCount > MAX_XLSX_ZIP_ENTRIES) throw new ImportZipBombError();
@@ -78,6 +105,7 @@ function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
   const cdOffset = readUint32LE(bytes, eocd + 16);
   let pos = cdOffset;
   let totalUncompressed = 0;
+  let totalRows = 0;
 
   for (let n = 0; n < entryCount; n++) {
     if (pos + 46 > bytes.length) throw new ImportZipBombError();
@@ -92,12 +120,21 @@ function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
 
     // The declared size is attacker-controlled, so it only serves as a cheap early reject. What
     // the entry really inflates to is measured below, against the same limits.
-    const actual = measureInflatedEntrySize(bytes, pos, MAX_XLSX_UNCOMPRESSED_TOTAL - totalUncompressed);
-    totalUncompressed += actual;
+    const entry = inflateEntry(bytes, pos, MAX_XLSX_UNCOMPRESSED_TOTAL - totalUncompressed);
+    totalUncompressed += entry.length;
     if (totalUncompressed > MAX_XLSX_UNCOMPRESSED_TOTAL) throw new ImportZipBombError();
+
+    // Counted on the inflated bytes of every entry, whatever its name: which parts are worksheets
+    // is for ExcelJS to decide, and the rows of all of them cost memory, not just the first sheet's.
+    totalRows += countRowElements(entry, MAX_XLSX_ROW_ELEMENTS - totalRows);
+    if (totalRows > MAX_XLSX_ROW_ELEMENTS) throw new ImportRowLimitError();
 
     pos += 46 + nameLen + extraLen + commentLen;
   }
+
+  // A ZIP reader walks the central directory until its records stop, not up to the declared count,
+  // so a record past the declared ones would be opened by ExcelJS without ever being measured here.
+  if (pos !== eocd) throw new ImportZipBombError();
 }
 
 const ZIP_METHOD_STORED = 0;
@@ -105,11 +142,11 @@ const ZIP_METHOD_DEFLATE = 8;
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 
 /**
- * Real uncompressed size of the entry whose central-directory header starts at `cdPos`, found by
+ * Real uncompressed bytes of the entry whose central-directory header starts at `cdPos`, found by
  * inflating its data with a hard output cap (never allocates more than the cap, whatever the
  * entry claims). Throws ImportZipBombError on any malformed header or when the cap is exceeded.
  */
-function measureInflatedEntrySize(bytes: Uint8Array, cdPos: number, remainingTotalBudget: number): number {
+function inflateEntry(bytes: Uint8Array, cdPos: number, remainingTotalBudget: number): Buffer {
   const method = readUint16LE(bytes, cdPos + 10);
   const compressedSize = readUint32LE(bytes, cdPos + 20);
   const localHeaderOffset = readUint32LE(bytes, cdPos + 42);
@@ -123,15 +160,37 @@ function measureInflatedEntrySize(bytes: Uint8Array, cdPos: number, remainingTot
   const cap = Math.min(MAX_XLSX_UNCOMPRESSED_ENTRY, remainingTotalBudget);
   if (method === ZIP_METHOD_STORED) {
     if (compressedSize > cap) throw new ImportZipBombError();
-    return compressedSize;
+    return Buffer.from(bytes.buffer, bytes.byteOffset + dataStart, compressedSize);
   }
   if (method !== ZIP_METHOD_DEFLATE) throw new ImportZipBombError();
   try {
-    return inflateRawSync(bytes.subarray(dataStart, dataStart + compressedSize), { maxOutputLength: cap }).length;
+    return inflateRawSync(bytes.subarray(dataStart, dataStart + compressedSize), { maxOutputLength: cap });
   } catch {
     // Output over the cap (ERR_BUFFER_TOO_LARGE) or a corrupt stream - neither is a workbook to open.
     throw new ImportZipBombError();
   }
+}
+
+const ROW_TAG = "<row";
+
+/** True for the byte after `<row` in a row start tag: XML whitespace, `>` or `/`. */
+function endsRowName(byte: number | undefined): boolean {
+  return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x3e || byte === 0x2f;
+}
+
+/**
+ * Number of `<row>` start tags in an inflated entry, counted only until it passes `limit`. A tag
+ * whose name goes on after `<row` (`<rowBreaks`) is another element. Rows are counted whether or not
+ * they hold cells or a row number: ExcelJS builds an object for each of them.
+ */
+function countRowElements(xml: Buffer, limit: number): number {
+  let count = 0;
+  let at = xml.indexOf(ROW_TAG);
+  while (at >= 0 && count <= limit) {
+    if (endsRowName(xml[at + ROW_TAG.length])) count++;
+    at = xml.indexOf(ROW_TAG, at + ROW_TAG.length);
+  }
+  return count;
 }
 
 function formulaResultToString(result: NonNullable<ExcelJS.CellFormulaValue["result"]>): string {
