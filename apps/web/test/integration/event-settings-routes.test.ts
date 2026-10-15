@@ -3507,6 +3507,46 @@ describe("event context routes", () => {
     }
   });
 
+  it("rejects a blank name, title or link on create and a blank title on update, without mutation", async () => {
+    const send = (method: "POST" | "PUT", path: string, body: object) =>
+      app.request(`/api/admin/events/${EVENT_SET}${path}`, {
+        method,
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const resource = await prisma.eventResource.create({
+      data: { event_id: EVENT_SET, title: "Blank resource", url: "https://example.com/blank" },
+    });
+    try {
+      const blankName = await send("POST", "/contacts", { name: "   " });
+      expect(blankName.status).toBe(400);
+      expect(await blankName.json()).toEqual({ error: "name_required" });
+
+      const blankTitle = await send("POST", "/resources", { title: "   ", url: "https://example.com/new" });
+      expect(blankTitle.status).toBe(400);
+      expect(await blankTitle.json()).toEqual({ error: "title_required" });
+
+      const blankUrl = await send("POST", "/resources", { title: "Blank link", url: "   " });
+      expect(blankUrl.status).toBe(400);
+      expect(await blankUrl.json()).toEqual({ error: "url_required" });
+
+      const blankUpdateTitle = await send("PUT", `/resources/${resource.id}`, { title: "   " });
+      expect(blankUpdateTitle.status).toBe(400);
+      expect(await blankUpdateTitle.json()).toEqual({ error: "title_required" });
+
+      expect(await prisma.eventContact.count({ where: { event_id: EVENT_SET, name: "" } })).toBe(0);
+      expect(await prisma.eventResource.count({ where: { event_id: EVENT_SET, title: { in: ["", "Blank link"] } } })).toBe(0);
+      expect(await prisma.eventResource.findUniqueOrThrow({ where: { id: resource.id } })).toMatchObject({
+        title: "Blank resource",
+        url: "https://example.com/blank",
+      });
+    } finally {
+      await prisma.eventResource.deleteMany({
+        where: { event_id: EVENT_SET, title: { in: ["Blank resource", "Blank link"] } },
+      });
+    }
+  });
+
   describe("a body of the wrong shape", () => {
     const send = (method: "PATCH" | "POST" | "PUT", path: string, body: string) =>
       app.request(`/api/admin/events/${EVENT_SET}${path}`, {
