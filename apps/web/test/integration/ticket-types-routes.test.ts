@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { Prisma } from "@admitto/db";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -541,6 +542,47 @@ describe("DELETE /api/admin/events/:eventId/ticket-types/:typeId", () => {
       expect(delRes.status).toBe(200);
       expect(createRes.status).toBe(400);
       expect(attendee).toBeNull();
+    }
+  });
+
+  // The in-use count can be stale: an attendee written after it (by a path that does not take the
+  // ticket-types lock, such as an import) still hits the restrictive foreign key when the type is
+  // deleted. That is the conflict the count reports, not a type that does not exist.
+  it("answers 409 type_in_use, not 404, when an attendee appears between the in-use check and the delete", async () => {
+    const created = await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "stale_count", label: "Stale count", sort_order: 97 },
+    });
+    const attendee = await prisma.attendee.create({
+      data: { event_id: EVENT_TT, email: "stale-count@example.com", name: "Stale Count", ticket_type: "stale_count" },
+    });
+    // Inside the route's transaction the attendee count answers 0, as if it had run before the
+    // attendee was written; the delete then runs against the real database and its real foreign key.
+    const realTransaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    const staleCount = vi.spyOn(prisma, "$transaction").mockImplementation(((arg: unknown, options?: unknown) => {
+      if (typeof arg !== "function") return realTransaction(arg, options);
+      return realTransaction((tx: Prisma.TransactionClient) => {
+        const stale = new Proxy(tx, {
+          get(target, prop) {
+            if (prop === "attendee") return { count: async () => 0 };
+            const value = Reflect.get(target, prop) as unknown;
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return (arg as (client: Prisma.TransactionClient) => Promise<unknown>)(stale);
+      }, options);
+    }) as never);
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_TT}/ticket-types/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "type_in_use" });
+      expect(await prisma.ticketType.findUnique({ where: { id: created.id } })).not.toBeNull();
+    } finally {
+      staleCount.mockRestore();
+      await prisma.attendee.delete({ where: { id: attendee.id } });
+      await prisma.ticketType.delete({ where: { id: created.id } });
     }
   });
 

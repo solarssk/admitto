@@ -166,6 +166,29 @@ describe("user", () => {
   });
 });
 
+describe("an email that cannot be stored", () => {
+  it("is an unknown account for findUserByEmail instead of a database error", async () => {
+    await expect(findUserByEmail(prisma, "super\u0000@example.com")).resolves.toBeNull();
+  });
+
+  it("fails login like an unknown account and still records the attempt", async () => {
+    const before = await prisma.securityAuditLog.count({ where: { event_type: "auth.login.fail" } });
+    const result = await login(prisma, { email: "no-such\u0000user@example.com", password: "irrelevant-password" });
+    expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
+    const lone = await login(prisma, { email: "\ud800no-such-user@example.com", password: "irrelevant-password" });
+    expect(lone).toEqual({ ok: false, reason: "invalid_credentials" });
+    expect(await prisma.securityAuditLog.count({ where: { event_type: "auth.login.fail" } })).toBe(before + 2);
+    const rows = await prisma.securityAuditLog.findMany({
+      where: { event_type: "auth.login.fail" },
+      orderBy: { created_at: "desc" },
+      take: 2,
+    });
+    const emails = rows.map((row) => (row.metadata as { email: string }).email);
+    expect(emails).toContain("no-such\ufffduser@example.com");
+    expect(emails).toContain("\ufffdno-such-user@example.com");
+  });
+});
+
 describe("login", () => {
   it("rejects inactive user with inactive reason", async () => {
     const result = await login(prisma, {
