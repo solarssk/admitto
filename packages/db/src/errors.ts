@@ -40,3 +40,24 @@ export function isUnstorableValueError(err: unknown): boolean {
   ).meta?.driverAdapterError?.cause;
   return typeof cause?.originalCode === "string" && cause.originalCode.startsWith("22");
 }
+
+/**
+ * True when a write failed because the row it points at does not exist: a foreign key violation
+ * (Prisma P2003) raised while inserting or updating the referencing row. A delete that is blocked
+ * by rows still pointing at the one being deleted is the same P2003 and the same SQLSTATE 23503,
+ * so only Postgres's wording tells the two apart ("insert or update on table ..." against "update
+ * or delete on table ... on table ..."); the driver adapter passes it on in
+ * `meta.driverAdapterError.cause.originalMessage`. A message in another language reads as "not a
+ * missing parent", which is the safe answer: the caller then maps nothing.
+ */
+export function isMissingParentViolation(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const cause = (
+    err as { meta?: { driverAdapterError?: { cause?: { originalCode?: unknown; originalMessage?: unknown } } } }
+  ).meta?.driverAdapterError?.cause;
+  return (
+    cause?.originalCode === "23503" &&
+    typeof cause.originalMessage === "string" &&
+    cause.originalMessage.startsWith("insert or update on table")
+  );
+}

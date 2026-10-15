@@ -105,6 +105,7 @@ export {
 } from './backfill-email-delivery-template-id-snapshot.js';
 
 export {
+  isMissingParentViolation,
   isSerializationFailure,
   isUnstorableValueError,
 } from './errors.js';

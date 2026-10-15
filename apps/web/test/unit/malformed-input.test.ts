@@ -11,6 +11,19 @@ function knownError(code: string, meta?: Record<string, unknown>): Prisma.Prisma
   });
 }
 
+const insertMessage =
+  'insert or update on table "EventContact" violates foreign key constraint "EventContact_event_id_fkey"';
+const deleteMessage =
+  'update or delete on table "TicketType" violates foreign key constraint "Attendee_event_id_ticket_type_fkey" on table "Attendee"';
+
+/** A P2003 shaped like the one Prisma 7's pg adapter raises for a real foreign key violation. */
+function foreignKeyError(modelName: string, originalMessage: string): Prisma.PrismaClientKnownRequestError {
+  return knownError("P2003", {
+    modelName,
+    driverAdapterError: { cause: { originalCode: "23503", originalMessage, kind: "ForeignKeyConstraintViolation" } },
+  });
+}
+
 describe("rejectNulInRequestTarget", () => {
   const app = new Hono();
   app.use("*", rejectNulInRequestTarget);
@@ -45,9 +58,18 @@ describe("rejectNulInRequestTarget", () => {
 });
 
 describe("requestRejectionForError", () => {
-  it("maps a record or parent that is not there to 404 not_found", () => {
+  it("maps a record or a parent row that is not there to 404 not_found", () => {
     expect(requestRejectionForError(knownError("P2025"))).toEqual({ status: 404, error: "not_found" });
-    expect(requestRejectionForError(knownError("P2003"))).toEqual({ status: 404, error: "not_found" });
+    expect(requestRejectionForError(foreignKeyError("EventContact", insertMessage))).toEqual({
+      status: 404,
+      error: "not_found",
+    });
+  });
+
+  it("does not call a delete blocked by rows that still point at the parent a missing record", () => {
+    expect(requestRejectionForError(foreignKeyError("TicketType", deleteMessage))).toBeNull();
+    // Without the wording that tells the two apart, nothing is guessed.
+    expect(requestRejectionForError(knownError("P2003"))).toBeNull();
   });
 
   it("maps a value the database refuses as malformed to 400 invalid_request", () => {

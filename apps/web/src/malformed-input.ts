@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { Prisma } from "@admitto/db/client";
-import { isUnstorableValueError } from "@admitto/db/errors";
+import { isMissingParentViolation, isUnstorableValueError } from "@admitto/db/errors";
 
 /** U+0000 in its only form a URL can carry it. Checked on the raw URL, so the path and the query
  * are covered alike, before a router or a handler decodes anything. An escaped percent sign
@@ -25,14 +25,17 @@ export const rejectNulInRequestTarget: MiddlewareHandler = async (c, next) => {
 export type RequestRejection = { status: 400 | 404; error: "invalid_request" | "not_found" };
 
 /**
- * Maps a database error that the request itself caused to a 4xx: a record or parent row the
- * request names that is not there (P2025, P2003), or a value Postgres refuses to store as
- * malformed (a body string with U+0000). Anything else - a unique conflict, a timeout, a lost
- * connection - stays a server error.
+ * Maps a database error that the request itself caused to a 4xx: a record the request names that
+ * is not there (P2025), a row written with a pointer to a parent that is not there (P2003 raised
+ * by the insert or update), or a value Postgres refuses to store as malformed (a body string with
+ * U+0000). A P2003 raised by a delete that rows still point at is a conflict, not a missing
+ * record, and is left to the route that knows what it conflicts with. Anything else - a unique
+ * conflict, a timeout, a lost connection - stays a server error.
  */
 export function requestRejectionForError(err: unknown): RequestRejection | null {
   if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return null;
-  if (err.code === "P2025" || err.code === "P2003") return { status: 404, error: "not_found" };
+  if (err.code === "P2025") return { status: 404, error: "not_found" };
+  if (err.code === "P2003" && isMissingParentViolation(err)) return { status: 404, error: "not_found" };
   if (isUnstorableValueError(err)) return { status: 400, error: "invalid_request" };
   return null;
 }
