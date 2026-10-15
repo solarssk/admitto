@@ -377,6 +377,59 @@ describe("POST /api/auth/logout", () => {
   });
 });
 
+describe("POST /api/auth/logout when the base URL cannot be used", () => {
+  /** An app whose injected base URL is malformed: resolving it throws, as a bad `BASE_URL` or `instance_url` would. */
+  let brokenApp: ReturnType<typeof createApp>;
+
+  beforeAll(() => {
+    brokenApp = createApp({
+      prisma,
+      checkinToken: CHECKIN_TOKEN,
+      allowCheckinBearer: false,
+      baseUrl: "not a url",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+  });
+
+  async function newSession(kind: "password" | "sso"): Promise<string> {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: OPERATOR_EMAIL } });
+    const { rawToken } = await createSession(prisma, {
+      userId: user.id,
+      stage: SESSION_STAGE.FULL,
+      ...(kind === "sso" ? { authMethod: AUTH_METHOD.OIDC, oidcProviderId: SSO_PROVIDER_ID } : {}),
+    });
+    return `admitto_session=${rawToken}`;
+  }
+
+  async function signOutBroken(cookie: string): Promise<Response> {
+    return brokenApp.request("/api/auth/logout", { method: "POST", headers: { Cookie: cookie, ...sameOrigin } });
+  }
+
+  async function isSignedIn(cookie: string): Promise<boolean> {
+    return (await app.request("/api/auth/me", { headers: { Cookie: cookie } })).status === 200;
+  }
+
+  it.each(["password", "sso"] as const)("signs a %s session out locally, with no end-session URL", async (kind) => {
+    const cookie = await newSession(kind);
+    expect(await isSignedIn(cookie)).toBe(true);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await signOutBroken(cookie);
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+      expect(await isSignedIn(cookie)).toBe(false);
+      expect((res.headers.getSetCookie?.() ?? []).some((line) => line.startsWith("admitto_session=;"))).toBe(true);
+      // Logged by name only: the message of the configuration error is not written to the log.
+      expect(logged).toHaveBeenCalledWith("resolve base URL for sign out failed:", { error_name: "Error" });
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("BASE_URL must");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+});
+
 describe("check-in session auth E2E", () => {
   it("login → cookie → history without Bearer", async () => {
     const loginRes = await app.request("/api/auth/login", {

@@ -60,6 +60,7 @@ import {
   webauthnAttachmentSchema,
 } from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { safeErrorFields } from "../safe-error-fields.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
@@ -172,14 +173,6 @@ export async function handleLogin(
     return c.json({ ok: true, next: result.next, backup_codes: backupCodes }, 200);
   }
   return c.json({ ok: true, next: result.next }, 200);
-}
-
-/** What may be logged about a failure here: its name and code, never its message, because a driver or
- * provider error message can carry query values (the session lookup is by token hash) or endpoint details. */
-function safeErrorFields(err: unknown): { error_name: string; error_code?: string } {
-  if (!(err instanceof Error)) return { error_name: "unknown" };
-  const code = (err as { code?: unknown }).code;
-  return { error_name: err.name, ...(typeof code === "string" ? { error_code: code } : {}) };
 }
 
 /**
