@@ -1121,35 +1121,43 @@ describe("SystemStatus trigger words", () => {
 });
 
 // staff.css shows this icon on a phone (up to 480px) in place of the dot, so that the verdicts differ by shape and not only by colour
-// (WCAG 1.4.1), and it is 16px wide for every verdict, so that the bell and the account button stay where they are.
+// (WCAG 1.4.1), and it is 16px wide for every verdict, so that the bell and the account button stay where they are. It is an inline SVG,
+// not a glyph of the icon font: every `.ti` glyph is invisible until that font has loaded (icon-font.ts, staff.css), and the trigger on a
+// phone has no word, so a glyph would leave it blank on a slow connection.
 describe("SystemStatus trigger cue", () => {
   const cue = () => document.querySelector(".sys-status__trigger .sys-status__cue");
 
-  const VERDICTS: ReadonlyArray<{ when: string; checks: Record<string, unknown>; name: RegExp; icon: string }> = [
-    { when: "every check is fine", checks: {}, name: /All systems normal/, icon: "ti-circle-check" },
+  const VERDICTS: ReadonlyArray<{ when: string; checks: Record<string, unknown>; name: RegExp; icon: string; stroke: string }> = [
+    { when: "every check is fine", checks: {}, name: /All systems normal/, icon: "circle-check", stroke: "M9 12l2 2l4 -4" },
     {
       when: "a check is degraded",
       checks: { redis: { ok: true, warn: true, detail: "Redis unreachable, using in-memory fallback" } },
       name: /Degraded performance/,
-      icon: "ti-alert-triangle",
+      icon: "alert-triangle",
+      stroke: "M12 9v4",
     },
     {
       when: "a check is down",
       checks: { database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
       name: /Action needed/,
-      icon: "ti-circle-x",
+      icon: "circle-x",
+      stroke: "M10 10l4 4m0 -4l-4 4",
     },
   ];
 
-  it.each(VERDICTS)("is the icon of that verdict's row in the panel when $when", async ({ checks, name, icon }) => {
+  it.each(VERDICTS)("is the icon of that verdict's row in the panel, drawn as an SVG, when $when", async ({ checks, name, icon, stroke }) => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: { ...OK_CHECKS, ...checks }, worker: OK_WORKER });
 
     renderStatus(SUPERADMIN);
     await screen.findByRole("button", { name });
 
-    const mark = cue()?.querySelector("i");
-    expect(mark?.classList.contains(icon)).toBe(true);
+    const mark = cue()?.querySelector("svg");
+    expect(mark?.getAttribute("data-icon")).toBe(icon);
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    // the drawing that tells the three verdicts apart: a check, a bang in a triangle, a cross
+    expect([...(mark?.querySelectorAll("path") ?? [])].map((path) => path.getAttribute("d"))).toContain(stroke);
+    // not a glyph of the icon font, which stays invisible until the font has loaded
+    expect(cue()?.querySelector(".ti")).toBeNull();
   });
 
   it("is the kit's spinner, hidden from assistive tech, while the checks have not answered", () => {
@@ -1160,5 +1168,6 @@ describe("SystemStatus trigger cue", () => {
     const spinner = cue()?.querySelector(".at-spinner");
     expect(spinner).not.toBeNull();
     expect(spinner?.getAttribute("aria-hidden")).toBe("true");
+    expect(cue()?.querySelector(".ti")).toBeNull();
   });
 });

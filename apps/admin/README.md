@@ -58,7 +58,8 @@ Browser-level tests in this repo, all under `apps/admin/e2e/`:
 - `topbar-phone.spec.ts`: the seeded superadmin on a 390, a 360, a 340 and a 320 pixel phone (touch emulation): the
   top bar does not let `div.main` scroll sideways and keeps its side padding, the system status is an icon and not
   the dot, and a click on the account button opens the menu and it stays open with Sign out in view (a bar wider
-  than the screen made the page scroll and the scroll closed the menu).
+  than the screen made the page scroll and the scroll closed the menu). A second test holds the icon font's request
+  and checks the same status icon is there while the font has not loaded.
 
 Not part of `npm test`. Runs in CI as the `e2e-checkin-smoke` job in `.github/workflows/ci.yml`
 when check-in-related paths change (see the `checkin` filter in that file), and daily via

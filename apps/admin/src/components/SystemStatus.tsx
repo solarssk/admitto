@@ -260,6 +260,44 @@ function RowCheck({ state }: Readonly<{ state: RowState }>) {
   return <i className={checkIconClassName(state)} aria-hidden="true" />;
 }
 
+/** The artwork of the icons named in `ROW_CHECK_ICON` (Tabler outline icons, @tabler/icons 3.48, MIT) as SVG paths. The panel's rows draw
+ * them with the icon font, but the trigger on a phone has no word to fall back on, and `icon-font.ts` keeps every `.ti` glyph invisible until
+ * the ~460 kB font is in (30 seconds at most), which would leave it blank. */
+const VERDICT_PATHS: Record<ResolvedRowState, readonly string[]> = {
+  ok: ["M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", "M9 12l2 2l4 -4"],
+  degraded: [
+    "M12 9v4",
+    "M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0",
+    "M12 16h.01",
+  ],
+  down: ["M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", "M10 10l4 4m0 -4l-4 4"],
+};
+
+/** What the trigger shows on a phone in place of the dot (staff.css): the icon of the verdict's row as an inline SVG, which is there at
+ * once whatever the font is doing, or the kit's spinner while the checks are still being read (decoration, like the rows' icons). */
+function VerdictCue({ state }: Readonly<{ state: RowState }>) {
+  if (state === "pending") return <Spinner size="sm" aria-hidden="true" className="sys-status__check sys-status__check--pending" />;
+  return (
+    <svg
+      className={state === "ok" ? "sys-status__check" : `sys-status__check sys-status__check--${state}`}
+      data-icon={ROW_CHECK_ICON[state]}
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {VERDICT_PATHS[state].map((d) => (
+        <path key={d} d={d} />
+      ))}
+    </svg>
+  );
+}
+
 /** The rows of the menu: the four setup checks (superadmin only), then Email sending when there is something to say about it. */
 function statusRows(
   superadmin: boolean,
@@ -493,9 +531,9 @@ export function SystemStatus({
         ref={triggerRef}
       >
         <span className={`sys-status__dot ${TRIGGER_META[worst].dot}`} />
-        {/* Shown instead of the dot on a phone (staff.css): the icon of the panel's row for this verdict, a shape that differs by state, not only a colour. */}
+        {/* Shown instead of the dot on a phone (staff.css): a shape that differs by state, not only a colour, and not a font glyph. */}
         <span className="sys-status__cue">
-          <RowCheck state={worst} />
+          <VerdictCue state={worst} />
         </span>
         <span className={triggerLabelClassName("sys-status__label--short", worst)}>
           {TRIGGER_META[worst].shortLabel}
