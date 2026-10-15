@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An archived event now says so once, in a bar above every page of the event (Overview, Attendees, Requirements, Communication, Check-in, Reports, Event settings) with Restore event for a superadmin, instead of only on Overview. The hint under Send test email on the Mailing tab no longer repeats it.
 - The Location, Mail, Images and Ticket types tabs of Event settings, and the image library, no longer show a line saying the event is archived and cannot be changed. The greyed fields and the missing Save already say so, and the line pushed the first row down.
 - The Check-in tab of Event settings no longer shows the note "This event is archived - check-in behaviour cannot be changed." on an archived event (the greyed switches and the missing Save already say so), and its four switches now sit at the vertical middle of their label and description instead of next to the first line.
+- Saving the pinned note, a key contact or an important link of an event with a body the app cannot read (not JSON, not an object, a field of the wrong type, an unknown field or an oversized value) now answers 400 instead of a server error, and a pinned-note request that does not say what the note should be (`{}`, for instance) no longer clears the note: clearing needs `"note": null` or a blank note.
 
 ### Security
 
