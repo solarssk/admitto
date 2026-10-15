@@ -1576,8 +1576,9 @@ describe("removing attendees from an event", () => {
 
       expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
       expect(requests(fetchMock)).toEqual(expect.arrayContaining(askedFor(reservedFor(a.id))));
+      // The older id is named too: the row that held it is gone, and the usual id would not find that pass.
       expect(failedLines().map((line) => line.fields)).toEqual([
-        { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rejected", attendeeIds: a.id },
+        { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rejected", attendeeIds: a.id, reservedIds: olderId },
       ]);
     });
 

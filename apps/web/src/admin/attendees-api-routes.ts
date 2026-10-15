@@ -100,6 +100,7 @@ import {
   PASS_ROW_STILL_AT_PROVIDER,
   deletePassesUnder,
   reservedPassId,
+  walletUserProvidedId,
   type RemoveUntrackedWalletTarget,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
@@ -2298,17 +2299,24 @@ export async function deleteUntrackedWalletPassesBestEffort(
 /** One line for a whole removal, however many passes are still at the provider (a bulk removal carries up to 100
  * attendees when the event has wallet credentials, and a line for each would push the rest out of the System logs). A
  * removed attendee leaves no row, so this line is the only record of whose pass stands: every id is named, and the pass
- * is found at the provider by its User provided ID, `admitto:<event id>:<attendee id>`. Ids and failure codes only. */
+ * is found at the provider by its User provided ID, `admitto:<event id>:<attendee id>` (or the id in `reservedIds`, for
+ * a row that held another). Ids and failure codes only. */
 function reportUntrackedDeleteFailures(eventId: string, failed: ReadonlyMap<string, UntrackedFailure>): void {
   if (failed.size === 0) return;
   // One entry for an attendee, whichever of their ids failed.
   const byAttendee = new Map<string, string>();
   for (const { attendeeId, code } of failed.values()) byAttendee.set(attendeeId, code);
+  // The attendee ids give the usual id, `admitto:<event id>:<attendee id>`. An id that a row held and that is not that one
+  // is the only way to find its pass once the row is gone, so it is named too.
+  const otherIds = [...failed.entries()]
+    .filter(([id, { attendeeId }]) => id !== walletUserProvidedId(eventId, attendeeId))
+    .map(([id]) => id);
   emitSystemLog("admin", "error", "wallet_pass_erasure_delete_failed", {
     eventId,
     failed: byAttendee.size,
     codes: [...new Set(byAttendee.values())].join(","),
     attendeeIds: [...byAttendee.keys()].join(","),
+    ...(otherIds.length > 0 ? { reservedIds: otherIds.join(",") } : {}),
   });
 }
 

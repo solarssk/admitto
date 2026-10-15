@@ -66,6 +66,10 @@ function fakeDb(options: { event?: unknown; rows?: unknown[] } = {}) {
 const targets = (count: number): RemoveUntrackedWalletTarget[] =>
   Array.from({ length: count }, (_, index) => ({ attendeeId: `att-${index}`, userProvidedId: `reserved-${index}` }));
 
+/** Targets whose ids are the usual ones, `admitto:<event id>:<attendee id>`, which the attendee ids already give. */
+const usualTargets = (count: number): RemoveUntrackedWalletTarget[] =>
+  Array.from({ length: count }, (_, index) => ({ attendeeId: `att-${index}`, userProvidedId: `admitto:${EVENT_ID}:att-${index}` }));
+
 const noOutcome = (): UntrackedDeleteOutcome => ({ answered: new Set(), failed: new Map() });
 const lines = () => querySystemLogs({ search: "wallet_pass_erasure_delete_failed" });
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -365,11 +369,11 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const db = fakeDb();
     resolveConfiguredWalletProvider.mockReturnValue(
       standIn((id) => {
-        if (id === "reserved-3") throw new WalletProviderError("wallet_provider_timeout", "timed out");
+        if (id.endsWith(":att-3")) throw new WalletProviderError("wallet_provider_timeout", "timed out");
         throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
       }),
     );
-    const all = targets(30);
+    const all = usualTargets(30);
 
     await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, all, noOutcome());
 
@@ -411,7 +415,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), noOutcome());
 
     expect(lines().map((line) => line.fields)).toEqual([
-      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-1" },
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-1", reservedIds: "reserved-1" },
     ]);
   });
 
@@ -451,7 +455,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, failedFirst(["an-older-id-of-att-0", "att-0"]));
 
     expect(lines().map((line) => line.fields)).toEqual([
-      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rate_limited", attendeeIds: "att-0" },
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rate_limited", attendeeIds: "att-0", reservedIds: "an-older-id-of-att-0" },
     ]);
   });
 
@@ -482,7 +486,34 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
 
     expect(askedPerId(provider)).toEqual({ "reserved-0": 1, "an-older-id-of-att-0": 1 });
     expect(lines().map((line) => line.fields)).toEqual([
-      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-0" },
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-0", reservedIds: "reserved-0,an-older-id-of-att-0" },
+    ]);
+  });
+
+  it("names a failed id that is not the usual one next to the attendee, and no id that the attendee id already gives", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn(() => {
+        throw new WalletProviderError("wallet_provider_timeout", "timed out");
+      }),
+    );
+    const mixed: RemoveUntrackedWalletTarget[] = [
+      { attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` },
+      { attendeeId: "att-1", userProvidedId: "an-older-id-of-att-1" },
+      // The usual id of another event is not the usual id of this one.
+      { attendeeId: "att-2", userProvidedId: "admitto:another-event:att-2" },
+    ];
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, mixed, noOutcome());
+
+    expect(lines().map((line) => line.fields)).toEqual([
+      {
+        eventId: EVENT_ID,
+        failed: 3,
+        codes: "wallet_provider_timeout",
+        attendeeIds: "att-0,att-1,att-2",
+        reservedIds: "an-older-id-of-att-1,admitto:another-event:att-2",
+      },
     ]);
   });
 
@@ -493,7 +524,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     await expect(deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome())).resolves.toBeUndefined();
 
     expect(lines().map((line) => line.fields)).toEqual([
-      { eventId: EVENT_ID, failed: 2, codes: "unknown", attendeeIds: "att-0,att-1" },
+      { eventId: EVENT_ID, failed: 2, codes: "unknown", attendeeIds: "att-0,att-1", reservedIds: "reserved-0,reserved-1" },
     ]);
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("jane@example.com");
   });

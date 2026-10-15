@@ -129,7 +129,8 @@ flowchart TD
        may have left. Where the provider could not answer before the local delete, Admitto asks once more
        after it, and writes one entry for the whole removal, not one for each pass: it names the
        attendee ids (`attendeeIds`) of the passes that are still at the provider, which you find in
-       the provider's own console by their User provided ID, `admitto:<event id>:<attendee id>`. If the
+       the provider's own console by their User provided ID, `admitto:<event id>:<attendee id>` (or the one the
+       entry names in `reservedIds`). If the
        provider says the id also belongs to another pass (as its barcode value), Admitto deletes nothing
        for that attendee and the entry names them: remove that pass in the provider's own console.
        **Nothing is sent, and no failure entry is written,** when the event's wallet template or
