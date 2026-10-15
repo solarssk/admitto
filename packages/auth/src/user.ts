@@ -54,14 +54,15 @@ export async function createUser(
   });
 }
 
-/** Lookup by normalized email. */
-export function findUserByEmail(
+/** Lookup by normalized email. An address with U+0000 cannot be stored, so no account has one: it
+ * is an unknown account here, not a database error that would fail the whole request. */
+export async function findUserByEmail(
   prisma: PrismaClient | Prisma.TransactionClient,
   email: string,
 ): Promise<User | null> {
-  return prisma.user.findUnique({
-    where: { email: normalizeEmail(email) },
-  });
+  const normalized = normalizeEmail(email);
+  if (normalized.includes("\u0000")) return null;
+  return prisma.user.findUnique({ where: { email: normalized } });
 }
 
 /** Lookup by primary key. */

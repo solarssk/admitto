@@ -106,6 +106,7 @@ export {
 
 export {
   isSerializationFailure,
+  isUnstorableValueError,
 } from './errors.js';
 
 export {

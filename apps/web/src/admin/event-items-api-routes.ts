@@ -263,6 +263,11 @@ export async function handleListEventItems(c: Context, db: PrismaClient): Promis
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
+  // A superadmin passes the access check for any id, and the self-heal below would fail on its
+  // foreign key for an event that does not exist.
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
   // Self-heal legacy events missing the "badge" item (see event-items.ts) so
   // Requirements shows it immediately, not only after the event's first check-in.
   await ensureBadgeEventItem(eventId, db);

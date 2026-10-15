@@ -25,3 +25,18 @@ export function isSerializationFailure(err: unknown): boolean {
 
   return false;
 }
+
+/**
+ * True when Postgres refused to store a value because it is malformed (SQLSTATE class 22, "data
+ * exception"): U+0000 in text, U+0000 or a lone surrogate inside JSON, a string too long for its
+ * column, a number out of range. Prisma 7's driver adapters report these under several Prisma
+ * codes (P2039 for a query, P2010 for a raw query, P2000 and P2007 for validation), but all of
+ * them carry the SQLSTATE at `meta.driverAdapterError.cause.originalCode`.
+ */
+export function isUnstorableValueError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const cause = (
+    err as { meta?: { driverAdapterError?: { cause?: { originalCode?: unknown } } } }
+  ).meta?.driverAdapterError?.cause;
+  return typeof cause?.originalCode === "string" && cause.originalCode.startsWith("22");
+}
