@@ -23,7 +23,7 @@ import {
   SLOW_NOTICE_TEXT,
 } from "../utils/loading-timing.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../utils/locale-store.js";
-import { isSignOutInProgress } from "./sign-out-in-progress.js";
+import { goToLogin } from "./login-navigation.js";
 
 export interface AuthContextValue {
   user: AuthUser;
@@ -78,15 +78,12 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     } catch (err) {
       hasLoadedRef.current = false;
       if (err instanceof ApiError && err.status === 401) {
-        // The user's own Sign out revokes the session: the trip to the identity provider's logout page is
-        // already under way and must not be replaced.
-        if (isSignOutInProgress()) return;
         // The session is gone. Drop the identity first, so the signed-in pages unmount at once (the
         // loader shows instead) and stay out of sight while the browser goes to the login page.
         setUser(null);
         setAssignments([]);
         const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.assign(`/login?next=${next}`);
+        goToLogin(`/login?next=${next}`);
         return;
       }
       setAuthError(

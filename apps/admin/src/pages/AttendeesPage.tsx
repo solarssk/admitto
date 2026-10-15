@@ -83,6 +83,7 @@ import { useRetry } from "../hooks/useRetry.js";
 import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import { loadWithTimeout } from "../utils/load-timeout.js";
+import { goToLogin } from "../auth/login-navigation.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 import { pluralize } from "../utils/pluralize.js";
 import "../attendees/add-attendee-modal.css";
@@ -1028,7 +1029,7 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
   reportApiError(err.status);
   if (err.status === 401) {
     const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
+    goToLogin(`/login?next=${next}`);
     return;
   }
   setLoadError(err.status === 403 ? "You do not have access to this event." : "Could not load attendees.");
@@ -1562,7 +1563,7 @@ export function AttendeesPage() {
         reportApiError(err.status);
         if (err.status === 401) {
           const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
+          goToLogin(`/login?next=${next}`);
           return;
         }
         setSendError(operatorApiErrorMessage(err, "Send failed."));
@@ -1790,7 +1791,7 @@ export function AttendeesPage() {
         reportApiError(err.status);
         if (err.status === 401) {
           const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
+          goToLogin(`/login?next=${next}`);
           return;
         }
         addToast(operatorApiErrorMessage(err, "Export failed."), "error");
