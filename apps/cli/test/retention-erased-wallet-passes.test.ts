@@ -121,10 +121,10 @@ describe("sweepErasedWalletPasses", () => {
       "evt-1",
       ["evt-1-att-0000", "evt-1-att-0001", "evt-1-att-0002"],
       provider,
-      { budgetMs: 60_000 },
+      { budgetMs: 50_000 },
     );
     expect(deletePasses).toHaveBeenNthCalledWith(2, expect.anything(), "evt-2", ["evt-2-att-0000", "evt-2-att-0001"], provider, {
-      budgetMs: 60_000,
+      budgetMs: 50_000,
     });
     expect(passes.every((pass) => pass.removed)).toBe(true);
   });
@@ -357,7 +357,8 @@ describe("sweepErasedWalletPasses", () => {
 
   it("gives each page what is left of the time budget, and stops, counting the rest, when it is gone", async () => {
     passes.push(...passesOf("evt-1", 250), ...passesOf("evt-2", 5));
-    // The clock moves 45 s with every look: the first page still has 15 s of a 60 s budget, the second has none.
+    // The clock moves 45 s with every look: the walk may use 50 s of the 60 s budget (a sixth is kept for the second look),
+    // so the first page still has 5 s of it, and the second has none.
     deps.nowMs = () => {
       const now = clock;
       clock += 45_000;
@@ -371,7 +372,7 @@ describe("sweepErasedWalletPasses", () => {
     );
 
     expect(deletePasses).toHaveBeenCalledTimes(1);
-    expect(deletePasses.mock.calls[0]![4]).toEqual({ budgetMs: 15_000 });
+    expect(deletePasses.mock.calls[0]![4]).toEqual({ budgetMs: 5_000 });
     expect(result).toEqual({ pending: 255, deleted: 100, failed: 0, undecided: 0, noProvider: 0, notTried: 155 });
     expect(erasedWalletPassesLeft(result)).toBe(155);
   });
@@ -396,6 +397,22 @@ describe("sweepErasedWalletPasses", () => {
       expect(order).toEqual(["walk", "look"]);
       expect(recheckSettled).toHaveBeenCalledTimes(1);
       expect(recheckSettled).toHaveBeenCalledWith(db, { budgetMs: 40_000 });
+    });
+
+    it("keeps a sixth of the time for itself, however long the walk over the pending passes would have taken", async () => {
+      passes.push(...passesOf("evt-1", 250));
+      // Every page uses all the time it is given, as a backlog of passes that keep failing does.
+      deletePasses.mockImplementation(async (_db: unknown, _eventId: string, attendeeIds: string[], _provider: unknown, options: { budgetMs: number }) => {
+        clock += options.budgetMs;
+        return { deleted: 0, untrackedDeleted: 0, undecided: 0, failedAttendeeIds: attendeeIds, failureCodes: ["wallet_credential_changed"], notTried: 0 };
+      });
+      const db = fakeDb([eventRow("evt-1")], passes);
+
+      await sweepErasedWalletPasses(db, { dryRun: false, budgetMs: 60_000 }, deps);
+
+      // The walk was given 50 s, and the first page used all of it: the second look still has the other 10 s.
+      expect(deletePasses.mock.calls[0]![4]).toEqual({ budgetMs: 50_000 });
+      expect(recheckSettled).toHaveBeenCalledWith(db, { budgetMs: 10_000 });
     });
 
     it("also runs when nothing is pending, because the passes it looks at are marked removed", async () => {

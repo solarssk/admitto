@@ -58,7 +58,8 @@ async function keepRecheckPlace(db: PrismaClient, walk: RecheckWalk, before: Cur
  * a pass that has turned up since (recheckSettledWalletPasses). Best effort and silent when all is well: one warning per
  * event and run when a pass was found (the sign that an answer of "none" came too early, with the event's id only), one
  * when the provider could not answer, and one when the run was cut short. An event without credentials the sweep can use
- * is skipped with a warning of its own (reportNoProvider). `budgetMs` is what is left of the sweep's time.
+ * is skipped with a warning of its own (reportNoProvider). `budgetMs` is what is left of the sweep's time, which is never
+ * less than the sixth that the walk over pending passes leaves alone for this.
  *
  * A run that is cut short (the time ran out, or an event had more rows than one page) keeps the place where it stopped
  * (RECHECK_CURSOR_KEY) and the next run goes on after it, wrapping round to the beginning, the way the sweep over pending
