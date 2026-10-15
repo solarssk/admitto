@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db/client";
 import type { ScopeType } from "@admitto/db";
 import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
-import { parseUserAgentSafe, redactEmail } from "@admitto/shared";
+import { parseUserAgentSafe, redactEmail, toDatabaseJson } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { notify } from "@admitto/notifications";
 
@@ -221,7 +221,9 @@ async function writeSecurityAuditLog(
         user_display_name: snapshot?.display_name ?? null,
         ip: fields.ip ?? null,
         actor_timezone: fields.actor_timezone ?? null,
-        metadata: fields.metadata as Prisma.InputJsonValue,
+        // The values come from whoever made the request (an attempted email, a request path), and
+        // JSON in Postgres rejects U+0000 and lone surrogates - which would drop the whole row.
+        metadata: toDatabaseJson(fields.metadata) as Prisma.InputJsonValue,
       },
     });
   } catch (err) {
@@ -685,6 +687,10 @@ export async function logOidcLoginSuccess(
   });
 }
 
+/** Longest request path an `auth.access.denied` event keeps. The route fixes only the start of a
+ * path; the rest is whatever the caller sent, so it is cut instead of stored in full. */
+const ACCESS_DENIED_PATH_MAX_LENGTH = 200;
+
 /** Emit `auth.access.denied` for session-based 403 on protected admin paths, and persist a
  * durable `SecurityAuditLog` row (`user_id: null` when the request had no resolvable session). */
 export async function logAccessDenied(
@@ -697,8 +703,9 @@ export async function logAccessDenied(
     ip?: string;
   },
 ): Promise<void> {
+  const path = input.path.slice(0, ACCESS_DENIED_PATH_MAX_LENGTH);
   emitAuditEvent("auth.access.denied", {
-    path: input.path,
+    path,
     reason: input.reason,
     auth_source: input.authSource ?? null,
     user_fingerprint: input.userId ? fingerprint(input.userId) : null,
@@ -708,7 +715,7 @@ export async function logAccessDenied(
     event_type: "auth.access.denied",
     user_id: input.userId ?? null,
     ip: input.ip ?? null,
-    metadata: { path: input.path, reason: input.reason, authSource: input.authSource ?? null },
+    metadata: { path, reason: input.reason, authSource: input.authSource ?? null },
   });
 }
 
