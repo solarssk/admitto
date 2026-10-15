@@ -462,7 +462,7 @@ describe("auth API routes (routes.ts)", () => {
         stage: "full",
         session: SSO_SESSION,
       } as never);
-      mockEndSession.mockRejectedValue(new Error("boom"));
+      mockEndSession.mockRejectedValue(Object.assign(new Error("lookup failed for secret-sentinel-1"), { code: "P1001" }));
       const logged = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
         const res = await postLogout(logoutApp());
@@ -471,7 +471,33 @@ describe("auth API routes (routes.ts)", () => {
         expect(await res.json()).toEqual({ ok: true, end_session_url: null });
         expect(mockLogout).toHaveBeenCalled();
         expect(clearsSessionCookie(res)).toBe(true);
-        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect:", "boom");
+        // Name and code only: a driver or provider error message can carry query values or endpoint details.
+        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", {
+          error_name: "Error",
+          error_code: "P1001",
+        });
+        expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-sentinel-1");
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    it("logs a failure that is not an Error as unknown, with nothing of its value", async () => {
+      mockValidatePartial.mockResolvedValue({
+        userId: "u1",
+        sessionId: "s1",
+        stage: "full",
+        session: SSO_SESSION,
+      } as never);
+      mockEndSession.mockRejectedValue("connection reset secret-sentinel-2");
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await postLogout(logoutApp());
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", { error_name: "unknown" });
+        expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-sentinel-2");
       } finally {
         logged.mockRestore();
       }
@@ -544,7 +570,7 @@ describe("auth API routes (routes.ts)", () => {
     it("still signs out when reading the session of an invalid cookie fails", async () => {
       mockValidatePartial.mockResolvedValue(null);
       const findUnique = vi.fn(async () => {
-        throw new Error("boom");
+        throw new Error(`Invalid findUnique() invocation: where: { token_hash: "${hashToken("tok")}" }`);
       });
       const logged = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
@@ -554,7 +580,9 @@ describe("auth API routes (routes.ts)", () => {
         expect(await res.json()).toEqual({ ok: true, end_session_url: null });
         expect(mockEndSession).not.toHaveBeenCalled();
         expect(mockLogout).toHaveBeenCalled();
-        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect:", "boom");
+        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", { error_name: "Error" });
+        // The token hash inside the driver's message never reaches the log.
+        expect(JSON.stringify(logged.mock.calls)).not.toContain(hashToken("tok"));
       } finally {
         logged.mockRestore();
       }

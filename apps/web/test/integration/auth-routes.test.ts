@@ -297,7 +297,11 @@ describe("POST /api/auth/logout", () => {
 
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true, end_session_url: null });
-      expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect:", expect.any(String));
+      expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", {
+        error_name: "TypeError",
+        error_code: "ERR_INVALID_URL",
+      });
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("not a url");
       expect(await isSignedIn(cookie)).toBe(false);
     } finally {
       logged.mockRestore();
