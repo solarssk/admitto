@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { AUTH_METHOD, SESSION_STAGE, createSession, hashPassword } from "@admitto/auth";
+import { hashToken } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookie } from "../helpers/session-cookie.js";
@@ -301,6 +302,62 @@ describe("POST /api/auth/logout", () => {
     } finally {
       logged.mockRestore();
     }
+  });
+
+  /** The raw session token inside a `Cookie` header value. */
+  const tokenOf = (cookie: string): string => cookie.slice("admitto_session=".length);
+
+  async function endSessionUrlOf(res: Response): Promise<string | null> {
+    return ((await res.json()) as { end_session_url: string | null }).end_session_url;
+  }
+
+  it("answers with the same end-session URL when the Sign out is repeated, as after an answer that never arrived", async () => {
+    const cookie = await ssoCookie(SSO_PROVIDER_ID);
+
+    const first = await signOut(cookie);
+    const repeated = await signOut(cookie);
+
+    expect(first.status).toBe(200);
+    expect(repeated.status).toBe(200);
+    const url = await endSessionUrlOf(first);
+    expect(url).toContain("https://idp.example.test/auth-routes/with-logout/end-session");
+    expect(await endSessionUrlOf(repeated)).toBe(url);
+    expect(await isSignedIn(cookie)).toBe(false);
+  });
+
+  it("answers with the end-session URL of an SSO session that has already run out", async () => {
+    const cookie = await ssoCookie(SSO_PROVIDER_ID);
+    await prisma.session.updateMany({
+      where: { token_hash: hashToken(tokenOf(cookie)) },
+      data: { expires_at: new Date(Date.now() - 60_000) },
+    });
+
+    const res = await signOut(cookie);
+
+    expect(res.status).toBe(200);
+    expect(await endSessionUrlOf(res)).toContain("https://idp.example.test/auth-routes/with-logout/end-session");
+  });
+
+  it("answers with no end-session URL for a password session that is already revoked", async () => {
+    const { rawToken } = await createSession(prisma, {
+      userId: await operatorId(),
+      stage: SESSION_STAGE.FULL,
+    });
+    const cookie = `admitto_session=${rawToken}`;
+    expect((await signOut(cookie)).status).toBe(200);
+
+    const repeated = await signOut(cookie);
+
+    expect(repeated.status).toBe(200);
+    expect(await endSessionUrlOf(repeated)).toBeNull();
+  });
+
+  it("answers with no end-session URL for a cookie that names no session, and still clears it", async () => {
+    const res = await signOut("admitto_session=not-a-session-token");
+
+    expect(res.status).toBe(200);
+    expect(await endSessionUrlOf(res)).toBeNull();
+    expect((res.headers.getSetCookie?.() ?? []).some((line) => line.startsWith("admitto_session=;"))).toBe(true);
   });
 
   it("rejects a cross-site POST and leaves the session signed in", async () => {
