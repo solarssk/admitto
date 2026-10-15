@@ -1,6 +1,15 @@
 # @admitto/mail-delivery
 
-Orchestrates ticket email delivery: resolve config/template → issue ticket → render a frozen snapshot → atomic claim (an `EmailDelivery` row in status `queued`) → the Admitto **worker** drains the queued rows (`drainPendingDeliveries`) and sends through the mailer → status updates (`accepted` / `sent` / `failed` / ...). `sendTicketEmails` only enqueues unless it is called with `deliverImmediately: true` (tests and legacy callers), so a running worker is required for mail to leave the system.
+Orchestrates ticket email delivery. The steps:
+
+1. Resolve the config and the template.
+2. Issue the ticket.
+3. Render a frozen snapshot.
+4. Claim it atomically: an `EmailDelivery` row in status `queued`.
+5. The Admitto **worker** drains the queued rows (`drainPendingDeliveries`) and sends through the mailer.
+6. The status updates (`accepted` / `sent` / `failed` / ...).
+
+`sendTicketEmails` only enqueues unless it is called with `deliverImmediately: true` (tests and legacy callers). So a running worker is required for mail to leave the system.
 
 ## Exports
 
@@ -14,9 +23,12 @@ Orchestrates ticket email delivery: resolve config/template → issue ticket →
 
 ### Operator preflight (v0.3 PR5)
 
-- `sendTestEmail({ eventId, toAddress, templateId? }, prisma, env?, deps?, options?)` - one test mail with **sample** template data (the default ticket template via `previewTemplate`, or the template passed as `templateId`); sample ticket, QR and wallet links are replaced by inert placeholders; does **not** create `EmailDelivery` rows
+- `sendTestEmail({ eventId, toAddress, templateId? }, prisma, env?, deps?, options?)` sends one test mail with **sample** template data.
+  - It uses the default ticket template via `previewTemplate`, or the template passed as `templateId`.
+  - The sample ticket, QR and wallet links are replaced by inert placeholders.
+  - It does **not** create `EmailDelivery` rows.
 - `getMailConfigDescription(eventId, prisma, env?)` - masked read-only config (passthrough to `describeMailConfig`)
-- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` - returns `{ items, total }`; safe delivery log projection (no `rendered_html` body; it does include `rendered_subject`, which is the row's title in the log)
+- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` returns `{ items, total }`. It is a safe delivery log projection: no `rendered_html` body. It does include `rendered_subject`, which is the row's title in the log.
 
 ### Queue and lifecycle
 
@@ -67,39 +79,38 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 
 ## Delivery ownership
 
-Each sending path (worker, CLI retry and synchronous delivery) takes a non-blocking PostgreSQL
-session advisory lock for the delivery id, separate from the worker job lock. The dedicated
-connection holds no transaction or row lock during provider IO and closes after the outcome.
-Other delivery ids proceed independently. A competing CLI retry is reported as skipped.
+**The lock**
 
-`DATABASE_URL` must connect directly to PostgreSQL or use a session-mode pooler that pins the
-backend for the connection's lifetime. Transaction/statement-mode pooling is unsupported for
-delivery ownership. Before protected writes, the lock connection verifies the exact advisory
-key in `pg_locks` and that its backend PID still matches acquisition. A missing lock, changed
-backend or failed connection refuses the write. This detects loss; it cannot prevent a backend
-failure after verification or recall a provider-accepted message.
+- Each sending path (worker, CLI retry and synchronous delivery) takes a non-blocking PostgreSQL session advisory lock for the delivery id, separate from the worker job lock.
+- The dedicated connection holds no transaction or row lock during provider IO, and it closes after the outcome.
+- Other delivery ids proceed independently.
+- A competing CLI retry is reported as skipped.
 
-Before sending, the attendee/override-holder erasure check still waits under attendee row locks.
-The delivery's status, `queued_at` revision and attempt count must match the cached snapshot.
-Retry/reclaim claims advance `queued_at` strictly, even with equal clock milliseconds, using a
-compare-and-set. Outcome writes compare revision and attempt count and refuse emptied recipients.
-Cancellation can stop messages not yet handed to the provider; an already handed-off message
-cannot be recalled. A reclaimed revision discards the preceding revision's outcome.
+**Connection requirements**
 
-This prevents competing local attempts while ownership is held. It does not provide exactly-once
-remote delivery after ambiguous provider acceptance, process failure or loss of the lock session.
+- `DATABASE_URL` must connect directly to PostgreSQL, or use a session-mode pooler that pins the backend for the connection's lifetime. Transaction-mode and statement-mode pooling is unsupported for delivery ownership.
+- Before protected writes, the lock connection verifies the exact advisory key in `pg_locks` and that its backend PID still matches acquisition.
+- A missing lock, changed backend or failed connection refuses the write.
+- This detects loss. It cannot prevent a backend failure after verification, or recall a provider-accepted message.
+
+**Before sending, and after**
+
+- Before sending, the attendee / override-holder erasure check still waits under attendee row locks.
+- The delivery's status, `queued_at` revision and attempt count must match the cached snapshot.
+- Retry and reclaim claims advance `queued_at` strictly, even with equal clock milliseconds, using a compare-and-set.
+- Outcome writes compare revision and attempt count, and refuse emptied recipients.
+- Cancellation can stop messages not yet handed to the provider. An already handed-off message cannot be recalled.
+- A reclaimed revision discards the preceding revision's outcome.
+
+This prevents competing local attempts while ownership is held. It does not provide exactly-once remote delivery after ambiguous provider acceptance, process failure or loss of the lock session.
 
 ## Snapshot retention
 
-Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days (override with
-`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) the Admitto **worker** (once at boot, then about every 24h),
-`admitto retention run` and `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject`
-while preserving delivery log metadata. A failed row loses `retryable` at the same time, so it can no
-longer be retried. Selection and the atomic update both require a still-stale terminal snapshot;
-a reclaim to queued in between preserves its fresh body. The cleanup transaction also tries the
-same delivery advisory key and skips an in-flight sender. A locked batch does not prevent later
-rows from being cleared; skipped rows are reconsidered on the next cleanup run. All three read
-the same variable.
+- Terminal deliveries keep frozen HTML/subject for retry and support.
+- After 60 days (override with `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`), the Admitto **worker** (once at boot, then about every 24h), `admitto retention run` and `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject`, while preserving delivery log metadata. All three read the same variable.
+- A failed row loses `retryable` at the same time, so it can no longer be retried.
+- Selection and the atomic update both require a still-stale terminal snapshot. A reclaim to queued in between preserves its fresh body.
+- The cleanup transaction also tries the same delivery advisory key and skips an in-flight sender. A locked batch does not prevent later rows from being cleared. Skipped rows are reconsidered on the next cleanup run.
 
 ## Tests
 

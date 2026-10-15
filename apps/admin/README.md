@@ -47,21 +47,17 @@ npm test -w @admitto/admin
 
 Browser-level tests in this repo, both under `apps/admin/e2e/`:
 
-- `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them
-  through the manual check-in path (not the camera/QR scanner).
-- `a11y.spec.ts`: an axe-core accessibility scan of the login page, the operator check-in page and
-  the main admin pages (events list, overview, attendees, attendee detail, event settings,
-  communication), the latter as a seeded superadmin (`admin-login.ts` walks the forced TOTP
-  enrollment over the API). iframes (the mail-template previews) are excluded.
-  Every violation is printed, written to the job summary, and saved as `test-results/*/axe-*.json`;
-  serious and critical ones fail the test, minor and moderate stay report-only.
+- `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them through the manual check-in path (not the camera/QR scanner).
+- `a11y.spec.ts`: an axe-core accessibility scan of the login page, the operator check-in page and the main admin pages.
+  - The main admin pages are the events list, overview, attendees, attendee detail, event settings and communication. They are scanned as a seeded superadmin (`admin-login.ts` walks the forced TOTP enrollment over the API).
+  - iframes (the mail-template previews) are excluded.
+  - Every violation is printed, written to the job summary, and saved as `test-results/*/axe-*.json`. Serious and critical ones fail the test. Minor and moderate stay report-only.
 
-Not part of `npm test`. Runs in CI as the `e2e-checkin-smoke` job in `.github/workflows/ci.yml`
-when check-in-related paths change (see the `checkin` filter in that file), and daily via
-`.github/workflows/e2e-checkin-smoke.yml`.
+When it runs:
 
-Runs against a real dev server in the "single server (production-like)" mode above, plus its own
-disposable Postgres database.
+- It is not part of `npm test`.
+- In CI it runs as the `e2e-checkin-smoke` job in `.github/workflows/ci.yml` when check-in-related paths change (see the `checkin` filter in that file), and daily via `.github/workflows/e2e-checkin-smoke.yml`.
+- It runs against a real dev server in the "single server (production-like)" mode above, plus its own disposable Postgres database.
 
 > [!WARNING]
 > Do not point this at your shared local `admitto` dev database. `apps/admin/e2e/seed.ts` resets
