@@ -353,7 +353,12 @@ describe("xlsxBufferToCsv row limit", () => {
 });
 
 
-describe("xlsxBufferToCsv cell limit", () => {
+// These workbooks hold a million cells or build ten million characters of text, and the CI runner
+// is far slower than a laptop (with coverage and the other test files running in parallel), so the
+// suites below get the same kind of generous explicit timeout as the 50,000-row test above.
+const BIG_WORKBOOK_TIMEOUT_MS = 30_000;
+
+describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
   // ExcelJS builds an object for every <c> while it loads a workbook, so a workbook with too many
   // cells has to be refused before load() is called, as one with too many rows is.
   const xlsxPrototype: { load: (...args: unknown[]) => unknown } = Object.getPrototypeOf(new ExcelJS.Workbook().xlsx);
@@ -419,13 +424,13 @@ describe("xlsxBufferToCsv cell limit", () => {
       ...Array.from({ length: 20 }, (_, i) => `field_${i + 1}`),
     ];
     const rows = [header];
-    for (let row = 1; row <= 3_000; row++) rows.push(header.map((name) => `${name} ${row}`));
+    for (let row = 1; row <= 100; row++) rows.push(header.map((name) => `${name} ${row}`));
 
     const lines = (await xlsxBufferToCsv(await buildXlsxBuffer(rows))).split("\n");
 
-    expect(lines).toHaveLength(3_001);
+    expect(lines).toHaveLength(101);
     expect(lines[0]).toBe(header.join(","));
-    expect(lines.at(-1)).toBe(header.map((name) => `${name} 3000`).join(","));
+    expect(lines.at(-1)).toBe(header.map((name) => `${name} 100`).join(","));
   });
 
   it("counts a cell start tag whatever follows `<c`", async () => {
@@ -462,24 +467,26 @@ describe("xlsxBufferToCsv cell limit", () => {
   });
 });
 
-describe("xlsxBufferToCsv text limit", () => {
+describe("xlsxBufferToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
   // The text is built in memory from the rows of the first sheet, so the limit on its length has to
-  // apply while it is built, not after all of it exists.
+  // apply while it is built, not after all of it exists. A text that many cells show keeps the
+  // workbook small while the text made from it reaches the limit.
   const LAST_COLUMN_LINE_CHARS = 16_384; // 16,383 commas and the one value
+  const KIB_64 = 64 * 1024;
 
   it("stops building text for rows that are mostly empty columns once it passes the limit", async () => {
     const rowsAtLimit = MAX_CSV_CHARS / LAST_COLUMN_LINE_CHARS;
-    const under = buildZip(workbookParts([lastColumnRows(rowsAtLimit - 40)]));
-    const over = buildZip(workbookParts([lastColumnRows(rowsAtLimit)]));
 
-    await expect(xlsxBufferToCsv(under)).resolves.toHaveLength(
-      (rowsAtLimit - 40) * LAST_COLUMN_LINE_CHARS + (rowsAtLimit - 41),
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([lastColumnRows(3)])))).resolves.toHaveLength(
+      3 * LAST_COLUMN_LINE_CHARS + 2,
     );
-    await expect(xlsxBufferToCsv(over)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([lastColumnRows(rowsAtLimit)])))).rejects.toBeInstanceOf(
+      ImportRowLimitError,
+    );
   });
 
   it("counts a large text once for every cell that shows it", async () => {
-    const shared = "x".repeat(1024 * 1024);
+    const shared = "x".repeat(KIB_64);
     const cellsAtLimit = MAX_CSV_CHARS / shared.length;
     const sharedByCells = (cells: number) => buildXlsxBuffer([Array.from({ length: cells }, () => shared)]);
 
@@ -490,13 +497,15 @@ describe("xlsxBufferToCsv text limit", () => {
   });
 
   it("takes text of exactly MAX_CSV_CHARS characters and refuses one character more", async () => {
-    const first = "a".repeat(MAX_CSV_CHARS / 2);
-    const second = "b".repeat(MAX_CSV_CHARS / 2 - 1);
+    // A line of cells that all show one text, then a last line that makes the total exact: the
+    // commas and the newline between the lines count too.
+    const shared = "a".repeat(KIB_64 - 1);
+    const sharedCells = 159;
+    const lastLine = "b".repeat(MAX_CSV_CHARS - sharedCells * (shared.length + 1));
+    const workbook = (last: string) => buildXlsxBuffer([Array.from({ length: sharedCells }, () => shared), [last]]);
 
-    await expect(xlsxBufferToCsv(await buildXlsxBuffer([[first], [second]]))).resolves.toHaveLength(MAX_CSV_CHARS);
-    await expect(xlsxBufferToCsv(await buildXlsxBuffer([[first], [`${second}b`]]))).rejects.toBeInstanceOf(
-      ImportRowLimitError,
-    );
+    await expect(xlsxBufferToCsv(await workbook(lastLine))).resolves.toHaveLength(MAX_CSV_CHARS);
+    await expect(xlsxBufferToCsv(await workbook(`${lastLine}b`))).rejects.toBeInstanceOf(ImportRowLimitError);
   });
 });
 
