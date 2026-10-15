@@ -1,13 +1,18 @@
 import { parseAttendees } from "@admitto/import";
+import { currentSystemLogCursor, querySystemLogs } from "@admitto/shared/system-log";
 import ExcelJS from "exceljs";
+import { EventEmitter } from "node:events";
 import { deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildXlsxBuffer,
+  decodeXlsxToCsv,
   ImportRowLimitError,
   ImportZipBombError,
   MAX_CSV_CHARS,
   MAX_IMPORT_ROWS,
+  runXlsxChild,
+  startXlsxChild,
   xlsxBufferToCsv,
 } from "../src/admin/xlsx-to-csv.js";
 
@@ -150,16 +155,16 @@ function buildZip(
   return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
 }
 
-describe("xlsxBufferToCsv zip guards", () => {
+describe("decodeXlsxToCsv zip guards", () => {
   it("rejects a deflate bomb whose central directory declares a small uncompressed size", async () => {
     const buf = buildForgedZipBomb(25 * 1024 * 1024, 1000);
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
   it("rejects an entry that inflates past the total budget even when each declared size is small", async () => {
     // 21 MB is over the per-entry cap but still tiny once deflated.
     const buf = buildForgedZipBomb(21 * 1024 * 1024, 10);
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
   it("rejects an archive whose local file header is missing, out of range or points past the data", async () => {
@@ -173,16 +178,16 @@ describe("xlsxBufferToCsv zip guards", () => {
       (bytes[offset]! | (bytes[offset + 1]! << 8) | (bytes[offset + 2]! << 16) | (bytes[offset + 3]! << 24)) >>> 0;
 
     // Local header signature clobbered.
-    await expect(xlsxBufferToCsv(patched((bytes) => writeUint32LE(bytes, 0, 0)))).rejects.toBeInstanceOf(
+    await expect(decodeXlsxToCsv(patched((bytes) => writeUint32LE(bytes, 0, 0)))).rejects.toBeInstanceOf(
       ImportZipBombError,
     );
     // Local header offset beyond the end of the file.
     await expect(
-      xlsxBufferToCsv(patched((bytes, cd) => writeUint32LE(bytes, cd + 42, 0xfffffff0))),
+      decodeXlsxToCsv(patched((bytes, cd) => writeUint32LE(bytes, cd + 42, 0xfffffff0))),
     ).rejects.toBeInstanceOf(ImportZipBombError);
     // Compressed size running past the end of the file.
     await expect(
-      xlsxBufferToCsv(patched((bytes, cd) => writeUint32LE(bytes, cd + 20, 0x7fffffff))),
+      decodeXlsxToCsv(patched((bytes, cd) => writeUint32LE(bytes, cd + 20, 0x7fffffff))),
     ).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
@@ -190,19 +195,19 @@ describe("xlsxBufferToCsv zip guards", () => {
     const bytes = new Uint8Array(buildForgedZipBomb(1024, 1024).slice(0));
     // Data starts after the 30-byte local header and the 24-byte entry name.
     bytes.fill(0xff, 54, 60);
-    await expect(xlsxBufferToCsv(bytes.buffer)).rejects.toBeInstanceOf(ImportZipBombError);
+    await expect(decodeXlsxToCsv(bytes.buffer)).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
   it("rejects a stored entry larger than the cap and entries with an unsupported method", async () => {
-    await expect(xlsxBufferToCsv(buildForgedZipBomb(21 * 1024 * 1024, 10, 0))).rejects.toBeInstanceOf(
+    await expect(decodeXlsxToCsv(buildForgedZipBomb(21 * 1024 * 1024, 10, 0))).rejects.toBeInstanceOf(
       ImportZipBombError,
     );
-    await expect(xlsxBufferToCsv(buildForgedZipBomb(16, 16, 12))).rejects.toBeInstanceOf(ImportZipBombError);
+    await expect(decodeXlsxToCsv(buildForgedZipBomb(16, 16, 12))).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
   it("rejects archives with an oversized declared uncompressed entry", async () => {
     const buf = buildZipBombBuffer(25 * 1024 * 1024);
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
   it("quotes embedded double quotes and leaves ordinary cells unquoted", async () => {
@@ -212,7 +217,7 @@ describe("xlsxBufferToCsv zip guards", () => {
       ["Grace", "plain text"],
     ]);
 
-    await expect(xlsxBufferToCsv(buf)).resolves.toBe(
+    await expect(decodeXlsxToCsv(buf)).resolves.toBe(
       'name,note\nAda,"said ""hello"""\nGrace,plain text',
     );
   });
@@ -224,7 +229,7 @@ describe("xlsxBufferToCsv zip guards", () => {
       ["Grace", { formula: "1/0", result: { error: "#DIV/0!" as const } }],
     ]);
 
-    await expect(xlsxBufferToCsv(buf)).resolves.toBe("name,calculation\nAda,2\nGrace,#DIV/0!");
+    await expect(decodeXlsxToCsv(buf)).resolves.toBe("name,calculation\nAda,2\nGrace,#DIV/0!");
   });
 
   it("preserves the other supported XLSX cell value shapes", async () => {
@@ -241,13 +246,13 @@ describe("xlsxBufferToCsv zip guards", () => {
       ],
     ]);
 
-    await expect(xlsxBufferToCsv(buf)).resolves.toBe(
+    await expect(decodeXlsxToCsv(buf)).resolves.toBe(
       "rich text,link,error,formula date,boolean,formula without result\nAda Lovelace,Admitto,#N/A,2026-09-17T12:00:00.000Z,true,",
     );
   });
 });
 
-describe("xlsxBufferToCsv row limit", () => {
+describe("decodeXlsxToCsv row limit", () => {
   // ExcelJS builds an object for every <row> while it loads a workbook, so a workbook with too many
   // rows has to be refused before load() is called, not by the row check that runs afterwards.
   const xlsxPrototype: { load: (...args: unknown[]) => unknown } = Object.getPrototypeOf(new ExcelJS.Workbook().xlsx);
@@ -260,18 +265,18 @@ describe("xlsxBufferToCsv row limit", () => {
     const load = vi.spyOn(xlsxPrototype, "load");
     const buf = buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS * 20)]));
 
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
   });
 
   it("counts the rows of every worksheet, not only the first", async () => {
     const load = vi.spyOn(xlsxPrototype, "load");
     const half = MAX_IMPORT_ROWS / 2;
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([emptyRows(half), emptyRows(half)])))).resolves.toBe("");
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([emptyRows(half), emptyRows(half)])))).resolves.toBe("");
 
     const buf = buildZip(workbookParts([emptyRows(half + 1), emptyRows(half + 1)]));
     load.mockClear();
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
   });
 
@@ -279,17 +284,20 @@ describe("xlsxBufferToCsv row limit", () => {
     const atLimit = buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS + 1)]));
     const oneOver = buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS + 2)]));
 
-    await expect(xlsxBufferToCsv(atLimit)).resolves.toBe("");
-    await expect(xlsxBufferToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(atLimit)).resolves.toBe("");
+    await expect(decodeXlsxToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
   });
 
-  it("still imports a workbook with MAX_IMPORT_ROWS data rows of five columns", async () => {
+  it.each([
+    ["in this process", decodeXlsxToCsv],
+    ["in a child process", xlsxBufferToCsv],
+  ])("still imports a workbook with MAX_IMPORT_ROWS data rows of five columns, read %s", async (_where, read) => {
     const rows: string[][] = [["first_name", "last_name", "email", "company", "ticket_type"]];
     for (let i = 1; i <= MAX_IMPORT_ROWS; i++) {
       rows.push([`First${i}`, `Last${i}`, `person${i}@example.com`, `Acme ${i % 500} Ltd`, i % 3 ? "Standard" : "VIP"]);
     }
 
-    const csv = await xlsxBufferToCsv(await buildXlsxBuffer(rows));
+    const csv = await read(await buildXlsxBuffer(rows));
 
     const lines = csv.split("\n");
     expect(lines).toHaveLength(MAX_IMPORT_ROWS + 1);
@@ -302,14 +310,14 @@ describe("xlsxBufferToCsv row limit", () => {
     const rows = Array.from({ length: MAX_IMPORT_ROWS + 2 }, (_, i) => forms[i % forms.length]!.replace("N", String(i + 1)));
     const buf = buildZip(workbookParts([`<sheetData>${rows.join("")}</sheetData>`]));
 
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
   });
 
   it("does not take another element that only begins with `<row` for a row", async () => {
     const breaks = '<rowBreaks count="1" manualBreakCount="1"><brk id="1" max="16383" man="1"/></rowBreaks>';
     const buf = buildZip(workbookParts([`${emptyRows(MAX_IMPORT_ROWS + 1)}${breaks}`]));
 
-    await expect(xlsxBufferToCsv(buf)).resolves.toBe("");
+    await expect(decodeXlsxToCsv(buf)).resolves.toBe("");
   });
 
   it("refuses an archive that lists more entries than its end record declares", async () => {
@@ -317,10 +325,10 @@ describe("xlsxBufferToCsv row limit", () => {
     const parts = workbookParts([emptyRows(10), emptyRows(MAX_IMPORT_ROWS)]);
 
     // The same archive is over the row limit when it declares every entry...
-    await expect(xlsxBufferToCsv(buildZip(parts))).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buildZip(parts))).rejects.toBeInstanceOf(ImportRowLimitError);
     // ...and must not slip past it by declaring one less: the last record is the second worksheet.
     await expect(
-      xlsxBufferToCsv(buildZip(parts, { declaredEntries: Object.keys(parts).length - 1 })),
+      decodeXlsxToCsv(buildZip(parts, { declaredEntries: Object.keys(parts).length - 1 })),
     ).rejects.toBeInstanceOf(ImportZipBombError);
     expect(load).not.toHaveBeenCalled();
   });
@@ -337,7 +345,7 @@ describe("xlsxBufferToCsv row limit", () => {
     patch(archive.subarray(archive.length - 22));
     const patched = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer;
 
-    await expect(xlsxBufferToCsv(patched)).rejects.toBeInstanceOf(ImportZipBombError);
+    await expect(decodeXlsxToCsv(patched)).rejects.toBeInstanceOf(ImportZipBombError);
   });
 
   it("counts the rows of a stored (uncompressed) worksheet too", async () => {
@@ -345,9 +353,9 @@ describe("xlsxBufferToCsv row limit", () => {
     const atLimit = buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS + 1)]), { method: 0 });
     const oneOver = buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS + 2)]), { method: 0 });
 
-    await expect(xlsxBufferToCsv(atLimit)).resolves.toBe("");
+    await expect(decodeXlsxToCsv(atLimit)).resolves.toBe("");
     load.mockClear();
-    await expect(xlsxBufferToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
   });
 });
@@ -358,7 +366,7 @@ describe("xlsxBufferToCsv row limit", () => {
 // suites below get the same kind of generous explicit timeout as the 50,000-row test above.
 const BIG_WORKBOOK_TIMEOUT_MS = 30_000;
 
-describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
+describe("decodeXlsxToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
   // ExcelJS builds an object for every <c> while it loads a workbook, so a workbook with too many
   // cells has to be refused before load() is called, as one with too many rows is.
   const xlsxPrototype: { load: (...args: unknown[]) => unknown } = Object.getPrototypeOf(new ExcelJS.Workbook().xlsx);
@@ -378,18 +386,18 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const load = vi.spyOn(xlsxPrototype, "load");
     const buf = buildZip(workbookParts([`<sheetData>${rowOf(20_000).repeat(100)}</sheetData>`]));
 
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
   });
 
   it("counts the cells of every worksheet, not only the first", async () => {
     const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
     const half = MAX_CELLS / 2;
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheetOfCells(half), sheetOfCells(half)])))).resolves.toBe("");
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([sheetOfCells(half), sheetOfCells(half)])))).resolves.toBe("");
 
     const buf = buildZip(workbookParts([sheetOfCells(half + 1), sheetOfCells(half + 1)]));
     load.mockClear();
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
   });
 
@@ -403,10 +411,10 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
       const atLimit = buildZip(workbookParts([sheetOfRows(MAX_IMPORT_ROWS + 1, 20)]), { method });
       const oneOver = buildZip(workbookParts([sheetOfRows(MAX_IMPORT_ROWS + 1, 21)]), { method });
 
-      await expect(xlsxBufferToCsv(atLimit)).resolves.toBe("");
+      await expect(decodeXlsxToCsv(atLimit)).resolves.toBe("");
       expect(load).toHaveBeenCalledTimes(1);
       load.mockClear();
-      await expect(xlsxBufferToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
+      await expect(decodeXlsxToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
       expect(load).not.toHaveBeenCalled();
     },
   );
@@ -427,7 +435,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const rows = [header];
     for (let row = 1; row <= 100; row++) rows.push(header.map((name) => `${name} ${row}`));
 
-    const lines = (await xlsxBufferToCsv(await buildXlsxBuffer(rows))).split("\n");
+    const lines = (await decodeXlsxToCsv(await buildXlsxBuffer(rows))).split("\n");
 
     expect(lines).toHaveLength(101);
     expect(lines[0]).toBe(header.join(","));
@@ -447,7 +455,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const cells = Array.from({ length: MAX_CELLS + 1 }, (_, i) => forms[i % forms.length]!);
     const buf = buildZip(workbookParts([`<sheetData><row>${cells.join("")}</row></sheetData>`]));
 
-    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
   });
 
   it("does not take another element that only begins with `<c` for a cell", async () => {
@@ -455,7 +463,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const others = ["<col/>", "<cols>", "<cfRule/>", "<c:v/>", "<cellXfs/>", "<cx/>"];
     const body = Array.from({ length: MAX_CELLS + 1 }, (_, i) => others[i % others.length]!).join("");
 
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([`<sheetData>${body}</sheetData>`])))).resolves.toBe("");
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([`<sheetData>${body}</sheetData>`])))).resolves.toBe("");
     expect(load).toHaveBeenCalledTimes(1);
   });
 
@@ -463,7 +471,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const load = vi.spyOn(xlsxPrototype, "load");
     const parts = { ...workbookParts([emptyRows(1)]), "docProps/custom.xml": sheetOfCells(MAX_CELLS + 1) };
 
-    await expect(xlsxBufferToCsv(buildZip(parts))).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(buildZip(parts))).rejects.toBeInstanceOf(ImportRowLimitError);
     expect(load).not.toHaveBeenCalled();
   });
 
@@ -471,7 +479,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     // A rule for a whole column makes ExcelJS build an object for each cell of that column.
     const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
 
-    await xlsxBufferToCsv(buildZip(workbookParts([emptyRows(1)])));
+    await decodeXlsxToCsv(buildZip(workbookParts([emptyRows(1)])));
 
     expect(load).toHaveBeenCalledWith(
       expect.anything(),
@@ -490,7 +498,7 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
       `<sheetData><row r="1">${textCell("A1", "email")}</row><row r="2">${textCell("A2", "ann@example.com")}</row></sheetData>` +
       `<dataValidations count="6">${lists}</dataValidations>`;
 
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheet])))).resolves.toBe("email\nann@example.com");
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([sheet])))).resolves.toBe("email\nann@example.com");
   });
 
   it("keeps the value of a merged cell on every row of the merge", async () => {
@@ -502,13 +510,13 @@ describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     ];
     const sheet = `<sheetData>${rows.join("")}</sheetData><mergeCells count="1"><mergeCell ref="A2:A4"/></mergeCells>`;
 
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheet])))).resolves.toBe(
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([sheet])))).resolves.toBe(
       "company,email\nAcme Ltd,ann@example.com\nAcme Ltd,bob@example.com\nAcme Ltd,cid@example.com",
     );
   });
 });
 
-describe("xlsxBufferToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
+describe("decodeXlsxToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
   // The text is built in memory from the rows of the first sheet, so the limit on its length has to
   // apply while it is built, not after all of it exists. A text that many cells show keeps the
   // workbook small while the text made from it reaches the limit.
@@ -518,10 +526,10 @@ describe("xlsxBufferToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
   it("stops building text for rows that are mostly empty columns once it passes the limit", async () => {
     const rowsAtLimit = MAX_CSV_CHARS / LAST_COLUMN_LINE_CHARS;
 
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([lastColumnRows(3)])))).resolves.toHaveLength(
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([lastColumnRows(3)])))).resolves.toHaveLength(
       3 * LAST_COLUMN_LINE_CHARS + 2,
     );
-    await expect(xlsxBufferToCsv(buildZip(workbookParts([lastColumnRows(rowsAtLimit)])))).rejects.toBeInstanceOf(
+    await expect(decodeXlsxToCsv(buildZip(workbookParts([lastColumnRows(rowsAtLimit)])))).rejects.toBeInstanceOf(
       ImportRowLimitError,
     );
   });
@@ -531,10 +539,10 @@ describe("xlsxBufferToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const cellsAtLimit = MAX_CSV_CHARS / shared.length;
     const sharedByCells = (cells: number) => buildXlsxBuffer([Array.from({ length: cells }, () => shared)]);
 
-    await expect(xlsxBufferToCsv(await sharedByCells(cellsAtLimit - 1))).resolves.toHaveLength(
+    await expect(decodeXlsxToCsv(await sharedByCells(cellsAtLimit - 1))).resolves.toHaveLength(
       (cellsAtLimit - 1) * shared.length + (cellsAtLimit - 2),
     );
-    await expect(xlsxBufferToCsv(await sharedByCells(cellsAtLimit))).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(await sharedByCells(cellsAtLimit))).rejects.toBeInstanceOf(ImportRowLimitError);
   });
 
   it("takes text of exactly MAX_CSV_CHARS characters and refuses one character more", async () => {
@@ -545,8 +553,8 @@ describe("xlsxBufferToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () 
     const lastLine = "b".repeat(MAX_CSV_CHARS - sharedCells * (shared.length + 1));
     const workbook = (last: string) => buildXlsxBuffer([Array.from({ length: sharedCells }, () => shared), [last]]);
 
-    await expect(xlsxBufferToCsv(await workbook(lastLine))).resolves.toHaveLength(MAX_CSV_CHARS);
-    await expect(xlsxBufferToCsv(await workbook(`${lastLine}b`))).rejects.toBeInstanceOf(ImportRowLimitError);
+    await expect(decodeXlsxToCsv(await workbook(lastLine))).resolves.toHaveLength(MAX_CSV_CHARS);
+    await expect(decodeXlsxToCsv(await workbook(`${lastLine}b`))).rejects.toBeInstanceOf(ImportRowLimitError);
   });
 });
 
@@ -554,7 +562,7 @@ it.each(["\n", "\r\n"])("round-trips XLSX multiline cells with %j through the im
   const company = `Synthetic, "Team"${newline}Headquarters`;
   const first = `Synthetic${newline}First`;
   const notes = `One${newline}Two`;
-  const csv = await xlsxBufferToCsv(await buildXlsxBuffer([
+  const csv = await decodeXlsxToCsv(await buildXlsxBuffer([
     ["first_name", "last_name", "email", "company", "notes"],
     [first, "Person", "xlsx-multiline@example.com", company, notes],
   ]));
@@ -564,4 +572,169 @@ it.each(["\n", "\r\n"])("round-trips XLSX multiline cells with %j through the im
   const decoded = (value: string) => value.replaceAll("\r\n", "\n");
   expect(csv).toContain(`"${decoded(first)}"`);
   expect(result.validRows).toEqual([expect.objectContaining({ rowIndex: 1, first_name: decoded(first), company: decoded(company), custom_data: { notes: decoded(notes) } })]);
+});
+
+/** Column letters for 1 to 702, enough for the 40 columns of the fixture below. */
+function columnName(n: number): string {
+  const letter = (i: number): string => String.fromCharCode(65 + i);
+  return n <= 26 ? letter(n - 1) : `${letter(Math.floor((n - 1) / 26) - 1)}${letter((n - 1) % 26)}`;
+}
+
+/**
+ * A workbook that stays inside every limit above (about 25,000 rows, 999,960 cells, parts well under
+ * the size limits) and still needs more memory to read than the process that reads it may use: a long
+ * list of defined names and three worksheets of numbers.
+ */
+function memoryHungryWorkbook(): ArrayBuffer {
+  const row = (r: number): string =>
+    `<row r="${r}">${Array.from({ length: 40 }, (_, c) => `<c r="${columnName(c + 1)}${r}"><v>1</v></c>`).join("")}</row>`;
+  const grid = `<sheetData>${Array.from({ length: 8_333 }, (_, r) => row(r + 1)).join("")}</sheetData>`;
+  const names = Array.from(
+    { length: 340_000 },
+    (_, i) => `<definedName name="N${i}">Sheet1!$A$${i + 1}</definedName>`,
+  ).join("");
+  const parts = workbookParts([grid, grid, grid]);
+  parts["xl/workbook.xml"] = parts["xl/workbook.xml"]!.replace(
+    "</sheets>",
+    `</sheets><definedNames>${names}</definedNames>`,
+  );
+  return buildZip(parts);
+}
+
+/** A workbook the limits above let through, whose worksheet is cut off in the middle of a row. */
+function unreadableWorkbook(): ArrayBuffer {
+  return buildZip({ ...workbookParts([emptyRows(1)]), "xl/worksheets/sheet1.xml": "<worksheet><sheetData><row" });
+}
+
+describe("xlsxBufferToCsv child process", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
+  // The workbook is read in a process of its own, so a workbook that needs more memory than that
+  // process may use is refused without taking anything from the rest of the app.
+  const xlsxPrototype: { load: (...args: unknown[]) => unknown } = Object.getPrototypeOf(new ExcelJS.Workbook().xlsx);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reads the workbook in another process and returns the text reading it here would", async () => {
+    const buf = await buildXlsxBuffer([
+      ["name", "note"],
+      ["Ada", 'said "hello"'],
+      ["Grace", "plain text"],
+    ]);
+    const load = vi.spyOn(xlsxPrototype, "load");
+
+    const csv = await xlsxBufferToCsv(buf);
+
+    expect(load).not.toHaveBeenCalled();
+    expect(buf.byteLength).toBeGreaterThan(0);
+    expect(csv).toBe('name,note\nAda,"said ""hello"""\nGrace,plain text');
+    expect(csv).toBe(await decodeXlsxToCsv(buf));
+  });
+
+  it("answers a workbook over the limits with the errors the import expects", async () => {
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS * 20)])))).rejects.toBeInstanceOf(
+      ImportRowLimitError,
+    );
+    await expect(xlsxBufferToCsv(buildForgedZipBomb(25 * 1024 * 1024, 1000))).rejects.toBeInstanceOf(
+      ImportZipBombError,
+    );
+  });
+
+  it("answers a workbook that passes the limits but cannot be read with a plain error", async () => {
+    const error: unknown = await xlsxBufferToCsv(unreadableWorkbook()).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(ImportRowLimitError);
+    expect(error).not.toBeInstanceOf(ImportZipBombError);
+  });
+
+  it("refuses a workbook that needs more memory than the process may use, and goes on reading others", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const cursor = currentSystemLogCursor();
+
+    await expect(xlsxBufferToCsv(memoryHungryWorkbook())).rejects.toBeInstanceOf(ImportRowLimitError);
+
+    // Only a process that ran out of memory is logged like this: a workbook over a limit is refused
+    // by the process itself, so this one went through every limit first.
+    expect(querySystemLogs({ sinceId: cursor }).map(({ message, fields }) => ({ message, fields }))).toEqual([
+      { message: "xlsx_decode_stopped", fields: expect.objectContaining({ reason: "memory" }) },
+    ]);
+    await expect(xlsxBufferToCsv(await buildXlsxBuffer([["a"], ["b"]]))).resolves.toBe("a\nb");
+  }, 120_000);
+});
+
+describe("runXlsxChild", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
+  const answersTo = async (data: unknown): Promise<unknown[]> => {
+    const answers: unknown[] = [];
+    await runXlsxChild((answer) => answers.push(answer), data);
+    return answers;
+  };
+
+  it("answers with the text of the workbook it was sent", async () => {
+    const workbook = await buildXlsxBuffer([
+      ["a", "b"],
+      ["1", "2"],
+    ]);
+
+    await expect(answersTo({ workbook })).resolves.toEqual([{ csv: "a,b\n1,2" }]);
+  });
+
+  it.each<[string, () => ArrayBuffer]>([
+    ["rows", () => buildZip(workbookParts([emptyRows(MAX_IMPORT_ROWS * 20)]))],
+    ["zip", () => buildForgedZipBomb(25 * 1024 * 1024, 1000)],
+    ["invalid", unreadableWorkbook],
+  ])("answers a refusal with its kind and nothing else: %s", async (refusal, build) => {
+    await expect(answersTo({ workbook: build() })).resolves.toEqual([{ refusal }]);
+  });
+
+  it.each([[undefined], [null], ["workbook"], [{}], [{ workbook: "not a buffer" }], [{ workbook: new Uint8Array(4) }]])(
+    "does nothing for data that is not a workbook: %j",
+    async (data) => {
+      await expect(answersTo(data)).resolves.toEqual([]);
+    },
+  );
+});
+
+describe("startXlsxChild", () => {
+  /** The parts of a Node process the child's wiring uses, with the channel to the app faked. */
+  function fakeProcess() {
+    return Object.assign(new EventEmitter(), {
+      send: vi.fn((_answer: unknown, done?: () => void) => {
+        done?.();
+        return true;
+      }),
+      exit: vi.fn(),
+    });
+  }
+
+  it("answers the workbook it is sent, then ends", async () => {
+    const proc = fakeProcess();
+    startXlsxChild(proc as unknown as NodeJS.Process);
+
+    proc.emit("message", { workbook: await buildXlsxBuffer([["a"], ["b"]]) });
+
+    await vi.waitFor(() => expect(proc.exit).toHaveBeenCalledExactlyOnceWith(0));
+    expect(proc.send).toHaveBeenCalledExactlyOnceWith({ csv: "a\nb" }, expect.any(Function));
+  });
+
+  it("ends when the app's side of the channel closes", () => {
+    const proc = fakeProcess();
+    startXlsxChild(proc as unknown as NodeJS.Process);
+
+    proc.emit("disconnect");
+
+    expect(proc.exit).toHaveBeenCalledExactlyOnceWith(0);
+    expect(proc.send).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet for a message that is not a workbook", async () => {
+    const proc = fakeProcess();
+    startXlsxChild(proc as unknown as NodeJS.Process);
+
+    proc.emit("message", "hello");
+    await Promise.resolve();
+
+    expect(proc.send).not.toHaveBeenCalled();
+    expect(proc.exit).not.toHaveBeenCalled();
+  });
 });

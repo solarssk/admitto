@@ -1,11 +1,17 @@
+// A child process loads this file as it is on disk to read a workbook (see xlsxBufferToCsv), so it
+// imports no sibling module: from a TypeScript source (tests, `tsx`) a "./x.js" specifier only
+// resolves under the compiler.
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import ExcelJS from "exceljs";
 
 /** Cap rows materialized from XLSX/CSV to limit decompression-bomb memory use. */
 export const MAX_IMPORT_ROWS = 50_000;
 
 /**
- * Max CSV text length after decode/conversion (post-decompression guard). xlsxBufferToCsv stops
+ * Max CSV text length after decode/conversion (post-decompression guard). decodeXlsxToCsv stops
  * building the text as soon as it passes this, not after all of it exists.
  */
 export const MAX_CSV_CHARS = 10 * 1024 * 1024;
@@ -27,7 +33,7 @@ const MAX_XLSX_UNCOMPRESSED_ENTRY = 20 * 1024 * 1024;
  * Most `<row>` elements a workbook may hold, counted over every worksheet: the header row plus
  * MAX_IMPORT_ROWS data rows, the same bound csvWithinLimits puts on a CSV. ExcelJS builds an
  * object for each one while it loads the workbook, blank rows included, so the row limit inside
- * xlsxBufferToCsv only applies after that memory is spent.
+ * decodeXlsxToCsv only applies after that memory is spent.
  */
 const MAX_XLSX_ROW_ELEMENTS = MAX_IMPORT_ROWS + 1;
 
@@ -270,8 +276,11 @@ function csvEscape(value: string): string {
  */
 const UNREAD_WORKSHEET_NODES = ["cols", "dataValidations"];
 
-/** Convert the first worksheet of an XLSX buffer to a CSV string (in memory). */
-export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
+/**
+ * Convert the first worksheet of an XLSX buffer to a CSV string (in memory), in the calling process.
+ * The import calls xlsxBufferToCsv, which runs this in a child process.
+ */
+export async function decodeXlsxToCsv(buf: ArrayBuffer): Promise<string> {
   assertZipWithinUncompressedLimits(buf);
 
   const workbook = new ExcelJS.Workbook();
@@ -308,6 +317,158 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
   });
   return lines.join("\n");
 }
+
+/**
+ * Node flags of the process that reads a workbook. The old generation limit is the heap it may use
+ * (the buffers it unpacks are outside the heap, and the size limits above bound those): the largest
+ * workbook the size limits let through needs about two thirds of it, and a workbook that needs more
+ * ends the process instead of taking memory from the rest of the app. The young generation is capped
+ * as well, which keeps the resident memory down and costs no time.
+ */
+const XLSX_CHILD_FLAGS = ["--max-old-space-size=384", "--max-semi-space-size=8"];
+
+/**
+ * Longest a workbook may take to read, counted from the start of its process. Memory is the limit
+ * that matters; this only ends a process that never finishes, so it is far above what reading takes
+ * on slow hardware.
+ */
+const XLSX_CHILD_TIMEOUT_MS = 60_000;
+
+type Refusal = "rows" | "zip" | "invalid";
+
+/** What the child process answers with: the CSV text, or the kind of refusal (an error message could hold text from the file). */
+type ChildAnswer = { csv: string } | { refusal: Refusal };
+
+function refusalOf(err: unknown): Refusal {
+  if (err instanceof ImportRowLimitError) return "rows";
+  if (err instanceof ImportZipBombError) return "zip";
+  return "invalid";
+}
+
+function errorForRefusal(refusal: Refusal): Error {
+  if (refusal === "rows") return new ImportRowLimitError();
+  if (refusal === "zip") return new ImportZipBombError();
+  return new Error("invalid xlsx workbook");
+}
+
+function isWorkbookTask(data: unknown): data is { workbook: ArrayBuffer } {
+  return typeof data === "object" && data !== null && "workbook" in data && data.workbook instanceof ArrayBuffer;
+}
+
+/**
+ * The child process's side: reads the workbook it was sent and reports the CSV text, or why it
+ * refused. Does nothing for data that is not a workbook.
+ */
+export async function runXlsxChild(reply: (answer: ChildAnswer) => void, data: unknown): Promise<void> {
+  if (!isWorkbookTask(data)) return;
+  try {
+    reply({ csv: await decodeXlsxToCsv(data.workbook) });
+  } catch (err) {
+    reply({ refusal: refusalOf(err) });
+  }
+}
+
+/**
+ * The child process's wiring: waits for the one workbook it is sent, answers and ends, and ends when
+ * the app's side of the channel closes.
+ */
+export function startXlsxChild(proc: Pick<NodeJS.Process, "once" | "send" | "exit">): void {
+  proc.once("message", (data: unknown) => {
+    void runXlsxChild((answer) => proc.send?.(answer, () => proc.exit(0)), data);
+  });
+  proc.once("disconnect", () => proc.exit(0));
+}
+
+/** V8 ends its process with SIGABRT when the heap is full, and the system's memory killer uses SIGKILL. */
+function stopReason(signal: NodeJS.Signals): "memory" | "crash" {
+  return signal === "SIGABRT" || signal === "SIGKILL" ? "memory" : "crash";
+}
+
+function logDecodeStopped(reason: "memory" | "crash" | "time", signal?: NodeJS.Signals): void {
+  emitSystemLog("api", "warn", "xlsx_decode_stopped", signal ? { reason, signal } : { reason });
+}
+
+function logDecodeFailed(cause: string): void {
+  emitSystemLog("api", "error", "xlsx_decode_failed", { cause });
+}
+
+/**
+ * Reads the workbook in a new process, and ends that process once it has answered, died or run out
+ * of time. A process that dies (usually of the heap limit, which ends it with a signal) or runs out
+ * of time is refused as ImportRowLimitError, the same answer as a workbook with too many rows. The
+ * process gets an empty environment, since it needs none of the app's secrets, and nothing it prints
+ * is kept.
+ */
+function decodeInChild(workbook: ArrayBuffer): Promise<string> {
+  const child = fork(fileURLToPath(import.meta.url), [], {
+    execArgv: [...process.execArgv, ...XLSX_CHILD_FLAGS],
+    serialization: "advanced",
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
+    env: {},
+  });
+  const result = new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(() => {
+        logDecodeStopped("time");
+        reject(new ImportRowLimitError());
+      });
+    }, XLSX_CHILD_TIMEOUT_MS);
+
+    // The first thing that happens decides. The listeners stay on, so that nothing the process does
+    // afterwards (an exit, an error of its own) is left without one.
+    function finish(settle: () => void): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      settle();
+    }
+
+    child.on("message", (answer: ChildAnswer) => {
+      finish(() => ("csv" in answer ? resolve(answer.csv) : reject(errorForRefusal(answer.refusal))));
+    });
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      finish(() => {
+        logDecodeFailed(err.code ?? err.name);
+        reject(err);
+      });
+    });
+    child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+      finish(() => {
+        if (signal) {
+          logDecodeStopped(stopReason(signal), signal);
+          reject(new ImportRowLimitError());
+        } else {
+          logDecodeFailed(`exit ${code}`);
+          reject(new Error("xlsx child process ended without an answer"));
+        }
+      });
+    });
+    child.send({ workbook });
+  });
+  return result.finally(() => {
+    child.kill("SIGKILL");
+  });
+}
+
+let lastDecode: Promise<unknown> = Promise.resolve();
+
+/**
+ * Convert the first worksheet of an XLSX buffer to a CSV string, in a child process with its own
+ * memory and time limits: a workbook that needs more than they allow is refused with
+ * ImportRowLimitError, whatever the reader does with it, and reading it does not hold up the rest of
+ * the app. Workbooks are read one at a time, so the memory they can take together stays at one
+ * process's limit. The process is not a sandbox; it bounds what a workbook can use.
+ */
+export function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
+  const result = lastDecode.then(() => decodeInChild(buf));
+  lastDecode = result.catch(() => undefined);
+  return result;
+}
+
+// True only in the child process: fork starts it with this file as its entry point.
+/* v8 ignore next */
+if (import.meta.main) startXlsxChild(process);
 
 /** Build a minimal XLSX buffer for tests (header + data rows). */
 export async function buildXlsxBuffer(
