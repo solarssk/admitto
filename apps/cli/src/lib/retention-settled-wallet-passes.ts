@@ -28,6 +28,16 @@ function reportRecheck(eventId: string, run: RecheckSettledWalletPassesResult): 
   if (run.incomplete) emitSystemLog("wallet", "warn", "wallet_pass_recheck_incomplete", { eventId });
 }
 
+/** An event whose wallet credentials are missing, or cannot be read, is not asked, and its settled rows go on ageing out of
+ * the horizon: nothing else looks at them (the walk over pending passes reports only events that have pending passes), so
+ * this says it, with how many rows are left unasked. The event's id and a count, never an attendee. */
+async function reportNoProvider(db: PrismaClient, eventId: string, since: Date): Promise<void> {
+  const settled = await db.walletPass.count({
+    where: { ...settledUntrackedPassRow(since), attendee: { event_id: eventId, erased_at: { not: null } } },
+  });
+  emitSystemLog("wallet", "warn", "wallet_pass_recheck_no_provider", { eventId, settled });
+}
+
 /** How one run of the second look went: the last row it asked about (null while it has asked about none) and whether it
  * was cut short, by the time or by a full page. */
 type RecheckWalk = { last: Cursor | null; cutShort: boolean };
@@ -48,7 +58,7 @@ async function keepRecheckPlace(db: PrismaClient, walk: RecheckWalk, before: Cur
  * a pass that has turned up since (recheckSettledWalletPasses). Best effort and silent when all is well: one warning per
  * event and run when a pass was found (the sign that an answer of "none" came too early, with the event's id only), one
  * when the provider could not answer, and one when the run was cut short. An event without credentials the sweep can use
- * is skipped (the sweep over pending passes already reports those). `budgetMs` is what is left of the sweep's time.
+ * is skipped with a warning of its own (reportNoProvider). `budgetMs` is what is left of the sweep's time.
  *
  * A run that is cut short (the time ran out, or an event had more rows than one page) keeps the place where it stopped
  * (RECHECK_CURSOR_KEY) and the next run goes on after it, wrapping round to the beginning, the way the sweep over pending
@@ -62,28 +72,24 @@ export async function recheckSettledWalletPassesOfEvents(
 ): Promise<void> {
   if (options.budgetMs <= 0) return;
   const startedAt = deps.nowMs();
+  const since = new Date(startedAt - SETTLED_RECHECK_HORIZON_MS);
   const events = await db.event.findMany({
-    where: {
-      attendees: {
-        some: {
-          erased_at: { not: null },
-          wallet_pass: { is: settledUntrackedPassRow(new Date(startedAt - SETTLED_RECHECK_HORIZON_MS)) },
-        },
-      },
-    },
+    where: { attendees: { some: { erased_at: { not: null }, wallet_pass: { is: settledUntrackedPassRow(since) } } } },
     select: { id: true, wallet_template_id: true, wallet_api_key_enc: true, wallet_field_mapping: true },
     orderBy: { id: "asc" },
   });
+  // Each event's provider is resolved once, before the walk, which may visit an event twice (the part after the kept place, and the part before it).
+  const candidates = events.map((event) => ({ event, provider: deps.resolveProvider(event) }));
+  await Promise.all(candidates.filter((item) => item.provider === null).map((item) => reportNoProvider(db, item.event.id, since)));
+  const askable = candidates.flatMap(({ event, provider }) => (provider ? [{ event, provider }] : []));
   const before = await readCursor(db, RECHECK_CURSOR_KEY);
   const walk: RecheckWalk = { last: null, cutShort: false };
-  for (const { event, range } of inSweepOrder(events.map((event) => ({ event })), before)) {
+  for (const { event, provider, range } of inSweepOrder(askable, before)) {
     const remainingMs = options.budgetMs - (deps.nowMs() - startedAt);
     if (remainingMs <= 0) {
       walk.cutShort = true;
       break;
     }
-    const provider = deps.resolveProvider(event);
-    if (!provider) continue;
     const run = await deps.recheck(db, event.id, provider, { budgetMs: remainingMs, ...range }); // NOSONAR - one event at a time on purpose: the events share one time budget and the provider must not be burst
     if (run.last !== null) walk.last = { eventId: event.id, attendeeId: run.last };
     reportRecheck(event.id, run);
