@@ -44,6 +44,7 @@ export {
   PASS_ROW_STILL_AT_PROVIDER,
   SETTLED_RECHECK_HORIZON_MS,
   deleteErasedWalletPasses,
+  deletePassesUnder,
   erasedPassToDeleteWhere,
   passIsStillToDelete,
   recheckSettledWalletPasses,

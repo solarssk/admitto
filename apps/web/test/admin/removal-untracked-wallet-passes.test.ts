@@ -32,12 +32,29 @@ const BATCH = 10;
 
 type StandIn = WalletPassProvider & { deletePass: ReturnType<typeof vi.fn>; deletePassByUserProvidedId: ReturnType<typeof vi.fn> };
 
-function standIn(deletePassByUserProvidedId: (id: string) => Promise<boolean> = async () => true): StandIn {
+/** A provider that answers a delete by id with whether it held a pass (true) or not (false). `answerOf` is told which call
+ * of that id it is answering, from 0: by default the provider holds none, so each id costs one call. */
+function standIn(answerOf: (id: string, call: number) => boolean | Promise<boolean> = () => false): StandIn {
+  const calls = new Map<string, number>();
   return {
     deletePass: vi.fn(async () => undefined),
-    deletePassByUserProvidedId: vi.fn(deletePassByUserProvidedId),
+    deletePassByUserProvidedId: vi.fn(async (id: string) => {
+      const call = calls.get(id) ?? 0;
+      calls.set(id, call + 1);
+      return answerOf(id, call);
+    }),
   } as unknown as StandIn;
 }
+
+/** A provider that holds `count` passes under each of the ids given (it answers true that many times, then false). */
+const holding = (count: number, ...ids: string[]) => (id: string, call: number) => ids.includes(id) && call < count;
+
+/** How many times each id was asked about, whatever the order the calls ran in. */
+const askedPerId = (provider: StandIn) => {
+  const asked: Record<string, number> = {};
+  for (const [id] of provider.deletePassByUserProvidedId.mock.calls) asked[String(id)] = (asked[String(id)] ?? 0) + 1;
+  return asked;
+};
 
 function fakeDb(options: { event?: unknown; rows?: unknown[] } = {}) {
   return {
@@ -65,29 +82,30 @@ afterEach(() => {
 
 describe("deleteUntrackedPassesAtProvider", () => {
   it("asks for each pass by its own id and counts a pass deleted and none there alike as answered", async () => {
-    const provider = standIn(async (id) => id !== "reserved-1");
+    // Reserved-0 and 2 are held (a delete, then the answer that none is left), reserved-1 is not.
+    const provider = standIn(holding(1, "reserved-0", "reserved-2"));
 
     const outcome = await deleteUntrackedPassesAtProvider(provider, targets(3));
 
-    expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual(["reserved-0", "reserved-1", "reserved-2"]);
+    expect(askedPerId(provider)).toEqual({ "reserved-0": 2, "reserved-1": 1, "reserved-2": 2 });
     expect(provider.deletePass).not.toHaveBeenCalled();
     expect([...outcome.answered].sort()).toEqual(["reserved-0", "reserved-1", "reserved-2"]);
     expect(outcome.failed.size).toBe(0);
   });
 
   it("keeps what the provider refused apart, by its failure code and never its message, and goes on with the rest", async () => {
-    const provider = standIn(async (id) => {
+    const provider = standIn((id) => {
       if (id === "reserved-1") throw new WalletProviderError("wallet_provider_timeout", "timed out for jane@example.com");
       if (id === "reserved-2") throw new Error("an internal detail that must not be logged");
-      return true;
+      return false;
     });
 
     const outcome = await deleteUntrackedPassesAtProvider(provider, targets(4));
 
     expect([...outcome.answered].sort()).toEqual(["reserved-0", "reserved-3"]);
     expect([...outcome.failed.entries()]).toEqual([
-      ["att-1", "wallet_provider_timeout"],
-      ["att-2", "unknown"],
+      ["reserved-1", { attendeeId: "att-1", code: "wallet_provider_timeout" }],
+      ["reserved-2", { attendeeId: "att-2", code: "unknown" }],
     ]);
   });
 
@@ -113,7 +131,7 @@ describe("deleteUntrackedPassesAtProvider", () => {
             id,
             answer: () => {
               inFlight -= 1;
-              resolve(true);
+              resolve(false);
             },
           });
         }),
@@ -139,6 +157,39 @@ describe("deleteUntrackedPassesAtProvider", () => {
     const outcome = await run;
     expect(outcome.answered.size).toBe(25);
     expect(mostAtOnce).toBe(BATCH);
+  });
+
+  it("deletes every pass under an id, until the provider has none, before it counts the id as answered", async () => {
+    // Two creations at once both succeeded under one reserved id.
+    const provider = standIn(holding(2, "reserved-0"));
+
+    const outcome = await deleteUntrackedPassesAtProvider(provider, targets(2));
+
+    expect(askedPerId(provider)).toEqual({ "reserved-0": 3, "reserved-1": 1 });
+    expect([...outcome.answered].sort()).toEqual(["reserved-0", "reserved-1"]);
+    expect(outcome.failed.size).toBe(0);
+  });
+
+  it("does not count an id as answered while the provider still holds a pass under it after five deletions", async () => {
+    const provider = standIn(() => true);
+
+    const outcome = await deleteUntrackedPassesAtProvider(provider, targets(1));
+
+    expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(6);
+    expect(outcome.answered.size).toBe(0);
+    expect([...outcome.failed.entries()]).toEqual([["reserved-0", { attendeeId: "att-0", code: "wallet_provider_rejected" }]]);
+  });
+
+  it("keeps an id apart that failed after it had deleted a pass, to be asked about again", async () => {
+    const provider = standIn((_id, call) => {
+      if (call === 1) throw new WalletProviderError("wallet_provider_timeout", "timed out");
+      return call === 0;
+    });
+
+    const outcome = await deleteUntrackedPassesAtProvider(provider, targets(1));
+
+    expect(outcome.answered.size).toBe(0);
+    expect([...outcome.failed.keys()]).toEqual(["reserved-0"]);
   });
 });
 
@@ -246,14 +297,14 @@ describe("deleteUntrackedWalletPassesBestEffort", () => {
   it("answers what failed too, so that the caller can try it again after the commit", async () => {
     const db = fakeDb({ rows: [{ attendee_id: "a", user_provided_id: "reserved-a" }] });
     resolveConfiguredWalletProvider.mockReturnValue(
-      standIn(async () => {
+      standIn(() => {
         throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
       }),
     );
 
     const outcome = await deleteUntrackedWalletPassesBestEffort(db as never, EVENT_ID, ["a"]);
 
-    expect([...outcome.failed.entries()]).toEqual([["a", "wallet_provider_rate_limited"]]);
+    expect([...outcome.failed.entries()]).toEqual([["reserved-a", { attendeeId: "a", code: "wallet_provider_rate_limited" }]]);
     // Nothing is said yet: the second try may still delete it.
     expect(lines()).toEqual([]);
   });
@@ -262,6 +313,11 @@ describe("deleteUntrackedWalletPassesBestEffort", () => {
 describe("deleteUntrackedPassesAfterRemoval", () => {
   /** What the first delete answered for, by the ids it asked about. */
   const answered = (...ids: string[]): UntrackedDeleteOutcome => ({ answered: new Set(ids), failed: new Map() });
+  /** What the first delete could not answer for: each id with its attendee. */
+  const failedFirst = (...entries: Array<[id: string, attendeeId: string]>): UntrackedDeleteOutcome => ({
+    answered: new Set(),
+    failed: new Map(entries.map(([id, attendeeId]) => [id, { attendeeId, code: "wallet_provider_timeout" }])),
+  });
 
   it("does nothing, and resolves no provider, when the first delete answered for every pass", async () => {
     const db = fakeDb();
@@ -308,7 +364,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
   it("says in one line which passes are still at the provider, however many, with ids and failure codes only", async () => {
     const db = fakeDb();
     resolveConfiguredWalletProvider.mockReturnValue(
-      standIn(async (id) => {
+      standIn((id) => {
         if (id === "reserved-3") throw new WalletProviderError("wallet_provider_timeout", "timed out");
         throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
       }),
@@ -331,7 +387,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
   it("also writes that line to the output, which is what outlives a restart", async () => {
     const db = fakeDb();
     resolveConfiguredWalletProvider.mockReturnValue(
-      standIn(async () => {
+      standIn(() => {
         throw new WalletProviderError("wallet_provider_timeout", "timed out");
       }),
     );
@@ -346,9 +402,9 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
   it("names only the passes that are still there when the second try deleted some", async () => {
     const db = fakeDb();
     resolveConfiguredWalletProvider.mockReturnValue(
-      standIn(async (id) => {
+      standIn((id, call) => {
         if (id === "reserved-1") throw new WalletProviderError("wallet_provider_timeout", "timed out");
-        return true;
+        return call === 0;
       }),
     );
 
@@ -363,12 +419,71 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const db = fakeDb();
     const provider = standIn();
     resolveConfiguredWalletProvider.mockReturnValue(provider);
-    const failedBefore: UntrackedDeleteOutcome = { answered: new Set(), failed: new Map([["att-0", "wallet_provider_timeout"]]) };
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(1), failedBefore);
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(1), failedFirst(["reserved-0", "att-0"]));
 
     expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(1);
     expect(lines()).toEqual([]);
+  });
+
+  it("asks again about the id the first delete failed for when a creating request has replaced it on the row", async () => {
+    const db = fakeDb();
+    const provider = standIn(holding(1, "an-older-id-of-att-0", `admitto:${EVENT_ID}:att-0`));
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+    const rewritten: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, failedFirst(["an-older-id-of-att-0", "att-0"]));
+
+    // Both ids are drained: the old one, which the removal's own rows no longer name, and the current one.
+    expect(askedPerId(provider)).toEqual({ "an-older-id-of-att-0": 2, [`admitto:${EVENT_ID}:att-0`]: 2 });
+    expect(lines()).toEqual([]);
+  });
+
+  it("names the attendee when the old id still fails after the retry, although the current id was deleted", async () => {
+    const db = fakeDb();
+    const provider = standIn((id, call) => {
+      if (id === "an-older-id-of-att-0") throw new WalletProviderError("wallet_provider_rate_limited", "slow down");
+      return call === 0;
+    });
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+    const rewritten: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, failedFirst(["an-older-id-of-att-0", "att-0"]));
+
+    expect(lines().map((line) => line.fields)).toEqual([
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rate_limited", attendeeIds: "att-0" },
+    ]);
+  });
+
+  it("leaves an id alone that the first delete failed for when this removal did not delete that attendee", async () => {
+    const db = fakeDb();
+    const provider = standIn();
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    // Another request removed att-9 at the same moment: it is that request's pass to deal with.
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(1), {
+      answered: new Set(["reserved-0"]),
+      failed: new Map([["reserved-9", { attendeeId: "att-9", code: "wallet_provider_timeout" }]]),
+    });
+
+    expect(provider.deletePassByUserProvidedId).not.toHaveBeenCalled();
+    expect(lines()).toEqual([]);
+  });
+
+  it("asks only once about an id that failed first and is also on a removed row, and names its attendee once", async () => {
+    const db = fakeDb();
+    const provider = standIn(() => {
+      throw new WalletProviderError("wallet_provider_timeout", "timed out");
+    });
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+    const both: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: "reserved-0" }];
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, both, failedFirst(["reserved-0", "att-0"], ["an-older-id-of-att-0", "att-0"]));
+
+    expect(askedPerId(provider)).toEqual({ "reserved-0": 1, "an-older-id-of-att-0": 1 });
+    expect(lines().map((line) => line.fields)).toEqual([
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-0" },
+    ]);
   });
 
   it("still answers, and says which passes are left, when the second try itself breaks, without the words of the error", async () => {

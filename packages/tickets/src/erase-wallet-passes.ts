@@ -148,7 +148,7 @@ function creationsAreSettled(pass: PassToDelete): boolean {
  * Throws when it still finds one after {@link MAX_PASSES_UNDER_ONE_ID} deletions (a delete that does not take, or the same
  * pass answered again), so that the row stays still to delete with the failure code of the provider.
  */
-async function deletePassesUnder(provider: WalletPassProvider, id: string, deleted = 0): Promise<number> {
+export async function deletePassesUnder(provider: WalletPassProvider, id: string, deleted = 0): Promise<number> {
   if (!(await provider.deletePassByUserProvidedId(id))) return deleted;
   if (deleted >= MAX_PASSES_UNDER_ONE_ID) {
     throw new WalletProviderError("wallet_provider_rejected", "The provider still holds a pass under the reserved id.");
