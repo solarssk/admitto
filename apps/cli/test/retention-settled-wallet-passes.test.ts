@@ -20,6 +20,7 @@ const through = (last: string | null = "att-9") => ({ checked: 3, found: 0, fail
 
 describe("recheckSettledWalletPassesOfEvents", () => {
   let findMany: ReturnType<typeof vi.fn>;
+  let countPasses: ReturnType<typeof vi.fn>;
   let db: PrismaClient;
   let recheck: ReturnType<typeof vi.fn>;
   let resolveProvider: ReturnType<typeof vi.fn>;
@@ -48,7 +49,8 @@ describe("recheckSettledWalletPassesOfEvents", () => {
       upsert: vi.fn(async () => undefined),
       deleteMany: vi.fn(async () => ({ count: 1 })),
     };
-    db = { event: { findMany }, systemSettings: settings } as unknown as PrismaClient;
+    countPasses = vi.fn(async () => 4);
+    db = { event: { findMany }, systemSettings: settings, walletPass: { count: countPasses } } as unknown as PrismaClient;
     recheck = vi.fn(async () => through());
     resolveProvider = vi.fn(() => provider);
     deps = {
@@ -127,13 +129,57 @@ describe("recheckSettledWalletPassesOfEvents", () => {
     expect(logs[0]).toMatchObject({ level: "warn", message: "wallet_pass_recheck_incomplete", fields: { eventId: "evt-1" } });
   });
 
-  it("skips an event whose credentials give no provider, and goes on with the next", async () => {
+  it("skips an event whose credentials give no provider, says so with the event id and how many settled rows it leaves unasked, and goes on with the next", async () => {
     resolveProvider.mockReturnValueOnce(null);
 
     await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
 
     expect(recheck).toHaveBeenCalledTimes(1);
     expect(recheck.mock.calls[0]![1]).toBe("evt-2");
+    // Nothing else looks at these rows: the walk over pending passes reports only events that have pending passes.
+    const logs = querySystemLogs({ source: "wallet" });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ level: "warn", message: "wallet_pass_recheck_no_provider", fields: { eventId: "evt-1", settled: 4 } });
+    expect(countPasses).toHaveBeenCalledTimes(1);
+    expect(countPasses).toHaveBeenCalledWith({
+      where: {
+        provider_pass_id: null,
+        provider_removed_at: { gte: new Date(NOW - SETTLED_RECHECK_HORIZON_MS) },
+        OR: [{ user_provided_id: { not: null } }, { status: "failed" }],
+        attendee: { event_id: "evt-1", erased_at: { not: null } },
+      },
+    });
+  });
+
+  it("says it once per event, although the walk would have visited the event twice (the part after the kept place and the part before it)", async () => {
+    resolveProvider.mockImplementation((event: EventRow) => (event.id === "evt-2" ? null : provider));
+    keptPlace("evt-2", "att-5");
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(resolveProvider).toHaveBeenCalledTimes(2);
+    expect(recheck.mock.calls.map((call) => call[1])).toEqual(["evt-1"]);
+    expect(querySystemLogs({ search: "wallet_pass_recheck_no_provider" })).toHaveLength(1);
+  });
+
+  it("says it for every event without a provider, and asks about none", async () => {
+    resolveProvider.mockReturnValue(null);
+
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(recheck).not.toHaveBeenCalled();
+    const logs = querySystemLogs({ search: "wallet_pass_recheck_no_provider" });
+    expect(logs.map((entry) => entry.fields?.eventId).sort()).toEqual(["evt-1", "evt-2"]);
+    // Nothing was asked, so a place that was kept stays as it was.
+    expect(settings.upsert).not.toHaveBeenCalled();
+    expect(settings.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about an event that has a provider", async () => {
+    await recheckSettledWalletPassesOfEvents(db, { budgetMs: 60_000 }, deps);
+
+    expect(countPasses).not.toHaveBeenCalled();
+    expect(querySystemLogs({ search: "wallet_pass_recheck_no_provider" })).toEqual([]);
   });
 
   it("stops before the next event once the time is used up", async () => {

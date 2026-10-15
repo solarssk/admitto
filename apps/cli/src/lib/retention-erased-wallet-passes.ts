@@ -15,6 +15,11 @@ import { inSweepOrder, readCursor, writeCursor, type Cursor, type Range } from "
 /** How long one sweep may spend at the provider. The worker's retention job holds up the next drain while it runs. */
 const DEFAULT_BUDGET_MS = 60_000;
 const PAGE_SIZE = 100;
+/** The share of a sweep's time that the walk over pending passes leaves alone for the second look. Without it, a backlog of
+ * passes that keep failing (a pass left in another account is retried every day, for good) could use all the time, day after
+ * day, until the settled rows the second look is for age out of the week unasked. The second look also gets whatever the
+ * walk does not use. */
+const RECHECK_RESERVE_SHARE = 1 / 6;
 /** How many attendee ids one log line of failures names. The worker relays each line to the app in a request of its own,
  * and that endpoint takes 120 a minute, so a run with hundreds of failures must not write a line for each. */
 const MAX_FAILED_IDS_LOGGED = 15;
@@ -242,14 +247,17 @@ async function keepPlace(db: PrismaClient, tally: Tally, before: Cursor | null):
  * One sweep has a time budget. When it runs out, the place where it stopped is kept (SWEEP_CURSOR_KEY) and the
  * next sweep goes on after it, wrapping round to the beginning, so that a long or failing run of passes at the
  * start cannot keep the rest, and the events after it, from ever being tried. A sweep that gets through
- * everything forgets the place.
+ * everything forgets the place. The walk may use only five sixths of the budget: the rest, and whatever the walk
+ * leaves, is the second look's, so that a backlog of passes that keep failing cannot starve it.
  */
 export async function sweepErasedWalletPasses(
   db: PrismaClient,
   options: { dryRun: boolean; budgetMs?: number },
   deps: ErasedWalletSweepDeps = realDeps,
 ): Promise<ErasedWalletSweepResult> {
-  const budget = { startedAt: deps.nowMs(), ms: options.budgetMs ?? DEFAULT_BUDGET_MS };
+  const totalMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+  const startedAt = deps.nowMs();
+  const budget = { startedAt, ms: totalMs - Math.floor(totalMs * RECHECK_RESERVE_SHARE) };
   const events = await db.event.findMany({
     where: {
       attendees: {
@@ -274,9 +282,10 @@ export async function sweepErasedWalletPasses(
     await sweepEvent({ db, provider, budget, deps, tally }, event.id, range); // NOSONAR - one event at a time on purpose, see surveyEvents
   }
   if (!options.dryRun) await keepPlace(db, tally, before);
-  // Whatever time is left goes to the second look at passes that were settled on "there is none", which the walk above
-  // does not see: they are marked removed. After the walk, so that a pass still to delete always comes first.
-  if (!options.dryRun) await deps.recheckSettled(db, { budgetMs: budget.ms - (deps.nowMs() - budget.startedAt) });
+  // The time that was kept back, and whatever the walk left of its own, goes to the second look at passes that were settled
+  // on "there is none", which the walk above does not see: they are marked removed. After the walk, so that a pass still
+  // to delete comes first, but never so late that the walk can leave it no time at all.
+  if (!options.dryRun) await deps.recheckSettled(db, { budgetMs: totalMs - (deps.nowMs() - startedAt) });
   result.deleted = tally.deleted;
   result.failed = tally.failed;
   result.undecided = tally.undecided;

@@ -111,18 +111,18 @@ export function reservedPassId(eventId: string, pass: { attendee_id: string; use
   return pass.user_provided_id ?? walletUserProvidedId(eventId, pass.attendee_id);
 }
 
-/** What a pass came to: the verdict on its row, and whether the provider held a pass under the reserved id that Admitto
+/** What a pass came to: the verdict on its row, and how many passes the provider held under the reserved id that Admitto
  * had not recorded (the only one of an unrecorded row, or a second one beside the recorded pass), found and deleted. The
  * verdict is "gone" (the row can be marked removed), "undecided" (there is none now, but a creation may still be on its
  * way, so the row stays as it is and the next run asks again) or "elsewhere" (a pass may be left in an account the event no
  * longer uses, see {@link verdictOf}). */
-type Answer = { verdict: "gone" | "undecided" | "elsewhere"; found: boolean };
+type Answer = { verdict: "gone" | "undecided" | "elsewhere"; found: number };
 
-/** What became of one pass: gone, not yet decided or failed, each with whether an unrecorded pass was found and deleted. */
+/** What became of one pass: gone, not yet decided or failed, each with how many unrecorded passes were found and deleted. */
 type Outcome =
-  | { kind: "gone"; untracked: boolean }
-  | { kind: "undecided"; untracked: boolean }
-  | { kind: "failed"; attendeeId: string; code: string; untracked: boolean };
+  | { kind: "gone"; untracked: number }
+  | { kind: "undecided"; untracked: number }
+  | { kind: "failed"; attendeeId: string; code: string; untracked: number };
 
 /** How many passes under one reserved id a run deletes before it gives up on the row. The provider does not enforce the
  * uniqueness of that id strictly under concurrent creations, so there can be a second pass (two taps at once), but not many. */
@@ -178,8 +178,8 @@ function verdictOf(pass: PassToDelete, found: boolean): Answer["verdict"] {
 async function deleteAtProvider(provider: WalletPassProvider, eventId: string, pass: PassToDelete): Promise<Answer> {
   if (pass.provider_pass_id !== null) await provider.deletePass(pass.provider_pass_id);
   const reservedId = reservedPassId(eventId, pass);
-  const found = (await deletePassesUnder(provider, reservedId)) > 0;
-  return { found, verdict: verdictOf(pass, found) };
+  const found = await deletePassesUnder(provider, reservedId);
+  return { found, verdict: verdictOf(pass, found > 0) };
 }
 
 async function deleteOne(
@@ -206,13 +206,13 @@ async function deleteOne(
     });
     return { kind: "gone", untracked: found };
   } catch (err) {
-    return { kind: "failed", attendeeId: pass.attendee_id, code: walletFailureCode(err), untracked: false };
+    return { kind: "failed", attendeeId: pass.attendee_id, code: walletFailureCode(err), untracked: 0 };
   }
 }
 
 /** Puts what became of one pass into the result: the count, or the attendee and the failure code. */
 function recordOutcome(result: EraseWalletPassesResult, codes: Set<string>, outcome: Outcome): void {
-  if (outcome.untracked) result.untrackedDeleted += 1;
+  result.untrackedDeleted += outcome.untracked;
   if (outcome.kind === "failed") {
     result.failedAttendeeIds.push(outcome.attendeeId);
     codes.add(outcome.code);
@@ -325,8 +325,8 @@ export function settledUntrackedPassRow(since: Date): Prisma.WalletPassWhereInpu
   };
 }
 
-/** What a second look did: how many ids the provider answered for, how many of them held a pass (deleted now), how many it
- * could not answer, whether rows were left unasked (the page was full, or the time ran out) and `last`, the attendee id of
+/** What a second look did: how many ids the provider answered for, how many passes it held under them (deleted now), how many
+ * ids it could not answer, whether rows were left unasked (the page was full, or the time ran out) and `last`, the attendee id of
  * the last row it asked about (null when it asked none), the place for the next run to go on after. */
 export type RecheckSettledWalletPassesResult = {
   checked: number;
@@ -344,11 +344,10 @@ function attendeeIdBetween(after: string | undefined, upTo: string | undefined):
   return { attendee_id: { ...(after ? { gt: after } : {}), ...(upTo ? { lte: upTo } : {}) } };
 }
 
-/** Asks the provider once for a pass of a settled row and deletes it if it is there: "found", "none" or "failed". */
-async function recheckOne(provider: WalletPassProvider, eventId: string, pass: PassToRecheck): Promise<"found" | "none" | "failed"> {
+/** Asks the provider for the passes of a settled row and deletes what it holds: how many there were, or "failed". */
+async function recheckOne(provider: WalletPassProvider, eventId: string, pass: PassToRecheck): Promise<number | "failed"> {
   try {
-    const found = await deletePassesUnder(provider, reservedPassId(eventId, pass));
-    return found > 0 ? "found" : "none";
+    return await deletePassesUnder(provider, reservedPassId(eventId, pass));
   } catch {
     return "failed";
   }
@@ -396,7 +395,7 @@ export async function recheckSettledWalletPasses(
       if (outcome === "failed") result.failed += 1;
       else {
         result.checked += 1;
-        if (outcome === "found") result.found += 1;
+        result.found += outcome;
       }
     }
     result.last = batch[batch.length - 1]!.attendee_id;
