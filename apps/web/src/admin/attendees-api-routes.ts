@@ -101,6 +101,7 @@ import {
   deletePassesUnder,
   reservedPassId,
   walletUserProvidedId,
+  type RemoveAttendeesResult,
   type RemoveUntrackedWalletTarget,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
@@ -2331,12 +2332,17 @@ function reportUntrackedDeleteFailures(eventId: string, failed: ReadonlyMap<stri
 export async function deleteUntrackedPassesAfterRemoval(
   db: PrismaClient,
   eventId: string,
-  removed: readonly RemoveUntrackedWalletTarget[],
+  removal: Pick<RemoveAttendeesResult, "removedIds" | "untrackedWalletTargets">,
   before: UntrackedDeleteOutcome,
 ): Promise<void> {
   const retry = new Map<string, RemoveUntrackedWalletTarget>();
-  for (const target of removed) if (!before.answered.has(target.userProvidedId)) retry.set(target.userProvidedId, target);
-  const removedAttendees = new Set(removed.map((target) => target.attendeeId));
+  for (const target of removal.untrackedWalletTargets) {
+    if (!before.answered.has(target.userProvidedId)) retry.set(target.userProvidedId, target);
+  }
+  // The attendees this removal deleted, whatever their rows had become by then: a row that a creating request has since
+  // given a provider id of its own is no longer one of the untracked targets, and the id the first delete failed for is
+  // still asked about.
+  const removedAttendees = new Set(removal.removedIds);
   for (const [userProvidedId, { attendeeId }] of before.failed) {
     if (removedAttendees.has(attendeeId)) retry.set(userProvidedId, { attendeeId, userProvidedId });
   }

@@ -70,6 +70,12 @@ const targets = (count: number): RemoveUntrackedWalletTarget[] =>
 const usualTargets = (count: number): RemoveUntrackedWalletTarget[] =>
   Array.from({ length: count }, (_, index) => ({ attendeeId: `att-${index}`, userProvidedId: `admitto:${EVENT_ID}:att-${index}` }));
 
+/** A removal that deleted exactly the attendees of these untracked targets (see `removeAttendees`). */
+const removing = (untrackedWalletTargets: RemoveUntrackedWalletTarget[], otherRemovedIds: string[] = []) => ({
+  untrackedWalletTargets,
+  removedIds: [...untrackedWalletTargets.map((target) => target.attendeeId), ...otherRemovedIds],
+});
+
 const noOutcome = (): UntrackedDeleteOutcome => ({ answered: new Set(), failed: new Map() });
 const lines = () => querySystemLogs({ search: "wallet_pass_erasure_delete_failed" });
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -326,7 +332,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
   it("does nothing, and resolves no provider, when the first delete answered for every pass", async () => {
     const db = fakeDb();
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("reserved-0", "reserved-1", "reserved-2"));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(3)), answered("reserved-0", "reserved-1", "reserved-2"));
 
     expect(db.event.findUnique).not.toHaveBeenCalled();
     expect(resolveConfiguredWalletProvider).not.toHaveBeenCalled();
@@ -336,7 +342,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
   it("does nothing when no pass was left by the removed rows at all", async () => {
     const db = fakeDb();
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, [], noOutcome());
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing([]), noOutcome());
 
     expect(db.event.findUnique).not.toHaveBeenCalled();
     expect(lines()).toEqual([]);
@@ -347,7 +353,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const provider = standIn();
     resolveConfiguredWalletProvider.mockReturnValue(provider);
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), answered("reserved-1"));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(3)), answered("reserved-1"));
 
     expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual(["reserved-0", "reserved-2"]);
     expect(lines()).toEqual([]);
@@ -360,7 +366,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     // The first delete answered for the id the row held then. A creating request has since written the current one.
     const rewritten: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, answered("an-older-id-of-att-0"));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(rewritten), answered("an-older-id-of-att-0"));
 
     expect(provider.deletePassByUserProvidedId.mock.calls.map((call) => call[0])).toEqual([`admitto:${EVENT_ID}:att-0`]);
   });
@@ -375,7 +381,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     );
     const all = usualTargets(30);
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, all, noOutcome());
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(all), noOutcome());
 
     const logged = lines();
     expect(logged).toHaveLength(1);
@@ -396,7 +402,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
       }),
     );
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome());
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(2)), noOutcome());
 
     const written = vi.mocked(console.error).mock.calls.map((call) => String(call[0]));
     expect(written).toHaveLength(1);
@@ -412,7 +418,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
       }),
     );
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(3), noOutcome());
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(3)), noOutcome());
 
     expect(lines().map((line) => line.fields)).toEqual([
       { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-1", reservedIds: "reserved-1" },
@@ -424,7 +430,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const provider = standIn();
     resolveConfiguredWalletProvider.mockReturnValue(provider);
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(1), failedFirst(["reserved-0", "att-0"]));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(1)), failedFirst(["reserved-0", "att-0"]));
 
     expect(provider.deletePassByUserProvidedId).toHaveBeenCalledTimes(1);
     expect(lines()).toEqual([]);
@@ -436,7 +442,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     resolveConfiguredWalletProvider.mockReturnValue(provider);
     const rewritten: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, failedFirst(["an-older-id-of-att-0", "att-0"]));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(rewritten), failedFirst(["an-older-id-of-att-0", "att-0"]));
 
     // Both ids are drained: the old one, which the removal's own rows no longer name, and the current one.
     expect(askedPerId(provider)).toEqual({ "an-older-id-of-att-0": 2, [`admitto:${EVENT_ID}:att-0`]: 2 });
@@ -452,10 +458,37 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     resolveConfiguredWalletProvider.mockReturnValue(provider);
     const rewritten: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, rewritten, failedFirst(["an-older-id-of-att-0", "att-0"]));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(rewritten), failedFirst(["an-older-id-of-att-0", "att-0"]));
 
     expect(lines().map((line) => line.fields)).toEqual([
       { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_rate_limited", attendeeIds: "att-0", reservedIds: "an-older-id-of-att-0" },
+    ]);
+  });
+
+  it("asks again about the id the first delete failed for when the row became a recorded pass meanwhile", async () => {
+    const db = fakeDb();
+    const provider = standIn(holding(1, "an-older-id-of-att-0"));
+    resolveConfiguredWalletProvider.mockReturnValue(provider);
+
+    // The creating request saved a provider id of its own, so the removal has no untracked target for the attendee.
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing([], ["att-0"]), failedFirst(["an-older-id-of-att-0", "att-0"]));
+
+    expect(askedPerId(provider)).toEqual({ "an-older-id-of-att-0": 2 });
+    expect(lines()).toEqual([]);
+  });
+
+  it("names the attendee whose row became a recorded pass when the older id keeps failing", async () => {
+    const db = fakeDb();
+    resolveConfiguredWalletProvider.mockReturnValue(
+      standIn(() => {
+        throw new WalletProviderError("wallet_provider_timeout", "timed out");
+      }),
+    );
+
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing([], ["att-0"]), failedFirst(["an-older-id-of-att-0", "att-0"]));
+
+    expect(lines().map((line) => line.fields)).toEqual([
+      { eventId: EVENT_ID, failed: 1, codes: "wallet_provider_timeout", attendeeIds: "att-0", reservedIds: "an-older-id-of-att-0" },
     ]);
   });
 
@@ -465,7 +498,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     resolveConfiguredWalletProvider.mockReturnValue(provider);
 
     // Another request removed att-9 at the same moment: it is that request's pass to deal with.
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(1), {
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(1)), {
       answered: new Set(["reserved-0"]),
       failed: new Map([["reserved-9", { attendeeId: "att-9", code: "wallet_provider_timeout" }]]),
     });
@@ -482,7 +515,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     resolveConfiguredWalletProvider.mockReturnValue(provider);
     const both: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: "reserved-0" }];
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, both, failedFirst(["reserved-0", "att-0"], ["an-older-id-of-att-0", "att-0"]));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(both), failedFirst(["reserved-0", "att-0"], ["an-older-id-of-att-0", "att-0"]));
 
     expect(askedPerId(provider)).toEqual({ "reserved-0": 1, "an-older-id-of-att-0": 1 });
     expect(lines().map((line) => line.fields)).toEqual([
@@ -500,7 +533,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     );
     const current: RemoveUntrackedWalletTarget[] = [{ attendeeId: "att-0", userProvidedId: `admitto:${EVENT_ID}:att-0` }];
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, current, failedFirst(["an-older-id-of-att-0", "att-0"]));
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(current), failedFirst(["an-older-id-of-att-0", "att-0"]));
 
     expect(lines().map((line) => line.fields)).toEqual([
       {
@@ -527,7 +560,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
       { attendeeId: "att-2", userProvidedId: "admitto:another-event:att-2" },
     ];
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, mixed, noOutcome());
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(mixed), noOutcome());
 
     expect(lines().map((line) => line.fields)).toEqual([
       {
@@ -544,7 +577,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const db = fakeDb();
     db.event.findUnique.mockRejectedValue(new Error("db hiccup for jane@example.com"));
 
-    await expect(deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome())).resolves.toBeUndefined();
+    await expect(deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(2)), noOutcome())).resolves.toBeUndefined();
 
     expect(lines().map((line) => line.fields)).toEqual([
       { eventId: EVENT_ID, failed: 2, codes: "unknown", attendeeIds: "att-0,att-1", reservedIds: "reserved-0,reserved-1" },
@@ -556,7 +589,7 @@ describe("deleteUntrackedPassesAfterRemoval", () => {
     const db = fakeDb();
     resolveConfiguredWalletProvider.mockReturnValue(null);
 
-    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, targets(2), noOutcome());
+    await deleteUntrackedPassesAfterRemoval(db as never, EVENT_ID, removing(targets(2)), noOutcome());
 
     expect(lines()).toEqual([]);
   });

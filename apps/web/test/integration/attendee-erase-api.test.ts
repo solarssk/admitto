@@ -1557,6 +1557,33 @@ describe("removing attendees from an event", () => {
       expect(failedLines()).toEqual([]);
     });
 
+    it("asks again about the older id the first delete failed for when the row became a recorded pass meanwhile", async () => {
+      const olderId = "admitto:older-event:older-attendee";
+      const a = await withRow({ status: "pending", user_provided_id: olderId });
+      let refused = 0;
+      const fetchMock = passcreatorHolding(() => true, {
+        // While the older id is first asked about, and fails, a creating request records its pass on the row.
+        beforeRequest: async (request) => {
+          if (request === readOf(olderId) && refused === 0) {
+            await prisma.walletPass.update({
+              where: { attendee_id: a.id },
+              data: { user_provided_id: reservedFor(a.id), provider_pass_id: "pc-recorded-meanwhile", status: "active" },
+            });
+          }
+        },
+        refuse: (request) => request === readOf(olderId) && (refused += 1) === 1,
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await post(removePath(EVENT_ID, a.id), { reason: REASON });
+
+      expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
+      // The recorded pass goes by its own id, and the older id is asked about again after the commit: the row, which
+      // is no longer one of the untracked ones, was still deleted by this removal.
+      expect(requests(fetchMock)).toEqual(expect.arrayContaining(["DELETE /api/v3/pass/pc-recorded-meanwhile", ...askedFor(olderId)]));
+      expect(failedLines()).toEqual([]);
+    });
+
     it("names the attendee when the older id keeps failing, although the current id was deleted", async () => {
       const olderId = "admitto:older-event:older-attendee";
       const a = await withRow({ status: "pending", user_provided_id: olderId });

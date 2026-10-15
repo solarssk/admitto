@@ -126,7 +126,7 @@ async function runRemoval(
       });
     }
   }
-  await deleteUntrackedPassesAfterRemoval(db, eventId, result.untrackedWalletTargets, untrackedBeforehand);
+  await deleteUntrackedPassesAfterRemoval(db, eventId, result, untrackedBeforehand);
 
   c.header("Cache-Control", "no-store");
   return { result, body: { removed: result.removedIds.length, not_found: result.notFoundIds.length } };
