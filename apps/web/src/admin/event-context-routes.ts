@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { z } from "zod";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { isValidEmailFormat } from "@admitto/auth";
@@ -6,6 +7,63 @@ import { CONTACT_EMAIL_MAX_LENGTH, isValidContactPhone } from "@admitto/shared";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { validateHttpUrl, InvalidHttpUrlError } from "@admitto/mail-templates";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
+
+// Generous for anything a person types, small enough that one request cannot fill the table. The
+// short limit is also far above the 254-character email and 40-character phone the checks below
+// allow, so a value saved before those checks existed still passes unchanged.
+const SHORT_TEXT_MAX = 500;
+const LONG_TEXT_MAX = 5000;
+const URL_MAX = 4096;
+
+const optionalText = (max: number) => z.string().max(max).nullable().optional();
+
+const noteBodySchema = z.object({ note: z.string().max(LONG_TEXT_MAX).nullable() }).strict();
+
+const contactBodySchema = z
+  .object({
+    name: z.string().max(SHORT_TEXT_MAX),
+    role: optionalText(SHORT_TEXT_MAX),
+    phone: optionalText(SHORT_TEXT_MAX),
+    email: optionalText(SHORT_TEXT_MAX),
+    note: optionalText(LONG_TEXT_MAX),
+    sort_order: z.int32().optional(),
+  })
+  .strict();
+const contactUpdateBodySchema = contactBodySchema.partial();
+
+const resourceBodySchema = z
+  .object({
+    title: z.string().max(SHORT_TEXT_MAX),
+    type: z.enum(["link", "file"]).optional(),
+    url: z.string().max(URL_MAX),
+    description: optionalText(LONG_TEXT_MAX),
+    sort_order: z.int32().optional(),
+  })
+  .strict();
+const resourceUpdateBodySchema = resourceBodySchema.partial();
+
+/** Fields the form already has its own message for: a wrong type or an oversize value there gets
+ * that message, anything else is a plain `validation_failed`. */
+const FIELD_ERROR_CODES = new Map([
+  ["email", "invalid_email"],
+  ["phone", "invalid_phone"],
+  ["type", "invalid_type"],
+]);
+
+/** Reads and validates the JSON body, or answers 400 (`invalid json` when it does not parse). */
+async function parseBody<S extends z.ZodType>(c: Context, schema: S): Promise<z.output<S> | Response> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = schema.safeParse(body);
+  if (parsed.success) return parsed.data;
+  const field = parsed.error.issues[0]?.path[0];
+  const code = (typeof field === "string" ? FIELD_ERROR_CODES.get(field) : undefined) ?? "validation_failed";
+  return c.json({ error: code }, 400);
+}
 
 function requireParam(c: Context, name: string): string | Response {
   const val = c.req.param(name);
@@ -44,8 +102,9 @@ export async function handlePatchEventNote(c: Context, db: PrismaClient): Promis
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const body = await c.req.json<{ note: string | null }>();
-  const note = typeof body.note === "string" ? body.note.trim() || null : null;
+  const body = await parseBody(c, noteBodySchema);
+  if (body instanceof Response) return body;
+  const note = body.note?.trim() || null;
   const audit = adminAuditFromContext(c);
 
   const updated = await db.event.update({
@@ -74,13 +133,9 @@ export async function handlePatchEventNote(c: Context, db: PrismaClient): Promis
  * value that actually changes is checked on update, so a contact saved before this check existed
  * can still have its name or role edited without being forced to fix an old phone number first. */
 function contactFieldError(
-  next: { email?: unknown; phone?: unknown },
+  next: { email?: string | null; phone?: string | null },
   current?: { email: string | null; phone: string | null },
 ): "invalid_email" | "invalid_phone" | null {
-  // Anything that is not a string (a number, an object) is not an email or a phone number either;
-  // rejecting it here also keeps it from reaching the .trim() calls below as a 500.
-  if (next.email != null && typeof next.email !== "string") return "invalid_email";
-  if (next.phone != null && typeof next.phone !== "string") return "invalid_phone";
   const email = next.email?.trim() || null;
   if (email && email !== current?.email && (email.length > CONTACT_EMAIL_MAX_LENGTH || !isValidEmailFormat(email))) {
     return "invalid_email";
@@ -99,16 +154,10 @@ export async function handleCreateContact(c: Context, db: PrismaClient): Promise
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const body = await c.req.json<{
-    name: string;
-    role?: string | null;
-    phone?: string | null;
-    email?: string | null;
-    note?: string | null;
-    sort_order?: number;
-  }>();
+  const body = await parseBody(c, contactBodySchema);
+  if (body instanceof Response) return body;
 
-  if (!body.name?.trim()) return c.json({ error: "name_required" }, 400);
+  if (!body.name.trim()) return c.json({ error: "name_required" }, 400);
   const fieldError = contactFieldError(body);
   if (fieldError) return c.json({ error: fieldError }, 400);
 
@@ -156,16 +205,10 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
   const existing = await db.eventContact.findFirst({ where: { id: contactId, event_id: eventId } });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
-  const body = await c.req.json<{
-    name?: string;
-    role?: string | null;
-    phone?: string | null;
-    email?: string | null;
-    note?: string | null;
-    sort_order?: number;
-  }>();
+  const body = await parseBody(c, contactUpdateBodySchema);
+  if (body instanceof Response) return body;
 
-  if (body.name !== undefined && !body.name?.trim()) return c.json({ error: "name_required" }, 400);
+  if (body.name !== undefined && !body.name.trim()) return c.json({ error: "name_required" }, 400);
   const fieldError = contactFieldError(
     {
       ...(body.email !== undefined && { email: body.email }),
@@ -257,19 +300,11 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const body = await c.req.json<{
-    title: string;
-    type?: "link" | "file";
-    url: string;
-    description?: string | null;
-    sort_order?: number;
-  }>();
+  const body = await parseBody(c, resourceBodySchema);
+  if (body instanceof Response) return body;
 
-  if (!body.title?.trim()) return c.json({ error: "title_required" }, 400);
-  if (!body.url?.trim()) return c.json({ error: "url_required" }, 400);
-  if (body.type && body.type !== "link" && body.type !== "file") {
-    return c.json({ error: "invalid_type" }, 400);
-  }
+  if (!body.title.trim()) return c.json({ error: "title_required" }, 400);
+  if (!body.url.trim()) return c.json({ error: "url_required" }, 400);
   try { validateHttpUrl("url", body.url.trim()); } catch (e) {
     if (e instanceof InvalidHttpUrlError) return c.json({ error: "invalid_url" }, 400);
     throw e;
@@ -303,22 +338,11 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
   return c.json(resource, 201);
 }
 
-type ResourceUpdateBody = {
-  title?: string;
-  type?: "link" | "file";
-  url?: string;
-  description?: string | null;
-  sort_order?: number;
-};
-
 /** Validates the mutable fields of a resource update; returns an error Response, or null if valid. */
-function validateResourceUpdateBody(c: Context, body: ResourceUpdateBody): Response | null {
-  if (body.type && body.type !== "link" && body.type !== "file") {
-    return c.json({ error: "invalid_type" }, 400);
-  }
-  if (body.title !== undefined && !body.title?.trim()) return c.json({ error: "title_required" }, 400);
+function validateResourceUpdateBody(c: Context, body: z.output<typeof resourceUpdateBodySchema>): Response | null {
+  if (body.title !== undefined && !body.title.trim()) return c.json({ error: "title_required" }, 400);
   if (body.url === undefined) return null;
-  if (!body.url?.trim()) return c.json({ error: "url_required" }, 400);
+  if (!body.url.trim()) return c.json({ error: "url_required" }, 400);
   try {
     validateHttpUrl("url", body.url.trim());
     return null;
@@ -343,7 +367,8 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
   const existing = await db.eventResource.findFirst({ where: { id: resourceId, event_id: eventId } });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
-  const body = await c.req.json<ResourceUpdateBody>();
+  const body = await parseBody(c, resourceUpdateBodySchema);
+  if (body instanceof Response) return body;
 
   const validationError = validateResourceUpdateBody(c, body);
   if (validationError) return validationError;
