@@ -42,6 +42,17 @@ their purpose. Verify factual instructions against the current `main` UI and dom
 the documentation check proves structural consistency, not product correctness.
 
 
+### Readable text
+
+People with a B1 to C1 level of English read these documents, and they have to want to. Write for them, not for a tool that can read anything.
+
+- One idea per paragraph, three or four lines at most. A sentence that needs a second breath is two sentences.
+- Parallel facts go in a list or a table. A table cell holds one short fact. If a paragraph or a table cell runs past about 80 words, split it, and move a long cell's explanation under the table.
+- Steps are numbered. Each step is one action, and a command gets its own code block.
+- Give the answer first (what to do, what it means), then the detail. Rare detail goes in a collapsed section or on another page.
+- No comparisons with other products and no version history in the text. History belongs in `CHANGELOG.md`.
+- When you reword a document, keep every fact: names, numbers, limits and warnings. Compare the old and the new text before you push, and list anything you removed on purpose in the pull request.
+
 ### Visual documentation
 
 - Use tables to compare roles, statuses, fields, providers, or actions.
