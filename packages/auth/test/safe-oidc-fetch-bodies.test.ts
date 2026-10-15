@@ -57,6 +57,25 @@ function sendChunked(res: ServerResponse, size: number): void {
   res.end();
 }
 
+// The only body sizes the tests ask for. A request for any other size is refused, never allocated.
+const SERVED_SIZES = [150_000, 200_000, LIMIT_BYTES, LIMIT_BYTES + 1];
+
+function servedSize(requested: string | null): number | undefined {
+  return SERVED_SIZES.find((size) => String(size) === requested);
+}
+
+function sendSized(res: ServerResponse, size: number | undefined, chunked: boolean): void {
+  if (size === undefined) {
+    res.writeHead(400);
+    res.end();
+  } else if (chunked) {
+    sendChunked(res, size);
+  } else {
+    res.writeHead(200, { "content-type": "text/plain", "content-length": size });
+    res.end(Buffer.alloc(size, 0x61));
+  }
+}
+
 function sendUntilClosed(res: ServerResponse): void {
   const chunk = Buffer.alloc(64 * 1024, 0x61);
   res.writeHead(200, { "content-type": "text/plain" });
@@ -73,12 +92,8 @@ function sendUntilClosed(res: ServerResponse): void {
 
 function handle(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url ?? "/", `https://${PINNED_HOST}`);
-  const size = Number(url.searchParams.get("size") ?? 0);
-  if (url.pathname === "/body") {
-    res.writeHead(200, { "content-type": "text/plain", "content-length": size });
-    res.end(Buffer.alloc(size, 0x61));
-  } else if (url.pathname === "/chunked") {
-    sendChunked(res, size);
+  if (url.pathname === "/body" || url.pathname === "/chunked") {
+    sendSized(res, servedSize(url.searchParams.get("size")), url.pathname === "/chunked");
   } else if (url.pathname === "/keys") {
     const body = keySet(300);
     res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
@@ -150,7 +165,7 @@ describe("safeOidcFetch response bodies over a pinned connection", () => {
   it("returns a large body whose length is not announced", async () => {
     const res = await safeOidcFetch(pinnedUrl("/chunked?size=150000"), attempt());
 
-    expect((await res.text()).length).toBe(150_000);
+    expect(await res.text()).toHaveLength(150_000);
   });
 
   it("serves a large key set through the jose custom fetch", async () => {
@@ -171,7 +186,7 @@ describe("safeOidcFetch response bodies over a pinned connection", () => {
 
   it("accepts a body of exactly the limit and rejects one byte more", async () => {
     const res = await safeOidcFetch(pinnedUrl(`/body?size=${LIMIT_BYTES}`), attempt());
-    expect((await res.text()).length).toBe(LIMIT_BYTES);
+    expect(await res.text()).toHaveLength(LIMIT_BYTES);
 
     await expect(safeOidcFetch(pinnedUrl(`/body?size=${LIMIT_BYTES + 1}`), attempt())).rejects.toThrow(
       /too large/,
@@ -188,7 +203,7 @@ describe("safeOidcFetch response bodies over a pinned connection", () => {
 describe("safeOidcFetch response bodies over the plain fetch path", () => {
   it("applies the same limit to a loopback identity provider", async () => {
     const small = await safeOidcFetch(`http://127.0.0.1:${port}/body?size=150000`, attempt());
-    expect((await small.text()).length).toBe(150_000);
+    expect(await small.text()).toHaveLength(150_000);
 
     await expect(safeOidcFetch(`http://127.0.0.1:${port}/endless`, attempt())).rejects.toThrow(/too large/);
     await vi.waitFor(() => expect(endlessStreamClosed).toBe(true));
