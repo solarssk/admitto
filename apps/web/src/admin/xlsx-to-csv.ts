@@ -64,7 +64,15 @@ class ImportZipBombError extends Error {
   }
 }
 
-export { ImportRowLimitError, ImportZipBombError };
+/** Too many workbooks are already waiting to be read: try again shortly. */
+class ImportBusyError extends Error {
+  constructor() {
+    super("xlsx import busy");
+    this.name = "ImportBusyError";
+  }
+}
+
+export { ImportBusyError, ImportRowLimitError, ImportZipBombError };
 
 function readUint16LE(bytes: Uint8Array, offset: number): number {
   return bytes[offset]! | (bytes[offset + 1]! << 8);
@@ -334,6 +342,13 @@ const XLSX_CHILD_FLAGS = ["--max-old-space-size=384", "--max-semi-space-size=8"]
  */
 const XLSX_CHILD_TIMEOUT_MS = 60_000;
 
+/**
+ * Most workbooks the import holds at once, the one being read included. Each one that waits keeps
+ * its upload in memory until its turn, and a slow workbook holds up every one behind it, so a
+ * request over this is turned away at once instead of queued.
+ */
+const XLSX_MAX_PENDING = 4;
+
 type Refusal = "rows" | "zip" | "invalid";
 
 /** What the child process answers with: the CSV text, or the kind of refusal (an error message could hold text from the file). */
@@ -393,6 +408,22 @@ function logDecodeFailed(cause: string): void {
 }
 
 /**
+ * The node flags of this process without the ones that load an environment file (`--env-file` and
+ * `--env-file-if-exists`, in both spellings; the dev scripts use them): the reading process is
+ * given an empty environment, and such a flag would fill it with the app's secrets again.
+ */
+function withoutEnvFileFlags(flags: readonly string[]): string[] {
+  const kept: string[] = [];
+  let valueFollows = false;
+  for (const flag of flags) {
+    if (valueFollows) valueFollows = false;
+    else if (flag === "--env-file" || flag === "--env-file-if-exists") valueFollows = true;
+    else if (!flag.startsWith("--env-file=") && !flag.startsWith("--env-file-if-exists=")) kept.push(flag);
+  }
+  return kept;
+}
+
+/**
  * Reads the workbook in a new process, and ends that process once it has answered, died or run out
  * of time. A process that dies (usually of the heap limit, which ends it with a signal) or runs out
  * of time is refused as ImportRowLimitError, the same answer as a workbook with too many rows. The
@@ -401,7 +432,7 @@ function logDecodeFailed(cause: string): void {
  */
 function decodeInChild(workbook: ArrayBuffer): Promise<string> {
   const child = fork(fileURLToPath(import.meta.url), [], {
-    execArgv: [...process.execArgv, ...XLSX_CHILD_FLAGS],
+    execArgv: [...withoutEnvFileFlags(process.execArgv), ...XLSX_CHILD_FLAGS],
     serialization: "advanced",
     stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: {},
@@ -433,7 +464,9 @@ function decodeInChild(workbook: ArrayBuffer): Promise<string> {
         reject(err);
       });
     });
-    child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+    // "close", not "exit": it comes after the channel is closed too, so an answer that is still on its
+    // way when the process is gone is handled first (the child ends as soon as it has sent it).
+    child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
       finish(() => {
         if (signal) {
           logDecodeStopped(stopReason(signal), signal);
@@ -452,18 +485,24 @@ function decodeInChild(workbook: ArrayBuffer): Promise<string> {
 }
 
 let lastDecode: Promise<unknown> = Promise.resolve();
+let pendingDecodes = 0;
 
 /**
  * Convert the first worksheet of an XLSX buffer to a CSV string, in a child process with its own
  * memory and time limits: a workbook that needs more than they allow is refused with
  * ImportRowLimitError, whatever the reader does with it, and reading it does not hold up the rest of
  * the app. Workbooks are read one at a time, so the memory they can take together stays at one
- * process's limit. The process is not a sandbox; it bounds what a workbook can use.
+ * process's limit, and no more than XLSX_MAX_PENDING are held at once: one more is refused with
+ * ImportBusyError. The process is not a sandbox; it bounds what a workbook can use.
  */
 export function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
+  if (pendingDecodes >= XLSX_MAX_PENDING) return Promise.reject(new ImportBusyError());
+  pendingDecodes++;
   const result = lastDecode.then(() => decodeInChild(buf));
   lastDecode = result.catch(() => undefined);
-  return result;
+  return result.finally(() => {
+    pendingDecodes--;
+  });
 }
 
 // True only in the child process: fork starts it with this file as its entry point.

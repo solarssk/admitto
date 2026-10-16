@@ -106,6 +106,38 @@ describe("xlsxBufferToCsv", () => {
     }
   });
 
+  it("leaves the environment-file flags out of the node flags it hands on", async () => {
+    const original = process.execArgv;
+    process.execArgv = [
+      "--import",
+      "tsx",
+      "--env-file=.env",
+      "--env-file",
+      "other.env",
+      "--env-file-if-exists=maybe.env",
+      "--env-file-if-exists",
+      "also.env",
+      "--conditions",
+      "development",
+    ];
+    try {
+      const result = read();
+      await flush();
+      expect(lastChild().options.execArgv).toEqual([
+        "--import",
+        "tsx",
+        "--conditions",
+        "development",
+        "--max-old-space-size=384",
+        "--max-semi-space-size=8",
+      ]);
+      lastChild().emit("message", { csv: "a" });
+      await result;
+    } finally {
+      process.execArgv = original;
+    }
+  });
+
   it("returns the text the process sends and ends the process", async () => {
     const result = read();
     await flush();
@@ -148,7 +180,7 @@ describe("xlsxBufferToCsv", () => {
     async (signal, reason) => {
       const result = read();
       await flush();
-      lastChild().emit("exit", null, signal);
+      lastChild().emit("close", null, signal);
 
       await expect(result).rejects.toBeInstanceOf(xlsx.ImportRowLimitError);
       expect(emitSystemLog).toHaveBeenCalledExactlyOnceWith("api", "warn", "xlsx_decode_stopped", { reason, signal });
@@ -156,10 +188,24 @@ describe("xlsxBufferToCsv", () => {
     },
   );
 
+  it("waits for the channel to close before it gives up on a process that has exited", async () => {
+    const result = read();
+    await flush();
+    const child = lastChild();
+
+    // The process is gone, but its answer was still on the way.
+    child.emit("exit", 0, null);
+    child.emit("message", { csv: "late but whole" });
+    child.emit("close", 0, null);
+
+    await expect(result).resolves.toBe("late but whole");
+    expect(emitSystemLog).not.toHaveBeenCalled();
+  });
+
   it("fails a workbook whose process exits without an answer and without a signal", async () => {
     const result = read();
     await flush();
-    lastChild().emit("exit", 1, null);
+    lastChild().emit("close", 1, null);
 
     await expect(result).rejects.toThrow("xlsx child process ended without an answer");
     expect(emitSystemLog).toHaveBeenCalledExactlyOnceWith("api", "error", "xlsx_decode_failed", { cause: "exit 1" });
@@ -186,7 +232,7 @@ describe("xlsxBufferToCsv", () => {
 
     child.emit("message", { refusal: "rows" });
     child.emit("error", new Error("late"));
-    child.emit("exit", null, "SIGKILL");
+    child.emit("close", null, "SIGKILL");
 
     expect(emitSystemLog).not.toHaveBeenCalled();
   });
@@ -234,12 +280,43 @@ describe("xlsxBufferToCsv", () => {
     await expect(second).resolves.toBe("second");
   });
 
+  it("holds four workbooks at most and turns a fifth away at once", async () => {
+    const held = [read(), read(), read(), read()];
+    await flush();
+    expect(children).toHaveLength(1);
+
+    await expect(read()).rejects.toBeInstanceOf(xlsx.ImportBusyError);
+    expect(children).toHaveLength(1);
+
+    for (const [i, answer] of held.entries()) {
+      await flush();
+      children[i]!.emit("message", { csv: String(i) });
+      await expect(answer).resolves.toBe(String(i));
+    }
+  });
+
+  it("takes a workbook again as soon as a place is free, whatever became of the one before", async () => {
+    const held = [read(), read(), read(), read()];
+    await flush();
+    children[0]!.emit("close", null, "SIGABRT");
+    await expect(held[0]).rejects.toBeInstanceOf(xlsx.ImportRowLimitError);
+
+    const next = read();
+    await expect(read()).rejects.toBeInstanceOf(xlsx.ImportBusyError);
+
+    for (const [i, answer] of [...held.slice(1), next].entries()) {
+      await flush();
+      children[i + 1]!.emit("message", { csv: "ok" });
+      await expect(answer).resolves.toBe("ok");
+    }
+  });
+
   it("reads the next workbook after one that was refused", async () => {
     const first = read();
     const second = read();
     await flush();
 
-    children[0]!.emit("exit", null, "SIGABRT");
+    children[0]!.emit("close", null, "SIGABRT");
     await expect(first).rejects.toBeInstanceOf(xlsx.ImportRowLimitError);
     await flush();
     expect(children).toHaveLength(2);
