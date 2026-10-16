@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, fetchMe } from "../api/client.js";
+import { goToLogin } from "../auth/login-navigation.js";
 import type { ConnectionContextValue, ConnectionState } from "./types.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -18,7 +19,7 @@ const ConnectionContext = createContext<ConnectionContextValue | null>(null);
 
 function loginRedirect(reason: string): void {
   const next = encodeURIComponent(window.location.pathname + window.location.search);
-  window.location.assign(`/login?reason=${reason}&next=${next}`);
+  goToLogin(`/login?reason=${reason}&next=${next}`);
 }
 
 export function ConnectionStateProvider({

@@ -8,7 +8,9 @@ Push a short custom message to attendees' already-installed Apple Wallet or Goog
 
 ## Before you start
 
-The event's Wallet integration must be configured and working (see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)), and at least some attendees must have an active wallet pass on this event - the recipient count is every attendee with an active pass (voided and expired passes are left out), whether or not they've actually added it to a phone yet. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so a queued send leaves the queue.
+- The event's Wallet integration is configured and working. See [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup).
+- At least some attendees have an active wallet pass on this event. The recipient count is every attendee with an active pass, whether or not they have added it to a phone yet. Voided and expired passes are left out.
+- The Admitto **worker** is running (`npm run worker` in development, or the compose `worker` service in deploy), so that a queued send leaves the queue.
 
 ## Steps
 
@@ -32,7 +34,8 @@ Recipients whose pass is still installed see a lock-screen notification with the
 | By ticket type | Attendees holding the selected ticket type, among wallet holders. |
 | Specific attendees | Search by name or email and pick individuals one at a time - only wallet holders are suggested. Use this for a small, named group. |
 
-A recipient count is a dry run and sends nothing. Sending always goes through the background worker, even for a single recipient - there is no way to send instantly from the browser tab.
+- A recipient count is a dry run. It sends nothing.
+- Sending always goes through the background worker, even for a single recipient. There is no way to send instantly from the browser tab.
 
 ## What changes after this action
 
