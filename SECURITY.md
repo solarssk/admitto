@@ -126,11 +126,13 @@ Git tags are created by the release workflow and are not GPG/SSH-signed.
 
 ### DAST scope (2026-08-29)
 
-- **Scope:** the ZAP baseline scan runs against the same docker-compose stack that `deploy-smoke.yml` builds. It runs three scans.
+- **Scope:** the ZAP baseline scan runs against the same docker-compose stack that `deploy-smoke.yml` builds. It runs four scans.
   - Two are unauthenticated: `/` (plus whatever its spider finds from there) and `/healthz`.
-  - The third signs in as a synthetic superadmin and crawls `/admin` with the AJAX spider, so the SPA's own API calls are exercised and passively scanned. `scripts/dast-login.mjs` walks the forced TOTP enrollment over HTTP, then hands ZAP the session cookie.
-  - The account exists only in that run's disposable stack. The logout URLs are excluded, so the spider cannot end its own session.
-- **Limitation:** scanning is passive plus spidering only, with no active attack payloads. `/operator` is scanned as a synthetic operator (created by `scripts/dast-seed-operator.mjs`) from the check-in page of a seeded event.
+  - Two sign in with a synthetic account and crawl with the AJAX spider, so the SPA's own API calls are exercised and passively scanned.
+    - `/admin` signs in as a synthetic superadmin. `scripts/dast-login.mjs` walks the forced TOTP enrollment over HTTP, then hands ZAP the session cookie.
+    - `/operator` signs in as a synthetic operator, created by `scripts/dast-seed-operator.mjs`. It starts from the check-in page of a seeded event.
+  - The accounts exist only in that run's disposable stack. The logout URLs are excluded, so the spider cannot end its own session.
+- **Limitation:** scanning is passive plus spidering only, with no active attack payloads.
 - **Reporting status:** report-only for now. Results are a workflow artifact, not a Security-tab SARIF upload (ZAP's baseline scanner has no native SARIF output), and they do not block any pipeline.
 
 ### What runs where
