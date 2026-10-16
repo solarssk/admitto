@@ -18,7 +18,14 @@ import {
   filterCustomDataAttributeFields,
   createUnderAttendeeJobQueueLock,
 } from "@admitto/tickets";
-import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
+import {
+  xlsxBufferToCsv,
+  ImportBusyError,
+  ImportRowLimitError,
+  ImportZipBombError,
+  MAX_CSV_CHARS,
+  MAX_IMPORT_ROWS,
+} from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
 import {
   adminAuditFromContext,
@@ -143,6 +150,7 @@ type UploadRejectReason =
   | "unsupported_file_type"
   | "invalid_file_content"
   | "too_many_rows"
+  | "import_busy"
   | "empty_file";
 
 /** Lowercase file extension including the leading dot, or empty when absent. */
@@ -295,7 +303,7 @@ function buildSampleRows(
   });
 }
 
-/** Log and return a 400 response for rejected uploads. */
+/** Log and return a 400 response (429 when the import is busy) for rejected uploads. */
 function rejectUpload(
   c: Context,
   ctx: UploadLogContext,
@@ -304,6 +312,7 @@ function rejectUpload(
   fields: {
     fileSizeBytes?: number;
   } = {},
+  status: 400 | 429 = 400,
 ): Response {
   logger.warn("Import upload rejected", {
     importId: ctx.importId,
@@ -312,7 +321,7 @@ function rejectUpload(
     reason,
     ...fields,
   });
-  return c.json({ error, importId: ctx.importId }, 400);
+  return c.json({ error, importId: ctx.importId }, status);
 }
 
 /** Parse multipart upload, validate file type/size, and return CSV text or an error response. */
@@ -359,6 +368,10 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
   try {
     csv = await bufferToCsvString(buf, extDot);
   } catch (err) {
+    if (err instanceof ImportBusyError) {
+      // The same answer the rate limits give, which the admin screen already words.
+      return rejectUpload(c, ctx, "import_busy", "too many requests", { fileSizeBytes: fileField.size }, 429);
+    }
     if (err instanceof ImportRowLimitError || err instanceof ImportZipBombError) {
       return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
         fileSizeBytes: fileField.size,

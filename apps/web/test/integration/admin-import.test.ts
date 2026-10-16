@@ -10,6 +10,7 @@ import { drainImportJobs } from "@admitto/import";
 import { querySystemLogs } from "@admitto/shared/system-log";
 import { createUnderAttendeeJobQueueLock, lockAttendeeJobQueue } from "@admitto/tickets";
 import { getDefaultStorage, resetDefaultStorageForTests, sweepOrphanedJobFiles } from "@admitto/storage";
+import * as xlsxToCsv from "../../src/admin/xlsx-to-csv.js";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
@@ -532,6 +533,25 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     const body = (await res.json()) as { error: string; importId: string };
     expect(body.error).toBe("invalid file content");
     expect(body.importId).toBeTruthy();
+  });
+
+  it("answers 429 with the usual wording when the import is busy reading other files", async () => {
+    const read = vi.spyOn(xlsxToCsv, "xlsxBufferToCsv").mockRejectedValueOnce(new xlsxToCsv.ImportBusyError());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const res = await postImport(
+        `/api/admin/events/${EVENT_A}/import/preview`,
+        await xlsxFormData([["first_name", "last_name", "email"], ["Ada", "Test", "busy@example.com"]]),
+        adminCookie,
+      );
+
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(429);
+      expect(await res.json()).toMatchObject({ error: "too many requests" });
+    } finally {
+      read.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it("rejects corrupt XLSX with 400", async () => {

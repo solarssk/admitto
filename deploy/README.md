@@ -248,7 +248,7 @@ The compose file sets no memory limit, so `app` can use all the memory of the ho
 | `app` during such an import | about 0.55 GB in total | the same lab run (reported) |
 
 - An import is limited to 50,000 data rows and 5 MB. A file with more columns needs more memory.
-- The biggest file the import accepts can take about 0.7 GB for a few seconds on top of what `app` uses otherwise.
+- Excel files are read one at a time, in a separate process that is held to a fixed amount of memory. Reading a file takes at most about 0.5 GB more than `app` uses otherwise. A file that would need more is refused (with the "too many rows" answer) instead of being read, so it cannot take `app` down.
 - A file over the limits is refused before it is read in full, but it is still opened far enough to be counted.
 - Only `app` reads Excel files. `worker`, `db` and `redis` do not. The memory of `worker` was not measured.
 - `app` has `restart: unless-stopped`. If it runs out of memory and stops, Docker starts it again. A request that was running at that moment fails and has to be repeated.
