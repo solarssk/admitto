@@ -1095,3 +1095,82 @@ describe("SystemStatus trigger label weight", () => {
     expect(trigger.querySelector(".sys-status__label--degraded")).toBeTruthy();
   });
 });
+
+// staff.css hides the short word on a phone (up to 480px) and the full sentence below 1200px, by these two class names: the top bar fits
+// a 360px screen only while the word that is wide stays in its own span (test/styles/topbar-fit-css.test.ts).
+describe("SystemStatus trigger words", () => {
+  it("holds the short word and the full sentence in a span of their own each", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS, worker: OK_WORKER });
+
+    renderStatus(SUPERADMIN);
+    const trigger = await screen.findByRole("button", { name: /All systems normal/ });
+
+    expect(trigger.querySelector(".sys-status__label--short")?.textContent).toBe("OK");
+    expect(trigger.querySelector(".sys-status__label--full")?.textContent).toBe("All systems normal");
+  });
+
+  it("does the same when a check is down, the verdict whose word was wide enough to push the bar off a 390px screen", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({
+      checks: { ...OK_CHECKS, database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
+      worker: OK_WORKER,
+    });
+
+    renderStatus(SUPERADMIN);
+    const trigger = await screen.findByRole("button", { name: /Action needed/ });
+
+    expect(trigger.querySelector(".sys-status__label--short")?.textContent).toBe("Alert");
+    expect(trigger.querySelector(".sys-status__label--full")?.textContent).toBe("Action needed");
+  });
+});
+
+// staff.css shows this icon on a phone (up to 480px) in place of the dot, so that the verdicts differ by shape and not only by colour
+// (WCAG 1.4.1), and it is 16px wide for every verdict, so that the bell and the account button stay where they are. It is an inline SVG,
+// not a glyph of the icon font: every `.ti` glyph is invisible until that font has loaded (icon-font.ts, staff.css), and the trigger on a
+// phone has no word, so a glyph would leave it blank on a slow connection.
+describe("SystemStatus trigger cue", () => {
+  const cue = () => document.querySelector(".sys-status__trigger .sys-status__cue");
+
+  const VERDICTS: ReadonlyArray<{ when: string; checks: Record<string, unknown>; name: RegExp; icon: string; stroke: string }> = [
+    { when: "every check is fine", checks: {}, name: /All systems normal/, icon: "circle-check", stroke: "M9 12l2 2l4 -4" },
+    {
+      when: "a check is degraded",
+      checks: { redis: { ok: true, warn: true, detail: "Redis unreachable, using in-memory fallback" } },
+      name: /Degraded performance/,
+      icon: "alert-triangle",
+      stroke: "M12 9v4",
+    },
+    {
+      when: "a check is down",
+      checks: { database: { ok: false, detail: "Cannot connect to PostgreSQL" } },
+      name: /Action needed/,
+      icon: "circle-x",
+      stroke: "M10 10l4 4m0 -4l-4 4",
+    },
+  ];
+
+  it.each(VERDICTS)("is the icon of that verdict's row in the panel, drawn as an SVG, when $when", async ({ checks, name, icon, stroke }) => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: { ...OK_CHECKS, ...checks }, worker: OK_WORKER });
+
+    renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name });
+
+    const mark = cue()?.querySelector("svg");
+    expect(mark?.getAttribute("data-icon")).toBe(icon);
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    // the drawing that tells the three verdicts apart: a check, a bang in a triangle, a cross
+    expect([...(mark?.querySelectorAll("path") ?? [])].map((path) => path.getAttribute("d"))).toContain(stroke);
+    // not a glyph of the icon font, which stays invisible until the font has loaded
+    expect(cue()?.querySelector(".ti")).toBeNull();
+  });
+
+  it("is the kit's spinner, hidden from assistive tech, while the checks have not answered", () => {
+    fetchSetupChecks.mockReturnValueOnce(new Promise(() => {}));
+
+    renderStatus(SUPERADMIN);
+
+    const spinner = cue()?.querySelector(".at-spinner");
+    expect(spinner).not.toBeNull();
+    expect(spinner?.getAttribute("aria-hidden")).toBe("true");
+    expect(cue()?.querySelector(".ti")).toBeNull();
+  });
+});
