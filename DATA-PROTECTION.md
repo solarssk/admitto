@@ -15,6 +15,9 @@
 - [Admin audit trail (`AttendeeActionLog`)](#admin-audit-trail-attendeeactionlog)
 - [Central admin audit log (`AdminAuditLog`)](#central-admin-audit-log-adminauditlog)
 - [Redis](#redis)
+  - [Rate-limit counters](#rate-limit-counters)
+  - [Live check-in updates](#live-check-in-updates)
+  - [Caches and pacing](#caches-and-pacing)
 - [Retention](#retention)
   - [By data category](#by-data-category)
   - [Compliance checklist](#compliance-checklist)
@@ -267,13 +270,57 @@ This is a narrower, more deliberate exception than it looks:
 
 Redis is used for rate-limit counters, live updates between the worker and the app, small caches and the pacing of wallet provider calls (see [CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md)). Sessions are stored in PostgreSQL, not in Redis.
 
-These are the parts that relate to people:
+Two of these relate to people: the rate-limit counters and the live check-in updates. The caches and the pacing hold no attendee or staff data.
 
-| What | What it holds about people | How long |
+### Rate-limit counters
+
+Each counter is one key. Its name starts with `rl:`, then the limit and who it counts, and ends with the start of the window. For example: `rl:admin:resend:user:<user id>:attendee:<attendee id>:<window start>`.
+
+The key name is where people show up. Anyone who can read your Redis (a `KEYS` command, a snapshot, a backup, a replica) can read it too, so keep Redis private and password-protected.
+
+These identifiers appear in key names:
+
+| Identifier | In which limits |
+|---|---|
+| E-mail address, trimmed and in lower case | Password sign-in only, as `auth:login:email:<e-mail>`. The key exists for every address typed with a password, whether or not an account has it. |
+| IP address | Most limits, also for visitors who are not signed in (sign-in, public ticket pages, health endpoints, webhooks). On the public ticket pages the key is the IP address alone. |
+| Staff user id | Limits on a signed-in staff member, as `user:<id>`: admin actions, check-in, MFA, password re-checks and the notification bell |
+| Sign-in session id | The MFA limits, as `session:<id>`. This is the id of the session row in PostgreSQL, not the secret in the cookie. |
+| Attendee id | Resending an attendee's e-mail (`admin:resend`) and editing an attendee (`admin:attendee-patch`) |
+| Event id | Many admin limits, the live check-in stream and the wallet provider's webhook |
+| Other ids | The sign-in provider being edited or tested (`admin:oidc-provider-ops`) and the staff member whose sessions are revoked (`admin:user-revoke-sessions`) |
+| Keyed hash of a recipient address | The test-mail limit, as `mail:test-recipient:<hash>`. The hash is HMAC-SHA-256 with the encryption key, so the address itself is not in Redis. |
+
+The ids are ids from your database. One id alone names nobody; only your PostgreSQL maps it to a person.
+
+A counter lives until the end of its window, never longer. With the default settings the windows are:
+
+| Window | Limits |
+|---|---|
+| 60 seconds | Sign-in, account, public ticket pages, check-in, health endpoints, webhooks and most admin limits |
+| 10 minutes | Wallet messages, bulk wallet actions and bulk resend |
+| 15 minutes | All MFA limits: code, recovery code, passkey or security key, step-up total and enrolment |
+| 1 hour | Test mail and mail transport tests (the second, hourly limit), exports, resend per staff member and test mail per recipient |
+
+`RATE_LIMIT_OVERRIDES` can change a window, and `CHECKIN_STREAM_*` can change the window of the live check-in stream.
+
+### Live check-in updates
+
+Each event has its own channel, named `admitto:sse:<event id>`. A check-in puts this on the channel: the attendee's name and id, the ticket type, the time, the operator's id and the device label. Other changes (a mail sent, an import finished) send only a signal with no data.
+
+Redis hands each message to the processes that are subscribed at that moment and forgets it, so nothing is kept. The app sends check-ins through Redis only when `REDIS_URL` points to the bundled `redis` service, to `localhost` or to a `127.x.x.x` address, or uses TLS (`rediss://`). With a plain `redis://` URL to any other host it keeps the updates inside its own process.
+
+### Caches and pacing
+
+These hold no attendee or staff data:
+
+| What | What it holds | How long |
 |---|---|---|
-| Password sign-in limit | The e-mail address typed into the form, in the key name `rl:auth:login:email:<e-mail>:<window start>` (trimmed, in lower case). The key exists for every address typed with a password, whether or not an account has it. | At most 60 seconds with the default settings (`RATE_LIMIT_OVERRIDES` can change the window) |
-| Limits per client address | The IP address, in the key name | Until the end of the window of that limit |
-| Live check-in updates | The attendee's name and id, the ticket type, the time, the operator's id and the device label | Not kept. Redis hands each message to the processes that are subscribed at that moment and forgets it. |
+| Venue search | The text typed into the venue search (in lower case), usually a venue name or address, or the rounded position of a map pin, and the places found. It is not tied to who typed it. | 30 days, 1 day when nothing was found |
+| Map images | The map picture of an event's venue, under a hash of the event id, the position and the map settings | 30 days |
+| Weather | The forecast for a day at the rounded position of a venue | 6 hours with the default settings (`WEATHER_CACHE_TTL_MS`) |
+| Wallet provider pacing | A counter per second for the calls to PassCreator | 1 second |
+| Map settings signal | A message that tells the other processes to read the map settings again | Not kept |
 
 ## Retention
 
@@ -292,7 +339,7 @@ policy). Different retention periods for different categories are intentional - 
 | In-app security alert inbox (`Notification` - a personal copy of alerts like "your password changed", shown via My Account's own notification bell; the underlying event is separately durable in `SecurityAuditLog` above regardless of this table) | Operator (primary) / Product (fallback) | A staff member can permanently clear their own notification history at any time (My Account's bell → **Clear all**); anything never cleared is auto-purged by the worker (boot + ~24h), default **30 days** (`NOTIFICATION_RETENTION_DAYS`) |
 | IP addresses in admin audit log and the `http_request` access log (every request, staff or anonymous) | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP logged this way is never itself persisted in a purgeable table - it lives in the System logs live tail below (in-memory only) and wherever your container log driver keeps stdout.) |
 | Wallet pass at the provider (PassCreator) | Operator | Stays at the provider after the event, even once voided or expired, until you run **Attendees → More actions → Remove inactive passes**, **Remove from provider** on the attendee, **Delete wallet pass** (which also deletes the pass at the provider and the local record), or erase the attendee (the delete is tried when the erasure commits, and again by the worker's retention run about once a day for as long as it fails). |
-| Rate-limit counters and live check-in updates in Redis | Product - automatic | Each counter expires at the end of its window (60 seconds for password sign-in with the default settings); live updates are not kept after they are delivered. See [Redis](#redis) |
+| Rate-limit counters and live check-in updates in Redis | Product - automatic | Each counter expires at the end of its window: 60 seconds for most limits and up to 1 hour for the longest ones with the default settings. Live updates are not kept after they are delivered. See [Redis](#redis) |
 | System logs live tail (in-memory only) | Product - automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Erase personal data** (single) or the Attendees list's row-selection bulk bar (several at once), the erase API directly, or `attendees erase` in the emergency CLI when the UI is unreachable; a mistake (duplicate, test person) is taken out with **Remove from event** in the same places - see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
