@@ -1,123 +1,125 @@
 # GDPR One-Pager
 
-> **Legal basis:** to be confirmed by the **customer's** privacy officer or legal team. This
-> document captures **technical and operational design intent**, not legal advice.
+A short summary for your privacy officer (DPO). It describes how Admitto is built and run. It is design intent, **not legal advice**. Your own privacy officer or legal team confirms the legal basis.
 
-**Detail:** [DATA-PROTECTION.md](../../DATA-PROTECTION.md) · **Subprocessors:** [SUBPROCESSORS.md](SUBPROCESSORS.md)
-
----
-
-## Controller and deployment
-
-- **Data controller:** the organization operating the Admitto instance.
-- **Processor role:** if applicable, determined by customer contracts (self-hosted software;
-  no vendor cloud database in MVP).
-- **Deployment:** single-tenant, self-hosted; region chosen by the customer.
-- **No vendor-hosted multi-tenant SaaS** in MVP - personal data stays in customer PostgreSQL.
+More detail: [DATA-PROTECTION.md](../../DATA-PROTECTION.md) · [SUBPROCESSORS.md](SUBPROCESSORS.md)
 
 ---
 
-## Purposes of processing
+## Who is responsible
 
-| Purpose | Lawful basis (candidates - confirm with legal) |
-|---------|--------------------------------------------------|
-| Event access (ticketing, check-in) | Legitimate interest / contract - **LIA may be required** for external guests |
+- **Data controller:** the organization that runs the Admitto instance.
+- **Processor role:** if there is one, your contracts decide. Admitto is self-hosted software, and there is no vendor cloud database in the MVP.
+- **Deployment:** single-tenant and self-hosted. You choose the region.
+- **No vendor-hosted multi-tenant SaaS** in the MVP. Personal data stays in your PostgreSQL.
+
+---
+
+## Why personal data is processed
+
+| Purpose | Lawful basis (candidates, confirm with legal) |
+|---------|-----------------------------------------------|
+| Event access (ticketing, check-in) | Legitimate interest or contract. A **LIA may be required** for external guests |
 | Ticket email delivery | Same as above |
 | Security and audit logging | Legitimate interest |
-| Staff administration | Contract / legitimate interest |
+| Staff administration | Contract or legitimate interest |
 
-If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should document a
-**Legitimate Interest Assessment (LIA)**, especially when processing data of external event guests.
+If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should document a **Legitimate Interest Assessment (LIA)**. This matters most for external event guests.
 
 ---
 
-## Data categories
+## What data is processed
 
-| Category | Examples | Special category? |
-|----------|----------|-------------------|
+| Category | Examples | Notes |
+|----------|----------|-------|
 | Identity | Name, email | Personal data |
-| Optional profile | Company, department, custom fields | Personal data - free-text notes/custom fields may contain Art. 9 special-category data (e.g. dietary, accessibility); see [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
-| Access token | Random QR / opaque ID | Not PII in the QR itself |
+| Optional profile | Company, department, custom fields | Personal data. Free-text notes and custom fields can hold Art. 9 special-category data (for example dietary or accessibility needs). See [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
+| Access token | Random QR code or opaque ID | The QR code itself holds no personal data |
 | Operational | Check-in time, ticket type | Operational |
-| Technical | IP address, user-agent (sessions / throttling) | Personal data (online identifier) |
-| OIDC access metadata | IdP group membership stored on `ExternalIdentity.groups` | Personal data (access metadata) |
+| Technical | IP address, user agent (sessions, rate limits) | Personal data (online identifier) |
+| SSO access metadata | Identity provider group membership, stored in `ExternalIdentity.groups` | Personal data (access metadata) |
 
 ---
 
-## Retention
+## How long data is kept
 
-Two layers: **product-automated** (Admitto **worker** at boot and about every 24 hours, best-effort) vs **operator policy**
-(export/delete, log retention). Periods differ by design.
+Two layers work together:
 
-| Data | Policy (default design intent) |
-|------|-------------------------------|
-| Login sessions, trusted devices | Purged automatically when expired/revoked - **worker** (boot + ~24h) |
-| Security audit trail (`SecurityAuditLog` - login/MFA/logout/OIDC/access-denied) | Purged automatically after **30 days** default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) - **worker** (boot + ~24h) |
-| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery - **worker** (boot + ~24h); delivery log metadata retained |
-| Files left by attendee exports and failed imports (the exported CSV, XLSX or PDF, and the staged import CSV) | Deleted automatically **7 days** after the job finished (`EXPORT_FILE_RETENTION_DAYS`, `IMPORT_STAGED_FILE_RETENTION_DAYS`) - **worker** (boot + ~24h); erasing or removing an attendee also deletes the event's export files and finished import CSVs at once and stops an export or an import that is waiting or running (so that an import cannot add the person back), and deleting an event deletes all the files its jobs left; a file that no job names (a process was killed while writing it) is deleted by the same worker run once it is a day old |
-| In-app security alert inbox (`Notification`) | Purged automatically after **30 days** by default (`NOTIFICATION_RETENTION_DAYS`), or earlier by the staff member's own Clear all - **worker** (boot + ~24h) |
-| IP in admin audit log | **30 days or operator corporate log retention policy** - not auto-purged by product. (Check-in-time IP only appears in the System logs live tail below, in-memory only - not a persisted, purgeable table.) |
-| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (**Erase personal data**, single or bulk) the erase API directly, or the `attendees erase` command of the emergency CLI when the UI is unreachable, per DSAR procedure |
-| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
-| System logs live tail (in-memory only) | Not persisted by the product - last 1000 entries, emptied on every restart |
+- **Product, automatic:** the Admitto **worker** deletes expired data at boot and about every 24 hours, on a best-effort basis.
+- **Operator policy:** you decide about exports, erasure and log retention.
 
-Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).
-Per-attendee erasure uses `POST /api/admin/events/:eventId/attendees/:id/erase`; follow
-[DSAR-PROCEDURE.md](DSAR-PROCEDURE.md). Automated post-event bulk purge is planned for **v1.0**.
+The periods differ by design.
+
+| Data | What happens |
+|------|--------------|
+| Login sessions, trusted devices | Deleted automatically when expired or revoked |
+| Security audit trail (`SecurityAuditLog`: login, MFA, logout, OIDC, access denied) | Deleted automatically after **30 days** by default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
+| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Emptied **60 days** after the delivery reached its final status. The delivery log metadata stays |
+| Export and import files (the exported CSV, XLSX or PDF, and the staged import CSV) | Deleted automatically **7 days** after the job finished (`EXPORT_FILE_RETENTION_DAYS`, `IMPORT_STAGED_FILE_RETENTION_DAYS`). Erasing or removing an attendee deletes them at once. Details: [DATA-PROTECTION.md](../../DATA-PROTECTION.md#retention) |
+| In-app security alert inbox (`Notification`) | Deleted automatically after **30 days** by default (`NOTIFICATION_RETENTION_DAYS`), or earlier when the staff member clears it |
+| IP address in the admin audit log | **30 days or your corporate log retention policy.** The product does not delete it. A check-in-time IP only appears in the System logs live tail, which is in memory only |
+| Event attendee personal data | **Kept until you erase it.** This is a deliberate product default. Export a copy first if you need one (spreadsheet or PDF in the admin UI). Erasure is described below |
+| Audit logs (general) | Per your security policy. Attendee data is kept out of log lines (the staff accountability exception is in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
+| System logs live tail | Not stored. The last 1000 entries live in memory and are emptied on every restart |
+
+An automated post-event purge of attendee data is planned for **v1.0**.
 
 ---
 
-## Data subject rights (access / erasure)
+## Data subject rights (access and erasure)
 
-Two models - **customer legal team chooses** before production:
+Your legal team chooses one of two models **before production**.
 
-### Option A - Self-service (API)
+### Option A: self-service (API)
 
-Dedicated endpoints for data-subject export and deletion (e.g. verified via ticket token or email
-verification).
+Dedicated endpoints for data-subject export and deletion, for example verified with a ticket token or email verification.
 
 | Pros | Cons |
 |------|------|
 | Clear for formal DSAR programmes | Extra development and legal alignment |
-| Fits automated privacy portals | Must match internal process exactly |
+| Fits automated privacy portals | Must match your internal process exactly |
 
-**Status:** not in MVP by default - implement only if legal requires it.
+**Status:** not in the MVP by default. Build it only if legal requires it.
 
-### Option B - Organizer-mediated
+### Option B: organizer-mediated
 
-Authorized staff export attendee data through the admin UI; erasure follows a **written procedure**
-(SLA, identity verification, audit trail).
+Authorized staff export attendee data in the admin UI. Erasure follows a **written procedure** (response time, identity check, audit trail).
 
 | Pros | Cons |
 |------|------|
-| Works with existing organizer workflows | Manual steps; legal must approve process |
-| No extra public API surface | Less suited to high-volume self-service DSAR |
+| Works with existing organizer workflows | Manual steps. Legal must approve the process |
+| No extra public API | Less suited to many requests |
 
-**Status:** export available in admin UI (v0.4.2+); erasure via the Attendees admin UI (**Erase personal data**, single or bulk) the erase API directly, or the `attendees erase` command of the emergency CLI when the UI is unreachable, per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
+**Status:** available now.
+
+- **Access:** export in the admin UI (spreadsheet or PDF).
+- **Erasure:** **Erase personal data** in the Attendees screen (one attendee or several), the erase API (`POST /api/admin/events/:eventId/attendees/:id/erase`), or the `attendees erase` command of the emergency CLI when the UI is down.
+
+Follow [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
 
 ---
 
 ## Subprocessors
 
-Depends on customer configuration - typical categories:
+They depend on your configuration. Typical categories:
 
 | Category | Role |
 |----------|------|
 | Hosting / cloud | VM, disk, backups |
 | Email | Microsoft 365 / Graph or corporate SMTP |
 | Edge (optional) | CDN, WAF, access gateway |
-| Wallet | Third-party pass provider (PassCreator) when enabled per event |
+| Wallet | Third-party pass provider (PassCreator), when enabled for an event |
 
-See [SUBPROCESSORS.md](SUBPROCESSORS.md).
+Full list: [SUBPROCESSORS.md](SUBPROCESSORS.md).
 
 ---
 
 ## Before processing real personal data
 
-1. Legal confirms lawful basis and subprocessors (DPAs in place).
-2. DSAR model (A or B) agreed and documented internally.
-3. Hosting meets organisational requirements (region, backups, access control).
-4. Perimeter and identity choices documented in the deployment runbook.
+1. Legal confirms the lawful basis and the subprocessors (DPAs are in place).
+2. The DSAR model (A or B) is agreed and documented internally.
+3. Hosting meets your requirements (region, backups, access control).
+4. Perimeter and identity choices are written in your deployment runbook.
 
 ---
 
