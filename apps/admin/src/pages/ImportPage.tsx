@@ -31,6 +31,7 @@ import { useFocusHandover } from "../hooks/useFocusHandover.js";
 import { useListLoad } from "../hooks/useListLoad.js";
 import { useOptionsLoad } from "../hooks/useOptionsLoad.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { goToLogin } from "../auth/login-navigation.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { pluralize } from "../utils/pluralize.js";
 import "../attendees/attendees.css";
@@ -228,7 +229,7 @@ function handleImportApiError(
     reportApiError(err.status);
     if (err.status === 401) {
       const next = encodeURIComponent(window.location.pathname);
-      window.location.assign(`/login?next=${next}`);
+      goToLogin(`/login?next=${next}`);
       return;
     }
   }

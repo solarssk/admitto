@@ -442,7 +442,7 @@ import {
   handleApiUpdateCfAccess,
   handleApiTestCfAccess,
 } from "./admin/identity-api-routes.js";
-import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
+import { resolveLogoutBaseUrl } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { rejectNulInRequestTarget, requestRejectionForError } from "./malformed-input.js";
 import { isSecureRequest } from "./is-secure-request.js";
@@ -1748,7 +1748,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, preAuthBodyLimit, (c) =>
     handleLogin(c, db, rateLimitStore),
   );
-  app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
+  app.post("/api/auth/logout", jsonPostCsrf, async (c) =>
+    handleLogout(c, db, await resolveLogoutBaseUrl(db, mailInjectedBaseUrl)),
+  );
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
   app.post("/api/auth/session/device-label", jsonPostCsrf, requireSession, (c) =>
     handlePostSessionDeviceLabel(c, db),
@@ -2962,7 +2964,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, async (c) =>
-    handlePostLogout(c, db, await resolveOidcPublicBaseUrlOrNull(db, mailInjectedBaseUrl)),
+    handlePostLogout(c, db, await resolveLogoutBaseUrl(db, mailInjectedBaseUrl)),
   );
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
   app.post("/change-password", preAuthBodyLimit, htmlPostCsrf, requireChangePasswordSession, (c) =>

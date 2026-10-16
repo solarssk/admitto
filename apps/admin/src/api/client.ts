@@ -472,6 +472,17 @@ export async function submitSessionDeviceLabel(deviceLabel: string): Promise<{ d
   return parseJson<{ device_label: string | null }>(res);
 }
 
+/**
+ * Ends the signed-in session. Resolves to the identity provider's end-session URL when the session
+ * came from single sign-on (the browser has to go there itself to end the provider's own session
+ * too), or null for any other session.
+ */
+export async function signOut(signal?: AbortSignal): Promise<string | null> {
+  const res = await fetch("/api/auth/logout", { ...jsonPostInit({}), signal });
+  const body = await parseJson<{ end_session_url?: unknown }>(res);
+  return typeof body.end_session_url === "string" ? body.end_session_url : null;
+}
+
 /** Load admin picker events; pass includeArchived to list archived rows. */
 export async function fetchAdminEvents(
   opts?: { includeArchived?: boolean; signal?: AbortSignal },

@@ -12,6 +12,8 @@ import {
 
 const RESOLVED_HOST_TTL_MS = 5 * 60 * 1000;
 const MAX_REDIRECTS = 5;
+// A discovery document, token response or key set is a few kilobytes; 1 MiB leaves ample room.
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 interface ResolvedHostRecord {
@@ -107,20 +109,51 @@ async function pinnedUndiciFetch(
   } as Parameters<typeof undiciFetch>[1]);
 }
 
+/** Reads a body up to MAX_RESPONSE_BYTES; leaving the loop on the limit cancels the stream. */
+async function readBodyWithinLimit(body: ReadableStream<Uint8Array>): Promise<Buffer> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of body) {
+    size += chunk.byteLength;
+    if (size > MAX_RESPONSE_BYTES) {
+      throw new Error("OIDC response body is too large");
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+/**
+ * Settles a response while its connection is still open, then hands back a copy that is safe to
+ * read later. Closing a pinned dispatcher waits for the request to finish, so a body nobody has
+ * read stalls the close once it outgrows the socket buffers. Only the headers of a redirect are
+ * used, so its body is cancelled instead of read.
+ */
+async function settleResponse(response: Response): Promise<Response> {
+  const { status, headers } = response;
+  if (REDIRECT_STATUSES.has(status)) {
+    await response.body?.cancel().catch(() => undefined);
+    return new Response(null, { status, headers });
+  }
+  const body = response.body ? await readBodyWithinLimit(response.body) : null;
+  return new Response(body, { status, headers });
+}
+
 async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Promise<Response> {
   assertSafeOidcFetchUrl(urlString);
   const url = new URL(urlString);
   const resolved = await getResolvedHost(url);
 
   if (resolved.useDefaultFetch) {
-    return fetch(urlString, { ...init, redirect: "manual" });
+    return settleResponse(await fetch(urlString, { ...init, redirect: "manual" }));
   }
 
   let lastError: unknown;
   for (const record of resolved.records) {
     const dispatcher = createPinnedDispatcher(resolved.hostname, record);
+    let response: Response;
     try {
-      return await pinnedUndiciFetch(urlString, { // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
+      response = await pinnedUndiciFetch(urlString, {
         method: init?.method,
         body: init?.body,
         signal: init?.signal,
@@ -128,8 +161,13 @@ async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Pro
         dispatcher,
       });
     } catch (err) {
+      await dispatcher.close();
       if (!isConnectFailure(err)) throw err;
       lastError = err;
+      continue;
+    }
+    try {
+      return await settleResponse(response); // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
     } finally {
       await dispatcher.close(); // NOSONAR - tries each resolved address in turn; the next one only after the previous failed
     }
@@ -158,6 +196,8 @@ function redirectFollowInit(status: number, init?: OidcFetchInit): OidcFetchInit
 /**
  * Outbound OIDC/CF Access fetch with DNS pinning at connect time.
  * Uses the original URL hostname for Host/SNI; undici connects via a validated pinned address.
+ * The returned response is already fully read, because the pinned connection is closed before it
+ * is returned; a body over MAX_RESPONSE_BYTES rejects instead.
  */
 export async function safeOidcFetch(urlString: string, init?: OidcFetchInit): Promise<Response> {
   let currentUrl = urlString;
