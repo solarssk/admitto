@@ -70,6 +70,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
         .setIssuer(issuer)
         .setAudience("test-oidc-client")
         .setSubject("mock-subject-oidc")
+        .setIssuedAt()
         .setExpirationTime("2h")
         .sign(privateKey);
       res.writeHead(200, { "Content-Type": "application/json" });

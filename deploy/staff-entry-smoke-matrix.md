@@ -2,9 +2,12 @@
 
 Status: Operational runbook · Date: 2026-06-16 · Audience: PO, deploy, QA.
 
-Manual verification after deploy or auth changes. Assumes hostname e.g. `staff.example.com`, Cloudflare
-Access on admin paths, WireGuard bypass for the event network, Authentik as shared IdP for CF ZTNA and
-the OIDC button on `/login`.
+Manual verification after deploy or auth changes. It assumes:
+
+- a hostname such as `staff.example.com`
+- Cloudflare Access on admin paths
+- a WireGuard bypass for the event network
+- Authentik as the shared IdP for CF ZTNA and for the OIDC button on `/login`
 
 ## Product interpretation (owner decision, post–foundation #56)
 

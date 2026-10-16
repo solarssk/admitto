@@ -25,10 +25,11 @@ Decide what the person must do, which organisation or event they need, and when 
    - **Sign-in security:** a Superadmin can **Reset two-factor** or **Reset password** for a staff account that lost access (this also revokes that account's sessions as part of the reset), or use the standalone **Revoke sessions** action to force-log-out a user without touching their password or two-factor setup.
 
    Resetting a staff account's two-factor or password, or unlinking its SSO connection, always sends that account a security notification (email and in-app). This cannot be turned off, so the account owner always knows their sign-in credentials changed, even when they didn't make the change themselves.
-8. Use instance scope only for a Superadmin.
-9. Use organisation scope for an Admin (only a Superadmin can grant this).
-10. Use event scope for an Operator.
-11. Confirm the assignment by signing in with a synthetic test account or asking the user to verify their visible events.
+8. Pick the scope that matches the role type:
+   - **Instance** scope: only for a Superadmin.
+   - **Organisation** scope: for an Admin. Only a Superadmin can grant this.
+   - **Event** scope: for an Operator.
+9. Confirm the assignment by signing in with a synthetic test account, or by asking the user to verify their visible events.
 
 ## Expected result
 
@@ -36,15 +37,23 @@ The user sees only the administration or check-in surfaces allowed by their curr
 
 ## Important decisions
 
-- A person holds **exactly one role type** at a time. Switching role type applies after confirmation and cannot be mixed with unsaved scope edits for the previous type.
+**Role types and scopes**
+
+- A person holds **exactly one role type** at a time. Switching role type applies after confirmation, and it cannot be mixed with unsaved scope edits for the previous type.
 - Within the current role type, more than one organisation or event scope can be active. Effective access is the combination of those scopes.
-- In the Edit user dialog, adding or removing a scope for the user's current role type is staged locally and only takes effect when you save Role & access changes as the UI describes.
-- Disabling a user blocks the account; removing one assignment only removes that scope.
-- Do not remove or disable the last active Superadmin.
+- In the Edit user dialog, adding or removing a scope for the user's current role type is staged locally. It takes effect only when you save Role & access changes, as the UI describes.
 - Local Admin and Superadmin accounts must follow the configured MFA policy. OIDC sessions follow the identity provider flow.
-- Resetting another Superadmin's two-factor or password, or revoking their sessions, requires the acting Superadmin to confirm their own authenticator app, backup code, passkey, or security key first. This protects against a single compromised Superadmin session being used to silently take over or lock out another Superadmin account. Acting on your own account never requires this.
-  - If you signed in through single sign-on and have no local password, you cannot set up any of these yourself to satisfy this (registering a passkey or security key also needs a local password first). Ask another Superadmin who already has one confirmed to perform the action instead.
+
+**Disabling and deleting**
+
+- Disabling a user blocks the account. Removing one assignment only removes that scope.
+- Do not remove or disable the last active Superadmin.
 - Deleting a staff account is permanent. Prefer disable when you only need to stop access.
+
+**Acting on another Superadmin**
+
+- Resetting another Superadmin's two-factor or password, or revoking their sessions, requires the acting Superadmin to confirm their own authenticator app, backup code, passkey or security key first. This protects against a single compromised Superadmin session being used to silently take over or lock out another Superadmin account. Acting on your own account never requires this.
+- If you signed in through single sign-on and have no local password, you cannot set up any of these yourself to satisfy this. Registering a passkey or security key also needs a local password first. Ask another Superadmin who already has one confirmed to perform the action instead.
 
 ## What changes after this action
 
@@ -52,17 +61,24 @@ New sessions use the updated assignments. Use **Active sessions** when access mu
 
 ## Common problems
 
-- **The user cannot sign in:** check account status, sign-in method, and MFA requirements.
-- **The list shows grey boxes, or says "Taking longer than usual":** the page is waiting for the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows "The server did not answer in time" with a **Retry** button. While you search, filter or change page on Staff users or Role assignments, or after you edit, invite, delete or revoke on any of the three tabs, the rows stay on screen, dimmed and not clickable, until the new list arrives.
-- **A warning says "Could not refresh this list, so it may show older details":** what you did was saved and is already shown, but loading the list again afterwards failed, so some other rows may be out of date. Press **Retry** in the warning to load the current list.
-- **A filter or picker says "Could not load events" (or organizations):** the events it offers could not be loaded. Press **Retry** next to it; the rest of the page keeps working. In the Edit user dialog, a scope then shows only "Event" or "Organization" instead of its name until the Retry works, and the picker stays off.
-- **Recent logins says "Could not load recent logins":** the sign-ins could not be read. It does not mean there were none. Press **Retry** next to it. "No recent logins" is shown only when the server answered that there are none.
-- **A confirmation (disable account, reset two-factor, revoke all sessions, change role) shows an error and stays open:** the action did not happen. The reason is shown inside the confirmation; press the button again, or **Cancel**. While it works, the button shows a spinner and cannot be pressed twice.
-- **A profile is saved but a role change is not:** the dialog stays open with the reason and with what was not done still staged. Press **Save changes** again to retry it. When you close the dialog, a message says "Changes partly saved" and the list shows what was saved.
-- **The user sees the wrong events:** inspect every scope for their role type, not only the newest one.
-- **A role option is unavailable:** an Administrator can only grant or remove the Operator role, and only for events in an organisation they administer. Everything else needs a Superadmin.
-- **No role assigned after sign-in:** the account lands on My account with a notice until a Superadmin grants a usable assignment.
-- **"You need a confirmed authenticator app, passkey, or security key..." when resetting another Superadmin's two-factor/password or revoking their sessions:** set up two-factor authentication on your own account first, then retry the action. If you have no local password (single sign-on only), you cannot do this yourself - ask another Superadmin with a confirmed second factor to perform it instead.
+| Problem | What it means and what to do |
+|---------|------------------------------|
+| **The user cannot sign in** | Check account status, sign-in method, and MFA requirements |
+| **The user sees the wrong events** | Inspect every scope for their role type, not only the newest one |
+| **A role option is unavailable** | An Administrator can only grant or remove the Operator role, and only for events in an organisation they administer. Everything else needs a Superadmin |
+| **No role assigned after sign-in** | The account lands on My account with a notice until a Superadmin grants a usable assignment |
+| **"You need a confirmed authenticator app, passkey, or security key..." when resetting another Superadmin's two-factor or password, or revoking their sessions** | Set up two-factor authentication on your own account first, then retry the action. If you have no local password (single sign-on only), you cannot do this yourself. Ask another Superadmin with a confirmed second factor to perform it instead |
+| **A profile is saved but a role change is not** | The dialog stays open with the reason, and with what was not done still staged. Press **Save changes** again to retry it. When you close the dialog, a message says "Changes partly saved" and the list shows what was saved |
+| **A confirmation (disable account, reset two-factor, revoke all sessions, change role) shows an error and stays open** | The action did not happen. The reason is shown inside the confirmation. Press the button again, or **Cancel**. While it works, the button shows a spinner and cannot be pressed twice |
+
+**Loading problems**
+
+| What you see | What it means and what to do |
+|--------------|------------------------------|
+| **The list shows grey boxes, or says "Taking longer than usual"** | The page is waiting for the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows "The server did not answer in time" with a **Retry** button. While you search, filter or change page on Staff users or Role assignments, or after you edit, invite, delete or revoke on any of the three tabs, the rows stay on screen, dimmed and not clickable, until the new list arrives |
+| **A warning says "Could not refresh this list, so it may show older details"** | What you did was saved and is already shown, but loading the list again afterwards failed, so some other rows may be out of date. Press **Retry** in the warning to load the current list |
+| **A filter or picker says "Could not load events" (or organizations)** | The events it offers could not be loaded. Press **Retry** next to it. The rest of the page keeps working. In the Edit user dialog, a scope then shows only "Event" or "Organization" instead of its name until the Retry works, and the picker stays off |
+| **Recent logins says "Could not load recent logins"** | The sign-ins could not be read. It does not mean there were none. Press **Retry** next to it. "No recent logins" is shown only when the server answered that there are none |
 
 ## Related pages
 

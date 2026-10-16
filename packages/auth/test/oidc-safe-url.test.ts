@@ -116,11 +116,7 @@ describe("fetchOidcDiscovery SSRF guard", () => {
   });
 
   it("rejects a discovery document with missing required fields", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ issuer: "http://127.0.0.1:9999/" }),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ issuer: "http://127.0.0.1:9999/" }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchOidcDiscovery("http://127.0.0.1:9999/")).rejects.toBeInstanceOf(TypeError);
@@ -130,16 +126,12 @@ describe("fetchOidcDiscovery SSRF guard", () => {
   it("inserts the slash a bare issuer is missing before appending .well-known, without storing it", async () => {
     // A bare issuer's own trailing slash is added only to build this request URL - it must not
     // replace the issuer's last path segment (what new URL(relative, base) would do without it).
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        issuer: "http://127.0.0.1:9999",
-        authorization_endpoint: "http://127.0.0.1:9999/authorize",
-        token_endpoint: "http://127.0.0.1:9999/token",
-        jwks_uri: "http://127.0.0.1:9999/jwks",
-      }),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({
+      issuer: "http://127.0.0.1:9999",
+      authorization_endpoint: "http://127.0.0.1:9999/authorize",
+      token_endpoint: "http://127.0.0.1:9999/token",
+      jwks_uri: "http://127.0.0.1:9999/jwks",
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchOidcDiscovery("http://127.0.0.1:9999");
@@ -153,18 +145,14 @@ describe("fetchOidcDiscovery SSRF guard", () => {
   it("carries end_session_endpoint through when the document advertises one", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          issuer: "http://127.0.0.1:9999/",
-          authorization_endpoint: "http://127.0.0.1:9999/authorize",
-          token_endpoint: "http://127.0.0.1:9999/token",
-          jwks_uri: "http://127.0.0.1:9999/jwks",
-          userinfo_endpoint: "http://127.0.0.1:9999/userinfo",
-          end_session_endpoint: "http://127.0.0.1:9999/end-session",
-        }),
-      }),
+      vi.fn().mockResolvedValue(Response.json({
+        issuer: "http://127.0.0.1:9999/",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+        userinfo_endpoint: "http://127.0.0.1:9999/userinfo",
+        end_session_endpoint: "http://127.0.0.1:9999/end-session",
+      })),
     );
 
     const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/");
@@ -175,16 +163,12 @@ describe("fetchOidcDiscovery SSRF guard", () => {
   it("resolves end_session_endpoint to undefined when the document doesn't advertise one", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          issuer: "http://127.0.0.1:9999/",
-          authorization_endpoint: "http://127.0.0.1:9999/authorize",
-          token_endpoint: "http://127.0.0.1:9999/token",
-          jwks_uri: "http://127.0.0.1:9999/jwks",
-        }),
-      }),
+      vi.fn().mockResolvedValue(Response.json({
+        issuer: "http://127.0.0.1:9999/",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      })),
     );
 
     const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/");
@@ -199,16 +183,12 @@ describe("fetchOidcDiscovery issuer validation (ASVS V10.5.3 / OIDC Discovery 1.
     // claim, not the one an admin configured.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          issuer: "http://127.0.0.1:9999/attacker-controlled",
-          authorization_endpoint: "http://127.0.0.1:9999/authorize",
-          token_endpoint: "http://127.0.0.1:9999/token",
-          jwks_uri: "http://127.0.0.1:9999/jwks",
-        }),
-      }),
+      vi.fn().mockResolvedValue(Response.json({
+        issuer: "http://127.0.0.1:9999/attacker-controlled",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      })),
     );
 
     await expect(fetchOidcDiscovery("http://127.0.0.1:9999")).rejects.toThrow(/issuer mismatch/);
@@ -217,16 +197,12 @@ describe("fetchOidcDiscovery issuer validation (ASVS V10.5.3 / OIDC Discovery 1.
   it("accepts a discovery document whose issuer matches the requested URL exactly", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          issuer: "http://127.0.0.1:9999",
-          authorization_endpoint: "http://127.0.0.1:9999/authorize",
-          token_endpoint: "http://127.0.0.1:9999/token",
-          jwks_uri: "http://127.0.0.1:9999/jwks",
-        }),
-      }),
+      vi.fn().mockResolvedValue(Response.json({
+        issuer: "http://127.0.0.1:9999",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      })),
     );
 
     const doc = await fetchOidcDiscovery("http://127.0.0.1:9999");
@@ -240,16 +216,12 @@ describe("fetchOidcDiscovery issuer validation (ASVS V10.5.3 / OIDC Discovery 1.
     // mismatch just because that ambiguity is inherent to the input, not a different issuer.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          issuer: "http://127.0.0.1:9999/",
-          authorization_endpoint: "http://127.0.0.1:9999/authorize",
-          token_endpoint: "http://127.0.0.1:9999/token",
-          jwks_uri: "http://127.0.0.1:9999/jwks",
-        }),
-      }),
+      vi.fn().mockResolvedValue(Response.json({
+        issuer: "http://127.0.0.1:9999/",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      })),
     );
 
     const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/.well-known/openid-configuration");
@@ -261,16 +233,12 @@ describe("fetchOidcDiscovery issuer validation (ASVS V10.5.3 / OIDC Discovery 1.
   it("still rejects a genuinely different issuer even when only the trailing slash differs", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          issuer: "http://127.0.0.1:9999/attacker-controlled/",
-          authorization_endpoint: "http://127.0.0.1:9999/authorize",
-          token_endpoint: "http://127.0.0.1:9999/token",
-          jwks_uri: "http://127.0.0.1:9999/jwks",
-        }),
-      }),
+      vi.fn().mockResolvedValue(Response.json({
+        issuer: "http://127.0.0.1:9999/attacker-controlled/",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      })),
     );
 
     await expect(fetchOidcDiscovery("http://127.0.0.1:9999")).rejects.toThrow(/issuer mismatch/);

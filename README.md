@@ -67,11 +67,24 @@
 
 ## What is Admitto?
 
-Admitto covers everything between "we have a guest list" and "the event is over and we know who showed up": import attendees, issue each one a secure QR ticket, deliver it by email (and optionally to Apple/Google Wallet), check people in at the door, and export who actually attended. It exists so that running an internal company event doesn't mean paying recurring fees for a general-purpose ticketing SaaS, or handing attendee data to one.
+Admitto covers everything between "we have a guest list" and "the event is over and we know who showed up":
 
-The idea it's built around: **Admitto is the single source of truth** for who's invited, who confirmed, and who showed up. The ticket email, the ticket page, and a wallet pass are just delivery layers that reflect that state - none of them hold their own copy of the truth.
+- import attendees
+- issue each one a secure QR ticket
+- deliver it by email, and optionally to Apple or Google Wallet
+- check people in at the door
+- export who actually attended
 
-**Who uses it day to day:** an Admin sets up the event, imports attendees, and sends tickets; an Operator (staff at the door) runs check-in on a tablet or scanner; a Superadmin configures the instance itself (mail, integrations, sign-in). Attendees never sign in at all - they receive a ticket and show it.
+It exists so that running an internal company event doesn't mean paying recurring fees for a general-purpose ticketing SaaS, or handing attendee data to one.
+
+The idea it's built around: **Admitto is the single source of truth** for who's invited, who confirmed, and who showed up. The ticket email, the ticket page, and a wallet pass are just delivery layers that reflect that state. None of them holds its own copy of the truth.
+
+**Who uses it day to day**
+
+- An **Admin** sets up the event, imports attendees, and sends tickets.
+- An **Operator** (staff at the door) runs check-in on a tablet or scanner.
+- A **Superadmin** configures the instance itself: mail, integrations, sign-in.
+- **Attendees** never sign in at all. They receive a ticket and show it.
 
 ## Documentation map
 
@@ -118,7 +131,8 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | ✅ | **Check-in** | Scan with a camera or USB scanner, or look someone up by name. Hand out badges and items. Beep / vibration on each scan. |
 | 🖥️ | **Staff admin** | Events, reports, and who can access what. Staff can connect or disconnect their own company SSO from My account. |
 | ⚙️ | **Ops** | A background worker sends mail and finishes long imports/exports. Health page plus audit and security logs. |
-| 🔒 | **Security** | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country (and city, when the offline dataset resolves one) for each IP, looked up on your own server (no external geo API). |
+| 🔒 | **Security** | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. |
+| 🌍 | **Sign-in locations** | Session and login logs show the country for each IP, and the city when the offline dataset resolves one. The lookup runs on your own server, with no external geo API. |
 | 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
 **Coming later:** public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest`.
@@ -184,15 +198,13 @@ More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web
 
 ## Production deployment
 
-Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag, and mirrored to `docker.io/solarssk/admitto`, as a **multi-arch manifest** (`linux/amd64` + `linux/arm64`). Docker pulls the right one automatically, whether you're on a standard x86 VPS or arm64 hardware such as:
+Self-hosted **Docker Compose** only.
 
-- AWS Graviton
-- Oracle Cloud's free arm tier
-- Raspberry Pi-class devices
-- Apple Silicon via Docker Desktop
+- Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag, and mirrored to `docker.io/solarssk/admitto`.
+- Each image is a **multi-arch manifest** (`linux/amd64` + `linux/arm64`). Docker pulls the right one automatically, on a standard x86 VPS or on arm64 hardware such as AWS Graviton, Oracle Cloud's free arm tier, Raspberry Pi-class devices, or Apple Silicon via Docker Desktop.
+- Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
+- Compose runs **`app`**, **`migrate`**, and a single **`worker`**. The worker handles the mail drain, import and export, bounce detection, retention, wallet sync, event-wide wallet clean-up, and wallet pass expiry.
 
-Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
-Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention, wallet sync, event-wide wallet clean-up, and wallet pass expiry).
 See [deploy/README.md](deploy/README.md).
 
 ## Repo layout
@@ -209,11 +221,11 @@ See [deploy/README.md](deploy/README.md).
 
 ## Roadmap
 
-[VERSIONING.md](VERSIONING.md) is the **only** place the release line, what's shipped, and what's next are tracked - intentionally not duplicated here, so this README can't drift out of sync with it the way a second copy eventually would.
+[VERSIONING.md](VERSIONING.md) is the **only** place that tracks the release line, what has shipped, and what comes next. It is not repeated here on purpose, so this README can't drift out of date the way a second copy eventually would.
 
 ## Licence
 
-[Apache License 2.0](LICENSE): a permissive open-source licence. You can self-host, modify, and
-run Admitto internally at no cost; keep the copyright and NOTICE file with any distribution.
-This is not legal advice, review the licence text for your own compliance needs.
-Copyright and Apache NOTICE: [NOTICE](NOTICE). Third-party attribution (OFL fonts, LGPL libvips): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+[Apache License 2.0](LICENSE): a permissive open-source licence. You can self-host, modify, and run Admitto internally at no cost. Keep the copyright and NOTICE file with any distribution. This is not legal advice, so review the licence text for your own compliance needs.
+
+- Copyright and Apache NOTICE: [NOTICE](NOTICE).
+- Third-party attribution (OFL fonts, LGPL libvips): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

@@ -7,11 +7,18 @@ Authentication and authorization for Admitto - local accounts, opaque DB session
 | Area | What lives here |
 |------|-----------------|
 | **Local auth** | Argon2 passwords, login/logout, session cookies |
-| **Sessions** | Opaque server-side sessions; separate TTL and idle timeout for admin vs operator. An operator-only account that signs in on the day of an event it is assigned to gets an event-day session instead (no idle window, ends at 06:00 the next local morning or the event's end if later; master switch `operator_event_day_sessions`, default on); admins and superadmins never do |
+| **Sessions** | Opaque server-side sessions, with a separate TTL and idle timeout for admin and operator. An operator can get an event-day session (see below) |
 | **MFA** | TOTP enrollment, WebAuthn passkey / security-key registration and assertion (also passwordless passkey sign-in, gated by the `webauthn_enabled` / `passkey_login_enabled` settings), backup codes, trusted devices, break-glass recovery |
 | **OIDC** | Provider CRUD, PKCE authorize flow, group→role mapping, external identity JIT |
 | **Cloudflare Access** | `Cf-Access-Jwt-Assertion` validation on admin collision paths |
 | **RBAC** | `canManageEvent`, `canPerformCheckIn`, `canManageInstance`, etc. - scope-bound flat roles (ADR 0005) |
+
+**Event-day sessions**
+
+- An operator-only account that signs in on the day of an event it is assigned to gets an event-day session instead.
+- It has no idle window. It ends at 06:00 the next local morning, or at the event's end if that is later.
+- The master switch is `operator_event_day_sessions` (default on).
+- Admins and superadmins never get one.
 
 `apps/web` wires HTTP routes and cookies; this package holds the domain logic.
 
@@ -40,7 +47,12 @@ npm run cli -w @admitto/auth -- reset-mfa --email superadmin@example.com
 npm run cli -w @admitto/auth -- generate-emergency-recovery --email superadmin@example.com
 ```
 
-Other subcommands: `bootstrap-superadmin --email <email> --force` (create another superadmin; asks for confirmation), `purge-auth-retention [--dry-run]` (expired and revoked sessions and trusted devices) and `purge-security-audit-log [--dry-run]` (rows older than `SECURITY_AUDIT_LOG_RETENTION_DAYS`, 30 by default). `reset-mfa` and `generate-emergency-recovery` work only for the `superadmin@instance` user and read that user's current password from stdin.
+Other subcommands:
+
+- `bootstrap-superadmin --email <email> --force`: create another superadmin (asks for confirmation).
+- `purge-auth-retention [--dry-run]`: expired and revoked sessions and trusted devices.
+- `purge-security-audit-log [--dry-run]`: rows older than `SECURITY_AUDIT_LOG_RETENTION_DAYS` (30 by default).
+- `reset-mfa` and `generate-emergency-recovery` work only for the `superadmin@instance` user. They read that user's current password from stdin.
 
 **Docker production** - the runtime image has no `npm`/`npx`; use `node` via the app entrypoint passthrough (see [`deploy/README.md`](../../deploy/README.md)):
 

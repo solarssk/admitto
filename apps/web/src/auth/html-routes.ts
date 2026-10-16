@@ -5,18 +5,15 @@ import {
   TRUSTED_DEVICE_COOKIE_NAME,
   LOGIN_NEXT,
   login,
-  logout,
   revokeSession,
   validateSession,
-  validatePartialSession,
-  resolveOidcEndSessionRedirect,
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
   getPasskeyConditionalUiEnabled,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import { setSessionCookie, clearSessionCookie } from "./routes.js";
+import { setSessionCookie, clearSessionCookie, endRequestSession } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -200,20 +197,6 @@ export async function handlePostLogin(
  * built without it).
  */
 export async function handlePostLogout(c: Context, db: PrismaClient, baseUrl: string | null): Promise<Response> {
-  const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
-  // Resolved before the local session is revoked below - same session row either way, just
-  // reading it while it's still the one the cookie names, not relying on ordering to matter.
-  // Failure here (e.g. a transient DB error looking up the provider) must not block local
-  // logout - the IdP redirect is a bonus, not a precondition for clearing this session.
-  const endSessionRedirect =
-    validated && baseUrl
-      ? await resolveOidcEndSessionRedirect(db, validated.session, baseUrl).catch((err) => {
-          console.error("resolve OIDC end-session redirect:", err instanceof Error ? err.message : "unknown");
-          return null;
-        })
-      : null;
-  await logout(db, validated, { ip: resolveClientIp(c) });
-  clearSessionCookie(c);
+  const endSessionRedirect = await endRequestSession(c, db, baseUrl);
   return c.redirect(endSessionRedirect ?? "/login", 302);
 }

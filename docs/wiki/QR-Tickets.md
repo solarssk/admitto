@@ -20,7 +20,10 @@ Prepare a synthetic attendee with an active pass. Save and test the ticket email
 3. Send a template test to an approved test address.
 4. Send the ticket to the synthetic attendee.
 5. Open **View your ticket** from the received message.
-6. Confirm that the browser ticket shows the correct event and attendee information. When a logo is configured for the event or organisation, the ticket shows that logo instead of the generic Admitto wordmark. When the event has a saved location, also check the address, directions/accessibility notes, and map links; a saved map pin adds the map image. When weather is enabled and the pin exists, the ticket also shows the forecast for the event day (Celsius and Fahrenheit together, for example `18°C (64°F)`), or “Forecast available N days before the event” when the day is still outside the provider horizon.
+6. Confirm that the browser ticket shows the correct event and attendee information. Then check what applies to your event:
+   - **Logo:** when a logo is configured for the event or organisation, the ticket shows that logo instead of the generic Admitto wordmark.
+   - **Location:** when the event has a saved location, check the address, the directions and accessibility notes, and the map links. A saved map pin adds the map image.
+   - **Weather:** when weather is enabled and the pin exists, the ticket also shows the forecast for the event day, in Celsius and Fahrenheit together (for example `18°C (64°F)`). While the day is still outside the provider horizon, it shows "Forecast available N days before the event".
 7. Scan its QR code in the correct test event.
 8. Confirm the expected check-in result, then correct the synthetic check-in if needed.
 
@@ -33,7 +36,10 @@ The email opens a valid browser ticket, the QR image renders clearly, and the co
 - A ticket is event-specific and belongs to one attendee.
 - Active and Confirmed passes can be admitted. Cancelled and Revoked passes cannot.
 - A repeated valid scan returns an already-checked-in result instead of recording a second admission.
-- The browser ticket's **Add to Apple Wallet** / **Add to Google Wallet** badges create a wallet pass on demand the first time an attendee taps one, then reopen the same pass on later taps. The badges disappear from the ticket page once the event is over or archived, and for an attendee whose wallet pass is no longer valid (voided, expired, or removed by an admin); an older link to a wallet badge then simply returns to the ticket, without an error message. If the wallet provider cannot be reached, the ticket reloads with a message asking the attendee to try again; the QR code stays the source of truth for check-in either way.
+- The browser ticket's **Add to Apple Wallet** and **Add to Google Wallet** badges create a wallet pass on demand the first time an attendee taps one. Later taps reopen the same pass.
+  - The badges disappear from the ticket page once the event is over or archived, and for an attendee whose wallet pass is no longer valid (voided, expired, or removed by an admin). An older link to a wallet badge then simply returns to the ticket, without an error message.
+  - If the wallet provider cannot be reached, the ticket reloads with a message asking the attendee to try again.
+  - The QR code stays the source of truth for check-in either way.
 
 ## What changes after this action
 
@@ -41,10 +47,12 @@ An attendee ticket may be issued when the delivery is prepared. Sending or resen
 
 ## Common problems
 
-- **The QR image is missing:** insert `qr_image_url` with the image button and preview again.
-- **The ticket link is invalid:** the browser shows a branded Admitto page with **404** and **Not found** (the same page as other unknown public URLs, not a bare HTML error). Use the latest delivery and ask an Event Manager to review the attendee and template.
-- **The code is invalid at check-in:** confirm the selected event and the on-screen result.
-- **The ticket is revoked or cancelled:** opening the public ticket link shows the event card with a notice that the ticket is no longer valid (no QR code). Review [Pass Statuses](Pass-Statuses); do not create a replacement attendee.
+| Problem | What it means and what to do |
+|---------|------------------------------|
+| **The QR image is missing** | Insert `qr_image_url` with the image button and preview again |
+| **The ticket link is invalid** | The browser shows a branded Admitto page with **404** and **Not found** (the same page as other unknown public URLs, not a bare HTML error). Use the latest delivery and ask an Event Manager to review the attendee and template |
+| **The code is invalid at check-in** | Confirm the selected event and the on-screen result |
+| **The ticket is revoked or cancelled** | Opening the public ticket link shows the event card with a notice that the ticket is no longer valid (no QR code). Review [Pass Statuses](Pass-Statuses). Do not create a replacement attendee |
 
 ## Related pages
 

@@ -1,29 +1,25 @@
 # SonarCloud coverage gate: CI-based analysis migration
 
-**Status: done (PR [#1245](https://github.com/solarssk/admitto/pull/1245), 2026-09-04).** Automatic
-Analysis is off; `sonarcloud` in `ci.yml` runs CI-based analysis against `sonar-project.properties`
-with a real `SONAR_TOKEN` and does ingest coverage now. The rest of this document describes the
-**pre-migration state and the sourced reasoning** that justified the switch - read `SECURITY.md`
-and `sonar-project.properties` for the current live config, not the "currently runs..." framing
-below.
+**Status: done** (PR [#1245](https://github.com/solarssk/admitto/pull/1245), 2026-09-04).
 
-**Current state:** the `sonarcloud` job in `.github/workflows/ci.yml` (named "Code quality
-(SonarCloud)", `needs` the `changes` job and the three test jobs) is report-only:
-`sonar.qualitygate.wait` is not set and the job is not a required check. It is skipped for fork
-PRs and Dependabot PRs (neither gets `SONAR_TOKEN`) and for documentation-only diffs.
-`sonar-project.properties` also sets `sonar.sources`, `sonar.coverage.exclusions` and a migrations
-exclusion, and `.sonarcloud.properties` has been removed. The sections below keep the original
-plan and its sourced reasoning; where they differ from `ci.yml` (action pins, `needs`, skip
-conditions), `ci.yml` is right.
+- Automatic Analysis is off.
+- `sonarcloud` in `ci.yml` runs CI-based analysis against `sonar-project.properties`, with a real `SONAR_TOKEN`, and it does ingest coverage now.
+- The rest of this document describes the **pre-migration state and the sourced reasoning** that justified the switch. Read `SECURITY.md` and `sonar-project.properties` for the current live config, not the "currently runs..." framing below.
 
-This repo's SonarCloud project (`solarssk_admitto`) used to run **Automatic Analysis** (the
-GitHub App, no `sonar-scanner`/`sonarqube-scan-action` step in any workflow file) and had **no
-`coverage` / `new_coverage` metric at all**, even though `npm run coverage` already produces LCOV
-for every workspace and CI already uploads it to Codecov (`apps/**/coverage/lcov.info`,
-`apps/**/coverage-integration/lcov.info`, `packages/**/coverage/lcov.info`,
-`packages/**/coverage-integration/lcov.info` - see `vitest.coverage.ts`). The project's quality
-gate ("Sonar way", the built-in default) *does* include a `new_coverage < 80%` condition, but it
-can never fire: with no coverage metric reported, SonarCloud has nothing to evaluate it against.
+**Current state**
+
+- The `sonarcloud` job in `.github/workflows/ci.yml` (named "Code quality (SonarCloud)", `needs` the `changes` job and the three test jobs) is report-only: `sonar.qualitygate.wait` is not set and the job is not a required check.
+- It is skipped for fork PRs and Dependabot PRs (neither gets `SONAR_TOKEN`) and for documentation-only diffs.
+- `sonar-project.properties` also sets `sonar.sources`, `sonar.coverage.exclusions` and a migrations exclusion. `.sonarcloud.properties` has been removed.
+- The sections below keep the original plan and its sourced reasoning. Where they differ from `ci.yml` (action pins, `needs`, skip conditions), `ci.yml` is right.
+
+**The problem it solved**
+
+This repo's SonarCloud project (`solarssk_admitto`) used to run **Automatic Analysis**.
+
+- It was the GitHub App, with no `sonar-scanner` / `sonarqube-scan-action` step in any workflow file.
+- It had **no `coverage` / `new_coverage` metric at all**, even though `npm run coverage` already produces LCOV for every workspace and CI already uploads it to Codecov (`apps/**/coverage/lcov.info`, `apps/**/coverage-integration/lcov.info`, `packages/**/coverage/lcov.info`, `packages/**/coverage-integration/lcov.info`, see `vitest.coverage.ts`).
+- The project's quality gate ("Sonar way", the built-in default) *does* include a `new_coverage < 80%` condition, but it can never fire. With no coverage metric reported, SonarCloud has nothing to evaluate it against.
 
 - [Sourced answer: Automatic Analysis cannot ingest coverage, under any configuration](#sourced-answer-automatic-analysis-cannot-ingest-coverage-under-any-configuration)
 - [What's already prepared in this repo (no secret needed)](#whats-already-prepared-in-this-repo-no-secret-needed)
@@ -48,14 +44,12 @@ Confirmed directly from SonarSource's own documentation (not inferred, not a sup
 > disabling automatic analysis.**"
 > - [JavaScript / TypeScript test coverage](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/test-coverage/javascript-typescript-test-coverage)
 
-This settles it: there is no `.sonarcloud.properties` trick, no alternate coverage property, and
-no partial workaround. `sonar.javascript.lcov.reportPaths` is real and does work - but only when a
-`sonar-scanner`/`sonarqube-scan-action` step actually runs in CI, authenticated with a
-`SONAR_TOKEN`, using `sonar-project.properties` (the CI-based config file). It is never read by
-Automatic Analysis, which reads `.sonarcloud.properties` instead and has coverage support removed
-entirely at the product level, independent of any property.
+This settles it. There is no `.sonarcloud.properties` trick, no alternate coverage property, and no partial workaround.
 
-Also relevant: **Automatic Analysis and CI-based analysis conflict if both are on at once** - "If
+- `sonar.javascript.lcov.reportPaths` is real and does work, but only when a `sonar-scanner` / `sonarqube-scan-action` step actually runs in CI, authenticated with a `SONAR_TOKEN`, using `sonar-project.properties` (the CI-based config file).
+- It is never read by Automatic Analysis. Automatic Analysis reads `.sonarcloud.properties` instead, and it has coverage support removed entirely at the product level, independent of any property.
+
+Also relevant: **Automatic Analysis and CI-based analysis conflict if both are on at once.** SonarSource says: "If
 you enable automatic analysis, you must ensure that you do not have any CI-based analyses
 configured. If you do then these CI-based analyses will fail and cause a failure in your build
 process." Migrating means turning Automatic Analysis **off**, not layering CI-based analysis on
@@ -102,14 +96,13 @@ public SonarCloud project via `api/components/show?component=solarssk_admitto`.
 
 ## Historical: the CI changes as planned
 
-Not applied in this PR - merging a scan step against a secret that doesn't exist yet would fail on
-every run, and this repo's own rule is "do not push on red." This is the literal patch to apply in
-a follow-up PR right after `SONAR_TOKEN` exists and Automatic Analysis is off. (It was applied in #1245 with different pins, `needs` and skip conditions; do not copy it, read `ci.yml`.)
+- It was not applied in the PR that wrote this plan. Merging a scan step against a secret that doesn't exist yet would fail on every run, and this repo's own rule is "do not push on red."
+- This is the literal patch to apply in a follow-up PR, right after `SONAR_TOKEN` exists and Automatic Analysis is off.
+- It was applied in #1245 with different pins, `needs` and skip conditions. Do not copy it. Read `ci.yml`.
 
-Each of `test-web`, `test-admin`, and `test-rest` in `.github/workflows/ci.yml` already produces
-LCOV as its own job, run in parallel - none of them has the full set of reports on its own, so a
-new job needs all three uploaded as build artifacts first. Add this step to **each** of the three
-jobs (after their existing `Run coverage` step, alongside the existing Codecov upload steps):
+Each of `test-web`, `test-admin` and `test-rest` in `.github/workflows/ci.yml` already produces LCOV as its own job, and they run in parallel. None of them has the full set of reports on its own, so a new job needs all three uploaded as build artifacts first.
+
+Add this step to **each** of the three jobs (after their existing `Run coverage` step, alongside the existing Codecov upload steps):
 
 ```yaml
       - name: Upload coverage artifact for SonarCloud
@@ -159,21 +152,13 @@ Notes on this shape:
 - The guard is necessary, not just tidy: unlike Codecov's upload action, `sonarqube-scan-action`
   has no `fail_ci_if_error`-style soft-fail - an empty/invalid `SONAR_TOKEN` makes the step error
   for real.
-- **Trade-off worth deciding on deliberately:** this guard means fork PRs get **no** SonarCloud
-  analysis at all post-migration, versus Automatic Analysis today, which analyzes fork PRs with
-  zero extra config (just without coverage). Flag this explicitly to whoever approves the
-  migration; it may be an acceptable trade for a mostly solo-maintained repo, or it may not.
-  - Getting CI-based analysis working on fork PRs too needs SonarSource's documented 3-workflow
-    split (build fork code with no secrets → hand off via `workflow_run` → analyze with secrets,
-    never executing fork-provided code) - real additional complexity and a security-sensitive
-    pattern, not something to add speculatively.
-- **Not included above, and a deliberate policy choice for whoever does the migration, not
-  something to default to silently:** `sonar.qualitygate.wait=true` (add to
-  `sonar-project.properties`) makes the scan step itself fail when the quality gate fails, which is
-  what would let `sonarcloud` become a required branch-protection check. Add it - and add
-  `sonarcloud` to `main`'s required status checks (`Settings > Branches`) - only once there's been
-  a chance to see real coverage numbers and confirm the existing `new_coverage < 80%` "Sonar way"
-  condition is achievable, not a surprise wall on the first PR after migration.
+- **Trade-off worth deciding on deliberately.**
+  - This guard means fork PRs get **no** SonarCloud analysis at all post-migration. Automatic Analysis today analyzes fork PRs with zero extra config (just without coverage).
+  - Flag this explicitly to whoever approves the migration. It may be an acceptable trade for a mostly solo-maintained repo, or it may not.
+  - Getting CI-based analysis working on fork PRs too needs SonarSource's documented 3-workflow split: build fork code with no secrets, hand off via `workflow_run`, then analyze with secrets, never executing fork-provided code. That is real additional complexity and a security-sensitive pattern, not something to add speculatively.
+- **Not included above, and a deliberate policy choice for whoever does the migration, not something to default to silently:** `sonar.qualitygate.wait=true`.
+  - Add it to `sonar-project.properties`. It makes the scan step itself fail when the quality gate fails, which is what would let `sonarcloud` become a required branch-protection check.
+  - Add it, and add `sonarcloud` to `main`'s required status checks (`Settings > Branches`), only once there's been a chance to see real coverage numbers. Confirm that the existing `new_coverage < 80%` "Sonar way" condition is achievable, so it is not a surprise wall on the first PR after migration.
 
 ## Verification after the follow-up PR merges
 
@@ -189,13 +174,10 @@ endpoint's response entirely, not just zero).
 
 ## Alternative / complement: gate on Codecov instead
 
-Codecov already receives this repo's LCOV on every PR (`CODECOV_TOKEN` is already an configured
-secret; no new one needed) and already posts a `codecov/patch` commit status today, using
-Codecov's undocumented-in-this-repo defaults. It's just not in `main`'s required status checks, and
-has no PR comment. A root `codecov.yml` (added in this PR - see repo root) makes that explicit and
-adds a `codecov/project` status plus a PR comment, without needing any of the SonarCloud steps
-above. See `codecov.yml`'s own comments for the exact config and `SECURITY.md`'s Codecov row for
-current status.
+- Codecov already receives this repo's LCOV on every PR (`CODECOV_TOKEN` is already a configured secret, so no new one is needed).
+- It already posts a `codecov/patch` commit status today, using Codecov's undocumented-in-this-repo defaults. That status is just not in `main`'s required status checks, and there is no PR comment.
+- A root `codecov.yml` (added in this PR, see repo root) makes that explicit and adds a `codecov/project` status plus a PR comment, without needing any of the SonarCloud steps above.
+- See `codecov.yml`'s own comments for the exact config and `SECURITY.md`'s Codecov row for current status.
 
 This is the faster, zero-new-secret path to "coverage is visibly gated somewhere". The SonarCloud
 migration above is still worth doing for its own sake (one combined quality + coverage gate, an
