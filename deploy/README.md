@@ -237,7 +237,7 @@ We have not tested or documented Synology ARM vs Intel paths separately - pick t
 
 ## Memory for the app container
 
-**Give `app` at least 1 GB of memory. 2 GB is comfortable.**
+**Give `app` at least 1 GB of memory. 2 GB is comfortable, and worth it if you import big attendee files.**
 
 The compose file sets no memory limit, so `app` can use all the memory of the host. To set a limit, use `mem_limit` in the compose file or the memory setting of a container manager such as Portainer.
 
@@ -248,7 +248,9 @@ The compose file sets no memory limit, so `app` can use all the memory of the ho
 | `app` during such an import | about 0.55 GB in total | the same lab run (reported) |
 
 - An import is limited to 50,000 data rows and 5 MB. A file with more columns needs more memory.
-- `worker` was not measured.
+- The biggest file the import accepts can take about 0.7 GB for a few seconds on top of what `app` uses otherwise.
+- A file over the limits is refused before it is read in full, but it is still opened far enough to be counted.
+- Only `app` reads Excel files. `worker`, `db` and `redis` do not. The memory of `worker` was not measured.
 - `app` has `restart: unless-stopped`. If it runs out of memory and stops, Docker starts it again. A request that was running at that moment fails and has to be repeated.
 
 ### How much memory Node.js uses for its heap
