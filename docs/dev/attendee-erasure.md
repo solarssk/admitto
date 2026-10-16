@@ -60,7 +60,7 @@ After the commit, it:
 
 The answer is `{ erased, already_erased, not_found, wallet_pending, wallet_removed_ids }`.
 
-- **`wallet_pending`** counts erased attendees whose pass is still to be deleted at the provider. That happens when the delete failed, when the event has no credentials, or when the 90 s budget of one request ran out. In database terms, it is a pass row that is not marked removed and that either holds the provider's id, or holds only the id reserved for the pass, or says that a creation failed ([Passes still at the provider](#passes-still-at-the-provider)).
+- **`wallet_pending`** counts erased attendees whose pass is still to be deleted at the provider. That happens when the delete failed, when the event has no credentials, or when the 90 s budget of one request ran out. In database terms, it is a pass row whose `left_behind_pass_id` is set, or that is not marked removed and either holds the provider's id, or holds only the id reserved for the pass, or says that a creation failed ([Passes still at the provider](#passes-still-at-the-provider)).
 - **`wallet_removed_ids`** lists the attendees whose pass was still to be deleted when the follow-up started and no longer is. The pass was deleted by this request, or by one running at the same moment. The list is read from the database before and after the follow-up.
   - A pass that never reached the provider (no id of any kind on its row), or that was removed before, is not in the list. So a screen can say "deleted" only for a pass that was.
   - A row that held only the reserved id is in the list once the provider has answered for that id. Either the provider deleted a pass, or it has none and the erasure is old enough to rely on that (10 minutes, see [A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
@@ -162,7 +162,7 @@ In the bulk bar, **More actions** has **Erase personal data** for the selection 
 - **Activity log:** one entry of the erasure itself (the staff member, the time in the zone they were in, through what, and where from for a Superadmin), and then a line saying that the rest of the history was erased. With no such entry, one line saying that the history was erased.
 - **The notice above the page** names the staff member too ("Personal data erased on 10 Oct 2026 by Admin Example.").
 - All of that comes from `erasure` in the detail response (see "Who erased the person" below).
-- **The Wallet card** says what became of the pass: deleted on a date, or still to be deleted, with a **Try again** button. "Still to be deleted" is `wallet_pass_delete_pending` in the detail response. It is true only for an erased attendee whose pass has a provider id and no `provider_removed_at`.
+- **The Wallet card** says what became of the pass: deleted on a date, or still to be deleted, with a **Try again** button. "Still to be deleted" is `wallet_pass_delete_pending` in the detail response. It is true for an erased attendee whose pass row is still to be deleted by the same question as `wallet_pending` ([Passes still at the provider](#passes-still-at-the-provider)).
 
 ### The Personal data erased dialog
 
@@ -544,12 +544,13 @@ What this does not cover:
 
 `sweepErasedWalletPasses` ([`retention-erased-wallet-passes.ts`](../../apps/cli/src/lib/retention-erased-wallet-passes.ts)) retries what the erase API could not finish.
 
-**Which passes it retries.** A pass of an erased attendee that is not marked removed (`provider_removed_at`) and that is one of these:
+**Which passes it retries.** A pass of an erased attendee in either of these cases:
 
-- It has the provider's id on its row.
-- It has only the id reserved for it.
-- It is a failed creation.
-- Its `left_behind_pass_id` is set. That keeps the row in the question even when the recorded pass was removed ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
+- Its `left_behind_pass_id` is set. That counts whatever else is on the row, even when the recorded pass was removed ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
+- It is not marked removed (`provider_removed_at`) and it has one of these:
+  - the provider's id on its row;
+  - only the id reserved for it;
+  - a failed creation.
 
 One question says which (`erasedPassToDeleteWhere`, and `passIsStillToDelete` for a row already read, in [`erase-wallet-passes.ts`](../../packages/tickets/src/erase-wallet-passes.ts)). The erase API, the command and the sweep all share it.
 
