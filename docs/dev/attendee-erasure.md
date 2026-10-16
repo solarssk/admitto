@@ -342,36 +342,203 @@ What is not covered:
 
 ## Files left in storage
 
-Erasure and removal logically invalidate every existing export of the event inside their database transaction (`invalidateEventExports`, called by `scrubAttendeeTraces`). The `result_json.invalidated` marker blocks download with `404 not_ready`, independently of physical deletion. Completed jobs keep their status, counts and file key; the key is cleared only after deletion succeeds, so cleanup remains retryable. Download checks again after storage IO to detect invalidation during the read. A response already handed out cannot be recalled. API, bulk actions and CLI share this contract. Jobs created after the commit remain available, and a repeated erasure that changes nobody leaves them alone.
+### Exports are invalidated first
 
-Two kinds of job leave a file in storage that holds attendees: an **export** (the CSV, XLSX or PDF of the attendee list, `AdminJob` of type `export`, the file at `storage_key`) and an **import** (the staged CSV of an `import_commit` job, which a commit that works deletes at once, so what stays is the CSV of a job that failed or whose cleanup failed). Both are copies of personal data that nothing reads once the job is done, and the job row itself (counts, filename) is history, so only the file goes and `storage_key` is cleared ([`purgeJobFiles.ts`](../../packages/storage/src/gc/purgeJobFiles.ts)).
+- Erasure and removal logically invalidate every existing export of the event inside their database transaction (`invalidateEventExports`, called by `scrubAttendeeTraces`).
+- The `result_json.invalidated` marker blocks download with `404 not_ready`, independently of physical deletion.
+- Completed jobs keep their status, counts and file key. The key is cleared only after deletion succeeds, so cleanup remains retryable.
+- A download checks again after storage IO, to detect invalidation during the read. A response that was already handed out cannot be recalled.
+- API, bulk actions and CLI share this contract.
+- Jobs created after the commit remain available. A repeated erasure that changes nobody leaves them alone.
 
-A file has a life: it is written, then named on its job row (`storage_key`), then deleted. Everything below is about the three moments where it can be left with nobody who knows it: written but not yet named, named by a row that is then deleted, and deleted by a step that fails.
+### Which files are left
+
+Two kinds of job leave a file in storage that holds attendees:
+
+- An **export**: the CSV, XLSX or PDF of the attendee list (`AdminJob` of type `export`, the file at `storage_key`).
+- An **import**: the staged CSV of an `import_commit` job. A commit that works deletes it at once, so what stays is the CSV of a job that failed or whose cleanup failed.
+
+Both are copies of personal data that nothing reads once the job is done. The job row itself (counts, filename) is history. So only the file goes, and `storage_key` is cleared ([`purgeJobFiles.ts`](../../packages/storage/src/gc/purgeJobFiles.ts)).
+
+A file has a life: it is written, then named on its job row (`storage_key`), then deleted. Everything below is about the three moments where it can be left with nobody who knows it:
+
+- written but not yet named
+- named by a row that is then deleted
+- deleted by a step that fails
 
 ### Writing: a file is never left unnamed
 
-| Writer | What makes sure of it |
-|---|---|
-| The export worker (`drain-export-jobs.ts`) stores the file first and names it on the job afterwards | It records the key only on a job that is **still running** (`status: "running"` is in the `where` of the update). If recording fails, because the row is gone (the event was deleted meanwhile), was closed meanwhile (an erasure stopped the job, or it was reclaimed as stale) or the write failed, the worker takes the file back (`takeBackStoredFile`). If even that delete fails, nothing else knows of the file, so its key goes to stdout (`export_file_left_in_storage`, what Docker keeps; the System logs buffer lives in memory) and, when the row is still there, onto the row, where the retention run of finished jobs tries again. The export is requested under the queue lock of the event (below). Marking a job failed does the same check, so a job that something else closed keeps its own error, and a row that is gone no longer aborts the rest of the queue. |
-| The import enqueue (`import-api-routes.ts`) stages the CSV first and creates the job afterwards | The job is created under the queue lock of the event (below), so one that is queued while an erasure is open waits for it and starts from the list as it is afterwards. If the job cannot be created the staged file is deleted at once; if that delete fails too, its key goes to stdout (`Import staged file left in storage`). |
+**The export worker** (`drain-export-jobs.ts`) stores the file first and names it on the job afterwards. What makes sure of it:
 
-The local storage adapter also removes the partial file of a write that fails half way (a full disk), so `put` never leaves a truncated file at a key nobody received.
+- It records the key only on a job that is **still running** (`status: "running"` is in the `where` of the update).
+- If recording fails, the worker takes the file back (`takeBackStoredFile`). Recording can fail because the row is gone (the event was deleted meanwhile), because the row was closed meanwhile (an erasure stopped the job, or it was reclaimed as stale), or because the write failed.
+- If even that delete fails, nothing else knows of the file. So its key goes to stdout (`export_file_left_in_storage`, which is what Docker keeps; the System logs buffer lives in memory). When the row is still there, the key goes onto the row too, where the retention run of finished jobs tries again.
+- The export is requested under the queue lock of the event (below).
+- Marking a job failed does the same check. So a job that something else closed keeps its own error, and a row that is gone no longer aborts the rest of the queue.
 
-A process killed between writing a file and recording it (an export file before its key is on the job, the staged CSV of an import before its job exists) still leaves a file that no row names: the export's job is failed as stale, and nothing in storage points at the file. So does a delete that failed after its row was gone (`export_file_left_in_storage` with no row left, `Import staged file left in storage`, `event_job_files_purge_incomplete`). The purge of finished jobs, the purge after an erasure and the event deletion all find a file through a row, so none of them can reach it; the sweep of unnamed files does (the row after the retention job's, in the table below). It deletes such a file once it is a day old, so a person who is erased while it exists stays in it until that run, at most about two days after the process was killed (a day of grace, then the next daily run). The erasure cannot do better: an unnamed file can be the staged CSV of an import that is queued behind the erasure and still needs it.
+**The import enqueue** (`import-api-routes.ts`) stages the CSV first and creates the job afterwards. What makes sure of it:
+
+- The job is created under the queue lock of the event (below). So a job that is queued while an erasure is open waits for it, and starts from the list as it is afterwards.
+- If the job cannot be created, the staged file is deleted at once. If that delete fails too, its key goes to stdout (`Import staged file left in storage`).
+
+**The local storage adapter** also removes the partial file of a write that fails half way (a full disk). So `put` never leaves a truncated file at a key nobody received.
+
+**A process killed between writing a file and recording it** still leaves a file that no row names. That covers an export file before its key is on the job, and the staged CSV of an import before its job exists.
+
+- The export's job is failed as stale, and nothing in storage points at the file.
+- A delete that failed after its row was gone leaves such a file too (`export_file_left_in_storage` with no row left, `Import staged file left in storage`, `event_job_files_purge_incomplete`).
+- The purge of finished jobs, the purge after an erasure and the event deletion all find a file through a row, so none of them can reach it. The sweep of unnamed files does (the fourth step in the list below).
+- The sweep deletes such a file once it is a day old. So a person who is erased while it exists stays in it until that run, at most about two days after the process was killed (a day of grace, then the next daily run).
+- The erasure cannot do better: an unnamed file can be the staged CSV of an import that is queued behind the erasure and still needs it.
 
 ### Deleting: who removes a file, and when
 
-| When | What goes |
-|---|---|
-| After an erasure or a removal commits and at least one attendee was erased or removed (`purgeEventJobFilesBestEffort`, [`purge-export-files.ts`](../../apps/web/src/admin/purge-export-files.ts); the CLI's `attendees erase` does the same) | The export files of the jobs the erasure saw, whatever their age, and the staged CSV of those imports that have **finished** (`purgeEventJobFiles`, given the ids of the jobs that held a file, which `eraseAttendees` and `removeAttendees` read at the end of their transaction under the queue lock: `attendeeJobIdsWithFiles`, so an export that is requested a moment after the erasure, and finishes before the purge runs, keeps its file): an export is cheap to run again, and the CSV of a finished import has no use. An import that was waiting or running is stopped by the erasure itself (next row), which finishes its job, so its file goes too; an import queued after the erasure committed keeps its file, because it still needs it. Best effort, like the wallet follow-up: the erasure never fails because of it, a file that cannot be deleted keeps its key and is reported in the System logs (`job_file_purge_incomplete`, or `job_file_purge_failed` when the purge itself broke), and the retention run below picks it up. A request that erased nobody new (a repeat, unknown ids) leaves the files alone. |
-| **The erasure's own transaction**, for the exports and imports that have not finished (`stopOpenAttendeeJobs`, called by `scrubAttendeeTraces`, so by `eraseAttendees` and `removeAttendees` and every caller of them) | Both kinds of job work from the list as it was before the erasure. An export that is being built has read its rows and is making a file that no job names yet, so the purge above cannot see it. An import creates people from a file that was uploaded before the erasure: once the erasure has committed, the address of an erased person matches nobody, so the import would create the person again, with the same data. A job that is still waiting is no safer than one that runs: the worker can claim it and read while the erasure's transaction is open, and a read does not see what an open transaction has changed. So the erasure closes all of them in its own transaction (status `failed`, the reason in `error`, the search text of an export scrubbed like for any failed export). The worker claims a job only while it is `pending`; an export records its file only while it is `running`; an import takes the row of its job as the first statement of the transaction in which it writes its people, and writes nothing when the job is not `running` (`ImportStoppedError`). Each is one conditional update or one locked read, and a statement that has to wait for the row the erasure holds checks the row again once the erasure commits, and finds it closed. The erasure takes the rows of the open jobs before it locks an attendee (`lockOpenAttendeeJobs`, as the first statement of `eraseAttendees` and `removeAttendees`, after the queue lock), so an import that is running is waited for (an erasure can wait as long as the import runs, within the statement limit of the database) and nothing is written by an import while an erasure of the event works: an import that would create somebody from an address the person had before cannot finish unseen. Every transaction takes these locks in the same order (the queue, the job rows, then the attendees), so the waits cannot end in a cycle. A job that finished before has what it wrote already committed, before the erasure began: an export has a key that the purge after the commit finds, an import has its people and its result, which the erasure then sees (an address that an import created is another attendee's address, left alone like any other, and the result is blanked by `scrubImportJobResults`, called after this step). The staged CSV of a stopped import is deleted by the same purge. The queue lock covers a job that is being created: `lockAttendeeJobQueue` is taken exclusively as the first statement of `eraseAttendees` and `removeAttendees` (before any row is locked, so two erasures of one event run one after the other and cannot deadlock over rows they share, such as a resend delivery addressed to someone else's address), and shared by the requests that create an export or an import job, in the transaction that inserts the job (`createUnderAttendeeJobQueueLock`, which allows it to wait for an open erasure for as long as the database allows a statement to run). A job that is being created is therefore either committed before the erasure looks (and stopped by it), or created after the erasure has committed. A job created after the erasure is a new job: an export reads the list as it is then, and an import adds back whoever its file lists, because nothing that identifies an erased person is kept. That includes an import whose upload began before the erasure and whose job was queued after it, and `import-attendees` on the command line, which has no job. The DSAR procedure says to remove the person from files that are still to be imported. The stop is for the whole event, whether or not the file of an import lists the person, because telling would mean reading every staged file inside the transaction: an import that was queued meanwhile for another reason (a removal with the reason `wrong_import` while the corrected file waits) is stopped too. The price: an export or an import that had not finished when someone was erased or removed fails, and has to be started again (an import without that person, if its file lists them). The integration tests hold an erasure open and check the waits: the claim, the recording of an export's file, the end of an import, and both requests that create a job (`attendee-erase-api.test.ts`, `admin-import.test.ts`). |
-| The retention job: the worker at boot and about every 24 hours, and `admitto retention run` (`--dry-run` only counts) (`purgeJobFilesForRetention`, [`retention-job-files.ts`](../../apps/cli/src/lib/retention-job-files.ts)) | The file of a finished export 7 days after it finished (`EXPORT_FILE_RETENTION_DAYS`) and the staged CSV of a finished import job 7 days after it finished (`IMPORT_STAGED_FILE_RETENTION_DAYS`). A job that has not finished is never touched. The worker logs `export_files`, `staged_import_files`, `orphaned_job_files` (the next row) and `failed` (a non-zero `failed` raises the line to a warning), and `retention run` writes the counts into its audit entry. |
-| The sweep of unnamed files, run right after the purge above by the same retention job and by `admitto retention run` (`--dry-run` only counts) (`sweepOrphanedJobFiles`, [`sweepOrphanedJobFiles.ts`](../../packages/storage/src/gc/sweepOrphanedJobFiles.ts), called by `purgeJobFilesForRetention`) | Every file in the job layout (`{org}/events/{event}/{uuid}` with `.csv`, `.xlsx` or `.pdf`, listed by `StorageAdapter.listJobFiles`, so a branding upload or any other file is never a candidate) that **no job row names** (`AdminJob.storage_key`, of any status, type or age) and that is **older than a day** (`ORPHANED_JOB_FILE_GRACE_HOURS`). It is safe because a file is named a moment after it is written (the worker's update, the enqueue's insert, each cut off by the database after 30 seconds), so an unnamed file that is a day old has no live writer. It also fails closed: the keys that jobs name are read before the listing, so a file written later is younger than the grace, and the key is looked up again right before each delete, so a job that was given it meanwhile keeps its file. A file deleted here that was about to be named after all ends as a job whose file is gone, which a download answers with `404 not_ready`, an import fails on, and the purge counts as deleted (a missing file is not an error). It never touches a file that a job names, so the file of a job created after an erasure stays; it writes no job row and takes no lock, so the erasure's lock order (the queue, the job rows, then the attendees) is unchanged; and the erasure does not run it, for the reason above. One line a run: the worker logs `orphaned_job_files` in its retention line and `retention run` writes `orphanedJobFiles` into its audit entry, never one line per file (the worker's relay to the System logs takes 120 a minute). A file that cannot be deleted, or a sweep that breaks (the upload directory cannot be read), counts in `failed`, so the line becomes a warning, and the other retention steps still run. The sweep assumes that the upload directory belongs to this database alone: another instance with its own database on the same directory, or a restore of an older database next to newer files, would show it files that nobody names. |
-| An event is deleted for good (`deleteEvent`, [`event-deletion.ts`](../../apps/web/src/admin/event-deletion.ts), Superadmin only) | Every file its jobs left, whatever the job's type or status (`deleteEventJobFilesBestEffort`, then `deleteStoredFiles`). Jobs are not a deletion blocker and cascade away with the event, and with them the only record of the keys, which the retention run reads; so the transaction first takes the queue lock exclusively (no job can be created until it ends, so none appears behind the read of the rows), then locks the rows of the event's jobs (an import holds its job row for the whole of its transaction and then needs the event row for the people it inserts, so the deletion takes the two in the same order and waits for a running import, whose people then make the event undeletable) and then the event row (a job that is being created for the event holds a share of it through its foreign key, so the deletion waits for that job and deletes it with the rest, and a job that starts later finds the event gone and deletes its own file), deletes the jobs with `RETURNING "storage_key"` (exactly the rows that went, as of the moment they went), writes those keys into its audit entry (`jobFileKeys`: a key is organisation, event and a random name, no personal data), and the files are deleted after the commit. Best effort: a failure never undoes the deletion, and every key that could not be deleted is logged, all of them with no cap, on stdout as well as in the System logs: `event_job_files_purge_incomplete`, or `event_job_files_purge_failed` when the cleanup itself broke. No row is left to retry from, so the log line and the audit entry are the only records of a file that stays; a process killed between the commit and the deletes loses nothing, because the audit entry holds every key. A refused deletion (409) leaves the files alone. An export that is running when its event is deleted is the writer's case above. |
+Five steps delete job files.
 
-A download that has read the job just before its file is deleted (an erasure, the retention run, an event deletion) answers `404 not_ready`, the same as a job whose file is already gone: `handleDownloadExportJob` maps the storage's `not_found` and nothing else, so any other storage error is still a server error.
+#### 1. After an erasure or a removal commits
 
-What this does not cover: the time a file that nobody names stays (a day of grace, then the next retention run), which nothing shortens; and a file outside the job layout, which the sweep never touches on purpose (the managed-upload sweep, `admitto storage gc`, ignores `.csv`, `.xlsx` and `.pdf` for the same reason: they are not branding uploads).
+`purgeEventJobFilesBestEffort` ([`purge-export-files.ts`](../../apps/web/src/admin/purge-export-files.ts)) runs when at least one attendee was erased or removed. The CLI's `attendees erase` does the same.
+
+What goes:
+
+- The export files of the jobs the erasure saw, whatever their age.
+- The staged CSV of those imports that have **finished**.
+- The function is `purgeEventJobFiles`. It is given the ids of the jobs that held a file. `eraseAttendees` and `removeAttendees` read those ids at the end of their transaction, under the queue lock (`attendeeJobIdsWithFiles`). So an export that is requested a moment after the erasure, and finishes before the purge runs, keeps its file.
+- Why: an export is cheap to run again, and the CSV of a finished import has no use.
+- An import that was waiting or running is stopped by the erasure itself (step 2), which finishes its job, so its file goes too.
+- An import queued after the erasure committed keeps its file, because it still needs it.
+
+How it fails:
+
+- It is best effort, like the wallet follow-up. The erasure never fails because of it.
+- A file that cannot be deleted keeps its key. It is reported in the System logs (`job_file_purge_incomplete`, or `job_file_purge_failed` when the purge itself broke). The retention run (step 3) picks it up.
+- A request that erased nobody new (a repeat, unknown ids) leaves the files alone.
+
+#### 2. The erasure's own transaction
+
+For the exports and imports that have not finished, `stopOpenAttendeeJobs` runs inside the erasure's own transaction. `scrubAttendeeTraces` calls it, so `eraseAttendees`, `removeAttendees` and every caller of them get it.
+
+Why it is needed:
+
+- Both kinds of job work from the list as it was before the erasure.
+- An export that is being built has read its rows and is making a file that no job names yet, so the purge in step 1 cannot see it.
+- An import creates people from a file that was uploaded before the erasure. Once the erasure has committed, the address of an erased person matches nobody, so the import would create the person again, with the same data.
+- A job that is still waiting is no safer than one that runs. The worker can claim it and read while the erasure's transaction is open, and a read does not see what an open transaction has changed.
+
+What it does:
+
+- The erasure closes all of them in its own transaction: status `failed`, the reason in `error`, and the search text of an export scrubbed like for any failed export.
+- The worker claims a job only while it is `pending`. An export records its file only while it is `running`. An import takes the row of its job as the first statement of the transaction in which it writes its people, and it writes nothing when the job is not `running` (`ImportStoppedError`).
+- Each of these is one conditional update or one locked read. A statement that has to wait for the row the erasure holds checks the row again once the erasure commits, and finds it closed.
+
+Lock order:
+
+- The erasure takes the rows of the open jobs before it locks an attendee (`lockOpenAttendeeJobs`, as the first statement of `eraseAttendees` and `removeAttendees`, after the queue lock).
+- So an import that is running is waited for (an erasure can wait as long as the import runs, within the statement limit of the database). Nothing is written by an import while an erasure of the event works. An import that would create somebody from an address the person had before cannot finish unseen.
+- Every transaction takes these locks in the same order (the queue, the job rows, then the attendees), so the waits cannot end in a cycle.
+
+A job that finished before:
+
+- What it wrote is already committed, before the erasure began.
+- An export has a key that the purge after the commit finds.
+- An import has its people and its result, which the erasure then sees. An address that an import created is another attendee's address, and it is left alone like any other. The result is blanked by `scrubImportJobResults`, called after this step.
+- The staged CSV of a stopped import is deleted by the same purge.
+
+The queue lock covers a job that is being created:
+
+- `lockAttendeeJobQueue` is taken exclusively as the first statement of `eraseAttendees` and `removeAttendees`. That is before any row is locked, so two erasures of one event run one after the other and cannot deadlock over rows they share, such as a resend delivery addressed to someone else's address.
+- It is taken shared by the requests that create an export or an import job, in the transaction that inserts the job (`createUnderAttendeeJobQueueLock`, which allows it to wait for an open erasure for as long as the database allows a statement to run).
+- A job that is being created is therefore either committed before the erasure looks (and stopped by it), or created after the erasure has committed.
+
+A job created after the erasure:
+
+- It is a new job. An export reads the list as it is then. An import adds back whoever its file lists, because nothing that identifies an erased person is kept.
+- That includes an import whose upload began before the erasure and whose job was queued after it, and `import-attendees` on the command line, which has no job.
+- The DSAR procedure says to remove the person from files that are still to be imported.
+
+The scope and the price:
+
+- The stop is for the whole event, whether or not the file of an import lists the person, because telling would mean reading every staged file inside the transaction. An import that was queued meanwhile for another reason is stopped too. An example is a removal with the reason `wrong_import` while the corrected file waits.
+- The price: an export or an import that had not finished when someone was erased or removed fails, and has to be started again (an import without that person, if its file lists them).
+
+Tests:
+
+- The integration tests hold an erasure open and check the waits: the claim, the recording of an export's file, the end of an import, and both requests that create a job (`attendee-erase-api.test.ts`, `admin-import.test.ts`).
+
+#### 3. The retention job
+
+It runs in the worker at boot and about every 24 hours, and as `admitto retention run` (`--dry-run` only counts). The function is `purgeJobFilesForRetention` ([`retention-job-files.ts`](../../apps/cli/src/lib/retention-job-files.ts)).
+
+What goes:
+
+- The file of a finished export, 7 days after it finished (`EXPORT_FILE_RETENTION_DAYS`).
+- The staged CSV of a finished import job, 7 days after it finished (`IMPORT_STAGED_FILE_RETENTION_DAYS`).
+- A job that has not finished is never touched.
+
+What it reports:
+
+- The worker logs `export_files`, `staged_import_files`, `orphaned_job_files` (step 4) and `failed`. A non-zero `failed` raises the line to a warning.
+- `retention run` writes the counts into its audit entry.
+
+#### 4. The sweep of unnamed files
+
+It runs right after the purge in step 3, by the same retention job and by `admitto retention run` (`--dry-run` only counts). The function is `sweepOrphanedJobFiles` ([`sweepOrphanedJobFiles.ts`](../../packages/storage/src/gc/sweepOrphanedJobFiles.ts)), called by `purgeJobFilesForRetention`.
+
+What goes: every file that meets both conditions.
+
+- It is in the job layout: `{org}/events/{event}/{uuid}` with `.csv`, `.xlsx` or `.pdf`, listed by `StorageAdapter.listJobFiles`. So a branding upload or any other file is never a candidate.
+- **No job row names it** (`AdminJob.storage_key`, of any status, type or age), and it is **older than a day** (`ORPHANED_JOB_FILE_GRACE_HOURS`).
+
+Why it is safe:
+
+- A file is named a moment after it is written (the worker's update, the enqueue's insert, each cut off by the database after 30 seconds). So an unnamed file that is a day old has no live writer.
+- It fails closed. The keys that jobs name are read before the listing, so a file written later is younger than the grace. The key is looked up again right before each delete, so a job that was given it meanwhile keeps its file.
+- A file deleted here that was about to be named after all ends as a job whose file is gone. A download answers that with `404 not_ready`, an import fails on it, and the purge counts it as deleted (a missing file is not an error).
+- It never touches a file that a job names, so the file of a job created after an erasure stays.
+- It writes no job row and takes no lock, so the erasure's lock order (the queue, the job rows, then the attendees) is unchanged.
+- The erasure does not run it, for the reason given under "Writing" above.
+
+Reporting:
+
+- One line a run. The worker logs `orphaned_job_files` in its retention line, and `retention run` writes `orphanedJobFiles` into its audit entry. There is never one line per file (the worker's relay to the System logs takes 120 a minute).
+- A file that cannot be deleted, or a sweep that breaks (the upload directory cannot be read), counts in `failed`, so the line becomes a warning. The other retention steps still run.
+
+The assumption:
+
+- The sweep assumes that the upload directory belongs to this database alone. Another instance with its own database on the same directory, or a restore of an older database next to newer files, would show it files that nobody names.
+
+#### 5. An event is deleted for good
+
+`deleteEvent` ([`event-deletion.ts`](../../apps/web/src/admin/event-deletion.ts), Superadmin only) deletes every file that the event's jobs left, whatever the job's type or status (`deleteEventJobFilesBestEffort`, then `deleteStoredFiles`).
+
+Why it needs care: jobs are not a deletion blocker, and they cascade away with the event. With them goes the only record of the keys, which the retention run reads.
+
+So the transaction does this, in order:
+
+1. It takes the queue lock exclusively. No job can be created until it ends, so none appears behind the read of the rows.
+2. It locks the rows of the event's jobs. An import holds its job row for the whole of its transaction and then needs the event row for the people it inserts. So the deletion takes the two in the same order and waits for a running import, whose people then make the event undeletable.
+3. It locks the event row. A job that is being created for the event holds a share of it through its foreign key. So the deletion waits for that job and deletes it with the rest, and a job that starts later finds the event gone and deletes its own file.
+4. It deletes the jobs with `RETURNING "storage_key"` (exactly the rows that went, as of the moment they went).
+5. It writes those keys into its audit entry (`jobFileKeys`: a key is organisation, event and a random name, no personal data).
+
+After the commit, the files are deleted.
+
+Failures:
+
+- It is best effort. A failure never undoes the deletion.
+- Every key that could not be deleted is logged, all of them with no cap, on stdout as well as in the System logs: `event_job_files_purge_incomplete`, or `event_job_files_purge_failed` when the cleanup itself broke.
+- No row is left to retry from. So the log line and the audit entry are the only records of a file that stays. A process killed between the commit and the deletes loses nothing, because the audit entry holds every key.
+- A refused deletion (409) leaves the files alone.
+- An export that is running when its event is deleted is the writer's case above.
+
+### Downloads and what is not covered
+
+A download that has read the job just before its file is deleted (an erasure, the retention run, an event deletion) answers `404 not_ready`, the same as a job whose file is already gone. `handleDownloadExportJob` maps the storage's `not_found` and nothing else, so any other storage error is still a server error.
+
+What this does not cover:
+
+- The time a file that nobody names stays (a day of grace, then the next retention run), which nothing shortens.
+- A file outside the job layout, which the sweep never touches on purpose. The managed-upload sweep (`admitto storage gc`) ignores `.csv`, `.xlsx` and `.pdf` for the same reason: they are not branding uploads.
 
 ## Passes still at the provider
 
@@ -416,16 +583,59 @@ Not covered: a pass whose request left no trace on the row at all (only a reques
 
 ## Rules for code
 
-- **New column or table on an attendee?** `packages/tickets/test/erasure-inventory.test.ts` fails until you decide what erasure does with it (cleared, kept, deleted). Add the behaviour to `eraseAttendees` and its test too.
-- **Never reuse an erased row.** `erased_at` is the marker; `status` is not (it drives capacity and issuing). Code that sends, issues, edits or checks in an attendee must refuse an erased one. Ticket issuing and the event-day operations (check-in, undo and revoke, item hand-outs, notes, the activity log, the door search and card) already do.
-- **Writing a row that belongs to an attendee?** Call `lockAttendeeRow` ([`attendee-lock.ts`](../../packages/tickets/src/attendee-lock.ts)) first in the same transaction. A check-in, note, item state, log entry, wallet pass or email delivery is inserted under the weakest row lock, so without it the insert can wait for a running erasure and land after it. A filter such as `attendee: { erased_at: null }` does not close that race. A write that updates the attendee row itself puts `erased_at: null` in its own `where` instead. A transaction that deletes an attendee and its children calls `lockAttendeesForUpdate` first, so it takes the attendee row before the children like everything else (the other order can deadlock). `lockAttendeeRow` answers null for an attendee that was removed, and `isAttendeeGone` is true for that and for an erased one: a request that has already sent the person's data somewhere (a wallet pass created at the provider) uses it to decide it must not keep what it made, where `?.erased` alone would read a removed attendee as still there.
-- **Only reading?** No lock. A plain read (the door search, the recent scans) is one statement, so it does not wait for an erasure that is still open: it sees the attendee as it was before that commit, or the placeholder after it. Both are fine, because what the operator was handed a moment before the commit cannot be taken back by any lock. Filter `erased_at: null` and leave it there. Take the row lock only when a read is followed by a write, as the card is (it inserts the pending item states).
-- **Storing a file of your own under an event's upload folder?** The sweep of unnamed files deletes any `.csv`, `.xlsx` or `.pdf` in `{org}/events/{event}/{uuid}` that no `AdminJob.storage_key` names, a day after it was written. A new feature that stores such a file must name it on a job row, or use another extension or folder. Nothing else guards this: the tests pass and the file is gone a day later (`isJobFileKey`, [`sweepOrphanedJobFiles.test.ts`](../../packages/storage/test/sweepOrphanedJobFiles.test.ts)).
-- **Creating a pass at the provider?** Write the id it will get on the attendee's pass row first (`reservePassId` in `handleWalletRedirect`, under the attendee's row lock) and only then call the provider. A row that holds the id and not the provider's is how an erasure and its follow-up know that a pass may exist which the request could not record; without it the pass stays at the provider with the person's name on it and nothing looks for it. `createPass` has one call site: keep it that way, or give the new one the same step. A provider's `createPass` must also stop sending after `CREATE_PASS_DEADLINE_MS`: the 10-minute window of the follow-up is only sound because of that. A pass that is made and then not kept (the template changed meanwhile) is deleted by the request that made it, with its own client, or, when that delete fails, recorded in `left_behind_pass_id`, which only a person clears.
+- **New column or table on an attendee?**
+  - `packages/tickets/test/erasure-inventory.test.ts` fails until you decide what erasure does with it (cleared, kept, deleted).
+  - Add the behaviour to `eraseAttendees` and its test too.
+- **Never reuse an erased row.**
+  - `erased_at` is the marker. `status` is not (it drives capacity and issuing).
+  - Code that sends, issues, edits or checks in an attendee must refuse an erased one.
+  - Ticket issuing and the event-day operations already do: check-in, undo and revoke, item hand-outs, notes, the activity log, the door search and card.
+- **Writing a row that belongs to an attendee?**
+  - Call `lockAttendeeRow` ([`attendee-lock.ts`](../../packages/tickets/src/attendee-lock.ts)) first, in the same transaction.
+  - Why: a check-in, note, item state, log entry, wallet pass or email delivery is inserted under the weakest row lock. Without the lock, the insert can wait for a running erasure and land after it.
+  - A filter such as `attendee: { erased_at: null }` does not close that race.
+  - A write that updates the attendee row itself puts `erased_at: null` in its own `where` instead.
+  - A transaction that deletes an attendee and its children calls `lockAttendeesForUpdate` first. So it takes the attendee row before the children, like everything else (the other order can deadlock).
+  - `lockAttendeeRow` answers null for an attendee that was removed. `isAttendeeGone` is true for that and for an erased one. A request that has already sent the person's data somewhere (a wallet pass created at the provider) uses it to decide that it must not keep what it made. `?.erased` alone would read a removed attendee as still there.
+- **Only reading?** No lock.
+  - A plain read (the door search, the recent scans) is one statement. So it does not wait for an erasure that is still open. It sees the attendee as it was before that commit, or the placeholder after it.
+  - Both are fine, because what the operator was handed a moment before the commit cannot be taken back by any lock.
+  - Filter `erased_at: null` and leave it there.
+  - Take the row lock only when a read is followed by a write, as the card is (it inserts the pending item states).
+- **Storing a file of your own under an event's upload folder?**
+  - The sweep of unnamed files deletes any `.csv`, `.xlsx` or `.pdf` in `{org}/events/{event}/{uuid}` that no `AdminJob.storage_key` names, a day after it was written.
+  - A new feature that stores such a file must name it on a job row, or use another extension or folder.
+  - Nothing else guards this: the tests pass and the file is gone a day later (`isJobFileKey`, [`sweepOrphanedJobFiles.test.ts`](../../packages/storage/test/sweepOrphanedJobFiles.test.ts)).
+- **Creating a pass at the provider?**
+  - Write the id it will get on the attendee's pass row first (`reservePassId` in `handleWalletRedirect`, under the attendee's row lock), and only then call the provider.
+  - A row that holds the id and not the provider's is how an erasure and its follow-up know that a pass may exist which the request could not record. Without it, the pass stays at the provider with the person's name on it and nothing looks for it.
+  - `createPass` has one call site. Keep it that way, or give the new one the same step.
+  - A provider's `createPass` must also stop sending after `CREATE_PASS_DEADLINE_MS`. The 10-minute window of the follow-up is only sound because of that.
+  - A pass that is made and then not kept (the template changed meanwhile) is deleted by the request that made it, with its own client. When that delete fails, it is recorded in `left_behind_pass_id`, which only a person clears.
 - **Never log or audit names or emails** of the people erased. Ids and counts only.
-- **The admin API marks and refuses.** `erased_at` is in the attendee list rows and the detail DTO (a list row also carries `last_mail_retryable`; the detail also carries `erasure`, who erased the person, read from the central audit log); the list hides erased attendees unless `include_erased=1` and returns `erased_count` (event-wide) for the "N hidden" note. Every single-attendee action answers `409 { error: "attendee_erased" }`, bulk actions skip erased attendees, and exports and the personal data export leave them out. **Remove from event** is the one action that keeps working on an erased attendee (not on an archived event). An erasure that commits after the route's plain read is told apart too: the domain functions that lock the attendee (revoking a check-in or an item, editing or deleting a note) mark the error they throw with `erased`, and the route answers `attendee_erased` (`attendeeErasedAnswer`) instead of the words of that error or a 404 for a note the erasure deleted. Counts that are acted on (the bounced count, the revoke counts, the installed-pass counts of the Danger Zone) and the activity feeds leave erased attendees out; the Overview tiles keep counting them, like Reports and capacity do, so a tile and its total stay consistent.
-- **The last check before something leaves.** The context a route loads and the rows an export reads come from plain queries, which do not wait for an erasure that is still open. So the last step before a wallet pass is changed at the provider (void, also in bulk and for the whole event, restore, push the content, delete, the bulk delete, and the void or restore that follows a status change or a bulk pass revoke), before a pass is read there for a status refresh (single, bulk and event-wide), and before an export file is built reads the attendee under their row lock, in a short transaction of its own (`attendeeIsLive`, `requireAttendeeStillLive`, `refreshWalletPassStatusUnlessErased`, `keepLiveRows`). An erasure that is still open is waited for: a wallet action then answers `attendee_erased` (a bulk action counts the attendee as skipped) and an export leaves the attendee out. The lock ends with that transaction, before the provider call or the build of the file, so an erasure that commits in the gap does not stop a call or a file that is already under way: the provider voids, restores, updates or deletes a pass that the erasure is about to delete anyway, and the file holds the person as they were when it started. What follows is detected, not undone: the write back onto the pass row takes the attendee's row lock again and leaves the row as the erasure kept it (`updateWalletPassUnlessRemoved` answers `attendee_erased` or `wallet_pass_removed`, not one `null`), and Delete does not touch the pass row an erasure keeps. A ticket link that an admin copies, and the preview of a sent message that puts the same link into the stored text, check the attendee before the link is put together and log the retrieval under the lock (`logTicketLinkRetrieved`, which uses that `writeActionLog` returns false for an erased attendee): an erasure that commits in between answers `attendee_erased` (the preview answers the empty message it gives once the erasure is done) and no link is handed out. The status refresh is the exception to that write back: it records registration counts, the first download and the lifecycle the provider reports, which are retained facts about the pass and not personal data, and the periodic sync and the webhook write the same columns without any attendee lock, so only its read is guarded.
-- **`@erased.invalid` is reserved.** Import, manual add and edit reject such an address, and a second CHECK refuses it on a live row: a live attendee holding `erased-<id>@erased.invalid` would make the erasure of `<id>` fail on the unique (event, email) index. The migration moves any address already in that namespace to `<local part>+<attendee id>@legacy.erased.invalid` before the constraint is added, so the upgrade cannot fail on old data.
+- **The admin API marks and refuses.**
+  - `erased_at` is in the attendee list rows and the detail DTO. A list row also carries `last_mail_retryable`. The detail also carries `erasure` (who erased the person, read from the central audit log).
+  - The list hides erased attendees unless `include_erased=1`, and it returns `erased_count` (event-wide) for the "N hidden" note.
+  - Every single-attendee action answers `409 { error: "attendee_erased" }`. Bulk actions skip erased attendees. Exports and the personal data export leave them out.
+  - **Remove from event** is the one action that keeps working on an erased attendee (not on an archived event).
+  - An erasure that commits after the route's plain read is told apart too. The domain functions that lock the attendee (revoking a check-in or an item, editing or deleting a note) mark the error they throw with `erased`. The route answers `attendee_erased` (`attendeeErasedAnswer`) instead of the words of that error, or a 404 for a note the erasure deleted.
+  - Counts that are acted on (the bounced count, the revoke counts, the installed-pass counts of the Danger Zone) and the activity feeds leave erased attendees out.
+  - The Overview tiles keep counting them, like Reports and capacity do, so a tile and its total stay consistent.
+- **The last check before something leaves.**
+  - The context a route loads and the rows an export reads come from plain queries, which do not wait for an erasure that is still open.
+  - So the last step before each of these reads the attendee under their row lock, in a short transaction of its own (`attendeeIsLive`, `requireAttendeeStillLive`, `refreshWalletPassStatusUnlessErased`, `keepLiveRows`):
+    - a wallet pass is changed at the provider: void (also in bulk and for the whole event), restore, push the content, delete, the bulk delete, and the void or restore that follows a status change or a bulk pass revoke
+    - a pass is read there for a status refresh (single, bulk and event-wide)
+    - an export file is built
+  - An erasure that is still open is waited for. A wallet action then answers `attendee_erased` (a bulk action counts the attendee as skipped), and an export leaves the attendee out.
+  - What it cannot do: the lock ends with that transaction, before the provider call or the build of the file. So an erasure that commits in the gap does not stop a call or a file that is already under way. The provider voids, restores, updates or deletes a pass that the erasure is about to delete anyway, and the file holds the person as they were when it started.
+  - What follows is detected, not undone. The write back onto the pass row takes the attendee's row lock again and leaves the row as the erasure kept it (`updateWalletPassUnlessRemoved` answers `attendee_erased` or `wallet_pass_removed`, not one `null`). Delete does not touch the pass row an erasure keeps.
+  - A ticket link that an admin copies, and the preview of a sent message that puts the same link into the stored text, check the attendee before the link is put together. They log the retrieval under the lock (`logTicketLinkRetrieved`, which uses that `writeActionLog` returns false for an erased attendee). An erasure that commits in between answers `attendee_erased` (the preview answers the empty message it gives once the erasure is done), and no link is handed out.
+  - The status refresh is the exception to that write back. It records registration counts, the first download and the lifecycle the provider reports. Those are retained facts about the pass and not personal data. The periodic sync and the webhook write the same columns without any attendee lock, so only its read is guarded.
+- **`@erased.invalid` is reserved.**
+  - Import, manual add and edit reject such an address. A second CHECK refuses it on a live row.
+  - Why: a live attendee holding `erased-<id>@erased.invalid` would make the erasure of `<id>` fail on the unique (event, email) index.
+  - The migration moves any address already in that namespace to `<local part>+<attendee id>@legacy.erased.invalid` before the constraint is added, so the upgrade cannot fail on old data.
 
 ## Not done by the function
 
