@@ -13,9 +13,13 @@ Both modes can coexist in a single file.
 
 ## CLI
 
-On a clean checkout, build workspace packages first (`npm run build` from the repo root, or an
-explicit sequence such as `npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth -w @admitto/storage`, then `npm run build -w @admitto/import`; `npm run pretest -w @admitto/import` runs the same dependency builds, in the same order).
-`npm run build -w @admitto/import` alone does **not** build its dependencies. Then:
+On a clean checkout, build the workspace packages first.
+
+- Run `npm run build` from the repo root. Or use an explicit sequence such as `npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth -w @admitto/storage`, then `npm run build -w @admitto/import`.
+- `npm run pretest -w @admitto/import` runs the same dependency builds, in the same order.
+- `npm run build -w @admitto/import` alone does **not** build its dependencies.
+
+Then:
 
 ```bash
 # Dry-run (default - no writes)
@@ -44,7 +48,11 @@ dependency `dist` trees are missing - run the build step above again.
 | `company` | No | |
 | `department` | No | |
 
-Headers are case-insensitive and trimmed. Existing attendees are matched by `external_uuid` / `qr_payload` first, then by email; a row whose identifiers point at different attendees is skipped as conflicting. A duplicate `email`, `external_uuid` or `qr_payload` within one file marks the later row invalid. Unknown columns are ignored with a warning. Event attribute (custom data) columns are recognised only when the caller passes `attributeFields` (the admin API does; the CLI does not, so they are ignored there).
+- Headers are case-insensitive and trimmed.
+- Existing attendees are matched by `external_uuid` / `qr_payload` first, then by email. A row whose identifiers point at different attendees is skipped as conflicting.
+- A duplicate `email`, `external_uuid` or `qr_payload` within one file marks the later row invalid.
+- Unknown columns are ignored with a warning.
+- Event attribute (custom data) columns are recognised only when the caller passes `attributeFields`. The admin API does. The CLI does not, so they are ignored there.
 
 ## Overwrite semantics
 
@@ -65,7 +73,8 @@ const summary = await commitImport(eventId, validRows, {
 });
 ```
 
-`parseAttendees(csv, { attributeFields?, ticketTypes? })` and `commitImport(eventId, rows, { overwrite?, dryRun?, ownedTransaction?, attributeFields?, ticketTypes?, timezone? }, db?)` take more options than the example shows. The package also exports what the admin API and the worker use: `executeImportCommit` / `dryRunImportCounts` (capacity-aware commit, throws `ImportCapacityExceededError`), `loadImportTicketTypes`, `drainImportJobs` (processes queued `import_commit` jobs whose CSV was staged through `@admitto/storage`) and `reclaimStaleImportJobs`.
+- `parseAttendees(csv, { attributeFields?, ticketTypes? })` and `commitImport(eventId, rows, { overwrite?, dryRun?, ownedTransaction?, attributeFields?, ticketTypes?, timezone? }, db?)` take more options than the example shows.
+- The package also exports what the admin API and the worker use: `executeImportCommit` / `dryRunImportCounts` (capacity-aware commit, throws `ImportCapacityExceededError`), `loadImportTicketTypes`, `drainImportJobs` (processes queued `import_commit` jobs whose CSV was staged through `@admitto/storage`) and `reclaimStaleImportJobs`.
 
 ## Security
 

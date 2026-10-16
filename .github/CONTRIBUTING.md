@@ -91,32 +91,44 @@ headings as they are:
 - **Documentation impact**: check exactly one box; CI verifies this against the actual diff.
 - **Checklist**: secrets, personal data, tests, migrations.
 
+### Who reviews and merges
+
 Admitto is currently a single-maintainer project (see
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)): @solarssk reviews and merges every PR, including their
-own, once CI is green - there's no one else to hand it to yet. "Please don't merge your own PR"
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)). @solarssk reviews and merges every PR, including their
+own, once CI is green. There's no one else to hand it to yet. "Please don't merge your own PR"
 applies once a second maintainer has write access to the repository.
 
-Branches aren't auto-deleted on merge (`delete_branch_on_merge` is off): this repo uses native
+### Branches
+
+Branches aren't auto-deleted on merge (`delete_branch_on_merge` is off). This repo uses native
 GitHub stacked PRs, where a later branch's base is an earlier, still-open PR's branch, so branches
 routinely need to outlive their own PR's merge.
+
+### Automated AI review
 
 For Claude review credentials, provider-unavailable outcomes and recovery, see
 [Automated AI review](../docs/dev/ai-review.md). A provider-unavailable run does not approve
 the PR and does not replace the independent approval required by branch protection.
 
-**Required conversation resolution (2026-09-04):** `main` requires every review thread to be
-resolved before merge. CodeRabbit is disabled by default (`.coderabbit.yaml`) and PR-Agent
-(`.github/workflows/pr-agent.yml`) only runs on an explicit `/review`, `/describe`, `/improve`, or
-`/ask` comment - but Codex (the `chatgpt-codex-connector` GitHub App, a separate integration from
-both of those, configured outside this repo) reviews every PR automatically and posts real,
-resolvable inline review threads whenever it has findings, with no mention needed - confirmed on
-PRs #1408 and #1410, neither of which had anyone type `@codex review`. **Replying to a thread does
-not resolve it** - found by testing this directly:
-PR #1239's two Codex review threads were replied to and their fixes merged, but stayed
-`isResolved: false` because a reply is not the same GitHub action as clicking **Resolve
-conversation**. If that button is ever unavailable or misbehaves (the original reason this repo
-was cautious about enabling this setting at all), resolve via GraphQL instead of the REST API -
-GitHub's REST API has no resolve-thread endpoint:
+### Required conversation resolution (2026-09-04)
+
+`main` requires every review thread to be resolved before merge.
+
+- **Who posts review threads**
+  - CodeRabbit is disabled by default (`.coderabbit.yaml`).
+  - PR-Agent (`.github/workflows/pr-agent.yml`) only runs on an explicit `/review`, `/describe`,
+    `/improve` or `/ask` comment.
+  - Codex (the `chatgpt-codex-connector` GitHub App, a separate integration from both of those,
+    configured outside this repo) reviews every PR automatically. It posts real, resolvable inline
+    review threads whenever it has findings, with no mention needed. This was confirmed on PRs
+    #1408 and #1410, neither of which had anyone type `@codex review`.
+- **Replying to a thread does not resolve it.** This was found by testing it directly: on PR
+  #1239, two Codex review threads were replied to and their fixes merged, but they stayed
+  `isResolved: false`, because a reply is not the same GitHub action as clicking **Resolve
+  conversation**.
+- **If that button is unavailable or misbehaves**, resolve the thread via GraphQL instead of the
+  REST API, because GitHub's REST API has no resolve-thread endpoint. (That possibility is the
+  original reason this repo was cautious about enabling this setting at all.)
 
 ```bash
 # Find thread IDs (PRRT_...) for a PR:

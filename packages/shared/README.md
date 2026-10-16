@@ -8,7 +8,7 @@ Small, framework-free helpers shared across workspace packages (no DB, no crypto
 
 | Entry | What it provides |
 |-------|------------------|
-| `@admitto/shared` (root) | `splitCsvLine` (one CSV line with quoted fields and doubled quotes; single line only, no multi-line quoted fields; used by `@admitto/import` and `@admitto/mailer`), `redactEmail`, contact email / phone limits and validators, `parseUserAgent*`, `NO_COMPRESSION_HEADERS`, supported locales and time formats, event-end helpers (`eventEndsAtUtc`, `eventEndsAtLocal`, `isWalletAddClosed`), `zonedWallClockToUtcIso`, `MAIL_PROVIDER_LABELS`, health status types, and the report / delivery DTO types shared by the server and the SPA |
+| `@admitto/shared` (root) | The browser-safe helpers and types listed below the table |
 | `@admitto/shared/ssrf-guard` | Node-only SSRF guard for outbound URLs (`resolveSafeHostname`, `isBlockedPrivateOrMetadataHost`, `SafeHostnameError`, ...) |
 | `@admitto/shared/pinned-dispatcher` | `createPinnedDispatcher(hostname, record)`: an `undici` agent pinned to an already validated address |
 | `@admitto/shared/ip-location` | `resolveIpLocation(ip)`: offline IP to country / city lookup (`ip-location-api` dataset) |
@@ -17,6 +17,15 @@ Small, framework-free helpers shared across workspace packages (no DB, no crypto
 | `@admitto/shared/sse-events` | Server-sent event types and per-event channel names (`sseChannelName`, `SseEvent`) |
 | `@admitto/shared/timezones` | Time zone definitions and helpers (`getTimeZones`, `normalizeTimeZone`, `getTimeZoneAbbreviationForDate`) |
 | `@admitto/shared/region-date-format` | Region-aware date and event-hours formatting (`formatDate`, `formatEventHour`, `formatEventHoursRangeText`) used by emails, tickets and wallet passes |
+
+**What the root entry provides**
+
+- `splitCsvLine`: one CSV line with quoted fields and doubled quotes. Single line only, no multi-line quoted fields. Used by `@admitto/import` and `@admitto/mailer`.
+- `redactEmail`, contact email / phone limits and validators, `parseUserAgent*`, `NO_COMPRESSION_HEADERS`
+- supported locales and time formats
+- event-end helpers (`eventEndsAtUtc`, `eventEndsAtLocal`, `isWalletAddClosed`) and `zonedWallClockToUtcIso`
+- `MAIL_PROVIDER_LABELS` and health status types
+- the report / delivery DTO types shared by the server and the SPA
 
 ## Import
 

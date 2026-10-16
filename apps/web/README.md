@@ -7,7 +7,9 @@ Production runs from the Docker image built at the monorepo root (`Dockerfile` â
 ## Prerequisites
 
 - Postgres (+ optional Redis) via [`infra/docker-compose.yml`](../../infra/docker-compose.yml)
-- `apps/web/.env` (copy from [`.env.example`](.env.example)) with `DATABASE_URL`, `ENCRYPTION_KEY`, `BASE_URL` and the mail provider vars. `npm run dev` passes `--env-file=.env`, so it requires this file (Node exits with "not found" without it) and reads no other; `packages/db/.env` only serves the db scripts (`db:migrate`, `db:seed`)
+- `apps/web/.env` (copy from [`.env.example`](.env.example)) with `DATABASE_URL`, `ENCRYPTION_KEY`, `BASE_URL` and the mail provider vars.
+  - `npm run dev` passes `--env-file=.env`, so it requires this file (Node exits with "not found" without it) and reads no other.
+  - `packages/db/.env` only serves the db scripts (`db:migrate`, `db:seed`).
 
 ## Dev
 

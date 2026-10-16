@@ -24,18 +24,29 @@ Filters show recorded facts; they do not guarantee that a person read the email.
 
 ## Investigating one delivery
 
-Use a row's **…** menu in the delivery log to look deeper at a single delivery without leaving the page:
+Use a row's **…** menu in the delivery log to look deeper at a single delivery without leaving the page.
 
-- **View sent message** shows the actual subject and body generated for that attendee, including the real ticket link and QR code the recipient received.
-- **View delivery details** shows the mail provider, message id, and attempt count. A Failed, Bounced, or Rejected delivery gets a red notice with the SMTP or transport error code and a plain-English explanation; an Accepted, Sent, or Delivered one gets a matching green confirmation instead. Sibling sends and resends for the same attendee stay on Delivery history (attendee page) and the Communication delivery log, not inside this popup.
-- Both dialogs open at once with the recipient's name, and the details or the message follow in a moment; if they cannot be read, the dialog says so with a **Retry**.
-- **Resend** and **Dismiss bounce** appear only on a Bounced row, and both grey out on that row once used, until you reload the page. On an archived event they are off from the start, like every action that changes or sends something. The row itself stays Bounced as a historical record, so check the attendee's newer deliveries before using **Resend** again.
-- **Resend** sends that same template again after you have corrected the cause.
-- **Dismiss bounce** clears the row from the Communication header's bounce count without sending anything, for cases already resolved another way (for example the attendee confirmed the original message).
+| Action | What it does |
+|--------|--------------|
+| **View sent message** | Shows the actual subject and body generated for that attendee, including the real ticket link and QR code the recipient received |
+| **View delivery details** | Shows the mail provider, message id and attempt count. A Failed, Bounced or Rejected delivery gets a red notice with the SMTP or transport error code and a plain-English explanation. An Accepted, Sent or Delivered one gets a matching green confirmation instead |
+| **Resend** | Sends that same template again after you have corrected the cause. Appears only on a Bounced row |
+| **Dismiss bounce** | Clears the row from the Communication header's bounce count without sending anything. Use it for cases already resolved another way (for example, the attendee confirmed the original message). Appears only on a Bounced row |
+
+- Sibling sends and resends for the same attendee stay on Delivery history (attendee page) and the Communication delivery log, not inside the details popup.
+- Both dialogs open at once with the recipient's name, and the details or the message follow in a moment. If they cannot be read, the dialog says so with a **Retry**.
+- **Resend** and **Dismiss bounce** both grey out on that row once used, until you reload the page. On an archived event they are off from the start, like every action that changes or sends something.
+- The row itself stays Bounced as a historical record, so check the attendee's newer deliveries before using **Resend** again.
 
 The Communication page header shows a running count of currently bounced attendees. It drops automatically once every bounced attendee has a newer non-bounced delivery, a dismissed bounce, or both.
 
-**Search** (recipient name or email) and the **Template** filter narrow the log alongside Status and Purpose; **Export log** downloads the current filtered view as CSV. The log refreshes itself every couple of seconds while **Live** is on (select it to switch to **Paused**). If the log cannot be read, the tab says so with a **Retry**, and while it is Live it also comes back by itself once the server answers again. When it is the next page that cannot be read, the page buttons stay under the message, so **Previous** takes you back.
+**The delivery log**
+
+- **Search** (recipient name or email) and the **Template** filter narrow the log alongside Status and Purpose.
+- **Export log** downloads the current filtered view as CSV.
+- The log refreshes itself every couple of seconds while **Live** is on. Select it to switch to **Paused**.
+- If the log cannot be read, the tab says so with a **Retry**. While it is Live, it also comes back by itself once the server answers again.
+- When it is the next page that cannot be read, the page buttons stay under the message, so **Previous** takes you back.
 
 ## Related pages
 
