@@ -1,5 +1,6 @@
 import { ApiError } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { goToLogin } from "../auth/login-navigation.js";
 import type { ToastVariant } from "@admitto/ui";
 
 /** Shared catch-block logic for an export button's failed fetch: an abort is a silent no-op (a
@@ -18,7 +19,7 @@ export function handleExportRequestError(
     reportApiError(err.status);
     if (err.status === 401) {
       const next = encodeURIComponent(window.location.pathname);
-      window.location.assign(`/login?next=${next}`);
+      goToLogin(`/login?next=${next}`);
       return;
     }
     addToast(operatorApiErrorMessage(err, fallback), "error");

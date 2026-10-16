@@ -499,6 +499,10 @@ html:not(.icons-ready) .ti {
   color: var(--status-error);
 }
 
+.user-menu__item[aria-busy="true"] {
+  cursor: progress;
+}
+
 .user-menu__item-icon {
   display: inline-grid;
   place-items: center;
@@ -658,6 +662,37 @@ html:not(.icons-ready) .ti {
 
   .sys-status__label--full {
     display: block;
+  }
+}
+
+/* The icon the phone shows in place of the dot (the phone block below). */
+.sys-status__cue {
+  display: none;
+}
+
+/* Phone (up to 480px). The trigger is an icon and the chevron. The icon is the one of the panel's row for that verdict (a
+   check, a warning triangle, a cross, a spinner), so the states differ by shape and not only by colour, and it is 16px wide
+   for every state, so the bell and the account button stay where they are whatever the verdict. It is drawn as an inline
+   image, not as a glyph of the icon font: every glyph stays invisible until that font (about 460 kB) has loaded, and with the
+   word clipped the trigger would be blank for as long as a slow connection takes. With its word the trigger was 70px (OK) to
+   120px (Checking…) wide, and a Superadmin's or an Administrator's top bar then ran past a 390px screen (shell.css). The word
+   is clipped away the way this app hides text for screen readers, not removed, so it stays the button's name. */
+@media (max-width: 480px) {
+  .sys-status__dot {
+    display: none;
+  }
+
+  .sys-status__cue {
+    display: inline-flex;
+  }
+
+  .sys-status__label--short {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
