@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { LOGIN_NEXT, SESSION_STAGE } from "@admitto/auth";
+import { hashToken } from "@admitto/tickets";
 import { InMemoryRateLimitStore } from "../src/rate-limit/in-memory.js";
 import {
   clearEnrollmentBackupCacheForTests,
@@ -33,6 +34,7 @@ vi.mock("@admitto/auth", async (importOriginal) => {
     regenerateBackupRecoveryCodes: vi.fn(),
     markBackupCodesAcknowledged: vi.fn(async () => {}),
     resolveSetupComplete: vi.fn(async () => true),
+    resolveOidcEndSessionRedirect: vi.fn(async () => null),
   };
 });
 
@@ -77,6 +79,7 @@ import {
   promoteSessionToBackupCodesStep,
   promoteSessionToFull,
   regenerateBackupRecoveryCodes,
+  resolveOidcEndSessionRedirect,
   resolveSetupComplete,
   revokeTrustedDeviceByToken,
   updateSessionDeviceLabel,
@@ -117,6 +120,7 @@ const mockSetupComplete = vi.mocked(resolveSetupComplete);
 const mockEmailLimit = vi.mocked(checkLoginEmailRateLimit);
 const mockMfaLimit = vi.mocked(checkMfaVerifyRateLimit);
 const mockStashEnsure = vi.mocked(ensureEnrollmentBackupCodesStashed);
+const mockEndSession = vi.mocked(resolveOidcEndSessionRedirect);
 
 type Vars = {
   Variables: {
@@ -168,6 +172,7 @@ describe("auth API routes (routes.ts)", () => {
     mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     mockUpdateLabel.mockResolvedValue(true);
     mockRegen.mockResolvedValue({ codes: ["A", "B"] } as never);
+    mockEndSession.mockResolvedValue(null);
   });
 
   describe("cookie helpers", () => {
@@ -369,16 +374,41 @@ describe("auth API routes (routes.ts)", () => {
   });
 
   describe("handleLogout", () => {
+    const BASE_URL = "https://admitto.example.com";
+    const END_SESSION_URL =
+      "https://idp.example.com/end-session?client_id=admitto&post_logout_redirect_uri=https%3A%2F%2Fadmitto.example.com%2Flogin";
+    const SSO_SESSION = { id: "s1", auth_method: "oidc", oidc_provider_id: "idp-1" };
+    const SESSION_COOKIE_HEADERS = { Cookie: "admitto_session=tok" };
+
+    function logoutApp(baseUrl: string | null = BASE_URL, db: PrismaClient = makeDb()): Hono {
+      const app = new Hono();
+      app.post("/api/auth/logout", (c) => handleLogout(c, db, baseUrl));
+      return app;
+    }
+
+    /** A database whose session lookup (by token hash) answers with `findUnique`: what Sign out reads when the
+     * cookie's session is no longer valid. */
+    function dbWithSessionLookup(findUnique: ReturnType<typeof vi.fn>): PrismaClient {
+      return { ...makeDb(), session: { findUnique } } as unknown as PrismaClient;
+    }
+
+    function postLogout(app: Hono, headers: Record<string, string> = SESSION_COOKIE_HEADERS): Promise<Response> {
+      return Promise.resolve(app.request("/api/auth/logout", { method: "POST", headers }));
+    }
+
+    function clearsSessionCookie(res: Response): boolean {
+      return (res.headers.getSetCookie?.() ?? []).some(
+        (line) => line.startsWith("admitto_session=;") && /max-age=0/i.test(line),
+      );
+    }
+
     it("revokes the session but leaves the trusted-device cookie/token untouched", async () => {
       mockValidatePartial.mockResolvedValue({
         userId: "u1",
         sessionId: "s1",
       } as never);
-      const app = new Hono();
-      app.post("/api/auth/logout", (c) => handleLogout(c, makeDb()));
-      const res = await app.request("/api/auth/logout", {
-        method: "POST",
-        headers: { Cookie: "admitto_session=tok; admitto_trusted_device=td" },
+      const res = await postLogout(logoutApp(), {
+        Cookie: "admitto_session=tok; admitto_trusted_device=td",
       });
       expect(res.status).toBe(200);
       expect(mockRevokeTrusted).not.toHaveBeenCalled();
@@ -386,6 +416,176 @@ describe("auth API routes (routes.ts)", () => {
       expect(
         res.headers.getSetCookie?.().some((c) => c.includes("admitto_trusted_device")),
       ).toBe(false);
+    });
+
+    it("answers with the identity provider's end-session URL for an SSO session, looked up before the session is revoked", async () => {
+      mockValidatePartial.mockResolvedValue({
+        userId: "u1",
+        sessionId: "s1",
+        stage: "full",
+        session: SSO_SESSION,
+      } as never);
+      mockEndSession.mockResolvedValue(END_SESSION_URL);
+
+      const res = await postLogout(logoutApp());
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: END_SESSION_URL });
+      expect(mockEndSession).toHaveBeenCalledWith(expect.anything(), SSO_SESSION, BASE_URL);
+      expect(mockLogout).toHaveBeenCalled();
+      expect(mockEndSession.mock.invocationCallOrder[0]).toBeLessThan(
+        mockLogout.mock.invocationCallOrder[0] ?? 0,
+      );
+      expect(clearsSessionCookie(res)).toBe(true);
+    });
+
+    it("answers with no end-session URL for a session that has none (password sign-in, or a provider without a logout address)", async () => {
+      mockValidatePartial.mockResolvedValue({
+        userId: "u1",
+        sessionId: "s1",
+        stage: "full",
+        session: { id: "s1", auth_method: "local", oidc_provider_id: null },
+      } as never);
+
+      const res = await postLogout(logoutApp());
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+      expect(mockLogout).toHaveBeenCalled();
+      expect(clearsSessionCookie(res)).toBe(true);
+    });
+
+    it("still signs out when looking up the end-session URL fails (a transient provider lookup error)", async () => {
+      mockValidatePartial.mockResolvedValue({
+        userId: "u1",
+        sessionId: "s1",
+        stage: "full",
+        session: SSO_SESSION,
+      } as never);
+      mockEndSession.mockRejectedValue(Object.assign(new Error("lookup failed for secret-sentinel-1"), { code: "P1001" }));
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await postLogout(logoutApp());
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+        expect(mockLogout).toHaveBeenCalled();
+        expect(clearsSessionCookie(res)).toBe(true);
+        // Name and code only: a driver or provider error message can carry query values or endpoint details.
+        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", {
+          error_name: "Error",
+          error_code: "P1001",
+        });
+        expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-sentinel-1");
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    it("logs a failure that is not an Error as unknown, with nothing of its value", async () => {
+      mockValidatePartial.mockResolvedValue({
+        userId: "u1",
+        sessionId: "s1",
+        stage: "full",
+        session: SSO_SESSION,
+      } as never);
+      mockEndSession.mockRejectedValue("connection reset secret-sentinel-2");
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await postLogout(logoutApp());
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", { error_name: "unknown" });
+        expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-sentinel-2");
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    it("signs out without looking for an end-session URL when no base URL is known yet (Instance URL not set)", async () => {
+      mockValidatePartial.mockResolvedValue({
+        userId: "u1",
+        sessionId: "s1",
+        stage: "full",
+        session: SSO_SESSION,
+      } as never);
+
+      const res = await postLogout(logoutApp(null));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+      expect(mockEndSession).not.toHaveBeenCalled();
+      expect(mockLogout).toHaveBeenCalled();
+    });
+
+    it("signs out cleanly when the request carries no session cookie", async () => {
+      const findUnique = vi.fn();
+
+      const res = await postLogout(logoutApp(BASE_URL, dbWithSessionLookup(findUnique)), {});
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+      expect(mockValidatePartial).not.toHaveBeenCalled();
+      expect(findUnique).not.toHaveBeenCalled();
+      expect(mockEndSession).not.toHaveBeenCalled();
+      expect(mockLogout).toHaveBeenCalledWith(expect.anything(), null, expect.anything());
+    });
+
+    it("still finds the provider of a session that is no longer valid (a repeated Sign out, or one pressed just after the session ran out)", async () => {
+      mockValidatePartial.mockResolvedValue(null);
+      const findUnique = vi.fn(async () => ({ auth_method: "oidc", oidc_provider_id: "idp-1" }));
+      mockEndSession.mockResolvedValue(END_SESSION_URL);
+
+      const res = await postLogout(logoutApp(BASE_URL, dbWithSessionLookup(findUnique)));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: END_SESSION_URL });
+      expect(findUnique).toHaveBeenCalledWith({
+        where: { token_hash: hashToken("tok") },
+        select: { auth_method: true, oidc_provider_id: true },
+      });
+      expect(mockEndSession).toHaveBeenCalledWith(
+        expect.anything(),
+        { auth_method: "oidc", oidc_provider_id: "idp-1" },
+        BASE_URL,
+      );
+      expect(mockLogout).toHaveBeenCalledWith(expect.anything(), null, expect.anything());
+      expect(clearsSessionCookie(res)).toBe(true);
+    });
+
+    it("answers with no end-session URL for a cookie that names no session", async () => {
+      mockValidatePartial.mockResolvedValue(null);
+      const findUnique = vi.fn(async () => null);
+
+      const res = await postLogout(logoutApp(BASE_URL, dbWithSessionLookup(findUnique)));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+      expect(findUnique).toHaveBeenCalledTimes(1);
+      expect(mockEndSession).not.toHaveBeenCalled();
+      expect(mockLogout).toHaveBeenCalled();
+    });
+
+    it("still signs out when reading the session of an invalid cookie fails", async () => {
+      mockValidatePartial.mockResolvedValue(null);
+      const findUnique = vi.fn(async () => {
+        throw new Error(`Invalid findUnique() invocation: where: { token_hash: "${hashToken("tok")}" }`);
+      });
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await postLogout(logoutApp(BASE_URL, dbWithSessionLookup(findUnique)));
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ ok: true, end_session_url: null });
+        expect(mockEndSession).not.toHaveBeenCalled();
+        expect(mockLogout).toHaveBeenCalled();
+        expect(logged).toHaveBeenCalledWith("resolve OIDC end-session redirect failed:", { error_name: "Error" });
+        // The token hash inside the driver's message never reaches the log.
+        expect(JSON.stringify(logged.mock.calls)).not.toContain(hashToken("tok"));
+      } finally {
+        logged.mockRestore();
+      }
     });
   });
 

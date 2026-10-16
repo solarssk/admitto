@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { ToastProvider } from "@admitto/ui";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
@@ -528,10 +529,12 @@ describe("SystemStatus", () => {
     };
 
     render(
-      <MemoryRouter>
-        <SystemStatus assignments={SUPERADMIN} mailerStatus={{ configured: true, provider: "smtp" }} />
-        <UserMenu user={user} assignments={SUPERADMIN} />
-      </MemoryRouter>,
+      <ToastProvider>
+        <MemoryRouter>
+          <SystemStatus assignments={SUPERADMIN} mailerStatus={{ configured: true, provider: "smtp" }} />
+          <UserMenu user={user} assignments={SUPERADMIN} />
+        </MemoryRouter>
+      </ToastProvider>,
     );
 
     openMenu();

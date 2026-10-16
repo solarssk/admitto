@@ -499,6 +499,10 @@ html:not(.icons-ready) .ti {
   color: var(--status-error);
 }
 
+.user-menu__item[aria-busy="true"] {
+  cursor: progress;
+}
+
 .user-menu__item-icon {
   display: inline-grid;
   place-items: center;
