@@ -65,7 +65,10 @@ beforeAll(async () => {
   });
 });
 
-beforeEach(() => rateLimitStore.reset());
+beforeEach(() => {
+  rateLimitStore.reset();
+  resetSystemLogBufferForTest();
+});
 
 afterAll(async () => {
   await prisma.oidcAuthState.deleteMany({ where: { provider_id: PROVIDER_ID } });
@@ -76,6 +79,12 @@ afterAll(async () => {
   await prisma.$disconnect();
   await stopMockOidcIdp(mockIdp);
 });
+
+/** A failed step leaves a security log entry whose `reason` tells it apart from the other failures. */
+function expectFailureLogged(message: string, reason: string): void {
+  const entry = querySystemLogs({ source: "security" }).find((candidate) => candidate.message === message);
+  expect(entry).toMatchObject({ level: "warn", fields: { errorKind: "non_error", reason } });
+}
 
 function extractSessionCookie(res: Response): string | undefined {
   const lines =
@@ -298,6 +307,7 @@ describe("oidc routes", () => {
 
   it("callback requires both an authorization code and a state", async () => {
     resetSystemLogBufferForTest();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/callback?code=x`, {
       redirect: "manual",
     });
@@ -307,9 +317,11 @@ describe("oidc routes", () => {
     expect(entry).toMatchObject({
       level: "warn",
       message: "oidc_callback_failed",
-      fields: { errorKind: "non_error" },
+      fields: { errorKind: "non_error", reason: "missing code or state" },
     });
     expect(JSON.stringify(entry)).not.toContain("code=x");
+    expect(errorSpy).toHaveBeenCalledWith("OIDC callback:", "missing code or state");
+    errorSpy.mockRestore();
   });
 
   it("callback rejects a mismatched OIDC flow cookie", async () => {
@@ -322,6 +334,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "oidc flow cookie mismatch");
   });
 
   it("callback rejects a state that was not created or was replayed", async () => {
@@ -335,6 +348,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "invalid or replayed state");
   });
 
   it("callback rejects a missing or disabled provider after the flow cookie is validated", async () => {
@@ -348,6 +362,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "provider missing or disabled");
   });
 
   it("callback rejects link flow when the step-up time is missing", async () => {
@@ -379,6 +394,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "link flow missing step-up");
 
     await prisma.oidcAuthState.deleteMany({ where: { state } });
     await prisma.user.delete({ where: { id: linkUser.id } });
@@ -421,6 +437,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "link step-up expired");
 
     await prisma.oidcAuthState.deleteMany({ where: { state } });
     await prisma.session.deleteMany({ where: { user_id: linkUser.id } });
@@ -456,6 +473,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "link flow missing session");
 
     await prisma.oidcAuthState.deleteMany({ where: { state } });
     await prisma.user.delete({ where: { id: linkUser.id } });
@@ -495,6 +513,7 @@ describe("oidc routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    expectFailureLogged("oidc_callback_failed", "link flow session mismatch");
 
     await prisma.oidcAuthState.deleteMany({ where: { state } });
     await prisma.session.deleteMany({ where: { user_id: otherUser.id } });
@@ -526,6 +545,8 @@ describe("oidc routes", () => {
       message: "oidc_token_validation_failed",
       fields: { errorKind: "error" },
     });
+    // An Error's message is only written to the console, never to the system log.
+    expect(entry?.fields).not.toHaveProperty("reason");
     expect(JSON.stringify(entry)).not.toContain("unissued-code");
     errorSpy.mockRestore();
   });
@@ -538,6 +559,7 @@ describe("oidc routes", () => {
       },
     });
 
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const res = await runOidcCallback();
       expect(res.status).toBe(302);
@@ -545,7 +567,13 @@ describe("oidc routes", () => {
       expect(
         await prisma.externalIdentity.count({ where: { provider_id: PROVIDER_ID, user_id: existing.id } }),
       ).toBe(0);
+      // The log names the conflict by its code and never carries the address that collided.
+      expectFailureLogged("oidc_identity_link_failed", "email_already_exists");
+      expect(errorSpy).toHaveBeenCalledWith("OIDC identity link:", "email_already_exists");
+      expect(JSON.stringify(querySystemLogs({ source: "security" }))).not.toContain("oidc-flow@example.com");
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("oidc-flow@example.com");
     } finally {
+      errorSpy.mockRestore();
       await prisma.session.deleteMany({ where: { user_id: existing.id } });
       await prisma.user.delete({ where: { id: existing.id } });
     }

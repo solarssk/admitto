@@ -179,12 +179,27 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
   hostname, also confirm that Docker DNS resolves it.
 - **Sign-in works but the role is wrong:** check the groups claim and every mapping.
 - **Sign-in can fail right after your identity provider changed its signing key:** the app container log shows `no applicable key found in the JSON Web Key Set`. Admitto fetches the provider's keys again after a short cooldown, so in a test sign-in worked again after about 35 seconds. No restart is needed.
+- **Sign-in with SSO returns to the Admitto sign-in page with an error:** open System logs in [Logs and Audit](Logs-and-Audit), set the Source filter to Security and read the newest `oidc_..._failed` entry. Its `reason` says what refused the sign-in; the table under this list explains each one. An entry without a `reason` was caused by an error, for example a refused ID token (see the next item), and the server log line that starts with the same step, such as `OIDC token validation:`, carries its message.
+- **Sign-in is refused after the provider signed the person in, and the server log shows `OIDC token validation:` followed by a claim name:** the ID token must carry `iss`, `aud`, `sub`, `iat` and `exp` and repeat the nonce Admitto sent. A token issued for several audiences must also carry `azp`, and any `azp` must be Admitto's client ID. A provider that leaves one of these out is refused.
 - **Sign-in redirects to an error at the identity provider ("redirect URI mismatch" or similar):** the callback registered at the provider must exactly match the **Redirect URI** shown in the provider editor (Instance URL + `/api/auth/oidc/<provider-id>/callback`). Check for a trailing slash, `http` vs `https`, or the wrong provider id. If Redirect URI is missing in the editor, set Instance URL under Organisation settings → General first. On the Add provider form, the URI appears only after the first save (the pattern is shown as a hint before then).
 - **Issuer rejected as private / link-local:** production blocks private destinations unless the exact hostname or IP literal is listed in `SSO_PRIVATE_DESTINATION_ALLOWLIST`. This is separate from the mail allowlist.
 - **Cloudflare test fails:** check the team URL and audience without copying tokens into support messages.
 - **Cloudflare sign-in shows a generic access-denied page** (for example "You signed in through Cloudflare Access, but this account has no admin access."), **or lands a staff member on Admitto's own sign-in screen instead of straight into the panel:** see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)'s Common problems list, which maps each specific denial reason from System logs to its cause.
 - **The Identity tab or an editor shows grey rows, or says "Taking longer than usual":** the providers, the Cloudflare Access settings or the provider being edited are being read from the server. Wait a moment and check your connection. After 30 seconds it stops waiting and shows an error with a **Retry** button; the button stays on screen, busy, until the answer is in. In the group mapping, the Event and Organization pickers are read when a mapping needs them; if either could not be loaded, a line under the mappings says so with its own **Retry** (one line for events and one for organizations), and the saved scope shows as "Event" or "Organization" until the names are known.
 - **The change risks lockout:** stop and use the separate Superadmin session to restore the last known working configuration.
+
+The `reason` of a refused SSO sign-in in System logs (Source: Security):
+
+| `reason` | What it means | What to do |
+|---|---|---|
+| `missing code or state` | The provider sent the person back without a sign-in code, for example after they cancelled there. | Start again from the Admitto sign-in page. |
+| `oidc flow cookie mismatch` | The sign-in was finished in another browser than the one that started it, or the browser blocked the cookie. | Finish the sign-in in the browser that started it and allow cookies for Admitto. |
+| `invalid or replayed state` | The sign-in link was already used, took too long or was repeated. | Start again from the Admitto sign-in page and do not reload the page the provider returned to. |
+| `provider missing or disabled` | The provider was disabled or deleted while the sign-in was under way. | Check that the provider is enabled on the Identity tab. |
+| `email_already_exists` | A local account already uses the e-mail address the provider sent, and Admitto does not link it automatically. | Sign in with that local account and connect the provider from [My Account](My-Account). |
+| `subject_already_linked` | That provider account is already linked to another Admitto account. | Unlink it from the other account in [My Account](My-Account), or link a different provider account. |
+| `user_inactive` | The Admitto account linked to the provider account is deactivated. | Reactivate it in [Users and Roles Administration](Users-and-Roles-Administration). |
+| `link ...` (several) | The account-linking page was left open too long, or the Admitto session changed while linking. | Start linking again from [My Account](My-Account). |
 
 ## Related pages
 

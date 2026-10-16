@@ -437,6 +437,9 @@ Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC
   the original hostname (correct Host/SNI). All validated A/AAAA records are cached; on
   network-unreachable failures, the client retries the next record. Redirects are handled manually
   with SSRF re-check on every hop.
+- **Bounded responses**: the response body is read before the pinned connection is closed and may
+  not exceed 1 MiB. A larger discovery document, token response or key set is rejected instead of
+  being buffered without limit.
 
 Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
