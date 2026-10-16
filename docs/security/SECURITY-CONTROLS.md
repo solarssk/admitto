@@ -27,6 +27,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
   - [Operations probes](#operations-probes)
   - [Staff admin (authenticated)](#staff-admin-authenticated)
   - [Superadmin (identity provider UI)](#superadmin-identity-provider-ui)
+  - [Body size caps](#body-size-caps)
 - [Reverse proxy and client IP (`TRUST_PROXY`)](#reverse-proxy-and-client-ip-trust_proxy)
 - [Outbound HTTP (SSRF mitigation)](#outbound-http-ssrf-mitigation)
 - [Data protection in operations](#data-protection-in-operations)
@@ -230,65 +231,63 @@ documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **ov
 
 ## Rate limiting
 
-Application throttles use a fixed window (default **60 seconds** unless noted): each bucket resets
-at a fixed boundary rather than rolling continuously, so a burst straddling a window edge can allow
-up to roughly 2x the stated limit in the worst case - a common, accepted trade-off against the
-extra cost of a true sliding window. Limits apply per bucket key; HTTP **429** when exceeded.
-Structured audit events: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
+Application throttles use a fixed window (default **60 seconds** unless noted).
 
-**Store:** Redis. `REDIS_URL` (with a password of at least 16 characters) is required outside
-development and test, and the application refuses to boot without it, so limits are shared across
-replicas and survive restarts. Only development and test runs fall back to an in-memory store per
-process.
+- Each bucket resets at a fixed boundary rather than rolling continuously. So a burst straddling a window edge can allow up to roughly 2x the stated limit in the worst case. This is a common, accepted trade-off against the extra cost of a true sliding window.
+- Limits apply per bucket key. When one is exceeded, the answer is HTTP **429**.
+- Structured audit event: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
 
-**Retuning limits:** every limit below can be changed with the `RATE_LIMIT_OVERRIDES` environment
-variable (JSON keyed by limit name, for example `{"auth:login-ip":{"max":60}}`; see `deploy/ENV.md`),
-read at startup, so a change needs the container recreated, not a new release. The per-IP limits
-(sign-in, OIDC, passkey sign-in, account) are the ones to raise when many staff share one network
-address, such as venue Wi-Fi or a corporate NAT. The per-account protections (sign-in per email, MFA
-and password re-check buckets) are the real brute-force defence and should be loosened with care.
-The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
+**Store: Redis.**
 
-**How the defaults compare with other software** (checked against their published defaults and source):
+- `REDIS_URL` (with a password of at least 16 characters) is required outside development and test. The application refuses to boot without it, so limits are shared across replicas and survive restarts.
+- Only development and test runs fall back to an in-memory store per process.
 
-| Project | Sign-in throttle | Notes |
-|---------|------------------|-------|
-| Mastodon (`config/initializers/rack_attack.rb`) | 25 / 5 min per IP; 25 / 1 h per email | unauthenticated API 300 / 5 min per IP |
-| GitLab (protected paths) | 10 / 60 s per IP | applies to sign-in, sign-up, password reset |
-| Grafana (`defaults.ini`) | 5 failed attempts per username | the per-IP login protection is **off** by default |
-| Discourse (`discourse_defaults.conf`) | no sign-in-specific IP limit | 200 / 60 s and 50 / 10 s per IP overall; private addresses exempt |
-| OWASP Authentication Cheat Sheet | count failures per account, not per IP | lockout can be abused to lock others out |
-| NIST SP 800-63B | at most 100 consecutive failed attempts per account | an upper bound, not a target |
+**Retuning limits.**
 
-Admitto's per-IP limits (30 sign-in, 30 passkey, 60 OIDC per minute) sit at the permissive end of
-this range on purpose: a venue's staff share one address, and the guidance above puts the real
-brute-force defence on the per-account counters. Stream reconnects follow the usual client
-practice of exponential backoff with a 30 s ceiling (LaunchDarkly's SSE clients use the same
-shape); the request budgets are far above what that schedule can produce.
+- Every limit below can be changed with the `RATE_LIMIT_OVERRIDES` environment variable: JSON keyed by limit name, for example `{"auth:login-ip":{"max":60}}` (see `deploy/ENV.md`).
+- It is read at startup, so a change needs the container recreated, not a new release.
+- The per-IP limits (sign-in, OIDC, passkey sign-in, account) are the ones to raise when many staff share one network address, such as venue Wi-Fi or a corporate NAT.
+- The per-account protections (sign-in per email, MFA and password re-check buckets) are the real brute-force defence and should be loosened with care.
+- The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
+
+**Why the per-IP limits are permissive.**
+
+- Admitto's per-IP limits (30 sign-in, 30 passkey, 60 OIDC per minute) are permissive on purpose. A venue's staff share one address, and the real brute-force defence is the per-account counters.
+- That follows the published guidance:
+  - The OWASP Authentication Cheat Sheet says to count failures per account, not per IP, and warns that a lockout can be abused to lock others out.
+  - NIST SP 800-63B allows at most 100 consecutive failed attempts per account, which is an upper bound, not a target.
+- Stream reconnects follow the usual client practice of exponential backoff with a 30 s ceiling. The request budgets are far above what that schedule can produce.
 
 ### Public and authentication
 
 | Surface | Bucket | Limit / window | Auth required |
 |---------|--------|----------------|---------------|
 | `POST /login`, `POST /api/auth/login` | client IP | 30 / 60 s | no |
-| same | normalized email | 10 / 60 s | no (inside the handler, counted before the password is checked, so a correct password is refused too once the budget is spent) |
-| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account (one counter per user across all sessions and addresses) | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
+| same | normalized email | 10 / 60 s | no (see the first note) |
+| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account | 10 / 15 min per proof type (see the second note) | partial session |
 | `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 60 / 60 s | no |
 | `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 30 / 60 s | no |
-| all `/api/account/*` routes except the notification unread-count poll (which has its own per-user bucket, 20 / 60 s) | client IP | 30 / 60 s | no (checked before the session) |
+| all `/api/account/*` routes except the notification unread-count poll (see the third note) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
 
+Notes on the rows above:
+
+- **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
+- **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
+- **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
+
 ### Check-in live updates (SSE stream)
 
-`GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
-Reports page (none for an archived event, whose pages do not open it and whose requests are refused). Connects and reconnects are limited per operator per event and per operator overall, and
-the number of simultaneously open streams is capped per application process. The defaults below are read once at startup from
-the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
-whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the
-container recreated, not just restarted.
+`GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or Reports page.
+
+- An archived event opens none: its pages do not open the stream, and its requests are refused.
+- Connects and reconnects are limited per operator per event and per operator overall.
+- The number of simultaneously open streams is capped per application process.
+- The defaults below are read once at startup from the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`). A value that is not a positive whole number is ignored, the default is used, and a warning is logged at boot.
+- Changing them needs the container recreated, not just restarted.
 
 | Bucket | Default | Variable |
 |--------|---------|----------|
@@ -298,12 +297,9 @@ container recreated, not just restarted.
 | open streams, per operator per event, per application process | 6 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
 | open streams, per operator overall, per application process | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
 
-The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in
-memory of each application process, not in a shared store, so with several application replicas the
-effective ceiling is the figure above multiplied by the number of replicas (for example 6 and 24 with two).
-
-The check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a
-minute when the rate limit is hit; scanning itself is not affected.
+- The connect and reconnect limits use the shared rate-limit store.
+- The open-stream caps are counted in the memory of each application process, not in a shared store. So with several application replicas the effective ceiling is the figure above multiplied by the number of replicas (for example 12 and 24 with two).
+- When the rate limit is hit, the check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a minute. Scanning itself is not affected.
 
 ### Operations probes
 
@@ -313,10 +309,9 @@ minute when the rate limit is hit; scanning itself is not affected.
 | `GET /readyz` | client IP | 10 / 60 s | `OPS_HEALTH_TOKEN` (disabled when unset) |
 | `POST /api/ops/system-logs` (worker to app log bridge) | client IP | 120 / 60 s | `OPS_HEALTH_TOKEN` |
 
-Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scoped per process
-(`hostname`) so replica probes are not summed into one bucket. External monitors receive 429
-only above 120 requests per minute per source IP (per replica); a poll every 10-30 seconds is well
-within the limit.
+- Docker `HEALTHCHECK` uses `/healthz` only.
+- With shared Redis, the limit is scoped per process (`hostname`), so replica probes are not summed into one bucket.
+- External monitors receive 429 only above 120 requests per minute per source IP (per replica). A poll every 10-30 seconds is well within the limit.
 
 ### Staff admin (authenticated)
 
@@ -329,10 +324,10 @@ within the limit.
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | admin (operators search through the check-in lookup) |
-| single-attendee wallet actions (void/restore/reissue/refresh status/delete/remove from provider), plus erase and remove of one attendee whenever the event has wallet configured | user + event | 10 / 60 s | event admin |
+| single-attendee wallet actions (void, restore, reissue, refresh status, delete, remove from provider) | user + event | 10 / 60 s | event admin |
 | bulk-attendee mutations (erase, remove, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/refresh status/delete/remove from provider for a selection), plus bulk-erase, bulk-remove and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
-| event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) - one background job per event at a time, no 100-attendee cap | user + event | 10 / 10 min | event admin |
+| bulk wallet actions (void, reissue, refresh status, delete, remove from provider for a selection) | user + event | 10 / 10 min | event admin |
+| event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) | user + event | 10 / 10 min | event admin |
 | polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
 | `PATCH …/attendees/:id` | user + attendee | 20 / 60 s | event admin |
 | `POST …/attendees/:id/resend` | user + attendee; and per user | 5 / 60 s; 30 / h | event admin |
@@ -347,15 +342,18 @@ within the limit.
 | audit-log export, security-audit-log export | user + route | 10 / h | superadmin |
 | attendee PII export | user + route | 5 / h | superadmin |
 
-All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also
-share one additional budget on top of their own per-user/event bucket: **5 / hour per recipient
-address, instance-wide** - not scoped to the calling user, event, or which of the three routes
-sent it. This bounds how much test mail any single external address can receive even if a
-compromised admin session rotates between routes, events, or accounts to work around the
-per-user/event limits above.
+Notes on the rows above:
 
-Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
-just gated at the HTTP-route layer - see **Outbound HTTP** below.
+- **Single-attendee wallet actions.** The same bucket also covers erase and remove of one attendee whenever the event has wallet configured.
+- **Bulk wallet actions.** Bulk-erase, bulk-remove and bulk-revoke-pass share this bucket whenever the event has wallet configured. All of them are capped at max 100 attendees per request in that case.
+- **Event-wide wallet jobs.** One background job runs per event at a time, and there is no 100-attendee cap.
+
+**Test mail to one address.** All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also share one additional budget on top of their own per-user/event bucket:
+
+- It is **5 / hour per recipient address, instance-wide**. It is not scoped to the calling user, event, or which of the three routes sent it.
+- It bounds how much test mail any single external address can receive, even if a compromised admin session rotates between routes, events, or accounts to work around the per-user/event limits above.
+
+Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not just gated at the HTTP-route layer: see [Outbound HTTP](#outbound-http-ssrf-mitigation) below.
 
 ### Superadmin (identity provider UI)
 
@@ -364,22 +362,41 @@ just gated at the HTTP-route layer - see **Outbound HTTP** below.
 | `POST /api/admin/identity/providers/:id/discover` | user + provider | 10 / 60 s |
 | `POST /api/admin/identity/providers/:id/test` | user + provider | 10 / 60 s |
 
-**Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
-≤ 200k character body field; every bulk-attendee-id request (the mutation and wallet routes above)
-≤ 0.5 MB, with each attendee id itself capped at 128 characters - see
-`apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
-`apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
-The pre-authentication routes (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`) are capped at 16 KB and the three wallet webhook routes at 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`); where a route has an IP rate limit it runs before the cap, so oversized requests are counted too. XLSX imports are additionally checked by their real unpacked size (inflated with a hard output cap), not by the sizes the file declares, and by the number of `<row>` and `<c>` elements in the unpacked parts (the header plus 50,000 rows and an average of 20 cells for each, counted over all sheets), before the workbook is read; the CSV text made from the first sheet is refused while it is built, as soon as it passes the 10 MiB text limit, not after all of it exists. The import reads only what an attendee list needs from a worksheet: its data validation rules and column definitions are left out. The workbook is read in a child process of its own, one at a time (four at most are held at once, a fifth is answered with the usual 429 `too many requests`), with a fixed limit on its memory (384 MiB of heap) and on its time (60 s), with an empty environment and with none of the node flags of the app, so that neither an `--env-file` flag of the dev scripts nor a heap-size flag can reach it: a workbook that passes the checks above and still needs more, or that makes the reader itself fail, is refused with the same answer and the app is not affected, and reading it does not hold up other requests. The process bounds what a workbook can use; it is not a sandbox. The six check-in POST routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit) and `POST /api/ops/system-logs` at 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check); both answer `413 request too large`.
+### Body size caps
+
+These are separate from rate limits.
+
+- **Import uploads:** at most 5 MB.
+- **Templates:** template JSON is sized for a body field of at most 200k characters.
+- **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
+- **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
+- **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
+- **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).
+- The check-in routes and `POST /api/ops/system-logs` both answer `413 request too large`.
+
+**XLSX imports** get more checks, before and while the workbook is read:
+
+- The real unpacked size is checked (inflated with a hard output cap), not the sizes the file declares.
+- The `<row>` and `<c>` elements in the unpacked parts are counted before the workbook is read: the header plus 50,000 rows and an average of 20 cells for each, counted over all sheets.
+- The CSV text made from the first sheet is refused while it is built, as soon as it passes the 10 MiB text limit, not after all of it exists.
+- The import reads only what an attendee list needs from a worksheet: its data validation rules and column definitions are left out.
+- The workbook is read in a child process of its own:
+  - one at a time (four at most are held at once, a fifth is answered with the usual 429 `too many requests`);
+  - with a fixed limit on its memory (384 MiB of heap) and on its time (60 s);
+  - with an empty environment and with none of the node flags of the app, so that neither an `--env-file` flag of the dev scripts nor a heap-size flag can reach it.
+- A workbook that passes the checks above and still needs more, or that makes the reader itself fail, is refused with the same answer. The app is not affected, and reading it does not hold up other requests.
+- The process bounds what a workbook can use; it is not a sandbox.
 
 ---
 
 ## Reverse proxy and client IP (`TRUST_PROXY`)
 
-`X-Forwarded-*` headers are honoured only when **both** are true: `TRUST_PROXY=true`, **and** the
-request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in
-[`deploy/.env.example`](../../deploy/.env.example), loopback-only if unset). `TRUST_PROXY` alone is
-not a trust boundary - anything that can reach the app directly could otherwise set these headers
-itself.
+`X-Forwarded-*` headers are honoured only when **both** are true:
+
+- `TRUST_PROXY=true`, **and**
+- the request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in [`deploy/.env.example`](../../deploy/.env.example), loopback-only if unset).
+
+`TRUST_PROXY` alone is not a trust boundary: anything that can reach the app directly could otherwise set these headers itself.
 
 | Header | Used for |
 |--------|----------|
@@ -387,36 +404,28 @@ itself.
 | `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
 | `X-Forwarded-Proto` | Session cookie `Secure` flag |
 
-Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/rate-limit/trust-proxy.ts)
-(the `TRUSTED_PROXY_CIDRS` peer check), consumed by
-[`client-ip.ts`](../../apps/web/src/rate-limit/client-ip.ts),
-[`same-origin-post.ts`](../../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in
-[`is-secure-request.ts`](../../apps/web/src/is-secure-request.ts) (used for the session cookie
-`Secure` flag).
+**Implementation:** [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/rate-limit/trust-proxy.ts) (the `TRUSTED_PROXY_CIDRS` peer check), consumed by [`client-ip.ts`](../../apps/web/src/rate-limit/client-ip.ts), [`same-origin-post.ts`](../../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in [`is-secure-request.ts`](../../apps/web/src/is-secure-request.ts) (used for the session cookie `Secure` flag).
 
-**Operator requirement:** the edge proxy should set a **single** trusted client IP (e.g. nginx
-`proxy_set_header X-Forwarded-For $remote_addr`). The app takes the **rightmost** hop that is not
-inside `TRUSTED_PROXY_CIDRS`, so a client-supplied prefix in an appended chain is ignored; every
-proxy in a multi-proxy chain must be listed in `TRUSTED_PROXY_CIDRS`, otherwise the nearest unlisted
-proxy is taken for the client and everyone behind it shares one rate-limit bucket.
+**Operator requirement:**
 
-**Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
-of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
+- The edge proxy should set a **single** trusted client IP (e.g. nginx `proxy_set_header X-Forwarded-For $remote_addr`).
+- The app takes the **rightmost** hop that is not inside `TRUSTED_PROXY_CIDRS`, so a client-supplied prefix in an appended chain is ignored.
+- Every proxy in a multi-proxy chain must be listed in `TRUSTED_PROXY_CIDRS`. Otherwise the nearest unlisted proxy is taken for the client, and everyone behind it shares one rate-limit bucket.
 
-**Hardening (v0.4.13+): what changed.** `TRUSTED_PROXY_CIDRS` adds a peer allowlist. Previously,
-`TRUST_PROXY=true` trusted forwarded headers from **any** direct connection, so a client that
-reached the app directly (misconfigured port exposure, or from elsewhere on the same network)
-could forge its own rate-limit IP, CSRF origin, and cookie `Secure` flag.
+**Hardening (v0.4.5+).** Malformed or non-IP first hops fall back to the TCP remote address instead of a shared `"unknown"` bucket, which previously allowed cross-client rate-limit interference.
 
-**Residual risk.** The default deploy topology pins `TRUSTED_PROXY_CIDRS` to the whole `internal`
-compose network subnet, not just the `proxy` container's individual address, so a compromise of
-another container on that same network (`db`, `redis`, `migrate`, `worker`) could still inject
-these headers. Narrowing to a single pinned container IP was judged not worth the added
-operational fragility (static IPs in Compose); this subnet-level allowlist is still a materially
-smaller trust boundary than "any direct connection."
+**Hardening (v0.4.13+): what changed.**
 
-When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF origin, and cookie
-`Secure` flag (direct socket / request URL used) regardless of peer.
+- `TRUSTED_PROXY_CIDRS` adds a peer allowlist.
+- Previously, `TRUST_PROXY=true` trusted forwarded headers from **any** direct connection. So a client that reached the app directly (misconfigured port exposure, or from elsewhere on the same network) could forge its own rate-limit IP, CSRF origin, and cookie `Secure` flag.
+
+**Residual risk.**
+
+- The default deploy topology pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy` container's individual address. So a compromise of another container on that same network (`db`, `redis`, `migrate`, `worker`) could still inject these headers.
+- Narrowing to a single pinned container IP was judged not worth the added operational fragility (static IPs in Compose).
+- This subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
+
+When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF origin, and cookie `Secure` flag (direct socket / request URL used) regardless of peer.
 
 ---
 
