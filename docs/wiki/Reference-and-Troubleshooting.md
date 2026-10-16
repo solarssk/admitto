@@ -19,9 +19,14 @@ Use these pages when you need an exact field, value, status, or definition.
 - [Manual Lookup and Corrections](Manual-Lookup-and-Corrections) - safe lookup, undo, and manager corrections.
 - [Check-in Connection Problems](Check-in-Connection-Problems) - Offline and Reconnecting guidance.
 
-## Product language and page status
+## Product language
 
 - [Glossary](Glossary) - product roles and event terms.
+
+## Page status labels
+
+Each page shows a **Feature status** at the top:
+
 - **Available** means supported in the current release.
 - **Preview** means usable but still subject to change.
 - **Planned** means not available yet.
