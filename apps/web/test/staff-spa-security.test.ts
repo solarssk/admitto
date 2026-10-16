@@ -107,6 +107,20 @@ describe("getStaffSpaSecurityHeaders", () => {
     }
   });
 
+  it("keeps form-action to 'self', also with trusted origins: Sign out reaches the identity provider by navigating there, not through a form redirect", () => {
+    const formAction = (csp: string) => /form-action[^;]*/.exec(csp)?.[0];
+    expect(formAction(getStaffSpaSecurityHeaders({ NODE_ENV: "production" })["Content-Security-Policy"]!)).toBe(
+      "form-action 'self'",
+    );
+    expect(
+      formAction(
+        getStaffSpaSecurityHeaders({ NODE_ENV: "production" }, ["https://analytics.example.com"])[
+          "Content-Security-Policy"
+        ]!,
+      ),
+    ).toBe("form-action 'self'");
+  });
+
   it("keeps font-src https: for optional superadmin branding fonts (regression guard)", () => {
     const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
     expect(csp).toContain("font-src 'self' https:");

@@ -1,6 +1,10 @@
 # @admitto/mailer-config
 
-Resolves **which mail transport and fields** apply for a given org/event scope. Precedence is per field: **env > event > org > default** (ADR 0002); the provider is resolved first and only fields valid for it are merged. Stored secrets are decrypted lazily (a secret supplied by env does not need `ENCRYPTION_KEY`). If an `allowed_from_domain` is set (database only, no env var), the resolved from address (Graph: the mailbox) must be in that domain or resolution throws. Produces a `MailerConfig` consumed by `@admitto/mailer` and described for the admin UI.
+Resolves **which mail transport and fields** apply for a given org/event scope. It produces a `MailerConfig` consumed by `@admitto/mailer` and described for the admin UI.
+
+- Precedence is per field: **env > event > org > default** (ADR 0002). The provider is resolved first, and only fields valid for it are merged.
+- Stored secrets are decrypted lazily. A secret supplied by env does not need `ENCRYPTION_KEY`.
+- If an `allowed_from_domain` is set (database only, no env var), the resolved from address (Graph: the mailbox) must be in that domain, or resolution throws.
 
 ## Exports
 

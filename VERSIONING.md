@@ -1,8 +1,8 @@
 # Versioning
 
-> **Stability status:** see the table below for what `v0.x`, `v1.0`, and `v1.1+` mean, and check
-> the current release tag or the open GitHub milestone for exactly where the project is right
-> now. That status lives there, not restated here, so it can't go stale between releases.
+> **Stability status:** the table below explains what `v0.x`, `v1.0`, and `v1.1+` mean. To see
+> exactly where the project is right now, check the current release tag or the open GitHub
+> milestone. That status lives there and is not restated here, so it can't go stale between releases.
 
 Admitto uses **one product version** for releases. Internal workspace packages are not versioned independently.
 
@@ -22,9 +22,14 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 | Line | Meaning |
 |------|---------|
-| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. Tags before `v0.4.13` are marked **pre-release** on GitHub; from `v0.4.13` onward, releases are stable enough for day-to-day use and are marked as the **latest** GitHub Release, even though the product isn't yet operator-ready for a real event. |
+| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. |
 | **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. After this tag, the product can run a real event end-to-end. |
 | **`v1.1+`** | **Post-first-event feature waves.** Capabilities that are useful but **not** required for the first go-live (see examples below). |
+
+How GitHub marks the `v0.x` tags:
+
+- Tags before `v0.4.13` are marked **pre-release**.
+- From `v0.4.13` onward, releases are stable enough for day-to-day use and are marked as the **latest** GitHub Release, even though the product isn't yet operator-ready for a real event.
 
 ### Planned sequence (high level)
 
@@ -45,9 +50,9 @@ flowchart LR
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches - see [CHANGELOG.md](CHANGELOG.md)). |
 | **v0.5** | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users-table UX. |
-| **v0.6** | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening; later 0.6.x patches added Reports' Wallets and Custom fields tabs, a Samsung Wallet settings toggle, passkey autofill (conditional mediation) on the login page, and multi-arch container images. |
+| **v0.6** | Delivered. Passkeys and security keys work for sign-in and step-up, not just registration. Also first-time 2FA method choice, and session-cookie and step-up security hardening. Later 0.6.x patches added Reports' Wallets and Custom fields tabs, a Samsung Wallet settings toggle, passkey autofill (conditional mediation) on the login page, and multi-arch container images. |
 | **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests, operational fixes toward go-live). |
-| **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, further hardening + dry run (backup/restore, event-day readiness - ADR 0012) - not yet scheduled to a specific version. |
+| **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, and further hardening plus a dry run (backup/restore, event-day readiness, ADR 0012). Not yet scheduled to a specific version. |
 | **v1.0** | First event **go-live ready** = MVP complete. |
 | **v1.1+** | New waves **after** the first event - e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
 
@@ -75,22 +80,24 @@ Do not bump per-package versions unless we start publishing libraries separately
 2. Update the `[Unreleased]` comparison link at the bottom of `CHANGELOG.md` to point to the new tag
 3. Add the new comparison link for the release (e.g. `[0.x.y]: https://github.com/solarssk/admitto/compare/v0.x.z...v0.x.y`)
 4. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
-5. Generate release artifacts and sync doc markers before opening the release PR:
+5. Generate the release artifacts and sync the doc markers before you open the release PR:
    ```bash
    python3 scripts/generate-release-notes.py 0.x.y "short tagline for GitHub Release title"
    python3 scripts/sync-release-docs.py
    npm install --package-lock-only
    ```
-   `generate-release-notes.py` writes `.github/release-notes/v0.x.y.md` and `.github/release-notes/v0.x.y.title` (tagline only - workflow composes `v0.x.y - tagline`, same pattern as earlier releases). `sync-release-docs.py` updates `<!-- admitto:latest-patch -->` markers (e.g. in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
-   Release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
-6. Commit on `main` - include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
-7. **Merge the release PR** - GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
-   - verifies release artifacts (`sync-release-docs.py --check`, notes file, non-empty `.title` file, CHANGELOG section),
-   - creates git tag `v0.x.y` **on the exact commit that push introduced and whose CI it just verified** (`--target`), so a merge that lands on `main` while the workflow waits for CI cannot end up inside the tag - it simply becomes part of the next release - and a GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y - …` from the `.title` file, marked as the **latest** release,
-   - triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload),
-   - closes the open milestone titled `v0.x.y` - the title must be exactly that, with the leading `v`: a milestone named `0.x.y` is silently skipped, so rename it before merging the release PR.
+   - `generate-release-notes.py` writes `.github/release-notes/v0.x.y.md` and `.github/release-notes/v0.x.y.title`. The title file holds the tagline only, and the workflow composes `v0.x.y - tagline`, the same pattern as earlier releases.
+   - `sync-release-docs.py` updates the `<!-- admitto:latest-patch -->` markers (for example in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
+   - The release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
+6. Commit on `main`. Include `CHANGELOG.md`, `package.json`, `package-lock.json`, the synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
+7. **Merge the release PR.** GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then does the following:
+   - It verifies the release artifacts: `sync-release-docs.py --check`, the notes file, a non-empty `.title` file, and the CHANGELOG section.
+   - It creates git tag `v0.x.y` **on the exact commit that push introduced and whose CI it just verified** (`--target`). A merge that lands on `main` while the workflow waits for CI therefore cannot end up inside the tag. It simply becomes part of the next release.
+   - It creates a GitHub Release from `.github/release-notes/v0.x.y.md`, with the title `v0.x.y - …` taken from the `.title` file, marked as the **latest** release.
+   - It triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload).
+   - It closes the open milestone titled `v0.x.y`. The title must be exactly that, with the leading `v`: a milestone named `0.x.y` is silently skipped, so rename it before you merge the release PR.
 
-   Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below) - not the default path.
+   Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below). It is not the default path.
 
 ### Tag signing (optional - emergency manual releases)
 

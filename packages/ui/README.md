@@ -5,7 +5,14 @@ Design system for the staff SPA: Tabler-flavoured CSS tokens plus shared React p
 ## What lives here
 
 - **Tokens / theme** - CSS variables and theme helpers (`theme.ts`, `styles/`)
-- **Primitives** - `Button`, `Input`, `Select`, `Checkbox`, `Switch`, `ModalBackdrop` (the shell the admin modals build on), `Toast`, `Notice`, `EmptyState`, `PageHeader`, `Avatar`, `Card`, `Tooltip`, `HintLabel`, `IconButton`, `PasswordStrengthMeter`, `StatusBadge`, `TicketTypeBadge`, tabs, badges, `Skeleton`/`Spinner`, `PageLoader`/`SectionLoader` (the Admitto mark for a whole screen, a ring for a panel, each with a line saying what is loading), `TopProgressBar` (viewport or `placement="container"`), `Button loading` and `IconButton loading`, etc.
+- **Primitives**
+  - `Button`, `Input`, `Select`, `Checkbox`, `Switch`
+  - `ModalBackdrop` (the shell the admin modals build on)
+  - `Toast`, `Notice`, `EmptyState`, `PageHeader`
+  - `Avatar`, `Card`, `Tooltip`, `HintLabel`, `IconButton`
+  - `PasswordStrengthMeter`, `StatusBadge`, `TicketTypeBadge`, tabs, badges
+  - Loading and busy states: `Skeleton` / `Spinner`, `PageLoader` / `SectionLoader` (the Admitto mark for a whole screen, a ring for a panel, each with a line saying what is loading), `TopProgressBar` (viewport or `placement="container"`), `Button loading` and `IconButton loading`
+  - and others
 - **Assets** - shared static pieces under `src/assets/`, exported as source through `@admitto/ui/assets/*`
 
 This package does **not** own app routes or API calls. Page-level UI stays in `apps/admin`.
@@ -16,11 +23,10 @@ This package does **not** own app routes or API calls. Page-level UI stays in `a
 import { Button, Notice, useToast } from "@admitto/ui";
 ```
 
-Stylesheets and assets are subpath exports served from source: `@admitto/ui/styles.css` (tokens and component styles), `@admitto/ui/shell.css`, `@admitto/ui/ticket.css` and `@admitto/ui/assets/*` (logo SVGs). The theme helpers (`resolveThemeVars`, `themeVarsToStyleBlock`, `applyThemeVars` and the branding font validators) are exported from the root.
-
-Prefer these components over one-off markup so spacing, focus, and toast behaviour stay consistent (see [standards/admin-spa/feedback-and-errors.md](../../standards/admin-spa/feedback-and-errors.md) for toast vs Notice).
-
-Every loading or busy state uses these components and the timing in [standards/admin-spa/loading.md](../../standards/admin-spa/loading.md), not a hand-made spinner, shimmer or label swap.
+- Stylesheets and assets are subpath exports served from source: `@admitto/ui/styles.css` (tokens and component styles), `@admitto/ui/shell.css`, `@admitto/ui/ticket.css` and `@admitto/ui/assets/*` (logo SVGs).
+- The theme helpers (`resolveThemeVars`, `themeVarsToStyleBlock`, `applyThemeVars` and the branding font validators) are exported from the root.
+- Prefer these components over one-off markup, so spacing, focus and toast behaviour stay consistent (see [standards/admin-spa/feedback-and-errors.md](../../standards/admin-spa/feedback-and-errors.md) for toast vs Notice).
+- Every loading or busy state uses these components and the timing in [standards/admin-spa/loading.md](../../standards/admin-spa/loading.md), not a hand-made spinner, shimmer or label swap.
 
 ## Build
 

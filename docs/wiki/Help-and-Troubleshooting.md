@@ -6,7 +6,8 @@ Start with the page for the failed workflow:
 
 | Problem | First page to use |
 |---|---|
-| Sign-in, MFA, or missing access | [My Account](My-Account) for your own sign-in or MFA; [Users and Roles Administration](Users-and-Roles-Administration) or [Identity and SSO](Identity-and-SSO) for access-scope or provider problems an admin must fix |
+| Your own sign-in or MFA | [My Account](My-Account) |
+| Missing access, or an access-scope or provider problem that an admin must fix | [Users and Roles Administration](Users-and-Roles-Administration) or [Identity and SSO](Identity-and-SSO) |
 | Invalid, warning, or skipped import rows | [Importing Attendees](Importing-Attendees) and [Import File Reference](Import-File-Reference) |
 | Template preview or test failure | [Email Templates](Email-Templates) and [Advanced Email Templates](Advanced-Email-Templates) |
 | Failed, bounced, or rejected delivery | [Email Delivery Statuses](Email-Delivery-Statuses) |
@@ -19,10 +20,11 @@ Start with the page for the failed workflow:
 
 ## Report a product problem
 
-1. Record the Admitto version and build commit shown in the interface (sidebar footer, for example `v0.7.4 · 68e3f79`). The commit should match the commit of that release's tag on GitHub. Version 0.7.3 is the one exception: its footer shows `8d64005`, a later commit, because of a release pipeline error fixed in 0.7.4. The running code is still the 0.7.3 release.
+1. Record the Admitto version and build commit shown in the interface (sidebar footer), for example `v0.7.4 · 68e3f79`. The commit should match the commit of that release's tag on GitHub.
+   - One exception: the footer of version 0.7.3 shows `8d64005`, a later commit, because of a release pipeline error that was fixed in 0.7.4. The running code is still the 0.7.3 release.
 2. Optional: open **Organisation settings → Health check**, use **Copy for GitHub Issue**, and paste the snapshot into the bug form. Remove any remaining secrets or personal data before posting.
-3. Record the page, approximate time, expected result, and safe error text.
-4. Remove attendee data, addresses, ticket links, QR values, secrets, and provider responses.
+3. Record the page, the approximate time, the expected result and the safe error text.
+4. Remove attendee data, addresses, ticket links, QR values, secrets and provider responses.
 5. Use the repository's [bug report form](https://github.com/solarssk/admitto/issues/new?template=bug.yml).
 
 For a suspected security problem, use the [security reporting policy](https://github.com/solarssk/admitto/blob/main/SECURITY.md) instead of a public issue.

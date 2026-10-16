@@ -12,7 +12,20 @@ Confirm that your account has the Admin role for the organisation that owns the 
 
 ## Steps
 
-1. Open **Events** to see active and archived events in your organisation. Each card shows a map preview when maps are enabled and the event has a pin, a short status (for example **Needs archiving**, **Today**, or **In N days**), location, attendee count, and a weather chip on the map when weather is enabled and the event has coordinates (temperature within the active provider horizon, or “Forecast available N days before the event” further out). Once the event day has passed, the chip shows the last forecast Admitto saw for that day, labelled **Last forecast**. Weather providers cannot look back, so Admitto saves the latest forecast whenever someone opens the Events list, the event, or the check-in event list while the day is still ahead. If no forecast was ever saved (for example an event that ended before this existed, or one nobody opened in the days before), the chip is hidden. It never shows an error for an event that is over. The chip uses °C or °F from your computer's timezone (`Europe/…` → °C, typical US/Americas zones → °F), not the browser language. Archive and restore stay in **Event settings** / organisation Event archiving, not on the card.
+1. Open **Events** to see active and archived events in your organisation. Each event card shows:
+   - a map preview, when maps are enabled and the event has a pin
+   - a short status, for example **Needs archiving**, **Today**, or **In N days**
+   - the location and the attendee count
+   - a weather chip on the map, when weather is enabled and the event has coordinates
+
+   Archive and restore stay in **Event settings** and in organisation Event archiving, not on the card.
+
+   **How the weather chip works**
+
+   - It shows the temperature within the active provider horizon, or "Forecast available N days before the event" further out.
+   - Once the event day has passed, it shows the last forecast Admitto saw for that day, labelled **Last forecast**. Weather providers cannot look back, so Admitto saves the latest forecast whenever someone opens the Events list, the event, or the check-in event list while the day is still ahead.
+   - If no forecast was ever saved (for example, an event that ended before this existed, or one nobody opened in the days before), the chip is hidden. It never shows an error for an event that is over.
+   - The chip uses °C or °F from your computer's timezone (`Europe/…` gives °C, typical US and Americas zones give °F), not the browser language.
 2. Create events and manage their attendees, requirements, communication, reports, and settings.
 3. Open **Users & roles** to review assignments available to your administration scope.
 4. Give operators event-scoped access only to the events where they work.
@@ -35,9 +48,11 @@ Event and access changes take effect for users in the affected scope. They do no
 
 ## Common problems
 
-- **An event is missing:** check that it belongs to your assigned organisation and is not under **Archived events**.
-- **A settings tab is missing:** it may be Superadmin-only.
-- **An operator cannot see an event:** review the event-scoped role assignment.
+| Problem | What it means and what to do |
+|---------|------------------------------|
+| **An event is missing** | Check that it belongs to your assigned organisation and is not under **Archived events** |
+| **A settings tab is missing** | It may be Superadmin-only |
+| **An operator cannot see an event** | Review the event-scoped role assignment |
 
 ## Related pages
 

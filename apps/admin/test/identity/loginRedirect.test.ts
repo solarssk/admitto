@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
+import { clearSignOutInProgress, markSignOutInProgress } from "../../src/auth/sign-out-in-progress.js";
 import { orLoginRedirect, redirectToLogin } from "../../src/identity/loginRedirect.js";
 
 const assign = vi.fn();
@@ -15,6 +16,7 @@ function stubLocation() {
 
 afterEach(() => {
   assign.mockClear();
+  clearSignOutInProgress();
   if (original) Object.defineProperty(window, "location", original);
 });
 
@@ -23,6 +25,13 @@ describe("redirectToLogin", () => {
     stubLocation();
     redirectToLogin();
     expect(assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fsettings%2Fidentity%2Fproviders");
+  });
+
+  it("stays where it is while the user's Sign out is under way, so the trip to the identity provider is not replaced", () => {
+    stubLocation();
+    markSignOutInProgress();
+    redirectToLogin();
+    expect(assign).not.toHaveBeenCalled();
   });
 });
 
