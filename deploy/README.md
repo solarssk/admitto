@@ -106,8 +106,11 @@ http://<docker-host>:8080
 
 Do **not** forward NPM to `app:3000` in this variant.
 
-In NPM **SSL**: request a certificate, enable **Force SSL**.  
-In NPM **Details**: scheme `http`, websockets on, block common exploits on.  
+In NPM:
+
+- **SSL**: request a certificate, enable **Force SSL**.
+- **Details**: scheme `http`, websockets on, block common exploits on.
+
 In NPM **Advanced**:
 
 ```nginx
@@ -143,7 +146,10 @@ location ~ ^/api/checkin/events/[^/]+/stream$ {
 
 ### Variant B - Portainer / NAS without compose nginx
 
-Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses - not every private Docker network on the host.
+Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner:
+
+- NPM talks straight to `app`.
+- So `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses, not every private Docker network on the host.
 
 Checklist:
 
@@ -177,14 +183,17 @@ Lab-only: stacks can instead set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` when `NO
 
 ## Container registries (ghcr.io / docker.io)
 
-Each release tag `vX.Y.Z` triggers [`.github/workflows/publish-container.yml`](../.github/workflows/publish-container.yml) and pushes the same multi-arch image (`linux/amd64` + `linux/arm64`, one digest, one Trivy CRITICAL gate per platform before the tags are published) to two registries:
+Each release tag `vX.Y.Z` triggers [`.github/workflows/publish-container.yml`](../.github/workflows/publish-container.yml). It pushes the same multi-arch image (`linux/amd64` + `linux/arm64`, one digest) to two registries. One Trivy CRITICAL gate per platform runs before the tags are published. The tags are:
 
 ```text
 ghcr.io/solarssk/admitto:X.Y.Z      docker.io/solarssk/admitto:X.Y.Z
 ghcr.io/solarssk/admitto:X.Y        docker.io/solarssk/admitto:X.Y      # minor line (e.g. 0.3)
 ```
 
-`ghcr.io` is the primary/documented registry below; `docker.io` is an equivalent alternative, useful where Docker Hub is easier to reach or already allowlisted (e.g. some `docker login`-free NAS UIs default to it). Pick one, pin `ADMITTO_IMAGE` to it, and pull:
+- `ghcr.io` is the primary/documented registry below.
+- `docker.io` is an equivalent alternative, useful where Docker Hub is easier to reach or already allowlisted (e.g. some `docker login`-free NAS UIs default to it).
+
+Pick one, pin `ADMITTO_IMAGE` to it, and pull:
 
 ```bash
 cd deploy
@@ -248,14 +257,21 @@ The compose file sets no memory limit, so `app` can use all the memory of the ho
 | `app` during such an import | about 0.55 GB in total | the same lab run (reported) |
 
 - An import is limited to 50,000 data rows and 5 MB. A file with more columns needs more memory.
-- Excel files are read one at a time, in a separate process that is held to a fixed amount of memory. Reading a file takes at most about 0.5 GB more than `app` uses otherwise. A file that would need more is refused (with the "too many rows" answer) instead of being read, so it cannot take `app` down.
+- Excel files are read one at a time, in a separate process that is held to a fixed amount of memory.
+  - Reading a file takes at most about 0.5 GB more than `app` uses otherwise.
+  - A file that would need more is refused (with the "too many rows" answer) instead of being read, so it cannot take `app` down.
 - A file over the limits is refused before it is read in full, but it is still opened far enough to be counted.
 - Only `app` reads Excel files. `worker`, `db` and `redis` do not. The memory of `worker` was not measured.
 - `app` has `restart: unless-stopped`. If it runs out of memory and stops, Docker starts it again. A request that was running at that moment fails and has to be repeated.
 
 ### How much memory Node.js uses for its heap
 
-Node.js keeps its working data in a heap. It sets the heap limit to about 55 percent of the memory it may use, and never more than about 2.2 GB. Without a limit, it counts the memory of the host. Measured with the official Node 24 image:
+Node.js keeps its working data in a heap.
+
+- It sets the heap limit to about 55 percent of the memory it may use, and never more than about 2.2 GB.
+- Without a limit, it counts the memory of the host.
+
+Measured with the official Node 24 image:
 
 | Memory limit of the container | Heap limit |
 |---|---|
@@ -266,27 +282,36 @@ Node.js keeps its working data in a heap. It sets the heap limit to about 55 per
 
 ## Quick start
 
-```bash
-cd deploy
-cp .env.example .env
-# Edit .env:
-#   POSTGRES_PASSWORD (openssl rand -hex 32)
-#   REDIS_PASSWORD (openssl rand -hex 32) - Compose sets REDIS_URL for app, migrate and worker
-#   ENCRYPTION_KEY (openssl rand -base64 32)
-#   DATABASE_URL - same password as POSTGRES_PASSWORD
-#   BASE_URL - production: https://tickets.example.com; local smoke: http://127.0.0.1:8080
-# Set EMAIL_PROVIDER to one of: smtp, graph, powerautomate (production paths)
-# export_only is dev/test dry-run only - requires a runtime exportSink; npm run dev wires one
-# automatically; production deploy must use a real provider (default in .env.example: smtp).
-# If EMAIL_PROVIDER=export_only slips into production anyway, boot logs a warning but does not
-# exit - mail sends fail at runtime until a real provider is configured.
-# Populate only the mail section for that provider
+1. Copy the example file:
 
-./validate-env.sh
-./scripts/init-host-dirs.sh
-docker compose up -d --build
-curl -sf http://127.0.0.1:8080/healthz
-```
+   ```bash
+   cd deploy
+   cp .env.example .env
+   ```
+
+2. Edit `.env`:
+
+   - `POSTGRES_PASSWORD`: generate it with `openssl rand -hex 32`.
+   - `REDIS_PASSWORD`: generate it with `openssl rand -hex 32`. Compose sets `REDIS_URL` for app, migrate and worker.
+   - `ENCRYPTION_KEY`: generate it with `openssl rand -base64 32`.
+   - `DATABASE_URL`: use the same password as `POSTGRES_PASSWORD`.
+   - `BASE_URL`: `https://tickets.example.com` in production, `http://127.0.0.1:8080` for a local smoke test.
+   - `EMAIL_PROVIDER`: one of `smtp`, `graph`, `powerautomate` (the production paths). Populate only the mail section for that provider.
+
+   About `export_only`:
+
+   - It is a dev/test dry run only, and it requires a runtime `exportSink`; `npm run dev` wires one automatically.
+   - A production deploy must use a real provider (default in `.env.example`: `smtp`).
+   - If `EMAIL_PROVIDER=export_only` slips into production anyway, boot logs a warning but does not exit. Mail sends fail at runtime until a real provider is configured.
+
+3. Validate, prepare the host directories, start the stack and check it:
+
+   ```bash
+   ./validate-env.sh
+   ./scripts/init-host-dirs.sh
+   docker compose up -d --build
+   curl -sf http://127.0.0.1:8080/healthz
+   ```
 
 The app listens on port 3000 **inside** the compose network only. Use the proxy on `127.0.0.1:8080`.
 
@@ -309,7 +334,17 @@ Migrations apply in the one-shot `migrate` service. `docker compose up -d` block
 - There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only, not a substitute for the manual backup above.
 - If the log says `failed migrations detected`, a migration stopped halfway. See [After a P3009 error](#after-a-p3009-error).
 
-`validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. A missing, passwordless or stale reference `REDIS_URL` produces a warning: Compose overrides it from `REDIS_PASSWORD` for app, migrate and worker. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
+`validate-env.sh` checks:
+
+- placeholders,
+- secret lengths,
+- `BASE_URL` (`https://` on production hosts), and
+- `DATABASE_URL` / `POSTGRES_PASSWORD` consistency.
+
+Two more things to know:
+
+- A missing, passwordless or stale reference `REDIS_URL` produces a warning, because Compose overrides it from `REDIS_PASSWORD` for app, migrate and worker.
+- The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
 ### After a P3009 error
 
@@ -416,9 +451,11 @@ Wiki Identity and SSO page.
 
 ## GeoIP dataset: your own MaxMind license key (optional)
 
-Admitto resolves IP addresses to a country and city (Logs & Audit, Active sessions, new-location sign-in alerts) using MaxMind's GeoLite2 database. By default this is baked into the image at build time from the [node-geolite2-redist](https://github.com/sapics/node-geolite2-redist) community mirror - no MaxMind account needed, whether you pull the published `ghcr.io`/`docker.io` image or build your own.
+Admitto resolves IP addresses to a country and city (Logs & Audit, Active sessions, new-location sign-in alerts) using MaxMind's GeoLite2 database.
 
-If you have a MaxMind GeoLite2 license key (a real, auditable license relationship with MaxMind - useful where your organisation's compliance process expects that over a community mirror), set `MAXMIND_LICENSE_KEY` in `deploy/.env` and restart the stack - no image rebuild needed, works with the published image too:
+**Default.** The database is baked into the image at build time from the [node-geolite2-redist](https://github.com/sapics/node-geolite2-redist) community mirror. No MaxMind account is needed, whether you pull the published `ghcr.io`/`docker.io` image or build your own.
+
+**With your own license key.** If you have a MaxMind GeoLite2 license key (a real, auditable license relationship with MaxMind - useful where your organisation's compliance process expects that over a community mirror), set `MAXMIND_LICENSE_KEY` in `deploy/.env` and restart the stack. No image rebuild is needed, and it works with the published image too:
 
 ```bash
 # deploy/.env
@@ -429,16 +466,21 @@ MAXMIND_LICENSE_KEY=YOUR_MAXMIND_LICENSE_KEY
 docker compose up -d
 ```
 
-At startup, `docker-entrypoint.sh` fetches a fresh GeoLite2 City database directly from MaxMind into `./geoip-data` (a bind mount, initialised by `./scripts/init-host-dirs.sh` like `uploads`/`emergency-exports` above) and caches it there - a later restart with the same key reuses that download instead of re-fetching it, and a failed fetch (bad key, network issue) falls back to the last good download rather than breaking startup. Remove `MAXMIND_LICENSE_KEY` and restart to go back to the default community-mirror dataset.
+**What happens at startup.**
 
-In Portainer: add `MAXMIND_LICENSE_KEY` under the stack's **Environment variables**, then **Update the stack** - the same flow as any other setting here, no build-secret or compose-file editing needed.
+- `docker-entrypoint.sh` fetches a fresh GeoLite2 City database directly from MaxMind into `./geoip-data` (a bind mount, initialised by `./scripts/init-host-dirs.sh` like `uploads`/`emergency-exports` above) and caches it there.
+- A later restart with the same key reuses that download instead of re-fetching it.
+- A failed fetch (bad key, network issue) falls back to the last good download rather than breaking startup. On a first-ever failed fetch, with no earlier download, it falls back to the built-in community-mirror dataset.
+- Remove `MAXMIND_LICENSE_KEY` and restart to go back to the default community-mirror dataset.
+
+**In Portainer.** Add `MAXMIND_LICENSE_KEY` under the stack's **Environment variables**, then **Update the stack**. It is the same flow as any other setting here: no build-secret or compose-file editing needed.
 
 ## Container startup (entrypoint)
 
-Migration and serving are two separate compose services, both running
-`deploy/docker-entrypoint.sh` (same image, different `command:`). **`app` only starts once
-`migrate` exits 0** (`depends_on: condition: service_completed_successfully`), so the web server
-never runs migration logic itself.
+Migration and serving are two separate compose services, both running `deploy/docker-entrypoint.sh` (same image, different `command:`).
+
+- **`app` only starts once `migrate` exits 0** (`depends_on: condition: service_completed_successfully`).
+- So the web server never runs migration logic itself.
 
 **Run one `migrate` at a time.**
 
@@ -474,24 +516,26 @@ cd deploy
 2. `prisma migrate deploy` - idempotent schema migrations (automatic; operators never run this by hand)
 3. Idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-- **`app`** execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot,
-  and no filesystem access to backup dumps.
-- **`worker`** (same image, `command: ["worker"]` → `admitto worker`) runs product retention (auth
-  sessions and trusted devices, mail delivery snapshots, security audit log, in-app notification
-  history), bounce ingest, mail drain, import/export jobs, and the wallet jobs (bulk push, wallet
-  messages, Remove from provider clean-up, status refresh, registration sync, expiry sweep).
-- Keep exactly one worker replica. The process uses session advisory locks, so a mistaken second
-  replica skips overlapping jobs rather than double-running them.
-- `DATABASE_URL` must use direct PostgreSQL or a session-mode pooler that pins each connection
-  to one backend. Transaction/statement-mode pooling does not support the session locks used by
-  worker jobs and per-delivery ownership. See [Delivery ownership](../packages/mail-delivery/README.md#delivery-ownership).
+- **`app`** execs `node apps/web/dist/src/index.js`.
+  - It runs no migration logic and no retention on boot.
+  - It has no filesystem access to backup dumps.
+  - When `MAXMIND_LICENSE_KEY` is set, it first refreshes the GeoIP dataset (see [GeoIP dataset](#geoip-dataset-your-own-maxmind-license-key-optional)).
+- **`worker`** (same image, `command: ["worker"]` → `admitto worker`) runs:
+  - product retention (auth sessions and trusted devices, mail delivery snapshots, security audit log, in-app notification history);
+  - bounce ingest and mail drain;
+  - import/export jobs;
+  - the wallet jobs (bulk push, wallet messages, Remove from provider clean-up, status refresh, registration sync, expiry sweep).
+- Keep exactly one worker replica. The process uses session advisory locks, so a mistaken second replica skips overlapping jobs rather than double-running them.
+- `DATABASE_URL` must use direct PostgreSQL or a session-mode pooler that pins each connection to one backend. Transaction/statement-mode pooling does not support the session locks used by worker jobs and per-delivery ownership. See [Delivery ownership](../packages/mail-delivery/README.md#delivery-ownership).
 
 Operator upgrade procedure: see [Upgrading](#upgrading) above.
 
 Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
-For one-off CLI (bootstrap, MFA reset, emergency export), the entrypoint passes through `node …` after
-checking that `EMERGENCY_EXPORT_DIR` is writable - see below. `npm`/`npx` are not available in the production image.
+For one-off CLI commands (bootstrap, MFA reset, emergency export):
+
+- The entrypoint passes through `node …` after checking that `EMERGENCY_EXPORT_DIR` is writable (see below).
+- `npm`/`npx` are not available in the production image.
 
 ## Optional container hardening
 
@@ -543,11 +587,13 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational - no PI
 | Container | What its logs show |
 |-----------|--------------------|
 | `migrate` | Entrypoint boot steps (migration status, backfills) - a one-shot container, exits after logging `migrate: startup tasks complete` |
-| `app` | `Admitto web running at …`, then: JSON access log (one line per request - method, redacted path, status, `duration_ms`, client `ip`, plus a `ref` hash for ticket/QR paths) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `app` | `Admitto web running at …`, then the JSON access log (see below), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `worker` | `[worker:<job>] <timestamp> …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) - includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
+
+**The `app` access log** is one JSON line per request: method, redacted path, status, `duration_ms`, client `ip`, plus a `ref` hash for ticket/QR paths. It is written when `LOG_HTTP_REQUESTS=1` (compose default).
 
 **Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately trades some detail for privacy:
 
@@ -600,46 +646,77 @@ When the admin SPA or scanner is down, use the unified emergency binary (same pr
 
 ```bash
 docker compose run --rm app node apps/cli/dist/index.js --help
+```
 
+### Look up and admit
+
+```bash
 # Manual lookup + admit (staging drill before the event)
 docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "jan kowal"
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
-
-# Paper backup list (CSV) - use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
-# Run ./scripts/init-host-dirs.sh on the host first if a fresh deploy created root-owned emergency-exports/
-# (/uploads/* is served without auth; /backups is only on the db-backup sidecar volume)
-docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
-# File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
-
-# Privacy request while the admin UI/API is down: erase attendees' personal data (find the ids first, preview with --dry-run, then run it for real)
-# find only reads, lists up to 20 people in every event (add --event <eventId> for one) with the event id and the attendee id,
-# and also works for an archived event (checkin lookup does not)
-docker compose run --rm app node apps/cli/dist/index.js attendees find --query "<name or email>"
-docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com --dry-run
-docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com
-# Asks you to type yes; exits 2 when a wallet pass is still at the provider (run it again to retry).
-
-# Retry failed mail batch
-docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
-
-# Session break-glass (destructive - requires confirmation or --yes, and --operator-email for audit)
-docker compose run --rm app node apps/cli/dist/index.js sessions revoke --user admin@example.com --operator-email super@example.com
-docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email super@example.com
-
-# Auth break-glass / retention
-# reset-mfa and generate-emergency-recovery accept only a superadmin@instance account and prompt for its
-# password on stdin (use a terminal or pipe it in; never pass it on argv)
-docker compose run --rm app node apps/cli/dist/index.js auth reset-mfa --email super@example.com
-docker compose run --rm app node apps/cli/dist/index.js auth generate-emergency-recovery --email super@example.com
-docker compose run --rm app node apps/cli/dist/index.js retention run --operator-email super@example.com
-
-# Orphaned branding uploads (dry run first)
-docker compose run --rm app node apps/cli/dist/index.js storage gc --operator-email super@example.com --dry-run
 ```
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
 
-Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log + notification + export/import job file cleanup + erased wallet pass retry in one audited command for manual/on-demand use.
+### Paper backup list (CSV)
+
+- Use `EMERGENCY_EXPORT_DIR` (a node-writable bind mount), **not** `/app/uploads` or `/backups`. (`/uploads/*` is served without auth; `/backups` is only on the `db-backup` sidecar volume.)
+- Run `./scripts/init-host-dirs.sh` on the host first if a fresh deploy created root-owned `emergency-exports/`.
+- The file lands on the host at `deploy/emergency-exports/` (bind mount, not web-accessible). The CLI writes mode 0600.
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
+```
+
+### Privacy request: erase personal data
+
+Use this while the admin UI/API is down: find the ids first, preview with `--dry-run`, then run it for real.
+
+- `attendees find` only reads. It lists up to 20 people in every event (add `--event <eventId>` for one) with the event id and the attendee id. It also works for an archived event (`checkin lookup` does not).
+- `attendees erase` asks you to type yes. It exits 2 when a wallet pass is still at the provider (run it again to retry).
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js attendees find --query "<name or email>"
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com --dry-run
+docker compose run --rm app node apps/cli/dist/index.js attendees erase --event <eventId> --attendee-ids <attendeeId>[,<attendeeId>...] --operator-email super@example.com
+```
+
+### Retry failed mail
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
+```
+
+### Session break-glass
+
+These are destructive. They require confirmation or `--yes`, and `--operator-email` for audit.
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js sessions revoke --user admin@example.com --operator-email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email super@example.com
+```
+
+### Auth break-glass and retention
+
+`reset-mfa` and `generate-emergency-recovery` accept only a `superadmin@instance` account and prompt for its password on stdin (use a terminal or pipe it in; never pass it on argv).
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js auth reset-mfa --email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js auth generate-emergency-recovery --email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js retention run --operator-email super@example.com
+```
+
+### Orphaned branding uploads (dry run first)
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js storage gc --operator-email super@example.com --dry-run
+```
+
+### Legacy per-package CLIs
+
+- `packages/auth/dist/cli.js` and `packages/mail-delivery/dist/cli.js` remain for bootstrap and low-level retention.
+- Product-automated retention runs on the Admitto **worker**.
+- `admitto retention run` combines auth + mail snapshot + security audit log + notification + export/import job file cleanup + erased wallet pass retry in one audited command for manual/on-demand use.
 
 ## Nginx Proxy Manager (deep notes)
 
@@ -647,9 +724,14 @@ Start with **[Edge proxy: two variants](#edge-proxy-two-variants)** above (heade
 
 - **NPM must overwrite `X-Forwarded-For`** with the real client IP, never append (`$proxy_add_x_forwarded_for` would let a client spoof an earlier hop). Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
 - **Use `$http_host`, not `$host`,** when the public URL uses a non-default port (e.g. local smoke on `:8080`), so the CSRF origin check matches the browser's `Origin` header.
-- **Admitto takes the rightmost `X-Forwarded-For` hop that is not inside `TRUSTED_PROXY_CIDRS`** ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)) when `TRUST_PROXY=true` - entries to its left were supplied by the client, so an appended chain cannot make a client pick its own rate-limit bucket. With a single-hop header (the overwriting setups above) that is simply the one hop. A chain of several trusted proxies works as long as each of them is listed in `TRUSTED_PROXY_CIDRS`; a proxy missing from it is taken for the client, and everyone behind it shares one rate-limit bucket. If any hop isn't a valid IP, the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
-- **Compose nginx trusts only two RealIP peers,** `127.0.0.1` (NPM on the host → `127.0.0.1:8080`) and `172.17.0.1` (the default Docker bridge gateway, for NPM running in Docker), set in `deploy/nginx/default.conf`. If NPM reaches the host through a different address, add that one address there - never widen it to a whole RFC1918 range.
-- **The app itself only honours `X-Forwarded-*`** when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)) - the compose `internal` subnet for Variant A, or NPM's exact source `/32` for Variant B (never a broad Docker RFC1918 range).
+- **Admitto takes the rightmost `X-Forwarded-For` hop that is not inside `TRUSTED_PROXY_CIDRS`** ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)) when `TRUST_PROXY=true`.
+  - Entries to its left were supplied by the client, so an appended chain cannot make a client pick its own rate-limit bucket.
+  - With a single-hop header (the overwriting setups above) that is simply the one hop.
+  - A chain of several trusted proxies works as long as each of them is listed in `TRUSTED_PROXY_CIDRS`. A proxy missing from it is taken for the client, and everyone behind it shares one rate-limit bucket.
+  - If any hop isn't a valid IP, the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
+- **Compose nginx trusts only two RealIP peers,** `127.0.0.1` (NPM on the host → `127.0.0.1:8080`) and `172.17.0.1` (the default Docker bridge gateway, for NPM running in Docker), set in `deploy/nginx/default.conf`.
+  - If NPM reaches the host through a different address, add that one address there - never widen it to a whole RFC1918 range.
+- **The app itself only honours `X-Forwarded-*`** when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)): the compose `internal` subnet for Variant A, or NPM's exact source `/32` for Variant B (never a broad Docker RFC1918 range).
 - **`$scheme` is `https`** on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.
 
 ## Cloudflare and WireGuard
@@ -787,7 +869,9 @@ This works for any number of skipped versions - all intermediate migrations are 
 Stop the app and worker, **empty the target database**, restore from your **pre-upgrade backup** or a
 **nightly dump** on the `migration_backups` volume, then redeploy the previous image.
 
-Nightly dumps and the manual `pg_dump` shown above are plain SQL (no `--clean`). Replaying into a database that already ran the bad migration will hit existing tables/types and can leave a **partial** schema - not a true rollback. You must drop and recreate the application database first.
+- Nightly dumps and the manual `pg_dump` shown above are plain SQL (no `--clean`).
+- Replaying into a database that already ran the bad migration will hit existing tables/types and can leave a **partial** schema. That is not a true rollback.
+- So you must drop and recreate the application database first.
 
 ```bash
 docker compose stop app worker
@@ -809,9 +893,8 @@ docker compose exec -T db-backup sh -c 'gunzip -c /backups/nightly-<UTC>.sql.gz'
 docker compose pull app && docker compose up -d app worker
 ```
 
-Without a pre-upgrade or nightly dump you cannot roll the database back - Case A (image-only rollback)
-still works when the schema change was additive and the old app tolerates the new schema.
-Practice this on a non-production database before the first large event.
+- Without a pre-upgrade or nightly dump you cannot roll the database back. Case A (image-only rollback) still works when the schema change was additive and the old app tolerates the new schema.
+- Practice this on a non-production database before the first large event.
 
 ### Case C - the schema needs fixing after a bad migration
 
@@ -824,7 +907,11 @@ That is what makes Case A - image rollback without touching the DB - safe by def
 
 ## Uptime Kuma (observability)
 
-Set `OPS_HEALTH_TOKEN` (at least 32 characters, for example `openssl rand -hex 32`) in `deploy/.env` (see `.env.example`). `/readyz` is **disabled** (404) until a valid token is set; a wrong token gets 401, and `/readyz` allows 10 requests per minute per client IP (429 above that), so poll it no faster than every 10 seconds per monitor.
+Set `OPS_HEALTH_TOKEN` (at least 32 characters, for example `openssl rand -hex 32`) in `deploy/.env` (see `.env.example`).
+
+- `/readyz` is **disabled** (404) until a valid token is set.
+- A wrong token gets 401.
+- `/readyz` allows 10 requests per minute per client IP (429 above that), so poll it no faster than every 10 seconds per monitor.
 
 | Monitor | URL | Notes |
 |---------|-----|-------|
