@@ -21,7 +21,13 @@ is a configuration concern: in the app it is resolved per event by [`@admitto/ma
 | `powerautomate` | ready | HTTP trigger is a premium licence |
 | `smtp` | ready | Generic SMTP relay (e.g. Microsoft 365 SMTP, Amazon SES, SendGrid, Mailgun, Postfix, corporate relay) with pooling + rate limits |
 | `graph` | built, not live-tested | App-only `Mail.Send`; tests use mocked fetch |
-| `export_only` | ready | No send - `createMailer` **requires** `exportSink`; validates messages like other providers. **Not a production mailer** without a sink (`npm run dev` wires a dev-only console sink logging byte lengths + truncated recipient hash - do not use where logs are archived; deploy must use smtp/graph/powerautomate). Production boot with `EMAIL_PROVIDER=export_only` warns but does not exit; sends fail until reconfigured. |
+| `export_only` | ready | No send. `createMailer` **requires** `exportSink`. Not a production mailer (see below) |
+
+**About `export_only`**
+
+- `createMailer` **requires** `exportSink`, and it validates messages like other providers.
+- It is **not a production mailer** without a sink. `npm run dev` wires a dev-only console sink that logs byte lengths and a truncated recipient hash. Do not use it where logs are archived. A deploy must use smtp/graph/powerautomate.
+- Production boot with `EMAIL_PROVIDER=export_only` warns but does not exit. Sends fail until reconfigured.
 
 ## Usage
 
@@ -48,19 +54,18 @@ const summary = await sendBatch(mailer, messages, { concurrency: 3 });
 await closeMailer(mailer); // releases the SMTP pool
 ```
 
-`createMailer` is `async`: it also resolves the SMTP host or Power Automate URL and can reject with `MailDestinationError`.
-
-Each adapter exposes `capabilities` so callers never assume Graph-like Sent Items behaviour.
-
-`to` / `cc` / `replyTo` may use RFC5322 address lists (quoted display names, angle addresses);
-the mailer normalizes them to bare email addresses for SMTP envelope and Graph API.
-`validateMailMessage()` runs in every adapter before send. Sender `fromName` must not contain
-control characters and is quoted in SMTP From headers. Power Automate URLs must use HTTPS.
+- `createMailer` is `async`: it also resolves the SMTP host or Power Automate URL, and it can reject with `MailDestinationError`.
+- Each adapter exposes `capabilities`, so callers never assume Graph-like Sent Items behaviour.
+- `to` / `cc` / `replyTo` may use RFC5322 address lists (quoted display names, angle addresses). The mailer normalizes them to bare email addresses for the SMTP envelope and the Graph API.
+- `validateMailMessage()` runs in every adapter before send.
+- Sender `fromName` must not contain control characters, and it is quoted in SMTP From headers.
+- Power Automate URLs must use HTTPS.
 
 ## Configuration
 
-`MailerConfig` is a zod discriminated union on `provider`. In the app the config comes from `@admitto/mailer-config`; `configFromEnv()` builds one from env only and is used by this package's test-send CLI, not by the app.
-See `.env.example` for `EMAIL_PROVIDER`, `MAIL_FROM_*`, `SMTP_*`, `GRAPH_*`, `POWER_AUTOMATE_*`.
+- `MailerConfig` is a zod discriminated union on `provider`.
+- In the app, the config comes from `@admitto/mailer-config`. `configFromEnv()` builds one from env only, and it is used by this package's test-send CLI, not by the app.
+- See `.env.example` for `EMAIL_PROVIDER`, `MAIL_FROM_*`, `SMTP_*`, `GRAPH_*`, `POWER_AUTOMATE_*`.
 
 | provider | key fields |
 |---|---|
@@ -71,7 +76,10 @@ See `.env.example` for `EMAIL_PROVIDER`, `MAIL_FROM_*`, `SMTP_*`, `GRAPH_*`, `PO
 
 ### Destination safety (SSRF guard)
 
-SMTP `host` and the Power Automate `url` must not be private, loopback, link-local or cloud-metadata addresses. This is checked when the config is parsed and again at connect time: `createMailer` resolves the hostname and throws `MailDestinationError` (`mail_destination_blocked` or `mail_destination_unresolved`). A production deployment with an SMTP relay on a private address must list its exact hostname or IP in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated; set it on the app and the worker). `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` is a lab-only bypass and is ignored when `NODE_ENV=production`.
+- SMTP `host` and the Power Automate `url` must not be private, loopback, link-local or cloud-metadata addresses.
+- This is checked when the config is parsed, and again at connect time: `createMailer` resolves the hostname and throws `MailDestinationError` (`mail_destination_blocked` or `mail_destination_unresolved`).
+- A production deployment with an SMTP relay on a private address must list its exact hostname or IP in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated; set it on the app and the worker).
+- `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` is a lab-only bypass, and it is ignored when `NODE_ENV=production`.
 
 ### SMTP rate limit
 

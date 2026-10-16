@@ -1,9 +1,7 @@
 # @admitto/wallet
 
-Wallet pass domain boundary (ADR 0009): the provider-neutral `WalletPassProvider` interface and
-domain types, plus the PassCreator HTTP client (ADR 0041) that implements it today. The rest of
-Admitto depends on `WalletPassProvider`, never on PassCreator specifics directly - a future second
-provider would only need to implement this interface.
+- Wallet pass domain boundary (ADR 0009): the provider-neutral `WalletPassProvider` interface and domain types, plus the PassCreator HTTP client (ADR 0041) that implements it today.
+- The rest of Admitto depends on `WalletPassProvider`, never on PassCreator specifics directly. A future second provider would only need to implement this interface.
 
 This README is the current technical reference for how the wallet integration works today.
 
@@ -57,19 +55,13 @@ import {
 } from "@admitto/wallet";
 ```
 
-`WalletPassProvider` operations: `createPass`, `updatePass`, `voidPass`, `restorePass`,
-`deletePass`, `deletePassByUserProvidedId`, `sendPushMessage`, `findByUserProvidedId`, `getPassSnapshot`, plus the declarative
-`capabilities` and `consistencyPolicy`. `WalletProviderError` carries a stable `code` (`wallet_provider_unauthorized` /
-`_rate_limited` / `_duplicate` / `_not_found` / `_timeout` / `_rejected`) - callers branch on
-`code`, never on `.message`.
-
-`resolveWalletProvider` is the provider for anything that presumes the wallet feature is on
-(master switch AND a configured template + key). `resolveConfiguredWalletProvider` resolves from the
-credentials alone, for actions on passes that already exist and must outlive the switch (GDPR
-erasure); `canIssueWalletPass` is the cheap predicate behind the first. The admin SPA reads static
-provider facts from the `@admitto/wallet/capabilities` subpath, never the package root. See
-[docs/dev/wallet-provider.md](../../docs/dev/wallet-provider.md) for who owns the lifecycle and how
-`getPassSnapshot`'s `null` must (not) be read.
+- `WalletPassProvider` operations: `createPass`, `updatePass`, `voidPass`, `restorePass`, `deletePass`, `deletePassByUserProvidedId`, `sendPushMessage`, `findByUserProvidedId`, `getPassSnapshot`, plus the declarative `capabilities` and `consistencyPolicy`.
+- `WalletProviderError` carries a stable `code` (`wallet_provider_unauthorized` / `_rate_limited` / `_duplicate` / `_not_found` / `_timeout` / `_rejected`). Callers branch on `code`, never on `.message`.
+- `resolveWalletProvider` is the provider for anything that presumes the wallet feature is on (master switch AND a configured template + key).
+- `resolveConfiguredWalletProvider` resolves from the credentials alone, for actions on passes that already exist and must outlive the switch (GDPR erasure).
+- `canIssueWalletPass` is the cheap predicate behind the first.
+- The admin SPA reads static provider facts from the `@admitto/wallet/capabilities` subpath, never the package root.
+- See [docs/dev/wallet-provider.md](../../docs/dev/wallet-provider.md) for who owns the lifecycle and how `getPassSnapshot`'s `null` must (not) be read.
 
 ## PassCreator API surface actually used
 
@@ -78,7 +70,7 @@ provider facts from the `@admitto/wallet/capabilities` subpath, never the packag
 | Create pass | `POST /api/v3/pass?async=false` | `async=false` to get `iPhoneUri`/`androidUri` back immediately |
 | Update pass | `PATCH /api/v3/pass/{id}` | Never `POST` - v3 `POST` replaces the whole record |
 | Delete pass | `DELETE /api/v3/pass/{id}` | 404 on retry treated as success (idempotent) |
-| Delete pass by userProvidedId | `GET /api/pass/{uid}` (no `/v3/`), then `DELETE /api/v3/pass/{identifier}` | For a pass whose identifier Admitto never saved (the erasure follow-up, and Remove from event before it deletes the row). The v1 path takes the pass UID, the userProvidedId or the barcode value, and the read returns a raw object with `identifier`, `userProvidedId` and `barcodeValue`; the v3 delete takes the identifier only, so an unknown id there is a 404 that `deletePass` counts as deleted. A 404 of the read = none there (not an error). The pass is deleted only when its own `userProvidedId` equals the id asked for (a pass that merely has it as its barcode value is never deleted: the call throws), and then by its identifier. Per PassCreator's docs, not yet confirmed live |
+| Delete pass by userProvidedId | `GET /api/pass/{uid}` (no `/v3/`), then `DELETE /api/v3/pass/{identifier}` | For a pass whose identifier Admitto never saved. Details below the table. Per PassCreator's docs, not yet confirmed live |
 | Void / restore | `PUT /api/pass/{uid}` (no `/v3/`) | Body `{"voided": true\|false}`; this is the only endpoint that can write `voided` |
 | Push message | `PATCH /api/v3/pass/bulk` | Body `{data:{pushNotificationText}, filter:{identifiers}}`; async (202), only confirms that PassCreator accepted it, not device delivery |
 | Search | `GET /api/v3/pass?query=<base64url query-language>` | Used for idempotency reconciliation and registration-status polling |
@@ -86,26 +78,36 @@ provider facts from the `@admitto/wallet/capabilities` subpath, never the packag
 | List webhooks | `GET /api/hook/list` | Account-wide, filtered by `passTemplate`; used before subscribing because subscribe is not idempotent |
 | Webhook subscribe | `POST /api/hook/subscribe/{templateId}` | Not idempotent - caller must check `listWebhooks()` first |
 | Webhook unsubscribe | `POST /api/hook/unsubscribe` | Body is just `{target_url}` - no templateId, no event. Removes *every* event subscribed to that URL, not one |
-| Webhook public key | `GET /api/hook/publickey` | EC (P-256), hex-encoded signature, SHA-1 hash (PassCreator's own `openssl_verify()` doc example omits the algorithm argument, which defaults to SHA-1 in PHP - confirmed 2026-08-19). Response is `{"publicKey": "<PEM>"}` at the top level - confirmed live 2026-08-19, not the usual `{success, data}` envelope |
+| Webhook public key | `GET /api/hook/publickey` | EC (P-256), hex-encoded signature, SHA-1 hash. Details below the table |
 
-**Webhook delivery has no event-type field or header** (confirmed 2026-08-19,
-developer.passcreator.com/en/webhooks/pass-hooks): the POST body never names which of the 4
-subscribed events fired, so the *target URL a delivery arrives on* is the only signal. The two
-registration-count events (`pushnotification_registered`, `pushnotification_unregistered`) share
-one target URL (`/api/wallet/webhook/passcreator/:eventId`) because their handling doesn't depend
-on telling them apart; `applyWebhookUpdate` just trusts whatever counts the delivery reports.
-`first_pushnotification_registered` gets its own `/first-confirmed`-suffixed URL
-(`isFirstConfirmedRoute` in `apps/web/src/wallet-webhook.ts`): a delivery there runs
-`applyFirstConfirmedAt` (which stamps `WalletPass.first_confirmed_at` once, feeding Reports'
-"Time to wallet install") in addition to the normal `applyWebhookUpdate`.
+**Delete by userProvidedId**
 
-`pass_voided` gets its own `/voided`-suffixed target URL (`subscribeWalletWebhooksBestEffort` in
-`apps/web/src/admin/event-settings-routes.ts`) because its payload has no `voided` field at all.
-Arriving on that URL is itself the only voided signal there is (`isVoidedRoute` in
-`apps/web/src/wallet-webhook.ts`).
+- It is for a pass whose identifier Admitto never saved: the erasure follow-up, and Remove from event before it deletes the row.
+- The v1 path takes the pass UID, the userProvidedId or the barcode value. The read returns a raw object with `identifier`, `userProvidedId` and `barcodeValue`.
+- The v3 delete takes the identifier only, so an unknown id there is a 404 that `deletePass` counts as deleted.
+- A 404 of the read means "none there" (not an error).
+- The pass is deleted only when its own `userProvidedId` equals the id asked for, and then by its identifier. A pass that merely has the id as its barcode value is never deleted: the call throws.
+
+**Webhook signature**
+
+- EC (P-256), hex-encoded signature, SHA-1 hash. PassCreator's own `openssl_verify()` doc example omits the algorithm argument, which defaults to SHA-1 in PHP (confirmed 2026-08-19).
+- The response is `{"publicKey": "<PEM>"}` at the top level. This was confirmed live on 2026-08-19. It is not the usual `{success, data}` envelope.
+
+**Webhook delivery has no event-type field or header** (confirmed 2026-08-19, developer.passcreator.com/en/webhooks/pass-hooks).
+
+- The POST body never names which of the 4 subscribed events fired. So the *target URL a delivery arrives on* is the only signal.
+- The two registration-count events (`pushnotification_registered`, `pushnotification_unregistered`) share one target URL (`/api/wallet/webhook/passcreator/:eventId`), because their handling doesn't depend on telling them apart. `applyWebhookUpdate` just trusts whatever counts the delivery reports.
+- `first_pushnotification_registered` gets its own `/first-confirmed`-suffixed URL (`isFirstConfirmedRoute` in `apps/web/src/wallet-webhook.ts`). A delivery there runs `applyFirstConfirmedAt` in addition to the normal `applyWebhookUpdate`. `applyFirstConfirmedAt` stamps `WalletPass.first_confirmed_at` once, feeding Reports' "Time to wallet install".
+- `pass_voided` gets its own `/voided`-suffixed target URL (`subscribeWalletWebhooksBestEffort` in `apps/web/src/admin/event-settings-routes.ts`), because its payload has no `voided` field at all. Arriving on that URL is itself the only voided signal there is (`isVoidedRoute` in `apps/web/src/wallet-webhook.ts`).
 
 - **Auth:** `Authorization: <api_key>` header, no `Bearer` prefix.
-- **Rate limit:** PassCreator allows 600 requests per minute per account. The client paces itself: at least 150 ms between call starts per process, plus, when `REDIS_URL` is set, a shared Redis gate of at most 6 calls per second across the app and the worker (it fails open to per-process pacing if Redis is unreachable). A 429 is retried 3 times with exponential backoff (500 ms base) before it surfaces as `wallet_provider_rate_limited`; each request has a 15 s timeout (`wallet_provider_timeout`). A pass creation (`createPass`) that has waited more than 2 minutes (`CREATE_PASS_DEADLINE_MS`, counted from the caller's check, `options.checkedAt`), for instance behind a long queue of other calls, is dropped without being sent and fails with `wallet_provider_timeout`, so nothing of it can reach PassCreator later. `PASSCREATOR_BASE_URL` (must start with `https://`) overrides the default `https://app.passcreator.com`.
+- **Rate limit:** PassCreator allows 600 requests per minute per account.
+  - The client paces itself: at least 150 ms between call starts per process.
+  - When `REDIS_URL` is set, there is also a shared Redis gate of at most 6 calls per second across the app and the worker. It fails open to per-process pacing if Redis is unreachable.
+  - A 429 is retried 3 times with exponential backoff (500 ms base) before it surfaces as `wallet_provider_rate_limited`.
+  - Each request has a 15 s timeout (`wallet_provider_timeout`).
+  - A pass creation (`createPass`) that has waited more than 2 minutes (`CREATE_PASS_DEADLINE_MS`, counted from the caller's check, `options.checkedAt`), for instance behind a long queue of other calls, is dropped without being sent and fails with `wallet_provider_timeout`. So nothing of it can reach PassCreator later.
+  - `PASSCREATOR_BASE_URL` (must start with `https://`) overrides the default `https://app.passcreator.com`.
 - **Config scope:** API key, template ID, and field mapping are stored per-event, not per-instance,
   so a leaked or rotated key's blast radius in Admitto's own logs/audit trail is scoped to one event.
 - **Key-scope caveat:** this does not limit the key itself. PassCreator API keys inherit the
@@ -116,21 +118,18 @@ Arriving on that URL is itself the only voided signal there is (`isVoidedRoute` 
 
 ## Data flow: field mapping is the only mechanism (semantics API field does not exist)
 
-Earlier revisions of this integration also built and sent a top-level `data.semantics` object,
-believing PassCreator's API passed it straight through into the issued pass's Apple `semantics`
-dictionary. **This was wrong and has been removed.** `semantics` is not a documented field of
-`POST /api/v3/pass` (confirmed against `developer.passcreator.com/en/api/v3/pass`), and empirical
-testing - diffing a real downloaded `.pkpass`/`pass.json` before and after editing the PassCreator
-template - showed it never reached the output pass regardless of what was sent. PassCreator
-silently ignores unknown request fields rather than rejecting them, so the request always looked
-like it worked.
+Earlier revisions of this integration also built and sent a top-level `data.semantics` object, believing PassCreator's API passed it straight through into the issued pass's Apple `semantics` dictionary. **This was wrong and has been removed.**
 
-The only mechanism that actually works is the same one that already powers the pass's visible
-fields (Name, Venue, Date, Hours): **field mapping** (`toPassCreatorData`'s `custom` object) - an
-admin maps every field their template's Additional Properties expect (Event Settings → Wallet →
-Field mapping); nothing beyond the provider-controlled base fields (`templateId`, `userProvidedId`, `enforceUniqueUserProvidedId`, `barcodeValue` and, when they apply, top-level `relevantDate` and `expirationDate`) is sent until explicitly mapped. To get a value into
-one of Apple's Semantic Tags (Siri Suggestions / Maps / Calendar smart surfacing), the admin must
-do **two** things, on two different systems, both required:
+- `semantics` is not a documented field of `POST /api/v3/pass` (confirmed against `developer.passcreator.com/en/api/v3/pass`).
+- Empirical testing showed it never reached the output pass, regardless of what was sent. The test diffed a real downloaded `.pkpass` / `pass.json` before and after editing the PassCreator template.
+- PassCreator silently ignores unknown request fields rather than rejecting them, so the request always looked like it worked.
+
+The only mechanism that actually works is the same one that already powers the pass's visible fields (Name, Venue, Date, Hours): **field mapping** (`toPassCreatorData`'s `custom` object).
+
+- An admin maps every field their template's Additional Properties expect (Event Settings → Wallet → Field mapping).
+- Nothing beyond the provider-controlled base fields is sent until explicitly mapped. Those base fields are `templateId`, `userProvidedId`, `enforceUniqueUserProvidedId`, `barcodeValue` and, when they apply, top-level `relevantDate` and `expirationDate`.
+
+To get a value into one of Apple's Semantic Tags (Siri Suggestions / Maps / Calendar smart surfacing), the admin must do **two** things, on two different systems, both required:
 
 1. In Admitto's Field mapping table, map a placeholder (e.g. `event_type`, `venue_room`,
    `doors_open_time` - see `WALLET_MAPPING_PLACEHOLDERS`) to a PassCreator Additional Property name.
@@ -156,28 +155,17 @@ app and enter it in Event Settings → Location.
 
 ### Standard: every date/time placeholder sent to Apple is a real ISO 8601 instant
 
-The seven `*OpenTimeLabel` fields on `WalletPassInput` are built with `zonedDateTimeToIso` from the
-event's stored UTC calendar day, an "HH:MM" field, and `event.timezone` - never a bare `"HH:MM"`,
-never a date without a UTC offset. See the doc comments on `zonedDateTimeToIso`/`tzOffsetSuffix` in
-`packages/tickets/src/wallet-pass-input.ts` for the exact day-boundary and DST-transition handling
-(both were real bugs once; the comments explain why the current approach avoids them). This is
-independent from the visible-text formatting in `region-date-format.ts` (below): these are
-machine-readable values for a Semantic Tag, field-mapping labels elsewhere are human-readable text
-- the two never need to agree, and a new date-typed placeholder should reuse `zonedDateTimeToIso`,
-not a new conversion.
+- The seven `*OpenTimeLabel` fields on `WalletPassInput` are built with `zonedDateTimeToIso` from the event's stored UTC calendar day, an "HH:MM" field, and `event.timezone`. Never a bare `"HH:MM"`, never a date without a UTC offset.
+- See the doc comments on `zonedDateTimeToIso` / `tzOffsetSuffix` in `packages/tickets/src/wallet-pass-input.ts` for the exact day-boundary and DST-transition handling. Both were real bugs once, and the comments explain why the current approach avoids them.
+- This is independent from the visible-text formatting in `region-date-format.ts` (below). These are machine-readable values for a Semantic Tag. Field-mapping labels elsewhere are human-readable text. The two never need to agree.
+- A new date-typed placeholder should reuse `zonedDateTimeToIso`, not a new conversion.
 
 ### Visible field text: region-aware formatting (`packages/shared/src/region-date-format.ts`)
 
-`eventDateLabel`/`eventHoursLabel` and other `*Label` fields on `WalletPassInput` are the only way
-to influence the *visible* text on the pass card, because PassCreator's Additional Properties have
-no date type (`enum<'email','text','textarea','checkbox','select','radiobutton'>` - confirmed
-against their API docs) - Apple's native `dateStyle`/`timeStyle` field rendering only applies to a
-template's own `fields`, never to values injected through Additional Properties. `formatDate`/
-`formatEventHour` resolve the event's `addressComponents.country` to a region (`en-<ISO region>`)
-so the date order and 12h/24h convention match the event's own country while text stays English;
-no match falls back to `en-GB`. Shared by the ticket page and the wallet pass - any new visible-text
-variant (e.g. a shorter date) is a new field computed by this same module, not a parallel
-implementation.
+- `eventDateLabel` / `eventHoursLabel` and other `*Label` fields on `WalletPassInput` are the only way to influence the *visible* text on the pass card.
+- Why: PassCreator's Additional Properties have no date type (`enum<'email','text','textarea','checkbox','select','radiobutton'>`, confirmed against their API docs). Apple's native `dateStyle` / `timeStyle` field rendering only applies to a template's own `fields`, never to values injected through Additional Properties.
+- `formatDate` / `formatEventHour` resolve the event's `addressComponents.country` to a region (`en-<ISO region>`). So the date order and 12h/24h convention match the event's own country, while the text stays English. No match falls back to `en-GB`.
+- It is shared by the ticket page and the wallet pass. Any new visible-text variant (e.g. a shorter date) is a new field computed by this same module, not a parallel implementation.
 
 ## Explicitly out of scope
 
@@ -185,36 +173,28 @@ implementation.
   iOS 18+) - requires NFC hardware and PassCreator account approval, and Apple's own docs state
   poster tickets are incompatible with QR/barcode-only entry. Admitto's check-in model depends on
   scanning the ticket's QR/barcode, so this is architecturally excluded, not just deferred.
-- **Samsung Wallet (partial)** - Event Settings → Wallet has a real Samsung Wallet switch (`wallet_samsung_enabled`, on by default) and, when it is on, the ticket page shows a greyed-out, non-tappable "Add to Samsung Wallet" badge. PassCreator returns no Samsung install link, so no attendee can add a Samsung pass yet. Admitto already reads and stores PassCreator's Samsung registration counts, which the Attendees Wallet column shows.
+- **Samsung Wallet (partial)**
+  - Event Settings → Wallet has a real Samsung Wallet switch (`wallet_samsung_enabled`, on by default). When it is on, the ticket page shows a greyed-out, non-tappable "Add to Samsung Wallet" badge.
+  - PassCreator returns no Samsung install link, so no attendee can add a Samsung pass yet.
+  - Admitto already reads and stores PassCreator's Samsung registration counts, which the Attendees Wallet column shows.
 
 ## Webhooks and background sync
 
-`apps/web/src/wallet-webhook.ts` receives `first_pushnotification_registered`,
-`pushnotification_registered`, `pushnotification_unregistered`, and `pass_voided`, verified via the
-EC public key above. `apps/cli`'s `wallet_sync` job (`runWalletRegistrationSync`) polls
-`getPassSnapshot()` for active, non-removed passes of non-archived events (stale after 30 minutes,
-oldest first, 25 per tick) as a fallback for events the webhook may have missed; the same read is
-how Admitto notices that the provider voided or expired a pass. `wallet_expire` marks passes past
-`WalletPass.expires_at` as expired locally, but only once the event's own end has passed too (checked
-under a lock on the event row in the same transaction as the update, so an end time moved later at
-that moment cannot slip through), `wallet_refresh_status` runs bulk and event-wide Refresh
-status, `wallet_cleanup` runs Void active passes and Remove inactive passes, and `wallet_message`
-sends wallet messages. `wallet_push` (`AdminJob`) is the background job that re-syncs already-issued
-passes when a save changes something that can reach a pass: an event field (title, date, timezone,
-hours, event type, the Apple Wallet toggle, `wallet_expiration_mode`) or a Location field, and only
-when the changed field is actually mapped in Field mapping (or feeds `relevantDate` /
-`expirationDate`); see `walletRelevantEventFieldsChanged` in
-`apps/web/src/admin/event-settings-routes.ts`. A bulk ticket-type change enqueues the same job for
-the selected attendees.
+`apps/web/src/wallet-webhook.ts` receives `first_pushnotification_registered`, `pushnotification_registered`, `pushnotification_unregistered`, and `pass_voided`, verified via the EC public key above.
+
+**Worker jobs** (`apps/cli`)
+
+- `wallet_sync` (`runWalletRegistrationSync`) polls `getPassSnapshot()` for active, non-removed passes of non-archived events (stale after 30 minutes, oldest first, 25 per tick). It is a fallback for events the webhook may have missed. The same read is how Admitto notices that the provider voided or expired a pass.
+- `wallet_expire` marks passes past `WalletPass.expires_at` as expired locally, but only once the event's own end has passed too. That is checked under a lock on the event row, in the same transaction as the update, so an end time moved later at that moment cannot slip through.
+- `wallet_refresh_status` runs bulk and event-wide Refresh status.
+- `wallet_cleanup` runs Void active passes and Remove inactive passes.
+- `wallet_message` sends wallet messages.
+- `wallet_push` (`AdminJob`) is the background job that re-syncs already-issued passes when a save changes something that can reach a pass.
+  - What counts: an event field (title, date, timezone, hours, event type, the Apple Wallet toggle, `wallet_expiration_mode`) or a Location field. And only when the changed field is actually mapped in Field mapping (or feeds `relevantDate` / `expirationDate`). See `walletRelevantEventFieldsChanged` in `apps/web/src/admin/event-settings-routes.ts`.
+  - A bulk ticket-type change enqueues the same job for the selected attendees.
 
 This job does *not* cover two things:
 
-- It targets `status: "active"` passes and never a pass removed at the provider
-  (`drain-wallet-push-jobs.ts`), so a voided pass stays untouched until it's restored *and*
-  separately reissued, except when the save changed the event's canonical expiration
-  (`wallet_expiration_mode`, or the date, hours or time zone while that mode is `event_end`): then
-  voided passes get the new expiration date too. `restorePass()` only clears the void flag at the
-  provider, it does not push fresh content.
-- A single-attendee edit (name, email, company, department, ticket type) pushes synchronously in
-  the same request instead of going through this job queue, so it never appears in the admin UI's
-  "Wallet push history" list.
+- It targets `status: "active"` passes and never a pass removed at the provider (`drain-wallet-push-jobs.ts`). So a voided pass stays untouched until it's restored *and* separately reissued. `restorePass()` only clears the void flag at the provider, it does not push fresh content.
+  - The exception: when the save changed the event's canonical expiration (`wallet_expiration_mode`, or the date, hours or time zone while that mode is `event_end`), voided passes get the new expiration date too.
+- A single-attendee edit (name, email, company, department, ticket type) pushes synchronously in the same request instead of going through this job queue, so it never appears in the admin UI's "Wallet push history" list.
