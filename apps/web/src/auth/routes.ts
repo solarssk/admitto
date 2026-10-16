@@ -14,6 +14,7 @@ import {
   login,
   logout,
   validatePartialSession,
+  resolveOidcEndSessionRedirect,
   completeMfa,
   completeMfaWithWebauthn,
   getOrStartTotpEnrollment,
@@ -41,6 +42,7 @@ import {
   loginWithPasskey,
 } from "@admitto/auth";
 import { generateToken } from "@admitto/crypto";
+import { hashToken } from "@admitto/tickets";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
@@ -58,6 +60,7 @@ import {
   webauthnAttachmentSchema,
 } from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { safeErrorFields } from "../safe-error-fields.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
@@ -172,17 +175,74 @@ export async function handleLogin(
   return c.json({ ok: true, next: result.next }, 200);
 }
 
-/** POST /api/auth/logout, revokes the current session and clears its cookie. Does not touch the
- * trusted-device cookie/token - "Remember this device" means skipping MFA on this device until
- * that trust itself expires or is explicitly revoked (password change, MFA reset, admin action),
- * not "only until the next logout". A normal sign-out should not force MFA again on next login,
- * on this same device, before that trust window ends. */
-export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * Where the browser has to go to end the identity provider's own session for the session the cookie
+ * names. The session need not be valid any more: it is read from its row when it is revoked or has run
+ * out, because a Sign out that is repeated after its first answer was lost, or pressed on a session
+ * that has just expired, must still find the provider. The row names only the sign-in method and the
+ * provider, never a secret. Failure here (e.g. a transient DB error looking up the provider) must not
+ * block local logout - the IdP redirect is a bonus, not a precondition for clearing this session.
+ */
+async function resolveEndSessionUrl(
+  db: PrismaClient,
+  rawToken: string | undefined,
+  validated: Awaited<ReturnType<typeof validatePartialSession>>,
+  baseUrl: string | null,
+): Promise<string | null> {
+  if (!rawToken || !baseUrl) return null;
+  try {
+    const session = validated
+      ? validated.session
+      : await db.session.findUnique({
+          where: { token_hash: hashToken(rawToken) },
+          select: { auth_method: true, oidc_provider_id: true },
+        });
+    return session ? await resolveOidcEndSessionRedirect(db, session, baseUrl) : null;
+  } catch (err) {
+    console.error("resolve OIDC end-session redirect failed:", safeErrorFields(err));
+    return null;
+  }
+}
+
+/**
+ * Revokes the session the request's cookie names, clears that cookie, and returns where the
+ * browser has to go next to end the identity provider's own session too (its OIDC end-session
+ * URL), or null when there is nowhere to go: any non-OIDC session, a provider that doesn't
+ * advertise an end-session endpoint, a cookie that names no session, or `baseUrl` null (Instance URL
+ * isn't configured yet, so no `post_logout_redirect_uri` can be built - local logout must still
+ * succeed). Shared by POST /api/auth/logout (the staff app's Sign out) and POST /logout (the
+ * server-rendered pages). Does not touch the trusted-device cookie/token - see handleLogout's docstring.
+ */
+export async function endRequestSession(
+  c: Context,
+  db: PrismaClient,
+  baseUrl: string | null,
+): Promise<string | null> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
+  // Resolved before the local session is revoked below - same session row either way, just
+  // reading it while it's still the one the cookie names, not relying on ordering to matter.
+  const endSessionUrl = await resolveEndSessionUrl(db, rawToken, validated, baseUrl);
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
-  return c.json({ ok: true }, 200);
+  return endSessionUrl;
+}
+
+/** POST /api/auth/logout, revokes the current session and clears its cookie, and answers with the
+ * identity provider's end-session URL (`end_session_url`, null when there is none) so the staff
+ * app can navigate there itself: the staff page's `form-action 'self'` policy also applies to the
+ * redirect target of a form post, so a 302 to the provider from `POST /logout` is not followed by
+ * every browser. Does not touch the trusted-device cookie/token - "Remember this device" means
+ * skipping MFA on this device until that trust itself expires or is explicitly revoked (password
+ * change, MFA reset, admin action), not "only until the next logout". A normal sign-out should not
+ * force MFA again on next login, on this same device, before that trust window ends. */
+export async function handleLogout(
+  c: Context,
+  db: PrismaClient,
+  baseUrl: string | null,
+): Promise<Response> {
+  const endSessionUrl = await endRequestSession(c, db, baseUrl);
+  return c.json({ ok: true, end_session_url: endSessionUrl }, 200);
 }
 
 export type MailerStatusPayload = {

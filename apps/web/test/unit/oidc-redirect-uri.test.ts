@@ -7,7 +7,11 @@ vi.mock("../../src/instance-base-url.js", () => ({
 }));
 
 import { resolveInstanceBaseUrl } from "../../src/instance-base-url.js";
-import { resolveOidcRedirectUri, resolveOidcPublicBaseUrlOrNull } from "../../src/admin/oidc-redirect-uri.js";
+import {
+  resolveLogoutBaseUrl,
+  resolveOidcRedirectUri,
+  resolveOidcPublicBaseUrlOrNull,
+} from "../../src/admin/oidc-redirect-uri.js";
 
 const mockResolve = vi.mocked(resolveInstanceBaseUrl);
 
@@ -59,5 +63,52 @@ describe("resolveOidcPublicBaseUrlOrNull", () => {
   it("rethrows unexpected resolution errors", async () => {
     mockResolve.mockRejectedValueOnce(new Error("db down"));
     await expect(resolveOidcPublicBaseUrlOrNull({} as PrismaClient)).rejects.toThrow("db down");
+  });
+});
+
+describe("resolveLogoutBaseUrl", () => {
+  it("returns the resolved base URL", async () => {
+    mockResolve.mockResolvedValueOnce("https://tickets.example.com/");
+    await expect(resolveLogoutBaseUrl({} as PrismaClient, "https://injected.example.com")).resolves.toBe(
+      "https://tickets.example.com/",
+    );
+    expect(mockResolve).toHaveBeenCalledWith({}, process.env, "https://injected.example.com");
+  });
+
+  it("returns null, quietly, when Instance URL is required but missing", async () => {
+    mockResolve.mockRejectedValueOnce(new InstanceUrlRequiredError());
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(resolveLogoutBaseUrl({} as PrismaClient)).resolves.toBeNull();
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("returns null for any other failure too (a malformed BASE_URL, a database error) and logs its name and code, never its message", async () => {
+    mockResolve.mockRejectedValueOnce(Object.assign(new Error("BASE_URL must be a valid URL: secret-sentinel-3"), { code: "ERR_X" }));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(resolveLogoutBaseUrl({} as PrismaClient)).resolves.toBeNull();
+      expect(logged).toHaveBeenCalledWith("resolve base URL for sign out failed:", {
+        error_name: "Error",
+        error_code: "ERR_X",
+      });
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-sentinel-3");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("returns null for a failure that is not an Error", async () => {
+    mockResolve.mockRejectedValueOnce("connection reset");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(resolveLogoutBaseUrl({} as PrismaClient)).resolves.toBeNull();
+      expect(logged).toHaveBeenCalledWith("resolve base URL for sign out failed:", { error_name: "unknown" });
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
