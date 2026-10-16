@@ -42,9 +42,16 @@ function oidcFailedRedirect(c: Context): Response {
   return c.redirect(OIDC_LOGIN_ERROR_PATH, 302);
 }
 
+/**
+ * `err` is an Error, or a fixed reason chosen by the caller. A reason is logged as given and
+ * recorded as the system log's `reason`, so an operator can tell the failures of one step apart;
+ * it must never be built from a name, an address or anything else a person supplied. An Error's
+ * message is only written to the console, never to the system log.
+ */
 function logOidcError(context: string, err: unknown): void {
+  const reason = typeof err === "string" ? err : undefined;
   const message = err instanceof Error ? err.message : "unknown";
-  console.error(`OIDC ${context}:`, message);
+  console.error(`OIDC ${context}:`, reason ?? message);
   const contextKey = context
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, "_")
@@ -54,7 +61,10 @@ function logOidcError(context: string, err: unknown): void {
     level: "warn",
     source: "security",
     message: `oidc_${contextKey}_failed`,
-    fields: { errorKind: err instanceof Error ? "error" : "non_error" },
+    fields: {
+      errorKind: err instanceof Error ? "error" : "non_error",
+      ...(reason === undefined ? {} : { reason }),
+    },
   });
 }
 
@@ -164,6 +174,8 @@ async function resolveOidcCallbackUserId(
     return { userId: resolved.user.id, linked: resolved.linked };
   } catch (err) {
     if (err instanceof ExternalIdentityLinkError) {
+      // Its message is one of a fixed set of codes (email_already_exists, subject_already_linked,
+      // ...), never an address or a name, so it is safe to log as the reason.
       logOidcError("identity link", err.message);
     } else {
       logOidcError("identity link", err);
