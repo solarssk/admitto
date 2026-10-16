@@ -1,10 +1,11 @@
 import { ApiError } from "../api/client.js";
+import { goToLogin } from "../auth/login-navigation.js";
 
 /** Session expired mid-request: hand off to login with a return path (the pattern used across the admin SPA, e.g.
  * ReportsPage/AttendeesPage). */
 export function redirectToLogin(): void {
   const next = encodeURIComponent(window.location.pathname);
-  window.location.assign(`/login?next=${next}`);
+  goToLogin(`/login?next=${next}`);
 }
 
 /**

@@ -66,6 +66,8 @@ function buildStaffSpaContentSecurityPolicy(
     `font-src ${STAFF_SPA_FONT_SRC.join(" ")}`,
     "object-src 'none'",
     "base-uri 'none'",
+    // Also applies to where a form post is redirected to, so no form on this page can end at another
+    // origin (an identity provider's logout page included): the staff app's Sign out navigates there itself.
     "form-action 'self'",
     "frame-ancestors 'none'",
   ].join("; ");
@@ -83,9 +85,10 @@ export function getStaffSpaSecurityHeaders(
   return {
     "Cache-Control": "no-store",
     "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(env, trustedOrigins),
-    // same-origin (not no-referrer) so Safari sends Referer on same-origin form POSTs
-    // (e.g. Sign out). no-referrer blocks Referer and Safari omits Origin for same-origin
-    // form POST, causing the CSRF guard to reject the request.
+    // same-origin (not no-referrer) so Safari sends Referer on same-origin form POSTs.
+    // no-referrer blocks Referer and Safari omits Origin for same-origin form POST, causing
+    // the CSRF guard to reject the request. The staff app's own requests, Sign out included,
+    // are fetch() calls, which send Origin whatever this header says.
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
     // Operator SPA uses the camera for QR scanning (CameraScanner.tsx) - allow it same-origin

@@ -2,11 +2,12 @@ import { useEffect } from "react";
 import { Navigate, Outlet } from "react-router";
 import { useAuth } from "./AuthProvider.js";
 import { canAccessAdminPanel, canAccessCheckInPanel, isSuperadmin } from "./capabilities.js";
+import { goToLogin } from "./login-navigation.js";
 
 function RedirectToLogin() {
   useEffect(() => {
     const next = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.assign(`/login?next=${next}`);
+    goToLogin(`/login?next=${next}`);
   }, []);
   return <p>Redirecting to sign in…</p>;
 }

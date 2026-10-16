@@ -45,7 +45,7 @@ npm test -w @admitto/admin
 
 ## E2E (Playwright)
 
-Browser-level tests in this repo, both under `apps/admin/e2e/`:
+Browser-level tests in this repo, all under `apps/admin/e2e/`:
 
 - `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them
   through the manual check-in path (not the camera/QR scanner).
@@ -55,6 +55,11 @@ Browser-level tests in this repo, both under `apps/admin/e2e/`:
   enrollment over the API). iframes (the mail-template previews) are excluded.
   Every violation is printed, written to the job summary, and saved as `test-results/*/axe-*.json`;
   serious and critical ones fail the test, minor and moderate stay report-only.
+- `topbar-phone.spec.ts`: the seeded superadmin on a 390, a 360, a 340 and a 320 pixel phone (touch emulation): the
+  top bar does not let `div.main` scroll sideways and keeps its side padding, the system status is an icon and not
+  the dot, and a click on the account button opens the menu and it stays open with Sign out in view (a bar wider
+  than the screen made the page scroll and the scroll closed the menu). A second test holds the icon font's request
+  and checks the same status icon is there while the font has not loaded.
 
 Not part of `npm test`. Runs in CI as the `e2e-checkin-smoke` job in `.github/workflows/ci.yml`
 when check-in-related paths change (see the `checkin` filter in that file), and daily via
