@@ -81,8 +81,8 @@ Expired or revoked session and trusted-device rows are purged best-effort on the
 (at boot and about every 24 hours). Operators can also run
 `docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview
 counts (drop `--dry-run` to run it); the production image ships no `npm`.
-**Trusted-device persistence across sign-out.** Signing out (`POST /logout` in the staff UI, or
-`POST /api/auth/logout`) revokes the session but intentionally does **not** clear the
+**Trusted-device persistence across sign-out.** Signing out (`POST /api/auth/logout` from the staff
+app, or `POST /logout` from the server-rendered pages) revokes the session but intentionally does **not** clear the
 `admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
 for its full window (`trusted_device_days`, 30 days by default) regardless of how many times the
 user signs out and back in on that browser, matching how most other products with this feature
