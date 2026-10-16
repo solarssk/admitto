@@ -661,6 +661,19 @@ describe("xlsxBufferToCsv child process", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, 
     ]);
     await expect(xlsxBufferToCsv(await buildXlsxBuffer([["a"], ["b"]]))).resolves.toBe("a\nb");
   }, 120_000);
+
+  it("keeps the memory limit of the process whatever heap-size flags this process was started with", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // A percentage of the host's memory takes precedence over the limit the process is given, and
+    // would let it read the workbook below in full.
+    const original = process.execArgv;
+    process.execArgv = [...original, "--max-old-space-size-percentage=50", "--max-old-space-size=4096"];
+    try {
+      await expect(xlsxBufferToCsv(memoryHungryWorkbook())).rejects.toBeInstanceOf(ImportRowLimitError);
+    } finally {
+      process.execArgv = original;
+    }
+  }, 120_000);
 });
 
 describe("runXlsxChild", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
