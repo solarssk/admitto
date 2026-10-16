@@ -6,6 +6,7 @@ import {
   buildXlsxBuffer,
   ImportRowLimitError,
   ImportZipBombError,
+  MAX_CSV_CHARS,
   MAX_IMPORT_ROWS,
   xlsxBufferToCsv,
 } from "../src/admin/xlsx-to-csv.js";
@@ -96,6 +97,15 @@ function workbookParts(sheetData: readonly string[]): Record<string, string> {
 /** A `<sheetData>` of `count` empty rows: the smallest worksheet that still has that many `<row>`s. */
 function emptyRows(count: number): string {
   return `<sheetData>${Array.from({ length: count }, (_, i) => `<row r="${i + 1}"/>`).join("")}</sheetData>`;
+}
+
+/** A `<sheetData>` of `count` rows with one value each, in XFD, the last column a worksheet has. */
+function lastColumnRows(count: number): string {
+  const rows = Array.from(
+    { length: count },
+    (_, i) => `<row r="${i + 1}"><c r="XFD${i + 1}" t="inlineStr"><is><t>x</t></is></c></row>`,
+  );
+  return `<sheetData>${rows.join("")}</sheetData>`;
 }
 
 /**
@@ -342,6 +352,203 @@ describe("xlsxBufferToCsv row limit", () => {
   });
 });
 
+
+// These workbooks hold a million cells or build ten million characters of text, and the CI runner
+// is far slower than a laptop (with coverage and the other test files running in parallel), so the
+// suites below get the same kind of generous explicit timeout as the 50,000-row test above.
+const BIG_WORKBOOK_TIMEOUT_MS = 30_000;
+
+describe("xlsxBufferToCsv cell limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
+  // ExcelJS builds an object for every <c> while it loads a workbook, so a workbook with too many
+  // cells has to be refused before load() is called, as one with too many rows is.
+  const xlsxPrototype: { load: (...args: unknown[]) => unknown } = Object.getPrototypeOf(new ExcelJS.Workbook().xlsx);
+  const MAX_CELLS = (MAX_IMPORT_ROWS + 1) * 20;
+  const rowOf = (cells: number): string => `<row>${"<c/>".repeat(cells)}</row>`;
+  const sheetOfCells = (cells: number): string => `<sheetData>${rowOf(cells)}</sheetData>`;
+  /** `rows` rows of 20 cells, the last one with `lastRowCells` instead. */
+  const sheetOfRows = (rows: number, lastRowCells: number): string =>
+    `<sheetData>${rowOf(20).repeat(rows - 1)}${rowOf(lastRowCells)}</sheetData>`;
+  const textCell = (ref: string, text: string): string => `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("refuses a worksheet with far more cells than the import accepts, without loading the workbook", async () => {
+    const load = vi.spyOn(xlsxPrototype, "load");
+    const buf = buildZip(workbookParts([`<sheetData>${rowOf(20_000).repeat(100)}</sheetData>`]));
+
+    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("counts the cells of every worksheet, not only the first", async () => {
+    const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
+    const half = MAX_CELLS / 2;
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheetOfCells(half), sheetOfCells(half)])))).resolves.toBe("");
+
+    const buf = buildZip(workbookParts([sheetOfCells(half + 1), sheetOfCells(half + 1)]));
+    load.mockClear();
+    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["deflated", 8],
+    ["stored", 0],
+  ])(
+    "takes 20 cells for each of the header row and MAX_IMPORT_ROWS rows and refuses one cell more (%s)",
+    async (_label, method) => {
+      const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
+      const atLimit = buildZip(workbookParts([sheetOfRows(MAX_IMPORT_ROWS + 1, 20)]), { method });
+      const oneOver = buildZip(workbookParts([sheetOfRows(MAX_IMPORT_ROWS + 1, 21)]), { method });
+
+      await expect(xlsxBufferToCsv(atLimit)).resolves.toBe("");
+      expect(load).toHaveBeenCalledTimes(1);
+      load.mockClear();
+      await expect(xlsxBufferToCsv(oneOver)).rejects.toBeInstanceOf(ImportRowLimitError);
+      expect(load).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still imports a workbook as wide as an event can use", async () => {
+    // The 8 standard columns and the 20 custom fields an event can have.
+    const header = [
+      "email",
+      "first_name",
+      "last_name",
+      "ticket_type",
+      "company",
+      "department",
+      "external_uuid",
+      "qr_payload",
+      ...Array.from({ length: 20 }, (_, i) => `field_${i + 1}`),
+    ];
+    const rows = [header];
+    for (let row = 1; row <= 100; row++) rows.push(header.map((name) => `${name} ${row}`));
+
+    const lines = (await xlsxBufferToCsv(await buildXlsxBuffer(rows))).split("\n");
+
+    expect(lines).toHaveLength(101);
+    expect(lines[0]).toBe(header.join(","));
+    expect(lines.at(-1)).toBe(header.map((name) => `${name} 100`).join(","));
+  });
+
+  it("counts a cell start tag whatever follows `<c`", async () => {
+    const forms = [
+      "<c/>",
+      '<c r="A1"/>',
+      '<c\tr="A1"/>',
+      '<c\nr="A1"/>',
+      '<c\r\nr="A1"/>',
+      "<c></c>",
+      '<c r="A1"><v>1</v></c>',
+    ];
+    const cells = Array.from({ length: MAX_CELLS + 1 }, (_, i) => forms[i % forms.length]!);
+    const buf = buildZip(workbookParts([`<sheetData><row>${cells.join("")}</row></sheetData>`]));
+
+    await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportRowLimitError);
+  });
+
+  it("does not take another element that only begins with `<c` for a cell", async () => {
+    const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
+    const others = ["<col/>", "<cols>", "<cfRule/>", "<c:v/>", "<cellXfs/>", "<cx/>"];
+    const body = Array.from({ length: MAX_CELLS + 1 }, (_, i) => others[i % others.length]!).join("");
+
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([`<sheetData>${body}</sheetData>`])))).resolves.toBe("");
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the cells of an entry whatever its name", async () => {
+    const load = vi.spyOn(xlsxPrototype, "load");
+    const parts = { ...workbookParts([emptyRows(1)]), "docProps/custom.xml": sheetOfCells(MAX_CELLS + 1) };
+
+    await expect(xlsxBufferToCsv(buildZip(parts))).rejects.toBeInstanceOf(ImportRowLimitError);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("does not let ExcelJS read the rules and the column definitions of a worksheet", async () => {
+    // A rule for a whole column makes ExcelJS build an object for each cell of that column.
+    const load = vi.spyOn(xlsxPrototype, "load").mockResolvedValue(undefined);
+
+    await xlsxBufferToCsv(buildZip(workbookParts([emptyRows(1)])));
+
+    expect(load).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ignoreNodes: expect.arrayContaining(["cols", "dataValidations"]) }),
+    );
+  });
+
+  it("still reads the values of a sheet with drop-down lists on whole columns", async () => {
+    const lists = Array.from(
+      "ABCDEF",
+      (column) =>
+        `<dataValidation type="list" sqref="${column}2:${column}1048576"><formula1>"yes,no"</formula1></dataValidation>`,
+    ).join("");
+    const sheet =
+      '<cols><col min="1" max="16384" width="12" customWidth="1"/></cols>' +
+      `<sheetData><row r="1">${textCell("A1", "email")}</row><row r="2">${textCell("A2", "ann@example.com")}</row></sheetData>` +
+      `<dataValidations count="6">${lists}</dataValidations>`;
+
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheet])))).resolves.toBe("email\nann@example.com");
+  });
+
+  it("keeps the value of a merged cell on every row of the merge", async () => {
+    const rows = [
+      `<row r="1">${textCell("A1", "company")}${textCell("B1", "email")}</row>`,
+      `<row r="2">${textCell("A2", "Acme Ltd")}${textCell("B2", "ann@example.com")}</row>`,
+      `<row r="3">${textCell("B3", "bob@example.com")}</row>`,
+      `<row r="4">${textCell("B4", "cid@example.com")}</row>`,
+    ];
+    const sheet = `<sheetData>${rows.join("")}</sheetData><mergeCells count="1"><mergeCell ref="A2:A4"/></mergeCells>`;
+
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([sheet])))).resolves.toBe(
+      "company,email\nAcme Ltd,ann@example.com\nAcme Ltd,bob@example.com\nAcme Ltd,cid@example.com",
+    );
+  });
+});
+
+describe("xlsxBufferToCsv text limit", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, () => {
+  // The text is built in memory from the rows of the first sheet, so the limit on its length has to
+  // apply while it is built, not after all of it exists. A text that many cells show keeps the
+  // workbook small while the text made from it reaches the limit.
+  const LAST_COLUMN_LINE_CHARS = 16_384; // 16,383 commas and the one value
+  const KIB_64 = 64 * 1024;
+
+  it("stops building text for rows that are mostly empty columns once it passes the limit", async () => {
+    const rowsAtLimit = MAX_CSV_CHARS / LAST_COLUMN_LINE_CHARS;
+
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([lastColumnRows(3)])))).resolves.toHaveLength(
+      3 * LAST_COLUMN_LINE_CHARS + 2,
+    );
+    await expect(xlsxBufferToCsv(buildZip(workbookParts([lastColumnRows(rowsAtLimit)])))).rejects.toBeInstanceOf(
+      ImportRowLimitError,
+    );
+  });
+
+  it("counts a large text once for every cell that shows it", async () => {
+    const shared = "x".repeat(KIB_64);
+    const cellsAtLimit = MAX_CSV_CHARS / shared.length;
+    const sharedByCells = (cells: number) => buildXlsxBuffer([Array.from({ length: cells }, () => shared)]);
+
+    await expect(xlsxBufferToCsv(await sharedByCells(cellsAtLimit - 1))).resolves.toHaveLength(
+      (cellsAtLimit - 1) * shared.length + (cellsAtLimit - 2),
+    );
+    await expect(xlsxBufferToCsv(await sharedByCells(cellsAtLimit))).rejects.toBeInstanceOf(ImportRowLimitError);
+  });
+
+  it("takes text of exactly MAX_CSV_CHARS characters and refuses one character more", async () => {
+    // A line of cells that all show one text, then a last line that makes the total exact: the
+    // commas and the newline between the lines count too.
+    const shared = "a".repeat(KIB_64 - 1);
+    const sharedCells = 159;
+    const lastLine = "b".repeat(MAX_CSV_CHARS - sharedCells * (shared.length + 1));
+    const workbook = (last: string) => buildXlsxBuffer([Array.from({ length: sharedCells }, () => shared), [last]]);
+
+    await expect(xlsxBufferToCsv(await workbook(lastLine))).resolves.toHaveLength(MAX_CSV_CHARS);
+    await expect(xlsxBufferToCsv(await workbook(`${lastLine}b`))).rejects.toBeInstanceOf(ImportRowLimitError);
+  });
+});
 
 it.each(["\n", "\r\n"])("round-trips XLSX multiline cells with %j through the import parser", async (newline) => {
   const company = `Synthetic, "Team"${newline}Headquarters`;

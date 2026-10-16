@@ -1,6 +1,7 @@
 import type { ToastVariant } from "@admitto/ui";
 import { ApiError } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { goToLogin } from "../auth/login-navigation.js";
 
 /** The error-surfacing half of the Attendees page's bulk-action params — split out so
  * reportBulkActionError can take just these, independent of the action's result type T. */
@@ -36,7 +37,7 @@ export function reportBulkActionError(err: unknown, reporters: BulkActionErrorRe
   reportApiError(err.status);
   if (err.status === 401) {
     const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
+    goToLogin(`/login?next=${next}`);
     return;
   }
   const message = mapErrorMessage ? mapErrorMessage(err) : operatorApiErrorMessage(err, apiErrorFallback);
