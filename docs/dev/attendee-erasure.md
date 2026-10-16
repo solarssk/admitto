@@ -1,84 +1,344 @@
 # Erasing an attendee's personal data
 
-`eraseAttendees` ([`packages/tickets/src/erase-attendees.ts`](../../packages/tickets/src/erase-attendees.ts)) anonymises attendees in place. The row stays, so the Reports totals and the admission log keep their numbers; capacity is the one thing that moves, because a person not admitted yet on an event that is not archived becomes `cancelled` and their place is free again. Nothing that identifies the person or opens their ticket is left. It is a different action from removing an attendee (hard delete, for mistakes), which changes Reports.
+`eraseAttendees` ([`packages/tickets/src/erase-attendees.ts`](../../packages/tickets/src/erase-attendees.ts)) anonymises attendees in place.
+
+- The row stays, so the Reports totals and the admission log keep their numbers.
+- Capacity is the one thing that moves. A person who is not admitted yet, on an event that is not archived, becomes `cancelled`, and their place is free again.
+- Nothing that identifies the person or opens their ticket is left.
+- It is a different action from removing an attendee (a hard delete, for mistakes), which changes Reports.
+
+On this page:
+
+- [What happens](#what-happens)
+- [The API](#the-api)
+- [The CLI](#the-cli)
+- [The screens](#the-screens)
+- [Removing an attendee](#removing-an-attendee)
+- [Job failure privacy](#job-failure-privacy)
+- [Files left in storage](#files-left-in-storage)
+- [Passes still at the provider](#passes-still-at-the-provider)
+- [Rules for code](#rules-for-code)
+- [Not done by the function](#not-done-by-the-function)
 
 ## What happens
 
-Run inside the caller's transaction, once per attendee that is not erased yet.
+`eraseAttendees` runs inside the caller's transaction, once per attendee that is not erased yet.
 
 | Where | What erasure does |
 |---|---|
 | Attendee | Name and email become placeholders (`Erased attendee`, `erased-<id>@erased.invalid`). Names, company, department, custom answers, ticket token, QR payload, agency ids and public ref are cleared. `erased_at` is set. Admission time is cut to the hour in the event timezone. |
 | Attendee status | A person not admitted yet, on an event that is not archived, becomes `cancelled`, so their place is free. Otherwise the status stays. |
 | Notes, activity log | Deleted. |
-| Check-ins | Kept without notes, time cut to the hour. Because of that cut, "undo the last scan on this device" refuses when an erased scan on the device could have been the last one (it cannot tell), instead of undoing an older, live attendee. |
+| Check-ins | Kept without notes, with the time cut to the hour. Because of that cut, "undo the last scan on this device" refuses when an erased scan on the device could have been the last one (it cannot tell). It does not undo an older, live attendee instead. |
 | Email deliveries | Kept as rows for the Mail report, without recipient, subject, body, provider message id and error text. Mail still waiting to go out is cancelled first. |
-| Wallet pass | Links, device and tokens cleared. Provider ids stay until the pass is deleted at the provider. A row that holds only the id reserved for a pass (its provider id was never saved) stays too, until the provider has answered for that id ([Passes still at the provider](#passes-still-at-the-provider)). |
+| Wallet pass | Links, device and tokens cleared. Provider ids stay until the pass is deleted at the provider. A row that holds only the id reserved for a pass (its provider id was never saved) also stays, until the provider has answered for that id ([Passes still at the provider](#passes-still-at-the-provider)). |
 | Central audit log | The "created manually" entry loses the name and email it recorded. |
 
 ## The API
 
-`POST /api/admin/events/:eventId/attendees/:id/erase` and `POST …/attendees/bulk-erase` (Administrator and Superadmin of the event; allowed on an archived event). In one transaction they run `eraseAttendees`, blank the erased addresses in the saved results of the event's imports (`scrubImportJobResults`) and write the audit entries (the event's activity log and the central audit log, **ids and counts only**, `method: "erase"`). After the commit they delete each erased attendee's wallet pass at the provider (`deleteErasedWalletPasses`, from the event's credentials alone, whatever the Wallet switch says) and mark it removed, and delete the files the event's exports and imports left in storage ([Files left in storage](#files-left-in-storage)).
+### Endpoints
 
-The answer is `{ erased, already_erased, not_found, wallet_pending, wallet_removed_ids }`. `wallet_pending` counts erased attendees whose pass is still to be deleted at the provider (it failed, the event has no credentials, or the 90 s budget of one request ran out): a pass row that is not marked removed and holds the provider's id, or only the id reserved for the pass, or says that a creation failed ([Passes still at the provider](#passes-still-at-the-provider)). `wallet_removed_ids` lists the attendees whose pass was still to be deleted when the follow-up started and no longer is (deleted by this request, or by one running at the same moment), read from the database before and after the follow-up; a pass that never reached the provider (no id of any kind on its row), or was removed before, is not in it, so a screen can say "deleted" only for a pass that was. A row that held only the reserved id is in it once the provider has answered for that id: it deleted a pass, or it has none and the erasure is old enough to rely on that (10 minutes, see [A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)). Both endpoints spend the attendee-mutation budget of the user and event (20 a minute). When the event has wallet credentials, the single one also spends the wallet-action budget it shares with the other single-attendee wallet actions (10 a minute), and the bulk one the wallet-action-bulk budget (10 in 10 minutes), as bulk remove does. One follow-up runs per user and event at a time. A provider that answers 404 counts as "deleted", so a pass issued under an API key or account that was changed later is marked removed while it may still exist. **Repeating the request is the retry:** attendees already erased change nothing in the database, only their pending passes are tried again. The retention run retries them too, about once a day ([Passes still at the provider](#passes-still-at-the-provider)).
+- `POST /api/admin/events/:eventId/attendees/:id/erase`
+- `POST …/attendees/bulk-erase`
 
-The database enforces the result: `Attendee_erased_carries_no_personal_data` rejects any row with `erased_at` set that still holds a name, email, credential or answer, and a trigger refuses to change or clear `erased_at` once it is set (a delete of the row is still allowed).
+Both are open to the Administrator and Superadmin of the event. Both are allowed on an archived event.
+
+### What a request does
+
+In one transaction, the request:
+
+1. runs `eraseAttendees`
+2. blanks the erased addresses in the saved results of the event's imports (`scrubImportJobResults`)
+3. writes the audit entries: the event's activity log and the central audit log, **ids and counts only**, with `method: "erase"`
+
+After the commit, it:
+
+1. deletes each erased attendee's wallet pass at the provider (`deleteErasedWalletPasses`, from the event's credentials alone, whatever the Wallet switch says) and marks the pass removed
+2. deletes the files that the event's exports and imports left in storage ([Files left in storage](#files-left-in-storage))
+
+### The answer
+
+The answer is `{ erased, already_erased, not_found, wallet_pending, wallet_removed_ids }`.
+
+- **`wallet_pending`** counts erased attendees whose pass is still to be deleted at the provider. That happens when the delete failed, when the event has no credentials, or when the 90 s budget of one request ran out. In database terms, it is a pass row that is not marked removed and that either holds the provider's id, or holds only the id reserved for the pass, or says that a creation failed ([Passes still at the provider](#passes-still-at-the-provider)).
+- **`wallet_removed_ids`** lists the attendees whose pass was still to be deleted when the follow-up started and no longer is. The pass was deleted by this request, or by one running at the same moment. The list is read from the database before and after the follow-up.
+  - A pass that never reached the provider (no id of any kind on its row), or that was removed before, is not in the list. So a screen can say "deleted" only for a pass that was.
+  - A row that held only the reserved id is in the list once the provider has answered for that id. Either the provider deleted a pass, or it has none and the erasure is old enough to rely on that (10 minutes, see [A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
+
+### Budgets
+
+Both endpoints spend the attendee-mutation budget of the user and event (20 a minute). When the event has wallet credentials, they spend a second budget too:
+
+- the single endpoint: the wallet-action budget that it shares with the other single-attendee wallet actions (10 a minute)
+- the bulk endpoint: the wallet-action-bulk budget (10 in 10 minutes), as bulk remove does
+
+One follow-up runs per user and event at a time.
+
+### Retrying and its limits
+
+- **Repeating the request is the retry.** Attendees already erased change nothing in the database. Only their pending passes are tried again.
+- The retention run retries them too, about once a day ([Passes still at the provider](#passes-still-at-the-provider)).
+- A provider that answers 404 counts as "deleted". So a pass issued under an API key or account that was changed later is marked removed while it may still exist.
+
+### What the database enforces
+
+- `Attendee_erased_carries_no_personal_data` rejects any row with `erased_at` set that still holds a name, email, credential or answer.
+- A trigger refuses to change or clear `erased_at` once it is set. (A delete of the row is still allowed.)
 
 ## The CLI
 
-`admitto attendees erase --event <id> --attendee-ids <id[,id...]> --operator-email <email> [--dry-run] [--yes]` ([`attendees-erase.ts`](../../apps/cli/src/commands/attendees-erase.ts)) is the break-glass path for a privacy request when the admin UI and API are not reachable. Its ids come from `admitto attendees find --query "<name or email>" [--event <id>]` ([`attendees-find.ts`](../../apps/cli/src/commands/attendees-find.ts)), a read-only lookup that lists up to 20 people (not those already erased), in every event unless `--event` is given, with the event's id and title and the attendee's id and address, so that a request naming only a person finds the event id too. It has no archived-event guard, unlike `checkin lookup`, because an archived event's attendees can still be erased. It runs the same domain functions as the API (`eraseAttendees`, `scrubImportJobResults`, the two audit writers, `purgeEventJobFiles`, `deleteErasedWalletPasses`) in the same order, with `source: "cli"` in the audit metadata (`attendee_erased` for one id, `attendees_bulk_erased` for several, ids and counts only). Differences: it asks for a typed `yes` (not for the attendee's name), takes up to 500 ids, gives the provider up to 10 minutes (nothing else waits for it), does not announce the change to open admin screens (they catch up on their 30 second poll), and exits with code 2 when a pass is still at the provider after the follow-up (it prints one line when the follow-up found passes that Admitto had no record of, see [Passes still at the provider](#passes-still-at-the-provider)). `--dry-run` needs no operator and changes nothing. **Remove from event** has no CLI command on purpose: it is for mistakes, changes Reports, and its best-effort wallet delete before the transaction lives in the web app.
+`admitto attendees erase --event <id> --attendee-ids <id[,id...]> --operator-email <email> [--dry-run] [--yes]` ([`attendees-erase.ts`](../../apps/cli/src/commands/attendees-erase.ts)) is the break-glass path for a privacy request when the admin UI and API are not reachable.
+
+**Finding the ids.** `admitto attendees find --query "<name or email>" [--event <id>]` ([`attendees-find.ts`](../../apps/cli/src/commands/attendees-find.ts)) is a read-only lookup.
+
+- It lists up to 20 people (not those already erased), in every event unless `--event` is given.
+- For each person it shows the event's id and title and the attendee's id and address. So a request that names only a person finds the event id too.
+- It has no archived-event guard, unlike `checkin lookup`, because an archived event's attendees can still be erased.
+
+**What `erase` runs.** The same domain functions as the API, in the same order: `eraseAttendees`, `scrubImportJobResults`, the two audit writers, `purgeEventJobFiles` and `deleteErasedWalletPasses`. The audit metadata carries `source: "cli"` (`attendee_erased` for one id, `attendees_bulk_erased` for several, ids and counts only).
+
+**How it differs from the API**
+
+- It asks for a typed `yes` (not for the attendee's name).
+- It takes up to 500 ids.
+- It gives the provider up to 10 minutes (nothing else waits for it).
+- It does not announce the change to open admin screens. They catch up on their 30 second poll.
+- It exits with code 2 when a pass is still at the provider after the follow-up.
+- It prints one line when the follow-up found passes that Admitto had no record of (see [Passes still at the provider](#passes-still-at-the-provider)).
+
+`--dry-run` needs no operator and changes nothing.
+
+**Remove from event** has no CLI command on purpose. It is for mistakes, it changes Reports, and its best-effort wallet delete before the transaction lives in the web app.
 
 ## The screens
 
-Where an Administrator or Superadmin reaches the erasure (`apps/admin`):
+Where an Administrator or Superadmin reaches the erasure (`apps/admin`). Erase is not behind the archived-event guard, like the API.
 
-| Screen | What it does |
-|---|---|
-| Attendees list, bulk bar, **More actions** | **Erase personal data** for the selection (`BulkEraseDialog`, `bulkEraseAttendees`). No typed name. The dialog says how many of the selected people are not checked in yet, so that their places become free (`placesFreedBy`, `freedPlacesLine`; the same rule as the one-person dialog, and never on an archived event). When the server confirms, the list at once redacts those rows in place (`redactedRowsAfterErasure`: personal data out, the check-in time cut to the hour of the event's zone like the server does, `truncatedToEventHour`, the status the server sets, mail that was waiting to go out cancelled (a list row carries `last_mail_retryable`, so it can tell a failed mail that was to be retried from one that was not), and the pass marked as removed at the provider for the people the answer lists in `wallet_removed_ids`) and then reads the server's version, so nothing of the people stays on screen while that read waits; if the read finds its page empty (the erasure took the last rows of the last page), the list steps back to the last page that exists instead of saying "No matches". |
-| Attendee page, **More actions** | **Erase personal data** for one person (`EraseAttendeeDialog`, `eraseAttendee`). The attendee's name has to be typed. When the server confirms, the page at once swaps its local copy for a redacted one (`redactedAfterErasure`: personal data out, the check-in time cut to the hour of the event's zone, the status the server sets, mail that was waiting to go out cancelled, and the pass as the answer left it: still at the provider when `wallet_pending` says so, which keeps the Try again there, and deleted now only when `wallet_removed_ids` lists the person) and then reads the server's version, so nothing of the person stays on screen while that read waits or if it fails. The page never turns an erased attendee back into one that is not (`isOlderThanErasure`, checked in `applyDetail`, the one place every answer goes through), so a read or a change (a note, say) that was already on its way cannot bring the person back when its answer arrives late; and a read that answers after a newer one is dropped (`loadSeqRef`), so an older answer cannot put back what the newer one changed (a pass deleted by Try again, say). The line "Not checked in yet, so their place becomes free" shows only when the erasure will cancel the attendee (`erasureFreesPlace`, the same rule as the function). |
-| Attendees list, **Filters** | Erased entries are left out (`include_erased` is not sent). **Erased entries** (**Hide** or **Show**, in Filters only when the event has any) lists them; its hint says how many (`erased_count`, event-wide, however the list is filtered, so no number is needed under the table) and that Reports count them either way, and the Filters button counts the switch when it is on. Nothing is said under the table. Shown, they are muted rows: "Erased attendee" (no second mark, the name says it) and "Erased on <date>" in place of the name and address (the placeholders the server sends are never shown), and a checkbox that stays off. **Select all** skips them. |
-| Attendee page of an erased attendee | `ErasedAttendeeView`: read-only, with the same header, status chips and tabs as every attendee's page (the page builds the strip and owns `?tab=`, so a link opens the tab it names). Overview: every field that held personal data reads **Erased**, the check-in time reads "Around HH:MM". Notes: one line saying that the notes were erased, and no way to add a note. Activity log: one entry of the erasure itself (the staff member, the time in the zone they were in, through what, and where from for a Superadmin), then a line saying that the rest of the history was erased; with no such entry, one line saying that the history was erased. The notice above the page names the staff member too ("Personal data erased on 10 Oct 2026 by Admin Example."). All of it comes from `erasure` in the detail response (see "Who erased the person" below). The Wallet card says what became of the pass: deleted on a date, or still to be deleted (`wallet_pass_delete_pending` in the detail response, true only for an erased attendee whose pass has a provider id and no `provider_removed_at`) with a **Try again** button. |
-| **Personal data erased** dialog | Shown after an erasure when `wallet_pending` is above zero (`useEraseWalletResult`). **Try again** sends the same request again, which for people who are already erased only retries the wallet delete. It is a Retry of a dialog: the failure of the earlier try stays on screen, with the busy button, until the answer is in; the button stays busy for 400ms at least; and a failure that repeats is announced again. What the answer says about the pass is applied at once, before the page reads the server's version, so a read that fails cannot make a deletion that worked look lost: to the attendee page (`withWalletOutcome`), and to the rows of the Attendees list for the people the answer lists in `wallet_removed_ids`, a partial retry included (`rowsWithPassesRemoved`). |
+### Attendees list: bulk bar
 
-Erase is not behind the archived-event guard, like the API.
+In the bulk bar, **More actions** has **Erase personal data** for the selection (`BulkEraseDialog`, `bulkEraseAttendees`).
+
+- No typed name is needed.
+- The dialog says how many of the selected people are not checked in yet, so that their places become free (`placesFreedBy`, `freedPlacesLine`). It is the same rule as the one-person dialog, and it never applies on an archived event.
+- When the server confirms, the list redacts those rows in place at once (`redactedRowsAfterErasure`), and then reads the server's version. So nothing of the people stays on screen while that read waits.
+- What the redaction does to a row:
+  - personal data out
+  - the check-in time cut to the hour of the event's zone, like the server does (`truncatedToEventHour`)
+  - the status that the server sets
+  - mail that was waiting to go out cancelled (a list row carries `last_mail_retryable`, so it can tell a failed mail that was to be retried from one that was not)
+  - the pass marked as removed at the provider, for the people the answer lists in `wallet_removed_ids`
+- If the read finds its page empty (the erasure took the last rows of the last page), the list steps back to the last page that exists instead of saying "No matches".
+
+### Attendee page: More actions
+
+**More actions** has **Erase personal data** for one person (`EraseAttendeeDialog`, `eraseAttendee`). The attendee's name has to be typed.
+
+- When the server confirms, the page swaps its local copy for a redacted one at once (`redactedAfterErasure`), and then reads the server's version. So nothing of the person stays on screen while that read waits, or if it fails.
+- The redacted copy has:
+  - personal data out
+  - the check-in time cut to the hour of the event's zone
+  - the status that the server sets
+  - mail that was waiting to go out cancelled
+  - the pass as the answer left it: still at the provider when `wallet_pending` says so (which keeps the Try again there), and deleted now only when `wallet_removed_ids` lists the person
+- The page never turns an erased attendee back into one that is not (`isOlderThanErasure`, checked in `applyDetail`, the one place every answer goes through). So a read, or a change (a note, say), that was already on its way cannot bring the person back when its answer arrives late.
+- A read that answers after a newer one is dropped (`loadSeqRef`). So an older answer cannot put back what the newer one changed (a pass deleted by Try again, say).
+- The line "Not checked in yet, so their place becomes free" shows only when the erasure will cancel the attendee (`erasureFreesPlace`, the same rule as the function).
+
+### Attendees list: Filters
+
+- Erased entries are left out of the list (`include_erased` is not sent).
+- **Erased entries** (**Hide** or **Show**) lists them. It is in Filters only when the event has any. The Filters button counts the switch when it is on.
+- Its hint says how many there are (`erased_count`, event-wide, however the list is filtered, so no number is needed under the table) and that Reports count them either way. Nothing is said under the table.
+- Shown, they are muted rows:
+  - "Erased attendee" (no second mark, the name says it) and "Erased on <date>" stand in place of the name and address. The placeholders that the server sends are never shown.
+  - The checkbox stays off. **Select all** skips them.
+
+### Attendee page of an erased attendee
+
+`ErasedAttendeeView` is read-only. It has the same header, status chips and tabs as every attendee's page. The page builds the strip and owns `?tab=`, so a link opens the tab it names.
+
+- **Overview:** every field that held personal data reads **Erased**. The check-in time reads "Around HH:MM".
+- **Notes:** one line saying that the notes were erased, and no way to add a note.
+- **Activity log:** one entry of the erasure itself (the staff member, the time in the zone they were in, through what, and where from for a Superadmin), and then a line saying that the rest of the history was erased. With no such entry, one line saying that the history was erased.
+- **The notice above the page** names the staff member too ("Personal data erased on 10 Oct 2026 by Admin Example.").
+- All of that comes from `erasure` in the detail response (see "Who erased the person" below).
+- **The Wallet card** says what became of the pass: deleted on a date, or still to be deleted, with a **Try again** button. "Still to be deleted" is `wallet_pass_delete_pending` in the detail response. It is true only for an erased attendee whose pass has a provider id and no `provider_removed_at`.
+
+### The Personal data erased dialog
+
+The dialog is shown after an erasure when `wallet_pending` is above zero (`useEraseWalletResult`).
+
+- **Try again** sends the same request again. For people who are already erased, that only retries the wallet delete.
+- It is a Retry of a dialog. The failure of the earlier try stays on screen, with the busy button, until the answer is in. The button stays busy for 400ms at least. A failure that repeats is announced again.
+- What the answer says about the pass is applied at once, before the page reads the server's version. So a read that fails cannot make a deletion that worked look lost. It is applied to the attendee page (`withWalletOutcome`), and to the rows of the Attendees list for the people the answer lists in `wallet_removed_ids`, a partial retry included (`rowsWithPassesRemoved`).
 
 ### Who erased the person
 
-The detail response of an erased attendee carries `erasure` ([`attendee-erasure-record.ts`](../../apps/web/src/admin/attendee-erasure-record.ts)): the first entry of the central audit log that names the attendee (same organisation, `attendee_erased` or `attendees_bulk_erased`, `metadata.method` `erase`, the event, and the attendee's id in `attendee_id` or `attendee_ids`, written within an hour of `erased_at`). It holds the staff member as the entry snapshotted them (`by.display_name` and `by.email`, `by` null when the entry kept neither), `via` (`cli` when `metadata.source` says so, else `admin`, which the screens and a script of the staff API share), the zone the staff member was in (`timezone`, in which the Activity log tells its times) and, only for a Superadmin, who is the one role that can read that log, the address of the request (`ip`) and where it is (`location`, as in the audit log). The address of the command line in the log is a placeholder and a request with no socket is logged as `unknown`: neither is sent. Everyone who can open the page gets `by`, `via` and `timezone`; the address leaves the server for no one else. `erasure` is null for an attendee who is not erased and when the log has no entry of the erasure (an operator cleared it), and the page then says only that the history was erased. The erased person is not in the lookup: it uses their id and nothing else about them.
+The detail response of an erased attendee carries `erasure` ([`attendee-erasure-record.ts`](../../apps/web/src/admin/attendee-erasure-record.ts)). It comes from the first entry of the central audit log that names the attendee. That entry must match all of these:
+
+- the same organisation
+- the action `attendee_erased` or `attendees_bulk_erased`
+- `metadata.method` is `erase`
+- the event
+- the attendee's id in `attendee_id` or `attendee_ids`
+- written within an hour of `erased_at`
+
+`erasure` holds:
+
+- the staff member as the entry snapshotted them (`by.display_name` and `by.email`). `by` is null when the entry kept neither.
+- `via`: `cli` when `metadata.source` says so, else `admin` (which the screens and a script of the staff API share).
+- `timezone`: the zone the staff member was in, in which the Activity log tells its times.
+- only for a Superadmin, who is the one role that can read that log: the address of the request (`ip`) and where it is (`location`, as in the audit log).
+
+More about what is sent:
+
+- The address of the command line in the log is a placeholder, and a request with no socket is logged as `unknown`. Neither is sent.
+- Everyone who can open the page gets `by`, `via` and `timezone`. The address leaves the server for no one else.
+- `erasure` is null for an attendee who is not erased, and when the log has no entry of the erasure (an operator cleared it). The page then says only that the history was erased.
+- The erased person is not in the lookup. It uses their id and nothing else about them.
 
 ## Removing an attendee
 
-`removeAttendees` ([`packages/tickets/src/remove-attendees.ts`](../../packages/tickets/src/remove-attendees.ts)) deletes attendees from an event for good: the hard delete, for mistakes (a duplicate, a test person, a wrong import file). Reports change with it. It is a different action from erasing (above), which keeps the entry.
+`removeAttendees` ([`packages/tickets/src/remove-attendees.ts`](../../packages/tickets/src/remove-attendees.ts)) deletes attendees from an event for good. It is the hard delete, for mistakes (a duplicate, a test person, a wrong import file). Reports change with it. It is a different action from erasing (above), which keeps the entry.
 
-`POST /api/admin/events/:eventId/attendees/:id/remove` and `POST …/attendees/bulk-remove` (Administrator and Superadmin of the event). The body carries a `reason` from a fixed list (`ATTENDEE_REMOVAL_REASONS` in `@admitto/shared`: `duplicate`, `test_person`, `wrong_import`, `added_by_mistake`, `other`) and, for a selection, `attendeeIds` (the same cap as the other bulk wallet routes when the event has wallet credentials). There is no free-text note: it would be personal data in the audit trail. The answer is `{ removed, not_found }`; an id that is not an attendee of the event answers 403 for one attendee, like every single-attendee route. An archived event refuses it (`403 { code: "event_archived" }`): its numbers are final. An erased attendee can be removed.
+### The removal API
 
-What happens: the wallet pass of each attendee is deleted at the provider first, best effort (the local row is the only place that knows the pass's id; a failure is logged as `wallet_pass_erasure_delete_failed` and the removal goes ahead, so check the System logs). A pass whose row has the provider's id is deleted by it; one whose row has no provider id, by the id reserved for it (**A pass with no provider id on its row**, below). Then, in one transaction, the attendee rows are locked in id order; their deliveries, wallet pass and check-ins are deleted; the attendee rows are deleted (notes, the per-attendee activity log and item hand-outs go by cascade); the copies of the identity elsewhere are scrubbed (`scrubAttendeeTraces`, shared with the erasure: the address on other attendees' deliveries that staff addressed to this person, and the name and address in the creation entry of the central audit log; plus the saved import results, `scrubImportJobResults`); and the audit entries are written, in the event's activity log and in the central admin audit log. After the commit the files the event's exports and imports left in storage are deleted ([Files left in storage](#files-left-in-storage)). They use the action names of an erasure (`attendee_erased`, `attendees_bulk_erased`) and are told apart by `metadata.method` (`"remove"`), with the reason code, the ids and the counts (`removed: { emailDeliveries, walletPasses, checkIns }`), never a name, an address or a note.
+`POST /api/admin/events/:eventId/attendees/:id/remove` and `POST …/attendees/bulk-remove` (Administrator and Superadmin of the event).
 
-Passes the first delete could not see or reach are dealt with after the commit. The statement that deletes the wallet pass rows returns what it deleted (`walletTargets`: the passes that still had a provider id and no `provider_removed_at`, read under the attendee locks), and the route deletes at the provider those the first delete did not (`deleteProviderPassesBestEffort`): a pass that an Add to Wallet request saved after the first delete had read the passes, and one the provider refused the first time (a second try, the same log line when it fails again). A pass that an Add to Wallet request is still creating when the removal commits is deleted by that request: `handleWalletRedirect` finds the attendee gone (`isAttendeeGone`, no row, the same answer as for an erased attendee) and deletes the new pass at the provider, with no row to keep its ids on, so when that delete fails the pass stays at the provider and the failure is logged as `wallet_pass_erased_delete_failed` (System logs).
+- The body carries a `reason` from a fixed list (`ATTENDEE_REMOVAL_REASONS` in `@admitto/shared`: `duplicate`, `test_person`, `wrong_import`, `added_by_mistake`, `other`).
+- For a selection, the body also carries `attendeeIds` (the same cap as the other bulk wallet routes when the event has wallet credentials).
+- There is no free-text note, because it would be personal data in the audit trail.
+- The answer is `{ removed, not_found }`. An id that is not an attendee of the event answers 403 for one attendee, like every single-attendee route.
+- An archived event refuses it (`403 { code: "event_archived" }`), because its numbers are final.
+- An erased attendee can be removed.
 
-**A pass with no provider id on its row** can still be at the provider: its creating request wrote only the id reserved for it (`user_provided_id`, `admitto:<event id>:<attendee id>`) and then could not record the pass (the save failed, the event's template changed, the process died), or its creation failed with no id of any kind ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)). Once the row is deleted nothing could find such a pass, so the removal asks about it first, with the erasure's own question (`PASS_ROW_STILL_AT_PROVIDER` and no provider id, read by `deleteUntrackedWalletPassesBestEffort` after `deleteWalletPassesBestEffort` has done the rows that have one), and deletes the pass by the id reserved for it (`deletePassByUserProvidedId`; `reservedPassId` takes the id off the row, or builds the one it would have been sent under for a failed creation that has none). The provider answers from its own record of the id, so "there is none" is an answer, like a pass deleted: unlike an erasure, which keeps its row and does not believe a "none" until it is 10 minutes old ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)), a removal keeps no row to ask again from, so the first "none" is final. It is best effort exactly like the delete by the provider's id and spends the same budget: batches of `BULK_CHECKIN_CONCURRENCY` (10), one after the other, for no more attendees than the selection holds (at most 100 when the event has wallet credentials, as before); more than one pass can sit under one id (two creations at once can both succeed), so an id is asked about until the provider has none (`deletePassesUnder`, the loop of the erasure's follow-up, at most 5 deletions, then the id counts as failed): a pass the provider holds costs three calls (the read of the id, the delete of the pass it found, only when that pass's own user provided ID is the id, and a read that finds none) and none costs one; an id that PassCreator also resolves to another pass (as its barcode value) is never deleted, the call fails with `wallet_provider_rejected` and the attendee is named in the line below; nothing is sent when the event has no usable credentials, and the Wallet switch plays no part. An attendee with no such row (no row at all, a `pending` row with no id, a pass already marked removed) costs no provider call.
+### What happens, in order
 
-The statement that deletes the rows returns these passes too (`untrackedWalletTargets`: the rows that had no provider id and are still to be deleted by `passIsStillToDelete`, each with the id to delete it by), and after the commit the route asks again for those it had no answer for (`deleteUntrackedPassesAfterRemoval`): a delete that failed, and a pass whose id was reserved or rewritten after the first read (it is the id that counts as answered, not the attendee). An id the first delete failed for is asked about again even when a creating request has put another id on the row meanwhile, as long as this removal deleted that attendee. What is still at the provider after that is said in **one line per request**, never one per pass (a bulk removal carries up to 100 attendees): `wallet_pass_erasure_delete_failed` with the event id, how many (`failed`), the failure codes (`codes`) and every attendee id (`attendeeIds`), and the id itself (`reservedIds`) for a row that held one other than `admitto:<event id>:<attendee id>`, which the attendee id already gives. A removed attendee leaves no row, so that line is the only record of whose pass stands: delete it in the provider's own console, by its User provided ID. The line names only what is still there after the second try. When the second try itself breaks (the database cannot be read after the commit), it names every pass the first delete had no answer for, with the failure code `unknown`. The removal answers the same whatever the provider does.
+1. **The wallet pass of each attendee is deleted at the provider first, best effort.** The local row is the only place that knows the pass's id. A failure is logged as `wallet_pass_erasure_delete_failed` and the removal goes ahead, so check the System logs.
+   - A pass whose row has the provider's id is deleted by that id.
+   - A pass whose row has no provider id is deleted by the id reserved for it ([A pass with no provider id on its row](#a-pass-with-no-provider-id-on-its-row), below).
+2. **Then, in one transaction:**
+   - The attendee rows are locked in id order.
+   - Their deliveries, wallet pass and check-ins are deleted.
+   - The attendee rows are deleted. Notes, the per-attendee activity log and item hand-outs go by cascade.
+   - The copies of the identity elsewhere are scrubbed (`scrubAttendeeTraces`, shared with the erasure). That means the address on other attendees' deliveries that staff addressed to this person, and the name and address in the creation entry of the central audit log. The saved import results are scrubbed too (`scrubImportJobResults`).
+   - The audit entries are written, in the event's activity log and in the central admin audit log.
+3. **After the commit,** the files that the event's exports and imports left in storage are deleted ([Files left in storage](#files-left-in-storage)).
 
-The old `DELETE …/attendees/:id` and `POST …/attendees/bulk-delete` are gone (they answer 404): they were not behind the archived-event guard, asked for no reason and kept the name and address in the central audit entry. Audit entries they wrote before the split still hold that identity (see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for blanking them).
+The audit entries use the action names of an erasure (`attendee_erased`, `attendees_bulk_erased`). They are told apart by `metadata.method` (`"remove"`). They carry the reason code, the ids and the counts (`removed: { emailDeliveries, walletPasses, checkIns }`), never a name, an address or a note.
 
-### The screens
+### Passes the first delete could not see or reach
 
-Where an Administrator or Superadmin reaches the removal (`apps/admin`):
+These are dealt with after the commit.
 
-| Screen | What it does |
-|---|---|
-| Attendees list, bulk bar, **More actions** | **Remove from event** for the selection (`BulkRemoveDialog`, `bulkRemoveAttendees`). A reason from the fixed list is chosen (Duplicate entry is the default each time the dialog opens), no typed name. The dialog says how many of the selected people have checked in, so that it is clear their check-ins leave Reports too (`checkedInAmong`, from the rows of the page: the selection is cleared when the page changes). When the server confirms, the list is read again and the selection cleared; the toast says how many were removed and, when someone else removed a person a moment before, how many were gone already (`removedToast`, from `not_found`). |
-| Attendee page, **More actions** | **Remove from event** for one person (`RemoveAttendeeDialog`, `removeAttendee`): the reason and the attendee's name to be typed. When it succeeds the page goes back to the Attendees list. The same item is on the read-only page of an erased attendee (`ErasedAttendeeView`), where the dialog has no link to Erase. |
-| Both dialogs, and the two Erase dialogs | A muted line crosses to the other action, for someone who picked the wrong one: "A privacy request? **Use Erase personal data**" in Remove, "A duplicate or a mistake? **Use Remove from event**" in Erase (`DialogCrossLink`). The current dialog closes and the other opens clean (its typed name and errors reset). A busy link keeps its focus and does nothing. The Erase side of a link is left out on an archived event, and Remove's on an erased attendee, because there is nowhere to go. |
-| Archived event | **Remove from event** is off in every menu, with the tooltip "This event is archived, so its numbers are final. To erase someone's personal data, use Erase personal data." (`REMOVE_ARCHIVED_TOOLTIP`; the generic archived tooltip would not say what to do instead). **Erase personal data** stays available, like the API. |
-| Admin audit log (Organisation settings → Logs → Audit) | An entry's label follows `metadata.method`: "Attendee removed (mistake)" / "Attendees bulk removed (mistake)" for a removal, "Attendee erased (GDPR)" / "Attendees bulk erased (GDPR)" for an erasure and for an entry from before the split. The Details show the reason in words (`Reason: Duplicate entry`). The Action filter has one option for both, "Attendee erased or removed", because both are written under the same action types. |
+- The statement that deletes the wallet pass rows returns what it deleted (`walletTargets`): the passes that still had a provider id and no `provider_removed_at`, read under the attendee locks.
+- The route deletes at the provider the passes that the first delete did not (`deleteProviderPassesBestEffort`):
+  - a pass that an Add to Wallet request saved after the first delete had read the passes
+  - a pass that the provider refused the first time (a second try, with the same log line when it fails again)
+- A pass that an Add to Wallet request is still creating when the removal commits is deleted by that request. `handleWalletRedirect` finds the attendee gone (`isAttendeeGone`: no row, the same answer as for an erased attendee) and deletes the new pass at the provider, with no row to keep its ids on. When that delete fails, the pass stays at the provider and the failure is logged as `wallet_pass_erased_delete_failed` (System logs).
+
+### A pass with no provider id on its row
+
+Such a pass can still be at the provider. There are two ways to get one:
+
+- Its creating request wrote only the id reserved for it (`user_provided_id`, `admitto:<event id>:<attendee id>`) and then could not record the pass. The save failed, the event's template changed, or the process died.
+- Its creation failed with no id of any kind ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
+
+Once the row is deleted, nothing could find such a pass. So the removal asks about it first:
+
+- It asks with the erasure's own question (`PASS_ROW_STILL_AT_PROVIDER` and no provider id). `deleteUntrackedWalletPassesBestEffort` reads it, after `deleteWalletPassesBestEffort` has done the rows that have a provider id.
+- It deletes the pass by the id reserved for it (`deletePassByUserProvidedId`). `reservedPassId` takes the id off the row, or builds the one it would have been sent under for a failed creation that has none.
+
+How the answer counts:
+
+- The provider answers from its own record of the id, so "there is none" is an answer, like a pass deleted.
+- An erasure keeps its row and does not believe a "none" until it is 10 minutes old ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)). A removal keeps no row to ask again from, so the first "none" is final.
+
+Cost and limits:
+
+- It is best effort, exactly like the delete by the provider's id, and it spends the same budget. That is batches of `BULK_CHECKIN_CONCURRENCY` (10), one after the other, for no more attendees than the selection holds (at most 100 when the event has wallet credentials, as before).
+- More than one pass can sit under one id, because two creations at once can both succeed. So an id is asked about until the provider has none (`deletePassesUnder`, the loop of the erasure's follow-up, at most 5 deletions, and then the id counts as failed).
+- A pass that the provider holds costs three calls: the read of the id, the delete of the pass it found (only when that pass's own user provided ID is the id), and a read that finds none. No pass costs one call.
+- An id that PassCreator also resolves to another pass (as its barcode value) is never deleted. The call fails with `wallet_provider_rejected`, and the attendee is named in the log line described next.
+- Nothing is sent when the event has no usable credentials. The Wallet switch plays no part.
+- An attendee with no such row costs no provider call. That covers no row at all, a `pending` row with no id, and a pass already marked removed.
+
+### What is still at the provider after a removal
+
+The statement that deletes the rows returns these passes too (`untrackedWalletTargets`). They are the rows that had no provider id and are still to be deleted by `passIsStillToDelete`, each with the id to delete it by.
+
+After the commit, the route asks again (`deleteUntrackedPassesAfterRemoval`) for the passes it had no answer for:
+
+- a delete that failed
+- a pass whose id was reserved or rewritten after the first read (it is the id that counts as answered, not the attendee)
+
+An id that the first delete failed for is asked about again even when a creating request has put another id on the row meanwhile, as long as this removal deleted that attendee.
+
+What is still at the provider after that is said in **one line per request**, never one per pass (a bulk removal carries up to 100 attendees):
+
+- The line is `wallet_pass_erasure_delete_failed`.
+- It carries the event id, how many (`failed`), the failure codes (`codes`) and every attendee id (`attendeeIds`).
+- For a row that held an id other than `admitto:<event id>:<attendee id>`, it also carries the id itself (`reservedIds`). The attendee id already gives the standard one.
+
+Other points:
+
+- A removed attendee leaves no row, so that line is the only record of whose pass stands. Delete the pass in the provider's own console, by its User provided ID.
+- The line names only what is still there after the second try.
+- When the second try itself breaks (the database cannot be read after the commit), the line names every pass that the first delete had no answer for, with the failure code `unknown`.
+- The removal answers the same whatever the provider does.
+
+### The old routes
+
+The old `DELETE …/attendees/:id` and `POST …/attendees/bulk-delete` are gone (they answer 404). They were not behind the archived-event guard, asked for no reason and kept the name and address in the central audit entry. Audit entries that they wrote before the split still hold that identity (see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for blanking them).
+
+### The removal screens
+
+Where an Administrator or Superadmin reaches the removal (`apps/admin`).
+
+**Attendees list, bulk bar, More actions.** **Remove from event** for the selection (`BulkRemoveDialog`, `bulkRemoveAttendees`).
+
+- A reason from the fixed list is chosen. Duplicate entry is the default each time the dialog opens. No typed name.
+- The dialog says how many of the selected people have checked in, so that it is clear their check-ins leave Reports too (`checkedInAmong`, from the rows of the page, because the selection is cleared when the page changes).
+- When the server confirms, the list is read again and the selection is cleared. The toast says how many were removed and, when someone else removed a person a moment before, how many were gone already (`removedToast`, from `not_found`).
+
+**Attendee page, More actions.** **Remove from event** for one person (`RemoveAttendeeDialog`, `removeAttendee`). The reason and the attendee's name have to be typed.
+
+- When it succeeds, the page goes back to the Attendees list.
+- The same item is on the read-only page of an erased attendee (`ErasedAttendeeView`), where the dialog has no link to Erase.
+
+**Both dialogs, and the two Erase dialogs.** A muted line crosses to the other action, for someone who picked the wrong one (`DialogCrossLink`).
+
+- In Remove it reads "A privacy request? **Use Erase personal data**". In Erase it reads "A duplicate or a mistake? **Use Remove from event**".
+- The current dialog closes and the other opens clean (its typed name and errors reset).
+- A busy link keeps its focus and does nothing.
+- The Erase side of a link is left out on an archived event, and Remove's side on an erased attendee, because there is nowhere to go.
+
+**Archived event.** **Remove from event** is off in every menu, with the tooltip "This event is archived, so its numbers are final. To erase someone's personal data, use Erase personal data." (`REMOVE_ARCHIVED_TOOLTIP`; the generic archived tooltip would not say what to do instead). **Erase personal data** stays available, like the API.
+
+**Admin audit log (Organisation settings → Logs → Audit).** An entry's label follows `metadata.method`.
+
+- "Attendee removed (mistake)" or "Attendees bulk removed (mistake)" for a removal.
+- "Attendee erased (GDPR)" or "Attendees bulk erased (GDPR)" for an erasure, and for an entry from before the split.
+- The Details show the reason in words (`Reason: Duplicate entry`).
+- The Action filter has one option for both, "Attendee erased or removed", because both are written under the same action types.
 
 ## Job failure privacy
 
-Import and export workers persist only fixed error categories, never arbitrary exception messages. Import capacity errors use fixed copy even if an exception carries identifying text. The job-status APIs and import history accept only recognized fixed messages; unknown historical errors receive a generic failure message, and non-failed job responses carry no error. Existing stopped-by-erasure and stale-worker messages remain distinct. Import preview/enqueue failure logs use fixed categories; export cleanup logs allow only recognized filesystem codes, plus opaque file/job/event identifiers needed for cleanup.
+What is protected:
 
-This protects new failures and application responses, without rewriting historical rows. Raw exception text saved by earlier versions may still exist in `AdminJob.error` and backups; erasure does not scrub that historical column. An operator must assess those records under their data-minimization/DSAR policy before making a separately reviewed cleanup. There is no automatic history deletion or retroactive claim that all stored copies are erased. Successful import row feedback continues to use the existing import-result scrubbing described below.
+- Import and export workers persist only fixed error categories, never arbitrary exception messages.
+- Import capacity errors use fixed copy, even if an exception carries identifying text.
+- The job-status APIs and import history accept only recognized fixed messages. Unknown historical errors receive a generic failure message, and non-failed job responses carry no error.
+- Existing stopped-by-erasure and stale-worker messages remain distinct.
+- Import preview and enqueue failure logs use fixed categories.
+- Export cleanup logs allow only recognized filesystem codes, plus the opaque file, job and event identifiers needed for cleanup.
+
+What is not covered:
+
+- This protects new failures and application responses, without rewriting historical rows.
+- Raw exception text saved by earlier versions may still exist in `AdminJob.error` and in backups. Erasure does not scrub that historical column.
+- An operator must assess those records under their data-minimization and DSAR policy before making a separately reviewed cleanup. There is no automatic history deletion, and no retroactive claim that all stored copies are erased.
+- Successful import row feedback continues to use the existing import-result scrubbing described below.
 
 ## Files left in storage
 
