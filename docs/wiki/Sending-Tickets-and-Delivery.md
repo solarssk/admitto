@@ -28,12 +28,20 @@ The batch completes with a recorded status for every attempted delivery - includ
 
 | Recipient option | Meaning |
 |---|---|
-| All attendees | Every attendee in the event. Use carefully because previous delivery does not exclude a person. |
-| Not yet emailed | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, rejected, or cancelled attempts do not count as successful delivery. |
-| By attendance status | Attendees whose current attendance status matches the selected status. |
-| By ticket type | Attendees whose stored ticket type matches the selected configured type. |
-| By wallet status | Attendees whose wallet pass matches the selected status, as last known: registered (last known) (registered on at least one wallet platform this event offers, as of the last check), previously registered (last known) (has real installation history but isn't registered on an offered platform any more - either genuinely removed, or its platform has since been turned off in Wallet settings), or never installed. The same three-way split as Reports' Wallets tab "Registration state (last known)" card. |
-| Specific attendees | Search by name or email and pick individual attendees one at a time, or check them directly in the **Attendees** list. Use this for a small, named group instead of a broad filter. Like **All attendees**, previous delivery does not exclude anyone selected this way: an attendee who already has a ticket gets a resend, and an attendee who does not gets a first ticket, in the same action. |
+| All attendees | Every attendee in the event. Use carefully, because previous delivery does not exclude a person |
+| Not yet emailed | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, rejected, or cancelled attempts do not count as successful delivery |
+| By attendance status | Attendees whose current attendance status matches the selected status |
+| By ticket type | Attendees whose stored ticket type matches the selected configured type |
+| By wallet status | Attendees whose wallet pass matches the selected status, as last known (see below) |
+| Specific attendees | Search by name or email and pick individual attendees one at a time, or check them directly in the **Attendees** list. Use this for a small, named group instead of a broad filter |
+
+**The three wallet statuses.** They are the same three-way split as the **Registration state (last known)** card on Reports' Wallets tab.
+
+- **Registered (last known):** registered on at least one wallet platform this event offers, as of the last check.
+- **Previously registered (last known):** has real installation history, but is not registered on an offered platform any more. Either it was genuinely removed, or its platform has since been turned off in Wallet settings.
+- **Never installed.**
+
+**Specific attendees.** Like **All attendees**, previous delivery does not exclude anyone selected this way. An attendee who already has a ticket gets a resend, and an attendee who does not gets a first ticket, in the same action.
 
 Custom-template bulk sends are recorded as resends. A recipient count is a dry run and sends nothing.
 
@@ -43,11 +51,13 @@ Sending creates delivery records and can issue the attendee's ticket when needed
 
 ## Common problems
 
-- **The count is zero:** verify the selected template, filter, and attendee data.
-- **Ticket types fail to load:** the **Ticket type** field stays off and says so with a **Retry** under it; retry before sending, and do not fall back to all attendees by guesswork.
-- **Some deliveries fail:** open that row's **View delivery details** for the exact provider error, then review [Email Delivery Statuses](Email-Delivery-Statuses), correct the cause, and use the permitted resend.
-- **The batch stays queued:** ask a Superadmin to review mail configuration and logs.
-- **You started a send by mistake:** select **Stop** while the batch is still draining. Anyone not yet emailed is left as Cancelled and can be sent to again immediately; anyone already emailed keeps that delivery, since it already left and cannot be undone.
+| Problem | What it means and what to do |
+|---------|------------------------------|
+| **The count is zero** | Verify the selected template, filter, and attendee data |
+| **Ticket types fail to load** | The **Ticket type** field stays off and says so, with a **Retry** under it. Retry before sending, and do not fall back to all attendees by guesswork |
+| **Some deliveries fail** | Open that row's **View delivery details** for the exact provider error, then review [Email Delivery Statuses](Email-Delivery-Statuses), correct the cause, and use the permitted resend |
+| **The batch stays queued** | Ask a Superadmin to review mail configuration and logs |
+| **You started a send by mistake** | Select **Stop** while the batch is still draining. Anyone not yet emailed is left as Cancelled and can be sent to again immediately. Anyone already emailed keeps that delivery, since it already left and cannot be undone |
 
 ## Related pages
 
