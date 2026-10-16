@@ -72,14 +72,12 @@ flowchart TB
 ```
 
 The application and background worker are separate processes from the same container image (ADR
-0042), not the same process under different threads. Only the application accepts inbound HTTP
-traffic; the worker has no listening port and is not reachable from the edge. The worker runs
-scheduled/queued jobs against the same database (mail delivery drain, bounce ingest, attendee
-import commit, export jobs, wallet sync and the event-wide wallet jobs, wallet pass expiry,
-retention purges). It coordinates through PostgreSQL (session advisory locks so each job class runs
-once at a time, and LISTEN/NOTIFY wake-ups when work is queued) and, best effort, through Redis
-(pub/sub so a worker-driven change reflects live in an open admin session without a refresh, and
-the shared pacing of PassCreator calls).
+0042), not the same process under different threads.
+
+- Only the application accepts inbound HTTP traffic. The worker has no listening port and is not reachable from the edge.
+- The worker runs scheduled and queued jobs against the same database: mail delivery drain, bounce ingest, attendee import commit, export jobs, wallet sync and the event-wide wallet jobs, wallet pass expiry, and retention purges.
+- It coordinates through PostgreSQL: session advisory locks so each job class runs once at a time, and LISTEN/NOTIFY wake-ups when work is queued.
+- It also coordinates, best effort, through Redis: pub/sub so a worker-driven change reflects live in an open admin session without a refresh, and the shared pacing of PassCreator calls.
 
 ---
 
@@ -96,14 +94,16 @@ flowchart LR
   Ingest[External registration source\nplanned, not built] -.-> Core
 ```
 
-**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped (see VERSIONING.md and the release tag for maturity status - shipped is not the same as production-ready for a first event). A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control. Mention it to auditors as **planned**, not as existing.
+**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped. See VERSIONING.md and the release tag for maturity status: shipped is not the same as production-ready for a first event.
+
+**Planned:** a self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control. Mention it to auditors as **planned**, not as existing.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
 customer process (today, via staff-driven CSV/XLSX import).
 
 ### 3.1 Triggers, actions, and processes
 
-The table below lists every event that causes Admitto to do something, for a reviewer who needs to trace cause and effect rather than just the end-to-end shape above. "Automatic" means it runs on a schedule or as a direct side effect with no staff action in the moment; every attendee-facing send today is staff-triggered, not automatic.
+The table below lists every event that causes Admitto to do something. It is for a reviewer who needs to trace cause and effect rather than just the end-to-end shape above. "Automatic" means it runs on a schedule or as a direct side effect with no staff action in the moment. Every attendee-facing send today is staff-triggered, not automatic.
 
 | Trigger | Actor | Process | Result |
 |---|---|---|---|
@@ -119,7 +119,9 @@ The table below lists every event that causes Admitto to do something, for a rev
 | Wallet status sync interval | Automatic - the worker | Read registration status from the wallet provider | Admitto's wallet status and "added to wallet" figures stay current |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
 
-There is currently **no date-triggered automation of attendee-facing messages** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one. The one date-driven job is wallet pass expiry: when an event's **Pass expiration** is set to expire when the event ends, the worker marks its passes Expired once the event is over, without contacting the wallet provider.
+- There is currently **no date-triggered automation of attendee-facing messages**. Examples are an automatic reminder email sent N days before an event, or an automatic waitlist promotion.
+- Every attendee-facing action above is either a direct staff action or an immediate side effect of one.
+- The one date-driven job is wallet pass expiry. When an event's **Pass expiration** is set to expire when the event ends, the worker marks its passes Expired once the event is over, without contacting the wallet provider.
 
 ---
 
@@ -128,13 +130,20 @@ There is currently **no date-triggered automation of attendee-facing messages** 
 | Area | Typical exposure | Mitigation approach |
 |------|------------------|---------------------|
 | Public ticket links | Internet | Opaque tokens; throttling; minimal data on page |
-| Staff UIs | Restricted by customer network and/or app auth | RBAC; MFA required for admin/superadmin by default; optional perimeter gateway |
+| Staff UIs | Restricted by customer network and/or app auth | RBAC; MFA required for admin/superadmin by default on local sign-in (an SSO sign-in relies on the identity provider's own MFA, see [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md#sso-and-two-factor-authentication)); optional perimeter gateway |
 | Admin APIs | Authenticated staff only | Scope checks on event/org; per-user throttling on heavy ops (import, template preview) |
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Wallet provider webhook | Internet (provider servers) | Signature verified against the provider's public key before any write; per-event and per-IP throttling; failures return no detail |
 | Database | Internal network | Not published to internet |
-| Container image | Pulled by customer | Multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation; release SBOMs carry a Sigstore signature and, from v0.7.4, a provenance file (see "Verifying a release" in SECURITY.md). Git tags are created by CI and are not GPG/SSH-signed. CI scanning documented in SECURITY.md |
+| Container image | Pulled by customer | Multi-arch image with attestations and signed release SBOMs (details under the table) |
 | Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |
+
+**Container image**
+
+- It is a multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation.
+- Release SBOMs carry a Sigstore signature and, from v0.7.4, a provenance file (see "Verifying a release" in SECURITY.md).
+- Git tags are created by CI and are not GPG/SSH-signed.
+- CI scanning is documented in SECURITY.md.
 
 Specific paths and headers are defined in deployment runbooks - not repeated here to avoid
 coupling public docs to one customer's perimeter design.
@@ -173,19 +182,15 @@ Admitto is **self-hosted, no formal certification** (no SOC 2 report, no ISO 270
 that's normal for this size and stage of a vendor, not a red flag to hide. Being upfront about it,
 and giving a reviewer something concrete to check instead, is what actually gets a review through:
 
-- **A vendor security questionnaire (SIG Lite, CAIQ, or an internal equivalent):** the documents
-  in the map above already answer most of the categories those cover - subprocessors, data flows,
-  authentication/access controls, encryption, incident response, and supply-chain scanning. Point
-  the reviewer at this document map rather than filling in a separate form from memory; the
-  answers should match.
-- **A technical/code-level review (pentest scoping, secure-SDLC checklist):** use the
-  [OWASP Application Security Verification Standard (ASVS)](https://owasp.org/www-project-application-security-verification-standard/)
-  as the reference checklist - it's a testing standard, not a certification, and maps directly onto
-  what [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) already documents (authentication,
-  session management, access control, input validation / SSRF handling, and so on).
-- **A formal audit (SOC 2, ISO 27001):** Admitto does not have either. If your organization's
-  policy requires one, that's a decision for whoever owns the vendor-risk process, not something
-  this documentation set can substitute for.
+- **A vendor security questionnaire (SIG Lite, CAIQ, or an internal equivalent):**
+  - The documents in the map above already answer most of the categories those cover: subprocessors, data flows, authentication and access controls, encryption, incident response, and supply-chain scanning.
+  - Point the reviewer at this document map rather than filling in a separate form from memory. The answers should match.
+- **A technical/code-level review (pentest scoping, secure-SDLC checklist):**
+  - Use the [OWASP Application Security Verification Standard (ASVS)](https://owasp.org/www-project-application-security-verification-standard/) as the reference checklist.
+  - It's a testing standard, not a certification, and it maps directly onto what [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) already documents (authentication, session management, access control, input validation / SSRF handling, and so on).
+- **A formal audit (SOC 2, ISO 27001):**
+  - Admitto does not have either.
+  - If your organization's policy requires one, that's a decision for whoever owns the vendor-risk process, not something this documentation set can substitute for.
 
 ## 8. Conscious exclusions (MVP)
 
@@ -203,7 +208,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Artefact | Location |
 |----------|----------|
 | Release tags | Project releases - created by CI as ordinary, unsigned GitHub tags by default; a manual signed-tag path exists for emergencies, see [VERSIONING.md](../../VERSIONING.md) |
-| Container SBOM | `.github/workflows/publish-container.yml` - CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets together with a Sigstore signature per SBOM and a provenance file; BuildKit SBOM and SLSA provenance attestations are also attached to the published image |
+| Container SBOM | `.github/workflows/publish-container.yml`. CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets together with a Sigstore signature per SBOM and a provenance file. BuildKit SBOM and SLSA provenance attestations are also attached to the published image |
 | Container vulnerability scan | `.github/workflows/publish-container.yml` - Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` - `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` - `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |

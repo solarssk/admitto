@@ -19,6 +19,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 - [Authentication and access](#authentication-and-access)
   - [Role hierarchy](#role-hierarchy)
   - [Implemented in codebase](#implemented-in-codebase)
+  - [SSO and two-factor authentication](#sso-and-two-factor-authentication)
 - [Authorization (RBAC)](#authorization-rbac)
 - [Optional hardening (customer choice)](#optional-hardening-customer-choice)
 - [Rate limiting](#rate-limiting)
@@ -41,7 +42,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 |------|-------------------------------|-----------------|-------|
 | Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
 | Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
-| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** (FIDO2, e.g. Face ID, Windows Hello, YubiKey) for elevated roles - usable for enrollment, sign-in, and step-up | App · Config |
+| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** (FIDO2, e.g. Face ID, Windows Hello, YubiKey) for elevated roles - usable for enrollment, sign-in, and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication) | App · Config |
 | Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway - e.g. **Cloudflare Access** - in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
@@ -81,8 +82,8 @@ Expired or revoked session and trusted-device rows are purged best-effort on the
 (at boot and about every 24 hours). Operators can also run
 `docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview
 counts (drop `--dry-run` to run it); the production image ships no `npm`.
-**Trusted-device persistence across sign-out.** Signing out (`POST /logout` in the staff UI, or
-`POST /api/auth/logout`) revokes the session but intentionally does **not** clear the
+**Trusted-device persistence across sign-out.** Signing out (`POST /api/auth/logout` from the staff
+app, or `POST /logout` from the server-rendered pages) revokes the session but intentionally does **not** clear the
 `admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
 for its full window (`trusted_device_days`, 30 days by default) regardless of how many times the
 user signs out and back in on that browser, matching how most other products with this feature
@@ -136,6 +137,14 @@ character-composition rules.
 account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts
 would itself be a denial-of-service vector on a self-hosted internal tool.
 
+**The per-email sign-in limit is a temporary block.**
+
+- Password sign-in accepts 10 attempts a minute for one e-mail address, from any client address.
+- Every attempt is counted before the password is checked (see **Rate limiting**).
+- After 10 attempts, even the account owner is refused with "Too many requests" until the minute is over.
+- Anyone who knows an address can use up that allowance, and can repeat it.
+- It applies to password sign-in only (`POST /login` and `POST /api/auth/login`). Passkey sign-in and SSO use other limits, per client address, so they stay available.
+
 Brute-force is mitigated instead by:
 
 - The login rate limits above (see **Rate limiting**).
@@ -173,6 +182,17 @@ passkey/security key at first sign-in. Operator accounts have no second factor b
 check-in station must stay usable on event day (the `operator` role can be added to the required-role
 list in Settings → Security). Confirm your deployment runbook matches your security policy.
 
+### SSO and two-factor authentication
+
+An SSO sign-in is a full session straight away. Admitto does not ask for a second factor of its own after it.
+
+| | Local password sign-in | SSO sign-in |
+|---|---|---|
+| Second factor asked by Admitto for admin and superadmin | Yes, by default (`MFA_REQUIRED_ROLES`) | No |
+| Who decides whether a second factor is used | Admitto | Your identity provider |
+
+Admitto validates the ID token and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number). It does **not** read `acr`, `amr`, `auth_time` or `email_verified`. So Admitto cannot tell whether the identity provider asked for a second factor. Whether administrators who sign in with SSO use one is enforced only by the identity provider, for example by a policy there.
+
 ---
 
 ## Authorization (RBAC)
@@ -200,6 +220,7 @@ Organizations with stricter policies often add controls **outside** the applicat
 | Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway - **Cloudflare Access is natively supported** (Organisation Settings → Identity): Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt |
 | Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity) - staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles |
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
+| Container runtime | A read-only root filesystem, no extra Linux capabilities and `no-new-privileges` on the `app` container. Optional and not in the shipped compose file, and only part of it was tried: see [Optional container hardening](../../deploy/README.md#optional-container-hardening) |
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
 documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **overwrite**

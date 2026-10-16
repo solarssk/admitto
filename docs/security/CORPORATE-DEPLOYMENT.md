@@ -32,11 +32,11 @@ own database, secrets, and operator access.
 
 | Component | Role |
 |-----------|------|
-| **Application container** | Web API, admin UI, check-in UI |
+| **Application container** | Web API, admin UI, check-in UI. Give it at least 1 GB of memory, see [Memory for the app container](../../deploy/README.md#memory-for-the-app-container) |
 | **PostgreSQL** | Primary data store (not exposed to the public internet) |
-| **Redis** (required, password-protected) | Rate limiting, live-update pub/sub between worker and application, caches, shared PassCreator call pacing. Sessions are stored in PostgreSQL, not Redis |
+| **Redis** (required, password-protected) | Rate limiting, live-update pub/sub between worker and application, caches, shared PassCreator call pacing. Sessions are stored in PostgreSQL, not Redis. What the keys and messages contain: [DATA-PROTECTION.md](../../DATA-PROTECTION.md#redis) |
 | **Worker container** | Same image as the application, exactly one replica, no listening port. Sends queued mail, runs imports/exports, bounce ingest, wallet jobs and scheduled retention purges |
-| **Migration job** | One-shot `migrate` service that applies schema changes before the application starts |
+| **Migration job** | One-shot `migrate` service that applies schema changes before the application starts. Run only one at a time per database, see [Container startup](../../deploy/README.md#container-startup-entrypoint) |
 | **Internal reverse proxy** | Bundled in compose; publishes loopback port to the host |
 | **Edge TLS / public routing** | Customer reverse proxy, load balancer, or CDN |
 | **DNS** | Customer-controlled |
@@ -110,10 +110,8 @@ define whether staff paths are VPN-only, zero-trust gated, or public with strong
 | Check-in operator | On-site staff | Operator UI, event scope |
 | Attendee | Guest | Public ticket link - no account |
 
-The initial platform administrator (a superadmin) is created in the browser on first start: with an
-empty database every staff URL redirects to `/setup`. The CLI (`docker compose run --rm app node
-packages/auth/dist/cli.js bootstrap-superadmin --email ...`) remains as a break-glass path when the
-web UI is unavailable.
+- The initial platform administrator (a superadmin) is created in the browser on first start. With an empty database, every staff URL redirects to `/setup`.
+- The CLI (`docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin --email ...`) remains as a break-glass path when the web UI is unavailable.
 
 ---
 

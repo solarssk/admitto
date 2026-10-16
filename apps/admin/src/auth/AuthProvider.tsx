@@ -23,6 +23,7 @@ import {
   SLOW_NOTICE_TEXT,
 } from "../utils/loading-timing.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../utils/locale-store.js";
+import { goToLogin } from "./login-navigation.js";
 
 export interface AuthContextValue {
   user: AuthUser;
@@ -82,7 +83,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
         setUser(null);
         setAssignments([]);
         const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.assign(`/login?next=${next}`);
+        goToLogin(`/login?next=${next}`);
         return;
       }
       setAuthError(

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { resetLoaderClockForTests, syncLoaderClockToSplash } from "@admitto/ui";
 import { AuthProvider, useAuth } from "../../src/auth/AuthProvider.js";
+import { clearSignOutInProgress, markSignOutInProgress } from "../../src/auth/sign-out-in-progress.js";
 import {
   BOOT_FADE_FALLBACK_MS,
   BOOT_FADE_MS,
@@ -327,6 +328,20 @@ describe("AuthProvider when the session has ended (401)", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearSignOutInProgress();
+  });
+
+  it("stays where it is while the user's Sign out is under way, so the trip to the identity provider is not replaced", async () => {
+    markSignOutInProgress();
+    mockFetchMe.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    render(
+      <AuthProvider>
+        <div data-testid="child">ok</div>
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(mockFetchMe).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("goes to the login page and keeps the page it was on as the way back", async () => {
