@@ -38,8 +38,6 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 const TIMEOUT_MS = 60_000;
-// The limits the child is given, after whatever node flags it inherits.
-const CHILD_LIMITS = ["--max-old-space-size=384", "--max-semi-space-size=8"];
 
 // The module is imported again for every test: its queue of workbooks is module state, and a test that
 // fails half way must not leave a workbook in it that holds up the next one.
@@ -53,22 +51,6 @@ function lastChild(): FakeChild {
   const child = children.at(-1);
   if (!child) throw new Error("no process was started");
   return child;
-}
-
-/** The node flags the child is started with when this process was started with `own`. */
-async function flagsHandedOn(own: string[]): Promise<string[] | undefined> {
-  const original = process.execArgv;
-  process.execArgv = own;
-  try {
-    const result = read();
-    await flush();
-    const handedOn = lastChild().options.execArgv;
-    lastChild().emit("message", { csv: "a" });
-    await result;
-    return handedOn;
-  } finally {
-    process.execArgv = original;
-  }
 }
 
 beforeEach(async () => {
@@ -94,9 +76,7 @@ describe("xlsxBufferToCsv", () => {
 
     // The process runs this module itself: it loads the file as it is on disk.
     expect(child.file).toMatch(/xlsx-to-csv\.(ts|js)$/);
-    expect(child.options.execArgv).toEqual(
-      expect.arrayContaining(["--max-old-space-size=384", "--max-semi-space-size=8"]),
-    );
+    expect(child.options.execArgv).toEqual(["--max-old-space-size=384", "--max-semi-space-size=8"]);
     expect(child.options).toMatchObject({
       serialization: "advanced",
       env: {},
@@ -105,54 +85,32 @@ describe("xlsxBufferToCsv", () => {
     expect(child.send).toHaveBeenCalledExactlyOnceWith({ workbook: buf });
   });
 
-  it("hands on the node flags of this process, so a loader such as tsx reaches the child too", async () => {
-    await expect(flagsHandedOn(["--import", "tsx"])).resolves.toEqual(["--import", "tsx", ...CHILD_LIMITS]);
-  });
-
-  it("leaves the environment-file flags out of the node flags it hands on", async () => {
-    const own = [
+  it("hands on none of the node flags of this process, so that nothing of the app reaches the child or overrides its limits", async () => {
+    const original = process.execArgv;
+    process.execArgv = [
       "--import",
       "tsx",
       "--env-file=.env",
       "--env-file",
       "other.env",
-      "--env-file-if-exists=maybe.env",
-      "--env-file-if-exists",
-      "also.env",
-      "--conditions",
-      "development",
-    ];
-
-    await expect(flagsHandedOn(own)).resolves.toEqual(["--import", "tsx", "--conditions", "development", ...CHILD_LIMITS]);
-  });
-
-  it("leaves the heap-size flags out of the node flags it hands on, so that nothing overrides the limits of the child", async () => {
-    const own = [
-      "--import",
-      "tsx",
       "--max-old-space-size-percentage=75",
       "--max-old-space-size-percentage",
-      "50",
-      "--max-old-space-size=2048",
-      "--max-semi-space-size=64",
-      "--min-semi-space-size=16",
-      "--initial-heap-size=1024",
-      "--initial-old-space-size=512",
+      "5e1",
+      "--max_old_space_size=2048",
+      "-max-old-space-size=2048",
       "--max-heap-size=4096",
-      "--max-shared-heap-size=128",
-      "--initial-shared-heap-size=64",
       "--conditions",
       "development",
     ];
-
-    await expect(flagsHandedOn(own)).resolves.toEqual(["--import", "tsx", "--conditions", "development", ...CHILD_LIMITS]);
-  });
-
-  it("keeps what only looks like a heap-size flag: the flag after one without a value, and a loader path", async () => {
-    const loader = "file:///opt/loaders/max-heap-size.mjs";
-    const own = ["--max-heap-size", "--conditions", "development", "--import", loader];
-
-    await expect(flagsHandedOn(own)).resolves.toEqual(["--conditions", "development", "--import", loader, ...CHILD_LIMITS]);
+    try {
+      const result = read();
+      await flush();
+      expect(lastChild().options.execArgv).toEqual(["--max-old-space-size=384", "--max-semi-space-size=8"]);
+      lastChild().emit("message", { csv: "a" });
+      await result;
+    } finally {
+      process.execArgv = original;
+    }
   });
 
   it("returns the text the process sends and ends the process", async () => {

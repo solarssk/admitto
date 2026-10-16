@@ -667,7 +667,13 @@ describe("xlsxBufferToCsv child process", { timeout: BIG_WORKBOOK_TIMEOUT_MS }, 
     // A percentage of the host's memory takes precedence over the limit the process is given, and
     // would let it read the workbook below in full.
     const original = process.execArgv;
-    process.execArgv = [...original, "--max-old-space-size-percentage=50", "--max-old-space-size=4096"];
+    process.execArgv = [
+      ...original,
+      "--max-old-space-size-percentage=50",
+      "--max_old_space_size_percentage",
+      "5e1",
+      "-max-old-space-size=4096",
+    ];
     try {
       await expect(xlsxBufferToCsv(memoryHungryWorkbook())).rejects.toBeInstanceOf(ImportRowLimitError);
     } finally {

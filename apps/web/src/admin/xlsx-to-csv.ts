@@ -331,8 +331,12 @@ export async function decodeXlsxToCsv(buf: ArrayBuffer): Promise<string> {
  * (the buffers it unpacks are outside the heap, and the size limits above bound those): the largest
  * workbook the size limits let through needs about two thirds of it, and a workbook that needs more
  * ends the process instead of taking memory from the rest of the app. The young generation is capped
- * as well, which keeps the resident memory down and costs no time. The heap-size flags of the app
- * itself are not handed on (see inheritedNodeFlags), so nothing overrides these.
+ * as well, which keeps the resident memory down and costs no time.
+ *
+ * These are the only node flags the process gets: none of the flags of the app is handed on. Node runs
+ * this file as it is, so no loader such as tsx is needed; an `--env-file` flag would fill the empty
+ * environment with the app's secrets again; and a flag that sizes the heap could replace the limits
+ * above (`--max-old-space-size-percentage` takes precedence over them wherever it stands).
  */
 const XLSX_CHILD_FLAGS = ["--max-old-space-size=384", "--max-semi-space-size=8"];
 
@@ -408,41 +412,6 @@ function logDecodeFailed(cause: string): void {
   emitSystemLog("api", "error", "xlsx_decode_failed", { cause });
 }
 
-/** The flags that size the V8 heap, such as `--max-old-space-size`, `--max-heap-size` and `--max-old-space-size-percentage`. */
-const HEAP_SIZING_FLAG = /^--(?:initial|max|min)-(?:old-space|semi-space|heap|shared-heap)-size/;
-
-const NUMBER_VALUE = /^[\d.]+$/;
-
-/** What the value of a flag that is left out looks like, or undefined for a flag that is kept. */
-function leftOutValue(name: string): "path" | "number" | undefined {
-  if (name === "--env-file" || name === "--env-file-if-exists") return "path";
-  return HEAP_SIZING_FLAG.test(name) ? "number" : undefined;
-}
-
-/**
- * The node flags of this process that the reading process inherits, so that a loader such as tsx
- * reaches it, without two kinds. The flags that load an environment file (`--env-file` and
- * `--env-file-if-exists`; the dev scripts use them): the reading process is given an empty
- * environment, and such a flag would fill it with the app's secrets again. The flags that size the
- * heap: the reading process has fixed limits of its own, and a percentage of the host's memory
- * (`--max-old-space-size-percentage`) takes precedence over them, wherever it stands. A flag may carry
- * its value after an `=` or as the next argument.
- */
-function inheritedNodeFlags(flags: readonly string[]): string[] {
-  const kept: string[] = [];
-  let valueFollows: "path" | "number" | undefined;
-  for (const flag of flags) {
-    const awaited = valueFollows;
-    valueFollows = undefined;
-    if (awaited === "path" || (awaited === "number" && NUMBER_VALUE.test(flag))) continue;
-    const name = flag.split("=", 1)[0] ?? flag;
-    const value = leftOutValue(name);
-    if (!value) kept.push(flag);
-    else if (name === flag) valueFollows = value;
-  }
-  return kept;
-}
-
 /**
  * Reads the workbook in a new process, and ends that process once it has answered, died or run out
  * of time. A process that dies (usually of the heap limit, which ends it with a signal) or runs out
@@ -452,7 +421,7 @@ function inheritedNodeFlags(flags: readonly string[]): string[] {
  */
 function decodeInChild(workbook: ArrayBuffer): Promise<string> {
   const child = fork(fileURLToPath(import.meta.url), [], {
-    execArgv: [...inheritedNodeFlags(process.execArgv), ...XLSX_CHILD_FLAGS],
+    execArgv: XLSX_CHILD_FLAGS,
     serialization: "advanced",
     stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: {},
