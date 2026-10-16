@@ -31,6 +31,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 - [Outbound HTTP (SSRF mitigation)](#outbound-http-ssrf-mitigation)
 - [Data protection in operations](#data-protection-in-operations)
 - [Known scope limits (MVP)](#known-scope-limits-mvp)
+  - [Multiple instance superadmins (v0.4.10+)](#multiple-instance-superadmins-v0410)
+  - [Offboarding runbook for OIDC-managed elevated roles](#offboarding-runbook-for-oidc-managed-elevated-roles)
   - [Penetration test verification (operator checklist)](#penetration-test-verification-operator-checklist)
 - [Related documents](#related-documents)
 
@@ -422,28 +424,20 @@ When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF or
 
 ## Outbound HTTP (SSRF mitigation)
 
-Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
-(and Cloudflare Access JWKS) use
-[`assertSafeOidcFetchUrl`](../../packages/auth/src/oidc/safe-url.ts) plus
-[`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
+Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches (and Cloudflare Access JWKS) use [`assertSafeOidcFetchUrl`](../../packages/auth/src/oidc/safe-url.ts) plus [`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
-- HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
-- Literal private, link-local, carrier-grade NAT (100.64.0.0/10, which includes Tailscale
-  addresses), multicast/reserved, and metadata hostnames rejected, including IPv4 embedded in
-  NAT64/6to4 IPv6 literals. Operators who reach an IdP over a tailnet add its exact host to the
-  SSO allowlist.
-- **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
-  connection uses a custom undici `lookup` to the validated address while the request URL keeps
-  the original hostname (correct Host/SNI). All validated A/AAAA records are cached; on
-  network-unreachable failures, the client retries the next record. Redirects are handled manually
-  with SSRF re-check on every hop.
-- **Bounded responses**: the response body is read before the pinned connection is closed and may
-  not exceed 1 MiB. A larger discovery document, token response or key set is rejected instead of
-  being buffered without limit.
+- HTTPS is required in production (HTTP loopback is allowed in development for mock IdPs).
+- **Blocked addresses.** Literal private, link-local, carrier-grade NAT (100.64.0.0/10, which includes Tailscale addresses), multicast/reserved, and metadata hostnames are rejected, including IPv4 embedded in NAT64/6to4 IPv6 literals. Operators who reach an IdP over a tailnet add its exact host to the SSO allowlist.
+- **DNS resolve-and-pin.**
+  - The hostname is resolved once (5 min TTL) and validated.
+  - Then the outbound connection uses a custom undici `lookup` to the validated address, while the request URL keeps the original hostname (correct Host/SNI).
+  - All validated A/AAAA records are cached. On network-unreachable failures, the client retries the next record.
+  - Redirects are handled manually, with the SSRF re-check on every hop.
+- **Bounded responses.** The response body is read before the pinned connection is closed and may not exceed 1 MiB. A larger discovery document, token response or key set is rejected instead of being buffered without limit.
 
-Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
-discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
-**public** URLs the instance can reach - perimeter egress filtering remains an operator control.
+Admin UI discover/test requires a **superadmin** session (or a Cloudflare Access JWT with instance admin role).
+
+**Residual risk.** A compromised superadmin account can still trigger outbound fetches to **public** URLs the instance can reach. Perimeter egress filtering remains an operator control.
 
 **Self-hosted private SSO allowlist:**
 
@@ -458,16 +452,16 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
   remains required.
 - **Where to set it:** on `app`.
 
-**Mail transport destinations (v0.4.13+).** The same class of guard now also covers the SMTP host,
-the Power Automate webhook URL, and the bounce-detection IMAP host. Each is checked against a
-private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the
-server connects, with the real connection pinned to the already-validated address, closing the
-same DNS-rebinding gap the OIDC guard closes.
+**Mail transport destinations (v0.4.13+).**
 
-Separately, event-level dedicated mail transport now also requires superadmin (matching the
-organization-wide Mail settings page). It can no longer silently send the organization's real SMTP
-password or Power Automate key to a connection target the event override changed: saving or
-sending now requires that override to also supply its own credential.
+- The same class of guard now also covers the SMTP host, the Power Automate webhook URL, and the bounce-detection IMAP host.
+- Each is checked against a private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the server connects.
+- The real connection is pinned to the already-validated address, closing the same DNS-rebinding gap the OIDC guard closes.
+
+Separately, event-level dedicated mail transport now also requires superadmin (matching the organization-wide Mail settings page).
+
+- It can no longer silently send the organization's real SMTP password or Power Automate key to a connection target the event override changed.
+- Saving or sending now requires that override to also supply its own credential.
 
 **Self-hosted private MTA allowlist:**
 
@@ -480,10 +474,10 @@ sending now requires that override to also supply its own credential.
   keep the list minimal and ensure DNS for those names is under operator control.
 - **Where to set it:** on both `app` and `worker`.
 
-**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers three
-admin-configurable external-service URLs under Organisation Settings → External services. Each
-re-resolves its hostname and pins the outbound connection to the validated address at request
-time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
+**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers three admin-configurable external-service URLs under Organisation Settings → External services.
+
+- Each re-resolves its hostname and pins the outbound connection to the validated address at request time.
+- That closes the same DNS-rebinding gap as the OIDC and mail guards above.
 
 | Service | Configurable URL | Implementation |
 |---------|-------------------|-----------------|
@@ -491,45 +485,47 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
 | Geocoding | Nominatim base URL | `apps/web/src/maps/nominatim-provider.ts` |
 | Map tiles | Map tile-server URL | `apps/web/src/maps/static-map.ts` |
 
-**Notification webhook destination.** The organisation's alert webhook (Organisation Settings →
-Notifications, superadmin only) is checked by `assertSafeWebhookUrl`
-(`packages/notifications/src/channels/webhook.ts`) when saved, and re-resolved and pinned to the
-validated address at every send, with a 15 s timeout. HTTPS is required (plain HTTP loopback only
-outside production) and private, loopback, link-local and cloud-metadata hosts are rejected. There
-is no allowlist escape hatch for this destination. The Send test action is rate limited per user.
+**Notification webhook destination.** The organisation's alert webhook (Organisation Settings → Notifications, superadmin only) is checked by `assertSafeWebhookUrl` (`packages/notifications/src/channels/webhook.ts`) when saved. It is re-resolved and pinned to the validated address at every send, with a 15 s timeout.
 
-**PassCreator call pacing (not SSRF - availability/abuse hardening).** Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`, which paces requests proactively rather than reacting to a 429 after PassCreator's own limit is already exceeded:
+- HTTPS is required (plain HTTP loopback only outside production), and private, loopback, link-local and cloud-metadata hosts are rejected.
+- There is no allowlist escape hatch for this destination.
+- The Send test action is rate limited per user.
 
-- **Spacing:** at least 150ms between calls, across every caller - single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save - regardless of how many separate requests or client instances are triggering them concurrently. This keeps Admitto's outbound traffic under PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at once).
-- **Multi-process coordination:** with `REDIS_URL` configured, pacing is coordinated across every server process via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`). Without it, each process paces only its own calls, so the combined rate across processes could exceed the intended pace.
-- **Relationship to the rate limits above:** those bound how much work an admin can queue up; this pacing bounds how fast that work actually reaches PassCreator - so a bulk wallet action against a selection now takes proportionally longer than a non-wallet bulk action, by design, rather than firing every call at once and having a chunk fail once PassCreator's limit was exceeded.
-- **Attendee caps:** bulk wallet actions on a whole selection are capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size request stays within a typical reverse proxy's response timeout. Bulk-erase, bulk-remove and bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured (both can also reach PassCreator once per selected attendee in that case); an event with no wallet configured keeps the general 500-attendee cap for both, since neither can reach PassCreator at all.
+**PassCreator call pacing** (not SSRF: availability and abuse hardening). Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`. It paces requests proactively, rather than reacting to a 429 after PassCreator's own limit is already exceeded.
+
+- **Spacing.** At least 150ms between calls, across every caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save.
+  - It holds regardless of how many separate requests or client instances are triggering them concurrently.
+  - This keeps Admitto's outbound traffic under PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at once).
+- **Multi-process coordination.** With `REDIS_URL` configured, pacing is coordinated across every server process via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`). Without it, each process paces only its own calls, so the combined rate across processes could exceed the intended pace.
+- **Relationship to the rate limits above.**
+  - Those bound how much work an admin can queue up. This pacing bounds how fast that work actually reaches PassCreator.
+  - So a bulk wallet action against a selection takes proportionally longer than a non-wallet bulk action, by design, rather than firing every call at once and having a chunk fail once PassCreator's limit was exceeded.
+- **Attendee caps.** Bulk wallet actions on a whole selection are capped at 100 attendees per request (down from the general 500 bulk-action cap), so a full-size request stays within a typical reverse proxy's response timeout.
+  - Bulk-erase, bulk-remove and bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured. In that case all three can also reach PassCreator once per selected attendee.
+  - An event with no wallet configured keeps the general 500-attendee cap for all three, since none of them can reach PassCreator at all.
 
 ---
 
 ## Data protection in operations
 
 - **Ticket / QR payload:** opaque random identifier - no attendee name or email embedded in the QR.
-- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key
-  supplied at deploy time via environment variable.
-- **Logs:** intended for operations, not analytics. Attendee-facing data (recipient addresses,
-  import content) and secrets are never logged in full. A small, named set of staff/operator
-  accountability events (login success, admin actions) does log the acting staff member's own
-  email address - see **Logs** and **System logs (live tail)** in
-  [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
-- **Health endpoints:** `/healthz` - liveness + DB ping, rate-limited, no PII; `/readyz` -
-  token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
-  security headers; neither exposes secrets or attendee data.
-- **Frozen email delivery bodies:** `EmailDelivery.rendered_html` / `rendered_subject` are nullified
-  best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60
-  days by default. `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker,
-  `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike. Preview with
-  `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
-- **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
-  (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
-  service; database dumps are **not** written during migrate. Operators take a pre-upgrade dump
-  (and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount),
-  so a compromised application process cannot read or tamper with those dumps.
+- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key supplied at deploy time via environment variable.
+- **Logs:**
+  - They are intended for operations, not analytics.
+  - Attendee-facing data (recipient addresses, import content) and secrets are never logged in full.
+  - A small, named set of staff/operator accountability events (login success, admin actions) does log the acting staff member's own email address. See **Logs** and **System logs (live tail)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
+- **Health endpoints:**
+  - `/healthz`: liveness + DB ping, rate-limited, no PII.
+  - `/readyz`: token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset).
+  - Both return baseline security headers; neither exposes secrets or attendee data.
+- **Frozen email delivery bodies:**
+  - `EmailDelivery.rendered_html` / `rendered_subject` are nullified best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days by default.
+  - `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker, `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike.
+  - Preview with `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
+- **Container privilege (v0.4.13+):**
+  - The production image runs as the unprivileged `node` user (UID 1000) for `migrate`, `app`, and `worker`.
+  - Schema migration is a one-shot `migrate` compose service; database dumps are **not** written during migrate.
+  - Operators take a pre-upgrade dump, and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount. So a compromised application process cannot read or tamper with those dumps.
 
 ---
 
@@ -538,65 +534,45 @@ is no allowlist escape hatch for this destination. The Send test action is rate 
 Be explicit with auditors about what is **out of product scope** today:
 
 - **No built-in SIEM or central log platform** (forward container logs if required).
-  - **System logs screen:** the in-app **System logs** screen (superadmin only, see
-    [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a short, in-memory live tail for day-to-day
-    diagnostics. It is **not** a substitute for a SIEM: it holds only the last 1000 entries and is
-    emptied on every restart.
-  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for sixteen
-    auth/security event types (login, repeated-failure alerts, new-country admin login, MFA, logout,
-    OIDC, access-denied, trusted-device, superadmin bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in
-    [DATA-PROTECTION.md](../../DATA-PROTECTION.md). This is a queryable incident-review trail, not
-    a general-purpose log platform, and rate-limit/system log signals stay ephemeral and
-    operator-shipped as above.
-  - **Durability caveats on that trail:** it is neither complete nor permanent. Persistence is
-    best-effort, a write failure is logged but never blocks the underlying auth action, so a
-    transient DB hiccup can leave a gap. Rows are also purged after the configured retention window
-    (30 days by default).
+  - **System logs screen:** the in-app **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a short, in-memory live tail for day-to-day diagnostics. It is **not** a substitute for a SIEM: it holds only the last 1000 entries and is emptied on every restart.
+  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for sixteen auth/security event types (login, repeated-failure alerts, new-country admin login, MFA, logout, OIDC, access-denied, trusted-device, superadmin bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md).
+    - It is a queryable incident-review trail, not a general-purpose log platform.
+    - Rate-limit and system log signals stay ephemeral and operator-shipped, as above.
+  - **Durability caveats on that trail:** it is neither complete nor permanent.
+    - Persistence is best-effort. A write failure is logged but never blocks the underlying auth action, so a transient DB hiccup can leave a gap.
+    - Rows are also purged after the configured retention window (30 days by default).
 - No HA / multi-region failover in the default compose topology.
-- No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge, email delivery snapshot nullification, security audit log purge and in-app notification purge run on the
-  Admitto **worker** at boot and about every 24 hours, and are also available as CLI maintenance
-  commands).
+- No always-on scheduler for all long-term PII purge domains yet. The retention **policy** is documented.
+  - Auth-state purge, email delivery snapshot nullification, security audit log purge and in-app notification purge run on the Admitto **worker** at boot and about every 24 hours.
+  - They are also available as CLI maintenance commands.
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
-- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot - minimum
-  length only (32 characters for both; a shorter `OPS_HEALTH_TOKEN` leaves `/readyz` disabled);
-  operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
-- Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
-  controls in front of the origin.
-- **OIDC roles are reconciled at login only (JIT):** group→role mappings are fully evaluated on
-  each OIDC sign-in, including removal of grants no longer authorized by IdP group membership.
-  If a user is removed from a group in the identity provider, an already-active elevated Admitto
-  session persists until the next OIDC login, session expiry, or session revocation. For
-  deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS`
-  to **8h or less** (`28800000`) so the stale-session window is bounded.
+- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot: minimum length only (32 characters for both; a shorter `OPS_HEALTH_TOKEN` leaves `/readyz` disabled). Operators should generate them with `openssl rand -hex 32` (documented in `.env.example`).
+- Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network controls in front of the origin.
+- **OIDC roles are reconciled at login only (JIT).** Group→role mappings are fully evaluated on each OIDC sign-in, including removal of grants no longer authorized by IdP group membership.
+  - If a user is removed from a group in the identity provider, an already-active elevated Admitto session persists until the next OIDC login, session expiry, or session revocation.
+  - For deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS` to **8h or less** (`28800000`) so the stale-session window is bounded.
 
-  **Multiple instance superadmins (v0.4.10+):** Admitto allows more than one active
-  `superadmin@instance` assignment (admin UI, CLI bootstrap, or OIDC group mapping). First-run
-  `POST /setup` still creates exactly one user when the database is empty; concurrent setup
-  submissions surface `409 already_initialized` for the loser. Before removing or demoting a
-  superadmin in the IdP, keep **at least two active** instance superadmins so OIDC reconciliation
-  cannot leave the deployment without break-glass access. OIDC group sync refuses to revoke the
-  last **active** instance-superadmin grant (`auth.oidc.superadmin_revoke_blocked` audit event);
-  inactive users are excluded from the floor count.
+### Multiple instance superadmins (v0.4.10+)
 
-  Offboarding runbook for OIDC-managed elevated roles:
-  1. Remove the user from the relevant group in the IdP **only after** another active instance
-     superadmin exists (see multiple-superadmin note above).
-  2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
-  3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
-     current IdP group membership.
-  4. Immediate access removal depends on the auth mode:
-     - **Session-cookie OIDC mode:** revoking sessions in step 2 is sufficient - an OIDC-sourced
-       grant without an active session grants nothing.
-     - **Cloudflare Access mode:** also remove or block the user at the Cloudflare Access / IdP
-       policy layer, because a valid CF Access JWT can authenticate staff requests without an
-       Admitto `Session` row.
+- Admitto allows more than one active `superadmin@instance` assignment (admin UI, CLI bootstrap, or OIDC group mapping).
+- First-run `POST /setup` still creates exactly one user when the database is empty. Concurrent setup submissions surface `409 already_initialized` for the loser.
+- Before removing or demoting a superadmin in the IdP, keep **at least two active** instance superadmins, so OIDC reconciliation cannot leave the deployment without break-glass access.
+- OIDC group sync refuses to revoke the last **active** instance-superadmin grant (`auth.oidc.superadmin_revoke_blocked` audit event). Inactive users are excluded from the floor count.
 
-     Either way, the grant row itself is only removed on the next OIDC/CF Access reconciliation,
-     and OIDC-sourced grants cannot be removed through the manual role revoke action
-     (`managed_by_idp`). If the grant row must disappear before the user's next authentication,
-     temporarily remove or disable the relevant group→role mapping rule, complete reconciliation,
-     then re-enable the rule if still needed.
+### Offboarding runbook for OIDC-managed elevated roles
+
+1. Remove the user from the relevant group in the IdP **only after** another active instance superadmin exists (see [Multiple instance superadmins](#multiple-instance-superadmins-v0410)).
+2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
+3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by current IdP group membership.
+4. Immediate access removal depends on the auth mode:
+   - **Session-cookie OIDC mode:** revoking sessions in step 2 is sufficient. An OIDC-sourced grant without an active session grants nothing.
+   - **Cloudflare Access mode:** also remove or block the user at the Cloudflare Access / IdP policy layer, because a valid CF Access JWT can authenticate staff requests without an Admitto `Session` row.
+
+Either way, the grant row itself is only removed on the next OIDC/CF Access reconciliation, and OIDC-sourced grants cannot be removed through the manual role revoke action (`managed_by_idp`). If the grant row must disappear before the user's next authentication:
+
+- temporarily remove or disable the relevant group→role mapping rule,
+- complete reconciliation,
+- then re-enable the rule if still needed.
 
 ### Penetration test verification (operator checklist)
 
