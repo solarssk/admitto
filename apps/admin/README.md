@@ -45,13 +45,18 @@ npm test -w @admitto/admin
 
 ## E2E (Playwright)
 
-Browser-level tests in this repo, both under `apps/admin/e2e/`:
+Browser-level tests in this repo, all under `apps/admin/e2e/`:
 
 - `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them through the manual check-in path (not the camera/QR scanner).
 - `a11y.spec.ts`: an axe-core accessibility scan of the login page, the operator check-in page and the main admin pages.
   - The main admin pages are the events list, overview, attendees, attendee detail, event settings and communication. They are scanned as a seeded superadmin (`admin-login.ts` walks the forced TOTP enrollment over the API).
   - iframes (the mail-template previews) are excluded.
   - Every violation is printed, written to the job summary, and saved as `test-results/*/axe-*.json`. Serious and critical ones fail the test. Minor and moderate stay report-only.
+- `topbar-phone.spec.ts`: the staff top bar on a phone. It runs as the seeded superadmin on a 390, a 360, a 340 and a 320 pixel wide screen (touch emulation).
+  - The top bar does not let `div.main` scroll sideways, and it keeps its side padding.
+  - The system status is an icon, not the dot.
+  - A click on the account button opens the menu, and the menu stays open with Sign out in view. A bar wider than the screen made the page scroll, and the scroll closed the menu.
+  - A second test holds back the icon font's request and checks that the same status icon is there while the font has not loaded.
 
 When it runs:
 

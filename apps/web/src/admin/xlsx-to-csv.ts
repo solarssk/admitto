@@ -4,7 +4,10 @@ import ExcelJS from "exceljs";
 /** Cap rows materialized from XLSX/CSV to limit decompression-bomb memory use. */
 export const MAX_IMPORT_ROWS = 50_000;
 
-/** Max CSV text length after decode/conversion (post-decompression guard). */
+/**
+ * Max CSV text length after decode/conversion (post-decompression guard). xlsxBufferToCsv stops
+ * building the text as soon as it passes this, not after all of it exists.
+ */
 export const MAX_CSV_CHARS = 10 * 1024 * 1024;
 
 /**
@@ -27,6 +30,16 @@ const MAX_XLSX_UNCOMPRESSED_ENTRY = 20 * 1024 * 1024;
  * xlsxBufferToCsv only applies after that memory is spent.
  */
 const MAX_XLSX_ROW_ELEMENTS = MAX_IMPORT_ROWS + 1;
+
+/**
+ * Most `<c>` (cell) elements a workbook may hold, counted over every worksheet: an average of 20
+ * for each of the rows allowed. ExcelJS builds an object for every cell it reads, empty ones that
+ * only carry a format included, so a few rows can cost as much memory as many. The size limits
+ * above already keep one worksheet of filled cells below this, so in practice it stops workbooks
+ * made of empty cells.
+ */
+const MAX_XLSX_CELLS_PER_ROW = 20;
+const MAX_XLSX_CELL_ELEMENTS = MAX_XLSX_ROW_ELEMENTS * MAX_XLSX_CELLS_PER_ROW;
 
 const EOCD_SIGNATURE = 0x06054b50;
 const CD_SIGNATURE = 0x02014b50;
@@ -91,7 +104,8 @@ function assertPlainEndRecord(bytes: Uint8Array, eocd: number): void {
 
 /**
  * Scan the ZIP central directory and enforce entry count, the real (measured, not declared)
- * uncompressed sizes and the number of rows before ExcelJS inflates and parses the archive.
+ * uncompressed sizes and the number of rows and cells before ExcelJS inflates and parses the
+ * archive.
  */
 function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
   const bytes = new Uint8Array(buf);
@@ -105,7 +119,7 @@ function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
   const cdOffset = readUint32LE(bytes, eocd + 16);
   let pos = cdOffset;
   let totalUncompressed = 0;
-  let totalRows = 0;
+  const totals: ElementTotals = { rows: 0, cells: 0 };
 
   for (let n = 0; n < entryCount; n++) {
     if (pos + 46 > bytes.length) throw new ImportZipBombError();
@@ -125,9 +139,9 @@ function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
     if (totalUncompressed > MAX_XLSX_UNCOMPRESSED_TOTAL) throw new ImportZipBombError();
 
     // Counted on the inflated bytes of every entry, whatever its name: which parts are worksheets
-    // is for ExcelJS to decide, and the rows of all of them cost memory, not just the first sheet's.
-    totalRows += countRowElements(entry, MAX_XLSX_ROW_ELEMENTS - totalRows);
-    if (totalRows > MAX_XLSX_ROW_ELEMENTS) throw new ImportRowLimitError();
+    // is for ExcelJS to decide, and the rows and cells of all of them cost memory, not just the
+    // first sheet's.
+    countElements(entry, totals);
 
     pos += 46 + nameLen + extraLen + commentLen;
   }
@@ -171,26 +185,52 @@ function inflateEntry(bytes: Uint8Array, cdPos: number, remainingTotalBudget: nu
   }
 }
 
-const ROW_TAG = "<row";
+const LESS_THAN = 0x3c;
+const LETTER_C = 0x63;
+const LETTER_R = 0x72;
+const LETTER_O = 0x6f;
+const LETTER_W = 0x77;
 
-/** True for the byte after `<row` in a row start tag: XML whitespace, `>` or `/`. */
-function endsRowName(byte: number | undefined): boolean {
+/** True for the byte after the name in a start tag: XML whitespace, `>` or `/`. */
+function endsElementName(byte: number | undefined): boolean {
   return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d || byte === 0x3e || byte === 0x2f;
 }
 
+/** True when the `<` at `at` starts a `<row>` tag. A longer name (`<rowBreaks`) is another one. */
+function startsRow(xml: Buffer, at: number): boolean {
+  return xml[at + 1] === LETTER_R && xml[at + 2] === LETTER_O && xml[at + 3] === LETTER_W && endsElementName(xml[at + 4]);
+}
+
 /**
- * Number of `<row>` start tags in an inflated entry, counted only until it passes `limit`. A tag
- * whose name goes on after `<row` (`<rowBreaks`) is another element. Rows are counted whether or not
- * they hold cells or a row number: ExcelJS builds an object for each of them.
+ * True when the `<` at `at` starts a `<c>` tag. Longer names (`<col`, `<cfRule`) and prefixed ones
+ * (`<c:v`) are other elements.
  */
-function countRowElements(xml: Buffer, limit: number): number {
-  let count = 0;
-  let at = xml.indexOf(ROW_TAG);
-  while (at >= 0 && count <= limit) {
-    if (endsRowName(xml[at + ROW_TAG.length])) count++;
-    at = xml.indexOf(ROW_TAG, at + ROW_TAG.length);
+function startsCell(xml: Buffer, at: number): boolean {
+  return xml[at + 1] === LETTER_C && endsElementName(xml[at + 2]);
+}
+
+/** The `<row>` and `<c>` start tags found so far in the inflated entries of an archive. */
+interface ElementTotals {
+  rows: number;
+  cells: number;
+}
+
+/**
+ * Adds the `<row>` and `<c>` start tags of an inflated entry to `totals` and throws
+ * ImportRowLimitError once either total is over its limit, counting no further then. It is one pass
+ * over the bytes, so the work does not depend on what the entry holds. Rows and cells are counted
+ * whether or not they hold values or an address: ExcelJS builds an object for each of them.
+ */
+function countElements(xml: Buffer, totals: ElementTotals): void {
+  let { rows, cells } = totals;
+  for (let at = 0; at < xml.length && rows <= MAX_XLSX_ROW_ELEMENTS && cells <= MAX_XLSX_CELL_ELEMENTS; at++) {
+    if (xml[at] !== LESS_THAN) continue;
+    if (startsCell(xml, at)) cells++;
+    else if (startsRow(xml, at)) rows++;
   }
-  return count;
+  totals.rows = rows;
+  totals.cells = cells;
+  if (rows > MAX_XLSX_ROW_ELEMENTS || cells > MAX_XLSX_CELL_ELEMENTS) throw new ImportRowLimitError();
 }
 
 function formulaResultToString(result: NonNullable<ExcelJS.CellFormulaValue["result"]>): string {
@@ -222,17 +262,31 @@ function csvEscape(value: string): string {
   return value;
 }
 
+/**
+ * Worksheet parts the import does not read: the rules for what may be typed into cells and the
+ * width and format of columns. They hold no attendee data, and ExcelJS builds an object for every
+ * cell or column they name, which a rule for a whole column makes very expensive.
+ * Merged ranges are not on this list: they decide which value each cell of a merge shows.
+ */
+const UNREAD_WORKSHEET_NODES = ["cols", "dataValidations"];
+
 /** Convert the first worksheet of an XLSX buffer to a CSV string (in memory). */
 export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
   assertZipWithinUncompressedLimits(buf);
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buf);
+  await workbook.xlsx.load(buf, { ignoreNodes: UNREAD_WORKSHEET_NODES });
   const sheet = workbook.worksheets[0];
   if (!sheet) return "";
 
   const lines: string[] = [];
   let dataRows = 0;
+  // Length the joined text has so far: no newline comes before the first line.
+  let chars = -1;
+  const addChars = (count: number): void => {
+    chars += count;
+    if (chars > MAX_CSV_CHARS) throw new ImportRowLimitError();
+  };
   sheet.eachRow((row, rowNumber) => {
     // Row 1 is the header — only count data rows against the limit.
     if (rowNumber > 1) {
@@ -242,7 +296,14 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
       }
     }
     const values = row.values as ExcelJS.CellValue[];
-    const cells = values.slice(1).map((v) => csvEscape(cellToString(v)));
+    // The text is counted cell by cell, so a row over the limit is refused while it is built and
+    // not after all of it exists. A row with empty columns adds their separators too.
+    const cells = values.slice(1).map((v) => {
+      const cell = csvEscape(cellToString(v));
+      addChars(cell.length);
+      return cell;
+    });
+    addChars(cells.length); // the commas between the cells and the newline after the line
     lines.push(cells.join(","));
   });
   return lines.join("\n");
