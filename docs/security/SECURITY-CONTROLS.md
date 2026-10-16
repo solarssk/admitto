@@ -18,6 +18,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 - [Control areas (summary)](#control-areas-summary)
 - [Authentication and access](#authentication-and-access)
   - [Role hierarchy](#role-hierarchy)
+  - [Sessions](#sessions)
+  - [Passwords and sign-in protection](#passwords-and-sign-in-protection)
   - [Implemented in codebase](#implemented-in-codebase)
   - [SSO and two-factor authentication](#sso-and-two-factor-authentication)
 - [Authorization (RBAC)](#authorization-rbac)
@@ -42,18 +44,24 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 |------|-------------------------------|-----------------|-------|
 | Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
 | Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
-| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** (FIDO2, e.g. Face ID, Windows Hello, YubiKey) for elevated roles - usable for enrollment, sign-in, and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication) | App · Config |
-| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway - e.g. **Cloudflare Access** - in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
+| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** for elevated roles (see the notes below the table) | App · Config |
+| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway in front of staff paths (see the notes below the table) | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
 | Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store, required in production) | App · Config |
-| Browser hardening | Clickjacking, MIME sniffing, script injection | Baseline headers on responses (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, `X-Robots-Tag: noindex, nofollow`); route-specific Content-Security-Policy on the staff SPA and auth pages, with extra trusted origins configurable by a superadmin (Settings → Security) | App · Config |
+| Browser hardening | Clickjacking, MIME sniffing, script injection | Baseline security headers and a Content-Security-Policy (see the notes below the table) | App · Config |
 | Outbound fetch safety | Block SSRF from OIDC / JWKS admin actions | Hostname blocklist + DNS resolve-before-connect on outbound HTTP | App |
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
 | Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
 | Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) | App |
 | Supply chain | Scans on code and container image | Documented in [SECURITY.md](../../SECURITY.md) | App |
+
+Notes on the rows above:
+
+- **Strong auth.** WebAuthn means FIDO2 passkeys and security keys, for example Face ID, Windows Hello or YubiKey. They are usable for enrollment, sign-in and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication).
+- **Edge access (ZTNA).** For example **Cloudflare Access**. The gateway verifies identity (via the same OIDC provider or its own) and device posture before it proxies the request through. It complements, and does not replace, Admitto's own RBAC.
+- **Browser hardening.** Baseline headers on responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, and `X-Robots-Tag: noindex, nofollow`. The staff SPA and the auth pages also get a route-specific Content-Security-Policy, with extra trusted origins configurable by a superadmin (Settings → Security).
 
 ---
 
@@ -76,18 +84,21 @@ flowchart TB
 - **Perimeter access control** (optional) - e.g. corporate zero-trust gateway, VPN, or CDN access
   rules in front of staff URLs. This complements, but does not replace, application RBAC.
 
-Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
-common web hardening (`httpOnly`, `SameSite`, `secure` in production).
-Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker**
-(at boot and about every 24 hours). Operators can also run
-`docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview
-counts (drop `--dry-run` to run it); the production image ships no `npm`.
-**Trusted-device persistence across sign-out.** Signing out (`POST /api/auth/logout` from the staff
-app, or `POST /logout` from the server-rendered pages) revokes the session but intentionally does **not** clear the
-`admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
-for its full window (`trusted_device_days`, 30 days by default) regardless of how many times the
-user signs out and back in on that browser, matching how most other products with this feature
-behave. It is cleared only by one of:
+### Sessions
+
+Sessions are **server-side**: the cookie holds an opaque token, and only its hash is stored in the database. Cookie flags follow common web hardening (`httpOnly`, `SameSite`, `secure` in production).
+
+**Cleanup.**
+
+- Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker** (at boot and about every 24 hours).
+- Operators can also run `docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview counts. Drop `--dry-run` to run it.
+- The production image ships no `npm`.
+
+#### Trusted devices after sign-out
+
+Signing out (`POST /api/auth/logout` from the staff app, or `POST /logout` from the server-rendered pages) revokes the session. It intentionally does **not** clear the `admitto_trusted_device` cookie or its database row.
+
+So a **"Remember this device"** trust now lasts for its full window (`trusted_device_days`, 30 days by default), however many times the user signs out and back in on that browser. It is cleared only by one of:
 
 - the trust window expiring,
 - a password change,
@@ -95,49 +106,100 @@ behave. It is cleared only by one of:
 - an admin-initiated reset, or
 - the account's own **"Forget all trusted devices"** action (My account → Two-factor authentication's options menu).
 
-> **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears
-> remembered-device trust. The trust is scoped to that specific account (`validateTrustedDevice`
-> rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the
-> device next. It does, however, let the *same* account skip MFA again on that device until the
-> trust window expires.
+> **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears remembered-device trust.
 >
-> Mitigations for an instance where the same account may sign in from a device it shouldn't stay
-> trusted on:
+> - The trust is scoped to that specific account (`validateTrustedDevice` rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the device next.
+> - It does, however, let the *same* account skip MFA again on that device until the trust window expires.
+>
+> Mitigations for an instance where the same account may sign in from a device it shouldn't stay trusted on:
+>
 > - Set `trusted_device_days` to a short value, or `0` to disable the feature entirely.
 > - Use **"Forget all trusted devices"** or an admin-initiated reset to clear trust sooner.
 
-**Session idle timeout (v0.4.13+).** Sessions previously only expired on an absolute lifetime
-(admin defaulted to 7 days), with no inactivity check, so a stolen or left-open admin browser tab
-stayed authenticated for up to a week. A `full`-stage session now also ends once `now -
-last_seen_at` exceeds a configurable idle window, using the same env-lock pattern as the
-absolute-lifetime settings.
+#### Session idle timeout (v0.4.13+)
+
+Before v0.4.13 a session only expired on an absolute lifetime (admin default: 7 days), with no inactivity check. A stolen or left-open admin browser tab stayed authenticated for up to a week.
+
+Now a `full`-stage session also ends once `now - last_seen_at` exceeds a configurable idle window. It uses the same env-lock pattern as the absolute-lifetime settings.
 
 | Role | Idle timeout env var | Idle default | Absolute default |
 |------|----------------------|---------------|-------------------|
 | Admin | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | 30 min | 12h (down from 7 days) |
 | Operator | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | 2h | 12h |
 
-Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a
-sane threshold, and the API rejects a save where the idle timeout would exceed that role's own
-absolute lifetime.
+- Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a sane threshold.
+- The API rejects a save where the idle timeout would exceed that role's own absolute lifetime.
 
-The 12h admin default only applies while no `session_ttl` row exists, and the 2FA migration (`20260614130000_2fa_totp`) seeded one holding 7 days, so until `20261001150000_reset_seeded_admin_session_ttl` every instance ran with 7 days. That migration moves a row that still holds exactly 7 days to 12h and leaves any other value alone; sessions already issued keep their own end time (the 30 min idle timeout ends most of them sooner). An instance that chose 7 days on purpose has to set it again in Settings → Security.
+**The 12h admin default and its migration.**
 
-**Operator event-day session (replaces the v0.7.4 "Keep me signed in" checkbox).** An exception to the table above, for check-in tablets that sit idle between shifts and are handed to staff who are not expected to make security choices. An operator-only account (no Admin or Superadmin role in any scope) that signs in, by any method (password, passkey or SSO), on the day of a non-archived event it is assigned to gets one session with **no inactivity window**: it ends at the later of 06:00 the next local morning and the event's own end time, and the session cookie is persistent so it survives the tablet app being closed. Nothing is ticked or chosen at sign-in. The day is the event's calendar day (`Event.date`, read as its UTC calendar day) from local midnight to the next local midnight in the event's own timezone, converted from wall-clock time so a 23 or 25 hour daylight-saving day still runs midnight to midnight; for an overnight event (end time earlier than start time) a sign-in still counts until the event ends the next morning. Only the moment of sign-in counts: someone who signs in the evening before gets a normal session and has to sign in again on the day. A date or timezone that cannot be read means normal limits, never a longer session. An event has one date, so an event lasting several days needs one event per day to be covered on each. It is decided again when a partial session is promoted to full (MFA, forced password change), and the role and the master switch are re-read on every request, so an Admin role granted after sign-in, or the switch turned off mid-event, puts the normal inactivity window back at once (the end time itself is not shortened, and a role change does not clamp it to the admin lifetime). Like every session lifetime here, the expiry is fixed when the session is issued: removing the assignment, moving the event date or archiving the event does not shorten a session already issued (per-request authorization still blocks that event), so revoke it from **Active sessions** if that matters. The master switch is the `operator_event_day_sessions` system setting (`OPERATOR_EVENT_DAY_SESSIONS`, default on; a value that is set but is not a boolean, whether an environment value other than true, false, 1 or 0 or a hand-edited row, turns it off rather than leaving it on). It replaces `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS`, which are no longer read, so an instance that had set the old value to 0 gets the event-day session until the new switch is turned off. Transition: a session issued with the v0.7.4 checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window, so revoke such sessions from **Active sessions** if that matters. Guidance considered (OWASP ASVS 7.1.1 asks for a documented, risk-based decision): NIST SP 800-63B-4 allows up to 30 days at AAL1 (password only) with an optional inactivity timeout and 24 hours with a 1 hour inactivity timeout at AAL2, and recommends that "remember me" style persistence be limited; this exception stays within the AAL1 bound and ends at most about 30 hours after sign-in (sooner for most sign-ins; later only when an overnight event itself ends after 06:00), down from the 3 to 14 days the v0.7.4 checkbox allowed, while Admin and Superadmin limits are unchanged. Accepted risk: operator accounts have no MFA by design (a superadmin can add the `operator` role to the required-MFA list in Settings → Security), so a lost or stolen tablet that is signed in on event day stays signed in until the end of that day or until someone revokes the session.
+- The 12h admin default only applies while no `session_ttl` row exists.
+- The 2FA migration (`20260614130000_2fa_totp`) seeded a row holding 7 days, so until `20261001150000_reset_seeded_admin_session_ttl` every instance ran with 7 days.
+- That migration moves a row that still holds exactly 7 days to 12h and leaves any other value alone.
+- Sessions already issued keep their own end time (the 30 min idle timeout ends most of them sooner).
+- An instance that chose 7 days on purpose has to set it again in Settings → Security.
 
-**Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
-change, self-service Account change, admin-initiated create/reset) requires at least 12 characters
-and rejects a built-in list of 143 very common passwords plus trivial patterns (a password made of
-very few distinct characters such as `aaaaaaaaaaaa` or `ababababab`, or a simple ascending/descending
-run of six or more characters) - enforced server-side, not just the strength meter shown while typing - per NIST SP 800-63B-4
-§3.1.1.2's requirement to check candidates against a blocklist instead of relying on
-character-composition rules.
+#### Operator event-day session (replaces the v0.7.4 "Keep me signed in" checkbox)
 
-**No account lockout, by design.** Local password authentication never locks or disables an
-account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts
-would itself be a denial-of-service vector on a self-hosted internal tool.
+An exception to the table above, for check-in tablets that sit idle between shifts and are handed to staff who are not expected to make security choices.
 
-**The per-email sign-in limit is a temporary block.**
+**Who gets it, and what they get.**
+
+- An operator-only account (no Admin or Superadmin role in any scope) that signs in, by any method (password, passkey or SSO), on the day of a non-archived event it is assigned to.
+- One session with **no inactivity window**. It ends at the later of 06:00 the next local morning and the event's own end time.
+- The session cookie is persistent, so it survives the tablet app being closed.
+- Nothing is ticked or chosen at sign-in.
+
+**What counts as the day.**
+
+- The event's calendar day (`Event.date`, read as its UTC calendar day), from local midnight to the next local midnight in the event's own timezone.
+- It is converted from wall-clock time, so a 23 or 25 hour daylight-saving day still runs midnight to midnight.
+- For an overnight event (end time earlier than start time), a sign-in still counts until the event ends the next morning.
+- Only the moment of sign-in counts: someone who signs in the evening before gets a normal session and has to sign in again on the day.
+- A date or timezone that cannot be read means normal limits, never a longer session.
+- An event has one date, so an event lasting several days needs one event per day to be covered on each.
+
+**When it is decided again.**
+
+- When a partial session is promoted to full (MFA, forced password change).
+- The role and the master switch are re-read on every request. So an Admin role granted after sign-in, or the switch turned off mid-event, puts the normal inactivity window back at once.
+- The end time itself is not shortened, and a role change does not clamp it to the admin lifetime.
+
+**What does not shorten it.**
+
+- Like every session lifetime here, the expiry is fixed when the session is issued.
+- Removing the assignment, moving the event date or archiving the event does not shorten a session already issued (per-request authorization still blocks that event).
+- Revoke it from **Active sessions** if that matters.
+
+**The master switch.**
+
+- It is the `operator_event_day_sessions` system setting (`OPERATOR_EVENT_DAY_SESSIONS`), on by default.
+- A value that is set but is not a boolean turns it off rather than leaving it on. That covers an environment value other than true, false, 1 or 0, and a hand-edited row.
+- It replaces `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS`, which are no longer read. So an instance that had set the old value to 0 gets the event-day session until the new switch is turned off.
+- **Transition:** a session issued with the v0.7.4 checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window. Revoke such sessions from **Active sessions** if that matters.
+
+**Why this is acceptable.** OWASP ASVS 7.1.1 asks for a documented, risk-based decision. The guidance considered:
+
+- NIST SP 800-63B-4 allows up to 30 days at AAL1 (password only) with an optional inactivity timeout, and 24 hours with a 1 hour inactivity timeout at AAL2. It recommends that "remember me" style persistence be limited.
+- This exception stays within the AAL1 bound. It ends at most about 30 hours after sign-in (sooner for most sign-ins; later only when an overnight event itself ends after 06:00). That is down from the 3 to 14 days the v0.7.4 checkbox allowed.
+- Admin and Superadmin limits are unchanged.
+
+**Accepted risk.** Operator accounts have no MFA by design (a superadmin can add the `operator` role to the required-MFA list in Settings → Security). So a lost or stolen tablet that is signed in on event day stays signed in until the end of that day or until someone revokes the session.
+
+### Passwords and sign-in protection
+
+#### Password blocklist (v0.4.13+)
+
+- It applies to every place a password is set or changed: first-run setup, forced change, self-service Account change, and admin-initiated create/reset.
+- A password needs at least 12 characters, and it is rejected if it is on a built-in list of 143 very common passwords.
+- Trivial patterns are rejected too: a password made of very few distinct characters (such as `aaaaaaaaaaaa` or `ababababab`), or a simple ascending/descending run of six or more characters.
+- It is enforced server-side, not just by the strength meter shown while typing.
+- The basis is NIST SP 800-63B-4 §3.1.1.2, which requires checking candidates against a blocklist instead of relying on character-composition rules.
+
+#### No account lockout, by design
+
+Local password authentication never locks or disables an account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts would itself be a denial-of-service vector on a self-hosted internal tool.
+
+#### The per-email sign-in limit is a temporary block
 
 - Password sign-in accepts 10 attempts a minute for one e-mail address, from any client address.
 - Every attempt is counted before the password is checked (see **Rate limiting**).
@@ -145,22 +207,20 @@ would itself be a denial-of-service vector on a self-hosted internal tool.
 - Anyone who knows an address can use up that allowance, and can repeat it.
 - It applies to password sign-in only (`POST /login` and `POST /api/auth/login`). Passkey sign-in and SSO use other limits, per client address, so they stay available.
 
-Brute-force is mitigated instead by:
+#### Brute-force protection and alerts
 
-- The login rate limits above (see **Rate limiting**).
-- An audit record on repeated failed attempts against privileged accounts
-  (`packages/auth/src/privileged-login-alert.ts`): crossing the threshold emits an
-  `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`) event into the System logs live
-  tail and writes a durable `SecurityAuditLog` row, for an operator to find on review.
+Brute force is mitigated instead by:
 
-This never blocks the account. Repeated failed sign-ins on an admin or superadmin account also raise
-a security alert (Organisation Settings → Notifications): an in-app notification and an email to
-the organisation's admins, plus the organisation's optional Discord, Slack or generic-JSON webhook,
-each switchable per alert type (all on by default). The same mechanism alerts on emergency
-two-factor bypass use, login or security settings changes, an admin sign-in from a new country and
-an admin or superadmin role being granted, and it sends mandatory self-alerts to the account owner
-(password or two-factor change, sign-in from a new location, reused two-factor code). Repeated
-failed MFA codes (`auth.mfa.repeated_failures`) are audit-only and send no notification.
+- The login rate limits (see **Rate limiting**).
+- An audit record on repeated failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`). Crossing the threshold emits an `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`) event into the System logs live tail and writes a durable `SecurityAuditLog` row, for an operator to find on review. This record never blocks the account.
+
+**Security alerts** (Organisation Settings → Notifications):
+
+- Repeated failed sign-ins on an admin or superadmin account also raise a security alert: an in-app notification and an email to the organisation's admins, plus the organisation's optional Discord, Slack or generic-JSON webhook.
+- Each alert type is switchable (all on by default).
+- The same mechanism alerts on emergency two-factor bypass use, login or security settings changes, an admin sign-in from a new country and an admin or superadmin role being granted.
+- It also sends mandatory self-alerts to the account owner: a password or two-factor change, a sign-in from a new location, and a reused two-factor code.
+- Repeated failed MFA codes (`auth.mfa.repeated_failures`) are audit-only and send no notification.
 
 ### Implemented in codebase
 
@@ -172,15 +232,14 @@ These capabilities exist in the application - they are **not** roadmap-only clai
 | WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/mfa/webauthn.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
 | OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
 | Local break-glass admin | Local account provider alongside OIDC |
-| Emergency check-in bearer token | Off by default. `ALLOW_CHECKIN_BEARER=true` plus a `CHECKIN_OPERATOR_TOKEN` of at least 32 characters re-enables a shared bearer token for the check-in scan/lookup API only (break-glass; rate limits are keyed per IP instead of per user) |
+| Emergency check-in bearer token | Off by default (break-glass). `ALLOW_CHECKIN_BEARER=true` plus a `CHECKIN_OPERATOR_TOKEN` of at least 32 characters re-enables a shared bearer token for the check-in scan/lookup API only. Rate limits are keyed per IP instead of per user |
 
 Effective controls still depend on **customer configuration** (OIDC is disabled by default).
-Two-factor authentication is required by default for the `admin` and `superadmin` roles
-(`MFA_REQUIRED_ROLES`, default `admin,superadmin`; a superadmin can change the list in
-Settings → Security unless the environment variable locks it), and those users must enrol TOTP or a
-passkey/security key at first sign-in. Operator accounts have no second factor by default, because a
-check-in station must stay usable on event day (the `operator` role can be added to the required-role
-list in Settings → Security). Confirm your deployment runbook matches your security policy.
+
+- Two-factor authentication is required by default for the `admin` and `superadmin` roles (`MFA_REQUIRED_ROLES`, default `admin,superadmin`). A superadmin can change the list in Settings → Security unless the environment variable locks it.
+- Those users must enrol TOTP or a passkey/security key at first sign-in.
+- Operator accounts have no second factor by default, because a check-in station must stay usable on event day. The `operator` role can be added to the required-role list in Settings → Security.
+- Confirm your deployment runbook matches your security policy.
 
 ### SSO and two-factor authentication
 
@@ -191,7 +250,9 @@ An SSO sign-in is a full session straight away. Admitto does not ask for a secon
 | Second factor asked by Admitto for admin and superadmin | Yes, by default (`MFA_REQUIRED_ROLES`) | No |
 | Who decides whether a second factor is used | Admitto | Your identity provider |
 
-Admitto validates the ID token and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number). It does **not** read `acr`, `amr`, `auth_time` or `email_verified`. So Admitto cannot tell whether the identity provider asked for a second factor. Whether administrators who sign in with SSO use one is enforced only by the identity provider, for example by a policy there.
+- Admitto validates the ID token and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number).
+- It does **not** read `acr`, `amr`, `auth_time` or `email_verified`. So Admitto cannot tell whether the identity provider asked for a second factor.
+- Whether administrators who sign in with SSO use one is enforced only by the identity provider, for example by a policy there.
 
 ---
 
@@ -217,10 +278,14 @@ Organizations with stricter policies often add controls **outside** the applicat
 |-------|-------------------------------------|
 | Edge / CDN | Cloudflare, Akamai, corporate CDN with WAF |
 | Reverse proxy | nginx, **Nginx Proxy Manager**, HAProxy, F5, cloud load balancer |
-| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway - **Cloudflare Access is natively supported** (Organisation Settings → Identity): Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt |
-| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity) - staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles |
+| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway (see the first note below) |
+| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity; see the second note below) |
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
-| Container runtime | A read-only root filesystem, no extra Linux capabilities and `no-new-privileges` on the `app` container. Optional and not in the shipped compose file, and only part of it was tried: see [Optional container hardening](../../deploy/README.md#optional-container-hardening) |
+| Container runtime | A read-only root filesystem, no extra Linux capabilities and `no-new-privileges` on the `app` container (see the third note below) |
+
+- **Cloudflare Access is natively supported** (Organisation Settings → Identity). Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt.
+- **SSO.** Staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles.
+- **Container hardening** is optional and not in the shipped compose file, and only part of it was tried: see [Optional container hardening](../../deploy/README.md#optional-container-hardening).
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
 documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **overwrite**
