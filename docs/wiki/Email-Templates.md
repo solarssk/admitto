@@ -16,7 +16,7 @@ Confirm the event title, date, timezone, location, attendee data, and effective 
 2. Select the ticket template or another named template from the picker at the top.
 3. Edit the **Subject**.
 4. Keep the existing **MJML** or **HTML** format unless you are replacing the whole body with that format.
-5. Insert variables with the chips above the source editor, grouped as Attendee, Event, Ticket & QR, Wallet, and Branding. Image and Wallet chips insert ready-to-use markup, an image or a wallet badge button, instead of plain text.
+5. Insert variables with the chips above the source editor, grouped as Attendee, Event, Ticket & QR, Wallet, and Branding, plus an Images group when the event has extra named images. Image and Wallet chips insert ready-to-use markup, an image or a wallet badge button, instead of plain text.
 6. Select **Preview** and resolve all validation messages.
 7. Save the template.
 8. In **Send test**, enter an approved address such as `docs.test@example.com` and select **Send test**.

@@ -2,7 +2,7 @@
 
 **Audience:** Event Managers and Technical Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
-Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. The chips are grouped the same way in the editor: Attendee, Event, Ticket & QR, Wallet and Branding.
+Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. The chips are grouped the same way in the editor: Attendee, Event, Ticket & QR, Wallet and Branding. A sixth group, Images, comes after them when the event has extra named images.
 
 ## Attendee
 
@@ -51,6 +51,13 @@ These show details from the current event.
 |----------|-------|
 | `logo_url` | The event's logo, inserted through the image chip. It falls back to the organisation's logo when the event has none, and is empty when neither is set |
 
+## Images
+
+This group is in the editor only when the event has extra named images (**Images** tab of Event settings, **Your images**). Each image adds one variable, which Admitto creates from the image name when you add the image.
+
+- In the body editor, its chip inserts ready-to-use image markup, like the other image chips.
+- Use only the images the editor lists. A variable that is not offered is flagged by name.
+
 ## Required ticket variables
 
 `ticket_url` and `qr_image_url` are required URL values for the ticket template. A missing or invalid required URL stops rendering instead of producing a broken ticket.
@@ -61,7 +68,7 @@ These show details from the current event.
 - Do not add spaces inside the braces.
 - Do not invent a variable that is not offered by the editor.
 - Put URL variables in a link destination and image variables in image markup. The chips help place them safely. Use the `event_map_url` chip to insert a map image.
-- Event image assets can add event-specific image variables. Use only assets listed by the editor.
+- The images of an event can add variables of their own, see [Images](#images). Use only the ones the editor lists.
 
 ## Related pages
 
