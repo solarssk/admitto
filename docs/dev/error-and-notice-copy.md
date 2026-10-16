@@ -1,30 +1,33 @@
 # Error and notice message content
 
-Admitto has two layers of rules for user-facing error/notice/status messages. [The admin feedback standard](../../standards/admin-spa/feedback-and-errors.md)
-decides **which surface** to use (Toast, `Notice`, `EmptyState`+Retry, `ConfirmDialog`, in-context
-inline) and how to get a server error into it safely (`operatorApiErrorMessage`, `hasApiErrorCode`).
-This doc decides **what the text says**, specifically that the same underlying event should not get
-the same words on every screen, because the reader's technical literacy differs by role. Today it
-does get the same words everywhere: `CODE_MESSAGES` (`apps/admin/src/api/operator-api-error.ts`)
-writes one flat register for every screen it's used on, including superadmin-only technical panels.
-This doc is what closes that gap.
+Admitto has two layers of rules for user-facing error, notice and status messages.
+
+- **Which surface.** [The admin feedback standard](../../standards/admin-spa/feedback-and-errors.md) decides which surface to use (Toast, `Notice`, `EmptyState` + Retry, `ConfirmDialog`, in-context inline). It also says how to get a server error into it safely (`operatorApiErrorMessage`, `hasApiErrorCode`).
+- **What the text says.** This doc decides that. Specifically, the same underlying event should not get the same words on every screen, because the reader's technical literacy differs by role.
+
+Today it does get the same words everywhere. `CODE_MESSAGES` (`apps/admin/src/api/operator-api-error.ts`) writes one flat register for every screen it's used on, including superadmin-only technical panels. This doc is what closes that gap.
 
 ## Reader by role
 
-Message copy is written for a specific reader. For most of the app, that reader is determined by
-**where the component lives**: a route sits behind exactly one role's guard, and the guard picks
-the register. A route that isn't behind a role-specific guard has no single reader, so it can't be
-classified this way. Look for it explicitly (the route tree in `apps/admin/src/App.tsx` and the guards in
-`apps/admin/src/auth/RoleRouter.tsx` show which guard, if any, sits in front of a given screen) rather than assuming location always resolves to
-one row below - the "Shared staff surface" row exists precisely for the routes it doesn't.
+Message copy is written for a specific reader. For most of the app, **where the component lives** decides who that reader is: a route sits behind exactly one role's guard, and the guard picks the register.
 
-| Register | Route / guard | Reader | Can name technical detail? |
-|---|---|---|---|
-| **Superadmin** | `/admin/settings` under `SuperadminGuard` (the `settings` route in `apps/admin/src/App.tsx`); also `SUPERADMIN_ONLY_TABS` (`apps/admin/src/settings/eventSettingsTabs.ts`, the `mail`/`wallet`/`integrations` tabs inside per-event settings) | IT/infra person configuring the instance: Identity/OIDC, Cloudflare Access, Mail transport, System Logs, Archiving | Yes. System/provider name, HTTP status, machine error code, alongside a plain sentence |
-| **Administrator** | `/admin` under `AdminGuard` (the `/admin` route in `apps/admin/src/App.tsx`), minus the superadmin-only settings tabs above | Org-level event manager running day-to-day ops: Attendees, Communication, Check-in admin, Requirements, Reports | No. Zero codes, zero jargon |
-| **Operator** | `/operator` under `OperatorGuard` (the `/operator` route in `apps/admin/src/App.tsx`) | Check-in desk, reading under time pressure at the door | No, and terser than Administrator: one line, one action |
-| **Shared staff surface** | `/account` under `AuthenticatedGuard` (the `/account` route in `apps/admin/src/App.tsx`; `AuthenticatedGuard` in `apps/admin/src/auth/RoleRouter.tsx` is a no-op guard, not a role check) | Whoever is signed in: Superadmin, Administrator, or Operator, viewing their own password/passkeys/sessions | No. Treat every reader as the least technical one who can land here (an Operator can reach `/account` too) - same floor as Administrator, regardless of the account's actual role |
-| **Public attendee** | `apps/web` (`ticket-page.ts`, served at `/t/:token`) | General public, no product context, may be their only interaction with Admitto | No. Plainest and most reassuring of all five |
+A route that isn't behind a role-specific guard has no single reader, so it can't be classified this way. Look for it explicitly, rather than assuming that location always resolves to one row below. The "Shared staff surface" row exists precisely for the routes where it doesn't. The route tree in `apps/admin/src/App.tsx` and the guards in `apps/admin/src/auth/RoleRouter.tsx` show which guard, if any, sits in front of a given screen.
+
+| Register | Reader | Can name technical detail? |
+|---|---|---|
+| **Superadmin** | IT/infra person configuring the instance: Identity/OIDC, Cloudflare Access, Mail transport, System Logs, Archiving | Yes. System/provider name, HTTP status, machine error code, alongside a plain sentence |
+| **Administrator** | Org-level event manager running day-to-day ops: Attendees, Communication, Check-in admin, Requirements, Reports | No. Zero codes, zero jargon |
+| **Operator** | Check-in desk, reading under time pressure at the door | No, and terser than Administrator: one line, one action |
+| **Shared staff surface** | Whoever is signed in: Superadmin, Administrator, or Operator, viewing their own password/passkeys/sessions | No. Treat every reader as the least technical one who can land here (an Operator can reach `/account` too). The same floor as Administrator, regardless of the account's actual role |
+| **Public attendee** | General public, no product context, may be their only interaction with Admitto | No. Plainest and most reassuring of all five |
+
+**Where each register lives**
+
+- **Superadmin:** `/admin/settings` under `SuperadminGuard` (the `settings` route in `apps/admin/src/App.tsx`). Also `SUPERADMIN_ONLY_TABS` (`apps/admin/src/settings/eventSettingsTabs.ts`, the `mail`/`wallet`/`integrations` tabs inside per-event settings).
+- **Administrator:** `/admin` under `AdminGuard` (the `/admin` route in `apps/admin/src/App.tsx`), minus the superadmin-only settings tabs above.
+- **Operator:** `/operator` under `OperatorGuard` (the `/operator` route in `apps/admin/src/App.tsx`).
+- **Shared staff surface:** `/account` under `AuthenticatedGuard` (the `/account` route in `apps/admin/src/App.tsx`). `AuthenticatedGuard` in `apps/admin/src/auth/RoleRouter.tsx` is a no-op guard, not a role check.
+- **Public attendee:** `apps/web` (`ticket-page.ts`, served at `/t/:token`).
 
 `docs/wiki/Roles-and-Permissions.md` is the canonical name source for the first three. Call the
 org-admin persona **Administrator** in code and comments, not "event manager", since that's the
@@ -32,36 +35,25 @@ plain-English description of the role, not the product's name for it.
 
 ## Content rules
 
-1. **One message per known cause, never one generic message for several causes.** *(Microsoft
-   Writing Style Guide, [Error Message Guidelines](https://learn.microsoft.com/en-us/windows/win32/debug/error-message-guidelines))*
-   If a 400 response can mean two different things, write two messages, not one that covers both.
-   [`AddAttendeeModal.tsx`](../../apps/admin/src/attendees/AddAttendeeModal.tsx) is the
-   pattern this rule asks for: the server's `customDataErrorPayload` branches on three distinct
-   codes (`unknown_custom_data_field`, `required_custom_data_field_missing`, `validation_failed`)
-   and carries the offending field's slug back to the client, which
-   [`customDataApiErrorMessage`](../../apps/admin/src/attendees/customData.ts) turns into a
-   specific per-field sentence (e.g. "Shirt size is required.") instead of one generic blob.
-2. **Name the specific field or item in text, not color alone.** *(WCAG 2.x SC 3.3.1 Error
-   Identification)* A validation error must say which field failed. The field slug is computed in
-   [`packages/tickets/src/validate-custom-data.ts:48,74`](../../packages/tickets/src/validate-custom-data.ts),
-   carried through the response by
-   [`customDataErrorPayload`](../../apps/web/src/admin/attendees-api-routes.ts), and turned into
-   the field's human label by `customDataApiErrorMessage` (see rule 1) - the slug now survives the
-   full round trip, so the copy layer can always name the field.
-3. **Say what happened and suggest the fix, not just that something is wrong.** *(WCAG SC 3.3.3
-   Error Suggestion; NN/g [Error-Message Guidelines](https://www.nngroup.com/articles/error-message-guidelines/))*
-   "Enter a value" is not a fix suggestion; "Attendee count must be a whole number, e.g. 12" is.
-4. **Plain language, non-blaming tone, for every register except Superadmin.** *(NN/g)* Never
-   "invalid"/"illegal" framed as the reader's fault. This matches the product's existing voice rule
-   ("copy states what happened and what to do next, no marketing, no hype"). This doc adds the piece
-   that voice rule doesn't cover: which register gets which level of technical detail.
-5. **Superadmin register may show technical detail, but still needs structure.** "OIDC discovery
-   failed" alone is not enough even for a technical reader. Pair the plain sentence with the detail:
-   "Identity provider sign-in failed. The discovery endpoint returned 404 (`discovery_failed`)."
-   Never a bare code with no sentence around it.
-6. **Don't invent a message the API can't back up.** If the backend genuinely has no more detail
-   than "something failed", say that plainly rather than fabricating a specific-sounding cause. A
-   wrong specific message is worse than an honest generic one.
+1. **One message per known cause, never one generic message for several causes.** *(Microsoft Writing Style Guide, [Error Message Guidelines](https://learn.microsoft.com/en-us/windows/win32/debug/error-message-guidelines))*
+   - If a 400 response can mean two different things, write two messages, not one that covers both.
+   - [`AddAttendeeModal.tsx`](../../apps/admin/src/attendees/AddAttendeeModal.tsx) is the pattern this rule asks for. The server's `customDataErrorPayload` branches on three distinct codes (`unknown_custom_data_field`, `required_custom_data_field_missing`, `validation_failed`) and carries the offending field's slug back to the client. [`customDataApiErrorMessage`](../../apps/admin/src/attendees/customData.ts) turns it into a specific per-field sentence (e.g. "Shirt size is required.") instead of one generic blob.
+2. **Name the specific field or item in text, not color alone.** *(WCAG 2.x SC 3.3.1 Error Identification)*
+   - A validation error must say which field failed.
+   - The field slug is computed in [`packages/tickets/src/validate-custom-data.ts:48,74`](../../packages/tickets/src/validate-custom-data.ts), carried through the response by [`customDataErrorPayload`](../../apps/web/src/admin/attendees-api-routes.ts), and turned into the field's human label by `customDataApiErrorMessage` (see rule 1). The slug now survives the full round trip, so the copy layer can always name the field.
+3. **Say what happened and suggest the fix, not just that something is wrong.** *(WCAG SC 3.3.3 Error Suggestion; NN/g [Error-Message Guidelines](https://www.nngroup.com/articles/error-message-guidelines/))*
+   - "Enter a value" is not a fix suggestion. "Attendee count must be a whole number, e.g. 12" is.
+4. **Plain language, non-blaming tone, for every register except Superadmin.** *(NN/g)*
+   - Never "invalid" or "illegal" framed as the reader's fault.
+   - This matches the product's existing voice rule ("copy states what happened and what to do next, no marketing, no hype").
+   - This doc adds the piece that voice rule doesn't cover: which register gets which level of technical detail.
+5. **Superadmin register may show technical detail, but still needs structure.**
+   - "OIDC discovery failed" alone is not enough, even for a technical reader.
+   - Pair the plain sentence with the detail: "Identity provider sign-in failed. The discovery endpoint returned 404 (`discovery_failed`)."
+   - Never a bare code with no sentence around it.
+6. **Don't invent a message the API can't back up.**
+   - If the backend genuinely has no more detail than "something failed", say that plainly rather than fabricating a specific-sounding cause.
+   - A wrong specific message is worse than an honest generic one.
 7. **The same event gets the same wording everywhere it appears, including within one component.**
 
    - **Within one component:** an `EmptyState`'s `title` and `description` describe the same
