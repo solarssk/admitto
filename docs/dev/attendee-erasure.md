@@ -60,7 +60,7 @@ After the commit, it:
 
 The answer is `{ erased, already_erased, not_found, wallet_pending, wallet_removed_ids }`.
 
-- **`wallet_pending`** counts erased attendees whose pass is still to be deleted at the provider. That happens when the delete failed, when the event has no credentials, or when the 90 s budget of one request ran out. In database terms, it is a pass row that is not marked removed and that either holds the provider's id, or holds only the id reserved for the pass, or says that a creation failed ([Passes still at the provider](#passes-still-at-the-provider)).
+- **`wallet_pending`** counts erased attendees whose pass is still to be deleted at the provider. That happens when the delete failed, when the event has no credentials, or when the 90 s budget of one request ran out. In database terms, it is a pass row whose `left_behind_pass_id` is set, or that is not marked removed and either holds the provider's id, or holds only the id reserved for the pass, or says that a creation failed ([Passes still at the provider](#passes-still-at-the-provider)).
 - **`wallet_removed_ids`** lists the attendees whose pass was still to be deleted when the follow-up started and no longer is. The pass was deleted by this request, or by one running at the same moment. The list is read from the database before and after the follow-up.
   - A pass that never reached the provider (no id of any kind on its row), or that was removed before, is not in the list. So a screen can say "deleted" only for a pass that was.
   - A row that held only the reserved id is in the list once the provider has answered for that id. Either the provider deleted a pass, or it has none and the erasure is old enough to rely on that (10 minutes, see [A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
@@ -162,7 +162,7 @@ In the bulk bar, **More actions** has **Erase personal data** for the selection 
 - **Activity log:** one entry of the erasure itself (the staff member, the time in the zone they were in, through what, and where from for a Superadmin), and then a line saying that the rest of the history was erased. With no such entry, one line saying that the history was erased.
 - **The notice above the page** names the staff member too ("Personal data erased on 10 Oct 2026 by Admin Example.").
 - All of that comes from `erasure` in the detail response (see "Who erased the person" below).
-- **The Wallet card** says what became of the pass: deleted on a date, or still to be deleted, with a **Try again** button. "Still to be deleted" is `wallet_pass_delete_pending` in the detail response. It is true only for an erased attendee whose pass has a provider id and no `provider_removed_at`.
+- **The Wallet card** says what became of the pass: deleted on a date, or still to be deleted, with a **Try again** button. "Still to be deleted" is `wallet_pass_delete_pending` in the detail response. It is true for an erased attendee whose pass row is still to be deleted by the same question as `wallet_pending` ([Passes still at the provider](#passes-still-at-the-provider)).
 
 ### The Personal data erased dialog
 
@@ -542,44 +542,249 @@ What this does not cover:
 
 ## Passes still at the provider
 
-`sweepErasedWalletPasses` ([`retention-erased-wallet-passes.ts`](../../apps/cli/src/lib/retention-erased-wallet-passes.ts)) retries what the erase API could not finish: a pass of an erased attendee that is not marked removed (`provider_removed_at`) and has the provider's id on its row, or only the id reserved for it, or is a failed creation, or whose `left_behind_pass_id` is set, which keeps the row in the question even when the recorded pass was removed ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)). One question says which (`erasedPassToDeleteWhere`, and `passIsStillToDelete` for a row already read, in [`erase-wallet-passes.ts`](../../packages/tickets/src/erase-wallet-passes.ts)), shared by the erase API, the command and the sweep. It runs in the worker's retention job (at boot and about every 24 hours) and in `admitto retention run` (`--dry-run` only counts). It finds the events that have such passes, resolves each event's provider from its credentials alone (whatever the Wallet switch says), and hands the passes, a page of 100 at a time in attendee id order, to `deleteErasedWalletPasses`. That function only touches passes of erased attendees of the event it is given, and a pass that is already gone at the provider counts as deleted. One run spends at most 60 seconds at the provider, and the walk over the pending passes may use only five sixths of that (the rest, and whatever the walk leaves, is the second look's, see below). When that is not enough, it keeps the place where it stopped (the last pass it tried, in `SystemSettings`, key `retention.erased_wallet_sweep_cursor`) and the next run goes on after it, to the end and then from the beginning up to that place, so that a pass that keeps failing, or a long run of passes at the start, cannot keep the rest, and the events after them, from ever being tried; a run that gets through everything forgets the place, and a dry run neither reads nor writes it. `deleteErasedWalletPasses` goes by attendee id, which is what lets a run know exactly which passes it got to.
+`sweepErasedWalletPasses` ([`retention-erased-wallet-passes.ts`](../../apps/cli/src/lib/retention-erased-wallet-passes.ts)) retries what the erase API could not finish.
+
+**Which passes it retries.** A pass of an erased attendee in either of these cases:
+
+- Its `left_behind_pass_id` is set. That counts whatever else is on the row, even when the recorded pass was removed ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
+- It is not marked removed (`provider_removed_at`) and it has one of these:
+  - the provider's id on its row;
+  - only the id reserved for it;
+  - a failed creation.
+
+One question says which (`erasedPassToDeleteWhere`, and `passIsStillToDelete` for a row already read, in [`erase-wallet-passes.ts`](../../packages/tickets/src/erase-wallet-passes.ts)). The erase API, the command and the sweep all share it.
+
+**When it runs.** In the worker's retention job (at boot and about every 24 hours) and in `admitto retention run` (`--dry-run` only counts).
+
+**What it does.**
+
+- It finds the events that have such passes.
+- It resolves each event's provider from its credentials alone (whatever the Wallet switch says).
+- It hands the passes to `deleteErasedWalletPasses`, a page of 100 at a time in attendee id order.
+- That function only touches passes of erased attendees of the event it is given. A pass that is already gone at the provider counts as deleted.
+- It goes by attendee id, which is what lets a run know exactly which passes it got to.
+
+**The time budget.**
+
+- One run spends at most 60 seconds at the provider.
+- The walk over the pending passes may use only five sixths of that. The rest, and whatever the walk leaves, is the second look's (see below).
+
+**The cursor.** When the budget is not enough, the run keeps the place where it stopped (the last pass it tried, in `SystemSettings`, key `retention.erased_wallet_sweep_cursor`).
+
+- The next run goes on after it, to the end and then from the beginning up to that place. So a pass that keeps failing, or a long run of passes at the start, cannot keep the rest, and the events after them, from ever being tried.
+- A run that gets through everything forgets the place.
+- A dry run neither reads nor writes it.
+
+**The counts of a run**
 
 | Count | Meaning |
 |---|---|
 | `deleted` | Deleted at the provider (or already gone) and marked as removed. |
-| `failed` | The provider refused or could not be reached. One line per event and run is logged as `wallet_pass_erasure_delete_failed`, with the event id, how many failed (`failed`), the failure codes and the first 15 attendee ids (`attendeeIds`, pseudonyms once the person is erased; `more` says how many are not named), not one line per pass: the worker relays every line to the app in a request of its own, and that endpoint takes 120 a minute, so a revoked key with hundreds of passes would push the later lines and the summary of the run out. |
+| `failed` | The provider refused or could not be reached. The log line is described below the table. |
 | `noProvider` | The event has no usable wallet credentials (none, or the key cannot be read), so nothing was tried. Each such event is logged as `wallet_pass_erasure_no_provider` with its id and the number of passes that wait, which is how an operator finds the event whose credentials need fixing. |
 | `undecided` | The provider has none under the reserved id, but a creation may still be on its way: the erasure is younger than 10 minutes, or (a recorded pass) so is the creation that recorded it. The row stays marked "still to delete" and the next sweep asks again. |
 | `notTried` | The time budget ran out first. |
 
-The worker's retention line carries `erased_wallet_passes` (the deleted ones) and counts the others in `failed=`, so any pass that stays raises the line to a warning, every day until it is dealt with (fix the credentials, or delete the pass in the provider's own console). `retention run` writes `erasedWalletPassesDeleted` and `erasedWalletPassesLeft` into its audit entry. The command is not the worker, so the lines of the failures (`wallet_pass_erasure_delete_failed`, `wallet_pass_erasure_no_provider`) are printed by the command itself, above its summary, and do not reach the System logs panel (only the worker relays its lines there).
+**The `failed` log line.** One line per event and run is logged as `wallet_pass_erasure_delete_failed`.
+
+- It carries the event id, how many failed (`failed`), the failure codes and the first 15 attendee ids (`attendeeIds`, pseudonyms once the person is erased). `more` says how many are not named.
+- It is not one line per pass. The worker relays every line to the app in a request of its own, and that endpoint takes 120 a minute. So a revoked key with hundreds of passes would push the later lines and the summary of the run out.
+
+**Reporting**
+
+- The worker's retention line carries `erased_wallet_passes` (the deleted ones) and counts the others in `failed=`. So any pass that stays raises the line to a warning, every day until it is dealt with (fix the credentials, or delete the pass in the provider's own console).
+- `retention run` writes `erasedWalletPassesDeleted` and `erasedWalletPassesLeft` into its audit entry.
+- The command is not the worker. So the lines of the failures (`wallet_pass_erasure_delete_failed`, `wallet_pass_erasure_no_provider`) are printed by the command itself, above its summary. They do not reach the System logs panel (only the worker relays its lines there).
 
 ### A pass whose provider id was never saved
 
-A request that creates a pass at the provider can fail to save its row afterwards: the database failed, the event's Template ID changed meanwhile (`markActive` refuses to keep the result), the process died. For an erased attendee the failure marker is skipped as well, so nothing in the database said that a pass existed, and no retry above looked for it: it stayed at the provider with the person's name on it. The provider can also hold a second pass beside the recorded one: its uniqueness check on the id is not strict under concurrent creations (two taps at once can both succeed, observed live), and the row has room for one provider id.
+#### The problem
 
-`handleWalletRedirect` therefore writes the id the pass will get at the provider (`user_provided_id`, `admitto:<event id>:<attendee id>`, built by `walletUserProvidedId`) on the attendee's pass row **before** it calls the provider (`reservePassId`: under the attendee's row lock, a `pending` row when there is none, and nothing is sent for an attendee who is erased or removed, or when the row cannot be written). An erasure keeps the row, so a row that holds that id and no provider id is the marker: a pass may exist that its request could not record. A `failed` row with no id at all counts too: it was written before ids were reserved, by a request whose pass may still have been made (a timeout, or a result that request dropped).
+A request that creates a pass at the provider can fail to save its row afterwards. The causes:
 
-The follow-up (`deleteErasedWalletPasses`) deletes a recorded pass by its own id, and then asks the provider, for **every** row, for the id reserved for it and deletes whatever it holds under that id (`deletePassesUnder`), until it has none (at most 5, then the row fails with `wallet_provider_rejected` and stays still to delete). That is how an unrecorded pass is found, and a second pass beside a recorded one. PassCreator's v3 delete takes the provider's id only and would answer 404, which counts as deleted, for anything else, so the client reads the id through the v1 path `GET /api/pass/{id}`, which takes a UID, a userProvidedId or a barcode value, and answers from the provider's own record of the id: a 404 ("there is none") is an answer, and a pass is found. Because that path also matches a pass that merely has the string as its barcode value (an agency's `qr_payload` is kept as it was sent), a pass is deleted only when its own `userProvidedId` is the id asked for, and then by its UID with the v3 delete; any other pass the id resolves to is left alone and the call fails with `wallet_provider_rejected` (the row stays "still to delete" until someone deals with that pass in the provider's console). A search by the id would not do instead: it is scoped to the event's current template (a pass made under the old one is not in it), it can lag, and a miss proves nothing. The cost is one read for every pass that is deleted, and a creation that really started is the only thing that makes a row an unrecorded one, so a bulk erase of 500 people who never tapped Add to Wallet makes no call for them.
+- the database failed
+- the event's Template ID changed meanwhile (`markActive` refuses to keep the result)
+- the process died
 
-A "none" is not final right after an erasure or a creation. A request that was creating the pass when the person was erased does not stop when the erasure commits, so the provider can still finish that pass after the follow-up asked, and when the request dies or times out nothing on its side clears anything. The follow-up therefore marks a row removed on "none" only when nothing can still be on its way: the erasure is at least `CREATION_SETTLE_WINDOW_MS` old, or, for a recorded pass, so is the creation that recorded it (`issued_at`; a creation that overlapped it and was given up on lands within the same window after it, so a person who is erased long after they got their pass is settled at once). The 10 minutes are a bound that has to cover the erasure's own transaction (`ERASE_TRANSACTION_TIMEOUT_MS`, 60 s: `erased_at` is Postgres's `NOW()`, the moment it started), the 2 minutes `CREATE_PASS_DEADLINE_MS` that a creation may still send in after the check that the attendee was not erased (`reservePassId` hands that moment to `createPass`, and to the `updatePass` of a duplicate recovery, as `checkedAt`, whatever the request waited for in the pacing gate or the retry backoff and however long the process was paused), the client's 15 s request timeout and five more minutes for the provider's own lag and for clocks; a test adds them up. Before that the row is left as it is (`undecided`): it still counts as "still to delete" in `wallet_pending`, the **Personal data erased** dialog and exit code 2, and the next run (**Try again**, the command again, or the daily sweep) asks again. An unrecorded pass that was found is deleted and its row marked at once, at any age (the second look below asks again). Should a request finish after the follow-up settled its row, it finds the attendee erased, gives the row the provider's id **and clears `provider_removed_at`**, and deletes the pass (`deleteOrphanPassOfGoneAttendee`); it leaves the row for the follow-up, which settles it by the rule above, because another creation of the same attendee may still be on its way.
+For an erased attendee, the failure marker is skipped as well. So nothing in the database said that a pass existed, and no retry above looked for it. The pass stayed at the provider with the person's name on it.
 
-A pass can also be made under credentials the event no longer has: an admin changes the Template ID (and may replace the API key with one of another PassCreator account) while a pass is being made. The follow-up asks the account the event uses now, so it could not find that pass, and a "none" from there would say nothing about the account the pass is in. The creating request still holds the client it made the pass with, so `markActive` in `handleWalletRedirect` deletes the pass there at once (`dropPassMadeUnderChangedCredentials`) and keeps nothing on the row. Only when that delete fails does it write the pass's provider id into `left_behind_pass_id` on the row (and `wallet_credential_changed` into `last_error_code`, which is what the attendee's page shows). It also writes `wallet_pass_changed_credentials_delete_failed`, with the ids, to stdout and the System logs, and `wallet_pass_left_behind_not_recorded` when even the column cannot be written: that line is then the only record of the pass id, so it is worth keeping (the System logs alone are memory only). The column is the durable marker: the next tap, which makes a pass under the new credentials, clears the code (`markActive` writes `last_error_code: null`), and nothing in Admitto clears the column, not a creation, a failure, a sync, an erasure or the removal of the recorded pass. The request whose attendee was erased meanwhile (`deleteOrphanPassOfGoneAttendee`) writes it the same way when its delete fails and the event's Template ID or API key is no longer the one it made the pass under (the settings guard checks a new key against the template only once a pass is issued, so the key alone can move an event to another account until then). **Delete wallet pass**, single and bulk, replaces the row it deletes by one that holds the column alone (status `pending`, no ids) when the column is set, so that the mark outlives it (the attendee then reads **Pending** until they add the pass again); **Remove from event** deletes the row with the attendee, and with it the mark, so do not use it for such a person before the pass is dealt with (the stdout line above is then all that is left, and nothing at all for a row that the migration marked `unknown`). The migration `20261015100000_backfill_wallet_pass_left_behind_pass_id` gave the column, with the value `unknown`, to every row that released versions (up to 0.7.5) had marked `wallet_credential_changed`, because those versions left such a pass where it was made; a row whose code a later tap had cleared or overwritten already cannot be recognised. While it is set the follow-up never marks the row removed, whatever the age of the erasure and whatever the account it asks answers, found or none, because nothing it can see says which account a pass is in, and the row stays "still to delete" even if something else (the admin action that removes a voided pass from the provider) marks the recorded pass removed. It still deletes what the account the event uses now holds under the reserved id, and it reports the row as failed with `wallet_credential_changed`, so the person stays "still to delete" in `wallet_pending`, the dialog and the exit code. To close such a row, delete any pass with that User provided ID (`admitto:<event id>:<attendee id>`) in the PassCreator account the event used before, then clear the marker with `UPDATE "WalletPass" SET left_behind_pass_id = NULL WHERE attendee_id = '<attendee id>'` (a person who runs the database, and only after the pass is gone: nothing else will look) and run the erasure again; the follow-up then settles the row by the usual rule. Putting the earlier Template ID and API key back does not close the row by itself, because Admitto cannot tell that the pass it finds is the one that was left.
+The provider can also hold a second pass beside the recorded one. Its uniqueness check on the id is not strict under concurrent creations (two taps at once can both succeed, observed live), and the row has room for one provider id.
 
-**A second look.** "There is none" is an answer about one moment, and nothing inside one process can rule out that a creation reaches the provider after it (a process paused after its last check and before its send, a provider that lags behind its own record, a clock that is off). So an unrecorded pass whose row was marked removed is not forgotten: for `SETTLED_RECHECK_HORIZON_MS` (7 days) after it was marked, the daily sweep asks the provider for its reserved id again (`recheckSettledWalletPassesOfEvents` in `apps/cli/src/lib/retention-settled-wallet-passes.ts` over `recheckSettledWalletPasses`, in event id and attendee id order, up to 1000 rows per event and call, after the walk over the pending passes, with the sixth of the time that the walk leaves alone for it and whatever the walk does not use, so that a backlog of passes that keep failing, a pass left in another account among them, cannot starve it) and deletes what has turned up since. A run that is cut short, by the time or by a full page, keeps the place where it stopped (the SystemSettings row `retention.settled_wallet_recheck_cursor`) and the next run goes on after it and wraps round, the way the walk over the pending passes does, so that a big erasure is covered over several days and its first rows are not asked about again and again while the rest of the week passes; a run that gets through everything forgets the place. It writes nothing, and the dialog, the command and the counts do not change: the row stays marked removed. A pass found this way is a warning in **System logs** (`wallet_pass_found_after_settling`, with the event id and how many), because it means that an earlier answer of "none" came too early; a provider that could not answer is `wallet_pass_recheck_failed`, an event whose credentials are missing or cannot be read is `wallet_pass_recheck_no_provider` (the event id and how many settled rows it leaves unasked, once per run, until the credentials are back or the rows leave the week: the walk over pending passes reports only events that have pending passes, so nothing else says it), a call that was cut short is `wallet_pass_recheck_incomplete` (the next run goes on after the place it kept), and events that a run did not reach for lack of time are not named: the next run goes on after the place it kept. A recorded pass is not looked at again: it relies on the rule above (asking about every person that was ever erased would cost a call a day for a week for each of them).
+#### Reserving the id first
 
-The follow-up says when it found a pass that Admitto had no record of: `wallet_pass_untracked_deleted` (a warning with the event id and how many), one line per event and run of the sweep and one per erase request, and the command prints one line. It is a warning because it means a request could not record its pass, or that a second pass was made.
+`handleWalletRedirect` therefore writes the id that the pass will get at the provider (`user_provided_id`, `admitto:<event id>:<attendee id>`, built by `walletUserProvidedId`) on the attendee's pass row **before** it calls the provider.
 
-**What this design relies on, and cannot enforce inside one process.** Check these before a release and when the provider changes:
+- That is `reservePassId`. It works under the attendee's row lock, and it creates a `pending` row when there is none.
+- Nothing is sent for an attendee who is erased or removed, or when the row cannot be written.
 
-- PassCreator's v1 read `GET /api/pass/{id}` resolves a userProvidedId from the provider's own record (not a lagging index), answers 404 only when there is no such pass, and returns the same `identifier` that the v3 delete takes. It is taken from PassCreator's documentation and has not been confirmed on a live account (the two `curl` checks are in the pull request). If it does not match the id at all, or answers 404 for the route itself (a proxy that only forwards `/api/v3`), the follow-up reports success without having looked. `PASSCREATOR_BASE_URL` has to be the same for every service that talks to the provider (the app, the worker and the command all read it).
-- The hosts' clocks agree with Postgres to within the margin above, and the web host's wall clock does not stall or jump back between the check and the send.
-- Nothing pauses the process between its last deadline check and the write to the socket (a late send then is found by the second look, for an unrecorded pass).
-- The event's credentials point at the account each pass was made in. A pass made by a request that died, or lost the provider's answer, in an account the event no longer uses is not found; the row says so (`left_behind_pass_id`) only when the request noticed the change and could not delete the pass. A Template ID change is refused once a pass is issued, and a new API key is checked against the template once a pass is issued, so this needs the account to be replaced before the first pass is (a request notices a changed Template ID in `markActive`, and a changed key only in the case of an attendee erased meanwhile).
+An erasure keeps the row. So a row that holds that id and no provider id is the marker: a pass may exist that its request could not record.
 
-**Remove from event** deletes the row together with the attendee, so it asks about these rows before it does and again after the commit ([Removing an attendee](#removing-an-attendee)); what it still could not delete is in the one line it logs. It cannot do what needs a row to come back to. Its "none" is final at once: a request that was creating the pass deletes its own pass when it finds the attendee gone (`deleteOrphanPassOfGoneAttendee`), and one that dies in that gap leaves the pass at the provider (only a request that began less than 2 minutes ago can still send one: `createPass` sends nothing later than `CREATE_PASS_DEADLINE_MS` after the check that the attendee was not erased). That holds also for a row with `left_behind_pass_id` set, whose pass may be in an account the event no longer uses: an erasure keeps such a person as still to delete for good, a removal deletes the row and the mark with it, and asks only the account the event uses now (which has none), so that pass is not found. And it does not look for a second pass under the reserved id beside a recorded one, which the follow-up of an erasure does (two creations at once can both succeed): for an unrecorded pass it empties the id, but for a recorded one that would be a second provider call for every recorded pass, which the budget of a removal does not allow.
+A `failed` row with no id at all counts too. It was written before ids were reserved, by a request whose pass may still have been made (a timeout, or a result that request dropped).
 
-Not covered: a pass whose request left no trace on the row at all (only a request from before ids were reserved can: its process died, or its database failed, with nothing written), for an erased attendee and for a removed one alike. Delete such a pass in the provider's own console, by its User provided ID.
+#### How the follow-up finds the pass
+
+The follow-up (`deleteErasedWalletPasses`) does two things for each row:
+
+1. It deletes a recorded pass by its own id.
+2. It then asks the provider, for **every** row, for the id reserved for it, and deletes whatever the provider holds under that id (`deletePassesUnder`), until it has none. At most 5 passes are deleted. After that the row fails with `wallet_provider_rejected` and stays still to delete.
+
+That is how an unrecorded pass is found, and a second pass beside a recorded one.
+
+How the client reads the id:
+
+- PassCreator's v3 delete takes the provider's id only, and it would answer 404 (which counts as deleted) for anything else.
+- So the client reads the id through the v1 path `GET /api/pass/{id}`. That path takes a UID, a userProvidedId or a barcode value, and it answers from the provider's own record of the id. A 404 ("there is none") is an answer, and a pass is found.
+- That path also matches a pass that merely has the string as its barcode value (an agency's `qr_payload` is kept as it was sent). So a pass is deleted only when its own `userProvidedId` is the id asked for, and then by its UID with the v3 delete.
+- Any other pass that the id resolves to is left alone, and the call fails with `wallet_provider_rejected`. The row stays "still to delete" until someone deals with that pass in the provider's console.
+
+Why not a search by the id: it is scoped to the event's current template (a pass made under the old one is not in it), it can lag, and a miss proves nothing.
+
+The cost is one read for every pass that is deleted. A creation that really started is the only thing that makes a row an unrecorded one, so a bulk erase of 500 people who never tapped Add to Wallet makes no call for them.
+
+#### When "none" is not final
+
+A "none" is not final right after an erasure or a creation. The reasons:
+
+- A request that was creating the pass when the person was erased does not stop when the erasure commits. So the provider can still finish that pass after the follow-up asked.
+- When the request dies or times out, nothing on its side clears anything.
+
+The rule: the follow-up marks a row removed on "none" only when nothing can still be on its way. That means:
+
+- the erasure is at least `CREATION_SETTLE_WINDOW_MS` old, or
+- for a recorded pass, the creation that recorded it is at least that old too (`issued_at`). A creation that overlapped it and was given up on lands within the same window after it. So a person who is erased long after they got their pass is settled at once.
+
+The window is 10 minutes. It is a bound that has to cover:
+
+- the erasure's own transaction (`ERASE_TRANSACTION_TIMEOUT_MS`, 60 s: `erased_at` is Postgres's `NOW()`, the moment it started)
+- the 2 minutes `CREATE_PASS_DEADLINE_MS` that a creation may still send in after the check that the attendee was not erased (`reservePassId` hands that moment to `createPass`, and to the `updatePass` of a duplicate recovery, as `checkedAt`, whatever the request waited for in the pacing gate or the retry backoff and however long the process was paused)
+- the client's 15 s request timeout
+- five more minutes for the provider's own lag and for clocks
+
+A test adds them up.
+
+Before the window ends:
+
+- The row is left as it is (`undecided`). It still counts as "still to delete" in `wallet_pending`, the **Personal data erased** dialog and exit code 2.
+- The next run (**Try again**, the command again, or the daily sweep) asks again.
+- An unrecorded pass that was found is deleted and its row marked at once, at any age (the second look below asks again).
+
+A request that finishes late:
+
+- Should a request finish after the follow-up settled its row, it finds the attendee erased. It gives the row the provider's id **and clears `provider_removed_at`**, and it deletes the pass (`deleteOrphanPassOfGoneAttendee`).
+- It leaves the row for the follow-up, which settles it by the rule above, because another creation of the same attendee may still be on its way.
+
+#### A pass made under other credentials
+
+The case: an admin changes the Template ID (and may replace the API key with one of another PassCreator account) while a pass is being made.
+
+- The follow-up asks the account the event uses now. So it could not find that pass, and a "none" from there would say nothing about the account the pass is in.
+
+What the creating request does:
+
+- It still holds the client it made the pass with. So `markActive` in `handleWalletRedirect` deletes the pass there at once (`dropPassMadeUnderChangedCredentials`) and keeps nothing on the row.
+- Only when that delete fails does it write the pass's provider id into `left_behind_pass_id` on the row. It also writes `wallet_credential_changed` into `last_error_code`, which is what the attendee's page shows.
+- It also writes `wallet_pass_changed_credentials_delete_failed`, with the ids, to stdout and the System logs.
+- When even the column cannot be written, it writes `wallet_pass_left_behind_not_recorded`. That line is then the only record of the pass id, so it is worth keeping (the System logs alone are memory only).
+
+The column is the durable marker:
+
+- The next tap, which makes a pass under the new credentials, clears the code (`markActive` writes `last_error_code: null`).
+- Nothing in Admitto clears the column: not a creation, a failure, a sync, an erasure or the removal of the recorded pass.
+- The request whose attendee was erased meanwhile (`deleteOrphanPassOfGoneAttendee`) writes the column the same way when its delete fails and the event's Template ID or API key is no longer the one it made the pass under. (The settings guard checks a new key against the template only once a pass is issued, so the key alone can move an event to another account until then.)
+
+How other actions treat the mark:
+
+- **Delete wallet pass**, single and bulk, replaces the row it deletes by one that holds the column alone (status `pending`, no ids) when the column is set, so that the mark outlives it. The attendee then reads **Pending** until they add the pass again.
+- **Remove from event** deletes the row with the attendee, and with it the mark. So do not use it for such a person before the pass is dealt with. The stdout line above is then all that is left, and nothing at all for a row that the migration marked `unknown`.
+
+The migration:
+
+- The migration `20261015100000_backfill_wallet_pass_left_behind_pass_id` gave the column, with the value `unknown`, to every row that released versions (up to 0.7.5) had marked `wallet_credential_changed`. Those versions left such a pass where it was made.
+- A row whose code a later tap had cleared or overwritten already cannot be recognised.
+
+What the follow-up does while the column is set:
+
+- It never marks the row removed, whatever the age of the erasure and whatever the account it asks answers (found or none). Nothing it can see says which account a pass is in.
+- The row stays "still to delete" even if something else (the admin action that removes a voided pass from the provider) marks the recorded pass removed.
+- It still deletes what the account the event uses now holds under the reserved id.
+- It reports the row as failed with `wallet_credential_changed`, so the person stays "still to delete" in `wallet_pending`, the dialog and the exit code.
+
+To close such a row:
+
+1. Delete any pass with that User provided ID (`admitto:<event id>:<attendee id>`) in the PassCreator account the event used before.
+2. Clear the marker with `UPDATE "WalletPass" SET left_behind_pass_id = NULL WHERE attendee_id = '<attendee id>'`. This is for a person who runs the database, and only after the pass is gone: nothing else will look.
+3. Run the erasure again. The follow-up then settles the row by the usual rule.
+
+Putting the earlier Template ID and API key back does not close the row by itself, because Admitto cannot tell that the pass it finds is the one that was left.
+
+#### A second look
+
+"There is none" is an answer about one moment. Nothing inside one process can rule out that a creation reaches the provider after it. Examples: a process paused after its last check and before its send, a provider that lags behind its own record, a clock that is off.
+
+So an unrecorded pass whose row was marked removed is not forgotten.
+
+- For `SETTLED_RECHECK_HORIZON_MS` (7 days) after it was marked, the daily sweep asks the provider for its reserved id again, and it deletes what has turned up since.
+- The functions are `recheckSettledWalletPassesOfEvents` in `apps/cli/src/lib/retention-settled-wallet-passes.ts`, over `recheckSettledWalletPasses`.
+- The order is event id and attendee id, with up to 1000 rows per event and call.
+- It runs after the walk over the pending passes. It gets the sixth of the time that the walk leaves alone for it, and whatever the walk does not use. So a backlog of passes that keep failing (a pass left in another account among them) cannot starve it.
+
+The cursor:
+
+- A run that is cut short, by the time or by a full page, keeps the place where it stopped (the SystemSettings row `retention.settled_wallet_recheck_cursor`).
+- The next run goes on after it and wraps round, the way the walk over the pending passes does. So a big erasure is covered over several days, and its first rows are not asked about again and again while the rest of the week passes.
+- A run that gets through everything forgets the place.
+
+What it changes: nothing is written. The dialog, the command and the counts do not change. The row stays marked removed.
+
+What it logs, all in **System logs**:
+
+- `wallet_pass_found_after_settling` (a warning, with the event id and how many): a pass was found this way. It means that an earlier answer of "none" came too early.
+- `wallet_pass_recheck_failed`: a provider that could not answer.
+- `wallet_pass_recheck_no_provider`: an event whose credentials are missing or cannot be read. It carries the event id and how many settled rows it leaves unasked, once per run, until the credentials are back or the rows leave the week. The walk over pending passes reports only events that have pending passes, so nothing else says it.
+- `wallet_pass_recheck_incomplete`: a call that was cut short. The next run goes on after the place it kept.
+- Events that a run did not reach for lack of time are not named. The next run goes on after the place it kept.
+
+A recorded pass is not looked at again. It relies on the rule above (asking about every person that was ever erased would cost a call a day for a week for each of them).
+
+#### Passes that Admitto had no record of
+
+The follow-up says when it found a pass that Admitto had no record of.
+
+- The line is `wallet_pass_untracked_deleted` (a warning with the event id and how many).
+- It is one line per event and run of the sweep, and one per erase request. The command prints one line.
+- It is a warning because it means a request could not record its pass, or that a second pass was made.
+
+#### What this design relies on, and cannot enforce inside one process
+
+Check these before a release and when the provider changes:
+
+- **PassCreator's v1 read `GET /api/pass/{id}`:**
+  - It resolves a userProvidedId from the provider's own record (not a lagging index).
+  - It answers 404 only when there is no such pass.
+  - It returns the same `identifier` that the v3 delete takes.
+  - This is taken from PassCreator's documentation and has not been confirmed on a live account (the two `curl` checks are in the pull request).
+  - If it does not match the id at all, or answers 404 for the route itself (a proxy that only forwards `/api/v3`), the follow-up reports success without having looked.
+  - `PASSCREATOR_BASE_URL` has to be the same for every service that talks to the provider (the app, the worker and the command all read it).
+- **Clocks.** The hosts' clocks agree with Postgres to within the margin above, and the web host's wall clock does not stall or jump back between the check and the send.
+- **No pause.** Nothing pauses the process between its last deadline check and the write to the socket. (A late send then is found by the second look, for an unrecorded pass.)
+- **The right account.** The event's credentials point at the account each pass was made in.
+  - A pass made by a request that died, or lost the provider's answer, in an account the event no longer uses is not found.
+  - The row says so (`left_behind_pass_id`) only when the request noticed the change and could not delete the pass.
+  - A Template ID change is refused once a pass is issued, and a new API key is checked against the template once a pass is issued. So this needs the account to be replaced before the first pass is.
+  - A request notices a changed Template ID in `markActive`, and a changed key only in the case of an attendee erased meanwhile.
+
+#### How Remove from event differs
+
+**Remove from event** deletes the row together with the attendee. So it asks about these rows before it does, and again after the commit ([Removing an attendee](#removing-an-attendee)). What it still could not delete is in the one line it logs.
+
+- It cannot do what needs a row to come back to.
+- Its "none" is final at once. A request that was creating the pass deletes its own pass when it finds the attendee gone (`deleteOrphanPassOfGoneAttendee`). One that dies in that gap leaves the pass at the provider. Only a request that began less than 2 minutes ago can still send one: `createPass` sends nothing later than `CREATE_PASS_DEADLINE_MS` after the check that the attendee was not erased.
+- That holds also for a row with `left_behind_pass_id` set, whose pass may be in an account the event no longer uses. An erasure keeps such a person as still to delete for good. A removal deletes the row and the mark with it, and asks only the account the event uses now (which has none), so that pass is not found.
+- It does not look for a second pass under the reserved id beside a recorded one, which the follow-up of an erasure does (two creations at once can both succeed). For an unrecorded pass it empties the id. For a recorded one, that would be a second provider call for every recorded pass, which the budget of a removal does not allow.
+
+#### Not covered
+
+A pass whose request left no trace on the row at all. Only a request from before ids were reserved can: its process died, or its database failed, with nothing written. This holds for an erased attendee and for a removed one alike. Delete such a pass in the provider's own console, by its User provided ID.
 
 ## Rules for code
 
@@ -639,11 +844,46 @@ Not covered: a pass whose request left no trace on the row at all (only a reques
 
 ## Not done by the function
 
-- The pass at the provider is not deleted (network call). The function returns `walletTargets`; the caller deletes them after commit and stamps `provider_removed_at`. Until then the row keeps its provider ids so the delete can be retried, and a pass with provider ids and no `provider_removed_at` on an erased attendee means "still to delete at the provider". The caller should re-read the attendee's wallet pass after the commit rather than trust `walletTargets` alone. A pass created by a request that started before the erasure ends up as exactly such a row: its install links are not saved, and the request deletes it at the provider right away and leaves the row for the follow-up, which settles it ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)). The retry is the erase API repeating its provider deletes: calling it once more for the same attendees tries every pending pass of theirs. The worker's retention job retries them on its own too ([Passes still at the provider](#passes-still-at-the-provider)), and a failed delete is logged as `wallet_pass_erasure_delete_failed` (System logs).
-- Event-level copies still left: wallet message job requests keep the pseudonymous attendee ids (the files that exports and imports leave in storage are covered by [Files left in storage](#files-left-in-storage)). Saved import results are blanked by the API (above; an import that is still running when the erasure starts is waited for or stopped, so it never writes its list afterwards). An entry counts as mentioning the address when it holds it as a whole (`containsAddress` in `erase-job-results.ts`): a full stop at the end of a sentence, brackets, double quotes and quote marks (`'a@x.com'`) around it do not hide it, while a longer address that merely ends or starts with it (`banana@x.com`, `_a@x.com`, `=a@x.com`, `o'brien@x.com` for `brien@x.com`, `a@x.com.au` for `a@x.com`) is another address and is left alone. The one judgement call is a quote mark right before it: a valid character of a local part, read as a quote because an erased address left behind in quotes is the worse mistake. A mail that staff sent to the person's address on behalf of another attendee (the resend override) loses that address in the erasure itself. The addresses that are matched, in saved import results and on those mails, are the one the person has now and the one their first ticket mail went to (`collectAttendeeAddresses` in `attendee-traces.ts`, read before the deliveries are emptied or deleted), because an address that was edited earlier survives only there. Only the first mail counts, since it always goes to the profile address while a resend can go to an address that staff typed in. An address is left out when it is not safely the person's alone (another attendee of the event holds it now, or the first mail of another attendee went to it too), so mail that is theirs is never blanked or cancelled. An address edited twice, or seen only in a resend, is not found.
-- The Reports tabs and their CSV exports, the delivery log and the Custom fields tab do not know about erased attendees yet: their rows show the placeholder name and no address, and the custom-field answers (deleted at erasure) land in "not answered". Their rows are read with plain queries and no last check, so a report or a CSV read while an erasure is still open carries that person's name and address: the one place the check described above does not reach yet.
-- Outside Admitto: the mail provider's Sent Items and relay logs, proxy logs, database backups (14 days by default). A restore must re-run the erasures.
-- A mail already handed to the sender when the erasure runs can still go out once. Its outcome is not written back: an emptied delivery (no recipient) is skipped by every write-back, so it stays cancelled. The last check before a message goes to the mailer (`readDeliveriesBeforeSend`: a retry, the worker, a synchronous send) reads the delivery under the attendee's row lock, so an erasure that is still open is waited for and a message never starts for someone it is erasing. That holds for a message that staff sent to another attendee's address (the resend override) as well: the delivery belongs to an attendee who is not being erased, but erasing the person who holds that address cancels and empties it, so the check also locks that person's row (found by the address in the delivery's event, whatever its case or padding), in the same statement and in id order, which cannot deadlock with an erasure. One case stays open: a resend that staff address to this person's email while the erasure is still running is created after the erasure has cancelled the waiting ones, and once the erasure commits nothing links the address to the person any more, so that mail goes to an address staff typed. Apart from that, the gap between the check and the mailer call is the only one left.
-- A pass update or a push message already with the wallet provider when the erasure runs still arrives, and the pass is deleted right after. The last check before one is sent (`attendeeIsLive` and `liveAttendeeIds` in [`lock-check.ts`](../../packages/tickets/src/lock-check.ts): the pass update, and each batch of a message to many passes) reads the attendee under their row lock, so an erasure that is still open is waited for and nothing starts for someone it is erasing.
-- An Add to Wallet request has the same last check at the end: `handleWalletRedirect` takes the attendee's row lock in the transaction that records the device, and a visitor whose attendee is erased (or removed: the row is gone) by then is sent back to the ticket page, whichever way the URL was obtained (a stored active pass, a pass just created, one another request is creating). It fails closed: if the check cannot be made (the lock gave up waiting behind an erasure, and a second try with the lock alone gave up too) the visitor gets the try-again notice, not the pass; a failure of the device write alone does not block the pass. Before it calls the provider the request takes the same lock to write the id on the pass row (`reservePassId`), and sends nothing for an attendee who is erased or removed by then, or when the row cannot be written (the try-again notice). The transaction that saves a new pass, and the check that follows a failed save, wait behind an erasure of the same attendee with a limit of 65 s (`ERASURE_WAIT_TX_TIMEOUT_MS`): Prisma's default 5 s does not cut a statement that waits for the row lock, but it expires the transaction, and its commit then fails and loses the work. The check after a failed save takes the row lock, so it waits for an erasure that is still open and the pass just created at the provider is deleted when the attendee turns out to be erased.
-- Other timestamps the person caused stay exact: mail opened and clicked, RSVP update, first wallet confirmation. Only admission and check-in times are cut to the hour.
+- **The pass at the provider is not deleted** (a network call).
+  - The function returns `walletTargets`. The caller deletes them after the commit and stamps `provider_removed_at`.
+  - Until then, the row keeps its provider ids so the delete can be retried. A pass with provider ids and no `provider_removed_at` on an erased attendee means "still to delete at the provider".
+  - The caller should re-read the attendee's wallet pass after the commit, rather than trust `walletTargets` alone.
+  - A pass created by a request that started before the erasure ends up as exactly such a row. Its install links are not saved. The request deletes it at the provider right away and leaves the row for the follow-up, which settles it ([A pass whose provider id was never saved](#a-pass-whose-provider-id-was-never-saved)).
+  - The retry is the erase API repeating its provider deletes. Calling it once more for the same attendees tries every pending pass of theirs.
+  - The worker's retention job retries them on its own too ([Passes still at the provider](#passes-still-at-the-provider)).
+  - A failed delete is logged as `wallet_pass_erasure_delete_failed` (System logs).
+- **Event-level copies still left.**
+  - Wallet message job requests keep the pseudonymous attendee ids. (The files that exports and imports leave in storage are covered by [Files left in storage](#files-left-in-storage).)
+  - Saved import results are blanked by the API (see above). An import that is still running when the erasure starts is waited for or stopped, so it never writes its list afterwards.
+  - How an address is matched in saved import results and on mails:
+    - An entry counts as mentioning the address when it holds it as a whole (`containsAddress` in `erase-job-results.ts`).
+    - A full stop at the end of a sentence, brackets, double quotes and quote marks (`'a@x.com'`) around it do not hide it.
+    - A longer address that merely ends or starts with it is another address and is left alone. Examples: `banana@x.com`, `_a@x.com`, `=a@x.com`, `o'brien@x.com` for `brien@x.com`, and `a@x.com.au` for `a@x.com`.
+    - The one judgement call is a quote mark right before it. It is a valid character of a local part, but it is read as a quote, because an erased address left behind in quotes is the worse mistake.
+    - A mail that staff sent to the person's address on behalf of another attendee (the resend override) loses that address in the erasure itself.
+    - The addresses that are matched, in saved import results and on those mails, are the one the person has now and the one their first ticket mail went to (`collectAttendeeAddresses` in `attendee-traces.ts`, read before the deliveries are emptied or deleted). An address that was edited earlier survives only there.
+    - Only the first mail counts, since it always goes to the profile address while a resend can go to an address that staff typed in.
+    - An address is left out when it is not safely the person's alone (another attendee of the event holds it now, or the first mail of another attendee went to it too). So mail that is theirs is never blanked or cancelled.
+    - An address edited twice, or seen only in a resend, is not found.
+- **Reports, the delivery log and Custom fields do not know about erased attendees yet.**
+  - The Reports tabs and their CSV exports, the delivery log and the Custom fields tab show the placeholder name and no address for them.
+  - The custom-field answers (deleted at erasure) land in "not answered".
+  - Their rows are read with plain queries and no last check. So a report or a CSV read while an erasure is still open carries that person's name and address. It is the one place the check described above does not reach yet.
+- **Outside Admitto:** the mail provider's Sent Items and relay logs, proxy logs, and database backups (14 days by default). A restore must re-run the erasures.
+- **A mail already handed to the sender** when the erasure runs can still go out once.
+  - Its outcome is not written back. An emptied delivery (no recipient) is skipped by every write-back, so it stays cancelled.
+  - The last check before a message goes to the mailer (`readDeliveriesBeforeSend`: a retry, the worker, a synchronous send) reads the delivery under the attendee's row lock. So an erasure that is still open is waited for, and a message never starts for someone it is erasing.
+  - That holds for a message that staff sent to another attendee's address (the resend override) as well. The delivery belongs to an attendee who is not being erased, but erasing the person who holds that address cancels and empties it. So the check also locks that person's row (found by the address in the delivery's event, whatever its case or padding), in the same statement and in id order, which cannot deadlock with an erasure.
+  - One case stays open: a resend that staff address to this person's email while the erasure is still running. It is created after the erasure has cancelled the waiting ones, and once the erasure commits nothing links the address to the person any more. So that mail goes to an address staff typed.
+  - Apart from that, the gap between the check and the mailer call is the only one left.
+- **A pass update or a push message already with the wallet provider** when the erasure runs still arrives, and the pass is deleted right after.
+  - The last check before one is sent reads the attendee under their row lock (`attendeeIsLive` and `liveAttendeeIds` in [`lock-check.ts`](../../packages/tickets/src/lock-check.ts): the pass update, and each batch of a message to many passes).
+  - So an erasure that is still open is waited for, and nothing starts for someone it is erasing.
+- **An Add to Wallet request has the same last check at the end.**
+  - `handleWalletRedirect` takes the attendee's row lock in the transaction that records the device.
+  - A visitor whose attendee is erased (or removed: the row is gone) by then is sent back to the ticket page. That holds whichever way the URL was obtained: a stored active pass, a pass just created, or one another request is creating.
+  - It fails closed. If the check cannot be made (the lock gave up waiting behind an erasure, and a second try with the lock alone gave up too), the visitor gets the try-again notice, not the pass. A failure of the device write alone does not block the pass.
+  - Before it calls the provider, the request takes the same lock to write the id on the pass row (`reservePassId`). It sends nothing for an attendee who is erased or removed by then, or when the row cannot be written (the try-again notice).
+  - The transaction that saves a new pass, and the check that follows a failed save, wait behind an erasure of the same attendee with a limit of 65 s (`ERASURE_WAIT_TX_TIMEOUT_MS`). Prisma's default 5 s does not cut a statement that waits for the row lock, but it expires the transaction, and its commit then fails and loses the work.
+  - The check after a failed save takes the row lock. So it waits for an erasure that is still open, and the pass just created at the provider is deleted when the attendee turns out to be erased.
+- **Other timestamps** the person caused stay exact: mail opened and clicked, RSVP update, first wallet confirmation. Only admission and check-in times are cut to the hour.
