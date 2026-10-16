@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A wallet pass can now read **Pending** on the attendee's page while it is being made (before, it was only ever Sent or Failed): the pass row is written just before the provider is called. If the request dies in between, the row stays Pending and the next tap on Add to Wallet makes the pass as before.
+- Documentation for operators: how to run `migrate` once and repair the database after a P3009 error, how much memory `app` needs, optional container hardening, that the sign-in limit per e-mail address is a temporary block, that SSO leaves two-factor authentication to the identity provider, what Redis holds that relates to people, and what to expect after an identity provider changes its signing key. Nothing changes in how the application behaves.
 
 ### Fixed
 
