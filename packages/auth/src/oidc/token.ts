@@ -76,6 +76,24 @@ export async function exchangeAuthorizationCode(
   };
 }
 
+/**
+ * OIDC Core 3.1.3.7, steps 4 and 5: a token issued for several audiences must name its
+ * authorized party, and a named authorized party must be this client. A single-audience token
+ * may omit `azp`.
+ */
+function assertAuthorizedParty(payload: JWTPayload, clientId: string): void {
+  const { aud, azp } = payload;
+  if (azp === undefined) {
+    if (Array.isArray(aud) && aud.length > 1) {
+      throw new Error("ID token with several audiences is missing azp");
+    }
+    return;
+  }
+  if (azp !== clientId) {
+    throw new Error("ID token azp mismatch");
+  }
+}
+
 /** Validate ID token signature and standard claims including nonce. */
 export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTPayload> {
   assertSafeOidcFetchUrl(input.provider.jwks_uri);
@@ -84,7 +102,12 @@ export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTP
     issuer: input.provider.issuer,
     audience: input.provider.client_id,
     algorithms: ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"],
+    // The issuer and audience options already require `iss` and `aud`; OIDC Core 2 also makes
+    // `exp`, `iat` and `sub` mandatory in an ID token.
+    requiredClaims: ["exp", "iat", "sub"],
   });
+
+  assertAuthorizedParty(payload, input.provider.client_id);
 
   if (payload.nonce !== input.expectedNonce) {
     throw new Error("ID token nonce mismatch");

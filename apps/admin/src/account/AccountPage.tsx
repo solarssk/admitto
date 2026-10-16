@@ -72,6 +72,7 @@ import { AccountLoadingSkeleton, NOTIFICATIONS_INTRO, RowsSkeleton } from "./Acc
 import { refetchCardProps } from "../utils/refetch-card.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
+import { goToLogin } from "../auth/login-navigation.js";
 
 const PASSWORD_HINT = "Changing your password ends your other active sessions. Your current session stays signed in.";
 const SESSIONS_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
@@ -405,7 +406,7 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
 function redirectToLoginIfUnauthorized(err: unknown): boolean {
   if (err instanceof ApiError && err.status === 401) {
     const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
+    goToLogin(`/login?next=${next}`);
     return true;
   }
   return false;
