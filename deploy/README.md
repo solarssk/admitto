@@ -512,7 +512,7 @@ services:
 **Tried once, on the 0.7.5 image**
 
 - `read_only: true`, `cap_drop: [ALL]` and `no-new-privileges:true`
-- `tmpfs` for `/tmp`, `/app/emergency-exports`, `/app/uploads` and `/app/data/geoip-custom` (the test had no volumes)
+- `tmpfs` for `/tmp`, `/app/emergency-exports`, `/app/uploads` and `/app/data/geoip-custom` (the test had no volumes and no `MAXMIND_LICENSE_KEY`)
 - Result: the container stayed healthy. `/healthz`, password sign-in, the staff app and the worker loops worked.
 
 **Not tried**
@@ -522,6 +522,15 @@ services:
 - exports written to real volumes
 
 **Different from the test.** In the shipped compose file, those three directories are bind mounts. A read-only root filesystem leaves bind mounts writable, so the example does not list them as `tmpfs`. That combination was not tried either.
+
+**With your own MaxMind key, `read_only: true` stops the app as is**
+
+- When `MAXMIND_LICENSE_KEY` is new or changed, the entrypoint downloads the dataset into `/app/data/geoip-custom.staging`. That directory sits next to the bind mount `/app/data/geoip-custom`, and its parent `/app/data` is part of the read-only filesystem. So `mkdir` fails and the container exits (the entrypoint uses `set -e`).
+- This happens on a first start with a key and after every key change. A restart with the same key, when the dataset is already in the mount, writes nothing there and works.
+- It was reproduced by running the entrypoint's own function in a read-only container: `mkdir: can't create directory '/app/data/geoip-custom.staging': Read-only file system`, exit code 1.
+- Choose one:
+  - Leave `read_only: true` out.
+  - Put the live and the staging directory under one writable mount. Replace the `./geoip-data:/app/data/geoip-custom` line of the `app` service with `./geoip-data:/app/geoip`, and set `MAXMIND_DATA_DIR=/app/geoip/live`. The staging directory is always `$MAXMIND_DATA_DIR.staging`, so it becomes `/app/geoip/live.staging`, inside the same mount. In the same test, `mkdir` then worked in a read-only container. A real download with a key was not tried.
 
 Test it on a stack that is not in production first. After the first start, read `docker compose logs app`.
 
