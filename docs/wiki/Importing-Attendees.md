@@ -33,13 +33,25 @@ New attendees are created, permitted fields on matched attendees are updated whe
 
 ## Important decisions
 
+**What the file needs**
+
 - `first_name`, `last_name`, and `email` are always required. A `name` column is not supported and is ignored with a warning.
-- External UUID and QR values are optional and should be used only when an external ticket source already owns them.
-- In an XLSX file, a formula cell is imported as its last calculated value, and an Excel error cell (such as #N/A) as its error text, so the preview shows readable values instead of an unusable object string. Save the workbook in Excel once before uploading so formula results are up to date.
+- External UUID and QR values are optional. Use them only when an external ticket source already owns them.
+- In an XLSX file, a formula cell is imported as its last calculated value, and an Excel error cell (such as #N/A) as its error text. So the preview shows readable values instead of an unusable object string. Save the workbook in Excel once before uploading, so the formula results are up to date.
+
+**How attendees are matched**
+
 - Matching uses agency identifiers first when present, then email. Conflicting identifiers are skipped.
-- Validation does not reserve places. The final import checks capacity again while sharing the event's capacity budget with manual creation and attendee restoration. If another operation uses the remaining places first, the import is refused without partially adding attendees. A manual addition or attendee restoration may wait while an import finishes; wait for the result before trying again. Lock acquisition preserves the full time budget for the final capacity check and writes. Slow acquisition attempts may restart before any writes; a transaction that has started writing is never replayed automatically. Waiting is bounded, so sustained contention can still fail without partially committing attendees.
 - With overwrite off, matching attendees are skipped.
 - With overwrite on, Admitto can update name, ticket type, company, department, and supplied custom fields. It never overwrites pass status, QR payload, external UUID, or the secure ticket token.
+
+**Capacity**
+
+- Validation does not reserve places. The final import checks capacity again, and it shares the event's capacity budget with manual creation and attendee restoration.
+- If another operation uses the remaining places first, the import is refused without partially adding attendees.
+- A manual addition or attendee restoration may wait while an import finishes. Wait for the result before trying again.
+- Lock acquisition preserves the full time budget for the final capacity check and writes. Slow acquisition attempts may restart before any writes. A transaction that has started writing is never replayed automatically.
+- Waiting is bounded, so sustained contention can still fail without partially committing attendees.
 
 ## What changes after this action
 
@@ -47,16 +59,17 @@ A committed import changes the attendee list and records an import-history entry
 
 ## Common problems
 
-- **Import failed:** job status and history show a safe failure category, without database or storage exception details. Check that the worker and storage are available, validate the file and upload again. Capacity, erasure and stopped-worker failures keep their specific recovery messages.
-
-- **Invalid row:** correct the displayed data error in the source file.
-- **Warning:** review it; unknown columns are ignored and duplicate headers use the last value.
-- **Skipped attendee:** read the reason, then decide whether overwrite is appropriate.
-- **Unknown ticket type:** use a configured label or key and validate again.
-- **Import history could not be loaded:** the card says so with a **Retry** that stays busy until the answer is in. An import that already ran is not affected; **Retry** reads the list again.
-- **The event's custom columns could not be loaded:** the **Required CSV columns** list says so with a **Retry**. Select it before preparing the file, because without it the list is missing the event's own columns.
-- **Import stopped, someone in this event was erased or removed before it finished:** an erasure or a removal stops every import of the event that is still waiting or running, so that none of them can add the person back, whether or not its file lists them. Nobody from that file was added. If the file lists the person, remove them from it; then validate it again and run the import again.
-- **Event is at capacity:** an Organisation Admin can open **Event settings** and review capacity. A Superadmin-only override is offered only when an authorised exception is required.
+| Problem | What it means and what to do |
+|---------|------------------------------|
+| **Import failed** | Job status and history show a safe failure category, without database or storage exception details. Check that the worker and storage are available, validate the file and upload again. Capacity, erasure and stopped-worker failures keep their specific recovery messages |
+| **Invalid row** | Correct the displayed data error in the source file |
+| **Warning** | Review it. Unknown columns are ignored, and duplicate headers use the last value |
+| **Skipped attendee** | Read the reason, then decide whether overwrite is appropriate |
+| **Unknown ticket type** | Use a configured label or key and validate again |
+| **Import history could not be loaded** | The card says so, with a **Retry** that stays busy until the answer is in. An import that already ran is not affected. **Retry** reads the list again |
+| **The event's custom columns could not be loaded** | The **Required CSV columns** list says so, with a **Retry**. Select it before preparing the file, because without it the list is missing the event's own columns |
+| **Import stopped: someone in this event was erased or removed before it finished** | An erasure or a removal stops every import of the event that is still waiting or running, so that none of them can add the person back, whether or not its file lists them. Nobody from that file was added. If the file lists the person, remove them from it. Then validate it again and run the import again |
+| **Event is at capacity** | An Organisation Admin can open **Event settings** and review capacity. A Superadmin-only override is offered only when an authorised exception is required |
 
 ## Related pages
 

@@ -28,11 +28,24 @@ Full documentation, source, and the Wiki live on GitHub: **[github.com/solarssk/
 
 ## What is Admitto?
 
-Admitto covers everything between "we have a guest list" and "the event is over and we know who showed up": import attendees, issue each one a secure QR ticket, deliver it by email (and optionally to Apple/Google Wallet), check people in at the door, and export who actually attended. It exists so that running an internal company event doesn't mean paying recurring fees for a general-purpose ticketing SaaS, or handing attendee data to one.
+Admitto covers everything between "we have a guest list" and "the event is over and we know who showed up":
 
-The idea it's built around: **Admitto is the single source of truth** for who's invited, who confirmed, and who showed up. The ticket email, the ticket page, and a wallet pass are just delivery layers that reflect that state - none of them hold their own copy of the truth.
+- import attendees
+- issue each one a secure QR ticket
+- deliver it by email, and optionally to Apple or Google Wallet
+- check people in at the door
+- export who actually attended
 
-**Who uses it day to day:** an Admin sets up the event, imports attendees, and sends tickets; an Operator (staff at the door) runs check-in on a tablet or scanner; a Superadmin configures the instance itself (mail, integrations, sign-in). Attendees never sign in at all - they receive a ticket and show it.
+It exists so that running an internal company event doesn't mean paying recurring fees for a general-purpose ticketing SaaS, or handing attendee data to one.
+
+The idea it's built around: **Admitto is the single source of truth** for who's invited, who confirmed, and who showed up. The ticket email, the ticket page, and a wallet pass are just delivery layers that reflect that state. None of them holds its own copy of the truth.
+
+**Who uses it day to day**
+
+- An **Admin** sets up the event, imports attendees, and sends tickets.
+- An **Operator** (staff at the door) runs check-in on a tablet or scanner.
+- A **Superadmin** configures the instance itself: mail, integrations, sign-in.
+- **Attendees** never sign in at all. They receive a ticket and show it.
 
 ## How it works
 
@@ -76,9 +89,11 @@ solarssk/admitto:X.Y.Z      # pinned release, e.g. 0.6.7
 solarssk/admitto:X.Y        # rolling minor line, e.g. 0.6
 ```
 
-Multi-arch manifest (`linux/amd64` + `linux/arm64`) - Docker pulls the one matching your host automatically. Every image passes a Trivy CRITICAL-vulnerability gate before a version tag is published, and the same content is also published to `ghcr.io/solarssk/admitto` if you prefer GHCR.
+- Each tag is a multi-arch manifest (`linux/amd64` + `linux/arm64`). Docker pulls the one that matches your host automatically.
+- Every image passes a Trivy CRITICAL-vulnerability gate before a version tag is published.
+- The same content is also published to `ghcr.io/solarssk/admitto`, if you prefer GHCR.
 
-This image is one part of a Docker Compose stack (app, worker, PostgreSQL, Redis, nginx) - it's not meant to run standalone with `docker run`. Deploy instructions: **[deploy/README.md](https://github.com/solarssk/admitto/blob/main/deploy/README.md)**.
+This image is one part of a Docker Compose stack (app, worker, PostgreSQL, Redis, nginx). It's not meant to run standalone with `docker run`. Deploy instructions: **[deploy/README.md](https://github.com/solarssk/admitto/blob/main/deploy/README.md)**.
 
 ## Links
 
@@ -89,4 +104,4 @@ This image is one part of a Docker Compose stack (app, worker, PostgreSQL, Redis
 
 ## Licence
 
-[Apache License 2.0](https://github.com/solarssk/admitto/blob/main/LICENSE): a permissive open-source licence. You can self-host, modify, and run Admitto internally at no cost; keep the copyright and NOTICE file with any distribution. This is not legal advice, review the licence text for your own compliance needs.
+[Apache License 2.0](https://github.com/solarssk/admitto/blob/main/LICENSE): a permissive open-source licence. You can self-host, modify, and run Admitto internally at no cost. Keep the copyright and NOTICE file with any distribution. This is not legal advice, so review the licence text for your own compliance needs.

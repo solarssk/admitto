@@ -5,13 +5,16 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 ## Flow
 
 1. **Save:** `body_template` (MJML or HTML) → `compileTemplate` → `compiled_html_template` (placeholders preserved).
-2. **Send:** the compiled template + attendee vars are rendered with `renderTemplateTrustedForStorage` into a frozen `{ subject, html }` snapshot (link placeholders stay literal); at delivery time `materializeStoredDeliveryMessage` fills in the per-attendee links for `@admitto/mailer`. `renderTemplate` (with full placeholder validation) is what preview and test-send use. Subject is plain text (no HTML escaping); HTML body is escaped context-aware.
+2. **Send:** the compiled template + attendee vars are rendered with `renderTemplateTrustedForStorage` into a frozen `{ subject, html }` snapshot (link placeholders stay literal).
+   - At delivery time, `materializeStoredDeliveryMessage` fills in the per-attendee links for `@admitto/mailer`.
+   - `renderTemplate` (with full placeholder validation) is what preview and test-send use.
+   - Subject is plain text (no HTML escaping). The HTML body is escaped context-aware.
 
 ## Placeholders
 
-Closed whitelist (plus, for event-scoped templates only, the tokens of that event's uploaded image assets, which are treated as optional image URL placeholders) - `{{snake_case}}` only, no interior whitespace (use `{{first_name}}`, not
-`{{ first_name }}`). Any `{{...}}` token is validated: malformed names (e.g. `{{First_Name}}`,
-`{{first-name}}`, padded spacing) and unknown names fail validation (fail-closed).
+- The whitelist is closed. For event-scoped templates only, it also includes the tokens of that event's uploaded image assets, which are treated as optional image URL placeholders.
+- Only `{{snake_case}}` is allowed, with no interior whitespace. Use `{{first_name}}`, not `{{ first_name }}`.
+- Any `{{...}}` token is validated. Malformed names (e.g. `{{First_Name}}`, `{{first-name}}`, padded spacing) and unknown names fail validation (fail-closed).
 
 | Placeholder | Notes |
 |-------------|-------|
@@ -28,9 +31,9 @@ Closed whitelist (plus, for event-scoped templates only, the tokens of that even
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.
 
-Placeholders in HTML attributes must use **quoted** values (`alt="{{first_name}}"`, not `alt={{first_name}}`).
-Unquoted attribute placeholders are rejected at save and render time (spaces in attendee data can break out of the attribute).
-Placeholders inside HTML or Outlook `<!--[if mso]>` conditional comments are also rejected (use live markup outside conditionals).
+- Placeholders in HTML attributes must use **quoted** values (`alt="{{first_name}}"`, not `alt={{first_name}}`).
+- Unquoted attribute placeholders are rejected at save and render time (spaces in attendee data can break out of the attribute).
+- Placeholders inside HTML or Outlook `<!--[if mso]>` conditional comments are also rejected (use live markup outside conditionals).
 
 ## Template formats
 
@@ -46,7 +49,11 @@ Empty optional URL placeholders strip `src`, `href`, `action`, and `background` 
 - Templates: the default `ticket` template resolves `resolveTemplate(eventId)` → event → organization → built-in default. Events and organizations can also hold additional named templates; `resolveTemplateById(templateId, eventId, prisma)` loads one that belongs to the event or its organization (otherwise `TemplateNotFoundError`).
 - Branding URLs: `resolveBranding(eventId)` → event → organization → empty (columns on `Organization` / `Event`).
 
-`event_date` and `event_hours` are display text, not ISO dates. `event_date` is a long date such as "1 September 2026"; day/month order and 12h vs 24h follow the event's Location country and fall back to en-GB. Both are computed by `formatDate` / `formatEventHoursRangeText` from `@admitto/shared/region-date-format`, identically in preview, test-send and real sends. `previewTemplate(eventId, prisma, sampleVars?, { baseUrl?, env? })` takes no time zone. `formatEventDate(date, timeZone)` (`YYYY-MM-DD`, default from `ADMITTO_DEFAULT_EVENT_TIMEZONE` or `UTC`) is exported for report and overview date bucketing and is not used for template variables.
+- `event_date` and `event_hours` are display text, not ISO dates.
+- `event_date` is a long date such as "1 September 2026". The day/month order and 12h vs 24h follow the event's Location country, and fall back to en-GB.
+- Both are computed by `formatDate` / `formatEventHoursRangeText` from `@admitto/shared/region-date-format`, identically in preview, test-send and real sends.
+- `previewTemplate(eventId, prisma, sampleVars?, { baseUrl?, env? })` takes no time zone.
+- `formatEventDate(date, timeZone)` (`YYYY-MM-DD`, default from `ADMITTO_DEFAULT_EVENT_TIMEZONE` or `UTC`) is exported for report and overview date bucketing. It is not used for template variables.
 
 ## Outlook Classic rules (advanced HTML mode)
 
@@ -94,12 +101,17 @@ import {
 } from "@admitto/mail-templates";
 ```
 
-Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/placeholders` and `@admitto/mail-templates/branding`, never the package root, which pulls in `mjml` and node-only modules. Also exported: `resolveTemplateForEvent`, `resolveTemplateById`, `createMailTemplate`, `updateMailTemplateMetadata`, `renderTemplateTrustedForStorage` and `materializeStoredDeliveryMessage`.
+- Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/placeholders` and `@admitto/mail-templates/branding`, never the package root, which pulls in `mjml` and node-only modules.
+- Also exported: `resolveTemplateForEvent`, `resolveTemplateById`, `createMailTemplate`, `updateMailTemplateMetadata`, `renderTemplateTrustedForStorage` and `materializeStoredDeliveryMessage`.
 
 ## Security
 
 - Placeholder **values** are HTML-escaped (text vs attribute context).
 - Literal angle brackets inside quoted attribute values do not change the escaping context; quotes in attendee values remain attribute data, including in frozen delivery snapshots.
-- Validation and rendering use HTML5 token boundaries from the pinned `parse5` dependency and scan attribute contexts forward per template. Raw-text/RCDATA content and declarations do not become attribute markup; repeated placeholders do not rescan earlier markup. The source is never reserialized and the parser executes no scripts or external IO. Trusted rendering skips whitelist revalidation but still refuses unquoted or structural slots that could construct a tag name or change script text boundaries.
+- Validation and rendering use HTML5 token boundaries from the pinned `parse5` dependency, and scan attribute contexts forward per template.
+  - Raw-text/RCDATA content and declarations do not become attribute markup.
+  - Repeated placeholders do not rescan earlier markup.
+  - The source is never reserialized, and the parser executes no scripts or external IO.
+  - Trusted rendering skips whitelist revalidation but still refuses unquoted or structural slots that could construct a tag name or change script text boundaries.
 - Template **content** is admin-authored (trusted, RBAC).
 - Templates are **not encrypted** (not secrets).

@@ -28,32 +28,53 @@ The field appears in supported attendee and import workflows with the label, typ
 
 ## Important decisions
 
+**Field ID and import**
+
 - The generated field ID cannot be changed after creation.
 - Use the field ID, not only the display label, as the import column name.
 - A required field can prevent incomplete attendee data from being saved or imported.
 - Select values must match an allowed option.
 - A field used by an event item cannot be deleted until that reference is removed.
-- Single choice and Yes/No fields can also be mapped onto a wallet pass field in Event Settings → Wallet (Field mapping); free-text fields are not offered there. A field mapped this way and later deleted or changed to free text simply stops being sent to the pass. See [Wallet Passes PassCreator Setup](Wallet-Passes-PassCreator-Setup).
-- Renaming or removing a Select option is a real content change, not a display tweak: any attendee currently holding that exact value stops matching it and needs to be reassigned. Clearing an option's text down to nothing has the same effect as removing it.
+
+**Wallet passes**
+
+- Single choice and Yes/No fields can also be mapped onto a wallet pass field in Event Settings → Wallet (Field mapping). Free-text fields are not offered there.
+- A field mapped this way and later deleted, or changed to free text, simply stops being sent to the pass.
+- See [Wallet Passes PassCreator Setup](Wallet-Passes-PassCreator-Setup).
+
+**Select options**
+
+- Renaming or removing a Select option is a real content change, not a display tweak. Any attendee currently holding that exact value stops matching it and needs to be reassigned.
+- Clearing an option's text down to nothing has the same effect as removing it.
 
 ## What changes after this action
 
-The field becomes part of the event's attendee data. Editing its label, description, type, required state, or options affects later data entry and validation; existing values are not automatically rewritten.
+The field becomes part of the event's attendee data. Editing its label, description, type, required state, or options affects later data entry and validation. Existing values are not rewritten automatically.
 
-When you reopen an existing Select field to edit it, each option shows how many attendees currently have it selected.
+**Editing a Select field.** When you reopen an existing Select field, each option shows how many attendees currently have it selected.
 
-1. Renaming or clearing an option that's in use flags it in place. Selecting **Save** then asks you to confirm before it goes through, listing exactly which options and how many attendees are affected.
-2. Removing an option outright (its **×** button) asks for confirmation the same way before it disappears.
-3. None of this applies to a brand-new option that hasn't been saved yet.
+- Renaming or clearing an option that is in use flags it in place. When you select **Save**, Admitto asks you to confirm. It lists exactly which options and how many attendees are affected.
+- Removing an option outright (its **×** button) asks for confirmation the same way before it disappears.
+- None of this applies to a brand-new option that has not been saved yet.
 
 ## Common problems
 
-- **The field ID is not what you need:** delete and recreate the unused field before importing data. It cannot be renamed later.
-- **A Select field cannot be saved:** add at least one option.
-- **An import value is invalid:** use the field ID as the column and match the selected type or option.
-- **The field cannot be deleted:** remove its use from event items first.
-- **An attendee's Select value now shows as unset:** someone renamed or removed the option it used to match. Open the attendee and choose a current option to reassign it - the confirmation shown when the option was edited names which attendees were affected.
-- **A Select field's Save button is off, or its options say "Unknown":** when you edit a Select field, Admitto reads how many attendees use each option, so that it can warn you before a rename or a removal affects them. The counts are grey bars until they arrive, and after 8 seconds a line above the options says it is taking longer than usual. If they cannot be read (after 30 seconds, or on an error), the options say **Unknown**, an error with a **Retry** button appears (it stays on screen, busy, until the answer is in), and **Save** and the remove buttons stay off, because the numbers decide whether a change is risky. **Save** and **Create field** show a spinner while they work.
+| Problem | What it means and what to do |
+|---------|------------------------------|
+| **The field ID is not what you need** | Delete and recreate the unused field before importing data. It cannot be renamed later |
+| **A Select field cannot be saved** | Add at least one option |
+| **An import value is invalid** | Use the field ID as the column and match the selected type or option |
+| **The field cannot be deleted** | Remove its use from event items first |
+| **An attendee's Select value now shows as unset** | Someone renamed or removed the option it used to match. Open the attendee and choose a current option to reassign it. The confirmation shown when the option was edited names which attendees were affected |
+
+**A Select field's Save button is off, or its options say "Unknown"**
+
+When you edit a Select field, Admitto reads how many attendees use each option, so that it can warn you before a rename or a removal affects them.
+
+- The counts are grey bars until they arrive. After 8 seconds, a line above the options says it is taking longer than usual.
+- If they cannot be read (after 30 seconds, or on an error), the options say **Unknown**. An error with a **Retry** button appears. It stays on screen, busy, until the answer is in.
+- **Save** and the remove buttons stay off in that state, because the numbers decide whether a change is risky.
+- **Save** and **Create field** show a spinner while they work.
 
 ## Related pages
 

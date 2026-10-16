@@ -36,7 +36,15 @@ A Superadmin manages the entire Admitto instance, staff users, instance configur
 
 ## Attendee
 
-An Attendee is not a staff role and does not appear in the permissions table above - they never sign in to Admitto and have no account, password, or dashboard. They are still very much part of the process: they receive a ticket by email (a QR code, and optionally an Apple or Google Wallet pass), and present it at the door - to an Operator's scanner or, if the event allows it, by name at manual lookup. That single interaction (receive a ticket, show up, get checked in) is the entirety of what an Attendee does in the system. See [About Admitto](About-Admitto) and the [Glossary](Glossary) for how this fits into the wider event journey.
+An Attendee is not a staff role, so they do not appear in the permissions table above. They never sign in to Admitto and have no account, password, or dashboard.
+
+They are still part of the process:
+
+1. They receive a ticket by email: a QR code, and optionally an Apple or Google Wallet pass.
+2. They show it at the door, to an Operator's scanner or, if the event allows it, by name at manual lookup.
+3. They are checked in.
+
+That is everything an Attendee does in the system. See [About Admitto](About-Admitto) and the [Glossary](Glossary) for how this fits into the wider event journey.
 
 ## Scope matters
 

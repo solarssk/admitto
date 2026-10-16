@@ -126,6 +126,21 @@ describe("safeOidcFetch", () => {
     expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://login.example.com/jwks");
     expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://login.example.com/jwks");
   });
+
+  it("does not try the next record after a failure that is not a connect failure, and closes the dispatcher", async () => {
+    mockedLookup.mockResolvedValue([
+      { address: "2001:db8::1", family: 6 },
+      { address: "93.184.216.34", family: 4 },
+    ] as Awaited<ReturnType<typeof lookup>>);
+    mockedUndiciFetch.mockRejectedValueOnce(new Error("unexpected response"));
+
+    await expect(safeOidcFetch("https://login.example.com/jwks")).rejects.toThrow("unexpected response");
+
+    expect(mockedUndiciFetch).toHaveBeenCalledTimes(1);
+    expect(MockedAgent).toHaveBeenCalledTimes(1);
+    const dispatcher = MockedAgent.mock.instances[0] as unknown as { close: ReturnType<typeof vi.fn> };
+    expect(dispatcher.close).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createSafeOidcCustomFetch", () => {

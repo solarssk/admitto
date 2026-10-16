@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
+  AUTH_METHOD,
+  SESSION_STAGE,
   hashPassword,
   createSession,
   SETTING_WEBAUTHN_ENABLED,
@@ -548,6 +550,105 @@ describe("POST /logout", () => {
     expect(res.headers.get("location")).toBe("/login");
     const meRes = await app.request("/api/auth/me", { headers: { Cookie: cookie } });
     expect(meRes.status).toBe(401);
+  });
+
+  it("redirects an SSO session to the identity provider's end-session URL and signs it out", async () => {
+    const providerId = "idp-login-page-logout";
+    await prisma.identityProvider.deleteMany({ where: { id: providerId } });
+    await prisma.identityProvider.create({
+      data: {
+        id: providerId,
+        issuer: "https://idp.example.test/login-page/",
+        client_id: "admitto-login-page",
+        authorization_endpoint: "https://idp.example.test/login-page/authorize",
+        token_endpoint: "https://idp.example.test/login-page/token",
+        jwks_uri: "https://idp.example.test/login-page/jwks",
+        end_session_endpoint: "https://idp.example.test/login-page/end-session",
+        display_name: "Login page SSO",
+      },
+    });
+    try {
+      const { rawToken } = await createSession(prisma, {
+        userId: operatorId,
+        stage: SESSION_STAGE.FULL,
+        authMethod: AUTH_METHOD.OIDC,
+        oidcProviderId: providerId,
+      });
+      const cookie = `admitto_session=${rawToken}`;
+
+      const res = await app.request("/logout", {
+        method: "POST",
+        headers: { Cookie: cookie, ...sameOrigin },
+      });
+
+      expect(res.status).toBe(302);
+      const target = new URL(res.headers.get("location") ?? "");
+      expect(`${target.origin}${target.pathname}`).toBe("https://idp.example.test/login-page/end-session");
+      expect(target.searchParams.get("client_id")).toBe("admitto-login-page");
+      expect(target.searchParams.get("post_logout_redirect_uri")).toBe("https://tickets.example.com/login");
+      const meRes = await app.request("/api/auth/me", { headers: { Cookie: cookie } });
+      expect(meRes.status).toBe(401);
+    } finally {
+      await prisma.identityProvider.deleteMany({ where: { id: providerId } });
+    }
+  });
+
+  describe("when the base URL cannot be used", () => {
+    /** An app whose injected base URL is malformed: resolving it throws, as a bad `BASE_URL` or `instance_url` would. */
+    let brokenApp: ReturnType<typeof createApp>;
+    const providerId = "idp-login-page-broken-base";
+
+    beforeAll(async () => {
+      brokenApp = createApp({
+        prisma,
+        checkinToken: null,
+        allowCheckinBearer: false,
+        baseUrl: "not a url",
+        rateLimitStore: createRateLimitStore(),
+        skipCheckinBootValidation: true,
+        adminDistRoot,
+      });
+      await prisma.identityProvider.deleteMany({ where: { id: providerId } });
+      await prisma.identityProvider.create({
+        data: {
+          id: providerId,
+          issuer: "https://idp.example.test/login-page-broken/",
+          client_id: "admitto-login-page-broken",
+          authorization_endpoint: "https://idp.example.test/login-page-broken/authorize",
+          token_endpoint: "https://idp.example.test/login-page-broken/token",
+          jwks_uri: "https://idp.example.test/login-page-broken/jwks",
+          end_session_endpoint: "https://idp.example.test/login-page-broken/end-session",
+          display_name: "Login page SSO (broken base URL)",
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.identityProvider.deleteMany({ where: { id: providerId } });
+    });
+
+    it.each(["password", "sso"] as const)("signs a %s session out and sends the browser to /login", async (kind) => {
+      const { rawToken } = await createSession(prisma, {
+        userId: operatorId,
+        stage: SESSION_STAGE.FULL,
+        ...(kind === "sso" ? { authMethod: AUTH_METHOD.OIDC, oidcProviderId: providerId } : {}),
+      });
+      const cookie = `admitto_session=${rawToken}`;
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await brokenApp.request("/logout", {
+          method: "POST",
+          headers: { Cookie: cookie, ...sameOrigin },
+        });
+
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/login");
+        expect((await app.request("/api/auth/me", { headers: { Cookie: cookie } })).status).toBe(401);
+        expect(logged).toHaveBeenCalledWith("resolve base URL for sign out failed:", { error_name: "Error" });
+      } finally {
+        logged.mockRestore();
+      }
+    });
   });
 
   it("rejects cross-site POST", async () => {
