@@ -21,7 +21,7 @@ Orchestrates ticket email delivery. The steps:
 - `recordTicketViewed(attendeeId, eventId, prisma)`
 - `buildAttendeeMailLinks`, `mapSendResultToDelivery`, `claimInitialDelivery`
 
-### Operator preflight (v0.3 PR5)
+### Operator preflight
 
 - `sendTestEmail({ eventId, toAddress, templateId? }, prisma, env?, deps?, options?)` sends one test mail with **sample** template data.
   - It uses the default ticket template via `previewTemplate`, or the template passed as `templateId`.

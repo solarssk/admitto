@@ -58,7 +58,7 @@
 - [Quick start](#quick-start)
 - [Production deployment](#production-deployment)
 - [Repo layout](#repo-layout)
-- [Roadmap](#roadmap)
+- [Versions](#versions)
 - [Licence](#licence)
 
 </details>
@@ -135,7 +135,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | 🌍 | **Sign-in locations** | Session and login logs show the country for each IP, and the city when the offline dataset resolves one. The lookup runs on your own server, with no external geo API. |
 | 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
-**Coming later:** public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest`.
+**Coming later:** public self-service registration is not part of Admitto. Intake from MS Forms through `/api/ingest` is planned.
 
 ## Stack
 
@@ -219,9 +219,9 @@ See [deploy/README.md](deploy/README.md).
 | [`deploy/`](deploy/README.md) | Production Compose, image, env |
 | [`docs/wiki/`](docs/wiki/) | Operator Wiki source |
 
-## Roadmap
+## Versions
 
-[VERSIONING.md](VERSIONING.md) is the **only** place that tracks the release line, what has shipped, and what comes next. It is not repeated here on purpose, so this README can't drift out of date the way a second copy eventually would.
+[VERSIONING.md](VERSIONING.md) explains the version numbers and how a release is cut. What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

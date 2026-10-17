@@ -70,7 +70,7 @@ The idea it's built around: **Admitto is the single source of truth** for who's 
 | 🔒 Security | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. |
 | 🏠 Hosting | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
-**Coming later:** public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest`.
+**Coming later:** public self-service registration is not part of Admitto. Intake from MS Forms through `/api/ingest` is planned.
 
 ## Stack
 
@@ -85,8 +85,8 @@ The idea it's built around: **Admitto is the single source of truth** for who's 
 ## Image tags
 
 ```text
-solarssk/admitto:X.Y.Z      # pinned release, e.g. 0.6.7
-solarssk/admitto:X.Y        # rolling minor line, e.g. 0.6
+solarssk/admitto:X.Y.Z      # pinned release
+solarssk/admitto:X.Y        # rolling minor line
 ```
 
 - Each tag is a multi-arch manifest (`linux/amd64` + `linux/arm64`). Docker pulls the one that matches your host automatically.

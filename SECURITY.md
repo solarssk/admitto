@@ -115,11 +115,11 @@ These automated checks are active in this repository. The table gives the short 
 To check one:
 
 ```bash
-cosign verify-blob --bundle sbom-v0.7.4-amd64.cdx.json.sigstore.json \
+cosign verify-blob --bundle sbom-vX.Y.Z-amd64.cdx.json.sigstore.json \
   --certificate-identity-regexp '^https://github\.com/solarssk/admitto/\.github/workflows/(publish-container|sign-release-assets)\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  sbom-v0.7.4-amd64.cdx.json
-gh attestation verify oci://ghcr.io/solarssk/admitto:0.7.4 --repo solarssk/admitto
+  sbom-vX.Y.Z-amd64.cdx.json
+gh attestation verify oci://ghcr.io/solarssk/admitto:X.Y.Z --repo solarssk/admitto
 ```
 
 Git tags are created by the release workflow and are not GPG/SSH-signed.
@@ -144,8 +144,9 @@ Git tags are created by the release workflow and are not GPG/SSH-signed.
 
 ### SAST on PRs vs `main`
 
-- **Decision (2026-07-06):** Semgrep was kept off PRs (Option B), purely as a CI-speed and marginal-value tradeoff. It adds about 2 to 3 minutes per PR, and it overlaps with CodeQL's `security-extended` rules.
-- **Revised (2026-08-29):** that calculus didn't weigh external perception. An enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A). CodeQL `security-extended` remains the primary gate, and Semgrep is the complementary second engine, on PRs and `main` alike.
+- CodeQL `security-extended` is the primary gate. Semgrep (`p/javascript`, `p/typescript`) is the complementary second engine, on every PR and on `main`.
+- Both engines run on every PR, because an enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`.
+- The cost is about 2 to 3 minutes of CI per PR, and Semgrep overlaps with CodeQL's `security-extended` rules.
 
 ### Required merge checks on `main`
 
@@ -167,12 +168,12 @@ GitHub branch protection requires these eight checks. All eight must pass before
 - Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities with a known fix (`ignore-unfixed: true`).
 - **HIGH** findings are reported (SARIF in the Security tab) but do not block the pipeline.
 
-**Remediation SLA (v0.4.6+)**
+**Remediation SLA**
 
 - **CRITICAL** with an available fix blocks the next release until patched.
 - **HIGH** with an available fix: remediate within **30 days** (tracked in backlog).
 - **HIGH** with no upstream fix: accepted risk, documented in the Security tab.
-- A blocking CI gate on HIGH+fixable (`--ignore-unfixed`) is planned before **v1.0**.
+- A blocking CI gate on HIGH+fixable (`--ignore-unfixed`) is planned.
 
 ### Build provenance
 

@@ -2,16 +2,17 @@ name: DAST baseline scan
 
 # Dynamic scan on top of the same docker-compose stack deploy-smoke.yml already builds and
 # health-checks (see that workflow for the stack itself). Runs OWASP ZAP's baseline scan
-# (passive rules + a short spidering crawl, no active/attack payloads) against the
-# unauthenticated, public/login-adjacent surface only — a fresh stack's database has no users, so
-# a synthetic one is seeded first (isFirstRunRequired() otherwise redirects every staff path to
-# /setup, not the pages this workflow means to scan - see deploy/README.md's "First superadmin").
-# Two scans run, since action-baseline only takes one target per invocation: / (spidered from the
-# real login page once seeded) and /healthz explicitly (a machine health-check endpoint no page
-# links to, so spidering from / would never reach it on its own).
+# (passive rules + a short spidering crawl, no active/attack payloads). A fresh stack's database
+# has no users, so a synthetic one is seeded first (isFirstRunRequired() otherwise redirects every
+# staff path to /setup, not the pages this workflow means to scan - see deploy/README.md's "First
+# superadmin").
+# Four scans run, since action-baseline only takes one target per invocation. The first two cover
+# the unauthenticated surface: / (spidered from the real login page once seeded) and /healthz
+# explicitly (a machine health-check endpoint no page links to, so spidering from / would never
+# reach it on its own).
 #
-# What this covers: missing security headers, cookie flags, information disclosure, and other
-# passive-scan findings on the surface a request can reach before authenticating.
+# What the first two cover: missing security headers, cookie flags, information disclosure, and
+# other passive-scan findings on the surface a request can reach before authenticating.
 # A third scan covers the signed-in superadmin surface: scripts/dast-login.mjs walks the forced TOTP
 # enrollment over HTTP for the seeded account and ZAP is handed the resulting session cookie
 # (ZAP_AUTH_HEADER), then crawls /admin with its AJAX spider so the SPA's own API calls are
