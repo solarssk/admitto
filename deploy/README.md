@@ -199,8 +199,8 @@ Pick one, pin `ADMITTO_IMAGE` to it, and pull:
 cd deploy
 cp .env.example .env
 # Set secrets, then pin the release image (version without leading v). Either registry works:
-# ADMITTO_IMAGE=ghcr.io/solarssk/admitto:0.4.11
-# ADMITTO_IMAGE=docker.io/solarssk/admitto:0.4.11
+# ADMITTO_IMAGE=ghcr.io/solarssk/admitto:X.Y.Z
+# ADMITTO_IMAGE=docker.io/solarssk/admitto:X.Y.Z
 
 docker compose pull app
 docker compose up -d --no-build
@@ -570,7 +570,7 @@ services:
       - /tmp
 ```
 
-**Tried once, on the 0.7.5 image**
+**Tried once**
 
 - `read_only: true`, `cap_drop: [ALL]` and `no-new-privileges:true`
 - `tmpfs` for `/tmp`, `/app/emergency-exports`, `/app/uploads` and `/app/data/geoip-custom` (the test had no volumes and no `MAXMIND_LICENSE_KEY`)
@@ -798,7 +798,7 @@ after deploy. Without a running worker, bulk mail stays queued and bounce/retent
 
 ## PostgreSQL backups (ADR 0012, ADR 0027)
 
-**Before every upgrade (required):** the stack no longer dumps the database before `migrate deploy`.
+**Before every upgrade (required):** the stack does not dump the database before `migrate deploy`.
 Take your own restore point immediately before pulling a new image:
 
 ```bash
@@ -872,7 +872,7 @@ Roll back by pointing at the previous image tag - **no DB operation needed, no d
 **CLI:**
 
 ```bash
-# in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
+# in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:X.Y.Z
 docker compose pull app && docker compose up -d app
 ```
 
@@ -904,7 +904,7 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERRO
 docker compose exec -T db-backup sh -c 'gunzip -c /backups/nightly-<UTC>.sql.gz' \
   | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
 
-# in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
+# in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:X.Y.Z
 docker compose pull app && docker compose up -d app worker
 ```
 

@@ -1,8 +1,6 @@
 # Versioning
 
-> **Stability status:** the table below explains what `v0.x`, `v1.0`, and `v1.1+` mean. To see
-> exactly where the project is right now, check the current release tag or the open GitHub
-> milestone. That status lives there and is not restated here, so it can't go stale between releases.
+> **Where the project stands:** check the current release tag or the open GitHub milestone. That status lives there and is not restated here, so it can't go stale between releases.
 
 Admitto uses **one product version** for releases. Internal workspace packages are not versioned independently.
 
@@ -14,55 +12,16 @@ Admitto uses **one product version** for releases. Internal workspace packages a
 | **Human-readable history** | [`CHANGELOG.md`](CHANGELOG.md) |
 | **Tracked in repo** | Root [`package.json`](package.json) `"version"` - bumped when cutting a release |
 
-GitHub **milestones** (`v0.3.6`, `v0.4.0`, …) group PRs toward the next tag; milestone title matches the upcoming product version.
+GitHub **milestones** (titled `vX.Y.Z`) group PRs toward the next tag. The milestone title matches the upcoming product version.
 
-## Product version lines (what `v0.x` vs `v1.0` means)
+## Version numbers
 
-Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** independent semver for each npm workspace package - it is the **release train** toward the first real event.
+Admitto ships as **one product** with git tags like `v0.x.y`. That is **not** independent semver for each npm workspace package.
 
-| Line | Meaning |
-|------|---------|
-| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. |
-| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. After this tag, the product can run a real event end-to-end. |
-| **`v1.1+`** | **Post-first-event feature waves.** Capabilities that are useful but **not** required for the first go-live (see examples below). |
+- **Pre-1.0 tags** are expected to iterate and refactor, so read [`CHANGELOG.md`](CHANGELOG.md) before you upgrade.
+- **Patches** (`v0.x.1`, `v0.x.2`, ...) are normal. They belong to the same minor line until the next tagged minor.
 
-How GitHub marks the `v0.x` tags:
-
-- Tags before `v0.4.13` are marked **pre-release**.
-- From `v0.4.13` onward, releases are stable enough for day-to-day use and are marked as the **latest** GitHub Release, even though the product isn't yet operator-ready for a real event.
-
-### Planned sequence (high level)
-
-This is the current product roadmap - details live in milestone descriptions and `CHANGELOG.md`:
-
-```mermaid
-flowchart LR
-    v04["v0.4.x ✓\nStaff SPA · check-in\nidentity · SSE · mail"]
-    v05["v0.5.x ✓\nWallet passes (PassCreator)\nPasskey registration · SSO hardening"]
-    v06["v0.6.x ✓\nPasskey/security-key sign-in\nMFA hardening"]
-    v07["v0.7\nHardening phase 1\n(mail/ticket cross-platform)"]
-    v08["v0.8+\nIngest API · RSVP/ICS\nWaitlist"]
-    v10(["v1.0\nFirst event\ngo-live"])
-    v04 --> v05 --> v06 --> v07 --> v08 --> v10
-```
-
-| Version | Focus |
-|---------|--------|
-| **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches - see [CHANGELOG.md](CHANGELOG.md)). |
-| **v0.5** | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users-table UX. |
-| **v0.6** | Delivered. Passkeys and security keys work for sign-in and step-up, not just registration. Also first-time 2FA method choice, and session-cookie and step-up security hardening. Later 0.6.x patches added Reports' Wallets and Custom fields tabs, a Samsung Wallet settings toggle, passkey autofill (conditional mediation) on the login page, and multi-arch container images. |
-| **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests, operational fixes toward go-live). |
-| **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, and further hardening plus a dry run (backup/restore, event-day readiness, ADR 0012). Not yet scheduled to a specific version. |
-| **v1.0** | First event **go-live ready** = MVP complete. |
-| **v1.1+** | New waves **after** the first event - e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
-
-### Common scope mistakes (read before opening a milestone PR)
-
-- **First-event attendee intake** is planned as **MS Forms → Power Automate → `/api/ingest`**, not a native public registration UI inside Admitto - not yet built, and not yet assigned to a specific version.
-- **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.5`–`v0.7` pre-go-live milestones.
-- **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal - they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
-
-Internal Polish product guide (maintainer docs, outside this public repo) mirrors this model; **this file is the canonical English definition for contributors and operators.**
+The documents in this repository describe the product as it is today. What changed in each release is in the CHANGELOG, not in the other documents.
 
 ## Workspace packages (`0.0.1`)
 
