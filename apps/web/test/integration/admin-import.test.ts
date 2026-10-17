@@ -2,7 +2,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -18,6 +18,15 @@ import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+import {
+  POLISH_ATTENDEES,
+  POLISH_ATTENDEE_NAMES,
+  encodeUtf16be,
+  encodeUtf16le,
+  encodeUtf8WithBom,
+  encodeWindows1250,
+  polishAttendeesCsv,
+} from "../helpers/csv-encodings.js";
 
 // Passes through to the real function; a test replaces it once to stop the enqueue where a killed process would.
 vi.mock("@admitto/tickets", async (importActual) => {
@@ -61,7 +70,7 @@ let uploadDir = "";
 let prevUploadDir: string | undefined;
 
 /** Build multipart form data for a CSV import fixture. */
-function csvFormData(content: string, filename = "import.csv", overwrite = false): FormData {
+function csvFormData(content: string | Uint8Array<ArrayBuffer>, filename = "import.csv", overwrite = false): FormData {
   const fd = new FormData();
   fd.append("file", new Blob([content], { type: "text/csv" }), filename);
   if (overwrite) fd.append("overwrite", "true");
@@ -364,6 +373,11 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     { filename: "Synthetic Private private@example.com.txt", content: VALID_CSV, reason: "unsupported_file_type" },
     { filename: "Synthetic Private private@example.com.csv", content: "   ", reason: "empty_file" },
     { filename: "Synthetic Private private@example.com.xlsx", content: "not a workbook", reason: "invalid_file_content" },
+    {
+      filename: "Synthetic Private private@example.com.csv",
+      content: `first_name,last_name,email\nSynthetic,Private,private@example.com${String.fromCharCode(0)}`,
+      reason: "unsupported_file_encoding",
+    },
   ])("omits filenames from rejected upload logs ($reason)", async ({ filename, content, reason }) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const sinceId = querySystemLogs().at(-1)?.id ?? 0;
@@ -548,6 +562,28 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
       expect(read).toHaveBeenCalledTimes(1);
       expect(res.status).toBe(429);
       expect(await res.json()).toMatchObject({ error: "too many requests" });
+    } finally {
+      read.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it.each([
+    { name: "a workbook with too many rows", error: () => new xlsxToCsv.ImportRowLimitError(), message: "too many rows" },
+    { name: "a workbook that holds too much inside", error: () => new xlsxToCsv.ImportZipBombError(), message: "too many rows" },
+    { name: "a workbook that cannot be read", error: () => new Error("unreadable workbook"), message: "invalid file content" },
+  ])("answers 400 for $name", async ({ error, message }) => {
+    const read = vi.spyOn(xlsxToCsv, "xlsxBufferToCsv").mockRejectedValueOnce(error());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const res = await postImport(
+        `/api/admin/events/${EVENT_A}/import/preview`,
+        await xlsxFormData([["first_name", "last_name", "email"], ["Ada", "Test", "workbook-refused@example.com"]]),
+        adminCookie,
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: message });
     } finally {
       read.mockRestore();
       warn.mockRestore();
@@ -1790,5 +1826,121 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
       headers: { Cookie: adminCookie },
     });
     expect(crossRes.status).toBe(403);
+  });
+});
+
+describe("CSV files saved by spreadsheet programs", () => {
+  const previewPath = `/api/admin/events/${EVENT_A}/import/preview`;
+  const commitPath = `/api/admin/events/${EVENT_A}/import/commit`;
+  const polishEmails = POLISH_ATTENDEES.map((attendee) => attendee.email);
+  const multilineEmail = "semicolon-multiline@example.com";
+  const NUL = String.fromCharCode(0);
+  const utf8 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(Buffer.from(text, "utf8"));
+  const importIds: string[] = [];
+
+  type PreviewBody = {
+    parse: { validCount: number; invalidCount: number; warnings: string[] };
+    sampleRows: { name: string; email: string }[];
+  };
+
+  afterEach(async () => {
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_A, email: { in: [...polishEmails, multilineEmail] } } });
+    for (const importId of importIds.splice(0)) {
+      await prisma.attendeeActionLog.deleteMany({
+        where: { event_id: EVENT_A, metadata: { path: ["importId"], equals: importId } },
+      });
+    }
+  });
+
+  const readable = [
+    { name: "a comma file saved as UTF-8", file: utf8(polishAttendeesCsv(",")), windows1250: false },
+    { name: "a comma file with a UTF-8 byte order mark", file: encodeUtf8WithBom(polishAttendeesCsv(",")), windows1250: false },
+    { name: "a semicolon file saved as UTF-8", file: utf8(polishAttendeesCsv(";")), windows1250: false },
+    { name: "a semicolon file with a UTF-8 byte order mark (Excel CSV UTF-8)", file: encodeUtf8WithBom(polishAttendeesCsv(";")), windows1250: false },
+    { name: "a tab file saved as UTF-8", file: utf8(polishAttendeesCsv("\t")), windows1250: false },
+    { name: "a semicolon file saved as Windows-1250 (Excel CSV)", file: encodeWindows1250(polishAttendeesCsv(";")), windows1250: true },
+    { name: "a comma file saved as Windows-1250", file: encodeWindows1250(polishAttendeesCsv(",")), windows1250: true },
+  ];
+
+  it.each(readable)("previews $name with every name spelled right", async ({ file, windows1250 }) => {
+    const res = await postImport(previewPath, csvFormData(file), adminCookie);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.parse).toMatchObject({ validCount: POLISH_ATTENDEES.length, invalidCount: 0 });
+    expect(body.sampleRows.map((row) => row.name)).toEqual(POLISH_ATTENDEE_NAMES);
+    expect(body.parse.warnings).toEqual(windows1250 ? [expect.stringContaining("Windows-1250")] : []);
+  });
+
+  it.each(readable)("imports $name through the worker with every name spelled right", async ({ file }) => {
+    const committed = await postCommitAndDrain(EVENT_A, csvFormData(file), adminCookie);
+    importIds.push(String(committed.body.importId));
+    expect(committed.result).toMatchObject({ created: POLISH_ATTENDEES.length, invalidCount: 0 });
+    const saved = await prisma.attendee.findMany({ where: { event_id: EVENT_A, email: { in: polishEmails } } });
+    expect(saved).toHaveLength(POLISH_ATTENDEES.length);
+    expect(saved.map((attendee) => attendee.name)).toEqual(expect.arrayContaining(POLISH_ATTENDEE_NAMES));
+  });
+
+  it("puts the Windows-1250 note before the warnings about the columns", async () => {
+    const csv = polishAttendeesCsv(";").replace("email\r\n", "email;nickname\r\n");
+    const res = await postImport(previewPath, csvFormData(encodeWindows1250(csv)), adminCookie);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.parse.warnings).toEqual([expect.stringContaining("Windows-1250"), "Unknown column ignored"]);
+  });
+
+  it("keeps a quoted line break inside one cell of a semicolon file from preview through commit", async () => {
+    const csv = `first_name;last_name;email;company\nAda;Test;${multilineEmail};"Acme; North\r\nHeadquarters"\n`;
+    const preview = await postImport(previewPath, csvFormData(csv), adminCookie);
+    expect(preview.status).toBe(200);
+    expect(((await preview.json()) as PreviewBody).parse).toMatchObject({ validCount: 1, invalidCount: 0 });
+    const committed = await postCommitAndDrain(EVENT_A, csvFormData(csv), adminCookie);
+    importIds.push(String(committed.body.importId));
+    const attendee = await prisma.attendee.findUniqueOrThrow({
+      where: { event_id_email: { event_id: EVENT_A, email: multilineEmail } },
+    });
+    expect(attendee.company).toBe("Acme; North\r\nHeadquarters");
+  });
+
+  it("counts the records of a semicolon file against the same 50,000 limit", async () => {
+    const row = 'Synthetic;;limit@example.com;"Head\nquarters"';
+    const csvOf = (count: number) => "first_name;last_name;email;company\n" + Array(count).fill(row).join("\n");
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const atLimit = await postImport(previewPath, csvFormData(csvOf(50_000)), adminCookie);
+      expect(atLimit.status).toBe(200);
+      expect(((await atLimit.json()) as PreviewBody).parse).toMatchObject({ validCount: 0, invalidCount: 50_000 });
+      const overLimit = await postImport(previewPath, csvFormData(csvOf(50_001)), adminCookie);
+      expect(overLimit.status).toBe(400);
+      expect(await overLimit.json()).toMatchObject({ error: "too many rows" });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  const refused = [
+    {
+      name: "a NUL character inside a cell",
+      file: utf8(`first_name,last_name,email,company\nAda,Test,ada@example.com,Acme${NUL}Co\nEve,Example,eve@example.com,Example Co\n`),
+    },
+    {
+      name: "a NUL character in a row that is invalid anyway",
+      file: utf8(`first_name,last_name,email\nBad,,bad${NUL}@example.com\nEve,Example,eve@example.com\n`),
+    },
+    { name: "UTF-16 little-endian with a byte order mark (Excel Unicode Text)", file: encodeUtf16le(polishAttendeesCsv("\t")) },
+    { name: "UTF-16 big-endian with a byte order mark", file: encodeUtf16be(polishAttendeesCsv("\t")) },
+    { name: "UTF-16 without a byte order mark", file: encodeUtf16le(polishAttendeesCsv("\t"), { bom: false }) },
+  ];
+
+  it.each(refused)("refuses $name before the preview", async ({ file }) => {
+    const res = await postImport(previewPath, csvFormData(file), adminCookie);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "unsupported file encoding" });
+  });
+
+  it.each(refused)("refuses $name before the commit and queues no job", async ({ file }) => {
+    const res = await postImport(commitPath, csvFormData(file), adminCookie);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "unsupported file encoding" });
+    expect(await prisma.adminJob.count({ where: { event_id: EVENT_A, type: "import_commit" } })).toBe(0);
   });
 });

@@ -127,6 +127,12 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(new ApiError(400, "invalid file content"), "Failed.")).toMatch(/could not be read/);
   });
 
+  it("tells the operator to save a CSV that cannot be read as text again as CSV UTF-8", () => {
+    const message = operatorApiErrorMessage(new ApiError(400, "unsupported file encoding"), "Failed.");
+    expect(message).toMatch(/CSV UTF-8/);
+    expect(message).not.toMatch(/valid CSV or XLSX/);
+  });
+
   it("suppresses SQL-like, stack, ORM, Windows path, and traceback detail", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(operatorApiErrorMessage(new ApiError(500, "syntax error at or near SELECT"), "Failed.")).toBe(
