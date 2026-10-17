@@ -14,7 +14,7 @@ Sign in with your own Superadmin account and complete the security steps shown b
 
 1. Confirm the organisation and first administrator before handing over event work.
 2. Use **Organisations** for organisation details and limits.
-3. Use **Users & roles** for staff users, role assignments, and **Active sessions** (sessions are no longer under Organisation settings → Security).
+3. Use **Users & roles** for staff users, role assignments, and **Active sessions**.
 4. Use **Organisation settings** for supported general, branding, mail, security, archiving, identity, log, and **Health check** settings.
    - **Health check** groups Core infrastructure and External integrations.
    - It can **Run live checks**.

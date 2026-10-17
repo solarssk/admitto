@@ -233,7 +233,7 @@ Profile changes take effect immediately and are visible to administrators who vi
 | Problem | What it means and what to do |
 |---------|------------------------------|
 | **You lost access to the authenticator app** | Use a saved backup code to sign in, then reset 2FA and set it up again from this page |
-| **The authenticator app now shows "Manage" instead of "Reset"** | That is expected. Manage opens a popup with just **Remove** (authenticator app only). To also clear passkeys, security keys and backup codes, use **Reset everything** in the card's options menu (the three-dot icon). Nothing is missing. It is relabelled and split into two places |
+| **The authenticator app card shows "Manage", not "Reset"** | Manage opens a popup with just **Remove** (authenticator app only). To also clear passkeys, security keys and backup codes, use **Reset everything** in the card's options menu (the three-dot icon) |
 | **No "Backup codes" row** | It appears only once you have at least one confirmed two-factor method. Set up an authenticator app, a passkey or a security key first |
 | **Regenerating backup codes asks for a code** | That is the required step-up check for accounts whose role requires two-factor authentication. It is not an error. Enter a code from your authenticator app, a saved backup code, or use a registered passkey or security key |
 | **A saved backup code stopped working** | Each **Regenerate** invalidates every code from the previous batch immediately. Only the newest set, shown once when you regenerated, is valid |
