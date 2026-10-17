@@ -8,10 +8,49 @@ import { readSeedData, seedCheckinE2eData } from "./seed.js";
  * Accessibility scan (axe-core) over the surfaces this suite can already reach with its one seeded
  * operator account. Every violation is logged, saved as JSON under test-results/, and written to the
  * job summary; serious and critical ones also fail the test (minor/moderate stay report-only until
- * the baseline for them is triaged). A scan that evaluated nothing fails too.
+ * the baseline for them is triaged). A scan that evaluated nothing fails too. A page is scanned only
+ * after it has settled (see `settle`), so axe reads the colours users end up seeing.
  */
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+
+/**
+ * Resolves once a successful GET has come back for each of the given paths. Call it before the
+ * action that makes the requests (a navigation or a click), so a fast response cannot be missed.
+ */
+function waitForGets(page: Page, pathnames: string[]): Promise<unknown> {
+  return Promise.all(
+    pathnames.map((pathname) =>
+      page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === pathname &&
+          res.request().method() === "GET" &&
+          res.ok(),
+      ),
+    ),
+  );
+}
+
+/**
+ * Waits until the page has stopped changing under axe: no spinner is left, two animation frames
+ * have let React commit what the responses just delivered, and every finite animation (content and
+ * notices fade in over 150 ms) is over. axe reads colours mid-fade otherwise, and reports contrast
+ * against a half-transparent text colour that is not what users end up seeing.
+ */
+async function settle(page: Page): Promise<void> {
+  await expect(page.locator(".at-spinner")).toHaveCount(0);
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    );
+  });
+}
 
 async function scanAndReport(
   page: Page,
@@ -85,10 +124,23 @@ test("operator check-in page", async ({ page }, testInfo) => {
   await page.waitForURL(/\/operator(\/|$)/);
   await page.goto(`/operator/events/${seed.eventId}/checkin`);
 
+  // The click mounts the check-in page, which asks for the counts and the recent scans: listen first.
+  const loaded = waitForGets(page, [
+    "/api/checkin/stats",
+    "/api/checkin/history",
+  ]);
   await page.getByRole("button", { name: "Continue without label" }).click();
   await expect(
     page.getByRole("searchbox", { name: "QR scan or search" }),
   ).toBeVisible();
+  await loaded;
+  // The responses are in, but a placeholder that has been painted stays for at least 400 ms: both
+  // blocks keep aria-busy until the loaded content replaces it. That content then fades in over
+  // 150 ms, which settle() waits out.
+  await expect(
+    page.locator('.ck-stats[aria-busy="true"], .ck-recent[aria-busy="true"]'),
+  ).toHaveCount(0);
+  await settle(page);
 
   await scanAndReport(page, testInfo, "operator-checkin");
 });
@@ -160,34 +212,11 @@ test("admin pages", async ({ page, baseURL }, testInfo) => {
   for (const surface of ADMIN_SURFACES) {
     const ids = { event: seed.eventId, attendee: seed.attendeeId };
     // Listeners are attached before navigating so a fast response cannot be missed.
-    const loaded = surface
-      .data(ids)
-      .map((pathname) =>
-        page.waitForResponse(
-          (res) =>
-            new URL(res.url()).pathname === pathname &&
-            res.request().method() === "GET" &&
-            res.ok(),
-        ),
-      );
+    const loaded = waitForGets(page, surface.data(ids));
     await page.goto(surface.path(ids));
-    await Promise.all(loaded);
+    await loaded;
     await expect(page.getByRole("heading").first()).toBeVisible();
-    await expect(page.locator(".at-spinner")).toHaveCount(0);
-    // Two animation frames let React commit what the responses just delivered, then any finite
-    // animation (notices fade in) must be over: axe reads colours mid-fade otherwise, and reports
-    // contrast against a half-transparent text colour that is not what users end up seeing.
-    await page.evaluate(async () => {
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-      await Promise.all(
-        document
-          .getAnimations()
-          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
-          .map((a) => a.finished),
-      );
-    });
+    await settle(page);
     await scanAndReport(page, testInfo, surface.name, {
       blocking: surface.blocking,
     });
