@@ -59,7 +59,7 @@ The periods differ by design.
 | In-app security alert inbox (`Notification`) | Deleted automatically after **30 days** by default (`NOTIFICATION_RETENTION_DAYS`), or earlier when the staff member clears it |
 | IP address in the admin audit log | **30 days or your corporate log retention policy.** The product does not delete it. A check-in-time IP only appears in the System logs live tail, which is in memory only |
 | Event attendee personal data | **Kept until you erase it.** This is a deliberate product default. Export a copy first if you need one (spreadsheet or PDF in the admin UI). Erasure is described below |
-| Audit logs (general) | Per your security policy. Attendee data is kept out of log lines (the staff accountability exception is in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
+| Audit logs (general) | Per your security policy. Attendee data is minimised in log lines (the staff accountability exception is in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
 | System logs live tail | Not stored. The last 1000 entries live in memory and are emptied on every restart |
 
 An automated post-event purge of attendee data is planned for **v1.0**.
