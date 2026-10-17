@@ -1125,255 +1125,234 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.12] - 2026-07-06
 
 ### Added
-- Vitest code coverage (`npm run coverage`) across workspaces with LCOV upload to Codecov on CI — reporting only, no coverage gate yet.
-- CI PR pipeline shortened: lint merged into `build-test`, Semgrep and Docker build smoke run on `main` merge (not every PR); `SECURITY.md` documents when each control runs.
-- Identity providers + Cloudflare Access JSON API (`/api/admin/identity/providers*`, `/api/admin/identity/cf-access*`) for the SPA Settings → Identity migration: list, get, create, update, toggle, discover, test, and CF Access get/update/test endpoints. Reuses `@admitto/auth` logic unchanged; gated by `requireAdminAccess` (superadmin) to match the legacy HTML routes. PUT contract: `mappings` is required on every PUT (replace-all, mirroring the HTML form; omitting it returns `mappings_required` so editing other fields can never silently delete mappings) and omitting `login_button_label` preserves the stored value (`null`/`""` clears); create defaults omitted `mappings` to `[]`. `mappingSchema` enforces `scope_id` for `organization`/`event` scopes. Toggle uses a conditional `updateMany` and returns `409` on a concurrent toggle (TOCTOU-safe). CF Access `test` endpoint shares the `adminAuthProviderOpsRateLimit` bucket with OIDC discover/test. Schemas use `z.strictObject()` (zod v4). Legacy HTML routes remain until the SPA editor lands (#266).
-- Settings → Identity & SSO SPA overview (#266 slice 2): new `/admin/settings/identity/*` routes under the existing `InstanceSettingsShell` render the OIDC providers list (with optimistic enable/disable toggle) and a Cloudflare Access summary card. The Settings "Identity" tab and the legacy `?tab=identity` query now hand off to the canonical `/admin/settings/identity/providers` route, keeping the SPA shell consistent instead of jumping to raw HTML. Add/Edit provider and CF Access Manage still bridge to the legacy HTML editors until the SPA editor lands in slices 3–4.
-- Identity provider SPA editor — Basics, Endpoints, Claims, login button label (#266 slice 3a): new `/admin/settings/identity/providers/new` and `/identity/providers/:providerId` routes render a full form editor under the SPA shell. Create POSTs a new provider; edit loads by id and PUTs the full form (mappings carried through unchanged until the repeater lands in slice 3b). Client-side validation mirrors the slice-1 Zod contract; the stored client secret is preserved on edit when left blank; a dirty guard warns on navigation. The providers list Add/Edit actions now SPA-navigate to these routes instead of the legacy HTML bridge.
-- Identity provider SPA editor — group→role mapping repeater, Discover/Test, SSO preview (#266 slice 3b): the editor gains an editable mapping repeater (add/remove rows, role + scope selects, conditional scope_id) with replace-all save semantics; Discover autofills OIDC endpoints from the issuer's `.well-known` config and Test probes the connection (edit mode only, both with 401 routing to login); a live SSO login button preview reflects the custom label or the product default. Mapping validation (group required, scope_id required for organization/event scopes) blocks save with inline row errors.
-- Identity provider SPA editor — draft test and discover in create mode (#266): `POST /api/admin/identity/providers/test` and `POST /api/admin/identity/providers/discover-preview` are stateless endpoints that probe OIDC connectivity and autofill endpoints without requiring a saved provider record; Discover and Test connection are now available in create mode (previously edit-only). Partial endpoint sets (fewer than all three of auth/token/jwks) fall back to discovery so the test always reflects the same endpoint resolution as save. Issuer URL is validated against the same SSRF guard as the save path before any explicit-endpoint test. Save and Cancel buttons are disabled while discovery is in flight; stale discover and test responses are silently discarded when the issuer or endpoint draft diverges mid-flight.
-- Cloudflare Access SPA editor (#266 slice 4): new `/admin/settings/identity/cloudflare` route renders the CF Zero Trust config editor under the SPA Identity sub-tab, replacing the slice-2 placeholder. Edits team URL, Application Audience (AUD), and protected URL paths (comma-separated lists), toggles enabled, and Test connection probes the team domain's JWKS endpoint (sends the draft team URL so operators can test before saving). Per-field env locks disable the locked inputs and show a "Locked by env" badge; the PUT body omits locked fields so the server keeps the env-managed value. A dirty guard (router `useBlocker` + `beforeunload`) and 401 routing to login match the OIDC provider editor patterns. The Identity overview "Manage" action now SPA-navigates here instead of bridging to the legacy HTML editor.
-- HTTP access log on `app` container stdout (`LOG_HTTP_REQUESTS`, on by default in deploy compose): one JSON line per request with method, redacted path, status, and duration — no IPs, query strings, or ticket/QR tokens; successful health probes are skipped. Documented per-container log expectations in `deploy/README.md` (#237).
-- Password strength meter on first-run `/setup`, forced `/change-password`, and admin Account password change — text label plus segmented bar (not color-only); confirm fields show match feedback on setup and change-password pages (#226).
-- Overview page: per-event **Pinned note** — short operational sticky visible to all admins; editable inline, highlighted in the right column (#291).
-- Overview page: per-event **Key contacts** — list of on-site contacts with name, role, phone and email action links; add/edit/delete inline (#291).
-- Overview page: per-event **Important links & files** — list of linked documents and URLs with title and optional description; add/edit/delete inline, shows first 4 with "View all" toggle (#291).
-- Audit log: all mutations to pinned note, key contacts, and important links are recorded in `AdminAuditLog` with actor, session, IP, and action type — visible to superadmins in the Audit viewer (#291).
+
+- Add Vitest coverage (`npm run coverage`) with LCOV upload to Codecov in CI ([#295](https://github.com/solarssk/admitto/pull/295))
+- Shorten the CI pull request pipeline: lint runs inside `build-test`, and Semgrep and the Docker smoke build run on `main` only ([#295](https://github.com/solarssk/admitto/pull/295))
+- Add the identity providers and Cloudflare Access JSON API (`/api/admin/identity/*`) for the SPA Identity settings ([#294](https://github.com/solarssk/admitto/pull/294))
+- Add the Identity & SSO overview to Settings, with a providers list and a Cloudflare Access summary ([#296](https://github.com/solarssk/admitto/pull/296))
+- Add the identity provider editor: Basics, Endpoints, Claims and the login button label ([#297](https://github.com/solarssk/admitto/pull/297))
+- Add the group-to-role mapping repeater, Discover and Test to the identity provider editor ([#298](https://github.com/solarssk/admitto/pull/298))
+- Allow Test and Discover on a draft identity provider before it is saved ([#313](https://github.com/solarssk/admitto/pull/313))
+- Add the Cloudflare Access editor to Settings, Identity ([#310](https://github.com/solarssk/admitto/pull/310))
+- Add a JSON HTTP access log on `app` stdout (`LOG_HTTP_REQUESTS`, on by default in the deploy compose), without IPs, query strings or tokens ([#260](https://github.com/solarssk/admitto/pull/260))
+- Add a password strength meter to `/setup`, `/change-password` and the Account password change ([#250](https://github.com/solarssk/admitto/pull/250))
+- Add a per-event Pinned note, Key contacts and Important links & files to Event Overview, with changes recorded in the audit log ([#291](https://github.com/solarssk/admitto/pull/291))
 
 ### Changed
-- Settings shell unified for Identity IA (#266 slice 7b): `SettingsLayout` wraps `/admin/settings/*` so the primary tabs (General | Mail | Security | Archiving | Identity) remain visible on the Identity overview and on all detail views (add/edit provider, Cloudflare Access editor). The second tab row (Providers | Cloudflare Access) is removed — Identity overview is a single page with both cards. The `?tab=identity` legacy query still redirects to the canonical `/admin/settings/identity/providers` route. Editor dirty guards (`useBlocker`) still trigger when switching primary tabs or leaving detail views.
-- Docs: sync CI/security narrative (Semgrep on `main`, Codecov data note, required merge checks), fix stale deploy examples (Node 24), README documentation map, identity SPA status in admin README, contributor coverage commands.
-- Overview page: redesigned as an event command center — "Quick actions" nav grid removed; new two-column layout with Needs attention alerts (email failures, queued tickets, missing operators), Event readiness checklist (attendees, tickets, delivery, operators), Email delivery breakdown, live Recent check-ins feed (SSE), and compact Event info block (#276).
-- Account page: sidebar nav structure now consistent with AdminShell — "My account" link is in the nav area (not the footer), back link stays in the footer; empty aria-hidden placeholder div removed (#267).
-- Reports: tile/panel spacing is now correct — `--space-md/sm/lg` and `--surface-elevated` were undefined tokens resolving to 0/transparent; replaced with `--space-4/3/5` and `--surface-sunken` throughout `reports-page.css`. Progress bars in "By ticket type" use `--primary` consistently (removed threshold-based traffic-light coloring that flagged <50% admission as a warning at the start of every event). Hourly chart is accessible by keyboard and screen reader — bars have individual `aria-label` with hour and count; `role="img"` removed so the accessibility tree is not flattened (#269).
-- Topbar: mailer status indicator now uses the shared `Badge` component (pill with dot) instead of bespoke markup — visually consistent with every other status badge in the app; label still hides at narrow viewports (#275).
-- Check-in: `AttendeeCard` status display now differentiates positive, warning, and blocking-error states — VALID/PREVIEW show status inline in the identity header; ALREADY_CHECKED_IN uses a compact warning strip; REVOKED/INVALID show a unified tinted alert block with status and reason text merged into one message. Item action buttons (Give gift bag, Return headset) use chip-matching geometry without a border or background (#270).
-- Toast notifications: unified design-system stack (Tabler icons, deduplicated messages, bottom-right placement); admin pages and settings panels use `useToast()` for save/load feedback instead of inline status text.
-- Account page: profile, password, and MFA success/error feedback uses toasts instead of inline status text; locale-change reminder stays until dismissed (#239).
-- Toast stack z-index sits below check-in camera overlay so mobile lookup warnings do not cover overlay controls.
-- Setup wizard mail step: provider select order/labels, per-provider field grouping (SMTP username+port grid), and test-send row aligned with design mockup.
-- First-run routing: unauthenticated staff entry (`/`, `/login`, `/admin`, `/operator`, and related HTML gates) redirects to `/setup` until the first user exists; login form is shown only after bootstrap.
-- Setup wizard system check: allow `http://127.0.0.1` / `localhost` BASE_URL in production (local Docker smoke); non-loopback HTTP still fails.
-- First-run mail wizard: ignore deploy env placeholders for field locks and test send until setup wizard completes (`setup_complete`).
-- Setup SSR (`/setup`): mockup-aligned copy, login-aligned `autocomplete="username"` on email, confirm password, and `passwordrules` for password managers.
-- Setup wizard shell: “Set up your instance” header, numbered stepper with labels, Continue arrow on primary CTA; custom date picker and timezone combobox; ready step summary chips.
-- Password strength meter: jsdom test executes the generated inline script end-to-end (meter, aria-label, confirm match); shared sample passwords move to the `@admitto/auth/password-strength-fixtures` test-only export (#254).
-- Settings page: the active in-page tab is persisted in the URL (`?tab=general|mail|security|archiving`, merged via `replace` so tab clicks don't stack history or wipe unrelated params) — Back from the Identity sub-section now restores the operator's tab instead of resetting to General (closes the #296 TODO); `?tab=identity` still redirects to the canonical Identity route. A SPA-side catch-all inside `/admin` redirects any unmatched `/admin/*` (including removed legacy `/admin/auth/*` URLs) to the events picker so old bookmarks/docs links don't land on a blank outlet (#266 slice 5).
+
+- Unify the Settings shell, so the primary tabs stay visible on all Identity screens ([#314](https://github.com/solarssk/admitto/pull/314))
+- Sync the CI and security docs, deploy examples (Node 24), the README documentation map and the contributor coverage commands ([#299](https://github.com/solarssk/admitto/pull/299))
+- Redesign Event Overview as a command center: Needs attention, Event readiness, Email delivery and a live Recent check-ins feed ([#290](https://github.com/solarssk/admitto/pull/290))
+- Align the Account page sidebar with the AdminShell standard ([#289](https://github.com/solarssk/admitto/pull/289))
+- Fix Reports tile and panel spacing, progress bar colours and chart accessibility ([#288](https://github.com/solarssk/admitto/pull/288))
+- Use the shared Badge for the topbar mailer status ([#287](https://github.com/solarssk/admitto/pull/287))
+- Show the check-in AttendeeCard status by severity: valid, warning or blocking error ([#284](https://github.com/solarssk/admitto/pull/284))
+- Unify toast notifications into one design-system stack, and use toasts for save and load feedback in admin pages and settings panels ([#236](https://github.com/solarssk/admitto/pull/236))
+- Use toasts for Account profile, password and MFA feedback ([#248](https://github.com/solarssk/admitto/pull/248))
+- Keep the toast stack below the check-in camera overlay on mobile ([#236](https://github.com/solarssk/admitto/pull/236))
+- Align the setup wizard mail step with the design mockup ([#229](https://github.com/solarssk/admitto/pull/229))
+- Redirect unauthenticated staff entry to `/setup` until the first user exists ([#215](https://github.com/solarssk/admitto/pull/215))
+- Allow `http://127.0.0.1` and `localhost` as BASE_URL in the setup wizard system check in production ([#215](https://github.com/solarssk/admitto/pull/215))
+- Ignore deploy env placeholders for mail field locks and test send until the setup wizard completes ([#215](https://github.com/solarssk/admitto/pull/215))
+- Polish the `/setup` form for password managers (`autocomplete` and `passwordrules`) ([#227](https://github.com/solarssk/admitto/pull/227))
+- Add the setup wizard header, numbered stepper, custom date picker, timezone combobox and ready step chips ([#242](https://github.com/solarssk/admitto/pull/242))
+- Test the password strength script end-to-end in jsdom, and move shared sample passwords to a test-only export ([#259](https://github.com/solarssk/admitto/pull/259))
+- Persist the active Settings tab in the URL (`?tab=general|mail|security|archiving`) ([#311](https://github.com/solarssk/admitto/pull/311))
 
 ### Removed
-- Identity providers migration cleanup (#266 slice 5): the legacy server-rendered identity admin is removed — `/admin/auth/providers*` and `/admin/auth/cf-access*` HTML routes, their handlers (`auth-providers-routes.ts`, `cf-access-routes.ts`), the HTML renderers (`auth-providers-html.ts`, `cf-access-html.ts`), and the `renderAdminShell` sidebar + `SETTINGS_SUBNAV_ITEMS` + `ADMIN_PAGE_CSS` block in `shared-auth-styles.ts`. The SPA at `/admin/settings/identity/*` is now the only identity admin surface; the JSON API (`/api/admin/identity/*`, slice 1) is unaffected. The `cf-access-routes` integration test was retargeted from the deleted HTML routes to the `/admin` SPA shell (and `/api/admin/identity/providers` for the CF no-role 403 message); the `oidc-admin-routes` and `auth-providers-html` unit tests were removed with the code they covered. Docs/env examples and `security/SECURITY-CONTROLS.md` updated to reference Settings → Identity; the stale `/admin/auth` Vite dev-proxy rule was removed.
+
+- Remove the legacy server-rendered identity admin (`/admin/auth/providers*`, `/admin/auth/cf-access*`) ([#311](https://github.com/solarssk/admitto/pull/311))
 
 ### Security
-- Login and MFA pages (verify, enroll, backup codes) ship inline scripts gated by a per-response CSP nonce instead of `script-src 'unsafe-inline'` (MFA) or a policy that blocked them in strict browsers (login) (#253).
+
+- Gate the login and MFA page scripts with a per-response CSP nonce instead of `unsafe-inline` ([#258](https://github.com/solarssk/admitto/pull/258))
 
 ### Fixed
-- Check-in: manual lookup no longer shows every guest as green "Ready to check in" — the result card now derives its state from the loaded card, so an already-admitted guest opens as **Already checked in** (with the entry time, no Confirm button) and a revoked/cancelled pass opens as **Revoked** immediately, with badge/gift-bag/headset issue actions disabled instead of failing after the click. Selecting a lookup result also clears the search query and result list (#379). The scan-bar typeahead's "checked in" hint could still show green for a guest whose pass was revoked after admission (a stale `admitted_at` with no status check) — `lookupAttendees` now excludes revoked/cancelled passes the same way `getCheckInStats` does, so the dropdown never contradicts the red Revoked card the operator sees on select.
-- Check-in: the admitted / total stats now count **active attendees only** — revoked and cancelled guests (who don't consume capacity and aren't expected at the door) are excluded from both counts, matching the Overview KPI denominator; the sidebar label reads "expected" instead of "total" (#380).
-- Admin: compact check-in timestamps (Attendees CHECK-IN column, Overview recent check-ins, check-in Recent scans) now show the **date + time** when a scan happened outside the event's calendar day (e.g. a test check-in weeks before the event), instead of a time-only value that looked like an event-day admission; comparison uses the event timezone via a shared `formatAdmissionDisplay` helper (#359).
-- Admin: checkboxes were invisible across the SPA — the `Checkbox` component never rendered the visual `.at-check__box` element its CSS expects, so only bare labels showed (Instance Settings → Security "Require 2FA for roles" collapsed into an unreadable `superadminadminoperator` string). The component now renders the box + check icon, the MFA roles fieldset is a vertical group with human labels (Superadmin / Admin / Operator; API slugs unchanged), and disabled checkboxes get a distinct visual state for env-locked settings (#413).
-- Communication: Delivery log no longer shows a successful SMTP/Graph send as yellow "Pending" with an empty Sent column — `accepted` status now renders as green "Sent" (ADR 0007 `accepted_only`: provider handoff is operator-visible success), `accepted_at` is included in the delivery DTO (API + SPA), and the Sent / Failed column and attendee drawer delivery list fall back to it when `sent_at` is null. The attendee list Mail column had its own duplicate status map (still yellow "Pending" for `accepted`); `MailStatusBadge` now delegates to the shared `resolveStatusMeta` so all mail-status surfaces stay in sync (#403).
-- Admin: dialogs on the shared `.add-attendee-modal` shell (Send tickets, Add attendee, Communication send, Create template) no longer render with a transparent panel that let the page table "ghost" through — `var(--surface-raised)` was referenced but never defined in the token set (same class of bug as #286); replaced with `var(--surface-card)` here and in the other remaining usages (icon picker, setup wizard card). The modal panel border referenced undefined `var(--border-subtle)` and silently didn't render; now uses `var(--border)` (#357).
-- Admin: modal and panel backgrounds (confirm dialog, note modal, create-event modal, attendee drawer, requirements, reports, users) were transparent — `var(--surface)` was referenced but never defined in the token set; replaced with `var(--surface-card)` (#286).
-- Check-in: scan input stays enabled and queues submissions while a previous scan/lookup is still processing, instead of disabling the field and silently dropping keyboard-wedge keystrokes for the next attendee (#261).
-- Check-in: duplicate-scan debounce and buffer-clear-on-accept are now measured at the moment a scan or manual-lookup query is accepted, not once it reaches the front of the FIFO queue — a slow first request could otherwise let a genuine duplicate through, or leave stale query text for a later wedge scan's keystrokes to land on (producing a corrupted, unmatchable scan payload). The mobile camera overlay's own manual-entry field had the same gap (no disabled state at all) and is fixed the same way. Auto-advance also no longer clears an unrelated, still-in-progress scan's buffer, and Confirm check-in, item actions, notes, manual-lookup select, and Undo now all queue behind an in-flight scan instead of racing it — previously a slower response from one of these could overwrite the card of an attendee scanned afterward, or (for Undo) roll back the wrong check-in (#277 review follow-up).
-- Mail settings: `SMTP_HOST`/`MAIL_FROM_ADDRESS` left at their shipped `deploy/.env.example` placeholder values (`smtp.example.com` / `events@example.com`) no longer falsely report as "managed by environment" — Settings → Mail is editable for deployments that configure the transport from the admin UI instead of env (#264).
-- Check-in: manual lookup no longer misfires as a QR scan for queries over 20 characters — this now covers pressing Enter/Search after slowly typing a long name or email (not just the auto-submit debounce timer) and any single-event bulk insert into an empty field (paste, browser autofill/autocomplete, drag-and-drop, IME composition, voice dictation), in addition to the original mid-typing case; wedge auto-submit still requires burst-speed keystrokes arriving one character at a time, not just buffer length. Burst detection also now uses the input event's own timestamp instead of wall-clock time at handler execution, so a busy main thread (e.g. an unrelated scan's response resolving) can no longer misclassify a genuinely fast wedge scan as manual typing (#262).
-- Admin shell: entering an event from the events picker (or right after creating one) no longer re-fetches the whole events list and no longer flashes a blank spinner screen in place of the sidebar/topbar — the picker passes the already-loaded event along, so the event shell renders instantly; the passed-along event is consumed once and cleared from that history entry, so a later browser back/forward revisit still re-validates event access from the server instead of trusting a stale snapshot. Deep links and refreshes still resolve the event from the API as before (#274).
-- Reports: hourly admissions chart and peak hour bucket check-ins in the event timezone — previously shifted by the UTC offset for non-UTC events (#268).
-- Sidebar: unreleased lifecycle sections (Approval, Passes, Fulfilment, Post-event) render as plain disabled items — stale “Soon v0.4.9”-style release badges removed; placeholder pages drop internal jargon (#263).
-- New events seed default event items (gift bag, badge, headset) at creation, so Requirements → Event items is populated before the first check-in (#238).
-- Setup wizard step 1: Retry on failed check load, **Run checks again** after results, inline fix hints; single-column check list with status on the right (#223).
-- Setup wizard system check: four rows like mockup (Database includes migration status; no separate Migrations row).
-- Setup wizard steps 2–5: mockup parity — mail test row, branding logo zone/toasts, typed date picker, timezone list layout, ready screen footer; step labels no longer truncated (#243).
-- Setup wizard: restore last step after browser refresh; unsaved-refresh notice only when a dirty form was lost (saved mail/branding kept).
-- `POST /api/admin/setup/complete` requires passing system checks (409 `setup_not_ready` when checks fail).
-- Mail transport test: actionable admin error messages for TLS hostname mismatch, auth, and port mode (no hostnames in API responses) (#244).
-- Check-in: server-connected status moves to a compact page-header pill; full-width green banner only for connection problems (#234).
-- Check-in: persistent screen-reader live region announces connection recovery after offline/degraded states.
-- Check-in search fields: suppress password-manager autofill hints on scan bar and manual lookup (#231).
-- Check-in manual lookup: warning toast when search returns no attendees (#232).
+
+- Define the missing surface token, so modals and panels are no longer transparent ([#286](https://github.com/solarssk/admitto/pull/286))
+- Queue check-in scans while a previous scan is processing, instead of dropping keystrokes for the next attendee ([#277](https://github.com/solarssk/admitto/pull/277))
+- Stop `deploy/.env.example` placeholder values falsely locking Mail settings as managed by environment ([#278](https://github.com/solarssk/admitto/pull/278))
+- Stop manual lookup misfiring as a QR scan for queries over 20 characters ([#279](https://github.com/solarssk/admitto/pull/279))
+- Render the event shell instantly when entering an event from the picker ([#282](https://github.com/solarssk/admitto/pull/282))
+- Bucket the Reports hourly admissions chart and peak hour in the event timezone ([#272](https://github.com/solarssk/admitto/pull/272))
+- Show unreleased lifecycle sections in the sidebar as plain disabled items ([#273](https://github.com/solarssk/admitto/pull/273))
+- Seed default event items (gift bag, badge, headset) when an event is created ([#255](https://github.com/solarssk/admitto/pull/255))
+- Bring the setup wizard to mockup parity: system check retry and hints, steps 2 to 5, and restoring the last step after a refresh ([#242](https://github.com/solarssk/admitto/pull/242))
+- Require passing system checks for `POST /api/admin/setup/complete` (409 `setup_not_ready`) ([#242](https://github.com/solarssk/admitto/pull/242))
+- Show actionable errors for TLS hostname mismatch, authentication and port mode in the mail transport test ([#242](https://github.com/solarssk/admitto/pull/242))
+- Show the check-in server status as a compact header pill, with a full-width banner only for connection problems ([#235](https://github.com/solarssk/admitto/pull/235))
+- Announce connection recovery to screen readers in check-in ([#235](https://github.com/solarssk/admitto/pull/235))
+- Suppress password-manager autofill hints on the check-in search fields ([#233](https://github.com/solarssk/admitto/pull/233))
+- Show a warning toast when check-in manual lookup finds nobody ([#233](https://github.com/solarssk/admitto/pull/233))
 
 ## [0.4.11] - 2026-07-02
 
 ### Fixed
-- Redis rate-limit integration test: wait for fresh fixed window before asserting block (flaky `build-test` on `main` after v0.4.10)
+
+- Stabilise the Redis rate-limit block test across window boundaries ([#213](https://github.com/solarssk/admitto/pull/213))
 
 ## [0.4.10] - 2026-07-02
 
 ### Changed
-- Remove instance-superadmin ceiling: multiple active `superadmin@instance` assignments are allowed; OIDC group→superadmin grants are no longer capped at one. The dropped index was redundant with the Serializable `user.count()` guard in `POST /setup`; first-run bootstrap protection is unchanged.
-- Consolidate rate-limit factories into declarative policy registry (no behavior change)
-- Centralize MFA enroll rate-limit constants in `RATE_POLICIES`; add registry edge-case and wiring tests
-- Extract inline-only rate limits to `INLINE_RATE_LIMITS` (excluded from `RatePolicyName`; compile-time guard against `rateLimit()` misuse)
-- Remove unused SSE message variant and stale nginx metrics location; fix dangling ADR links in deploy docs
-- Docs: superadmin runbook for multiple instance admins and OIDC offboarding prerequisites (`security/SECURITY-CONTROLS.md`, `deploy/README.md`)
+
+- Remove the instance superadmin ceiling: allow several active `superadmin@instance` assignments, and stop capping OIDC group-to-superadmin grants at one ([#210](https://github.com/solarssk/admitto/pull/210))
+- Consolidate the rate-limit factories into a declarative policy registry, with no change in behaviour ([#200](https://github.com/solarssk/admitto/pull/200), [#202](https://github.com/solarssk/admitto/pull/202), [#203](https://github.com/solarssk/admitto/pull/203))
+- Remove an unused SSE message variant and a stale nginx metrics location, and fix dangling ADR links in the deploy docs ([#204](https://github.com/solarssk/admitto/pull/204))
+- Add a superadmin runbook for multiple instance admins and OIDC offboarding ([#211](https://github.com/solarssk/admitto/pull/211))
 
 ### Security
-- Fix event-settings GET authz-order oracle (404→403 for cross-org probing of non-existent events); add defense-in-depth `assertEventManageAccess` to `handlePatchEvent` handler body (route wrapper already enforced scope); reduce QR image cache TTL from 24h to 5min
-- Emergency CLI attendee export: enforce mode 0600 on overwrite; writable `emergency-exports` bind mount; reject `--out` under public `UPLOAD_DIR` or outside `EMERGENCY_EXPORT_DIR` when those env vars are set; reject `EMERGENCY_EXPORT_DIR` when it is a public alias under `UPLOAD_DIR` raw or realpath (including symlinked upload roots); require raw `--out` under raw `EMERGENCY_EXPORT_DIR` (not only canonical realpath); resolve symlinks before path checks; write via validated canonical path with `O_NOFOLLOW` (loop until full buffer is written)
+
+- Fix the event-settings GET authorization-order oracle (404 to 403), add `assertEventManageAccess` to the PATCH handler, and reduce the QR image cache TTL from 24 hours to 5 minutes ([#205](https://github.com/solarssk/admitto/pull/205))
+- Harden the emergency CLI attendee export paths: mode 0600, a writable `emergency-exports` mount, and rejection of `--out` under the public `UPLOAD_DIR`, outside `EMERGENCY_EXPORT_DIR` or through symlinks ([#209](https://github.com/solarssk/admitto/pull/209), [#208](https://github.com/solarssk/admitto/pull/208))
 
 ### Fixed
-- `POST /setup` maps Serializable transaction conflicts (`P2034`) to `409 already_initialized` when two first-run submissions race with different emails
-- `bootstrap-superadmin --force` recovery path works after removing the single-superadmin partial unique index
-- OIDC group-sync cannot revoke the last active instance superadmin (floor-guard with audit event `auth.oidc.superadmin_revoke_blocked`; Serializable transaction on active instance-superadmin revoke; inactive owners skip the floor check; retries `P2034` serialization losers so concurrent OIDC logins do not fail)
+
+- Map Serializable conflicts in `POST /setup` to `409 already_initialized` when two first-run submissions race ([#210](https://github.com/solarssk/admitto/pull/210))
+- Keep the `bootstrap-superadmin --force` recovery path working after the single-superadmin index was removed ([#210](https://github.com/solarssk/admitto/pull/210))
+- Stop OIDC group sync revoking the last active instance superadmin, and record `auth.oidc.superadmin_revoke_blocked` ([#210](https://github.com/solarssk/admitto/pull/210))
 
 ### Added
-- CLI: `admitto` emergency ops binary (`apps/cli`) — checkin admit/lookup, attendees export, mail retry-failed, auth bootstrap-superadmin/reset-mfa, sessions revoke/purge, retention run
-- Automated retention cron (auth sessions, mail delivery snapshots) and nightly pg_dump backup sidecar in deploy compose
+
+- Add the `admitto` emergency ops CLI (`apps/cli`): check-in admit and lookup, attendee export, mail retry, bootstrap-superadmin, reset-mfa, session revoke and purge, and retention run ([#207](https://github.com/solarssk/admitto/pull/207))
+- Add an automated retention cron and a nightly `pg_dump` backup sidecar to the deploy compose ([#206](https://github.com/solarssk/admitto/pull/206))
 
 ## [0.4.9] - 2026-07-02
 
 ### Added
-- Admin: Instance URL setting (Settings → General) for email logo absolute URLs when BASE_URL env is unset
-- Backend: live check-in SSE at `GET /api/checkin/events/:eventId/stream` (operator/admin `canPerformCheckIn` auth)
-- Backend: multiple email templates per event (`name`/`label`, CRUD under `/api/admin/events/:eventId/templates`)
-- Backend: bulk send `POST /api/admin/events/:eventId/send` with `templateId`, recipient filters, and `dryRun` recipient count
-- Backend: send batch status `GET /api/admin/events/:eventId/send/status/:batchId`
-- Backend: per-template test send `POST /api/admin/events/:eventId/templates/:templateId/test-send`
-- `EmailDelivery.template_id` foreign key to `MailTemplate` (delivery audit per template)
-- Admin SPA: `useEventStream` hook for live check-in SSE with reconnect and auth-error heuristic
-- Admin SPA: Check-in page live feed (prepend history, dedup, offline banner)
-- Admin SPA: Event overview optimistic `admitted_count` from SSE
-- Admin SPA: Communication page multi-template editor, bulk send dialog with dry-run and batch polling
+
+- Add an Instance URL setting (Settings, General) for absolute email logo URLs when `BASE_URL` is unset ([#195](https://github.com/solarssk/admitto/pull/195))
+- Add live check-in updates: an SSE stream at `GET /api/checkin/events/:eventId/stream`, a live feed on Check-in and an optimistic admitted count on Overview ([#190](https://github.com/solarssk/admitto/pull/190), [#191](https://github.com/solarssk/admitto/pull/191))
+- Add several email templates per event with CRUD under `/api/admin/events/:eventId/templates`, a per-template test send and a multi-template editor on Communication ([#190](https://github.com/solarssk/admitto/pull/190), [#191](https://github.com/solarssk/admitto/pull/191))
+- Add a bulk send API (`POST /api/admin/events/:eventId/send`) with template, recipient filters, a dry-run count and batch status, plus a bulk send dialog on Communication ([#190](https://github.com/solarssk/admitto/pull/190), [#191](https://github.com/solarssk/admitto/pull/191))
 
 ### Changed
-- Docs: align contributor roadmap in `AGENTS.md`, `README.md`, and `VERSIONING.md` (v0.5 ingest API → v0.6 Wallet → v0.7 RSVP); `AGENTS.md` points at `CHANGELOG.md` and the open GitHub milestone instead of a hardcoded active milestone
+
+- Align the contributor roadmap in `AGENTS.md`, `README.md` and `VERSIONING.md`, and point `AGENTS.md` at `CHANGELOG.md` and the open milestone ([#198](https://github.com/solarssk/admitto/pull/198))
 
 ### Fixed
-- Admin: corrupt uploaded logo files clear the upload value in LogoUploadZone and show an error; external HTTPS URLs keep the value for manual correction
-- Admin: attendee resend and bulk resend use DB instance URL for ticket links when BASE_URL env is unset
-- Instance URL validation rejects bare `?` or `#` delimiters (prevents malformed ticket and QR link paths)
-- Admin SPA: event overview reuses check-in TTL dedup map for SSE admits (no full clear on server refresh; TTL prune on poll keeps map bounded)
-- Admin SPA: communication page refetches inherited ticket template on each virtual-ticket selection (avoids stale legacy cache)
-- Admin SPA: communication page clears editor actions after delete when ticket fallback load fails (avoids targeting deleted template; re-select or create reloads editor)
-- Admin: revoke and restore pass from attendees list
-- Email templates (reminder and custom) can be deleted even after deliveries were sent (delivery log keeps rows; template reference cleared)
+
+- Clear the upload value and show an error when an uploaded logo file is corrupt ([#195](https://github.com/solarssk/admitto/pull/195))
+- Use the stored instance URL for ticket links in resend and bulk resend when `BASE_URL` is unset ([#195](https://github.com/solarssk/admitto/pull/195))
+- Reject bare `?` and `#` in the instance URL ([#196](https://github.com/solarssk/admitto/pull/196))
+- Fix the Overview SSE dedup memory and stale ticket template caching on Communication ([#193](https://github.com/solarssk/admitto/pull/193))
+- Revoke and restore a pass from the attendees list ([#194](https://github.com/solarssk/admitto/pull/194))
+- Allow deleting reminder and custom email templates after deliveries were sent ([#194](https://github.com/solarssk/admitto/pull/194))
 
 ## [0.4.8] - 2026-07-01
 
 ### Fixed
-- Event capacity: pass restore (`status: registered`) respects capacity limits; manual create and import share an advisory lock to prevent concurrent over-capacity writes
-- PATCH reactivation from `cancelled` or `revoked` to `registered` enforces capacity the same way as manual create
-- Event overview `attendee_count` excludes revoked attendees (aligned with capacity enforcement)
-- Event overview `admitted_count` uses the same active scope as `attendee_count` (excludes revoked/cancelled)
-- Event capacity counts exclude `cancelled` as well as `revoked` passes
-- CSV import capacity override (`?force=1`) records `forced: true` in `attendees_imported` audit metadata
-- Import overwrite-only commits allowed when `toCreate === 0` even if event is already over capacity
-- Event overview email card surfaces `email_bounced` separately from failed deliveries
-- Branding upload validates magic bytes and uses async filesystem I/O
+
+- Enforce event capacity on pass restore, reactivation and manual create, share an advisory lock between create and import, exclude cancelled passes, and allow overwrite-only imports when over capacity ([#186](https://github.com/solarssk/admitto/pull/186))
+- Exclude revoked and cancelled attendees from the Overview `attendee_count` and `admitted_count` ([#186](https://github.com/solarssk/admitto/pull/186))
+- Record `forced: true` in the audit metadata when a CSV import overrides capacity with `?force=1` ([#186](https://github.com/solarssk/admitto/pull/186))
+- Show `email_bounced` separately from failed deliveries on the Overview email card ([#186](https://github.com/solarssk/admitto/pull/186))
+- Validate magic bytes and use async filesystem I/O for branding uploads ([#186](https://github.com/solarssk/admitto/pull/186))
 
 ### Added
-- Admin: logo upload zone in setup wizard (server upload or external HTTPS URL)
-- Admin: bounce alert on Communication page with link to delivery log
-- Backend: `saveEventUpload` helper for event-scoped branding paths (`/uploads/{orgId}/events/{eventId}/…`; no HTTP endpoint yet)
-- Branding save accepts validated `/uploads/…` logo paths in addition to HTTPS URLs
-- Email template render absolutizes `/uploads/…` branding assets using `BASE_URL` (required for logo in outbound mail)
-- Admin: revoke and restore pass on attendee detail (PATCH `status`, capacity-aware restore)
-- Admin: CSV import shows `event_full` capacity banner; superadmin can override with force commit
-- Admin: TOTP enrollment QR code on Account page
-- Admin: device label pre-filled from browser user agent
-- Admin: sidebar pin/unpin (desktop), lifecycle nav labels (Passes, Post-event), Administration section
-- Event capacity enforcement on manual attendee create and CSV import commit: returns `409 event_full` when the limit would be exceeded; instance superadmin may override with `?force=1` (audited)
-- `PATCH /api/admin/events/:eventId/attendees/:id` supports `status: registered | revoked` with `pass_revoked` / `pass_restored` attendee action log entries
-- Local branding upload API: `POST /api/admin/uploads` (PNG/JPG/WebP, max 2 MB, superadmin-only) and `GET /uploads/*` static serve; Docker Compose volume for `./uploads`
-- Event overview: separate `email_bounced` count distinct from `email_failed` (failed + rejected only)
-- Attendee status `revoked` in database (migration) — revoked passes are not admittable at check-in
+
+- Add a logo upload zone to the setup wizard (server upload or external HTTPS URL) ([#188](https://github.com/solarssk/admitto/pull/188))
+- Add a bounce alert with a link to the delivery log on the Communication page ([#188](https://github.com/solarssk/admitto/pull/188))
+- Add the branding upload API (`POST /api/admin/uploads`, PNG, JPG or WebP up to 2 MB, superadmin only) with `GET /uploads/*` and a Compose volume ([#186](https://github.com/solarssk/admitto/pull/186), [#188](https://github.com/solarssk/admitto/pull/188))
+- Let admins revoke and restore a pass from attendee detail, with a `revoked` attendee status that blocks admission ([#187](https://github.com/solarssk/admitto/pull/187), [#186](https://github.com/solarssk/admitto/pull/186))
+- Return `409 event_full` on manual create and CSV import over capacity, show an `event_full` banner, and let a superadmin override with `?force=1` ([#186](https://github.com/solarssk/admitto/pull/186), [#187](https://github.com/solarssk/admitto/pull/187))
+- Show the TOTP enrollment QR code on the Account page ([#187](https://github.com/solarssk/admitto/pull/187))
+- Pre-fill the device label from the browser user agent ([#187](https://github.com/solarssk/admitto/pull/187))
+- Add sidebar pin and unpin on desktop, lifecycle nav labels and an Administration section ([#187](https://github.com/solarssk/admitto/pull/187))
 
 ## [0.4.7] - 2026-06-30
 
 ### Security
-- Rate-limit admin export endpoints: PII export 5/h, attendees/reports export 10/h per user per route (global across events)
+
+- Rate-limit the admin export endpoints: PII export 5 an hour, attendees and reports export 10 an hour per user and route ([#181](https://github.com/solarssk/admitto/pull/181))
 
 ### Added
-- Bulk **Send tickets** on the attendees list: `POST .../attendees/bulk-resend` with `target` `unsent` (default, `purpose: initial` with atomic claim) or `all` (resend, max 500 per request); rate limit 3 requests per 10 minutes per admin; response reports provider-accepted (`queued`), `skipped`, and `failed` counts; confirmation modal in admin SPA; audit via `mail_bulk_resend` in attendee action log
-- CSV import preview: first 20 valid rows returned as `sampleRows` with `attributeFieldLabels`; admin Import page shows a scrollable "Data preview" table before commit (dynamic optional columns + event custom attributes)
-- Requirements v2 (admin): Tabler icon picker on event items (`EventItem.icon`); contents metadata (`type`, `required`, `options`); ops-config flags `allow_manual_lookup` and `auto_advance_on_valid` (defaults true)
-- Check-in runtime: enforces `allow_manual_lookup` (403 on lookup API; UI hides manual lookup and blocks short-query lookup); `auto_advance_on_valid` clears scan state after VALID admission; `GET /api/checkin/ops-config`; item icons on AttendeeCard (Tabler)
-- Contents metadata runtime: enforce `type`/`select`/`boolean`/`required`/`options` on attendee create and patch; type-aware admin fields; required markers and formatted values on check-in item detail
-- CSV import: dynamic event-item attribute columns (`source_field` slugs) validated and stored in `custom_data`; template includes configured fields; export-style label headers accepted on re-import
-- Per-user preferred locale (`User.preferred_locale`) with date-format picker on Account page; admin SPA date displays respect the stored locale via module-level locale store
-- Per-event IANA timezone on events — create/settings/wizard picker, reports/exports/mail preview use event timezone
-- Event overview dashboard at `/admin/events/:id/overview` with admission rate, email delivery stats, event countdown, and dedicated `GET /api/admin/events/:eventId/overview` endpoint
+
+- Add bulk "Send tickets" to the attendees list (`POST .../attendees/bulk-resend`, `unsent` or `all`, up to 500 per request, 3 requests per 10 minutes) ([#180](https://github.com/solarssk/admitto/pull/180))
+- Show a "Data preview" of the first 20 valid rows before a CSV import commit ([#179](https://github.com/solarssk/admitto/pull/179))
+- Add icons, contents metadata and the `allow_manual_lookup` and `auto_advance_on_valid` flags to Requirements event items ([#171](https://github.com/solarssk/admitto/pull/171))
+- Enforce the check-in ops flags at the door and show item icons on the attendee card (`GET /api/checkin/ops-config`) ([#172](https://github.com/solarssk/admitto/pull/172))
+- Enforce contents metadata (type, select, boolean, required, options) on attendee create and patch, and on check-in item detail ([#176](https://github.com/solarssk/admitto/pull/176))
+- Accept dynamic event-item attribute columns (`source_field` slugs) in CSV import, with matching template and re-import support ([#177](https://github.com/solarssk/admitto/pull/177))
+- Add a per-user preferred locale with a date-format picker on the Account page ([#161](https://github.com/solarssk/admitto/pull/161))
+- Add a per-event IANA timezone to event creation, settings and the wizard, used by reports, exports and mail previews ([#160](https://github.com/solarssk/admitto/pull/160))
+- Add an event overview dashboard at `/admin/events/:id/overview` with admission rate, email delivery stats and a countdown ([#159](https://github.com/solarssk/admitto/pull/159))
 
 ### Fixed
-- Event settings PATCH: `audit_failed` 500 uses `{ error }` shape
-- Communication template editor: cursor restored after inserting placeholders into subject/body fields
-- Event overview: auto-refresh stats every 30s during event
-- CSV import: ignore `source_field` slugs that collide with standard import columns (`email`, `company`, etc.); event item contents API and admin form reject those reserved slugs on save
-- CSV import: validate merged `custom_data` at commit (including overwrite with existing attributes); return 400 when event attribute config has conflicting select options
-- Settings tabs preserve in-progress panel state (drafts, filters) when switching tabs without eager-loading every panel on first visit
+
+- Return an `{ error }` body for the `audit_failed` 500 on event settings PATCH ([#181](https://github.com/solarssk/admitto/pull/181))
+- Restore the cursor after inserting placeholders in the template editor ([#181](https://github.com/solarssk/admitto/pull/181))
+- Refresh the Overview stats every 30 seconds during an event ([#181](https://github.com/solarssk/admitto/pull/181))
+- Ignore import `source_field` slugs that collide with standard columns, and reject such slugs in event items ([#177](https://github.com/solarssk/admitto/pull/177))
+- Validate merged `custom_data` at import commit, and return 400 for conflicting select options ([#177](https://github.com/solarssk/admitto/pull/177))
+- Preserve Settings tab drafts and filters when switching tabs ([#178](https://github.com/solarssk/admitto/pull/178))
 
 ### Changed
-- Settings: replace mixed SPA/SSR horizontal tabs with four grouped in-app tabs (General, Security, Archiving, Identity); OIDC and Cloudflare Access remain server-rendered manage links
-- Admin timestamp display clarity: event operational times use event timezone with abbreviation; admin/system times (audit log, mail deliveries, sessions, archived_at) always show UTC with label
-- `client-ip` / healthz rate-limit helpers import `resolveTrustProxy` from lightweight `env-flags` module (avoids flaky CI load of `@admitto/auth` barrel → `@admitto/tickets` → Prisma singleton)
-- Shared `@admitto/shared` locale whitelist (`SUPPORTED_LOCALE_TAGS`) used by API validation and Account picker; invalid DB values sanitized on read
-- Audit log date filters use UTC calendar-day bounds (aligned with UTC table display)
-- Existing events migrated to UTC — update timezone in Event Settings after deploy
-- Known limitation: Account page TOTP enrollment still shows an `otpauth://` URI string (HTML `/mfa/enroll` shows QR; SPA QR deferred to v0.5)
+
+- Group Settings into four in-app tabs: General, Security, Archiving and Identity ([#178](https://github.com/solarssk/admitto/pull/178))
+- Show event times in the event timezone with an abbreviation, and admin and system times in UTC with a label ([#161](https://github.com/solarssk/admitto/pull/161))
+- Import `resolveTrustProxy` from a lightweight module in the client-ip and healthz rate-limit helpers, avoiding a flaky CI load ([#171](https://github.com/solarssk/admitto/pull/171))
+- Add a shared locale whitelist (`SUPPORTED_LOCALE_TAGS`) for API validation and the Account picker ([#161](https://github.com/solarssk/admitto/pull/161))
+- Use UTC calendar-day bounds for the Audit log date filters ([#161](https://github.com/solarssk/admitto/pull/161))
+- Migrate existing events to UTC; set their timezone in Event Settings after deploying ([#160](https://github.com/solarssk/admitto/pull/160))
+- Known limitation: TOTP enrollment on the Account page shows an `otpauth://` URI instead of a QR code
 
 ## [0.4.6] - 2026-06-27
 
 ### Changed
-- Admin and operator check-in: desktop camera renders inline in the main panel (stats sidebar stays visible); mobile keeps fullscreen camera overlay; operator mobile autostart with "Use camera" button to reopen after close; desktop inline shows lookup errors in the scan bar area and renders full AttendeeCard (items, notes, undo) below the camera preview
-- Attendee note modal includes a one-line reminder not to record medical, dietary, or other sensitive personal data
-- Staff SPA Content-Security-Policy allows HTTPS branding logo URLs in setup wizard and settings preview (aligned with existing `font-src https:` for theme fonts)
-- Privacy docs: retention tables distinguish product-automated cleanup (sessions, email snapshots) from operator-controlled data (IP logs, attendee lists); OIDC IdP group membership documented; attendee erasure documented as API-only (no SPA delete button)
-- `SECURITY.md`: Trivy HIGH remediation SLA (30 days when fix available); blocking HIGH gate deferred to v1.0
-- `deploy/README.md`: container startup documents auth-state and email snapshot retention purge steps
-- README: MFA first-login flow notes backup-code acknowledgment is persisted in the database
+
+- Render the check-in camera inline on desktop with the stats sidebar visible, and keep the fullscreen overlay on mobile ([#145](https://github.com/solarssk/admitto/pull/145))
+- Add a one-line reminder not to record sensitive personal data to the attendee note modal, linked to the textarea for screen readers ([#158](https://github.com/solarssk/admitto/pull/158))
+- Allow HTTPS branding logo URLs in the staff SPA Content-Security-Policy for the setup wizard and settings preview ([#158](https://github.com/solarssk/admitto/pull/158))
+- Update the privacy, security and deploy docs: retention tables, OIDC group membership, the Trivy HIGH remediation SLA and the startup purge steps ([#158](https://github.com/solarssk/admitto/pull/158))
 
 ### Added
-- Account self-service at `/account` for all signed-in staff: profile, password change (re-auth), TOTP enrollment/reset, and session management (`/api/account/*`)
-- Nullable `User.password_hash` for OIDC-only accounts (additive migration; existing rows unchanged)
-- IAM Users & roles page at `/admin/users`: staff user table (search, filters, pagination), invite-user modal, edit-user modal with role management, reset MFA/password/sessions, and role-assignments tab
-- `GET/POST/PATCH /api/admin/users` and role grant/revoke, reset-2fa, reset-password, revoke-sessions endpoints with anti-lockout guards and audit logging (superadmin; org admin may grant/revoke operator@event only)
-- `GET /api/admin/role-assignments` for non-instance role grants
-- `must_change_password` on `User` with server-rendered `/change-password` flow after login or admin password reset
-- First-run setup: server-rendered `/setup` for empty-database superadmin bootstrap; 5-step React onboarding wizard (system checks, mail, org branding, first event, completion) gated by `setup_complete` in `SystemSettings`
-- Settings audit log viewer: superadmin-only paginated table of `AdminAuditLog` entries with action-type and date filters (`GET /api/admin/audit-log`)
-- Event reports page at `/admin/events/:id/reports`: admission stats, hourly CSS chart, ticket-type breakdown, paginated admission log, CSV export, and printable HTML/PDF export via `GET /api/admin/events/:eventId/reports` and `/reports/export`; exports write `reports_exported` to the event audit log
-- Admin attendee erasure now has a GDPR-ready `DELETE /api/admin/events/:eventId/attendees/:id` path that removes dependent delivery, wallet, and check-in rows in one transaction while preserving an event-scoped audit entry (PRIV-001, PRIV-004)
+
+- Add Account self-service at `/account`: profile, password change, TOTP enrollment and reset, and session management (`/api/account/*`) ([#141](https://github.com/solarssk/admitto/pull/141))
+- Make `User.password_hash` nullable for OIDC-only accounts ([#141](https://github.com/solarssk/admitto/pull/141))
+- Add the Users & roles page at `/admin/users` with invite, edit, role management, resets and a role-assignments tab, backed by `/api/admin/users` ([#142](https://github.com/solarssk/admitto/pull/142))
+- Add `must_change_password` with a server-rendered `/change-password` flow after login or an admin password reset ([#142](https://github.com/solarssk/admitto/pull/142))
+- Add first-run setup: a server-rendered `/setup` for the first superadmin and a 5-step onboarding wizard gated by `setup_complete` ([#140](https://github.com/solarssk/admitto/pull/140))
+- Add a superadmin-only Audit log viewer in Settings (`GET /api/admin/audit-log`) ([#138](https://github.com/solarssk/admitto/pull/138))
+- Add the event Reports page at `/admin/events/:id/reports` with stats, an hourly chart, ticket type breakdown, admission log, and CSV and printable export ([#139](https://github.com/solarssk/admitto/pull/139))
+- Add `DELETE /api/admin/events/:eventId/attendees/:id` for GDPR erasure, removing dependent rows in one transaction and keeping an audit entry ([#153](https://github.com/solarssk/admitto/pull/153))
 
 ### Fixed
-- Check-in camera result panel shows the actual admission timestamp on repeat scans instead of a hardcoded "Entered earlier today" subtitle
-- Attendee note modal privacy hint is linked to the textarea via `aria-describedby` for screen readers
-- Ops health/readiness rate limiters import audit logging via `@admitto/auth/audit` so unit tests do not load the full auth barrel (flaky `PrismaClient` init in CI)
-- Account page (`/account`): profile Save disabled when unchanged; live password-confirm mismatch feedback; Spinner loading states; SPA `Link` navigation to account from staff/operator shells
-- `@admitto/auth` `runInTransaction` no longer value-imports `PrismaClient`, avoiding flaky `healthz-rate-limit` unit tests when the auth barrel loads before `prisma generate`
-- First-run `POST /setup` bootstrap race: Serializable transaction re-checks empty user table so only one superadmin can be created
-- IAM anti-lockout guards (`last_superadmin` on role revoke and superadmin deactivation) run atomically in Serializable transactions; idempotent role DELETE returns 204 instead of 500 when the assignment is already gone; 404 when the assignment exists under a different user id in the URL
-- Setup wizard no longer bypassed on `/operator` — `setup_complete` included on `/api/auth/me` for instance superadmins
-- Event slug helper truncates before trimming trailing dashes; wizard step 4 disables Continue when slug is empty and uses max slug length 80 (aligned with API and CreateEventModal)
-- DB partial unique index enforces at most one instance-scoped superadmin `RoleAssignment`
-- Admin mutations that write `AdminAuditLog` now persist audit rows in the same database transaction as the primary change (users IAM routes, mail settings PUT); audit failure rolls back the mutation instead of leaving inconsistent state (BE-001, BE-002)
-- Concurrent attendee import commits for the same event are serialized with a PostgreSQL advisory lock so duplicate bulk audit rows cannot be written (BE-004)
-- Agency `public_ref` backfill processes attendees in bounded batches instead of loading all rows at once (BE-005)
-- User deactivation revokes sessions after the Serializable user-update transaction commits, avoiding serialization conflicts with concurrent `last_seen_at` updates (Bugbot)
-- Import commit transaction timeout raised to 120s so a second commit can wait on the per-event advisory lock without aborting mid-queue (Bugbot)
-- `Attendee.rsvp_status` now has a database CHECK constraint matching the application enum, preventing invalid RSVP states from raw SQL or future scripts (DATA-002)
-- `OidcRoleGrant` now uses partial unique indexes for scoped and instance grants, correctly enforcing uniqueness when `scope_id` is `NULL` (DATA-004)
-- Attendee, check-in, and event item state status columns now have database CHECK constraints matching persisted application values (DATA-003)
-- Destructive migration scanning now flags `DELETE FROM` DML in new Prisma migrations unless explicitly approved (DATA-006)
-- Staff account creation audit metadata and import CLI skipped-row output now redact email addresses, and privacy/DSAR docs now document attendee-note special-category risk plus manual erasure FK ordering (PRIV-001, PRIV-002, PRIV-003, PRIV-004, PRIV-006)
-- Container startup now wraps the agency `public_ref` backfill in a 120-second timeout, and PR-Agent comments are limited to collaborators/members/owners to prevent public API-credit drain (INFRA-002, INFRA-003)
-- Container startup now attempts a best-effort purge of expired/revoked `Session` and `TrustedDevice` rows after migrations/backfills with a 120-second timeout; operators can also run `npm run cli -w @admitto/auth -- purge-auth-retention --dry-run` to preview counts, reducing stale auth-state retention (DATA-001, PRIV-005)
-- Container startup now nullifies stale `EmailDelivery.rendered_html` / `rendered_subject` snapshots on terminal deliveries older than 60 days (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`); operators can preview counts with `npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run` (DATA-005, PRIV-001)
+
+- Show the real admission time on repeat scans in the check-in camera result panel ([#145](https://github.com/solarssk/admitto/pull/145))
+- Import audit logging in the ops health and readiness rate limiters from `@admitto/auth/audit`, to avoid a flaky CI load
+- Polish the Account page: Save disabled when unchanged, live password-confirm feedback and spinner states ([#144](https://github.com/solarssk/admitto/pull/144))
+- Stop `runInTransaction` value-importing `PrismaClient`, which made `healthz-rate-limit` unit tests flaky ([#144](https://github.com/solarssk/admitto/pull/144))
+- Re-check the empty user table in a Serializable transaction on first-run `POST /setup`, so only one superadmin can be created ([#140](https://github.com/solarssk/admitto/pull/140))
+- Run the IAM anti-lockout guards atomically in Serializable transactions, and make an idempotent role DELETE return 204 ([#143](https://github.com/solarssk/admitto/pull/143))
+- Stop the setup wizard being bypassed on `/operator` ([#140](https://github.com/solarssk/admitto/pull/140))
+- Truncate the event slug before trimming dashes, and cap wizard step 4 at 80 characters ([#140](https://github.com/solarssk/admitto/pull/140))
+- Add a partial unique index allowing at most one instance-scoped superadmin `RoleAssignment` ([#140](https://github.com/solarssk/admitto/pull/140))
+- Persist `AdminAuditLog` rows in the same transaction as the change they describe ([#148](https://github.com/solarssk/admitto/pull/148))
+- Serialise concurrent attendee import commits per event with an advisory lock, and raise the commit timeout to 120 seconds ([#148](https://github.com/solarssk/admitto/pull/148))
+- Batch the agency `public_ref` backfill instead of loading all attendees at once ([#148](https://github.com/solarssk/admitto/pull/148))
+- Revoke sessions after the user-update transaction commits when a user is deactivated ([#148](https://github.com/solarssk/admitto/pull/148))
+- Add a database CHECK constraint for `Attendee.rsvp_status` ([#149](https://github.com/solarssk/admitto/pull/149))
+- Use partial unique indexes for `OidcRoleGrant` scoped and instance grants ([#150](https://github.com/solarssk/admitto/pull/150))
+- Add CHECK constraints to the attendee, check-in and event item state status columns, and flag `DELETE FROM` in new migrations ([#151](https://github.com/solarssk/admitto/pull/151))
+- Redact emails in staff account creation audit metadata and import CLI skipped-row output, and document the attendee-note risk and erasure FK order ([#152](https://github.com/solarssk/admitto/pull/152))
+- Wrap the startup `public_ref` backfill in a 120-second timeout, and limit PR-Agent comments to collaborators, members and owners ([#154](https://github.com/solarssk/admitto/pull/154))
+- Purge expired and revoked `Session` and `TrustedDevice` rows at container startup, with `purge-auth-retention --dry-run` to preview ([#155](https://github.com/solarssk/admitto/pull/155))
+- Nullify stale `EmailDelivery` rendered snapshots older than 60 days at startup (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) ([#157](https://github.com/solarssk/admitto/pull/157))
 
 ### Security
-- Forced password change is now enforced as a dedicated `change_password_required` session stage: a user whose password was reset by an admin cannot reach any protected route (API or UI) until they set a new password — the previous `next: change_password` hint was a UI directive only and could be ignored by any HTTP client (IAM-001)
-- Backup recovery codes must be acknowledged before a full session is granted, even after a fresh login or when the completion request lands on a different process: acknowledgment is now persisted on `UserMfaMethod` (`backup_codes_acknowledged_at`) instead of an in-memory stash, closing a bypass where a returning user could skip saving recovery codes (IAM-002)
-- Forced password-change form now enforces the same 12-character minimum as all other self-set passwords (was 8) (IAM-003)
-- Granting `superadmin@instance` to a second user now returns HTTP 409 `single_superadmin_limit` instead of an unhandled 500 (IAM-004)
-- Known limitation: OIDC group→role mappings are fully reconciled at OIDC login only; deployments using OIDC-managed admin/superadmin roles should set admin session TTL to 8h or less and follow the documented offboarding runbook (accepted risk, IAM-005)
-- Attendee CSV export now uses the shared CSV formula-injection sanitizer (covers newline-prefixed formulas and whitespace-padded `=`) across attendee, event-settings PII, and reports exports (SEC-001)
-- Printable HTML/PDF event report export now sends a restrictive Content-Security-Policy header (SEC-003)
-- `EmailDelivery.error` sanitization now redacts URLs (e.g. Power Automate webhooks) before persistence (BE-006)
-- REVOKED check-in audit rows are written inside a transaction for consistency with other check-in paths (BE-003)
-- Known limitation: automated post-event attendee PII purge deferred to v1.0 — use Attendees export + per-attendee `DELETE` API (no SPA delete button yet)
-- Known limitation: OIDC group→role reconciliation runs at OIDC login only — shorten admin session TTL and follow offboarding guidance in `security/SECURITY-CONTROLS.md`
-- Known limitation: Account page TOTP enrollment shows an `otpauth://` URI string; HTML `/mfa/enroll` shows a QR code — SPA QR deferred to v0.4.7
-- Known limitation: ticket token may appear in server access logs when operators open ticket URLs — accepted risk; control via reverse-proxy log retention
+
+- Enforce a forced password change as a `change_password_required` session stage ([#146](https://github.com/solarssk/admitto/pull/146))
+- Persist backup-code acknowledgment (`backup_codes_acknowledged_at`) before a full session is granted ([#146](https://github.com/solarssk/admitto/pull/146))
+- Require 12 characters in the forced password-change form, up from 8 ([#146](https://github.com/solarssk/admitto/pull/146))
+- Return 409 `single_superadmin_limit` instead of 500 when a second `superadmin@instance` is granted ([#146](https://github.com/solarssk/admitto/pull/146))
+- Known limitation: OIDC group-to-role mappings are reconciled at OIDC login only; set the admin session TTL to 8 hours or less and follow the offboarding runbook ([#156](https://github.com/solarssk/admitto/pull/156))
+- Use the shared CSV formula-injection sanitizer in attendee, event-settings PII and reports exports ([#147](https://github.com/solarssk/admitto/pull/147))
+- Send a restrictive Content-Security-Policy on the printable event report export ([#147](https://github.com/solarssk/admitto/pull/147))
+- Redact URLs from `EmailDelivery.error` before it is stored ([#148](https://github.com/solarssk/admitto/pull/148))
+- Write REVOKED check-in audit rows inside a transaction ([#148](https://github.com/solarssk/admitto/pull/148))
+- Known limitation: the post-event attendee personal data purge is not automated; use Attendees export and the per-attendee `DELETE` API ([#158](https://github.com/solarssk/admitto/pull/158))
+- Known limitation: TOTP enrollment on the Account page shows an `otpauth://` URI instead of a QR code ([#158](https://github.com/solarssk/admitto/pull/158))
+- Known limitation: the ticket token may appear in server access logs when operators open ticket URLs (accepted risk); limit reverse-proxy log retention ([#158](https://github.com/solarssk/admitto/pull/158))
 
 ## [0.4.5] - 2026-06-24
 
