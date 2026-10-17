@@ -141,6 +141,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   unknown_custom_data_field: "Unknown custom field.",
   unsupported_file_type: "Unsupported file type. Upload a PNG, JPG, or WebP image.",
   "unsupported file type": "Unsupported file type. Upload a .csv or .xlsx file.",
+  "unsupported file encoding":
+    "This file is saved in a format Admitto cannot read, for example Unicode Text. Save it again as CSV UTF-8 and upload it.",
   validation_failed: "Check the form and try again.",
   verification_failed: "Could not verify the passkey/security key. Try again.",
   webauthn_disabled: "Passkeys and security keys are turned off for this instance. Ask an administrator to enable them.",

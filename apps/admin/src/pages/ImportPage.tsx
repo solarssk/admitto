@@ -187,7 +187,8 @@ function importApiErrorToast(err: unknown): { message: string; duration?: number
   const duration =
     hasApiErrorCode(err, "file too large") ||
     hasApiErrorCode(err, "too many rows") ||
-    hasApiErrorCode(err, "invalid file content")
+    hasApiErrorCode(err, "invalid file content") ||
+    hasApiErrorCode(err, "unsupported file encoding")
       ? 7000
       : undefined;
   return { message, duration };

@@ -154,6 +154,8 @@ Restoring a revoked attendee checks the event's capacity limit again, the same a
 |---|---|
 | The file must be `.csv` or `.xlsx`, up to 5 MB | "Unsupported file type. Upload a .csv or .xlsx file." / "File exceeds the 5 MB limit." |
 | The file content is checked against its real format, not just its extension | "The file could not be read. Check that it is a valid CSV or XLSX." |
+| A CSV file is UTF-8 or Windows-1250 text. A file saved as UTF-16 (Excel "Unicode Text"), or with a NUL character, is refused | "This file is saved in a format Admitto cannot read, for example Unicode Text. Save it again as CSV UTF-8 and upload it." |
+| A CSV file that is not valid UTF-8 is read as Windows-1250 | A warning in the preview: "This file is not saved as UTF-8, so Admitto read it as Windows-1250. Check that names with accented letters look right in the sample rows. If they do not, save the file as CSV UTF-8 and upload it again." |
 | Up to 50,000 data rows per file | "File exceeds the row limit. Split the file and import in parts." |
 | A row needs a first name, a last name and a valid, non-empty email | "Both first_name and last_name are required." / "Missing email." / "Invalid email: ..." |
 | The same email, agency ID or QR payload can't appear twice **within one file** | "Duplicate email in file: ..." (and similarly for the others) |
