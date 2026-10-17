@@ -49,7 +49,8 @@ If a file that looks shorter is refused for too many rows:
 
 1. Delete the sheets you do not need.
 2. Delete the unused rows and columns below and beside the data. Delete them, do not only clear them.
-3. Save the file and upload it again.
+3. Save the file.
+4. Upload it again.
 
 ## Matching and duplicates
 
