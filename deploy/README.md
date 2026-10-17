@@ -304,12 +304,27 @@ Measured with the official Node 24 image:
    - A production deploy must use a real provider (default in `.env.example`: `smtp`).
    - If `EMAIL_PROVIDER=export_only` slips into production anyway, boot logs a warning but does not exit. Mail sends fail at runtime until a real provider is configured.
 
-3. Validate, prepare the host directories, start the stack and check it:
+3. Validate the configuration:
 
    ```bash
    ./validate-env.sh
+   ```
+
+4. Prepare the host directories:
+
+   ```bash
    ./scripts/init-host-dirs.sh
+   ```
+
+5. Start the stack:
+
+   ```bash
    docker compose up -d --build
+   ```
+
+6. Check that the app answers:
+
+   ```bash
    curl -sf http://127.0.0.1:8080/healthz
    ```
 
@@ -516,10 +531,10 @@ cd deploy
 2. `prisma migrate deploy` - idempotent schema migrations (automatic; operators never run this by hand)
 3. Idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-- **`app`** execs `node apps/web/dist/src/index.js`.
+- **`app`** execs `node apps/web/dist/src/index.js` only.
   - It runs no migration logic and no retention on boot.
   - It has no filesystem access to backup dumps.
-  - When `MAXMIND_LICENSE_KEY` is set, it first refreshes the GeoIP dataset (see [GeoIP dataset](#geoip-dataset-your-own-maxmind-license-key-optional)).
+  - Before it execs, when `MAXMIND_LICENSE_KEY` is set, the entrypoint refreshes the GeoIP dataset (see [GeoIP dataset](#geoip-dataset-your-own-maxmind-license-key-optional)).
 - **`worker`** (same image, `command: ["worker"]` → `admitto worker`) runs:
   - product retention (auth sessions and trusted devices, mail delivery snapshots, security audit log, in-app notification history);
   - bounce ingest and mail drain;
