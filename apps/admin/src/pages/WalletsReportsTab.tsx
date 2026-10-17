@@ -16,7 +16,7 @@ import {
 import { Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { EventWalletReportsResponse } from "../api/types.js";
-import { viewerLocalTime } from "../utils/event-dates.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 import {
   preventFocusRing,
@@ -155,7 +155,7 @@ const PROVIDER_STATE_COLORS: Record<ProviderStateKey, string> = {
  * wondering why a number looks stale, so it still lives behind a hover rather than competing for
  * attention with the title on every view. */
 function syncedHint(syncedAt: string | null): string {
-  const label = syncedAt ? `Synced at ${viewerLocalTime(syncedAt)}` : "Not synced yet";
+  const label = syncedAt ? `Synced at ${formatUtcDateTime(syncedAt)}` : "Not synced yet";
   // Generic "each enabled wallet platform", not "Apple/Google" - registration_checked_at is one
   // shared timestamp covering whichever platforms the event actually offers, Samsung included now
   // that this tab reads its real registration data too (CodeRabbit review).
@@ -177,7 +177,7 @@ function syncedHint(syncedAt: string | null): string {
  * blanket "Synced at" would repeat exactly the false confidence this hint exists to dispel (bot
  * review, a second finding on the same hint). */
 function passValidityHint(syncedAt: string | null): string {
-  const label = syncedAt ? `Most recently checked at ${viewerLocalTime(syncedAt)}` : "No pass checked yet";
+  const label = syncedAt ? `Most recently checked at ${formatUtcDateTime(syncedAt)}` : "No pass checked yet";
   return `${label} (the most recently checked pass, not all of them). Void/Restore is instant, but the wallet service voiding a pass on its own is only caught by the next sync or a manual Refresh - skipped for archived events.`;
 }
 

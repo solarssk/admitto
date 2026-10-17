@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { makeOrgAdminAssignment, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const loadAttendeeDetailData = vi.fn();
 const addAttendeeNote = vi.fn();
@@ -63,6 +64,13 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     updateAttendeeNote: (...args: unknown[]) => updateAttendeeNote(...args),
     deleteAttendeeNote: (...args: unknown[]) => deleteAttendeeNote(...args),
   };
+});
+
+// The zone the viewer's browser reports. The time of a note must not depend on it.
+let mockViewerZone = "Europe/Warsaw";
+vi.mock("../../src/utils/event-dates.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/utils/event-dates.js")>();
+  return { ...actual, getBrowserTimeZone: () => mockViewerZone };
 });
 
 function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
@@ -861,5 +869,24 @@ describe("AttendeeDetailPage — Notes tab", () => {
       expect((await screen.findByRole("alert")).textContent).toBe("Could not delete note.");
       expect(screen.getByText("Delete this note?")).toBeTruthy();
     });
+  });
+});
+
+describe("AttendeeDetailPage — time of a note", () => {
+  beforeEach(() => setPreferredLocale("en-GB"));
+  afterEach(() => {
+    setPreferredLocale(null);
+    mockViewerZone = "Europe/Warsaw";
+  });
+
+  // A note has no stored author zone, so its time is UTC: the same text wherever the viewer is.
+  it.each(["Pacific/Honolulu", "Asia/Kolkata", "Europe/Warsaw"])("shows the time in UTC with the viewer's browser in %s", async (viewerZone) => {
+    mockViewerZone = viewerZone;
+    mockLoad(baseDetail({ notes: [makeNote({ created_at: "2026-06-01T09:00:00.000Z" })] }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    expect(within(notesList()).getByText("01 Jun 2026, 09:00 UTC")).toBeTruthy();
   });
 });

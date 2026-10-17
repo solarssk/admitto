@@ -10,6 +10,7 @@ Rules for the staff app in `apps/admin`. [apps/admin/AGENTS.md](../../apps/admin
 | ...on a card list, the delivery log, a record modal, a Reports tab, the Attendees list, the events picker, the attendee page | [loading-lists-and-reports.md](loading-lists-and-reports.md) |
 | ...on the send panels, Add attendee, Import, the setup wizard, the custom field editor, a lookup of options | [loading-flows-and-dialogs.md](loading-flows-and-dialogs.md) |
 | Change what a screen shows, in any state (placeholder, error, empty, loaded) | [readability.md](readability.md) |
+| Show a time: a timestamp, a "last updated", a "Today 14:05" | [time-display.md](time-display.md) |
 | Add a component, dropdown, modal, CSS file, font, or an import from a workspace package | [ui-gotchas.md](ui-gotchas.md) |
 | Write the words of an error or a notice | [docs/dev/error-and-notice-copy.md](../../docs/dev/error-and-notice-copy.md) |
 
@@ -22,5 +23,6 @@ The mechanical parts are tests, so a violation fails CI with a hint of what to u
 - `apps/admin/test/styles/readable-text-css.test.ts`: the CSS that keeps text readable.
 - `apps/admin/test/styles/token-fallback-coverage.test.ts`: a `var(--token, #hex)` fallback equals the token.
 - `apps/admin/test/api/operator-api-error.coverage.test.ts`: every known API error code has its UI string.
+- `apps/admin/test/locale/time-zone-standard.test.ts`: no new read of the viewer's own time zone to show a time.
 
 The rest (what the screen looks like at 390px, a focus that falls to the page, a message that is announced twice) is in the rules and in review. Look at the screen in a real browser before you change what it shows.

@@ -10,6 +10,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Changed
 
+- Show the times on the Wallet card, in notes, in the wallet report hints and in bounce checks in UTC, the same for every viewer
 - Show a wallet pass as "Pending" on the attendee's page while it is being made ([#1690](https://github.com/solarssk/admitto/pull/1690))
 - Document `migrate` and P3009 recovery, `app` memory sizing, container hardening, the sign-in limit, SSO two-factor and what Redis holds ([#1695](https://github.com/solarssk/admitto/pull/1695))
 

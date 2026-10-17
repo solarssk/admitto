@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { getTooltipText, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const loadAttendeeDetailData = vi.fn();
 const voidWalletPass = vi.fn();
@@ -25,6 +26,13 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
+
+// The zone the viewer's browser reports. Nothing on the Wallet card may depend on it.
+let mockViewerZone = "Europe/Warsaw";
+vi.mock("../../src/utils/event-dates.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/utils/event-dates.js")>();
+  return { ...actual, getBrowserTimeZone: () => mockViewerZone };
+});
 
 // Far ahead by default: Restore is not offered once the event is over.
 let mockEventDate = "2099-06-01";
@@ -880,13 +888,16 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
   });
 
   describe("First downloaded (formatFirstDownloadedAt)", () => {
+    beforeEach(() => setPreferredLocale("en-GB"));
+    afterEach(() => setPreferredLocale(null));
+
     it("formats a well-shaped provider timestamp in UTC", async () => {
       mockLoad(baseDetail({ wallet_pass: walletPass({ first_downloaded_at: "2026-08-01 10:00:00" }) }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
 
       const row = screen.getByText("First downloaded").closest(".attendee-detail-row");
-      expect(row?.textContent).toContain("2026");
+      expect(row?.textContent).toContain("01 Aug 2026, 10:00 UTC");
     });
 
     it("falls back to the raw provider string when it doesn't match the expected shape", async () => {
@@ -896,6 +907,50 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
 
       const row = screen.getByText("First downloaded").closest(".attendee-detail-row");
       expect(row?.textContent).toContain("not-a-timestamp");
+    });
+  });
+
+  describe("times on the Wallet card", () => {
+    beforeEach(() => setPreferredLocale("en-GB"));
+    afterEach(() => {
+      setPreferredLocale(null);
+      mockViewerZone = "Europe/Warsaw";
+    });
+
+    // A label such as "Voided" can also be a status badge, so take the one that sits in a card row.
+    const rowValue = (label: string) =>
+      screen
+        .getAllByText(label)
+        .map((el) => el.closest(".attendee-detail-row"))
+        .find(Boolean)
+        ?.querySelector(".mono")?.textContent;
+
+    // Pass created is the first tap on Add to Wallet (a mail scanner can make it), the rest are admin or
+    // worker actions with no stored zone, so each row is UTC: the same text wherever the viewer is.
+    it.each(["Pacific/Honolulu", "Asia/Kolkata", "Europe/Warsaw"])("shows every time in UTC with the viewer's browser in %s", async (viewerZone) => {
+      mockViewerZone = viewerZone;
+      mockLoad(
+        baseDetail({
+          wallet_pass: walletPass({
+            status: "voided",
+            first_downloaded_at: "2026-08-01 10:00:00",
+            issued_at: "2026-01-01T00:00:00.000Z",
+            voided_at: "2026-02-01T00:00:00.000Z",
+            provider_removed_at: "2026-02-04T23:30:00.000Z",
+            last_synced_at: "2026-02-02T12:42:00.000Z",
+            registration_checked_at: "2026-02-03T08:15:00.000Z",
+          }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(rowValue("First downloaded")).toBe("01 Aug 2026, 10:00 UTC");
+      expect(rowValue("Pass created")).toBe("01 Jan 2026, 00:00 UTC");
+      expect(rowValue("Voided")).toBe("01 Feb 2026, 00:00 UTC");
+      expect(rowValue("Removed from provider")).toBe("04 Feb 2026, 23:30 UTC");
+      expect(rowValue("Last updated")).toBe("02 Feb 2026, 12:42 UTC");
+      expect(rowValue("Last system status update")).toBe("03 Feb 2026, 08:15 UTC");
     });
   });
 

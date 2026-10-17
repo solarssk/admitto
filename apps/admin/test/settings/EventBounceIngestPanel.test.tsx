@@ -8,6 +8,7 @@ import {
   type EventBounceIngestPanelHandle,
 } from "../../src/settings/EventBounceIngestPanel.js";
 import { deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 import { describePanelLoading } from "./panel-loading.js";
 import type { EventBounceIngestSettingsResponse } from "../../src/api/types.js";
 
@@ -425,6 +426,34 @@ describe("EventBounceIngestPanel", () => {
     expect(await screen.findByText(/^OK ·/)).toBeTruthy();
     expect(screen.getByText(/3 seen/)).toBeTruthy();
     expect(screen.getByText(/1 bounced/)).toBeTruthy();
+  });
+
+  it("shows the time of the last check and of each recent check in UTC", async () => {
+    setPreferredLocale("en-GB");
+    try {
+      const run = (at: string, messagesSeen: number) => ({
+        at,
+        ok: true,
+        messagesSeen,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      });
+      const newer = run("2026-08-06T11:30:00.000Z", 2);
+      const older = run("2026-08-06T10:00:00.000Z", 1);
+      mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: newer, recentRuns: [newer, older] }));
+      renderPanel();
+
+      expect(await screen.findByText("OK · 06 Aug 2026, 11:30 UTC")).toBeTruthy();
+      expect(document.querySelector(".event-bounce-ingest__recent-run-meta")?.textContent).toBe(
+        "06 Aug 2026, 10:00 UTC · 1 seen · 0 bounced · 0 errors",
+      );
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 
   it("shows Failed when lastRun.ok is false", async () => {

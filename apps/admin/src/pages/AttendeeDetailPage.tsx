@@ -64,7 +64,7 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js
 import {
   formatAdmissionDisplayParts,
   formatEventDateTime,
-  getBrowserTimeZone,
+  formatUtcDateTime,
   type AdmissionDisplayParts,
 } from "../utils/event-dates.js";
 import {
@@ -863,20 +863,18 @@ function walletTone(pass: WalletPassActionDto | null): ChipTone {
 
 /** PassCreator's firstDownloadedAt comes back as "YYYY-MM-DD HH:MM:SS" with no offset - confirmed
  * UTC by cross-checking a live pass's raw value against PassCreator's own dashboard, which shows
- * the same moment already converted to the viewer's local time (PO review, 2026-08-13). Shown in
- * UTC, not the viewer's browser zone (unlike issued_at/voided_at/etc below) - this is the
- * ATTENDEE's own action on their own device, in a timezone we have no way to know (PassCreator's
- * API doesn't expose it), so converting to the admin's own zone would misrepresent it as the
- * admin's or the attendee's local time when it's neither (PO review). Appending "Z" makes it a
- * real ISO instant so it can go through the same formatEventDateTime pipeline as every other
- * wallet timestamp instead of being shown as an unparsed raw string. */
+ * the same moment already converted to the viewer's local time (PO review, 2026-08-13). It is the
+ * ATTENDEE's own action on their own device, in a timezone PassCreator's API does not expose, so it
+ * is shown in UTC like every other time on the Wallet card. Appending "Z" makes it a real ISO
+ * instant so it goes through the same formatUtcDateTime as the other rows instead of being shown
+ * as an unparsed raw string. */
 function formatFirstDownloadedAt(raw: string): string {
   const iso = `${raw.replace(" ", "T")}Z`;
   // A value that doesn't match the expected "YYYY-MM-DD HH:MM:SS" shape (already has an offset,
   // uses a different separator, ...) would otherwise silently become an Invalid Date with no
   // fallback - show the raw provider string instead of that.
   if (Number.isNaN(new Date(iso).getTime())) return raw;
-  return formatEventDateTime(iso, "UTC");
+  return formatUtcDateTime(iso);
 }
 
 function itemStateLabel(state: string): string {
@@ -1134,12 +1132,13 @@ function AttendeeOverviewTab({
                     </span>
                   </div>
                 )}
-                {/* None of these timestamps has a captured actor/device timezone (issued_at is the
-                    attendee's own device; voided_at/last_synced_at/registration_checked_at are
-                    admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
-                    own UTC value, see formatFirstDownloadedAt) - viewer's own browser zone, matching
-                    viewerLocalTime's "no known actor zone" convention, not the event's timezone
-                    (which has no real relationship to any of these - PO review). */}
+                {/* None of these timestamps carries the zone it happened in (the pass is created by
+                    the first tap on Add to Wallet, which may be a mail scanner's; voided_at,
+                    last_synced_at and registration_checked_at are admin or worker actions with no
+                    persisted zone; first_downloaded_at is PassCreator's own UTC value), so every
+                    row is UTC: the same text for every viewer, never the viewer's own zone or the
+                    event's. The zone an admin acted in is on the Activity tab
+                    (standards/admin-spa/time-display.md). */}
                 {detail.wallet_pass.first_downloaded_at && (
                   <div className="attendee-detail-row">
                     <span>First downloaded</span>
@@ -1170,7 +1169,7 @@ function AttendeeOverviewTab({
                   <div className="attendee-detail-row">
                     <span>Pass created</span>
                     <span className="mono">
-                      {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
+                      {formatUtcDateTime(detail.wallet_pass.issued_at)}
                     </span>
                   </div>
                 )}
@@ -1178,7 +1177,7 @@ function AttendeeOverviewTab({
                   <div className="attendee-detail-row">
                     <span>Voided</span>
                     <span className="mono">
-                      {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
+                      {formatUtcDateTime(detail.wallet_pass.voided_at)}
                     </span>
                   </div>
                 )}
@@ -1188,7 +1187,7 @@ function AttendeeOverviewTab({
                   <div className="attendee-detail-row">
                     <span>Removed from provider</span>
                     <span className="mono">
-                      {formatEventDateTime(detail.wallet_pass.provider_removed_at, getBrowserTimeZone())}
+                      {formatUtcDateTime(detail.wallet_pass.provider_removed_at)}
                     </span>
                   </div>
                 )}
@@ -1196,7 +1195,7 @@ function AttendeeOverviewTab({
                   <div className="attendee-detail-row">
                     <span>Last updated</span>
                     <span className="mono">
-                      {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
+                      {formatUtcDateTime(detail.wallet_pass.last_synced_at)}
                     </span>
                   </div>
                 )}
@@ -1204,7 +1203,7 @@ function AttendeeOverviewTab({
                   <div className="attendee-detail-row">
                     <span>Last system status update</span>
                     <span className="mono">
-                      {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
+                      {formatUtcDateTime(detail.wallet_pass.registration_checked_at)}
                     </span>
                   </div>
                 )}
@@ -1571,7 +1570,7 @@ function AttendeeNotesTab({
                    * on this page (wallet pass dates above) and fixing a note added by/for someone
                    * outside the event's own timezone reading as the wrong time (PO report). */}
                   <time className="at-notes-list__time" dateTime={note.created_at}>
-                    {formatActivityTimestamp(note.created_at, null, getBrowserTimeZone())}
+                    {formatUtcDateTime(note.created_at)}
                   </time>
                 </div>
                 {isEditing ? (

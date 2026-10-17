@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletsReportsTab } from "../../src/reports/ReportsTabs.js";
 import { ApiError } from "../../src/api/client.js";
 import type { EventWalletReportsResponse } from "../../src/api/types.js";
-import { advanceTimers, connectionStateValue, deferred, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, connectionStateValue, deferred, getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const fetchEventWalletReports = vi.fn();
 const reportApiError = vi.fn();
@@ -340,6 +341,21 @@ describe("WalletsReportsTab", () => {
       expect(screen.queryAllByTestId(chart)).toHaveLength(0);
     }
     expect(screen.getByText("Wallet platform")).toBeTruthy();
+  });
+
+  it("names the time of the last sync in UTC in the hints of Wallet adoption and Pass validity", async () => {
+    setPreferredLocale("en-GB");
+    try {
+      fetchEventWalletReports.mockResolvedValue(fixture({ synced_at: "2026-08-01T10:00:00.000Z" }));
+      renderWithToast(<WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />);
+      await reportLoaded("Wallet adoption");
+
+      const hintOf = (title: string) => getTooltipText(cardByTitle(title).querySelector(".at-tooltip-trigger") as HTMLElement);
+      expect(hintOf("Wallet adoption")).toContain("Synced at 01 Aug 2026, 10:00 UTC - ");
+      expect(hintOf("Pass validity")).toContain("Most recently checked at 01 Aug 2026, 10:00 UTC (");
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 
   it("shows an EmptyState with a Retry action on a generic fetch error, and re-fetches on click", async () => {

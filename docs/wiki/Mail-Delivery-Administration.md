@@ -127,7 +127,7 @@ When a hard-failure NDR is forwarded into the mailbox, the next ingest run updat
 - Bounce settings are **per event**, so the same recipient in two events does not create an ambiguous match.
 - Soft or temporary SMTP failures (`4xx`) are logged. They do not flip a successful send to Bounced.
 - Messages are not deleted from the mailbox. Admitto records the processed IMAP UIDs, so an accidental "mark as read" in a mail client does not skip a bounce.
-- **Last automatic check** on the bounce panel shows the latest bounce-ingest run for this event (not Test connection). When more than one run exists, **Recent checks** lists the latest history. Organisation Settings → Health includes soft Bounce detection and Background worker rows for enabled automation.
+- **Last automatic check** on the bounce panel shows the latest bounce-ingest run for this event (not Test connection). When more than one run exists, **Recent checks** lists the latest history. Both show their times in UTC. Organisation Settings → Health includes soft Bounce detection and Background worker rows for enabled automation.
 - **Check every** sets how often bounce detection should poll this event's mailbox. The Admitto **worker** process wakes on a short tick and skips events that are not yet due. The Health check tab uses both Check every and the worker tick when it decides whether a successful run looks stale.
 - Bounce detection can append run outcomes to **Organisation Settings → Logs** (System Logs, mail source) when the worker has `BOUNCE_INGEST_APP_URL` (or `ADMITTO_INTERNAL_URL`) and the same `OPS_HEALTH_TOKEN` as the app. A missing URL or token skips this bridge. It does not block mailbox polling.
 
