@@ -7,7 +7,7 @@ import {
   formatDeliveryHistoryTimeParts,
   rowTimestamp,
 } from "../../src/communication/delivery-format.js";
-import { formatEventDate, formatEventDateTime, formatEventTime } from "../../src/utils/event-dates.js";
+import { formatEventDate, formatEventDateTime, formatEventTime, formatUtcDateTime } from "../../src/utils/event-dates.js";
 
 describe("rowTimestamp", () => {
   it("falls all the way back to queued_at when nothing later ever happened", () => {
@@ -37,21 +37,16 @@ describe("formatDeliveryHistoryTime", () => {
   const iso = "2026-01-05T09:31:05.000Z";
 
   it("returns '-' when the timestamp is absent", () => {
-    expect(formatDeliveryHistoryTime(null, "Europe/Warsaw", "Europe/Warsaw")).toBe("-");
+    expect(formatDeliveryHistoryTime(null, "Europe/Warsaw")).toBe("-");
   });
 
-  it("prefers the actor client timezone over the event timezone", () => {
-    expect(formatDeliveryHistoryTime(iso, "Asia/Kolkata", "Europe/Warsaw")).toBe(
-      formatEventDateTime(iso, "Asia/Kolkata"),
-    );
+  it("shows the zone of the browser that triggered the send", () => {
+    expect(formatDeliveryHistoryTime(iso, "Asia/Kolkata")).toBe(formatEventDateTime(iso, "Asia/Kolkata"));
   });
 
-  it("falls back to the event timezone when client_timezone is missing", () => {
-    expect(formatDeliveryHistoryTime(iso, null, "Europe/Warsaw")).toBe(
-      formatEventDateTime(iso, "Europe/Warsaw"),
-    );
-    expect(formatDeliveryHistoryTime(iso, null, "Europe/Warsaw")).toMatch(/UTC\+1/);
-    expect(formatDeliveryHistoryTime(iso, null, "Europe/Warsaw")).not.toMatch(/ UTC$/);
+  it("shows UTC when client_timezone is missing, not the event's zone", () => {
+    expect(formatDeliveryHistoryTime(iso, null)).toBe(formatUtcDateTime(iso));
+    expect(formatDeliveryHistoryTime(iso, undefined)).toMatch(/ UTC$/);
   });
 });
 
@@ -59,21 +54,22 @@ describe("formatDeliveryHistoryTimeParts", () => {
   const iso = "2026-01-05T09:31:05.000Z";
 
   it("returns null when the timestamp is absent", () => {
-    expect(formatDeliveryHistoryTimeParts(null, "Europe/Warsaw", "Europe/Warsaw")).toBeNull();
+    expect(formatDeliveryHistoryTimeParts(null, "Europe/Warsaw")).toBeNull();
   });
 
-  it("prefers the actor client timezone over the event timezone", () => {
-    expect(formatDeliveryHistoryTimeParts(iso, "Asia/Kolkata", "Europe/Warsaw")).toEqual({
+  it("shows the zone of the browser that triggered the send", () => {
+    expect(formatDeliveryHistoryTimeParts(iso, "Asia/Kolkata")).toEqual({
       date: formatEventDate(iso, "Asia/Kolkata"),
       time: formatEventTime(iso, "Asia/Kolkata"),
     });
   });
 
-  it("falls back to the event timezone when client_timezone is missing", () => {
-    expect(formatDeliveryHistoryTimeParts(iso, null, "Europe/Warsaw")).toEqual({
-      date: formatEventDate(iso, "Europe/Warsaw"),
-      time: formatEventTime(iso, "Europe/Warsaw"),
+  it("shows UTC when client_timezone is missing, not the event's zone", () => {
+    expect(formatDeliveryHistoryTimeParts(iso, null)).toEqual({
+      date: formatEventDate(iso, "UTC"),
+      time: formatEventTime(iso, "UTC"),
     });
+    expect(formatDeliveryHistoryTimeParts(iso, null)?.time).toMatch(/ UTC$/);
   });
 });
 

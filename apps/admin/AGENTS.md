@@ -6,6 +6,7 @@ Loaded in addition to the root [AGENTS.md](../../AGENTS.md), whose security, tes
 
 - Look at it in real Chrome at 1280px and at 390px, in every state it has: placeholder, slow note, error with Retry, empty, loaded. Use data as long as real data is (an address as a name, a long word in a note). [readability.md](../../standards/admin-spa/readability.md)
 - Run the full admin suite and `npm run build -w @admitto/admin` before pushing. Vitest alone does not run `tsc`.
+- A time is the same text for every viewer: never format it in the viewer's own zone. Show the zone it happened in when it is stored, otherwise UTC. [time-display.md](../../standards/admin-spa/time-display.md)
 
 ## Which surface says it
 

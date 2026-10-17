@@ -905,11 +905,11 @@ describe("AttendeeDetailPage: who erased the person", () => {
     expect(entry.textContent).not.toMatch(/from /);
   });
 
-  it("tells the time in the event's zone when the entry kept none", async () => {
+  it("tells the time in UTC when the entry kept no zone", async () => {
     await openActivityTab({ erasure: erasure({ timezone: null }) });
 
-    const time = within(screen.getByRole("listitem")).getByText(/14:00/);
-    expect(time.textContent).toMatch(/UTC\+2/);
+    const time = within(screen.getByRole("listitem")).getByText(/12:00/);
+    expect(time.textContent).toMatch(/ UTC$/);
   });
 
   it("tells a Superadmin from where: the address, and where it is", async () => {

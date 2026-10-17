@@ -1719,6 +1719,7 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
           created_count: 10,
           updated_count: 2,
           skipped_count: 1,
+          client_timezone: "Asia/Kolkata",
           created_at: new Date("2026-06-01T10:00:00Z"),
           finished_at: new Date("2026-06-01T10:01:00Z"),
         },
@@ -1786,6 +1787,9 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
     });
     expect(body.items[2]).toMatchObject({ filename: "first.csv", created: 10, updated: 2, skipped: 1 });
     expect(typeof body.items[0]!.created_at).toBe("string");
+    // The zone the import was queued from comes back with the entry, and stays null when none was stored.
+    expect(body.items[2]).toMatchObject({ client_timezone: "Asia/Kolkata" });
+    expect(body.items[1]).toMatchObject({ client_timezone: null });
   });
 
   it("tolerates succeeded jobs with missing count columns", async () => {

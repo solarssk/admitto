@@ -33,8 +33,8 @@ import type {
 } from "../api/types.js";
 import {
   calendarDateInZone,
+  formatActorTime,
   formatEventDate,
-  formatEventDateTime,
   formatRelativeTime as formatRelativeTimeShared,
   getBrowserTimeZone,
 } from "../utils/event-dates.js";
@@ -462,7 +462,9 @@ function ActivityIcon({ entry }: Readonly<{ entry: DisplayActivityEntry }>) {
 }
 
 /** Live SSE check-ins reshaped to look like a `recent_activity` row so they can render in the
- * same timeline immediately, ahead of the next overview poll (#373). */
+ * same timeline immediately, ahead of the next overview poll (#373). The stream carries no zone
+ * of its own, and it also carries other operators' scans, so each row is stamped with this
+ * browser's zone: the reader's own clock, like the feed's "Today" (standards/admin-spa/time-display.md). */
 function liveCheckinsAsActivity(checkins: StreamCheckinEvent[]): DisplayActivityEntry[] {
   return checkins.map((c) => ({
     id: `live-checkin:${c.attendeeId}-${c.admittedAt}`,
@@ -472,8 +474,6 @@ function liveCheckinsAsActivity(checkins: StreamCheckinEvent[]): DisplayActivity
     attendee_id: c.attendeeId,
     message: "checked in",
     occurred_at: c.admittedAt,
-    // This browser is the one that just scanned - its own zone is the real actor zone, not a
-    // guess, unlike the null-and-fall-back-to-viewer case the server-sourced rows use.
     actor_timezone: getBrowserTimeZone(),
     ticketType: c.ticketType,
   }));
@@ -656,7 +656,7 @@ function RecentActivityCard({
                         {formatRelativeTime(entry.occurred_at)}
                       </span>
                       <span className="overview-activity__time-absolute">
-                        {formatEventDateTime(entry.occurred_at, entry.actor_timezone ?? timezone)}
+                        {formatActorTime(entry.occurred_at, entry.actor_timezone)}
                       </span>
                     </time>
                   </li>

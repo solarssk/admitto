@@ -671,6 +671,8 @@ export type ImportHistoryEntryDto = {
   skipped: number;
   status: "succeeded" | "failed";
   error: string | null;
+  /** IANA zone of the browser that queued the import (`AdminJob.client_timezone`), when captured. */
+  client_timezone: string | null;
 };
 
 function importHistoryNumber(value: unknown): number {
@@ -714,7 +716,7 @@ export async function loadRecentImportBatches(
   eventId: string,
   limit: number,
 ): Promise<
-  Array<Omit<ImportHistoryEntryDto, "status" | "error"> & { status?: "succeeded"; actor_timezone: string | null }>
+  Array<Omit<ImportHistoryEntryDto, "status" | "error" | "client_timezone"> & { status?: "succeeded"; actor_timezone: string | null }>
 > {
   const rows = await db.attendeeActionLog.findMany({
     where: { event_id: eventId, action_type: "attendees_imported" },
@@ -762,6 +764,7 @@ export async function loadRecentImportJobs(
       status: true,
       error: true,
       filename: true,
+      client_timezone: true,
       created_count: true,
       updated_count: true,
       skipped_count: true,
@@ -781,6 +784,7 @@ export async function loadRecentImportJobs(
       skipped: counts.skipped,
       status: job.status === "failed" ? "failed" : "succeeded",
       error: job.status === "failed" ? safeImportJobError(job.error) : null,
+      client_timezone: job.client_timezone,
     };
   });
 }

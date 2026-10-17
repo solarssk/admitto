@@ -971,7 +971,7 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
               />
             )}
 
-            <ImportHistoryCard list={history} eventTimezone={event.timezone} />
+            <ImportHistoryCard list={history} />
           </div>
         </div>
       )}

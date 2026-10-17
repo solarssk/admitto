@@ -180,8 +180,8 @@ export function ReportsCumulativeAreaChart({
   seriesName: string;
   isActive: boolean;
 }>) {
-  // Noon UTC, not midnight - a date-only value pinned to midnight can render as the previous
-  // calendar day once the chart formats it in the viewer's own local timezone.
+  // Noon UTC, not midnight, and formatted in UTC below: the server bucketed each day in the event's zone, so
+  // the day on the axis is that calendar day for every viewer, whatever zone their browser is in.
   const points = data.map((d) => ({ date: Date.parse(`${d.date}T12:00:00Z`), value: d.cumulative }));
   // The first real day's cumulative is never 0 (it's already counting that day's own count), so
   // without this the line starts flat at that count instead of visibly rising from 0.
@@ -190,7 +190,7 @@ export function ReportsCumulativeAreaChart({
   // comment for why a small count needs this.
   const { axisMax, tickAmount } = niceCountAxis(data.at(-1)!.cumulative);
   const yTicks = Array.from({ length: tickAmount + 1 }, (_, i) => (i * axisMax) / tickAmount);
-  const dayFormatter = (ts: number) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(ts);
+  const dayFormatter = (ts: number) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }).format(ts);
   return (
     <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
@@ -228,7 +228,7 @@ export function ReportsCumulativeAreaChart({
             />
             <Tooltip
               labelFormatter={(label) =>
-                new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(
+                new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(
                   Number(label),
                 )
               }

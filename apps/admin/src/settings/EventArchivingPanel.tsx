@@ -14,7 +14,7 @@ import { useListLoad } from "../hooks/useListLoad.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
-import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatActorTime, formatEventDateTime } from "../utils/event-dates.js";
 import { UsersListSkeleton, type SkeletonColumn } from "../pages/users/UsersListSkeleton.js";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
@@ -47,12 +47,9 @@ function actorLabel(displayName: string | null | undefined, email: string | null
   return displayName || email || "-";
 }
 
-/** Created/archived date+time in the acting admin's own timezone when known — a regular admin
- * cares when they themselves did it, not the UTC instant. Falls back to UTC only when the
- * actor's timezone wasn't captured (events predating this attribution, or a non-browser actor). */
+/** Created/archived date+time in the acting admin's own timezone when known, UTC otherwise (formatActorTime). */
 function actorDateTime(iso: string | null | undefined, timezone: string | null | undefined): string {
-  if (!iso) return "-";
-  return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
+  return iso ? formatActorTime(iso, timezone) : "-";
 }
 
 /** Date/time + "by <actor>" subline, shared by the desktop table cell and the mobile card row. */

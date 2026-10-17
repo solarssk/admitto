@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   calendarDateInZone,
   formatAdmissionDisplay,
+  formatActorTime,
   formatEventDate,
   formatWalletDatePreview,
   formatWalletDatePreviewShort,
@@ -80,6 +81,27 @@ describe("formatWalletDatePreviewShort", () => {
 
   it("returns null for an empty date instead of the literal string 'Invalid Date'", () => {
     expect(formatWalletDatePreviewShort("")).toBeNull();
+  });
+});
+
+describe("formatActorTime", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  const ISO = "2026-06-28T13:00:00.000Z";
+
+  it("shows the zone the actor was in, with its offset", () => {
+    setPreferredLocale("en-GB");
+    // An admin who acted from Zurich reads as Zurich time, and one who acted in Bangalore as Bangalore time,
+    // whoever looks at the entry and from wherever.
+    expect(formatActorTime(ISO, "Europe/Zurich")).toBe("28 Jun 2026, 15:00 UTC+2");
+    expect(formatActorTime(ISO, "Asia/Kolkata")).toBe("28 Jun 2026, 18:30 UTC+5:30");
+  });
+
+  it("shows UTC when no zone was stored, never the event's zone or the viewer's", () => {
+    setPreferredLocale("en-GB");
+    for (const none of [null, undefined, ""]) {
+      expect(formatActorTime(ISO, none)).toBe("28 Jun 2026, 13:00 UTC");
+    }
   });
 });
 

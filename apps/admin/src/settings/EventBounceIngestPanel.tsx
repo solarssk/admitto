@@ -41,7 +41,7 @@ import { PanelLoadError } from "./PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
-import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 
 /** The cards of the panel's placeholder: the mailbox settings, and the last automatic check. */
 export const BOUNCE_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
@@ -107,7 +107,7 @@ function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>)
         <strong>
           {run.ok ? "OK" : "Failed"}
           {" · "}
-          {formatEventDateTime(run.at, getBrowserTimeZone())}
+          {formatUtcDateTime(run.at)}
         </strong>
         <span>{lastRunCountsLine(run)}</span>
       </div>
@@ -152,7 +152,7 @@ function RecentChecksList({
                 {run.ok ? "OK" : "Failed"}
               </span>
               <span className="event-bounce-ingest__recent-run-meta">
-                {formatEventDateTime(run.at, getBrowserTimeZone())} · {lastRunCountsLine(run)}
+                {formatUtcDateTime(run.at)} · {lastRunCountsLine(run)}
               </span>
             </li>
           ))}

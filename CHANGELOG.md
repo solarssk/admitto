@@ -10,11 +10,14 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Changed
 
+- Show times with no recorded time zone in UTC, the same for every viewer: Wallet card, Activity, delivery history, notes, import history, Recent activity ([#1743](https://github.com/solarssk/admitto/pull/1743))
 - Show a wallet pass as "Pending" on the attendee's page while it is being made ([#1690](https://github.com/solarssk/admitto/pull/1690))
 - Document `migrate` and P3009 recovery, `app` memory sizing, container hardening, the sign-in limit, SSO two-factor and what Redis holds ([#1695](https://github.com/solarssk/admitto/pull/1695))
 
 ### Fixed
 
+- Start every Activity label with a capital letter, also for an action type the list does not know ([#1743](https://github.com/solarssk/admitto/pull/1743))
+- Show the same day labels in the cumulative charts of the wallet and mail reports for every viewer, including those far east of UTC ([#1743](https://github.com/solarssk/admitto/pull/1743))
 - Read CSV files with semicolons, tabs or Windows-1250 letters (Polish Excel), and refuse UTF-16 and NUL files with a message to save as CSV UTF-8 ([#1742](https://github.com/solarssk/admitto/pull/1742))
 - Show one "archived" bar above every page of an archived event, with "Restore event" for a Superadmin ([#1687](https://github.com/solarssk/admitto/pull/1687))
 - Remove the repeated "archived" line from the other Event settings tabs and the image library ([#1686](https://github.com/solarssk/admitto/pull/1686))

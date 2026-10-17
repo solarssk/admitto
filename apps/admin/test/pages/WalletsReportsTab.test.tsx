@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletsReportsTab } from "../../src/reports/ReportsTabs.js";
 import { ApiError } from "../../src/api/client.js";
 import type { EventWalletReportsResponse } from "../../src/api/types.js";
-import { advanceTimers, connectionStateValue, deferred, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, connectionStateValue, deferred, getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const fetchEventWalletReports = vi.fn();
 const reportApiError = vi.fn();
@@ -28,6 +29,7 @@ let capturedCumulative:
       yTicks?: number[];
       yWidth?: number;
       labelFormatter?: (label: number) => string;
+      xTickFormatter?: (ts: number) => string;
     }
   | undefined;
 let capturedTap:
@@ -124,10 +126,12 @@ vi.mock("recharts", () => {
     data: Array<{ date: number; value: number }>;
     children: ReactNode;
   }) => {
+    const xAxis = childProps(children, XAxis);
     const yAxis = childProps(children, YAxis);
     const tooltip = childProps(children, Tooltip);
     capturedCumulative = {
       points: data,
+      xTickFormatter: xAxis?.tickFormatter,
       yTickFormatter: yAxis?.tickFormatter,
       yTicks: yAxis?.ticks,
       yWidth: yAxis?.width,
@@ -340,6 +344,21 @@ describe("WalletsReportsTab", () => {
       expect(screen.queryAllByTestId(chart)).toHaveLength(0);
     }
     expect(screen.getByText("Wallet platform")).toBeTruthy();
+  });
+
+  it("names the time of the last sync in UTC in the hints of Wallet adoption and Pass validity", async () => {
+    setPreferredLocale("en-GB");
+    try {
+      fetchEventWalletReports.mockResolvedValue(fixture({ synced_at: "2026-08-01T10:00:00.000Z" }));
+      renderWithToast(<WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />);
+      await reportLoaded("Wallet adoption");
+
+      const hintOf = (title: string) => getTooltipText(cardByTitle(title).querySelector(".at-tooltip-trigger") as HTMLElement);
+      expect(hintOf("Wallet adoption")).toContain("Synced at 01 Aug 2026, 10:00 UTC - ");
+      expect(hintOf("Pass validity")).toContain("Most recently checked at 01 Aug 2026, 10:00 UTC (");
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 
   it("shows an EmptyState with a Retry action on a generic fetch error, and re-fetches on click", async () => {
@@ -853,6 +872,31 @@ describe("WalletsReportsTab", () => {
     await reportLoaded("Wallet adoption");
 
     expect(capturedCumulative?.labelFormatter?.(Date.parse("2026-06-02T12:00:00Z"))).toBe("02 Jun 2026");
+  });
+
+  it("formats the days of the cumulative chart in UTC, the zone its points are pinned in, whatever zone the browser is in", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+    renderWithToast(
+      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await reportLoaded("Wallet adoption");
+
+    // The server bucketed each day in the event's zone and the chart pins it to noon UTC, so the label is that
+    // calendar day only when it is formatted in UTC: in the browser's own zone a viewer far east of UTC would
+    // read the next day. The zone the formatters name is what is checked, since the test machine's own zone is not ours to set.
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    const zones: unknown[] = [];
+    Intl.DateTimeFormat = function (locales?: string | string[], options?: Intl.DateTimeFormatOptions) {
+      zones.push(options?.timeZone);
+      return new RealDateTimeFormat(locales, options);
+    } as unknown as typeof Intl.DateTimeFormat;
+    try {
+      capturedCumulative?.xTickFormatter?.(Date.parse("2026-06-02T12:00:00Z"));
+      capturedCumulative?.labelFormatter?.(Date.parse("2026-06-02T12:00:00Z"));
+    } finally {
+      Intl.DateTimeFormat = RealDateTimeFormat;
+    }
+    expect(zones).toEqual(["UTC", "UTC"]);
   });
 
   it("prevents the browser's default focus-ring outline on a chart click, at the mousedown event level", async () => {

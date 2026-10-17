@@ -307,7 +307,6 @@ function DeliveryListContent({
 
 export interface DeliveryLogTabProps {
   eventId: string;
-  eventTimezone: string;
   /** The query, the list that follows the loading standard and what keeps it live (`useDeliveryLog`). */
   log: DeliveryLog;
   templates: MailTemplateListItem[];
@@ -340,7 +339,6 @@ const DELIVERY_LOG_HINT =
  * `RefetchRegion` (the live refresh does not even dim them). */
 export function DeliveryLogTab({
   eventId,
-  eventTimezone,
   log,
   templates,
   resolvedBounceRowIds,
@@ -537,7 +535,6 @@ export function DeliveryLogTab({
       {detailsRow && (
         <DeliveryDetailsModal
           eventId={eventId}
-          eventTimezone={eventTimezone}
           row={detailsRow}
           onClose={() => setDetailsRow(null)}
           onViewSentMessage={(row) => {

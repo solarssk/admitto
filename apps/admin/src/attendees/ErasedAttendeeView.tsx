@@ -7,8 +7,7 @@ import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { formatEventDate } from "../utils/event-dates.js";
-import { formatActivityTimestamp } from "./attendeeTimeline.js";
+import { formatActorTime, formatEventDate } from "../utils/event-dates.js";
 import { ERASED_ATTENDEE_LABEL, erasedByName, erasedNoticeText, erasureViaLine } from "./erasedAttendee.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { REMOVE_ARCHIVED_TOOLTIP } from "./removeAttendee.js";
@@ -179,8 +178,7 @@ function ErasedOverviewTab({
 function ErasedActivityTab({
   erasure,
   erasedAt,
-  timezone,
-}: Readonly<{ erasure: AttendeeErasureDto | null; erasedAt: string; timezone: string }>) {
+}: Readonly<{ erasure: AttendeeErasureDto | null; erasedAt: string }>) {
   if (erasure === null) {
     return (
       <Card padded>
@@ -206,7 +204,7 @@ function ErasedActivityTab({
           </div>
           <div className="at-tl-meta">
             <time className="at-tl-time" dateTime={erasedAt}>
-              {formatActivityTimestamp(erasedAt, erasure.timezone, timezone)}
+              {formatActorTime(erasedAt, erasure.timezone)}
             </time>
             {name !== null && (
               <span className="at-tl-actor">
@@ -315,7 +313,7 @@ export function ErasedAttendeeView({
           onWalletTryAgain={onWalletTryAgain}
         />
       )}
-      {tab === "activity" && <ErasedActivityTab erasure={erasure} erasedAt={erasedAt} timezone={event.timezone} />}
+      {tab === "activity" && <ErasedActivityTab erasure={erasure} erasedAt={erasedAt} />}
       {tab === "notes" && <ErasedNotesTab />}
     </>
   );

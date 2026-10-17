@@ -22,6 +22,7 @@ import {
 } from "../test-utils.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { formatEventCalendarDate } from "../../src/utils/event-dates.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const fetchEventOverview = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -958,6 +959,32 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText(/Ticket email failed/)).toBeTruthy();
     // No SSE event was ever fired above - this proves the feed hydrated purely from the initial fetch.
     expect(streamHandler).not.toBeNull();
+  });
+
+  it("shows a Recent activity row in the zone it was stored with, and in UTC when none was stored", async () => {
+    setPreferredLocale("en-GB");
+    try {
+      const entry = (id: string, actorTimezone: string | null): EventRecentActivityEntry => ({
+        id,
+        type: "checkin",
+        tone: "ok",
+        attendee_name: id,
+        attendee_id: `att-${id}`,
+        message: "checked in",
+        occurred_at: "2026-06-28T13:00:00.000Z",
+        actor_timezone: actorTimezone,
+      });
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { recent_activity: [entry("Kolkata Guest", "Asia/Kolkata"), entry("Unzoned Guest", null)] }));
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText("Unzoned Guest")).toBeTruthy());
+
+      const absoluteTimeOf = (name: string) => screen.getByText(name).closest("li")?.querySelector(".overview-activity__time-absolute")?.textContent;
+      expect(absoluteTimeOf("Kolkata Guest")).toBe("28 Jun 2026, 18:30 UTC+5:30");
+      expect(absoluteTimeOf("Unzoned Guest")).toBe("28 Jun 2026, 13:00 UTC");
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 
   it("filters Recent activity to warn/error entries only via the Issues toggle, rendered in the card header alongside the live badge (#E2)", async () => {

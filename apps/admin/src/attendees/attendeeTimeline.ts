@@ -5,27 +5,10 @@ import type {
   RsvpStatus,
   TicketTypeDto,
 } from "../api/types.js";
-import { formatEventDateTime } from "../utils/event-dates.js";
 import type { CustomDataFieldDef } from "./customData.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
 import { PASS_STATUS_LABELS } from "./passStatusBadge.js";
 import { WALLET_LIFECYCLE_STATUS_LABELS } from "./walletStatusBadge.js";
-
-/** Activity row timestamp, in the timezone the acting admin was actually in when they made this
- * change (PO review, round 2 - the prior "always event timezone" version was itself wrong):
- * admins managing an event travel, so a single global rule (UTC, or always the event's zone)
- * can't be right for every row - an edit made from Zurich should read as Zurich time forever,
- * and a later on-site check-in in Bangalore should read as Bangalore time forever, even once
- * the admin is back in Zurich looking at the log. `entryTimezone` is the zone captured at write
- * time (see OpsAuditContext.timezone); falls back to the event's zone for rows written before
- * this capture existed, or from a non-browser path that never had one to capture. */
-export function formatActivityTimestamp(
-  iso: string,
-  entryTimezone: string | null,
-  eventTimezone: string,
-): string {
-  return formatEventDateTime(iso, entryTimezone ?? eventTimezone);
-}
 
 function formatRsvpStatus(value: unknown): string {
   const key = String(value);
@@ -241,7 +224,7 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "scan_preview":
       return "Scan preview";
     default:
-      return entry.action_type.replaceAll("_", " ");
+      return humanizeFieldKey(entry.action_type);
   }
 }
 

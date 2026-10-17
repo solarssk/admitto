@@ -70,6 +70,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - Activity is paged like the other tables. Pick **Rows per page** (10, 25, 50, or 100) and use **Previous** and **Next** at the bottom to reach older entries.
    - While you browse older pages, the list stays fixed even if colleagues add entries. Go back to page 1 to see the newest.
    - The tab you are on is kept in the page address (`?tab=activity` or `?tab=notes`), so you can bookmark or share a link that opens straight to it.
+   - Times on this page follow one rule. When Admitto recorded the time zone an action happened in (**Activity**, **Registered on**, **Delivery history**), the time shows that zone with its UTC offset, for example "15:00 UTC+2". Every other time is in UTC: the **Wallet** card, **Notes**, and any entry with no recorded zone. A check-in time is in the event's time zone.
 5. Delivery history supports **View sent message** (the rendered mail exactly as sent, including the real ticket link and QR code) and **View delivery details**.
 6. Use the red **Revoke** control for revoke pass and revoke check-in.
 7. **More actions** holds:
@@ -160,6 +161,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - **Void wallet pass**, **Delete wallet pass**, **Remove from provider** and **Refresh status** all still work on an archived event or with the event's Wallet switch off. That is useful for winding down wallet passes once an event has ended.
 - Neither **Delete wallet pass** nor **Remove from provider** removes the pass from the attendee's phone. Apple and Google Wallet give no third party a way to do that. Only the attendee can. Neither affects check-in. Use **Revoke pass** to block entry.
 - Once a pass is confirmed installed, the attendee's Wallet card shows an **Added from** row with the browser and OS that installed it (for example "Safari 18.7 / iOS 18.7"). It appears only for a pass confirmed after this was introduced, and never for a link that a mail security scanner merely pre-fetched. Passes confirmed earlier stay without it.
+- The Wallet card shows every time in UTC: **First downloaded**, **Pass created**, **Voided**, **Removed from provider**, **Last updated** and **Last system status update**. The card does not record the time zone each one happened in, so everyone who opens it reads the same time, wherever they are.
 
 **Wallet pass actions for the whole event**
 
