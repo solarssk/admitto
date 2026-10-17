@@ -18,6 +18,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 - [Control areas (summary)](#control-areas-summary)
 - [Authentication and access](#authentication-and-access)
   - [Role hierarchy](#role-hierarchy)
+  - [Sessions](#sessions)
+  - [Passwords and sign-in protection](#passwords-and-sign-in-protection)
   - [Implemented in codebase](#implemented-in-codebase)
   - [SSO and two-factor authentication](#sso-and-two-factor-authentication)
 - [Authorization (RBAC)](#authorization-rbac)
@@ -27,10 +29,13 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
   - [Operations probes](#operations-probes)
   - [Staff admin (authenticated)](#staff-admin-authenticated)
   - [Superadmin (identity provider UI)](#superadmin-identity-provider-ui)
+  - [Body size caps](#body-size-caps)
 - [Reverse proxy and client IP (`TRUST_PROXY`)](#reverse-proxy-and-client-ip-trust_proxy)
 - [Outbound HTTP (SSRF mitigation)](#outbound-http-ssrf-mitigation)
 - [Data protection in operations](#data-protection-in-operations)
 - [Known scope limits (MVP)](#known-scope-limits-mvp)
+  - [Multiple instance superadmins (v0.4.10+)](#multiple-instance-superadmins-v0410)
+  - [Offboarding runbook for OIDC-managed elevated roles](#offboarding-runbook-for-oidc-managed-elevated-roles)
   - [Penetration test verification (operator checklist)](#penetration-test-verification-operator-checklist)
 - [Related documents](#related-documents)
 
@@ -42,18 +47,24 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 |------|-------------------------------|-----------------|-------|
 | Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
 | Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
-| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** (FIDO2, e.g. Face ID, Windows Hello, YubiKey) for elevated roles - usable for enrollment, sign-in, and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication) | App · Config |
-| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway - e.g. **Cloudflare Access** - in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
+| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** for elevated roles (see the notes below the table) | App · Config |
+| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway in front of staff paths (see the notes below the table) | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
 | Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store, required in production) | App · Config |
-| Browser hardening | Clickjacking, MIME sniffing, script injection | Baseline headers on responses (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, `X-Robots-Tag: noindex, nofollow`); route-specific Content-Security-Policy on the staff SPA and auth pages, with extra trusted origins configurable by a superadmin (Settings → Security) | App · Config |
+| Browser hardening | Clickjacking, MIME sniffing, script injection | Baseline security headers and a Content-Security-Policy (see the notes below the table) | App · Config |
 | Outbound fetch safety | Block SSRF from OIDC / JWKS admin actions | Hostname blocklist + DNS resolve-before-connect on outbound HTTP | App |
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
 | Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
 | Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) | App |
 | Supply chain | Scans on code and container image | Documented in [SECURITY.md](../../SECURITY.md) | App |
+
+Notes on the rows above:
+
+- **Strong auth.** WebAuthn means FIDO2 passkeys and security keys, for example Face ID, Windows Hello or YubiKey. They are usable for enrollment, sign-in and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication).
+- **Edge access (ZTNA).** For example **Cloudflare Access**. The gateway verifies identity (via the same OIDC provider or its own) and device posture before it proxies the request through. It complements, and does not replace, Admitto's own RBAC.
+- **Browser hardening.** Baseline headers on responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, and `X-Robots-Tag: noindex, nofollow`. The staff SPA and the auth pages also get a route-specific Content-Security-Policy, with extra trusted origins configurable by a superadmin (Settings → Security).
 
 ---
 
@@ -76,18 +87,21 @@ flowchart TB
 - **Perimeter access control** (optional) - e.g. corporate zero-trust gateway, VPN, or CDN access
   rules in front of staff URLs. This complements, but does not replace, application RBAC.
 
-Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
-common web hardening (`httpOnly`, `SameSite`, `secure` in production).
-Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker**
-(at boot and about every 24 hours). Operators can also run
-`docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview
-counts (drop `--dry-run` to run it); the production image ships no `npm`.
-**Trusted-device persistence across sign-out.** Signing out (`POST /api/auth/logout` from the staff
-app, or `POST /logout` from the server-rendered pages) revokes the session but intentionally does **not** clear the
-`admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
-for its full window (`trusted_device_days`, 30 days by default) regardless of how many times the
-user signs out and back in on that browser, matching how most other products with this feature
-behave. It is cleared only by one of:
+### Sessions
+
+Sessions are **server-side**: the cookie holds an opaque token, and only its hash is stored in the database. Cookie flags follow common web hardening (`httpOnly`, `SameSite`, `secure` in production).
+
+**Cleanup.**
+
+- Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker** (at boot and about every 24 hours).
+- Operators can also run `docker compose exec app node packages/auth/dist/cli.js purge-auth-retention --dry-run` to preview counts. Drop `--dry-run` to run it.
+- The production image ships no `npm`.
+
+#### Trusted devices after sign-out
+
+Signing out (`POST /api/auth/logout` from the staff app, or `POST /logout` from the server-rendered pages) revokes the session. It intentionally does **not** clear the `admitto_trusted_device` cookie or its database row.
+
+So a **"Remember this device"** trust lasts for its full window (`trusted_device_days`, 30 days by default), however many times the user signs out and back in on that browser. It is cleared only by one of:
 
 - the trust window expiring,
 - a password change,
@@ -95,49 +109,95 @@ behave. It is cleared only by one of:
 - an admin-initiated reset, or
 - the account's own **"Forget all trusted devices"** action (My account → Two-factor authentication's options menu).
 
-> **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears
-> remembered-device trust. The trust is scoped to that specific account (`validateTrustedDevice`
-> rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the
-> device next. It does, however, let the *same* account skip MFA again on that device until the
-> trust window expires.
+> **Shared check-in devices.** On shared operator tablets, signing out alone does not clear remembered-device trust.
 >
-> Mitigations for an instance where the same account may sign in from a device it shouldn't stay
-> trusted on:
+> - The trust is scoped to that specific account (`validateTrustedDevice` rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the device next.
+> - It does, however, let the *same* account skip MFA again on that device until the trust window expires.
+>
+> Mitigations for an instance where the same account may sign in from a device it shouldn't stay trusted on:
+>
 > - Set `trusted_device_days` to a short value, or `0` to disable the feature entirely.
 > - Use **"Forget all trusted devices"** or an admin-initiated reset to clear trust sooner.
 
-**Session idle timeout (v0.4.13+).** Sessions previously only expired on an absolute lifetime
-(admin defaulted to 7 days), with no inactivity check, so a stolen or left-open admin browser tab
-stayed authenticated for up to a week. A `full`-stage session now also ends once `now -
-last_seen_at` exceeds a configurable idle window, using the same env-lock pattern as the
-absolute-lifetime settings.
+#### Session idle timeout
+
+A `full`-stage session ends once `now - last_seen_at` exceeds a configurable idle window, as well as at its absolute lifetime. This limits how long a stolen or left-open admin browser tab stays authenticated. The idle window uses the same env-lock pattern as the absolute-lifetime settings.
 
 | Role | Idle timeout env var | Idle default | Absolute default |
 |------|----------------------|---------------|-------------------|
-| Admin | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | 30 min | 12h (down from 7 days) |
+| Admin | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | 30 min | 12h |
 | Operator | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | 2h | 12h |
 
-Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a
-sane threshold, and the API rejects a save where the idle timeout would exceed that role's own
-absolute lifetime.
+- Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a sane threshold.
+- The API rejects a save where the idle timeout would exceed that role's own absolute lifetime.
 
-The 12h admin default only applies while no `session_ttl` row exists, and the 2FA migration (`20260614130000_2fa_totp`) seeded one holding 7 days, so until `20261001150000_reset_seeded_admin_session_ttl` every instance ran with 7 days. That migration moves a row that still holds exactly 7 days to 12h and leaves any other value alone; sessions already issued keep their own end time (the 30 min idle timeout ends most of them sooner). An instance that chose 7 days on purpose has to set it again in Settings → Security.
+**The admin absolute lifetime.**
 
-**Operator event-day session (replaces the v0.7.4 "Keep me signed in" checkbox).** An exception to the table above, for check-in tablets that sit idle between shifts and are handed to staff who are not expected to make security choices. An operator-only account (no Admin or Superadmin role in any scope) that signs in, by any method (password, passkey or SSO), on the day of a non-archived event it is assigned to gets one session with **no inactivity window**: it ends at the later of 06:00 the next local morning and the event's own end time, and the session cookie is persistent so it survives the tablet app being closed. Nothing is ticked or chosen at sign-in. The day is the event's calendar day (`Event.date`, read as its UTC calendar day) from local midnight to the next local midnight in the event's own timezone, converted from wall-clock time so a 23 or 25 hour daylight-saving day still runs midnight to midnight; for an overnight event (end time earlier than start time) a sign-in still counts until the event ends the next morning. Only the moment of sign-in counts: someone who signs in the evening before gets a normal session and has to sign in again on the day. A date or timezone that cannot be read means normal limits, never a longer session. An event has one date, so an event lasting several days needs one event per day to be covered on each. It is decided again when a partial session is promoted to full (MFA, forced password change), and the role and the master switch are re-read on every request, so an Admin role granted after sign-in, or the switch turned off mid-event, puts the normal inactivity window back at once (the end time itself is not shortened, and a role change does not clamp it to the admin lifetime). Like every session lifetime here, the expiry is fixed when the session is issued: removing the assignment, moving the event date or archiving the event does not shorten a session already issued (per-request authorization still blocks that event), so revoke it from **Active sessions** if that matters. The master switch is the `operator_event_day_sessions` system setting (`OPERATOR_EVENT_DAY_SESSIONS`, default on; a value that is set but is not a boolean, whether an environment value other than true, false, 1 or 0 or a hand-edited row, turns it off rather than leaving it on). It replaces `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS`, which are no longer read, so an instance that had set the old value to 0 gets the event-day session until the new switch is turned off. Transition: a session issued with the v0.7.4 checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window, so revoke such sessions from **Active sessions** if that matters. Guidance considered (OWASP ASVS 7.1.1 asks for a documented, risk-based decision): NIST SP 800-63B-4 allows up to 30 days at AAL1 (password only) with an optional inactivity timeout and 24 hours with a 1 hour inactivity timeout at AAL2, and recommends that "remember me" style persistence be limited; this exception stays within the AAL1 bound and ends at most about 30 hours after sign-in (sooner for most sign-ins; later only when an overnight event itself ends after 06:00), down from the 3 to 14 days the v0.7.4 checkbox allowed, while Admin and Superadmin limits are unchanged. Accepted risk: operator accounts have no MFA by design (a superadmin can add the `operator` role to the required-MFA list in Settings → Security), so a lost or stolen tablet that is signed in on event day stays signed in until the end of that day or until someone revokes the session.
+- The 12h admin default only applies while no `session_ttl` row exists. A value stored in Settings → Security is kept as it is.
+- An instance that wants a different lifetime, for example 7 days, sets it in Settings → Security.
 
-**Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
-change, self-service Account change, admin-initiated create/reset) requires at least 12 characters
-and rejects a built-in list of 143 very common passwords plus trivial patterns (a password made of
-very few distinct characters such as `aaaaaaaaaaaa` or `ababababab`, or a simple ascending/descending
-run of six or more characters) - enforced server-side, not just the strength meter shown while typing - per NIST SP 800-63B-4
-§3.1.1.2's requirement to check candidates against a blocklist instead of relying on
-character-composition rules.
+#### Operator event-day session
 
-**No account lockout, by design.** Local password authentication never locks or disables an
-account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts
-would itself be a denial-of-service vector on a self-hosted internal tool.
+An exception to the table above, for check-in tablets that sit idle between shifts and are handed to staff who are not expected to make security choices.
 
-**The per-email sign-in limit is a temporary block.**
+**Who gets it, and what they get.**
+
+- An operator-only account (no Admin or Superadmin role in any scope) that signs in, by any method (password, passkey or SSO), on the day of a non-archived event it is assigned to.
+- One session with **no inactivity window**. It ends at the later of 06:00 the next local morning and the event's own end time.
+- The session cookie is persistent, so it survives the tablet app being closed.
+- Nothing is ticked or chosen at sign-in.
+
+**What counts as the day.**
+
+- The event's calendar day (`Event.date`, read as its UTC calendar day), from local midnight to the next local midnight in the event's own timezone.
+- It is converted from wall-clock time, so a 23 or 25 hour daylight-saving day still runs midnight to midnight.
+- For an overnight event (end time earlier than start time), a sign-in still counts until the event ends the next morning.
+- Only the moment of sign-in counts: someone who signs in the evening before gets a normal session and has to sign in again on the day.
+- A date or timezone that cannot be read means normal limits, never a longer session.
+- An event has one date, so an event lasting several days needs one event per day to be covered on each.
+
+**When it is decided again.**
+
+- When a partial session is promoted to full (MFA, forced password change).
+- The role and the master switch are re-read on every request. So an Admin role granted after sign-in, or the switch turned off mid-event, puts the normal inactivity window back at once.
+- The end time itself is not shortened, and a role change does not clamp it to the admin lifetime.
+
+**What does not shorten it.**
+
+- Like every session lifetime here, the expiry is fixed when the session is issued.
+- Removing the assignment, moving the event date or archiving the event does not shorten a session already issued (per-request authorization still blocks that event).
+- Revoke it from **Active sessions** if that matters.
+
+**The master switch.**
+
+- It is the `operator_event_day_sessions` system setting (`OPERATOR_EVENT_DAY_SESSIONS`), on by default.
+- A value that is set but is not a boolean turns it off rather than leaving it on. That covers an environment value other than true, false, 1 or 0, and a hand-edited row.
+- The older settings `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS` are not read. An instance that had set the old value to 0 gets the event-day session until this switch is turned off.
+- A session that was issued with the older **Keep me signed in** checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window. Revoke such sessions from **Active sessions** if that matters.
+
+**Why this is acceptable.** OWASP ASVS 7.1.1 asks for a documented, risk-based decision. The guidance considered:
+
+- NIST SP 800-63B-4 allows up to 30 days at AAL1 (password only) with an optional inactivity timeout, and 24 hours with a 1 hour inactivity timeout at AAL2. It recommends that "remember me" style persistence be limited.
+- This exception stays within the AAL1 bound. It ends at most about 30 hours after sign-in (sooner for most sign-ins; later only when an overnight event itself ends after 06:00).
+- Admin and Superadmin limits are unchanged.
+
+**Accepted risk.** Operator accounts have no MFA by design (a superadmin can add the `operator` role to the required-MFA list in Settings → Security). So a lost or stolen tablet that is signed in on event day stays signed in until the end of that day or until someone revokes the session.
+
+### Passwords and sign-in protection
+
+#### Password blocklist
+
+- It applies to every place a password is set or changed: first-run setup, forced change, self-service Account change, and admin-initiated create/reset.
+- A password needs at least 12 characters, and it is rejected if it is on a built-in list of 143 very common passwords.
+- Trivial patterns are rejected too: a password made of very few distinct characters (such as `aaaaaaaaaaaa` or `ababababab`), or a simple ascending/descending run of six or more characters.
+- It is enforced server-side, not just by the strength meter shown while typing.
+- The basis is NIST SP 800-63B-4 §3.1.1.2, which requires checking candidates against a blocklist instead of relying on character-composition rules.
+
+#### No account lockout, by design
+
+Local password authentication never locks or disables an account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts would itself be a denial-of-service vector on a self-hosted internal tool.
+
+#### The per-email sign-in limit is a temporary block
 
 - Password sign-in accepts 10 attempts a minute for one e-mail address, from any client address.
 - Every attempt is counted before the password is checked (see **Rate limiting**).
@@ -145,22 +205,20 @@ would itself be a denial-of-service vector on a self-hosted internal tool.
 - Anyone who knows an address can use up that allowance, and can repeat it.
 - It applies to password sign-in only (`POST /login` and `POST /api/auth/login`). Passkey sign-in and SSO use other limits, per client address, so they stay available.
 
-Brute-force is mitigated instead by:
+#### Brute-force protection and alerts
 
-- The login rate limits above (see **Rate limiting**).
-- An audit record on repeated failed attempts against privileged accounts
-  (`packages/auth/src/privileged-login-alert.ts`): crossing the threshold emits an
-  `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`) event into the System logs live
-  tail and writes a durable `SecurityAuditLog` row, for an operator to find on review.
+Brute force is mitigated instead by:
 
-This never blocks the account. Repeated failed sign-ins on an admin or superadmin account also raise
-a security alert (Organisation Settings → Notifications): an in-app notification and an email to
-the organisation's admins, plus the organisation's optional Discord, Slack or generic-JSON webhook,
-each switchable per alert type (all on by default). The same mechanism alerts on emergency
-two-factor bypass use, login or security settings changes, an admin sign-in from a new country and
-an admin or superadmin role being granted, and it sends mandatory self-alerts to the account owner
-(password or two-factor change, sign-in from a new location, reused two-factor code). Repeated
-failed MFA codes (`auth.mfa.repeated_failures`) are audit-only and send no notification.
+- The login rate limits (see **Rate limiting**).
+- An audit record on repeated failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`). Crossing the threshold emits an `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`) event into the System logs live tail and writes a durable `SecurityAuditLog` row, for an operator to find on review. This record never blocks the account.
+
+**Security alerts** (Organisation Settings → Notifications):
+
+- Repeated failed sign-ins on an admin or superadmin account also raise a security alert: an in-app notification and an email to the organisation's admins, plus the organisation's optional Discord, Slack or generic-JSON webhook.
+- Each of these channels can be switched on or off separately for each alert type (all on by default).
+- The same mechanism alerts on emergency two-factor bypass use, login or security settings changes, an admin sign-in from a new country and an admin or superadmin role being granted.
+- It also sends mandatory self-alerts to the account owner: a password or two-factor change, a sign-in from a new location, and a reused two-factor code.
+- Repeated failed MFA codes (`auth.mfa.repeated_failures`) are audit-only and send no notification.
 
 ### Implemented in codebase
 
@@ -172,15 +230,14 @@ These capabilities exist in the application - they are **not** roadmap-only clai
 | WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/mfa/webauthn.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
 | OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
 | Local break-glass admin | Local account provider alongside OIDC |
-| Emergency check-in bearer token | Off by default. `ALLOW_CHECKIN_BEARER=true` plus a `CHECKIN_OPERATOR_TOKEN` of at least 32 characters re-enables a shared bearer token for the check-in scan/lookup API only (break-glass; rate limits are keyed per IP instead of per user) |
+| Emergency check-in bearer token | Off by default (break-glass). `ALLOW_CHECKIN_BEARER=true` plus a `CHECKIN_OPERATOR_TOKEN` of at least 32 characters re-enables a shared bearer token for the check-in scan/lookup API only. Rate limits are keyed per IP instead of per user |
 
 Effective controls still depend on **customer configuration** (OIDC is disabled by default).
-Two-factor authentication is required by default for the `admin` and `superadmin` roles
-(`MFA_REQUIRED_ROLES`, default `admin,superadmin`; a superadmin can change the list in
-Settings → Security unless the environment variable locks it), and those users must enrol TOTP or a
-passkey/security key at first sign-in. Operator accounts have no second factor by default, because a
-check-in station must stay usable on event day (the `operator` role can be added to the required-role
-list in Settings → Security). Confirm your deployment runbook matches your security policy.
+
+- Two-factor authentication is required by default for the `admin` and `superadmin` roles (`MFA_REQUIRED_ROLES`, default `admin,superadmin`). A superadmin can change the list in Settings → Security unless the environment variable locks it.
+- Those users must enrol TOTP or a passkey/security key at first sign-in.
+- Operator accounts have no second factor by default, because a check-in station must stay usable on event day. The `operator` role can be added to the required-role list in Settings → Security.
+- Confirm your deployment runbook matches your security policy.
 
 ### SSO and two-factor authentication
 
@@ -191,7 +248,9 @@ An SSO sign-in is a full session straight away. Admitto does not ask for a secon
 | Second factor asked by Admitto for admin and superadmin | Yes, by default (`MFA_REQUIRED_ROLES`) | No |
 | Who decides whether a second factor is used | Admitto | Your identity provider |
 
-Admitto validates the ID token and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number). It does **not** read `acr`, `amr`, `auth_time` or `email_verified`. So Admitto cannot tell whether the identity provider asked for a second factor. Whether administrators who sign in with SSO use one is enforced only by the identity provider, for example by a policy there.
+- Admitto validates the ID token and reads the subject plus the claims mapped in the provider settings (email, name, groups and phone number).
+- It does **not** read `acr`, `amr`, `auth_time` or `email_verified`. So Admitto cannot tell whether the identity provider asked for a second factor.
+- Whether administrators who sign in with SSO use one is enforced only by the identity provider, for example by a policy there.
 
 ---
 
@@ -217,10 +276,14 @@ Organizations with stricter policies often add controls **outside** the applicat
 |-------|-------------------------------------|
 | Edge / CDN | Cloudflare, Akamai, corporate CDN with WAF |
 | Reverse proxy | nginx, **Nginx Proxy Manager**, HAProxy, F5, cloud load balancer |
-| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway - **Cloudflare Access is natively supported** (Organisation Settings → Identity): Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt |
-| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity) - staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles |
+| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway (see the first note below) |
+| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity; see the second note below) |
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
-| Container runtime | A read-only root filesystem, no extra Linux capabilities and `no-new-privileges` on the `app` container. Optional and not in the shipped compose file, and only part of it was tried: see [Optional container hardening](../../deploy/README.md#optional-container-hardening) |
+| Container runtime | A read-only root filesystem, no extra Linux capabilities and `no-new-privileges` on the `app` container (see the third note below) |
+
+- **Cloudflare Access is natively supported** (Organisation Settings → Identity). Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt.
+- **SSO.** Staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles.
+- **Container hardening** is optional and not in the shipped compose file, and only part of it was tried: see [Optional container hardening](../../deploy/README.md#optional-container-hardening).
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
 documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **overwrite**
@@ -230,65 +293,63 @@ documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **ov
 
 ## Rate limiting
 
-Application throttles use a fixed window (default **60 seconds** unless noted): each bucket resets
-at a fixed boundary rather than rolling continuously, so a burst straddling a window edge can allow
-up to roughly 2x the stated limit in the worst case - a common, accepted trade-off against the
-extra cost of a true sliding window. Limits apply per bucket key; HTTP **429** when exceeded.
-Structured audit events: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
+Application throttles use a fixed window (default **60 seconds** unless noted).
 
-**Store:** Redis. `REDIS_URL` (with a password of at least 16 characters) is required outside
-development and test, and the application refuses to boot without it, so limits are shared across
-replicas and survive restarts. Only development and test runs fall back to an in-memory store per
-process.
+- Each bucket resets at a fixed boundary rather than rolling continuously. So a burst straddling a window edge can allow up to roughly 2x the stated limit in the worst case. This is a common, accepted trade-off against the extra cost of a true sliding window.
+- Limits apply per bucket key. When one is exceeded, the answer is HTTP **429**.
+- Structured audit event: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
 
-**Retuning limits:** every limit below can be changed with the `RATE_LIMIT_OVERRIDES` environment
-variable (JSON keyed by limit name, for example `{"auth:login-ip":{"max":60}}`; see `deploy/ENV.md`),
-read at startup, so a change needs the container recreated, not a new release. The per-IP limits
-(sign-in, OIDC, passkey sign-in, account) are the ones to raise when many staff share one network
-address, such as venue Wi-Fi or a corporate NAT. The per-account protections (sign-in per email, MFA
-and password re-check buckets) are the real brute-force defence and should be loosened with care.
-The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
+**Store: Redis.**
 
-**How the defaults compare with other software** (checked against their published defaults and source):
+- `REDIS_URL` (with a password of at least 16 characters) is required outside development and test. The application refuses to boot without it, so limits are shared across replicas and survive restarts.
+- Only development and test runs fall back to an in-memory store per process.
 
-| Project | Sign-in throttle | Notes |
-|---------|------------------|-------|
-| Mastodon (`config/initializers/rack_attack.rb`) | 25 / 5 min per IP; 25 / 1 h per email | unauthenticated API 300 / 5 min per IP |
-| GitLab (protected paths) | 10 / 60 s per IP | applies to sign-in, sign-up, password reset |
-| Grafana (`defaults.ini`) | 5 failed attempts per username | the per-IP login protection is **off** by default |
-| Discourse (`discourse_defaults.conf`) | no sign-in-specific IP limit | 200 / 60 s and 50 / 10 s per IP overall; private addresses exempt |
-| OWASP Authentication Cheat Sheet | count failures per account, not per IP | lockout can be abused to lock others out |
-| NIST SP 800-63B | at most 100 consecutive failed attempts per account | an upper bound, not a target |
+**Retuning limits.**
 
-Admitto's per-IP limits (30 sign-in, 30 passkey, 60 OIDC per minute) sit at the permissive end of
-this range on purpose: a venue's staff share one address, and the guidance above puts the real
-brute-force defence on the per-account counters. Stream reconnects follow the usual client
-practice of exponential backoff with a 30 s ceiling (LaunchDarkly's SSE clients use the same
-shape); the request budgets are far above what that schedule can produce.
+- Every limit below can be changed with the `RATE_LIMIT_OVERRIDES` environment variable: JSON keyed by limit name, for example `{"auth:login-ip":{"max":60}}` (see `deploy/ENV.md`).
+- It is read at startup, so a change needs the container recreated, not a new release.
+- The per-IP limits (sign-in, OIDC, passkey sign-in, account) are the ones to raise when many staff share one network address, such as venue Wi-Fi or a corporate NAT.
+- The per-account protections (sign-in per email, MFA and password re-check buckets) are the real brute-force defence and should be loosened with care.
+- The check-in stream has its own `CHECKIN_STREAM_*` variables instead.
+
+**Why the per-IP limits are permissive.**
+
+- Admitto's per-IP limits (30 sign-in, 30 passkey, 60 OIDC per minute) are permissive on purpose. A venue's staff share one address, and the real brute-force defence is the per-account counters.
+- That follows the published guidance:
+  - The OWASP Authentication Cheat Sheet says to count failures per account, not per IP, and warns that a lockout can be abused to lock others out.
+  - NIST SP 800-63B allows at most 100 consecutive failed attempts per account, which is an upper bound, not a target.
+- Stream reconnects follow the usual client practice of exponential backoff with a 30 s ceiling. The request budgets are far above what that schedule can produce.
 
 ### Public and authentication
 
 | Surface | Bucket | Limit / window | Auth required |
 |---------|--------|----------------|---------------|
 | `POST /login`, `POST /api/auth/login` | client IP | 30 / 60 s | no |
-| same | normalized email | 10 / 60 s | no (inside the handler, counted before the password is checked, so a correct password is refused too once the budget is spent) |
-| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account (one counter per user across all sessions and addresses) | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
+| same | normalized email | 10 / 60 s | no (see the first note) |
+| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP; at sign-in also the account | 10 / 15 min per proof type (see the second note) | partial session |
 | `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 60 / 60 s | no |
 | `POST /api/auth/login/webauthn/begin`, `POST /api/auth/login/webauthn/finish` (passkey sign-in) | client IP, one bucket each | 30 / 60 s | no |
-| all `/api/account/*` routes except the notification unread-count poll (which has its own per-user bucket, 20 / 60 s) | client IP | 30 / 60 s | no (checked before the session) |
+| all `/api/account/*` routes except the notification unread-count poll (see the third note) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
 
+Notes on the rows above:
+
+- **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
+- **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
+- **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
+
 ### Check-in live updates (SSE stream)
 
-`GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or
-Reports page (none for an archived event, whose pages do not open it and whose requests are refused). Connects and reconnects are limited per operator per event and per operator overall, and
-the number of simultaneously open streams is capped per application process. The defaults below are read once at startup from
-the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`); a value that is not a positive
-whole number is ignored, the default is used, and a warning is logged at boot. Changing them needs the
-container recreated, not just restarted.
+`GET /api/checkin/events/:eventId/stream` is one long-lived connection per open Check-in, Overview or Reports page.
+
+- An archived event opens none: its pages do not open the stream, and its requests are refused.
+- Connects and reconnects are limited per operator per event and per operator overall.
+- The number of simultaneously open streams is capped per application process.
+- The defaults below are read once at startup from the `CHECKIN_STREAM_*` environment variables (see `deploy/ENV.md`). A value that is not a positive whole number is ignored, the default is used, and a warning is logged at boot.
+- Changing them needs the container recreated, not just restarted.
 
 | Bucket | Default | Variable |
 |--------|---------|----------|
@@ -298,12 +359,9 @@ container recreated, not just restarted.
 | open streams, per operator per event, per application process | 6 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` |
 | open streams, per operator overall, per application process | 12 | `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` |
 
-The connect and reconnect limits use the shared rate-limit store. The open-stream caps are counted in
-memory of each application process, not in a shared store, so with several application replicas the
-effective ceiling is the figure above multiplied by the number of replicas (for example 6 and 24 with two).
-
-The check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a
-minute when the rate limit is hit; scanning itself is not affected.
+- The connect and reconnect limits use the shared rate-limit store.
+- The open-stream caps are counted in the memory of each application process, not in a shared store. So with several application replicas the effective ceiling is the figure above multiplied by the number of replicas (for example 12 and 24 with two).
+- When the rate limit is hit, the check-in page shows "Live updates paused briefly (too many reconnects)" and retries after about a minute. Scanning itself is not affected.
 
 ### Operations probes
 
@@ -313,10 +371,9 @@ minute when the rate limit is hit; scanning itself is not affected.
 | `GET /readyz` | client IP | 10 / 60 s | `OPS_HEALTH_TOKEN` (disabled when unset) |
 | `POST /api/ops/system-logs` (worker to app log bridge) | client IP | 120 / 60 s | `OPS_HEALTH_TOKEN` |
 
-Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scoped per process
-(`hostname`) so replica probes are not summed into one bucket. External monitors receive 429
-only above 120 requests per minute per source IP (per replica); a poll every 10-30 seconds is well
-within the limit.
+- Docker `HEALTHCHECK` uses `/healthz` only.
+- With shared Redis, the limit is scoped per process (`hostname`), so replica probes are not summed into one bucket.
+- External monitors receive 429 only above 120 requests per minute per source IP (per replica). A poll every 10-30 seconds is well within the limit.
 
 ### Staff admin (authenticated)
 
@@ -329,10 +386,10 @@ within the limit.
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | admin (operators search through the check-in lookup) |
-| single-attendee wallet actions (void/restore/reissue/refresh status/delete/remove from provider), plus erase and remove of one attendee whenever the event has wallet configured | user + event | 10 / 60 s | event admin |
+| single-attendee wallet actions (void, restore, reissue, refresh status, delete, remove from provider) | user + event | 10 / 60 s | event admin |
 | bulk-attendee mutations (erase, remove, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/refresh status/delete/remove from provider for a selection), plus bulk-erase, bulk-remove and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
-| event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) - one background job per event at a time, no 100-attendee cap | user + event | 10 / 10 min | event admin |
+| bulk wallet actions (void, reissue, refresh status, delete, remove from provider for a selection) | user + event | 10 / 10 min | event admin |
+| event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) | user + event | 10 / 10 min | event admin |
 | polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
 | `PATCH …/attendees/:id` | user + attendee | 20 / 60 s | event admin |
 | `POST …/attendees/:id/resend` | user + attendee; and per user | 5 / 60 s; 30 / h | event admin |
@@ -347,15 +404,18 @@ within the limit.
 | audit-log export, security-audit-log export | user + route | 10 / h | superadmin |
 | attendee PII export | user + route | 5 / h | superadmin |
 
-All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also
-share one additional budget on top of their own per-user/event bucket: **5 / hour per recipient
-address, instance-wide** - not scoped to the calling user, event, or which of the three routes
-sent it. This bounds how much test mail any single external address can receive even if a
-compromised admin session rotates between routes, events, or accounts to work around the
-per-user/event limits above.
+Notes on the rows above:
 
-Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
-just gated at the HTTP-route layer - see **Outbound HTTP** below.
+- **Single-attendee wallet actions.** The same bucket also covers erase and remove of one attendee whenever the event has wallet configured.
+- **Bulk wallet actions.** Bulk-erase, bulk-remove and bulk-revoke-pass share this bucket whenever the event has wallet configured. All of them are capped at max 100 attendees per request in that case.
+- **Event-wide wallet jobs.** One background job runs per event at a time, and there is no 100-attendee cap.
+
+**Test mail to one address.** All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also share one additional budget on top of their own per-user/event bucket:
+
+- It is **5 / hour per recipient address, instance-wide**. It is not scoped to the calling user, event, or which of the three routes sent it.
+- It bounds how much test mail any single external address can receive, even if a compromised admin session rotates between routes, events, or accounts to work around the per-user/event limits above.
+
+Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not just gated at the HTTP-route layer: see [Outbound HTTP](#outbound-http-ssrf-mitigation) below.
 
 ### Superadmin (identity provider UI)
 
@@ -364,22 +424,41 @@ just gated at the HTTP-route layer - see **Outbound HTTP** below.
 | `POST /api/admin/identity/providers/:id/discover` | user + provider | 10 / 60 s |
 | `POST /api/admin/identity/providers/:id/test` | user + provider | 10 / 60 s |
 
-**Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
-≤ 200k character body field; every bulk-attendee-id request (the mutation and wallet routes above)
-≤ 0.5 MB, with each attendee id itself capped at 128 characters - see
-`apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
-`apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
-The pre-authentication routes (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`) are capped at 16 KB and the three wallet webhook routes at 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`); where a route has an IP rate limit it runs before the cap, so oversized requests are counted too. XLSX imports are additionally checked by their real unpacked size (inflated with a hard output cap), not by the sizes the file declares, and by the number of `<row>` and `<c>` elements in the unpacked parts (the header plus 50,000 rows and an average of 20 cells for each, counted over all sheets), before the workbook is read; the CSV text made from the first sheet is refused while it is built, as soon as it passes the 10 MiB text limit, not after all of it exists. The import reads only what an attendee list needs from a worksheet: its data validation rules and column definitions are left out. The workbook is read in a child process of its own, one at a time (four at most are held at once, a fifth is answered with the usual 429 `too many requests`), with a fixed limit on its memory (384 MiB of heap) and on its time (60 s), with an empty environment and with none of the node flags of the app, so that neither an `--env-file` flag of the dev scripts nor a heap-size flag can reach it: a workbook that passes the checks above and still needs more, or that makes the reader itself fail, is refused with the same answer and the app is not affected, and reading it does not hold up other requests. The process bounds what a workbook can use; it is not a sandbox. The six check-in POST routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit) and `POST /api/ops/system-logs` at 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check); both answer `413 request too large`.
+### Body size caps
+
+These are separate from rate limits.
+
+- **Import uploads:** at most 5 MB.
+- **Templates:** template JSON is sized for a body field of at most 200k characters.
+- **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
+- **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
+- **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
+- **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).
+- The check-in routes and `POST /api/ops/system-logs` both answer `413 request too large`.
+
+**XLSX imports** get more checks, before and while the workbook is read:
+
+- The real unpacked size is checked (inflated with a hard output cap), not the sizes the file declares.
+- The `<row>` and `<c>` elements in the unpacked parts are counted before the workbook is read: the header plus 50,000 rows and an average of 20 cells for each, counted over all sheets.
+- The CSV text made from the first sheet is refused while it is built, as soon as it passes the 10 MiB text limit, not after all of it exists.
+- The import reads only what an attendee list needs from a worksheet: its data validation rules and column definitions are left out.
+- The workbook is read in a child process of its own:
+  - one at a time (four at most are held at once, a fifth is answered with the usual 429 `too many requests`);
+  - with a fixed limit on its memory (384 MiB of heap) and on its time (60 s);
+  - with an empty environment and with none of the node flags of the app, so that neither an `--env-file` flag of the dev scripts nor a heap-size flag can reach it.
+- A workbook that passes the checks above and still needs more, or that makes the reader itself fail, is refused with the same answer. The app is not affected, and reading it does not hold up other requests.
+- The process bounds what a workbook can use; it is not a sandbox.
 
 ---
 
 ## Reverse proxy and client IP (`TRUST_PROXY`)
 
-`X-Forwarded-*` headers are honoured only when **both** are true: `TRUST_PROXY=true`, **and** the
-request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in
-[`deploy/.env.example`](../../deploy/.env.example), loopback-only if unset). `TRUST_PROXY` alone is
-not a trust boundary - anything that can reach the app directly could otherwise set these headers
-itself.
+`X-Forwarded-*` headers are honoured only when **both** are true:
+
+- `TRUST_PROXY=true`, **and**
+- the request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in [`deploy/.env.example`](../../deploy/.env.example), loopback-only if unset).
+
+`TRUST_PROXY` alone is not a trust boundary: anything that can reach the app directly could otherwise set these headers itself.
 
 | Header | Used for |
 |--------|----------|
@@ -387,63 +466,47 @@ itself.
 | `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
 | `X-Forwarded-Proto` | Session cookie `Secure` flag |
 
-Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/rate-limit/trust-proxy.ts)
-(the `TRUSTED_PROXY_CIDRS` peer check), consumed by
-[`client-ip.ts`](../../apps/web/src/rate-limit/client-ip.ts),
-[`same-origin-post.ts`](../../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in
-[`is-secure-request.ts`](../../apps/web/src/is-secure-request.ts) (used for the session cookie
-`Secure` flag).
+**Implementation:** [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/rate-limit/trust-proxy.ts) (the `TRUSTED_PROXY_CIDRS` peer check), consumed by [`client-ip.ts`](../../apps/web/src/rate-limit/client-ip.ts), [`same-origin-post.ts`](../../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in [`is-secure-request.ts`](../../apps/web/src/is-secure-request.ts) (used for the session cookie `Secure` flag).
 
-**Operator requirement:** the edge proxy should set a **single** trusted client IP (e.g. nginx
-`proxy_set_header X-Forwarded-For $remote_addr`). The app takes the **rightmost** hop that is not
-inside `TRUSTED_PROXY_CIDRS`, so a client-supplied prefix in an appended chain is ignored; every
-proxy in a multi-proxy chain must be listed in `TRUSTED_PROXY_CIDRS`, otherwise the nearest unlisted
-proxy is taken for the client and everyone behind it shares one rate-limit bucket.
+**Operator requirement:**
 
-**Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
-of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
+- The edge proxy should set a **single** trusted client IP (e.g. nginx `proxy_set_header X-Forwarded-For $remote_addr`).
+- The app takes the **rightmost** hop that is not inside `TRUSTED_PROXY_CIDRS`, so a client-supplied prefix in an appended chain is ignored.
+- Every proxy in a multi-proxy chain must be listed in `TRUSTED_PROXY_CIDRS`. Otherwise the nearest unlisted proxy is taken for the client, and everyone behind it shares one rate-limit bucket.
 
-**Hardening (v0.4.13+): what changed.** `TRUSTED_PROXY_CIDRS` adds a peer allowlist. Previously,
-`TRUST_PROXY=true` trusted forwarded headers from **any** direct connection, so a client that
-reached the app directly (misconfigured port exposure, or from elsewhere on the same network)
-could forge its own rate-limit IP, CSRF origin, and cookie `Secure` flag.
+**Hardening (v0.4.5+).** Malformed or non-IP first hops fall back to the TCP remote address instead of a shared `"unknown"` bucket, which previously allowed cross-client rate-limit interference.
 
-**Residual risk.** The default deploy topology pins `TRUSTED_PROXY_CIDRS` to the whole `internal`
-compose network subnet, not just the `proxy` container's individual address, so a compromise of
-another container on that same network (`db`, `redis`, `migrate`, `worker`) could still inject
-these headers. Narrowing to a single pinned container IP was judged not worth the added
-operational fragility (static IPs in Compose); this subnet-level allowlist is still a materially
-smaller trust boundary than "any direct connection."
+**Hardening (v0.4.13+): what changed.**
 
-When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF origin, and cookie
-`Secure` flag (direct socket / request URL used) regardless of peer.
+- `TRUSTED_PROXY_CIDRS` adds a peer allowlist.
+- Previously, `TRUST_PROXY=true` trusted forwarded headers from **any** direct connection. So a client that reached the app directly (misconfigured port exposure, or from elsewhere on the same network) could forge its own rate-limit IP, CSRF origin, and cookie `Secure` flag.
+
+**Residual risk.**
+
+- The default deploy topology pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy` container's individual address. So a compromise of another container on that same network (`db`, `redis`, `migrate`, `worker`) could still inject these headers.
+- Narrowing to a single pinned container IP was judged not worth the added operational fragility (static IPs in Compose).
+- This subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
+
+When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF origin, and cookie `Secure` flag (direct socket / request URL used) regardless of peer.
 
 ---
 
 ## Outbound HTTP (SSRF mitigation)
 
-Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
-(and Cloudflare Access JWKS) use
-[`assertSafeOidcFetchUrl`](../../packages/auth/src/oidc/safe-url.ts) plus
-[`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
+Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches (and Cloudflare Access JWKS) use [`assertSafeOidcFetchUrl`](../../packages/auth/src/oidc/safe-url.ts) plus [`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
-- HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
-- Literal private, link-local, carrier-grade NAT (100.64.0.0/10, which includes Tailscale
-  addresses), multicast/reserved, and metadata hostnames rejected, including IPv4 embedded in
-  NAT64/6to4 IPv6 literals. Operators who reach an IdP over a tailnet add its exact host to the
-  SSO allowlist.
-- **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
-  connection uses a custom undici `lookup` to the validated address while the request URL keeps
-  the original hostname (correct Host/SNI). All validated A/AAAA records are cached; on
-  network-unreachable failures, the client retries the next record. Redirects are handled manually
-  with SSRF re-check on every hop.
-- **Bounded responses**: the response body is read before the pinned connection is closed and may
-  not exceed 1 MiB. A larger discovery document, token response or key set is rejected instead of
-  being buffered without limit.
+- HTTPS is required in production (HTTP loopback is allowed in development for mock IdPs).
+- **Blocked addresses.** Literal private, link-local, carrier-grade NAT (100.64.0.0/10, which includes Tailscale addresses), multicast/reserved, and metadata hostnames are rejected, including IPv4 embedded in NAT64/6to4 IPv6 literals. Operators who reach an IdP over a tailnet add its exact host to the SSO allowlist.
+- **DNS resolve-and-pin.**
+  - The hostname is resolved once (5 min TTL) and validated.
+  - Then the outbound connection uses a custom undici `lookup` to the validated address, while the request URL keeps the original hostname (correct Host/SNI).
+  - All validated A/AAAA records are cached. On network-unreachable failures, the client retries the next record.
+  - Redirects are handled manually, with the SSRF re-check on every hop.
+- **Bounded responses.** The response body is read before the pinned connection is closed and may not exceed 1 MiB. A larger discovery document, token response or key set is rejected instead of being buffered without limit.
 
-Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
-discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
-**public** URLs the instance can reach - perimeter egress filtering remains an operator control.
+Admin UI discover/test requires a **superadmin** session (or a Cloudflare Access JWT with instance admin role).
+
+**Residual risk.** A compromised superadmin account can still trigger outbound fetches to **public** URLs the instance can reach. Perimeter egress filtering remains an operator control.
 
 **Self-hosted private SSO allowlist:**
 
@@ -458,16 +521,16 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
   remains required.
 - **Where to set it:** on `app`.
 
-**Mail transport destinations (v0.4.13+).** The same class of guard now also covers the SMTP host,
-the Power Automate webhook URL, and the bounce-detection IMAP host. Each is checked against a
-private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the
-server connects, with the real connection pinned to the already-validated address, closing the
-same DNS-rebinding gap the OIDC guard closes.
+**Mail transport destinations (v0.4.13+).**
 
-Separately, event-level dedicated mail transport now also requires superadmin (matching the
-organization-wide Mail settings page). It can no longer silently send the organization's real SMTP
-password or Power Automate key to a connection target the event override changed: saving or
-sending now requires that override to also supply its own credential.
+- The same class of guard now also covers the SMTP host, the Power Automate webhook URL, and the bounce-detection IMAP host.
+- Each is checked against a private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the server connects.
+- The real connection is pinned to the already-validated address, closing the same DNS-rebinding gap the OIDC guard closes.
+
+Separately, event-level dedicated mail transport now also requires superadmin (matching the organization-wide Mail settings page).
+
+- It can no longer silently send the organization's real SMTP password or Power Automate key to a connection target the event override changed.
+- Saving or sending now requires that override to also supply its own credential.
 
 **Self-hosted private MTA allowlist:**
 
@@ -480,10 +543,10 @@ sending now requires that override to also supply its own credential.
   keep the list minimal and ensure DNS for those names is under operator control.
 - **Where to set it:** on both `app` and `worker`.
 
-**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers three
-admin-configurable external-service URLs under Organisation Settings → External services. Each
-re-resolves its hostname and pins the outbound connection to the validated address at request
-time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
+**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers three admin-configurable external-service URLs under Organisation Settings → External services.
+
+- Each re-resolves its hostname and pins the outbound connection to the validated address at request time.
+- That closes the same DNS-rebinding gap as the OIDC and mail guards above.
 
 | Service | Configurable URL | Implementation |
 |---------|-------------------|-----------------|
@@ -491,45 +554,47 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
 | Geocoding | Nominatim base URL | `apps/web/src/maps/nominatim-provider.ts` |
 | Map tiles | Map tile-server URL | `apps/web/src/maps/static-map.ts` |
 
-**Notification webhook destination.** The organisation's alert webhook (Organisation Settings →
-Notifications, superadmin only) is checked by `assertSafeWebhookUrl`
-(`packages/notifications/src/channels/webhook.ts`) when saved, and re-resolved and pinned to the
-validated address at every send, with a 15 s timeout. HTTPS is required (plain HTTP loopback only
-outside production) and private, loopback, link-local and cloud-metadata hosts are rejected. There
-is no allowlist escape hatch for this destination. The Send test action is rate limited per user.
+**Notification webhook destination.** The organisation's alert webhook (Organisation Settings → Notifications, superadmin only) is checked by `assertSafeWebhookUrl` (`packages/notifications/src/channels/webhook.ts`) when saved. It is re-resolved and pinned to the validated address at every send, with a 15 s timeout.
 
-**PassCreator call pacing (not SSRF - availability/abuse hardening).** Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`, which paces requests proactively rather than reacting to a 429 after PassCreator's own limit is already exceeded:
+- HTTPS is required (plain HTTP loopback only outside production), and private, loopback, link-local and cloud-metadata hosts are rejected.
+- There is no allowlist escape hatch for this destination.
+- The Send test action is rate limited per user.
 
-- **Spacing:** at least 150ms between calls, across every caller - single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save - regardless of how many separate requests or client instances are triggering them concurrently. This keeps Admitto's outbound traffic under PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at once).
-- **Multi-process coordination:** with `REDIS_URL` configured, pacing is coordinated across every server process via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`). Without it, each process paces only its own calls, so the combined rate across processes could exceed the intended pace.
-- **Relationship to the rate limits above:** those bound how much work an admin can queue up; this pacing bounds how fast that work actually reaches PassCreator - so a bulk wallet action against a selection now takes proportionally longer than a non-wallet bulk action, by design, rather than firing every call at once and having a chunk fail once PassCreator's limit was exceeded.
-- **Attendee caps:** bulk wallet actions on a whole selection are capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size request stays within a typical reverse proxy's response timeout. Bulk-erase, bulk-remove and bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured (both can also reach PassCreator once per selected attendee in that case); an event with no wallet configured keeps the general 500-attendee cap for both, since neither can reach PassCreator at all.
+**PassCreator call pacing** (not SSRF: availability and abuse hardening). Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`. It paces requests proactively, rather than reacting to a 429 after PassCreator's own limit is already exceeded.
+
+- **Spacing.** At least 150ms between calls, across every caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save.
+  - It holds regardless of how many separate requests or client instances are triggering them concurrently.
+  - This keeps Admitto's outbound traffic under PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at once).
+- **Multi-process coordination.** With `REDIS_URL` configured, pacing is coordinated across every server process via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`). Without it, each process paces only its own calls, so the combined rate across processes could exceed the intended pace.
+- **Relationship to the rate limits above.**
+  - Those bound how much work an admin can queue up. This pacing bounds how fast that work actually reaches PassCreator.
+  - So a bulk wallet action against a selection takes proportionally longer than a non-wallet bulk action, by design, rather than firing every call at once and having a chunk fail once PassCreator's limit was exceeded.
+- **Attendee caps.** Bulk wallet actions on a whole selection are capped at 100 attendees per request (down from the general 500 bulk-action cap), so a full-size request stays within a typical reverse proxy's response timeout.
+  - Bulk-erase, bulk-remove and bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured. In that case all three can also reach PassCreator once per selected attendee.
+  - An event with no wallet configured keeps the general 500-attendee cap for all three, since none of them can reach PassCreator at all.
 
 ---
 
 ## Data protection in operations
 
 - **Ticket / QR payload:** opaque random identifier - no attendee name or email embedded in the QR.
-- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key
-  supplied at deploy time via environment variable.
-- **Logs:** intended for operations, not analytics. Attendee-facing data (recipient addresses,
-  import content) and secrets are never logged in full. A small, named set of staff/operator
-  accountability events (login success, admin actions) does log the acting staff member's own
-  email address - see **Logs** and **System logs (live tail)** in
-  [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
-- **Health endpoints:** `/healthz` - liveness + DB ping, rate-limited, no PII; `/readyz` -
-  token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
-  security headers; neither exposes secrets or attendee data.
-- **Frozen email delivery bodies:** `EmailDelivery.rendered_html` / `rendered_subject` are nullified
-  best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60
-  days by default. `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker,
-  `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike. Preview with
-  `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
-- **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
-  (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
-  service; database dumps are **not** written during migrate. Operators take a pre-upgrade dump
-  (and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount),
-  so a compromised application process cannot read or tamper with those dumps.
+- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key supplied at deploy time via environment variable.
+- **Logs:**
+  - They are intended for operations, not analytics.
+  - Attendee-facing data (recipient addresses, import content) and secrets are never logged in full.
+  - A small, named set of staff/operator accountability events (login success, admin actions) does log the acting staff member's own email address. See **Logs** and **System logs (live tail)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
+- **Health endpoints:**
+  - `/healthz`: liveness + DB ping, rate-limited, no PII.
+  - `/readyz`: token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset).
+  - Both return baseline security headers; neither exposes secrets or attendee data.
+- **Frozen email delivery bodies:**
+  - `EmailDelivery.rendered_html` / `rendered_subject` are nullified best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days by default.
+  - `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker, `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike.
+  - Preview with `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
+- **Container privilege (v0.4.13+):**
+  - The production image runs as the unprivileged `node` user (UID 1000) for `migrate`, `app`, and `worker`.
+  - Schema migration is a one-shot `migrate` compose service; database dumps are **not** written during migrate.
+  - Operators take a pre-upgrade dump, and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount. So a compromised application process cannot read or tamper with those dumps.
 
 ---
 
@@ -538,65 +603,45 @@ is no allowlist escape hatch for this destination. The Send test action is rate 
 Be explicit with auditors about what is **out of product scope** today:
 
 - **No built-in SIEM or central log platform** (forward container logs if required).
-  - **System logs screen:** the in-app **System logs** screen (superadmin only, see
-    [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a short, in-memory live tail for day-to-day
-    diagnostics. It is **not** a substitute for a SIEM: it holds only the last 1000 entries and is
-    emptied on every restart.
-  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for sixteen
-    auth/security event types (login, repeated-failure alerts, new-country admin login, MFA, logout,
-    OIDC, access-denied, trusted-device, superadmin bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in
-    [DATA-PROTECTION.md](../../DATA-PROTECTION.md). This is a queryable incident-review trail, not
-    a general-purpose log platform, and rate-limit/system log signals stay ephemeral and
-    operator-shipped as above.
-  - **Durability caveats on that trail:** it is neither complete nor permanent. Persistence is
-    best-effort, a write failure is logged but never blocks the underlying auth action, so a
-    transient DB hiccup can leave a gap. Rows are also purged after the configured retention window
-    (30 days by default).
+  - **System logs screen:** the in-app **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a short, in-memory live tail for day-to-day diagnostics. It is **not** a substitute for a SIEM: it holds only the last 1000 entries and is emptied on every restart.
+  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for sixteen auth/security event types (login, repeated-failure alerts, new-country admin login, MFA, logout, OIDC, access-denied, trusted-device, superadmin bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md).
+    - It is a queryable incident-review trail, not a general-purpose log platform.
+    - Rate-limit and system log signals stay ephemeral and operator-shipped, as above.
+  - **Durability caveats on that trail:** it is neither complete nor permanent.
+    - Persistence is best-effort. A write failure is logged but never blocks the underlying auth action, so a transient DB hiccup can leave a gap.
+    - Rows are also purged after the configured retention window (30 days by default).
 - No HA / multi-region failover in the default compose topology.
-- No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge, email delivery snapshot nullification, security audit log purge and in-app notification purge run on the
-  Admitto **worker** at boot and about every 24 hours, and are also available as CLI maintenance
-  commands).
+- No always-on scheduler for all long-term PII purge domains yet. The retention **policy** is documented.
+  - Auth-state purge, email delivery snapshot nullification, security audit log purge and in-app notification purge run on the Admitto **worker** at boot and about every 24 hours.
+  - They are also available as CLI maintenance commands.
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
-- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot - minimum
-  length only (32 characters for both; a shorter `OPS_HEALTH_TOKEN` leaves `/readyz` disabled);
-  operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
-- Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
-  controls in front of the origin.
-- **OIDC roles are reconciled at login only (JIT):** group→role mappings are fully evaluated on
-  each OIDC sign-in, including removal of grants no longer authorized by IdP group membership.
-  If a user is removed from a group in the identity provider, an already-active elevated Admitto
-  session persists until the next OIDC login, session expiry, or session revocation. For
-  deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS`
-  to **8h or less** (`28800000`) so the stale-session window is bounded.
+- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot: minimum length only (32 characters for both; a shorter `OPS_HEALTH_TOKEN` leaves `/readyz` disabled). Operators should generate them with `openssl rand -hex 32` (documented in `.env.example`).
+- Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network controls in front of the origin.
+- **OIDC roles are reconciled at login only (JIT).** Group→role mappings are fully evaluated on each OIDC sign-in, including removal of grants no longer authorized by IdP group membership.
+  - If a user is removed from a group in the identity provider, an already-active elevated Admitto session persists until the next OIDC login, session expiry, or session revocation.
+  - For deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS` to **8h or less** (`28800000`) so the stale-session window is bounded.
 
-  **Multiple instance superadmins (v0.4.10+):** Admitto allows more than one active
-  `superadmin@instance` assignment (admin UI, CLI bootstrap, or OIDC group mapping). First-run
-  `POST /setup` still creates exactly one user when the database is empty; concurrent setup
-  submissions surface `409 already_initialized` for the loser. Before removing or demoting a
-  superadmin in the IdP, keep **at least two active** instance superadmins so OIDC reconciliation
-  cannot leave the deployment without break-glass access. OIDC group sync refuses to revoke the
-  last **active** instance-superadmin grant (`auth.oidc.superadmin_revoke_blocked` audit event);
-  inactive users are excluded from the floor count.
+### Multiple instance superadmins (v0.4.10+)
 
-  Offboarding runbook for OIDC-managed elevated roles:
-  1. Remove the user from the relevant group in the IdP **only after** another active instance
-     superadmin exists (see multiple-superadmin note above).
-  2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
-  3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
-     current IdP group membership.
-  4. Immediate access removal depends on the auth mode:
-     - **Session-cookie OIDC mode:** revoking sessions in step 2 is sufficient - an OIDC-sourced
-       grant without an active session grants nothing.
-     - **Cloudflare Access mode:** also remove or block the user at the Cloudflare Access / IdP
-       policy layer, because a valid CF Access JWT can authenticate staff requests without an
-       Admitto `Session` row.
+- Admitto allows more than one active `superadmin@instance` assignment (admin UI, CLI bootstrap, or OIDC group mapping).
+- First-run `POST /setup` still creates exactly one user when the database is empty. Concurrent setup submissions surface `409 already_initialized` for the loser.
+- Before removing or demoting a superadmin in the IdP, keep **at least two active** instance superadmins, so OIDC reconciliation cannot leave the deployment without break-glass access.
+- OIDC group sync refuses to revoke the last **active** instance-superadmin grant (`auth.oidc.superadmin_revoke_blocked` audit event). Inactive users are excluded from the floor count.
 
-     Either way, the grant row itself is only removed on the next OIDC/CF Access reconciliation,
-     and OIDC-sourced grants cannot be removed through the manual role revoke action
-     (`managed_by_idp`). If the grant row must disappear before the user's next authentication,
-     temporarily remove or disable the relevant group→role mapping rule, complete reconciliation,
-     then re-enable the rule if still needed.
+### Offboarding runbook for OIDC-managed elevated roles
+
+1. Remove the user from the relevant group in the IdP **only after** another active instance superadmin exists (see [Multiple instance superadmins](#multiple-instance-superadmins-v0410)).
+2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
+3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by current IdP group membership.
+4. Immediate access removal depends on the auth mode:
+   - **Session-cookie OIDC mode:** revoking sessions in step 2 is sufficient. An OIDC-sourced grant without an active session grants nothing.
+   - **Cloudflare Access mode:** also remove or block the user at the Cloudflare Access / IdP policy layer, because a valid CF Access JWT can authenticate staff requests without an Admitto `Session` row.
+
+Either way, the grant row itself is only removed on the next OIDC/CF Access reconciliation, and OIDC-sourced grants cannot be removed through the manual role revoke action (`managed_by_idp`). If the grant row must disappear before the user's next authentication:
+
+- temporarily remove or disable the relevant group→role mapping rule,
+- complete reconciliation,
+- then re-enable the rule if still needed.
 
 ### Penetration test verification (operator checklist)
 
