@@ -703,9 +703,13 @@ export function createApp(options: CreateAppOptions = {}) {
   // Applied after next() so it lands on responses handlers build via c.json()/c.body()
   // AND ones that return a bare `new Response(...)` (e.g. CSV/PDF/XLSX exports) — Hono only
   // merges pre-next() c.header() calls into responses built through its own c.json()/c.body().
+  // Staff API answers are per user and carry personal data, and check-in tablets are shared
+  // devices, so no browser or proxy may keep them. A handler that sets its own Cache-Control keeps
+  // it (the live check-in stream sends no-cache).
   app.use("/api/*", async (c, next) => {
     await next();
     applyBaselineSecurityHeaders((name, value) => c.header(name, value));
+    if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "no-store");
   });
   // After the header middleware above, so its 400 still gets those headers on /api.
   app.use("*", rejectNulInRequestTarget);

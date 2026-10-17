@@ -20,11 +20,18 @@ export function tooShortProgressScore(length: number, minLength: number): number
   return Math.min(4, Math.max(1, Math.ceil((length / minLength) * 4)));
 }
 
-/** True when a password has very low character variety or is a simple ascending/descending run. */
+/**
+ * True when a password has very low character variety or is a simple ascending/descending run.
+ * Very low variety means at most a quarter of the characters are different and at most 6 are,
+ * the same rule as `hasTrivialCharacterPattern` (see `MAX_REPEATED_CHARACTERS` there for why
+ * there is a cap). The 6 is written out here because this function is sent to the browser as
+ * text and cannot read a constant from outside itself.
+ */
 export function hasNearZeroEntropy(password: string): boolean {
   const lower = password.toLowerCase();
-  const uniqueRatio = new Set(lower).size / lower.length;
-  if (uniqueRatio <= 0.25) return true;
+  const distinct = new Set(lower).size;
+  const uniqueRatio = distinct / lower.length;
+  if (uniqueRatio <= 0.25 && distinct <= 6) return true;
   return isSimpleAsciiRun(lower);
 }
 
