@@ -16,6 +16,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Fixed
 
+- Start every Activity label with a capital letter, also for an action type the list does not know
 - Show the same day labels in the cumulative charts of the wallet and mail reports for every viewer, including those far east of UTC
 - Show one "archived" bar above every page of an archived event, with "Restore event" for a Superadmin ([#1687](https://github.com/solarssk/admitto/pull/1687))
 - Remove the repeated "archived" line from the other Event settings tabs and the image library ([#1686](https://github.com/solarssk/admitto/pull/1686))

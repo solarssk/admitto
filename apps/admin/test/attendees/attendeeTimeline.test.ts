@@ -107,8 +107,9 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     expect(getTimelineLabel(labelEntry(actionType))).toBe(expected);
   });
 
-  it("falls back to a humanized raw action_type for anything unrecognized", () => {
-    expect(getTimelineLabel(labelEntry("some_future_action"))).toBe("some future action");
+  it("falls back to a humanized raw action_type for anything unrecognized, starting with a capital letter", () => {
+    expect(getTimelineLabel(labelEntry("some_future_action"))).toBe("Some future action");
+    expect(getTimelineLabel(labelEntry("checked_in"))).toBe("Checked in");
   });
 
   it("shows the RSVP target status, defaulting to 'updated' when metadata has none", () => {
