@@ -31,8 +31,6 @@ function isFailureStatus(status: string): boolean {
 
 export interface DeliveryDetailsModalProps {
   eventId: string;
-  /** Event IANA zone - fallback when a delivery row has no client_timezone. */
-  eventTimezone: string;
   row: DeliveryDto;
   onClose: () => void;
   onViewSentMessage: (row: DeliveryDto) => void;
@@ -63,16 +61,12 @@ function timelineStepLabel(timeline: DeliveryDto[], index: number): string {
   return `Resend ${resendNumber}`;
 }
 
-function deliveryDetailTime(
-  iso: string | null,
-  clientTimezone: string | null | undefined,
-  eventTimezone: string,
-): string {
-  return formatDeliveryHistoryTime(iso, clientTimezone, eventTimezone);
+function deliveryDetailTime(iso: string | null, clientTimezone: string | null | undefined): string {
+  return formatDeliveryHistoryTime(iso, clientTimezone);
 }
 
-function timelineItemTime(item: DeliveryDto, eventTimezone: string): string {
-  return deliveryDetailTime(rowTimestamp(item), item.client_timezone, eventTimezone);
+function timelineItemTime(item: DeliveryDto): string {
+  return deliveryDetailTime(rowTimestamp(item), item.client_timezone);
 }
 
 /** "-" when unknown (not yet failed, or a status this app never retries), else Yes/No. */
@@ -126,7 +120,7 @@ function deliverySuccessNoticeContent(detail: DeliveryDetailDto): string | null 
 /** Plain-text dump for the "Export as .txt" footer action - real captured fields only, no
  * fabricated provider transcript (plan.md's load-bearing constraint: no Postmark integration
  * exists, so nothing like a fake SMTP transcript is invented here). */
-function buildExportText(detail: DeliveryDetailDto, eventTimezone: string): string {
+function buildExportText(detail: DeliveryDetailDto): string {
   const lines = [
     "Admitto delivery details",
     "========================",
@@ -140,10 +134,10 @@ function buildExportText(detail: DeliveryDetailDto, eventTimezone: string): stri
     `Provider message ID: ${detail.provider_message_id ?? "-"}`,
     `Attempts: ${detail.attempts}`,
     `Retryable: ${retryableLabel(detail.retryable)}`,
-    `Queued at: ${deliveryDetailTime(detail.queued_at, detail.client_timezone, eventTimezone)}`,
-    `Accepted at: ${deliveryDetailTime(detail.accepted_at, detail.client_timezone, eventTimezone)}`,
-    `Sent at: ${deliveryDetailTime(detail.sent_at, detail.client_timezone, eventTimezone)}`,
-    `Failed at: ${deliveryDetailTime(detail.failed_at, detail.client_timezone, eventTimezone)}`,
+    `Queued at: ${deliveryDetailTime(detail.queued_at, detail.client_timezone)}`,
+    `Accepted at: ${deliveryDetailTime(detail.accepted_at, detail.client_timezone)}`,
+    `Sent at: ${deliveryDetailTime(detail.sent_at, detail.client_timezone)}`,
+    `Failed at: ${deliveryDetailTime(detail.failed_at, detail.client_timezone)}`,
     `Error code: ${detail.error_code ?? "-"}`,
     `Error: ${detail.error ?? "-"}`,
     `Sent by: ${detail.actor_display ?? "System"}`,
@@ -155,7 +149,7 @@ function buildExportText(detail: DeliveryDetailDto, eventTimezone: string): stri
     "------------------",
     ...detail.timeline.map((item, index) => {
       const errorSuffix = item.error && isFailureStatus(item.status) ? ` - ${item.error}` : "";
-      return `${timelineStepLabel(detail.timeline, index)}: ${item.status} (${timelineItemTime(item, eventTimezone)})${errorSuffix}`;
+      return `${timelineStepLabel(detail.timeline, index)}: ${item.status} (${timelineItemTime(item)})${errorSuffix}`;
     }),
   ];
   return lines.join("\n");
@@ -173,7 +167,6 @@ export function DeliveryDetailsModal(props: Readonly<DeliveryDetailsModalProps>)
 
 function DeliveryDetailsModalBody({
   eventId,
-  eventTimezone,
   row,
   onClose,
   onViewSentMessage,
@@ -263,21 +256,21 @@ function DeliveryDetailsModalBody({
                     </div>
                     <div>
                       <dt>Queued at</dt>
-                      <dd>{deliveryDetailTime(detail.queued_at, detail.client_timezone, eventTimezone)}</dd>
+                      <dd>{deliveryDetailTime(detail.queued_at, detail.client_timezone)}</dd>
                     </div>
                     <div>
                       <dt>Accepted at</dt>
-                      <dd>{deliveryDetailTime(detail.accepted_at, detail.client_timezone, eventTimezone)}</dd>
+                      <dd>{deliveryDetailTime(detail.accepted_at, detail.client_timezone)}</dd>
                     </div>
                     <div>
                       <dt>
                         <HintLabel hint={SENT_AT_HINT}>Sent at</HintLabel>
                       </dt>
-                      <dd>{deliveryDetailTime(detail.sent_at, detail.client_timezone, eventTimezone)}</dd>
+                      <dd>{deliveryDetailTime(detail.sent_at, detail.client_timezone)}</dd>
                     </div>
                     <div>
                       <dt>Failed at</dt>
-                      <dd>{deliveryDetailTime(detail.failed_at, detail.client_timezone, eventTimezone)}</dd>
+                      <dd>{deliveryDetailTime(detail.failed_at, detail.client_timezone)}</dd>
                     </div>
                     <div>
                       <dt>Sent by</dt>
@@ -345,7 +338,7 @@ function DeliveryDetailsModalBody({
                 variant="secondary"
                 icon={<i className="ti ti-download" aria-hidden="true" />}
                 onClick={() =>
-                  downloadTextFile(`delivery-${detail.id}.txt`, buildExportText(detail, eventTimezone))
+                  downloadTextFile(`delivery-${detail.id}.txt`, buildExportText(detail))
                 }
               >
                 Export as .txt

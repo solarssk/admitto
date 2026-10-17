@@ -62,8 +62,8 @@ import { useRetryKeepingError } from "../hooks/useRetryKeepingError.js";
 import { loadWithTimeout, rejectOnAbort } from "../utils/load-timeout.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import {
+  formatActorTime,
   formatAdmissionDisplayParts,
-  formatEventDateTime,
   formatUtcDateTime,
   type AdmissionDisplayParts,
 } from "../utils/event-dates.js";
@@ -74,7 +74,6 @@ import {
   getTimelineIcon,
   getTimelineLabel,
   getTimelineTone,
-  formatActivityTimestamp,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
 import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
@@ -1048,7 +1047,7 @@ function AttendeeOverviewTab({
             <div className="attendee-detail-row">
               <span>Registered on</span>
               <span className="mono">
-                {formatEventDateTime(detail.created_at, detail.client_timezone ?? event.timezone)}
+                {formatActorTime(detail.created_at, detail.client_timezone)}
               </span>
             </div>
           </div>
@@ -1279,7 +1278,6 @@ function AttendeeOverviewTab({
                   const timeParts = formatDeliveryHistoryTimeParts(
                     rowTimestamp(delivery),
                     delivery.client_timezone,
-                    event.timezone,
                   );
                   return (
                     <li className="attendee-delivery" key={delivery.id}>
@@ -1337,7 +1335,6 @@ function AttendeeOverviewTab({
       {detailsRow && (
         <DeliveryDetailsModal
           eventId={event.id}
-          eventTimezone={event.timezone}
           row={detailsRow}
           showOpenAttendee={false}
           onClose={() => setDetailsRow(null)}
@@ -1363,7 +1360,6 @@ function AttendeeActivityTab({
   attributeFields,
   eventItems,
   ticketTypes,
-  event,
 }: Readonly<{
   actionLog: AttendeeDetailDto["action_log"];
   total: number;
@@ -1374,7 +1370,6 @@ function AttendeeActivityTab({
   attributeFields: CustomDataFieldDef[];
   eventItems: AttendeeDetailDto["event_items"];
   ticketTypes: TicketTypeDto[];
-  event: EventDto;
 }>) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
@@ -1400,7 +1395,7 @@ function AttendeeActivityTab({
                 </div>
                 <div className="at-tl-meta">
                   <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
+                    {formatActorTime(entry.created_at, entry.client_timezone)}
                   </time>
                   <span className="at-tl-actor">
                     <i className="ti ti-user" aria-hidden="true" />
@@ -1564,11 +1559,9 @@ function AttendeeNotesTab({
                       </Badge>
                     )}
                   </div>
-                  {/* AttendeeNote has no per-note captured timezone (unlike Activity log entries),
-                   * so this always falls through to the fallback below — the viewer's own
-                   * browser zone, not the event's, matching the other viewer-facing timestamps
-                   * on this page (wallet pass dates above) and fixing a note added by/for someone
-                   * outside the event's own timezone reading as the wrong time (PO report). */}
+                  {/* AttendeeNote has no per-note captured timezone (unlike Activity log entries), so
+                   * its time is UTC: the same text for every viewer, never the viewer's own zone or
+                   * the event's (standards/admin-spa/time-display.md). */}
                   <time className="at-notes-list__time" dateTime={note.created_at}>
                     {formatUtcDateTime(note.created_at)}
                   </time>
@@ -2968,7 +2961,6 @@ export function AttendeeDetailPage() {
           attributeFields={attributeFields}
           eventItems={eventItems}
           ticketTypes={ticketTypes}
-          event={event}
         />
       )}
 

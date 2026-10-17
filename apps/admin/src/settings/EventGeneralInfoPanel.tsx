@@ -5,7 +5,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import type { EventSettingsFormPanelProps } from "../pages/EventSettingsPage.js";
-import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatActorTime } from "../utils/event-dates.js";
 import { buildEventTypeOptions } from "./eventTypeOptions.js";
 import { LogoAwareSettingsFooter, NO_AUTOFILL_PROPS } from "./mailTransportFormParts.js";
 
@@ -26,11 +26,6 @@ const EVENT_TYPE_SELECT_OPTIONS = [
     icon: option.icon,
   })),
 ];
-
-/** Created/Archived stamp in the acting admin's timezone when known; UTC fallback for legacy rows. */
-function formatActorStamp(iso: string, timezone: string | null | undefined): string {
-  return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
-}
 
 /** General tab: event status summary and basic information (title, date, capacity, event type,
  * hours, timezone). */
@@ -64,7 +59,7 @@ export function EventGeneralInfoPanel({
             </p>
             <p className="field-hint">
               {isArchived && event.archived_at
-                ? `Archived on ${formatActorStamp(event.archived_at, event.archived_by_timezone)}.`
+                ? `Archived on ${formatActorTime(event.archived_at, event.archived_by_timezone)}.`
                 : "Active events accept check-ins and allow attendee edits."}
             </p>
           </div>
@@ -79,7 +74,7 @@ export function EventGeneralInfoPanel({
               Created:{" "}
               <strong>
                 {event.created_at
-                  ? formatActorStamp(event.created_at, event.created_by_timezone)
+                  ? formatActorTime(event.created_at, event.created_by_timezone)
                   : "-"}
               </strong>
             </p>

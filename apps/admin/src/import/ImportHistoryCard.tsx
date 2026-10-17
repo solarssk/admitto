@@ -6,14 +6,14 @@ import { RefreshWarning } from "../components/RefreshWarning.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { useCardLoad } from "../hooks/useCardLoad.js";
 import type { ListLoad } from "../hooks/useListLoad.js";
-import { formatEventDateTime } from "../utils/event-dates.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 import { ImportHistorySkeleton } from "./ImportHistorySkeleton.js";
 import "../attendees/attendees.css";
 import "../pages/import.css";
 
 const NO_ENTRIES: ImportHistoryEntry[] = [];
 
-function ImportHistoryTable({ entries, eventTimezone }: Readonly<{ entries: readonly ImportHistoryEntry[]; eventTimezone: string | undefined }>) {
+function ImportHistoryTable({ entries }: Readonly<{ entries: readonly ImportHistoryEntry[] }>) {
   return (
     <div className="attendees-table-wrap">
       <table className="table import-history-table">
@@ -30,7 +30,7 @@ function ImportHistoryTable({ entries, eventTimezone }: Readonly<{ entries: read
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.id}>
-              <td className="import-history__date">{formatEventDateTime(entry.created_at, eventTimezone)}</td>
+              <td className="import-history__date">{formatUtcDateTime(entry.created_at)}</td>
               <td className="import-history__file">{entry.filename ?? <span className="import-sample__empty">-</span>}</td>
               <td
                 className={
@@ -57,10 +57,7 @@ function ImportHistoryTable({ entries, eventTimezone }: Readonly<{ entries: read
  * shape for the first read, an error with a busy Retry that stays on screen until the answer is in, and the rows kept,
  * blocked and dimmed, while the refresh that follows an import runs (a refresh that fails keeps them and says so).
  */
-export function ImportHistoryCard({
-  list,
-  eventTimezone,
-}: Readonly<{ list: ListLoad<ImportHistoryEntry[]>; eventTimezone: string | undefined }>) {
+export function ImportHistoryCard({ list }: Readonly<{ list: ListLoad<ImportHistoryEntry[]> }>) {
   const card = useCardLoad(list);
   const entries = list.data ?? NO_ENTRIES;
   let body: ReactNode;
@@ -86,7 +83,7 @@ export function ImportHistoryCard({
         {entries.length === 0 ? (
           <p className="import-hint">No imports yet for this event.</p>
         ) : (
-          <ImportHistoryTable entries={entries} eventTimezone={eventTimezone} />
+          <ImportHistoryTable entries={entries} />
         )}
       </RefetchRegion>
     );

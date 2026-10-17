@@ -6,6 +6,7 @@ import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
 import { importApiMocks } from "./importApiMock.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const { fetchEventCustomFields, previewImport, commitImport, fetchImportJobStatus, fetchImportHistory } = importApiMocks;
 
@@ -908,6 +909,22 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("attendees_final.csv")).toBeTruthy();
     expect(screen.getByText("312")).toBeTruthy();
     expect(screen.getByText("171")).toBeTruthy();
+  });
+
+  it("shows the time of an import in UTC: the history keeps no zone for it", async () => {
+    setPreferredLocale("en-GB");
+    try {
+      fetchEventCustomFields.mockResolvedValue([]);
+      fetchImportHistory.mockResolvedValue([
+        { id: "log-2", created_at: "2026-06-07T10:00:00.000Z", filename: "late_list.csv", created: 1, updated: 0, skipped: 0, status: "succeeded", error: null },
+      ]);
+      renderPage();
+
+      expect(await screen.findByText("late_list.csv")).toBeTruthy();
+      expect(document.querySelector(".import-history__date")?.textContent).toBe("07 Jun 2026, 10:00 UTC");
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 
   it("shows an empty state when there are no imports yet", async () => {

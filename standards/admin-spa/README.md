@@ -23,6 +23,6 @@ The mechanical parts are tests, so a violation fails CI with a hint of what to u
 - `apps/admin/test/styles/readable-text-css.test.ts`: the CSS that keeps text readable.
 - `apps/admin/test/styles/token-fallback-coverage.test.ts`: a `var(--token, #hex)` fallback equals the token.
 - `apps/admin/test/api/operator-api-error.coverage.test.ts`: every known API error code has its UI string.
-- `apps/admin/test/locale/time-zone-standard.test.ts`: no new read of the viewer's own time zone to show a time.
+- `apps/admin/test/locale/time-zone-standard.test.ts`: no new read of the viewer's own time zone, no time formatted without a zone, no fallback from an actor's zone to another zone.
 
 The rest (what the screen looks like at 390px, a focus that falls to the page, a message that is announced twice) is in the rules and in review. Look at the screen in a real browser before you change what it shows.

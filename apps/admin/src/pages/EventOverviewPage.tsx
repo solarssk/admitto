@@ -33,8 +33,8 @@ import type {
 } from "../api/types.js";
 import {
   calendarDateInZone,
+  formatActorTime,
   formatEventDate,
-  formatEventDateTime,
   formatRelativeTime as formatRelativeTimeShared,
   getBrowserTimeZone,
 } from "../utils/event-dates.js";
@@ -656,7 +656,7 @@ function RecentActivityCard({
                         {formatRelativeTime(entry.occurred_at)}
                       </span>
                       <span className="overview-activity__time-absolute">
-                        {formatEventDateTime(entry.occurred_at, entry.actor_timezone ?? timezone)}
+                        {formatActorTime(entry.occurred_at, entry.actor_timezone)}
                       </span>
                     </time>
                   </li>

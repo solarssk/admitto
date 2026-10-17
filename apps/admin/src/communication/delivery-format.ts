@@ -1,4 +1,4 @@
-import { formatEventDate, formatEventDateTime, formatEventTime, formatUtcDateTime, formatZonedClockTime } from "../utils/event-dates.js";
+import { formatActorTime, formatEventDate, formatEventTime, formatUtcDateTime, formatZonedClockTime } from "../utils/event-dates.js";
 import type { DeliveryDto } from "../api/types.js";
 
 /** Format an ISO timestamp for the delivery log, or "-" when absent. */
@@ -7,16 +7,12 @@ export function formatDateTime(iso: string | null): string {
   return formatUtcDateTime(iso);
 }
 
-/** Single-line time for Attendee Detail's Delivery history card: actor browser zone when
- * known, else event zone (same Category-1 pattern as Registered on / Activity). Not the
+/** Single-line time for Attendee Detail's Delivery history card: the zone of the browser that
+ * triggered the send when known, else UTC (same rule as Registered on / Activity). Not the
  * Communication log's UTC-primary + local-secondary pair. */
-export function formatDeliveryHistoryTime(
-  iso: string | null,
-  clientTimezone: string | null | undefined,
-  eventTimezone: string,
-): string {
+export function formatDeliveryHistoryTime(iso: string | null, clientTimezone: string | null | undefined): string {
   if (!iso) return "-";
-  return formatEventDateTime(iso, clientTimezone ?? eventTimezone);
+  return formatActorTime(iso, clientTimezone);
 }
 
 export interface DeliveryHistoryTimeParts {
@@ -30,10 +26,9 @@ export interface DeliveryHistoryTimeParts {
 export function formatDeliveryHistoryTimeParts(
   iso: string | null,
   clientTimezone: string | null | undefined,
-  eventTimezone: string,
 ): DeliveryHistoryTimeParts | null {
   if (!iso) return null;
-  const timezone = clientTimezone ?? eventTimezone;
+  const timezone = clientTimezone || undefined;
   return { date: formatEventDate(iso, timezone), time: formatEventTime(iso, timezone) };
 }
 

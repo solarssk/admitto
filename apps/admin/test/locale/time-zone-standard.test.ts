@@ -4,9 +4,11 @@ import { RULES, RULE_HINTS, scanTimeZoneViolations, type Counts, type Rule } fro
 /**
  * Drift guard for the zone a time is shown in (standards/admin-spa/time-display.md): a time on a screen is
  * the same text for every viewer, so the staff UI (`apps/admin/src`) does not read the viewer's own zone to
- * format one. The reads that remain are listed below, each with the reason a reviewer can check. A new one
- * fails this test with a hint of what to use instead. It is a ratchet: an entry that no longer matches the
- * code has to be lowered or removed.
+ * format one, does not format without naming a zone, and does not fall back from an actor's zone to another
+ * zone. The findings that remain are listed below, each with the reason a reviewer can check. A new one fails
+ * this test with a hint of what to use instead. It is a ratchet: an entry that no longer matches the code has
+ * to be lowered or removed. The scan reads the code as a syntax tree and sees the spellings its self-test
+ * lists (`timeZoneStandardScan.test.ts`); it is a guard against drift, not a proof.
  */
 const SECONDARY_LINE =
   "The secondary \"Your local time\" line that sits under a UTC time, for a row whose actor zone is not stored. The time itself stays UTC.";
@@ -18,27 +20,34 @@ const NEW_EVENT_DEFAULT = "The zone offered first for a new event is the creator
 
 const EXCEPTIONS: Record<Rule, Record<string, { count: number; reason: string }>> = {
   "viewer-zone-read": {
-    "apps/admin/src/checkin/AttendeeCard.tsx": { count: 1, reason: `${LIVE_CHECK_IN} Here it is the "Today HH:MM" next to a pinned note.` },
+    "apps/admin/src/checkin/AttendeeCard.tsx": {
+      count: 1,
+      reason: `${LIVE_CHECK_IN} Here it is the "Today HH:MM" next to a note pinned on the card, which has no stored author zone.`,
+    },
     "apps/admin/src/checkin/CheckInCameraResultPanel.tsx": { count: 1, reason: `${LIVE_CHECK_IN} Here it is "Entered HH:MM" on the scan result.` },
     "apps/admin/src/checkin/CkRecentScans.tsx": { count: 1, reason: `${LIVE_CHECK_IN} Here it is the Recent scans feed.` },
     "apps/admin/src/components/EventCard.tsx": {
       count: 1,
       reason: "Picks Fahrenheit or Celsius from the region of the viewer's zone. No time is shown.",
     },
+    "apps/admin/src/components/TimeInput.tsx": {
+      count: 1,
+      reason: "Reads the 12 or 24 hour clock that the browser's locale uses (`hourCycle`). The zone is not read and no time is shown.",
+    },
     "apps/admin/src/events/CreateEventModal.tsx": { count: 1, reason: NEW_EVENT_DEFAULT },
     "apps/admin/src/pages/EventOverviewPage.tsx": {
       count: 2,
       reason:
-        "One read stamps the zone of the browser that has just scanned on a live check-in row (the viewer is the actor). The other gives the Recent activity feed its \"Today\" and its day headings from the reader's own clock.",
+        "One read stamps this browser's zone on a row built from the live check-in stream, which carries no zone of its own (and also carries other operators' scans). The other gives the Recent activity feed its \"Today\" and its day headings from the reader's own clock.",
     },
     "apps/admin/src/pages/wizard/WizardStep4Event.tsx": { count: 1, reason: NEW_EVENT_DEFAULT },
     "apps/admin/src/settings/AuditLogPanel.tsx": {
       count: 1,
-      reason: "The text of the \"Your local time\" line under the UTC time of an Audit log or Security log row.",
+      reason: "The text of the \"Your local time\" line under the UTC time of an Audit log or Security log row, and in the copied summary of a row.",
     },
     "apps/admin/src/settings/HealthCheckPanel.tsx": {
       count: 1,
-      reason: `${JUST_RAN_BY_VIEWER} Here it is a health snapshot, with its Generated time.`,
+      reason: `${JUST_RAN_BY_VIEWER} Here it is a health snapshot: its Generated time, and the worker's last beat when its age is not shown.`,
     },
     "apps/admin/src/settings/mailTransportFormParts.tsx": {
       count: 1,
@@ -49,6 +58,8 @@ const EXCEPTIONS: Record<Rule, Record<string, { count: number; reason: string }>
     "apps/admin/src/components/ActorOrViewerLocalTimeLine.tsx": { count: 1, reason: SECONDARY_LINE },
     "apps/admin/src/pages/users/RoleAssignmentsTab.tsx": { count: 2, reason: SECONDARY_LINE },
   },
+  "implicit-zone-format": {},
+  "zone-fallback-not-utc": {},
 };
 
 /** The findings a rule may have: none, except for the ones listed above (per file, with their count). */
@@ -59,7 +70,7 @@ function tolerated(rule: Rule): Counts {
 describe("time zone drift (apps/admin/src)", () => {
   const found = scanTimeZoneViolations();
 
-  it.each(RULES)("%s: no read beyond the documented exceptions", (rule) => {
+  it.each(RULES)("%s: no finding beyond the documented exceptions", (rule) => {
     const actual = found[rule];
     const allowed = tolerated(rule);
 
@@ -75,7 +86,7 @@ describe("time zone drift (apps/admin/src)", () => {
   });
 });
 
-describe("the reads that are tolerated", () => {
+describe("the findings that are tolerated", () => {
   const listed = Object.entries(EXCEPTIONS).flatMap(([rule, files]) =>
     Object.entries(files).map(([file, entry]) => [`${rule}: ${file}`, entry] as const),
   );

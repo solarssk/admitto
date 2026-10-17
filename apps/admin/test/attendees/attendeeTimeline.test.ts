@@ -1,14 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   deriveAttendeeSource,
-  formatActivityTimestamp,
   getTimelineActor,
   getTimelineDetail,
   getTimelineIcon,
   getTimelineLabel,
   getTimelineTone,
 } from "../../src/attendees/attendeeTimeline.js";
-import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 describe("check_in_revoked timeline mapping (#449 review)", () => {
   it("gets a ban icon and a capitalized label", () => {
@@ -566,32 +564,6 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         [],
       ),
     ).toBe("Gratis");
-  });
-});
-
-describe("formatActivityTimestamp (PO review, round 2 — actor's timezone at write time)", () => {
-  afterEach(() => setPreferredLocale(null));
-
-  const ISO = "2026-06-28T13:00:00.000Z";
-
-  it("uses the entry's captured timezone over the event's, when both are known", () => {
-    setPreferredLocale("en-GB");
-    // An admin managing a Bangalore event from Zurich should see that edit in Warsaw's
-    // offset (UTC+2), not Kolkata's — the entry's own captured timezone wins over the
-    // event's. A single numeric offset (not a locale-dependent "CEST"/"GMT+2" split) is
-    // deterministic regardless of the viewer's own locale.
-    const result = formatActivityTimestamp(ISO, "Europe/Warsaw", "Asia/Kolkata");
-    expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/UTC\+2/);
-  });
-
-  it("falls back to the event's timezone when the entry has none captured", () => {
-    setPreferredLocale("en-GB");
-    // Pre-migration rows and non-browser write paths never had a timezone to capture —
-    // those keep displaying in the event's own timezone, same as before this feature.
-    const result = formatActivityTimestamp(ISO, null, "Europe/Warsaw");
-    expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/UTC\+2/);
   });
 });
 

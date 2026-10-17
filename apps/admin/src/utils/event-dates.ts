@@ -171,6 +171,15 @@ export function formatEventDateTime(iso: string, timezone?: string): string {
   return offset ? `${base} ${offset}` : base;
 }
 
+/**
+ * An instant in the zone the actor was in when Admitto stored it, with that zone's offset ("15:00 UTC+2"),
+ * or in UTC when no zone was stored ("13:00 UTC"). The text depends only on stored data, so every viewer reads
+ * the same one (standards/admin-spa/time-display.md).
+ */
+export function formatActorTime(iso: string, actorTimezone: string | null | undefined): string {
+  return actorTimezone ? formatEventDateTime(iso, actorTimezone) : formatUtcDateTime(iso);
+}
+
 /** Category 1 — time-only with a numeric UTC offset (e.g. admitted_at in tables). */
 export function formatEventTime(iso: string, timezone?: string): string {
   const base = new Date(iso).toLocaleString(getPreferredLocale(), {

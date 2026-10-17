@@ -349,9 +349,9 @@ export function AttendeeCard({
             <ul>
               {card.notes.map((n, i) => (
                 <li key={`${n.created_at}-${i}`}>
-                  {/* Viewer's own browser timezone, not the event's — matches Attendee Detail's
-                   * Notes tab and fixes a note timestamp reading as wrong for anyone outside the
-                   * event's own timezone (PO report). Today/Yesterday/date + time — the same
+                  {/* The reader's own browser timezone, not the event's: this card is read live at
+                   * the venue and a note has no stored author zone (the Notes tab shows the same
+                   * time in UTC). Today/Yesterday/date + time — the same
                    * relative pattern Recent scans already uses (CkRecentScans), reused rather
                    * than duplicated — a note added a different day than it's read on must show
                    * which day (PO report); a bare time-only string can't tell the two apart.

@@ -9,6 +9,12 @@ import {
 } from "../../src/settings/EventBounceIngestPanel.js";
 import { deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
+
+// The zone the viewer's browser reports. The times of the checks must not depend on it.
+vi.mock("../../src/utils/event-dates.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/utils/event-dates.js")>();
+  return { ...actual, getBrowserTimeZone: () => "Pacific/Honolulu" };
+});
 import { describePanelLoading } from "./panel-loading.js";
 import type { EventBounceIngestSettingsResponse } from "../../src/api/types.js";
 

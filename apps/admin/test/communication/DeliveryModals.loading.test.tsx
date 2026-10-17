@@ -56,7 +56,7 @@ const CASES = [
     loaded: () => screen.queryByText("Provider message ID"),
     open: (id = row.id) => (
       <MemoryRouter>
-        <DeliveryDetailsModal eventId="evt-1" eventTimezone="Europe/Warsaw" row={{ ...row, id }} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
+        <DeliveryDetailsModal eventId="evt-1" row={{ ...row, id }} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
       </MemoryRouter>
     ),
   },

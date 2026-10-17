@@ -10,12 +10,13 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Changed
 
-- Show the times on the Wallet card, in notes, in the wallet report hints and in bounce checks in UTC, the same for every viewer
+- Show times with no recorded time zone in UTC, the same for every viewer, on the Wallet card, history, delivery log, notes and imports
 - Show a wallet pass as "Pending" on the attendee's page while it is being made ([#1690](https://github.com/solarssk/admitto/pull/1690))
 - Document `migrate` and P3009 recovery, `app` memory sizing, container hardening, the sign-in limit, SSO two-factor and what Redis holds ([#1695](https://github.com/solarssk/admitto/pull/1695))
 
 ### Fixed
 
+- Show the same day labels in the wallet report's cumulative chart for every viewer, including those far east of UTC
 - Show one "archived" bar above every page of an archived event, with "Restore event" for a Superadmin ([#1687](https://github.com/solarssk/admitto/pull/1687))
 - Remove the repeated "archived" line from the other Event settings tabs and the image library ([#1686](https://github.com/solarssk/admitto/pull/1686))
 - Remove the "archived" note from the Check-in settings tab and centre its switches on their labels ([#1685](https://github.com/solarssk/admitto/pull/1685))

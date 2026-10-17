@@ -2116,7 +2116,6 @@ function CommunicationPageBody({
       {tab === "log" && (
         <DeliveryLogTab
           eventId={eventId}
-          eventTimezone={event.timezone}
           log={deliveryLog}
           templates={templates}
           resolvedBounceRowIds={resolvedBounceRowIds}

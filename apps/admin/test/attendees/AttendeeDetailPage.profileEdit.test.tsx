@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const updateAttendee = vi.fn();
 const resendTicket = vi.fn();
@@ -725,6 +726,23 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("CSV/XLSX import")).toBeTruthy();
   });
 
+  it.each([
+    ["Asia/Kolkata", "05 Jan 2026, 15:00 UTC+5:30"],
+    [null, "05 Jan 2026, 09:30 UTC"],
+  ])("shows Registered on in the zone of the admin who added the attendee (%s), and in UTC when none was stored", async (zone, expected) => {
+    setPreferredLocale("en-GB");
+    try {
+      mockLoad(baseDetail({ created_at: "2026-01-05T09:30:00.000Z", client_timezone: zone }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      const row = screen.getByText("Registered on").closest(".attendee-detail-row");
+      expect(row?.querySelector(".mono")?.textContent).toBe(expected);
+    } finally {
+      setPreferredLocale(null);
+    }
+  });
+
   it("omits Added via when the server reports no creation entry", async () => {
     mockLoad(baseDetail({ action_log: [] }));
     renderPage();
@@ -805,6 +823,39 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     const itemsList = document.querySelector(".attendee-items-list") as HTMLElement;
     expect(within(itemsList).getAllByText("Issued")).toHaveLength(2);
     expect(within(itemsList).getByText("Not yet")).toBeTruthy();
+  });
+
+  it("shows a delivery whose send stored no browser zone in UTC, not in the event's zone", async () => {
+    setPreferredLocale("en-GB");
+    onTestFinished(() => setPreferredLocale(null));
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-2",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "sent",
+            recipient_email: "anna@example.com",
+            client_timezone: null,
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    // The event is in Warsaw (UTC+1 in January): that zone is not what the send happened in, so it is not shown.
+    const deliveryCard = document.querySelector(".attendee-delivery") as HTMLElement;
+    expect(deliveryCard.textContent).toMatch(/09:31 UTC(?!\+)/);
+    expect(deliveryCard.textContent).not.toMatch(/UTC\+1/);
   });
 
   it("lists mail delivery history when deliveries exist, with a working row menu", async () => {
