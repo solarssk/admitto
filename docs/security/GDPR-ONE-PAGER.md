@@ -62,7 +62,7 @@ The periods differ by design.
 | Audit logs (general) | Per your security policy. Attendee data is minimised in log lines (the staff accountability exception is in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
 | System logs live tail | Not stored. The last 1000 entries live in memory and are emptied on every restart |
 
-An automated post-event purge of attendee data is planned for **v1.0**.
+An automated post-event purge of attendee data is planned.
 
 ---
 

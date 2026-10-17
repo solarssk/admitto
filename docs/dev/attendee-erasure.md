@@ -336,7 +336,7 @@ What is protected:
 What is not covered:
 
 - This protects new failures and application responses, without rewriting historical rows.
-- Raw exception text saved by earlier versions may still exist in `AdminJob.error` and in backups. Erasure does not scrub that historical column.
+- Older rows may still hold raw exception text in `AdminJob.error`, and so may backups. Erasure does not scrub that historical column.
 - An operator must assess those records under their data-minimization and DSAR policy before making a separately reviewed cleanup. There is no automatic history deletion, and no retroactive claim that all stored copies are erased.
 - Successful import row feedback continues to use the existing import-result scrubbing described below.
 
@@ -699,7 +699,7 @@ How other actions treat the mark:
 
 The migration:
 
-- The migration `20261015100000_backfill_wallet_pass_left_behind_pass_id` gave the column, with the value `unknown`, to every row that released versions (up to 0.7.5) had marked `wallet_credential_changed`. Those versions left such a pass where it was made.
+- The migration `20261015100000_backfill_wallet_pass_left_behind_pass_id` gave the column the value `unknown` for every row that was marked `wallet_credential_changed` before the column existed. Such a pass was left where it was made.
 - A row whose code a later tap had cleared or overwritten already cannot be recognised.
 
 What the follow-up does while the column is set:
