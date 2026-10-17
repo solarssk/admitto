@@ -50,7 +50,7 @@ People with a B1 to C1 level of English read these documents, and they have to w
 - Parallel facts go in a list or a table. A table cell holds one short fact. If a paragraph or a table cell runs past about 80 words, split it, and move a long cell's explanation under the table.
 - Steps are numbered. Each step is one action, and a command gets its own code block.
 - Give the answer first (what to do, what it means), then the detail. Rare detail goes in a collapsed section or on another page.
-- No comparisons with other products and no version history in the text. History belongs in `CHANGELOG.md`.
+- No comparisons with other products. Describe how the product works today. Leave out version markers ("v0.4.13+", "since v0.4", "before v0.4"), "previously", "no longer" and "now also" narratives, dated decision logs and the release plan ("planned for v1.0", "the first live event comes with"). History belongs in `CHANGELOG.md`, and the plan in the open milestone.
 - When you reword a document, keep every fact: names, numbers, limits and warnings. Compare the old and the new text before you push, and list anything you removed on purpose in the pull request.
 
 ### Visual documentation
