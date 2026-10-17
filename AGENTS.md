@@ -107,6 +107,8 @@ Before handoff: assignee @solarssk, current milestone when it exists, labels - o
 
 **During feature work:** add operator-facing bullets under `[Unreleased]` as you implement (`Added`, `Changed`, `Fixed`, `Security`, …). Not a final-step chore.
 
+**How to write a bullet:** one line in the imperative ("Add", "Fix", "Show"), about 25 words at most, in plain words for an operator, ending with a link to the pull request: `- Show a wallet pass as "Pending" on the attendee's page ([#1690](https://github.com/solarssk/admitto/pull/1690))`. Say what changes for the reader. The reasons, failure modes and screen-by-screen detail belong in the pull request description that the link leads to. The number exists only once the pull request is open, so add the link in your next push; every bullet has its link before the release commit.
+
 **Closing a milestone (`v0.x.y`):** follow [VERSIONING.md](VERSIONING.md) end-to-end. In short:
 
 1. Move `[Unreleased]` → `## [0.x.y] - YYYY-MM-DD`; update comparison links.
