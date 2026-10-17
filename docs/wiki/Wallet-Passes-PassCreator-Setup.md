@@ -87,8 +87,6 @@ Good to know:
 - There is no toggle for this in Admitto. A semantic tag placeholder becomes live the moment it is mapped in Field mapping and bound in PassCreator, the same as any other field.
 - It has no effect on Google Wallet passes, and it does not require NFC or any special PassCreator account approval.
 
-An earlier version of this integration sent a separate `semantics` object through the wallet API, with an event-level "Semantic tags" toggle. That object was never a documented part of PassCreator's pass API and had no effect on issued passes (confirmed by inspecting real `.pkpass` files), so it has been removed. There is no impact if you had the toggle turned on.
-
 ## Lock Screen relevance date (always on for Apple Wallet, no switch)
 
 Whenever Apple Wallet is enabled for an event and the event has a start time set (Event settings → Basic information → Event hours), Admitto also tells PassCreator when the pass becomes relevant enough to surface on the Lock Screen.

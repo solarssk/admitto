@@ -98,7 +98,7 @@ Everything personal inside Admitto is gone either way. If the wallet provider ca
 | System logs shows `wallet_pass_found_after_settling` | A pass reached the provider after Admitto settled on "no pass". The daily retention run found it within a week and deleted it | Nothing |
 | A pass was made before that id was written, by a request that died without leaving anything on the row | Admitto cannot find it | Delete it in the provider's own console, by its User provided ID, `admitto:<event id>:<attendee id>` |
 
-**The code `wallet_credential_changed`.** The pass was made under an earlier Template ID or API key of the event, and it could not be deleted then. Admitto never marks such a pass as removed on its own, because it cannot tell which account a pass is in. A row that version 0.7.5 or earlier marked `wallet_credential_changed` carries the mark `unknown` after the upgrade. Treat it the same way.
+**The code `wallet_credential_changed`.** The pass was made under an earlier Template ID or API key of the event, and it could not be deleted then. Admitto never marks such a pass as removed on its own, because it cannot tell which account a pass is in. A row can also carry the mark `unknown`. It means the same, except that the id of the pass is not known. Treat it the same way.
 
 1. Delete the pass in the earlier account's console, by its User provided ID, `admitto:<event id>:<attendee id>`.
 2. Ask whoever runs the database to clear the marker on the pass row:
