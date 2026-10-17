@@ -52,7 +52,7 @@ function ImportHistoryTable({ entries }: Readonly<{ entries: readonly ImportHist
 
 /**
  * "Import history" card from the design mockup: recent commits with their outcome counts, read from the audit log (no
- * dedicated table). Timestamps render in the event's timezone via the central formatter, like other event-scoped tables.
+ * dedicated table). Timestamps are UTC: the history response keeps no zone for an import.
  * It follows the loading standard of a list in a card (`useListLoad` and `useCardLoad`): a placeholder with the table's own
  * shape for the first read, an error with a busy Retry that stays on screen until the answer is in, and the rows kept,
  * blocked and dimmed, while the refresh that follows an import runs (a refresh that fails keeps them and says so).

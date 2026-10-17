@@ -43,7 +43,7 @@ const EXCEPTIONS: Record<Rule, Record<string, { count: number; reason: string }>
     "apps/admin/src/pages/wizard/WizardStep4Event.tsx": { count: 1, reason: NEW_EVENT_DEFAULT },
     "apps/admin/src/settings/AuditLogPanel.tsx": {
       count: 1,
-      reason: "The text of the \"Your local time\" line under the UTC time of an Audit log or Security log row, and in the copied summary of a row.",
+      reason: "The \"Your local time\" part of the copied summary of a Security log row, when the row stores no actor zone. Its time is also UTC.",
     },
     "apps/admin/src/settings/HealthCheckPanel.tsx": {
       count: 1,
@@ -77,7 +77,7 @@ describe("time zone drift (apps/admin/src)", () => {
     const extra = Object.entries(actual)
       .filter(([file, n]) => n > (allowed[file] ?? 0))
       .map(([file, n]) => `${file}: ${n} (allowed ${allowed[file] ?? 0})`);
-    expect(extra, `"${rule}" violation. ${RULE_HINTS[rule]}`).toEqual([]);
+    expect(extra, `"${rule}" violation. ${RULE_HINTS[rule]} If the finding is intended, list it in EXCEPTIONS of this file with its reason.`).toEqual([]);
 
     const stale = Object.entries(allowed)
       .filter(([file, n]) => (actual[file] ?? 0) < n)

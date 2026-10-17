@@ -36,6 +36,7 @@ const VIEWER_LOCAL_TIME_HELPER = "viewerLocalTime";
 
 /** Zone-taking helpers of utils/event-dates.ts, with the position of their zone argument. */
 const ZONE_ARGUMENT: Record<string, number> = {
+  formatActorTime: 1,
   formatEventDateTime: 1,
   formatEventTime: 1,
   formatEventDate: 1,
@@ -105,10 +106,20 @@ function isBuiltToReadOptions(node: Node, ancestors: Node[]): boolean {
   return parent?.type === "MemberExpression" && parent.object === node && identifierName(parent.property) === "resolvedOptions";
 }
 
-/** `x ?? y` or `x || y` whose fallback is something other than the literal "UTC". */
+/** The operands of a chain of `??` and `||`: `a ?? b ?? c` gives [a, b, c]. */
+function chainOperands(node: unknown): unknown[] {
+  if (!isNode(node) || node.type !== "LogicalExpression" || (node.operator !== "??" && node.operator !== "||")) return [node];
+  return [...chainOperands(node.left), ...chainOperands(node.right)];
+}
+
+/** A fallback that names no zone: the literal "UTC", `undefined` or `null`, which the helpers read as UTC. */
+function isUtcFallback(node: unknown): boolean {
+  return stringValue(node) === "UTC" || identifierName(node) === "undefined" || (isNode(node) && node.type === "Literal" && node.value === null);
+}
+
+/** `x ?? y` or `x || y` (in any chain) where something after the first operand names another zone. */
 function isNonUtcFallback(node: unknown): boolean {
-  if (!isNode(node) || node.type !== "LogicalExpression" || (node.operator !== "??" && node.operator !== "||")) return false;
-  return stringValue(node.right) !== "UTC";
+  return chainOperands(node).slice(1).some((operand) => !isUtcFallback(operand));
 }
 
 /** Local names that an import gives to `imported`, plus the nodes of the import specifiers themselves. */

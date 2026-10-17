@@ -247,7 +247,7 @@ describe("the placeholders have the shape of what they stand in for (measured ag
     mockDetail.mockImplementation(hangUntilAborted as never);
     render(
       <MemoryRouter>
-        <DeliveryDetailsModal eventId="evt-1" eventTimezone="Europe/Warsaw" row={row} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
+        <DeliveryDetailsModal eventId="evt-1" row={row} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
       </MemoryRouter>,
     );
     await advanceTimers(200);
@@ -263,7 +263,7 @@ describe("the placeholders have the shape of what they stand in for (measured ag
     mockDetail.mockResolvedValue(detail);
     render(
       <MemoryRouter>
-        <DeliveryDetailsModal eventId="evt-1" eventTimezone="Europe/Warsaw" row={row} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
+        <DeliveryDetailsModal eventId="evt-1" row={row} onClose={vi.fn()} onViewSentMessage={vi.fn()} />
       </MemoryRouter>,
     );
     await advanceTimers(0);
@@ -289,7 +289,7 @@ describe("DeliveryDetailsModal footer", () => {
     const onViewSentMessage = vi.fn();
     render(
       <MemoryRouter>
-        <DeliveryDetailsModal eventId="evt-1" eventTimezone="Europe/Warsaw" row={row} onClose={vi.fn()} onViewSentMessage={onViewSentMessage} />
+        <DeliveryDetailsModal eventId="evt-1" row={row} onClose={vi.fn()} onViewSentMessage={onViewSentMessage} />
       </MemoryRouter>,
     );
 

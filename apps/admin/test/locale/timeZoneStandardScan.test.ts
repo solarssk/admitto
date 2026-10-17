@@ -107,8 +107,17 @@ describe("time-zone-standard scanner: a zone that falls back to something other 
     expect(scan("const s = formatRelativeAdmissionDisplay(iso, day, a ?? b);", "zone-fallback-not-utc")).toEqual(only(1));
   });
 
-  it("does not count a fallback to UTC, a plain zone, or the same expression in another function", () => {
+  it("counts formatActorTime too, and a fallback hidden in front of a final UTC", () => {
+    expect(scan("const s = formatActorTime(iso, actorZone ?? eventZone);", "zone-fallback-not-utc")).toEqual(only(1));
+    expect(scan('const s = formatEventDateTime(iso, a ?? b ?? "UTC");', "zone-fallback-not-utc")).toEqual(only(1));
+    expect(scan("const s = formatEventDateTime(iso, a || (b ?? c));", "zone-fallback-not-utc")).toEqual(only(1));
+  });
+
+  it("does not count a fallback to UTC, to undefined or to null, a plain zone, or the same expression in another function", () => {
     expect(scan('const s = formatEventDateTime(iso, entryZone ?? "UTC");', "zone-fallback-not-utc")).toEqual({});
+    expect(scan("const s = formatActorTime(iso, entryZone ?? undefined);", "zone-fallback-not-utc")).toEqual({});
+    expect(scan("const s = formatEventTime(iso, entryZone || undefined);", "zone-fallback-not-utc")).toEqual({});
+    expect(scan("const s = formatEventTime(iso, entryZone ?? null);", "zone-fallback-not-utc")).toEqual({});
     expect(scan("const s = formatEventDateTime(iso, zone);", "zone-fallback-not-utc")).toEqual({});
     expect(scan("const s = formatEventDateTime(a ?? b, zone);", "zone-fallback-not-utc")).toEqual({});
     expect(scan("const s = somethingElse(iso, entryZone ?? eventZone);", "zone-fallback-not-utc")).toEqual({});
