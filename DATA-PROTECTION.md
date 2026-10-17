@@ -253,7 +253,7 @@ This is a narrower, more deliberate exception than it looks:
   ```
 
   An automated version of this (or of the broader attendee-PII purge already listed below) is
-  v1.0-planned work, not shipped today.
+  planned, not shipped today.
 
 ## Redis
 
@@ -353,7 +353,7 @@ policy). Different retention periods for different categories are intentional - 
 - Erasure: **Attendees → attendee detail → More actions → Erase personal data** (single), the Attendees list's row-selection bulk bar (several at once), the erase API directly, or `attendees erase` in the emergency CLI when the UI is unreachable.
 - A mistake (duplicate, test person) is taken out with **Remove from event** in the same places.
 
-Automated post-event attendee purge is planned for **v1.0**; until then, export and erasure for the
+An automated post-event attendee purge is planned; until then, export and erasure for the
 attendee list stay manual (see the table row above).
 
 ### Compliance checklist
@@ -364,9 +364,9 @@ framework:
 | Mechanism | Status |
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
-| Organizer export before purge | Admin UI - **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
+| Organizer export before purge | Admin UI - **Attendees → Export** (CSV/XLSX/PDF) |
 | Per-attendee erasure | Admin SPA (single and bulk): **Erase personal data** (anonymises the entry, Reports keep their numbers) and **Remove from event** (deletes the entry, for mistakes); each has an API endpoint for one attendee and one for a selection |
-| Automated purge job | Partial - auth-state, email delivery snapshot and export/import file cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
+| Automated purge job | Partial - auth-state, email delivery snapshot and export/import file cleanup on the Admitto worker; full attendee PII purge planned |
 
 **Import and export job failures**
 
