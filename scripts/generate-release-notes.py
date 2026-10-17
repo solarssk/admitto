@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CHANGELOG = ROOT / "CHANGELOG.md"
 OUT_DIR = ROOT / ".github" / "release-notes"
 
+# Tags up to this version hold the CHANGELOG.md from before it was rewritten to one line per
+# change, so their release notes link to the file on main instead of to the tag.
+LAST_TAG_WITH_OLD_CHANGELOG = (0, 7, 5)
+
 
 def parse_sections(text: str) -> dict[str, tuple[str, str]]:
     link_footer = re.search(r"\n\[(?:Unreleased|\d)", text)
@@ -57,8 +61,9 @@ def deploy_footer(version: str) -> str:
         lines.append("- Run `npm run build` and `npm run db:migrate` on deploy.")
 
     lines.append("")
+    ref = "main" if parts <= LAST_TAG_WITH_OLD_CHANGELOG else f"v{version}"
     lines.append(
-        f"[Full changelog](https://github.com/solarssk/admitto/blob/v{version}/CHANGELOG.md)"
+        f"[Full changelog](https://github.com/solarssk/admitto/blob/{ref}/CHANGELOG.md)"
     )
     return "\n".join(lines)
 
