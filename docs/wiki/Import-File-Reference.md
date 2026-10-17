@@ -18,11 +18,38 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 
 ## File format and row numbers
 
-- CSV uses comma-separated columns. Wrap a value containing a comma, double quote, or line break in double quotes; write a double quote inside that value as two double quotes. LF and CRLF inside a quoted cell are preserved. XLSX cells with line breaks follow the same import rules; the workbook decoder normalises CRLF to LF.
-- Diagnostic row numbers count non-empty data records, starting at 1 after the header. Blank records are ignored, and a line break inside a quoted cell does not increase the number.
-- The upload accepts at most 50,000 data records. The existing file-size and decoded-text limits still apply, including line breaks inside cells.
-- An XLSX file counts the rows of the whole workbook against that limit, blank rows and the rows of other sheets included, because the file is read as a whole. Cells count too, up to an average of 20 for each of the rows allowed (1,000,020 in all), empty cells that only carry a format included. A workbook that would take too much memory to read is refused in the same way. If a file that looks shorter is refused for too many rows, delete the sheets you do not need and the unused rows and columns below and beside the data (delete them, do not only clear them), save it and upload it again.
-- **Malformed CSV record:** close quoted fields and remove text after the closing quote or cells that have no corresponding header. Missing trailing optional cells are treated as empty.
+### Columns, quotes and line breaks
+
+- CSV uses comma-separated columns.
+- Wrap a value that contains a comma, a double quote, or a line break in double quotes. Write a double quote inside that value as two double quotes.
+- LF and CRLF inside a quoted cell are preserved.
+- XLSX cells with line breaks follow the same import rules. The workbook decoder normalises CRLF to LF.
+- **Malformed CSV record:** close quoted fields, and remove text after the closing quote or cells that have no corresponding header. Missing trailing optional cells are treated as empty.
+
+### Row numbers
+
+- Diagnostic row numbers count non-empty data records, starting at 1 after the header.
+- Blank records are ignored.
+- A line break inside a quoted cell does not increase the number.
+
+### Size limits
+
+- The upload accepts at most 50,000 data records.
+- The existing file-size and decoded-text limits still apply, including line breaks inside cells.
+
+### XLSX files
+
+An XLSX file is read as a whole, so it counts more than the rows you can see. A file over one of these limits is refused for too many rows:
+
+- **Rows:** the rows of the whole workbook count against the limit of 50,000 data records. Blank rows and the rows of other sheets are included.
+- **Cells:** cells count too, up to an average of 20 for each of the rows allowed (1,000,020 in all). Empty cells that only carry a format are included.
+- **Memory:** a workbook that would take too much memory to read is refused in the same way.
+
+If a file that looks shorter is refused for too many rows:
+
+1. Delete the sheets you do not need.
+2. Delete the unused rows and columns below and beside the data. Delete them, do not only clear them.
+3. Save the file and upload it again.
 
 ## Matching and duplicates
 
@@ -30,11 +57,14 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 - Rows without external identifiers are matched by email.
 - A file cannot repeat an email, external UUID, or QR payload.
 - If identifiers point to different attendees, the row is skipped as a conflict.
-- Unknown columns produce warnings and are ignored. Duplicate headers produce a warning; the last value is used.
+- Unknown columns produce warnings and are ignored.
+- Duplicate headers produce a warning; the last value is used.
 
 ## Overwrite behaviour
 
-With **Overwrite existing attendees** off, a matching attendee is skipped. With it on, Admitto can update the first name, last name, ticket type, company, department, and supplied custom-field values. It does not replace pass status, QR payload, external UUID, or the secure ticket token.
+- With **Overwrite existing attendees** off, a matching attendee is skipped.
+- With it on, Admitto can update the first name, last name, ticket type, company, department, and supplied custom-field values.
+- Even with it on, Admitto does not replace pass status, QR payload, external UUID, or the secure ticket token.
 
 ## Validation results
 
