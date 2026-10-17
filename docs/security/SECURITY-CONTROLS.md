@@ -52,7 +52,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
 | Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store, required in production) | App · Config |
-| Browser hardening | Clickjacking, MIME sniffing, script injection | Baseline security headers and a Content-Security-Policy (see the notes below the table) | App · Config |
+| Browser hardening | Clickjacking, MIME sniffing, script injection, saved copies of API answers on a shared device | Baseline security headers, a Content-Security-Policy and `Cache-Control: no-store` on API answers (see the notes below the table) | App · Config |
 | Outbound fetch safety | Block SSRF from OIDC / JWKS admin actions | Hostname blocklist + DNS resolve-before-connect on outbound HTTP | App |
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
@@ -65,6 +65,7 @@ Notes on the rows above:
 - **Strong auth.** WebAuthn means FIDO2 passkeys and security keys, for example Face ID, Windows Hello or YubiKey. They are usable for enrollment, sign-in and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication).
 - **Edge access (ZTNA).** For example **Cloudflare Access**. The gateway verifies identity (via the same OIDC provider or its own) and device posture before it proxies the request through. It complements, and does not replace, Admitto's own RBAC.
 - **Browser hardening.** Baseline headers on responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, and `X-Robots-Tag: noindex, nofollow`. The staff SPA and the auth pages also get a route-specific Content-Security-Policy, with extra trusted origins configurable by a superadmin (Settings → Security).
+- **API answers are not stored.** Every answer the application sends under `/api/` carries `Cache-Control: no-store`, so browsers and proxies are told not to keep a copy. This matters on shared devices such as check-in tablets. The live check-in stream is the one exception and sends `no-cache`.
 
 ---
 
