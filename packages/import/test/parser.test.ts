@@ -376,6 +376,87 @@ describe("CSV logical-record boundaries", () => {
 });
 
 
+describe("parseAttendees - separators saved by spreadsheet programs", () => {
+  const BOM = String.fromCharCode(0xfeff);
+  const people = [
+    ["Łukasz", "Wiśniewski", "lukasz.wisniewski@example.com"],
+    ["Żaneta", "Dąbrowska", "zaneta.dabrowska@example.com"],
+  ];
+  const fileWith = (separator: string, newline = "\r\n") =>
+    [["first_name", "last_name", "email"], ...people].map((cells) => cells.join(separator)).join(newline) + newline;
+
+  it.each([
+    ["a comma", ","],
+    ["a semicolon (Polish Excel)", ";"],
+    ["a tab", "\t"],
+  ])("reads a file separated by %s", (_label, separator) => {
+    const result = parseAttendees(fileWith(separator));
+    expect(result.warnings).toEqual([]);
+    expect(result.invalidRows).toEqual([]);
+    expect(result.validRows.map((row) => [row.first_name, row.last_name, row.email])).toEqual(people);
+  });
+
+  it("reads a semicolon file that starts with a byte order mark (Excel CSV UTF-8)", () => {
+    const result = parseAttendees(BOM + fileWith(";"));
+    expect(result.warnings).toEqual([]);
+    expect(result.validRows).toHaveLength(2);
+  });
+
+  it("keeps commas, quoted separators and quoted line breaks inside the cells of a semicolon file", () => {
+    const csv = [
+      "first_name;last_name;email;company",
+      "Ada;Test;ada@example.com;Acme, Inc",
+      'Eve;Example;eve@example.com;"Acme; North"',
+      'Max;Sample;max@example.com;"Head\r\nquarters"',
+      "Zed;Last;zed@example.com;",
+    ].join("\n");
+    const result = parseAttendees(csv);
+    expect(result.invalidRows).toEqual([]);
+    expect(result.validRows.map((row) => [row.rowIndex, row.company])).toEqual([
+      [1, "Acme, Inc"],
+      [2, "Acme; North"],
+      [3, "Head\r\nquarters"],
+      [4, undefined],
+    ]);
+  });
+
+  it("numbers the rows the same way whatever the separator is", () => {
+    const rows = (separator: string) => parseAttendees(fileWith(separator)).validRows.map((row) => row.rowIndex);
+    expect(rows(";")).toEqual(rows(","));
+    expect(rows("\t")).toEqual(rows(","));
+  });
+
+  it("flags a malformed record in a semicolon file as it does in a comma file", () => {
+    const result = parseAttendees('first_name;last_name;email;company\nAda;Test;ada@example.com;"Closed"garbage');
+    expect(result.invalidRows).toEqual([{ rowIndex: 1, raw: {}, reason: "Malformed CSV record" }]);
+  });
+
+  it("keeps the comma when no separator makes the header match", () => {
+    const result = parseAttendees("name;mail\nAda;ada@example.com");
+    expect(result.warnings).toContain('Unknown column ignored: "name;mail"');
+  });
+
+  it("keeps the comma when two separators match the header equally", () => {
+    const result = parseAttendees("first_name,last_name;email\nAda,Test;ada@example.com");
+    expect(result.warnings).toContain('Unknown column ignored: "last_name;email"');
+  });
+});
+
+describe("csvRecords - separators", () => {
+  it.each([";", "\t"])("keeps a quoted line break inside one record when the separator is %j", (separator) => {
+    const header = ["first_name", "last_name", "email", "company"].join(separator);
+    const row = ["Ada", "Test", "ada@example.com", '"Head\nquarters"'].join(separator);
+    expect([...csvRecords(`${header}\n${row}\n`)].map((record) => record.malformed)).toEqual([false, false]);
+  });
+
+  it("uses the separator it is given instead of detecting one", () => {
+    const csv = 'first_name;last_name;email\nAda;Test;"a\nb@example.com"\n';
+    expect([...csvRecords(csv, ";")]).toHaveLength(2);
+    expect([...csvRecords(csv)]).toHaveLength(2);
+    expect([...csvRecords(csv, ",")]).toHaveLength(3);
+  });
+});
+
 it("round-trips bounded seeded quoted records with delimiters, quotes, Unicode and newlines", () => {
   let seed = 741819;
   const next = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };

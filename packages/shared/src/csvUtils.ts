@@ -14,8 +14,11 @@ function parseQuotedField(line: string, start: number): { field: string; next: n
   return { field, next: i };
 }
 
-/** RFC 4180-compatible CSV field splitter — handles double-quoted fields with embedded commas. */
-export function splitCsvLine(line: string): string[] {
+/**
+ * RFC 4180-compatible CSV field splitter that handles double-quoted fields with embedded separators.
+ * The separator is one character: a comma unless the caller passes another (spreadsheets also save `;` and tab).
+ */
+export function splitCsvLine(line: string, delimiter = ","): string[] {
   const fields: string[] = [];
   let i = 0;
   while (i <= line.length) {
@@ -23,10 +26,10 @@ export function splitCsvLine(line: string): string[] {
       const { field, next } = parseQuotedField(line, i + 1); // i + 1 skips opening quote
       fields.push(field);
       i = next;
-      if (line.charAt(i) === ",") i++; // skip comma after closing quote
+      if (line.charAt(i) === delimiter) i++; // skip the separator after the closing quote
       else break; // end-of-line after quoted field — no phantom empty field
     } else {
-      const end = line.indexOf(",", i);
+      const end = line.indexOf(delimiter, i);
       if (end === -1) { fields.push(line.slice(i)); break; }
       fields.push(line.slice(i, end));
       i = end + 1;

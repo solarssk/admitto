@@ -1,3 +1,5 @@
+import { detectCsvDelimiter, type CsvDelimiter } from "./csv-delimiter.js";
+
 /** Non-empty logical CSV records; quoted LF/CRLF remain part of their field. */
 export type CsvRecord = { text: string; malformed: boolean };
 type CsvState = {
@@ -6,14 +8,14 @@ type CsvState = {
 };
 
 /** True only for the second half of an escaped quote, which the caller skips. */
-function advanceCsvState(state: CsvState, char: string, next: string): boolean {
+function advanceCsvState(state: CsvState, char: string, next: string, delimiter: CsvDelimiter): boolean {
   if (state.kind === "quoted") {
     if (char !== '"') return false;
     if (next === '"') return true;
     state.kind = "closed";
     return false;
   }
-  if (char === ",") {
+  if (char === delimiter) {
     state.malformed ||= state.kind === "closedSpace";
     state.kind = "start";
     return false;
@@ -29,8 +31,14 @@ function advanceCsvState(state: CsvState, char: string, next: string): boolean {
   return false;
 }
 
-/** Streaming boundaries let upload limits stop before materializing every record. */
-export function* csvRecords(csvString: string): Generator<CsvRecord> {
+/**
+ * Streaming boundaries let upload limits stop before materializing every record. The separator is the
+ * one the header settles (see detectCsvDelimiter), unless the caller already knows it.
+ */
+export function* csvRecords(
+  csvString: string,
+  delimiter: CsvDelimiter = detectCsvDelimiter(csvString),
+): Generator<CsvRecord> {
   const csv = csvString.replace(/^\uFEFF/, "");
   let start = 0;
   let state: CsvState = { kind: "start", malformed: false };
@@ -41,7 +49,7 @@ export function* csvRecords(csvString: string): Generator<CsvRecord> {
       if (text.trim()) yield { text, malformed: state.malformed };
       start = index + 1;
       state = { kind: "start", malformed: false };
-    } else if (advanceCsvState(state, char, csv.charAt(index + 1))) {
+    } else if (advanceCsvState(state, char, csv.charAt(index + 1), delimiter)) {
       index++;
     }
   }
