@@ -7,7 +7,7 @@ Docker Compose stack for **local development and CI tests**. Production deployme
 | Service | Image | Host bind | Purpose |
 |---------|-------|-----------|---------|
 | `db` | `postgres:16-alpine` | `127.0.0.1:5432` | Primary database (dev creds `admitto`/`admitto`) |
-| `redis` | `redis:7-alpine` | `127.0.0.1:6379` | Optional shared rate-limit / session store (`REDIS_URL`) |
+| `redis` | `redis:7-alpine` | `127.0.0.1:6379` | Rate-limit counters, live updates between the worker and the app, small caches and wallet provider pacing (`REDIS_URL`). Optional in development, required in production. Sessions are stored in PostgreSQL |
 
 Both services use **loopback-only** ports - not reachable from the LAN.
 

@@ -11,7 +11,7 @@ import { emitSystemLog } from "@admitto/shared/system-log";
  * processes can each stay under their own budget and still sum to roughly double the real
  * account-wide limit (bot review, PR #1064 round 3). This module coordinates the pace across
  * every process via Redis when `REDIS_URL` is configured (the same connection info already
- * required for rate limiting and session storage in this deployment), and falls back to the
+ * required for rate limiting and live updates in this deployment), and falls back to the
  * simple in-process gate otherwise - correct for a single-process deployment, and a same-class
  * fail-open (not fail-closed) if Redis becomes unreachable, matching
  * `apps/web/src/rate-limit/redis.ts`'s established trade-off for exactly this kind of shared
