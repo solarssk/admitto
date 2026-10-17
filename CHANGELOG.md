@@ -665,229 +665,224 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Settings → Logs & audit → System now has three additional log sources: Worker (background job activity - mail delivery, import/export, wallet push/message drains, bounce ingest, wallet sync, retention), Wallet (Apple/Google Wallet provider operations - issue, void, push, search), and External services (outbound weather and maps/geocoding calls). None of this activity reached the live tail before.
+- Add Worker, Wallet and External services log sources to Settings, Logs & audit, System ([#1004](https://github.com/solarssk/admitto/pull/1004), [#1005](https://github.com/solarssk/admitto/pull/1005), [#1007](https://github.com/solarssk/admitto/pull/1007))
 
 ### Changed
 
-- Communication → Delivery log's "View sent message" preview now shows the recipient's real ticket link and QR code instead of a redacted placeholder. Event managers already have equivalent access to the same real ticket link one click away (attendee detail → More actions → Copy ticket link), so hiding it in the preview no longer served a purpose.
+- Show the real ticket link and QR code in the "View sent message" preview ([#1003](https://github.com/solarssk/admitto/pull/1003))
 
 ### Fixed
 
-- The login, MFA, change-password, and other server-rendered auth pages no longer block same-origin fetch/XHR requests such as Cloudflare's own edge-injected bot-detection beacon (`/cdn-cgi/challenge-platform/...`). Their Content-Security-Policy previously omitted `connect-src` entirely on an instance with no trusted origins configured, so it fell back to `default-src 'none'` and blocked even requests to Admitto's own origin.
-- Event Overview's Key contacts avatars are now centered against the full row height instead of anchored to the top, so they no longer sit noticeably above center once a contact has a role or note wrapping the row to two lines.
-- The staff user edit modal (Users & roles) no longer permanently reserves scrollbar-gutter space on its right edge, matching every other modal that shares its layout - a short profile (no recent logins, no role chips) sat with dead space on the right where a scrollbar was never going to appear.
-- Settings → Logs & audit → System's Level filter dropdown no longer opens far wider than its four short options need, leaving a mostly-empty panel hugging the toolbar's right edge.
+- Allow same-origin `connect-src` on the server-rendered auth pages, so Cloudflare's own beacon is no longer blocked ([#1002](https://github.com/solarssk/admitto/pull/1002))
+- Centre the Key contacts avatars against the full row height ([#1009](https://github.com/solarssk/admitto/pull/1009))
+- Stop the staff user edit modal reserving scrollbar space ([#1011](https://github.com/solarssk/admitto/pull/1011))
+- Narrow the System logs Level filter dropdown ([#1015](https://github.com/solarssk/admitto/pull/1015))
 
 ### Security
 
-- The production Docker image no longer ships the full development toolchain (TypeScript, ESLint, Vitest, Vite). A Dockerfile step meant to restore Prisma CLI's runtime dependencies after pruning devDependencies was instead restoring every pruned package, shrinking the image by about 200 MB and removing 11 CVEs (10 high, 1 medium) that lived in TypeScript's native compiler binary.
-- `bootstrap-superadmin --force` (both `npm run cli -w @admitto/auth --` and the `admitto` CLI) no longer hangs forever when the confirmation and password answers are piped in together, as any scripted/non-interactive caller does - only a human typing at a real terminal, one line at a time, avoided the underlying readline bug.
+- Stop shipping the development toolchain in the production image, which is about 200 MB smaller and drops 11 CVEs ([#1014](https://github.com/solarssk/admitto/pull/1014))
+- Stop `bootstrap-superadmin --force` hanging when its answers are piped in ([#1012](https://github.com/solarssk/admitto/pull/1012))
 
 ## [0.5.4] - 2026-08-21
 
 ### Added
 
-- Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik", or "Authentik + Cloudflare Access" when also linked through Cloudflare Access) instead of the generic "Identity provider" label.
-- Bulk check-in from the Attendees list now asks for confirmation before admitting everyone selected, matching the other bulk actions (revoke, delete, send tickets) on the same toolbar.
-- Event Settings → Wallet → Field mapping has a new `event_date_short` placeholder alongside the existing `event_date` - a shorter form with an abbreviated month (e.g. "24 Sep 2026" instead of "24 September 2026") for pass template fields too narrow for the long date. An event's wallet pass now also sets PassCreator's Lock Screen relevance date whenever Apple Wallet is enabled and the event has a start time, independent of the separate Apple Wallet semantic tags opt-in.
+- Show the real linked identity provider names in the staff user modal and the My account SSO menu ([#977](https://github.com/solarssk/admitto/pull/977))
+- Ask for confirmation before a bulk check-in from the Attendees list ([#979](https://github.com/solarssk/admitto/pull/979))
+- Add the `event_date_short` wallet placeholder, and set the Lock Screen relevance date on Apple Wallet passes ([#996](https://github.com/solarssk/admitto/pull/996))
 
 ### Changed
 
-- The "Confirm check-in" button on the Check-in screen always uses Admitto's own blue, regardless of the organisation's branding accent color - a branded accent in red or orange read as an error state on this specific button.
-- Attendee Overview's two-column layout is now a literal 50/50 split.
-- The Two-factor coverage stat on Users & roles no longer counts staff who sign in through an identity provider as "missing 2FA" - two-factor for those accounts is the identity provider's responsibility, not something Admitto enforces.
-- The public ticket page's date, time, and venue now read as a proper stat layout - "Date" and "Time" as labeled columns side by side with a divider between them, and the venue address on its own line below with a pin icon - instead of three stacked icon-and-text rows. The previous layout also had a real bug: the pin icon could drift away from a venue address that wrapped onto a second line, growing worse the longer the venue name was. Date and time no longer need an icon at all, and the venue's pin icon now stays at a fixed, consistent gap from the address regardless of its length.
-- Wallet pass's `event_hours` field mapping now reads exactly like the public ticket page: a spaced hyphen between start and end ("9:00 am - 6:00 pm" instead of "9:00am-6:00pm"), the event's timezone abbreviation appended, and an open-ended "from"/"until" instead of being omitted entirely when only one of start/end is set on the event.
-- Ticket confirmation emails' `{{event_date}}` and `{{event_hours}}` placeholders now match the public ticket page's format - the event's own regional date/time convention with its timezone abbreviation (e.g. "21 August 2026", "10:00 am - 6:05 pm IST") - instead of a fixed ISO date and 24-hour time with no timezone shown, regardless of where the event actually takes place.
+- Always use Admitto's own blue for the "Confirm check-in" button ([#985](https://github.com/solarssk/admitto/pull/985))
+- Make the Attendee Overview layout a 50/50 split ([#980](https://github.com/solarssk/admitto/pull/980))
+- Stop counting SSO staff as missing 2FA in the Two-factor coverage stat ([#972](https://github.com/solarssk/admitto/pull/972))
+- Lay out the ticket page date, time and venue as a stat row ([#995](https://github.com/solarssk/admitto/pull/995))
+- Make the wallet `event_hours` field read like the ticket page ([#996](https://github.com/solarssk/admitto/pull/996))
+- Match the `{{event_date}}` and `{{event_hours}}` email placeholders to the ticket page format ([#999](https://github.com/solarssk/admitto/pull/999))
 
 ### Fixed
 
-- Unlinking SSO from My Account now also removes a linked Cloudflare Access identity, instead of leaving it behind without its underlying sign-in method. Previously this silently broke every later Cloudflare-authenticated request for that account.
-- Wallet registration webhooks from PassCreator (device add/remove events) are no longer silently rejected. Two separate bugs each broke every delivery in a different way: Admitto was reading PassCreator's public-key response with the wrong field name (so the key could never be fetched at all), and signature verification was using the wrong hash algorithm (so a fetched key still couldn't validate a genuine delivery). No wallet registration status ever updated from a live device, and PassCreator kept retrying every delivery for over a day. Also fixed: some Android Wallet variants (`Android`, `AndroidWalletPasses`, `AndroidWalletUnion`, not just `AndroidGooglePay`) were silently ignored instead of updating Google registration counts. Wallet status now updates correctly when an attendee adds or removes their pass from Apple or Google Wallet.
-- Voiding a pass directly in PassCreator's own dashboard (bypassing Admitto) is now reflected on the attendee's Wallet status. This never worked before: PassCreator's void-notification webhook doesn't say which event fired or carry any voided flag in its payload, so it was structurally indistinguishable from every other wallet event and was always ignored. It now gets its own separate webhook subscription so Admitto can tell the two apart. PassCreator has no equivalent restore/un-void webhook event, so a pass restored directly in PassCreator's dashboard still isn't reflected automatically - Admitto's own restore action is unaffected.
-- Organisation Settings → Archiving and My account → Active sessions: their tables now span the full width of their card, matching every other table in the app. A leftover negative-margin/padding pair silently canceled itself out, so the table never actually reached the card's edge.
-- The Audit log now keeps the deleted event's real name in "Deleted event …" entries instead of falling back to the generic label once the event itself no longer exists to look the name up from.
-- A staff account's display name, when unset, now shows their email address in the top-right account menu instead of just the part of the email before the @ sign.
-- Activity log and attendee Notes now show a staff member's email when they have no display name set, instead of a generic label ("Admin", which wrongly implied a specific role) or skipping straight past the email to that same generic fallback.
-- Note author badges (Attendee detail → Notes) now use the same role name and color as everywhere else in the app ("Superadmin"/"Administrator"/"Operator"), instead of an unrelated two-letter code ("SA"/"AD"/"OP").
-- Requirements' Add/Edit item and Add/Edit custom field modals no longer shift their form width when the scrollbar appears or disappears - their content almost always needs to scroll, so the space for it is now reserved up front instead of toggling in and out.
-- Check-in and note timestamps now show in the viewer's own browser timezone rather than the event's, and a note added on an earlier day now shows which day, not just a time.
-- Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
-- Several small layout fixes on Check-in, Users & roles, My account, Organisation settings → Identity/Mail, and Attendee delivery history: text no longer wraps awkwardly in status chips or company/department names, modal scrollbars behave consistently and no longer shift content when they appear, a Redirect URI field's copy control now sits inside the field, and a couple of redundant or misaligned hint lines were removed or straightened out.
-- Ticket page event hours now show the event's own timezone abbreviation next to the time (e.g. "10:00 am - 6:05 pm IST"), always use lowercase am/pm instead of varying between "AM" and "am" depending on the event's country, and join the start and end time with a spaced hyphen instead of a tight dash.
-- Initial setup and change-password screens: the password strength meter no longer sits almost on top of the "Confirm password" field once it appears. It now takes up real space below the password field, the same standard gap used between every other field on the form, instead of floating on an overlay a couple of pixels above the next label.
+- Remove the linked Cloudflare Access identity when SSO is unlinked from My Account ([#987](https://github.com/solarssk/admitto/pull/987))
+- Fix PassCreator wallet registration webhooks that were always rejected (key field and hash algorithm) ([#959](https://github.com/solarssk/admitto/pull/959))
+- Reflect a pass voided directly in PassCreator on the attendee's Wallet status, through its own webhook subscription ([#959](https://github.com/solarssk/admitto/pull/959))
+- Make the Archiving and Active sessions tables span the full card width ([#961](https://github.com/solarssk/admitto/pull/961))
+- Keep the deleted event's name in "Deleted event" Audit log entries ([#969](https://github.com/solarssk/admitto/pull/969))
+- Show the email address in the account menu when no display name is set ([#982](https://github.com/solarssk/admitto/pull/982))
+- Show a staff member's email instead of "Admin" in the Activity log and Notes ([#970](https://github.com/solarssk/admitto/pull/970))
+- Use the canonical role badge on attendee Notes ([#992](https://github.com/solarssk/admitto/pull/992))
+- Stop Requirements modals shifting width when the scrollbar appears ([#971](https://github.com/solarssk/admitto/pull/971))
+- Show check-in and note timestamps in the viewer's browser timezone, and the day for older notes ([#981](https://github.com/solarssk/admitto/pull/981))
+- Give "2FA verified" Security log rows the "your local time" icon ([#978](https://github.com/solarssk/admitto/pull/978))
+- Fix small layout issues on Check-in, Users & roles, My account, Identity, Mail and delivery history ([#960](https://github.com/solarssk/admitto/pull/960), [#966](https://github.com/solarssk/admitto/pull/966))
+- Show the timezone abbreviation, lowercase am/pm and a spaced hyphen in the ticket page event hours ([#995](https://github.com/solarssk/admitto/pull/995))
+- Give the password strength meter real space below the password field ([#998](https://github.com/solarssk/admitto/pull/998))
 
 ## [0.5.3] - 2026-08-18
 
 ### Added
 
-- Mail templates now support two more placeholders: `{{ticket_type}}` (the attendee's ticket type label) and `{{event_hours}}` (the event's start-end time, if set in Event settings). Both were already available on wallet passes but missing from the Communication tab's template editor.
-- Attendee detail's "More actions" menu now has a "Copy ticket link" action for admins and superadmins, which copies the attendee's existing ticket URL to the clipboard. Previously the only way to get that link was to resend the ticket email to yourself. The raw ticket token is still never exposed as attendee data - it's decrypted server-side only for this action, the same way the existing wallet-pass link actions already work, and each copy is recorded in the attendee's action log.
+- Add the `{{ticket_type}}` and `{{event_hours}}` mail template placeholders ([#953](https://github.com/solarssk/admitto/pull/953))
+- Add "Copy ticket link" to the Attendee detail "More actions" menu ([#950](https://github.com/solarssk/admitto/pull/950))
 
 ### Fixed
 
-- An attendee's Wallet status now shows "Added" only once PassCreator confirms the pass was actually registered on an Apple or Google Wallet device. Previously it showed "Added" as soon as the attendee opened the "Add to Wallet" link, even if they backed out of the install prompt and never actually added it - it now shows "Sent" until a real device registration is confirmed.
-- Selecting attendees on the Attendees list and clicking "Send tickets" (single or bulk) no longer silently skips anyone who already received a ticket, reporting "No tickets were queued" with nothing actually sent. It now resends to whoever already has a ticket while still sending a first ticket to anyone who doesn't, correctly recorded in the delivery log either way.
-- The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.
-- Signing in with a local password (or directly through your identity provider, not Cloudflare Access) no longer gets stuck after the two-factor code when the admin panel is one of the paths Cloudflare Access protects - it now lands on the check-in surface instead, which every admin and superadmin can already use once at least one event exists. It falls back once more, to My account, on a brand new instance with no events yet.
-- Pressing and holding a searchable dropdown's own caption (e.g. Attendance, Ticket type, Event timezone) while it was open inside a modal no longer closes it the instant you press down, then reopens it the instant you release. Clicking near the caption briefly moved keyboard focus to the surrounding modal window itself, which every one of these dropdowns mistook for "focus moved to something else" and closed for.
-- The Apple Wallet and Google Wallet buttons inserted into email templates now show up correctly in Outlook. Classic Outlook desktop doesn't render SVG images at all in mail bodies, so the badge graphic was silently missing for anyone reading their ticket confirmation there; it's now a PNG in email while the public ticket page keeps the sharper SVG version.
-- The Send test email result in Event/Organisation Settings → Mail no longer shows the bounce-detection message pressed directly against the details above it, with no visible gap.
-- Sending an attendee's first ticket from two staff actions at the same time no longer sends two copies of the email. The delivery log already kept one ticket, but the second send could reach the mail provider before the duplicate was rejected.
+- Show a wallet pass as "Added" only once PassCreator confirms a device registration ([#952](https://github.com/solarssk/admitto/pull/952))
+- Resend tickets to attendees who already have one when "Send tickets" is used on a selection ([#951](https://github.com/solarssk/admitto/pull/951))
+- Let staff who sign in only through Cloudflare Access use the Check-in tab ([#938](https://github.com/solarssk/admitto/pull/938))
+- Land on the check-in surface after a local or IdP sign-in when Cloudflare Access protects the admin panel ([#938](https://github.com/solarssk/admitto/pull/938))
+- Stop searchable dropdowns closing and reopening when their caption is pressed and held in a modal ([#939](https://github.com/solarssk/admitto/pull/939))
+- Serve PNG wallet badges in email and keep SVG on the ticket page, so Outlook shows them ([#954](https://github.com/solarssk/admitto/pull/954))
+- Add the missing gap below the Send test email result ([#949](https://github.com/solarssk/admitto/pull/949))
+- Stop two simultaneous first-ticket sends emailing two copies ([#956](https://github.com/solarssk/admitto/pull/956))
 
 ## [0.5.2] - 2026-08-16
 
 ### Fixed
 
-- Signing in to the admin panel through Cloudflare Access no longer causes repeated "write conflict or a deadlock" errors in server logs on every page load. A page load fires many API requests at once, and each one was independently re-resolving and re-writing the signed-in identity to the database; a short-lived cache now resolves it once per Cloudflare-issued token instead, with no change to how quickly a revoked token or account stops working.
-- Being denied access to the admin panel or check-in panel (an unlinked Cloudflare Access sign-in, no admin role, no check-in access) now shows the same branded error page already used for a broken link or a server error, with a plain-language message explaining what happened, instead of the bare word "Forbidden."
+- Cache the Cloudflare Access identity per issued token, to stop repeated write-conflict errors on page load ([#925](https://github.com/solarssk/admitto/pull/925))
+- Show the branded error page instead of a bare "Forbidden" when access is denied ([#926](https://github.com/solarssk/admitto/pull/926))
 
 ## [0.5.1] - 2026-08-15
 
 ### Security
 
-- Account and two-factor management endpoints (change password, reset two-factor, remove single sign-on, etc.) no longer share their request throttle with the public sign-in page. Previously, a burst of a few dozen requests against those endpoints - even without a valid session - could exhaust the shared limit and lock every user behind the same office or VPN connection out of signing in. Re-entering your current password to confirm a sensitive change (password change, two-factor reset, removing single sign-on) is now also throttled per account rather than only by network address, so repeatedly guessing a password from different addresses is caught instead of slipping through.
-- Users & roles: resetting another superadmin's two-factor authentication or password now requires the acting superadmin to confirm with their own authenticator code first, and is recorded distinctly in the audit log. Previously any superadmin could reset another superadmin's 2FA or password with no extra confirmation and no way to tell it apart from an ordinary staff reset in the audit trail, so a compromised superadmin session could be used to quietly take over every other superadmin account. Resetting your own account is unaffected. An acting superadmin who has never set up their own authenticator app (for example a superadmin role granted purely through single sign-on) is now denied this specific action outright instead of the check being silently skipped. The confirmation step is also now required unconditionally for this specific action, regardless of the instance's configurable "which roles require two-factor" setting - previously, an instance that had scoped that setting away from superadmin could still let the check be silently skipped even for an actor with two-factor already set up.
-- Users & roles: the check that blocks resetting two-factor authentication or a password for an SSO-managed account is now applied at the exact moment the reset is written, closing a narrow timing window where linking single sign-on at the same moment as an admin's reset could still leave a local password or two-factor method silently in place.
-- A break-glass emergency or backup recovery code is no longer consumed when two-factor sign-in fails to complete right after the code was entered correctly (for example, the partial sign-in session expired or was signed out from elsewhere in that instant) - the code stays valid for a retry instead of a locked-out user silently losing their one working recovery code for nothing. This kind of failure is also now recorded in the security audit log so it can be investigated after the fact.
-- Superadmins reviewing the security audit log now get an aggregated alert after repeated incorrect two-factor codes against an admin or superadmin account, the same way repeated wrong-password attempts already trigger one. Previously, someone who already had a valid password for a privileged account could try two-factor codes indefinitely without ever tripping that alert.
-- Signing in with the correct password to a deactivated staff account now takes the same amount of time, and is recorded distinctly in the security audit log, from a plain wrong-password attempt. Previously the deactivated-account case responded faster, which could let someone testing a leaked password/email pair infer from response speed alone that the password was still correct.
-- Regenerating a superadmin's emergency recovery code is now an all-or-nothing operation, matching how backup recovery codes are already regenerated - an interruption partway through can no longer leave the account with no active emergency code.
-- "Remember this device" (MFA-skip) cookies are now bound to the IP address recorded when you checked the box. A cookie used later from a different network is no longer accepted silently - it falls back to asking for your two-factor code again, so a copied or stolen cookie can't skip MFA from an attacker's own network. Browser User-Agent alone is no longer enough on its own to vouch for a device (it's a value the browser sends and any HTTP client can copy or guess), so it's recorded for context but no longer decides whether a cookie is trusted.
-- The break-glass `bootstrap-superadmin` CLI command now records a dedicated "Superadmin created (bootstrap)" entry in the security audit log, shown as its own event in Organisation Settings → Logs → Recent Activity rather than folded into the generic "2FA break-glass override" label the other break-glass commands use, since creating a new superadmin is a materially different, more significant action. That record is now written atomically with the account itself - a failure to persist the audit row rolls back the account and role creation too, rather than the write being silently swallowed and the account created anyway - so a superadmin can no longer end up with no audit trail. It also now rejects `--password` on the command line (previously only the space-separated form was blocked, not `--password=<value>`), checked before any other prompt or database lookup, so an operator's password can no longer end up in shell history or the process list when running any of these break-glass commands.
+- Isolate the account and two-factor management rate limits from the public sign-in page, and throttle password re-entry per account ([#919](https://github.com/solarssk/admitto/pull/919))
+- Require the acting superadmin's own authenticator code to reset another superadmin's two-factor or password, and audit it separately ([#918](https://github.com/solarssk/admitto/pull/918))
+- Apply the SSO-managed check at the moment a reset is written, closing a timing window ([#918](https://github.com/solarssk/admitto/pull/918))
+- Keep a break-glass or backup recovery code valid when two-factor sign-in fails to complete ([#917](https://github.com/solarssk/admitto/pull/917))
+- Alert superadmins after repeated incorrect two-factor codes against an admin account ([#917](https://github.com/solarssk/admitto/pull/917))
+- Answer a correct password for a deactivated account as slowly as a wrong one, and record it distinctly ([#917](https://github.com/solarssk/admitto/pull/917))
+- Regenerate a superadmin's emergency recovery code as an all-or-nothing operation ([#917](https://github.com/solarssk/admitto/pull/917))
+- Bind "Remember this device" cookies to the IP address recorded when they were set ([#916](https://github.com/solarssk/admitto/pull/916))
+- Record a dedicated "Superadmin created (bootstrap)" audit entry from `bootstrap-superadmin`, written atomically with the account ([#915](https://github.com/solarssk/admitto/pull/915))
+- Bind Cloudflare Access sign-ins to an existing direct OIDC identity, and reconcile its group roles on every sign-in ([#912](https://github.com/solarssk/admitto/pull/912))
 
 ### Added
 
-- Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.
-- Event settings → Location changes (venue name, address, coordinates, directions/accessibility notes) are now also pushed in the background to every already-issued active wallet pass for that event. Previously only name/date/timezone/event-hours changes triggered this, so a venue or address change silently drifted out of sync with already-issued passes.
-- Editing an attendee's name, email, company, department, or ticket type now also pushes the change to their already-issued wallet pass, the same way a bulk ticket type change already does. Event settings → Wallet has a new Wallet push history list showing recent bulk ticket type pushes for the event.
-- Event settings → Wallet's "Wallet push history" list now shows a Scope column (how many attendees, or the whole event plus which location/settings save triggered it) and supports pagination instead of always showing only the most recent rows. Its Date column now shows when the push actually ran, in UTC with the triggering admin's own local time underneath, instead of the event venue's timezone (which had no relation to when the background job executed).
-- Event settings → Wallet has a new "Semantic tags" switch under Apple Wallet, off by default. When enabled, issued Apple Wallet passes include event name, date/time, venue location, and entrance directions as Apple's own semantic tags, which power Siri Suggestions, Maps, and Calendar smart surfacing. No NFC or PassCreator account approval needed, and it has no effect on Google Wallet passes. Toggling it also refreshes already-issued Apple Wallet passes.
-- Event settings → Images: uploaded images can now be re-cropped after the fact. A new Edit button on each image in "Your images" reopens the crop tool on the original, uncropped file with the previous framing restored, matching the logo upload's existing re-crop capability.
-- Communication now has a **Wallets** tab: compose a short message and push it to attendees' already-installed Apple Wallet or Google Wallet passes as a lock-screen notification, with the same recipient-filtering and count-before-you-send pattern as the existing mail Send tab. Recipient options are limited to attendees who currently have an active wallet pass (all such attendees, by ticket type, or specific attendees).
-- The public ticket page and wallet pass now show the event's date and hours in the format attendees from that country actually expect - for example a US event shows "September 24, 2026" and "9:00 AM-6:00 PM" instead of always using the day/month/year, 24-hour style. This is based on the event's own address (Location tab); events with no address set, or an address in a country the app doesn't recognize, are unaffected and keep today's format.
+- Push a bulk ticket type change to already-issued wallet passes in the background ([#892](https://github.com/solarssk/admitto/pull/892))
+- Push Event settings Location changes to already-issued wallet passes ([#893](https://github.com/solarssk/admitto/pull/893))
+- Push attendee edits to their wallet pass, and add a Wallet push history list to Event settings ([#894](https://github.com/solarssk/admitto/pull/894))
+- Add a Scope column and pagination to the Wallet push history, and show when each push ran ([#911](https://github.com/solarssk/admitto/pull/911))
+- Add an Apple Wallet "Semantic tags" switch to Event settings ([#907](https://github.com/solarssk/admitto/pull/907))
+- Allow re-cropping already uploaded event images ([#905](https://github.com/solarssk/admitto/pull/905))
+- Add a Wallets tab to Communication for lock-screen messages to installed passes ([#903](https://github.com/solarssk/admitto/pull/903))
+- Format dates and hours on the ticket page and wallet pass by the event's country ([#914](https://github.com/solarssk/admitto/pull/914))
 
 ### Changed
 
-- Attendee export/import and mail sending now start almost immediately after you trigger them, instead of waiting up to a minute for the background worker's next scheduled check.
-- Event settings → Ticket types now uses the same explicit Save/Reset pattern as every other settings tab, instead of saving each name/color edit or new type immediately with no Save button. Deleting a type is unchanged - it still removes immediately once you confirm.
+- Start attendee export, import and mail sending at once instead of waiting for the worker's next check ([#890](https://github.com/solarssk/admitto/pull/890))
+- Save and reset the Ticket types tab explicitly, like the other settings tabs ([#902](https://github.com/solarssk/admitto/pull/902))
 
 ### Fixed
 
-- Apple Wallet passes with Semantic tags enabled could show the wrong event start/end time and duration for an event whose hours fall on the same calendar day a daylight saving time change happens in its own timezone, for zones that aren't UTC or GMT-based. A US event, for example, could show a 2-hour event as 1 hour or vice versa if it ran during the transition.
-- Wiki documentation: every page's header (Audience / Required role / Feature status / Last verified) is now a small table instead of four blockquote lines, easier to scan at a glance.
-- Wiki documentation: corrected several pages that had fallen out of date after recent feature changes - Wallet is now listed as a Superadmin-only tab (Roles and Permissions, Organisation Administration), the Ticket Types page no longer describes a "permanent link name" field removed from event creation, wallet badge/link descriptions in the email template docs no longer say they are unbuilt (they work once Wallet is configured), the weather chip description now reflects that it always shows Celsius, and Pass Statuses/Glossary/Help and Troubleshooting now cover the wallet-pass void/restore cascade. Also documents `MAIL_PRIVATE_DESTINATION_ALLOWLIST` for self-hosted mail servers, which previously had no Wiki coverage.
-- Organisation settings → Security and Mail: the session-lifetime/timeout number fields and the SMTP/Graph/Power Automate/wallet secret fields now have a stable `id`, so browser password managers and accessibility tools can associate each field with its label instead of treating it as anonymous.
-- CI's secret-scan job no longer fails a pull request over commits from unrelated branches. It scanned the full history of every branch in the repository (gitleaks' default behavior once history is fetched), so any PR would fail if any other open branch happened to contain something gitleaks flagged, regardless of that PR's own changes. The scan is now scoped to just the commits a given PR or push actually introduces.
-- The small map on the public ticket page and its "© OpenStreetMap contributors" credit could render as blank boxes instead of readable text in the packaged app image, because the container had no fonts installed at all for the server-side map renderer to draw with.
-- Event settings → Wallet: registering the PassCreator webhook subscriptions on save no longer logs a false failure and falls back to re-subscribing unconditionally on every save. PassCreator's hook endpoints return success without matching the response shape used elsewhere in its API, so a working subscription was being misread as an error.
-- Wallet pass registration status (Registered/Unregistered on the Attendees list and Attendee Detail) now updates correctly from PassCreator's webhook deliveries. The delivered payload's device-registration fields don't match the shape assumed during development, so live updates were silently ignored in favor of the slower periodic background refresh.
-- Attendee Detail → Delivery history: on narrow screens, a long subject or recipient address could squeeze the row down until the message text disappeared entirely, or overlap the timestamp, instead of cleanly wrapping the timestamp onto its own line underneath.
-- My account: closing the Unlink SSO dialog after it fails because a role is managed by your identity provider, or because there's no password or two-factor code to verify you with, no longer leaves the password fields holding what you typed if you reopen it. The Password and Two-factor authentication cards also show a clearer placeholder with an icon for sign-in-only accounts, matching the empty-state style used elsewhere, instead of a single line of text.
-- Settings → Health could show the background worker as unresponsive during a large attendee import, export, or wallet pass push, even though it was still actively working - the worker's liveness signal was only refreshed before and after one of those runs, not while it was still in progress.
-- Attendee exports (PDF, CSV, and XLSX) now show a readable check-in status ("Checked in" / "Not checked in") instead of the raw "admitted"/"not_admitted" database value. The PDF export additionally no longer cuts off long email addresses with "...", or squeezes every column down once several custom fields are added: column widths are now measured from the real data on every export instead of guessed, long values wrap onto extra lines instead of being truncated, and the page automatically switches to a larger paper size only on the rare export with enough custom fields that even wrapped text wouldn't otherwise fit.
-- Save buttons across Event settings, Organisation settings, and attendee/requirements/communication edit forms stayed clickable with nothing to save, instead of greying out until an actual change was made.
-- Event settings → Danger zone: the Delete event button could keep showing a stale "can't delete yet" state after clearing the event's last blocking ticket type or editing a ticket type's color/label - it was only ever refreshed on page load, not after that change.
-- Event settings → Wallet: field mapping rows overlapped and truncated on narrow screens; the field name and its mapped value now stack onto two readable lines instead of squeezing four columns into one.
-- Communication → Delivery log looked cramped on narrow screens; its header actions now wrap onto a second line instead of forcing everything into one.
-- Requirements page's Documentation button now matches the same compact mobile sizing as every other page's, instead of staying full-size with its icon.
-- Attendees list: on narrow screens, each attendee's Pass/Attendance/Mail status badges are now labeled, so it's clear what each one refers to - previously that context only existed in the desktop table's column headers.
+- Resolve daylight-saving offsets correctly for Apple Wallet semantic tags ([#922](https://github.com/solarssk/admitto/pull/922))
+- Show the wiki page header as a table, and correct out-of-date wiki pages on wallets, ticket types and mail templates ([#910](https://github.com/solarssk/admitto/pull/910))
+- Give the Security and Mail settings number and secret fields a stable `id` ([#888](https://github.com/solarssk/admitto/pull/888))
+- Scope the CI secret scan to the commits a pull request introduces ([#891](https://github.com/solarssk/admitto/pull/891))
+- Install fonts in the production image, so the ticket page map renders its text ([#883](https://github.com/solarssk/admitto/pull/883))
+- Stop treating a successful PassCreator webhook subscription as a failure ([#882](https://github.com/solarssk/admitto/pull/882))
+- Update wallet registration status from PassCreator webhook deliveries ([#884](https://github.com/solarssk/admitto/pull/884))
+- Stop Delivery history rows collapsing on narrow screens ([#889](https://github.com/solarssk/admitto/pull/889))
+- Clear the Unlink SSO password fields whenever the dialog closes ([#909](https://github.com/solarssk/admitto/pull/909))
+- Keep the worker's liveness signal fresh during long imports, exports and wallet pushes ([#892](https://github.com/solarssk/admitto/pull/892))
+- Show "Checked in" or "Not checked in" in attendee exports, and size PDF columns from the real data ([#901](https://github.com/solarssk/admitto/pull/901))
+- Grey out Save buttons until there is something to save ([#899](https://github.com/solarssk/admitto/pull/899))
+- Fix the Delivery log, wallet field mapping, Requirements and Attendees list layouts on mobile, and refresh the Delete event state after a ticket type change ([#899](https://github.com/solarssk/admitto/pull/899))
 
 ## [0.5.0] - 2026-08-13
 
 ### Added
 
-- My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
-- **My account: passkeys and security keys.** Staff can now register passkeys (Face ID, Windows Hello, and similar) and security keys (for example a YubiKey) as extra two-factor methods alongside an authenticator app. Each one is given a name so multiple keys can be told apart, and there is no limit on how many can be registered. Setting up, resetting, or adding a two-factor method now opens in a popup instead of expanding inline on the page. Registering a passkey or security key stays available to inspect or remove even if an administrator later turns passkeys/security keys off for the instance — only adding a new one is affected. If it's the account's first-ever confirmed two-factor method, its 10 backup codes are shown once in the same popup and must be saved before it can be closed, the same as first-time authenticator app setup.
-- **My account: backup codes.** A new Backup codes row in Two-factor authentication shows how many of your codes are still unused (for example "7 of 10 remaining"). Regenerate invalidates the current batch and issues a fresh set of 10 codes, shown once as plain text — the same one-time reveal used during initial setup.
-- **Add to Apple Wallet / Google Wallet.** The wallet badges on the public ticket page are now live — tapping one creates (or reuses) the attendee's wallet pass and opens it directly, without ever landing on a PassCreator-hosted page. If creation fails, the ticket page shows a retry notice instead of a broken redirect.
-- **Wallet settings in the admin UI.** Event settings → Wallet (superadmin-only) now has a real PassCreator API key and Template ID field, both specific to that event, so a leaked or rotated key only ever affects one event, not the whole instance (instead of the roadmap placeholder). A header switch turns the whole feature on or off for the event; independent Apple Wallet / Google Wallet switches disable one platform without clearing the other's configuration. Test connection checks the API key and template against PassCreator before saving. Field mapping controls which PassCreator field key receives which attendee/event value — nothing beyond the QR code is sent until it's mapped, since PassCreator templates don't share a common set of field names. Admins can map attendee name (full or first/last), email, company, department, event name/date/hours/location, ticket type, the ticket/QR value (for templates whose barcode isn't bound to it directly), directions and accessibility notes, individual address components, and Google/Apple Maps links. No env var restart needed to change any of it.
-- **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
-- **Wallet pass management for staff.** Attendee Detail's Wallet card can void, restore, push updates, or permanently delete an attendee's wallet pass at the provider; the same void/push-updates/delete actions are also available in bulk from the Attendees list's selection menu. The Attendees table now shows a compact Wallet column — a highlighted icon per platform (Apple/Google) the attendee has actually added their pass to, muted otherwise — instead of the previous per-row view/revoke action icons, which duplicated the row's own menu.
-- **Wallet pass registration status.** Whether an attendee has actually added a pass to their device (not just had one issued) is now tracked from PassCreator — shown as Registered, Unregistered, or Status unknown on the Attendee Detail Wallet card and the Attendees table's Wallet column. Kept current by a webhook PassCreator calls on registration/unregistration/void, backed by periodic polling as a fallback.
-- Revoking an attendee's ticket now also voids their wallet pass, if they have one, so a revoked ticket doesn't stay usable at the gate through an old wallet install. Restoring the ticket restores the pass the same way.
-- Event Settings changes to an event's name, date, timezone, or event hours are now pushed in the background to every already-issued wallet pass for that event, so passes stay in sync without staff needing to push updates manually.
-- Organisation Settings → Security: superadmins can now allow specific third-party `https://` origins to run script, send data, and (on sign-in pages) render an embedded widget, for example an analytics/monitoring beacon like Cloudflare Web Analytics or a login challenge widget like Cloudflare Turnstile, without weakening the Content-Security-Policy for anything else.
-
-### Changed
-
-- **My account: two-factor authentication methods can now be managed independently.** The authenticator app's action is now **Manage** instead of **Reset**: **Remove** takes out only the authenticator app and leaves passkeys, security keys, and backup codes untouched; **Reset everything** remains available from the card's own options menu for clearing all of them at once.
+- Let staff choose a 12-hour, 24-hour or browser-default time input, independently of the date format ([#740](https://github.com/solarssk/admitto/pull/740))
+- Make the Add to Apple Wallet and Add to Google Wallet badges on the ticket page work ([#744](https://github.com/solarssk/admitto/pull/744))
+- Add Wallet settings to Event settings: per-event PassCreator API key and Template ID, platform switches, Test connection and field mapping ([#748](https://github.com/solarssk/admitto/pull/748))
+- Add an optional "Event hours" start and end field to New event and Event settings ([#740](https://github.com/solarssk/admitto/pull/740))
+- Let staff void, restore, push updates to or delete a wallet pass from Attendee Detail and in bulk, with a Wallet column on the Attendees table ([#879](https://github.com/solarssk/admitto/pull/879))
+- Track wallet pass registration (Registered, Unregistered, Status unknown) from PassCreator webhooks, with polling as a fallback ([#879](https://github.com/solarssk/admitto/pull/879))
+- Void an attendee's wallet pass when the ticket is revoked, and restore it with the ticket ([#879](https://github.com/solarssk/admitto/pull/879))
+- Push changes to an event's name, date, timezone or hours to already-issued wallet passes in the background ([#879](https://github.com/solarssk/admitto/pull/879))
+- Allow superadmins to add trusted third-party origins to the Content-Security-Policy in Organisation Settings, Security ([#865](https://github.com/solarssk/admitto/pull/865))
 
 ### Fixed
-- Public ticket page: the browser tab, bookmarks, and home-screen shortcuts now show the Admitto icon on the ticket page and its not-found/error state, instead of a blank or default icon. The shared favicon markup was never wired into this page's HTML template.
-- The Admitto mark's checkmark had a hidden default black fill baked in on top of its white stroke (a missing `fill="none"` on the SVG path), invisible at normal browser-tab size but visible as a black wedge on the larger iOS "Add to Home Screen" icon. The `apple-touch-icon.png` is also now flattened onto an opaque background instead of keeping transparent corners, since iOS applies its own rounded mask and can render transparency as solid black.
-- Event Settings → Ticket types: adding a new type now creates it with the name you actually type, so its internal key derives from that name instead of always starting from the throwaway "New type" placeholder shown before the first click. The attendee Activity log's ticket type field also now shows the type's current name in its before/after diff instead of that frozen internal key.
-- Instance Settings → Mail and an event's Mailing settings: when a stored SMTP password, Graph client secret, or Power Automate key can no longer be decrypted (for example after `ENCRYPTION_KEY` changes), the Test and Verify connection actions now show a clear message asking the admin to re-enter and save the credential, instead of a generic "Something went wrong" error. System logs now record `mail_secret_decryption_failed` instead of a bare unhandled exception. Sending or resending tickets, retrying a failed delivery, Organisation Settings → Health check, and an event's "Verify bounce" check now surface the same clear message instead of a generic failure or an opaque retry with no recorded reason.
-- Communication → Templates: on phones, the selected template name is no longer covered by its status badge; the last-edited date is available from the Edit template control. **Delete event** now permits an otherwise-empty event whose only saved mail template is its non-deletable default Ticket email override; additional custom templates still block deletion.
-- Organisation Settings → Health check: the mobile **More actions** menu now stays compact instead of expanding to fit its longest description.
-- Organisation Settings → Logs: on iPhone browsers, opening Filters or typing a date no longer leaves the page or the calendar clipped behind the software keyboard. Filter and option panels now stay within the visible screen and scroll when necessary.
-- Timezone selection now uses one global IANA timezone catalogue with legacy aliases folded into their preferred current names. Map suggestions, event saves, and the picker consistently use one entry, for example, `Asia/Calcutta` is accepted but shown and saved as `Asia/Kolkata`.
-- My account: an account signed in only through an identity provider now correctly shows "Password is managed by your identity provider" and no longer asks for a current password it can never have. Unlinking SSO on such an account now fails with a clear message asking you to contact an administrator, instead of endlessly rejecting a password that doesn't exist. Existing accounts in this state are corrected automatically on upgrade.
-- Organisation Settings → Identity → group mapping: Scope is no longer a separate choice — it now always matches the selected role (Superadmin → instance, Admin → organization, Operator → event), the same pairing already used everywhere else roles are granted. Existing mappings saved with a mismatched pair are corrected automatically the next time the provider is opened. The mapping row also no longer wraps unevenly onto two lines when the Organization/Event ID field appears.
-- Organisation Settings → Identity → group mapping: the Organization/Event field is now a searchable picker showing real names instead of a raw ID with nothing to guide it, so a mistyped value can no longer save a mapping that could never match a real user's grant. The editor is wider so the mapping row has room to breathe, and on narrow screens it now packs two fields per line instead of stacking every field onto its own row.
-- Organisation Settings → Identity → provider editor: every field now has a short inline hint, including an explicit warning that Issuer URL must be the bare URL, not the `/.well-known/openid-configuration` discovery document some providers show you. Pasting the full discovery URL there (directly, or via **Discover**) is now corrected automatically instead of silently breaking sign-in later or 404ing.
-- Add to Apple Wallet / Google Wallet: the pass now carries the same QR code as the attendee's ticket page, so scanning it at check-in resolves to the right attendee. Previously the pass fell back to PassCreator's own internal identifier, which check-in could not match.
-- Wallet pass creation/update, Microsoft Graph mail sending, and MET Norway weather lookups now ask the provider not to compress responses, working around a process-wide bug where an unrelated `undici` import elsewhere in the same process can silently corrupt automatic gzip decompression on HTTP/2 connections so the response reports success but its body and headers arrive unusable.
+
+- Show the Admitto favicon on the public ticket page and its error state ([#880](https://github.com/solarssk/admitto/pull/880))
+- Fix the black wedge in the iOS home-screen icon by removing the default fill and flattening the touch icon ([#880](https://github.com/solarssk/admitto/pull/880))
+- Create a new ticket type with the name you type, and show type names in the Activity log diff ([#877](https://github.com/solarssk/admitto/pull/877))
+- Ask the admin to re-enter a mail credential that can no longer be decrypted, and log `mail_secret_decryption_failed` ([#867](https://github.com/solarssk/admitto/pull/867))
+- Fix the mobile Templates header, and let Delete event ignore a default Ticket email override ([#863](https://github.com/solarssk/admitto/pull/863))
+- Keep the Health check mobile "More actions" menu compact ([#863](https://github.com/solarssk/admitto/pull/863))
+- Keep the Logs filters and date picker clear of the keyboard on iPhone ([#863](https://github.com/solarssk/admitto/pull/863))
+- Use one IANA timezone catalogue, with legacy aliases folded into current names ([#864](https://github.com/solarssk/admitto/pull/864))
+- Show "Password is managed by your identity provider" for SSO-only accounts, and fail SSO unlink with a clear message ([#869](https://github.com/solarssk/admitto/pull/869))
+- Derive the Identity group mapping scope from the selected role ([#871](https://github.com/solarssk/admitto/pull/871))
+- Make the Identity group mapping Organization/Event field a searchable picker ([#871](https://github.com/solarssk/admitto/pull/871))
+- Add inline hints to the identity provider editor, and correct a pasted discovery URL to the bare issuer URL ([#872](https://github.com/solarssk/admitto/pull/872))
+- Put the ticket's QR code on the wallet pass, so scanning it at check-in resolves to the right attendee ([#748](https://github.com/solarssk/admitto/pull/748))
+- Ask providers not to compress responses, to work around an `undici` gzip/HTTP2 bug ([#878](https://github.com/solarssk/admitto/pull/878))
 
 ### Security
-- Cloudflare Access staff sign-ins now bind only to an existing direct OIDC identity through a forwarded immutable subject, reconcile that provider's managed group roles on every edge sign-in, and fail closed when a required role claim is unavailable. Enabling it requires selecting an enabled direct identity provider.
-- Users & roles: **Reset password** and **Reset two-factor** are now disabled for staff accounts signed in through an identity provider, in both the menu and the API, since resetting a password on an SSO-managed account previously created a working local sign-in path alongside the identity provider link with no warning shown.
-- **Log out now also ends the session at the identity provider**, when it advertises a logout endpoint via discovery, instead of only clearing the local Admitto session. Previously the identity provider's session (and any other application sharing it) stayed signed in, so a fresh SSO login could silently succeed without re-authenticating. Existing OIDC providers pick this up the next time **Discover** is run.
-- Static map tile fetching (the map image on tickets and mail) now re-resolves and pins the connection to a freshly validated address for every request and every redirect hop, closing the same DNS-rebinding gap already fixed for weather and address lookup.
-- The instance now publishes a `robots.txt`, and every public page (ticket, QR code, event map, branding assets, staff sign-in) sends `X-Robots-Tag: noindex, nofollow`, so search engines and AI crawlers that respect these signals no longer index attendee ticket links or scan QR codes into image search. `robots.txt` allows crawling on purpose — a blanket disallow would stop crawlers from ever fetching a page and seeing its `noindex` header, so a URL indexed before this change could never be removed.
+
+- Disable Reset password and Reset two-factor for SSO-managed accounts, in the menu and the API ([#868](https://github.com/solarssk/admitto/pull/868))
+- End the identity provider session on log out when the provider advertises a logout endpoint ([#870](https://github.com/solarssk/admitto/pull/870))
+- Re-resolve and pin the connection for every static map tile request and redirect hop ([#878](https://github.com/solarssk/admitto/pull/878))
+- Publish `robots.txt` and send `X-Robots-Tag: noindex, nofollow` on public pages ([#880](https://github.com/solarssk/admitto/pull/880))
 
 ## [0.4.14] - 2026-08-11
 
 ### Added
-- **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
-- Event Overview's Recent activity now also shows attendees added and items issued/returned/revoked, alongside check-ins, mail failures, and imports.
-- Event Overview now refreshes within ~3 seconds of a check-in, attendee add, or item issue/return/revoke (previously up to 30s), via a lightweight SSE signal that triggers an immediate refetch of the whole page.
-- Event Overview now also refreshes within ~3 seconds of a mail send/failure or a finished import. The worker announces these over Redis pub/sub so live updates aren't limited to actions taken in the admin app itself. Falls back to the existing 30s poll if Redis is unavailable.
+
+- Add a first-boot checklist, a Portainer/NPM variant without the compose nginx, and a generated environment dictionary (`deploy/ENV.md`) to the deploy docs ([#835](https://github.com/solarssk/admitto/pull/835))
+- Show attendees added and items issued, returned or revoked in the Event Overview Recent activity ([#858](https://github.com/solarssk/admitto/pull/858))
+- Refresh Event Overview within about 3 seconds of a check-in, attendee add or item change ([#859](https://github.com/solarssk/admitto/pull/859))
+- Refresh Event Overview within about 3 seconds of a mail send, failure or finished import, announced by the worker over Redis ([#860](https://github.com/solarssk/admitto/pull/860))
 
 ### Changed
-- **GitHub Releases from `v0.4.13` onward are marked as the latest release instead of pre-release** — the release pipeline no longer marks every `v0.x.y` tag as pre-release; see [VERSIONING.md](VERSIONING.md).
-- Living ops and security docs now match the current stack: generic **Upgrading** (manual backup first), no automatic pre-migration dump / root migrate, product retention and bounce on the **worker** (not app startup or a retention sidecar), and package README CLI notes aligned with workspace builds.
-- **OIDC providers are configured only in Organisation settings → Identity.** Removed the unused `OIDC_ENABLED` / `OIDC_ISSUER` / `OIDC_CLIENT_*` / `OIDC_DISPLAY_NAME` env-seed documentation (the runtime never read those variables). Cloudflare Access optional env locks are unchanged.
-- Identity provider editor shows the Redirect URI pattern on the Add form before the first save.
-- **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Every upgrade previously got a guaranteed snapshot immediately before the migration; that guarantee is gone, so **take a manual database backup before every upgrade** (see `deploy/README.md` → Upgrading) — without it, your recovery point is whatever the nightly `db-backup` service last captured, which can be up to 24 hours old. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user.
-- **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
+
+- Mark GitHub Releases from `v0.4.13` onward as the latest release instead of pre-release ([#857](https://github.com/solarssk/admitto/pull/857))
+- Update the living ops and security docs to the current stack: manual backup, worker-based retention and bounce handling ([#851](https://github.com/solarssk/admitto/pull/851))
+- Configure OIDC providers only in Organisation settings, Identity, and drop the unused `OIDC_*` environment documentation ([#847](https://github.com/solarssk/admitto/pull/847))
+- Show the Redirect URI pattern on the identity provider Add form before the first save ([#847](https://github.com/solarssk/admitto/pull/847))
+- Drop the automatic pre-migration database backup and run no container as root; back up the database manually before every upgrade ([#836](https://github.com/solarssk/admitto/pull/836))
+- Show the full attempted email for failed sign-ins in the Security audit log ([#852](https://github.com/solarssk/admitto/pull/852))
 
 ### Fixed
-- Admin table pagination now opens a compact **Rows per page** menu, and card headers keep a consistent height whether or not they contain actions.
-- Event Settings → Images: the "file too large" messages on the event logo drop zone and the crop dialog now use the same bordered Notice style as the rest of the image library, instead of two different ad-hoc red-text treatments.
-- Check-in's Recent scans no longer shows a duplicate "Checked in" row for the same admission after a follow-up action (e.g. issuing a badge) refreshes the sidebar: the persisted check-in timestamp now matches the one already shown by the optimistic local echo instead of being read from the database's own clock.
-- Event Settings no longer crashes on load: the image library imports placeholder names from a browser-safe `@admitto/mail-templates` subpath instead of the package root (which pulled Prisma/Node APIs into the SPA).
-- Event Settings → Images: Image name hint/error sits close under the field (standard field spacing), and invalid focused inputs keep a single error focus ring instead of blue border plus red glow.
-- Requirements → Custom attendee fields: empty registry uses EmptyState (no empty table row), the table shows Description instead of Type, and the type icon has a hover tooltip. Field-type buttons share equal width; type hints describe attendee answers with examples. Event items and custom-fields tables share column layout and row height; IDs use monospace. Event item modal: header icon, slim scrollbar, Delete on the left with Cancel/Save on the right.
-- Sessions and Security logs now show the actor's own timezone on the secondary time line (same pattern as Audit logs), capturing it at local login, initial `/setup`, and OIDC start. Older rows and non-browser clients still fall back to your browser timezone.
-- Event settings: clearer card hints, Location **Remove pin** (no Find on map), safer ticket-type delete confirm, and Organisation Admins can manage the mail image library. Image uploads use a plain image name (server builds `{{token}}`), with clearer upload/remove errors.
-- Attendees now show "No ticket type" instead of a dash when no type is assigned. Bulk delete and revoke confirmations are immediately actionable, while their confirmation dialog remains in place.
-- Requirements now gives new Badge items (and untouched legacy seed badges) the Name badge issued at check-in description and badge icon, without overwriting cleared descriptions or an intentional package/default icon. Custom field types use clear labels and guidance, and the Requirements page links to its documentation.
-- Users & roles: clearer labels (Identity provider / Local password; Two-factor / Authenticator app), Windows Chrome shows country flags in phone pickers via a bundled Twemoji font, and Invite user resists Chrome autofill into phone and temporary password.
-- Events picker: **New event** stays on one row with the title on mobile and shows a calendar-plus icon.
-- New event modal: location has a single Optional label, the link ID is generated from the title (no Link name field), Find on map is removed, the timezone hint is clearer, and the timezone list reopens with one click after closing it by clicking outside. Non-Latin titles still get a unique `event-<fingerprint>` link ID so Create stays enabled.
-- Event Overview now shows completed setup checks alongside outstanding work, describes email activity consistently, and lets staff save key contact phone numbers with a country-code picker.
-- Bulk ticket-send previews no longer use the three-send limit. Real bulk sends now explain the 10-minute limit when it is reached.
-- Check-in cards label their dismiss action "Close", and Recent activity no longer shows duplicate-scan warnings as check-ins.
-- Public HTML 404/500 pages no longer overflow on narrow phones, and show a clearer layout (large status code and icon instead of a small boxed notice).
-- MFA enrollment: downloading backup codes no longer leaves the button stuck on "Please wait…".
-- MFA setup on desktop no longer offers a misleading "Open in password manager" link (otpauth often does nothing on Windows Chrome); copy explains scanning the QR or pasting the setup key instead.
-- Security and Audit logs now keep the staff member's email and display name on each row after their account is deleted, using immutable identity snapshot columns written at event time.
-- Concurrent OIDC instance-superadmin revokes use true full-jitter backoff (0..cap ms) so Serializable retries no longer thrash under a floor+jitter delay.
-- **Delete event** is no longer blocked by leftover operational action-log history after attendees and event-specific content are cleared (demo/test events can be removed again). Danger zone now lists the concrete remaining blockers when delete is disabled. Permanent delete also best-effort removes managed event branding and named image-asset uploads from storage (same cleanup as deleting a single asset).
-- System logs' request-activity lines now include the client IP when the request came from an authenticated staff or check-in operator session, matching how an identity provider attributes its own activity log; anonymous/attendee-facing requests still omit it. A denied admin/superadmin request (insufficient role, password-change required) now keeps this same attribution instead of logging as anonymous.
-- Settings → Logs & audit: the Audit and Security tabs no longer keep polling their endpoints in the background while you're looking at a different tab (System, or each other) — only the tab currently on screen refreshes itself.
-- Modals on iOS Safari no longer trap scrolling: panel height now follows the dynamic toolbar (`dvh`) instead of a fixed `100vh` that could sit taller than the visible viewport, so Save/Cancel stay reachable. The check-in note popup gained the same height limit and scrolling it was missing entirely.
-- Text inputs, search boxes, and the date picker no longer trigger iOS Safari's auto-zoom on focus (their font size is now 16px on touch devices, matching the platform's zoom threshold, regardless of viewport width or orientation).
-- Organisation Settings → Health check: the version/build info no longer overflows off narrow screens, and "Run live checks" moves into the "More actions" menu on mobile so the header stays on one row.
-- Organisation Settings → Security: the per-role authenticator switches (Superadmin/Administrator/Operator) stack one per row on mobile instead of wrapping unevenly.
-- Organisation Settings → Mail: the "Use TLS" and "Require STARTTLS" switches stay next to their label on mobile instead of dropping to their own line.
-- Audit and Security logs (Organisation settings → Logs) now span the full width of their card, matching every other table in the app; the table and its horizontal scrollbar previously stopped short of the card edge.
+
+- Open a compact "Rows per page" menu in admin table pagination, and give card headers a consistent height ([#862](https://github.com/solarssk/admitto/pull/862))
+- Use the bordered Notice style for "file too large" messages in Event Settings, Images ([#856](https://github.com/solarssk/admitto/pull/856))
+- Stop Recent scans showing a duplicate "Checked in" row after a follow-up action ([#855](https://github.com/solarssk/admitto/pull/855))
+- Stop Event Settings crashing on load by importing placeholder names from a browser-safe subpath ([#854](https://github.com/solarssk/admitto/pull/854))
+- Fix the Image name hint spacing and the error focus ring in Event Settings, Images ([#854](https://github.com/solarssk/admitto/pull/854))
+- Polish Requirements: empty custom field state, Description column, equal-width type buttons and the item modal layout ([#854](https://github.com/solarssk/admitto/pull/854))
+- Show the actor's own timezone on the time line of Sessions and the Security logs ([#853](https://github.com/solarssk/admitto/pull/853))
+- Clarify Event settings card hints, add Location "Remove pin", and let Organisation Admins manage the mail image library ([#845](https://github.com/solarssk/admitto/pull/845))
+- Show "No ticket type" for attendees without a type, and make bulk delete and revoke confirmations actionable at once ([#846](https://github.com/solarssk/admitto/pull/846))
+- Give new Badge items the "Name badge issued at check-in" description, and link Requirements to its documentation ([#846](https://github.com/solarssk/admitto/pull/846))
+- Clarify Users & roles labels, show country flags in phone pickers on Windows Chrome, and stop Invite user being autofilled ([#843](https://github.com/solarssk/admitto/pull/843))
+- Keep "New event" on one row with the title on mobile in the events picker ([#841](https://github.com/solarssk/admitto/pull/841))
+- Tidy the New event modal: one Optional label, link ID from the title, no Find on map, clearer timezone hint ([#841](https://github.com/solarssk/admitto/pull/841))
+- Show completed setup checks on Event Overview, and add a country-code picker to key contact phone numbers ([#844](https://github.com/solarssk/admitto/pull/844))
+- Stop bulk ticket-send previews using the three-send limit, and explain the 10-minute limit on real sends ([#842](https://github.com/solarssk/admitto/pull/842))
+- Label the check-in card dismiss action "Close", and stop Recent activity showing duplicate-scan warnings as check-ins ([#842](https://github.com/solarssk/admitto/pull/842))
+- Fix the public 404 and 500 pages on narrow phones ([#840](https://github.com/solarssk/admitto/pull/840))
+- Stop the backup codes download leaving the MFA enrollment button on "Please wait" ([#840](https://github.com/solarssk/admitto/pull/840))
+- Replace the misleading "Open in password manager" link in desktop MFA setup with QR and setup key guidance ([#840](https://github.com/solarssk/admitto/pull/840))
+- Keep the staff member's email and name on audit rows after their account is deleted ([#839](https://github.com/solarssk/admitto/pull/839))
+- Use full-jitter backoff for concurrent OIDC instance-superadmin revokes ([#834](https://github.com/solarssk/admitto/pull/834))
+- Allow deleting an event once its content is cleared, and list the remaining blockers in the Danger zone ([#838](https://github.com/solarssk/admitto/pull/838))
+- Include the client IP in System logs request lines for authenticated staff and check-in sessions ([#850](https://github.com/solarssk/admitto/pull/850))
+- Stop the Audit and Security log tabs polling while another tab is shown ([#850](https://github.com/solarssk/admitto/pull/850))
+- Stop modals on iOS Safari trapping scrolling ([#848](https://github.com/solarssk/admitto/pull/848))
+- Stop iOS Safari zooming on focus in text inputs, search boxes and the date picker ([#848](https://github.com/solarssk/admitto/pull/848))
+- Fit the Health check version info, and move "Run live checks" into "More actions" on mobile ([#848](https://github.com/solarssk/admitto/pull/848))
+- Stack the per-role authenticator switches in Security settings one per row on mobile ([#848](https://github.com/solarssk/admitto/pull/848))
+- Keep the Mail settings "Use TLS" and "Require STARTTLS" switches next to their label on mobile ([#848](https://github.com/solarssk/admitto/pull/848))
+- Make the Audit and Security log tables span the full card width ([#849](https://github.com/solarssk/admitto/pull/849))
 
 ### Security
-- **Self-hosted LAN identity providers (SSO):** ops can allow specific Issuer/endpoint hostnames (or IP literals) that resolve to private addresses via `SSO_PRIVATE_DESTINATION_ALLOWLIST` on `app`. One list covers every configured provider sharing those hosts (OIDC today; same guard for future SAML). HTTPS remains required. Separate from the mail allowlist.
-- Weather (Open-Meteo) and geocoding (Nominatim) requests now pin the outbound connection to a freshly re-resolved, validated address instead of trusting the hostname check performed when the base URL was last saved, closing a DNS-rebinding gap that could let a superadmin-configured external service URL reach an internal/metadata address after passing that save-time check.
-- **Self-hosted LAN mail in production:** ops can allow specific SMTP/IMAP/Power Automate hosts (or IP literals) that resolve to private addresses via `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (app and worker). The lab-only `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` flag remains ignored when `NODE_ENV=production`.
+
+- Add `SSO_PRIVATE_DESTINATION_ALLOWLIST` to allow self-hosted LAN identity providers ([#847](https://github.com/solarssk/admitto/pull/847))
+- Pin weather and geocoding connections to a freshly re-resolved, validated address, closing a DNS-rebinding gap ([#837](https://github.com/solarssk/admitto/pull/837))
+- Add `MAIL_PRIVATE_DESTINATION_ALLOWLIST` to allow self-hosted LAN SMTP, IMAP and Power Automate hosts in production ([#834](https://github.com/solarssk/admitto/pull/834))
 
 ## [0.4.13] - 2026-08-09
 
