@@ -852,6 +852,19 @@ describe("ImportPage dropzone (#358 Phase A)", () => {
     expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("tells the operator to save a file the server cannot read as text again as CSV UTF-8", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockRejectedValueOnce(new ApiError(400, "unsupported file encoding", "unsupported file encoding"));
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect((await screen.findByTestId("at-toast")).textContent).toContain("Save it again as CSV UTF-8");
+    expect(screen.queryByText("To create")).toBeNull();
+  });
+
   it("removing the picked file via the chip brings the dropzone back and clears any preview", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());

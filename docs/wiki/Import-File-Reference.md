@@ -18,10 +18,23 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 
 ## File format and row numbers
 
+### Separator and text encoding
+
+A CSV file can separate its columns with a comma, a semicolon or a tab. Admitto reads the header row and takes the separator that gives the columns `first_name`, `last_name` and `email`. If the header does not settle it, the comma is used.
+
+The text of the file must be UTF-8 or Windows-1250:
+
+| The file is | What Admitto does |
+|---|---|
+| UTF-8, with or without a byte order mark | Reads it as it is. |
+| Not valid UTF-8 | Reads it as Windows-1250 and shows a warning in the preview. Check that names with accented letters look right in the sample rows. |
+| UTF-16, or any file with a NUL character (an invisible character with the code 0) | Refuses it with a message to save the file as CSV UTF-8. |
+
+On a Windows PC set to Polish, Excel saves CSV files with semicolons. **CSV UTF-8** gives UTF-8 and plain **CSV** gives Windows-1250, so both can be uploaded as they are. **Unicode Text** gives UTF-16, so save the file as **CSV UTF-8** instead.
+
 ### Columns, quotes and line breaks
 
-- CSV uses comma-separated columns.
-- Wrap a value that contains a comma, a double quote, or a line break in double quotes. Write a double quote inside that value as two double quotes.
+- Wrap a value that contains the separator, a double quote, or a line break in double quotes. Write a double quote inside that value as two double quotes.
 - LF and CRLF inside a quoted cell are preserved.
 - XLSX cells with line breaks follow the same import rules. The workbook decoder normalises CRLF to LF.
 - **Malformed CSV record:** close quoted fields, and remove text after the closing quote or cells that have no corresponding header. Missing trailing optional cells are treated as empty.

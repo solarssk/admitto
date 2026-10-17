@@ -9,6 +9,7 @@ import {
   strengthPoints,
   tooShortProgressScore,
 } from "../src/password-strength.js";
+import { hasTrivialCharacterPattern } from "../src/password-blocklist.js";
 import { passwordStrengthAuthScript } from "../src/password-strength-script.js";
 import {
   PASSWORD_STRENGTH_FAIR,
@@ -16,6 +17,15 @@ import {
   PASSWORD_STRENGTH_STRONG,
   PASSWORD_STRENGTH_WEAK,
 } from "../src/password-strength-fixtures.js";
+import {
+  BASE64URL,
+  DIGITS,
+  GENERATED_PASSPHRASE,
+  HEX,
+  generatedText,
+  generatedUuidPair,
+  withDistinctCharacters,
+} from "./generated-passwords.js";
 
 describe("scorePasswordStrength", () => {
   it("returns empty for blank input", () => {
@@ -129,6 +139,51 @@ describe("passwordStrengthTip", () => {
     expect(passwordStrengthTip("aabbccddeeffgghhiijj", PASSWORD_MIN_LENGTH)).toBe(
       "Add more variety of characters for a stronger score.",
     );
+  });
+});
+
+describe("long generated passwords", () => {
+  const longGenerated: Array<[string, string]> = [
+    ["64 hex characters", generatedText(HEX, 64, 1)],
+    ["two UUIDs written one after the other", generatedUuidPair(2)],
+    ["40 digits", generatedText(DIGITS, 40, 3)],
+    ["a passphrase of 15 words", GENERATED_PASSPHRASE],
+    ["64 base64url characters", generatedText(BASE64URL, 64, 4)],
+  ];
+
+  it.each(longGenerated)("%s is not called weak", (_label, password) => {
+    expect(hasNearZeroEntropy(password)).toBe(false);
+    expect(scorePasswordStrength(password).label).not.toBe("Weak");
+    expect(passwordStrengthTip(password, PASSWORD_MIN_LENGTH)).not.toContain("repeated or sequential");
+  });
+
+  it.each([
+    ["one character, 64 times", "a".repeat(64)],
+    ["two characters taking turns", "ab".repeat(30)],
+    ["three characters repeating", "abc".repeat(20)],
+  ])("%s is still called weak", (_label, password) => {
+    expect(scorePasswordStrength(password)).toMatchObject({ level: "weak", label: "Weak", score: 1 });
+    expect(passwordStrengthTip(password, PASSWORD_MIN_LENGTH)).toBe(
+      "Avoid repeated or sequential characters for a stronger score.",
+    );
+  });
+
+  it("agrees with the server check on every length and number of different characters", () => {
+    // The meter keeps its own copy of the check (it is sent to the browser as text), so this is
+    // what stops the two from drifting apart.
+    const differing: string[] = [];
+    const passwords = ["abcdefghijkl", "zyxwvu", "23456789", "abcde", "abcdefgxyz", "users-pass-123"];
+    for (const length of [12, 16, 20, 24, 27, 28, 32, 40, 64, 72, 128]) {
+      for (let distinct = 1; distinct <= 9; distinct++) {
+        passwords.push(withDistinctCharacters(length, distinct));
+      }
+    }
+    for (const password of passwords) {
+      if (hasNearZeroEntropy(password) !== hasTrivialCharacterPattern(password)) {
+        differing.push(password);
+      }
+    }
+    expect(differing).toEqual([]);
   });
 });
 

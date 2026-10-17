@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { csvRecords, type CsvRecord } from "./csv-records.js";
 import { splitCsvLine } from "@admitto/shared";
+import { detectCsvDelimiter, type CsvDelimiter } from "./csv-delimiter.js";
 import { RESERVED_CUSTOM_DATA_SOURCE_FIELDS, isErasedPlaceholderEmail } from "@admitto/tickets";
 import {
   buildAttributeHeaderKeys,
@@ -50,8 +51,9 @@ function parseHeaderLine(
   headerLine: string,
   attributeHeaderKeys: Set<string>,
   warnings: string[],
+  delimiter: CsvDelimiter,
 ): string[] {
-  const rawHeaders = splitCsvLine(headerLine).map(normalizeHeader);
+  const rawHeaders = splitCsvLine(headerLine, delimiter).map(normalizeHeader);
 
   const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
   if (dupHeaders.length > 0) {
@@ -193,9 +195,9 @@ function buildValidatedRow({
 }
 
 /** Refuse malformed quoting/extra cells before building any attendee data. */
-function recordCells(record: CsvRecord, headerCount: number): string[] | null {
+function recordCells(record: CsvRecord, headerCount: number, delimiter: CsvDelimiter): string[] | null {
   if (record.malformed) return null;
-  const cells = splitCsvLine(record.text);
+  const cells = splitCsvLine(record.text, delimiter);
   return cells.length > headerCount ? null : cells;
 }
 
@@ -209,7 +211,8 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
   const invalidRows: InvalidRow[] = [];
   const warnings: string[] = [];
 
-  const records = [...csvRecords(csvString)];
+  const delimiter = detectCsvDelimiter(csvString);
+  const records = [...csvRecords(csvString, delimiter)];
 
   if (records.length === 0) {
     warnings.push("CSV is empty");
@@ -220,7 +223,7 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     warnings.push("Malformed CSV header");
     return { validRows, invalidRows, warnings };
   }
-  const rawHeaders = parseHeaderLine(records[0]!.text, attributeHeaderKeys, warnings);
+  const rawHeaders = parseHeaderLine(records[0]!.text, attributeHeaderKeys, warnings, delimiter);
 
   const seenEmails = new Set<string>();
   const seenUUIDs = new Set<string>();
@@ -229,7 +232,7 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
 
   for (let rowIdx = 1; rowIdx < records.length; rowIdx++) {
     const record = records.at(rowIdx)!;
-    const cells = recordCells(record, rawHeaders.length);
+    const cells = recordCells(record, rawHeaders.length, delimiter);
     if (cells === null) {
       invalidRows.push({ rowIndex: rowIdx, raw: {}, reason: "Malformed CSV record" });
       continue;

@@ -26,6 +26,7 @@ import {
   MAX_CSV_CHARS,
   MAX_IMPORT_ROWS,
 } from "./xlsx-to-csv.js";
+import { UnsupportedCsvEncodingError, WINDOWS_1250_WARNING, decodeCsvBytes } from "./csv-decode.js";
 import { logger } from "../logger.js";
 import {
   adminAuditFromContext,
@@ -132,6 +133,8 @@ type ImportFileType = "csv" | "xlsx";
 
 type ParsedUpload = {
   csv: string;
+  /** Notes the preview shows before the parser's own warnings (how the file was read). */
+  warnings: string[];
   filename: string;
   overwrite: boolean;
   sizeBytes: number;
@@ -149,6 +152,7 @@ type UploadRejectReason =
   | "file_too_large"
   | "unsupported_file_type"
   | "invalid_file_content"
+  | "unsupported_file_encoding"
   | "too_many_rows"
   | "import_busy"
   | "empty_file";
@@ -197,12 +201,43 @@ function fileSignatureValid(buf: ArrayBuffer, ext: string): boolean {
   return false;
 }
 
-/** Decode an uploaded CSV or XLSX buffer to a CSV string (in memory). */
-async function bufferToCsvString(buf: ArrayBuffer, ext: string): Promise<string> {
+type UploadText = { csv: string; warnings: string[] };
+
+/** Decode an uploaded CSV or XLSX buffer to a CSV string (in memory). A CSV that is not UTF-8 is read as Windows-1250. */
+async function bufferToCsvString(buf: ArrayBuffer, ext: string): Promise<UploadText> {
   if (ext === ".csv") {
-    return new TextDecoder("utf-8").decode(buf);
+    const { csv, encoding } = decodeCsvBytes(buf);
+    return { csv, warnings: encoding === "windows-1250" ? [WINDOWS_1250_WARNING] : [] };
   }
-  return xlsxBufferToCsv(buf);
+  return { csv: await xlsxBufferToCsv(buf), warnings: [] };
+}
+
+/**
+ * The text of an upload, or the response that refuses it. Split out of parseImportUpload so that the
+ * branching of each stays under Sonar's cognitive-complexity limit.
+ */
+async function readUploadText(
+  c: Context,
+  ctx: UploadLogContext,
+  buf: ArrayBuffer,
+  ext: string,
+  fileSizeBytes: number,
+): Promise<UploadText | Response> {
+  try {
+    return await bufferToCsvString(buf, ext);
+  } catch (err) {
+    if (err instanceof ImportBusyError) {
+      // The same answer the rate limits give, which the admin screen already words.
+      return rejectUpload(c, ctx, "import_busy", "too many requests", { fileSizeBytes }, 429);
+    }
+    if (err instanceof ImportRowLimitError || err instanceof ImportZipBombError) {
+      return rejectUpload(c, ctx, "too_many_rows", "too many rows", { fileSizeBytes });
+    }
+    if (err instanceof UnsupportedCsvEncodingError) {
+      return rejectUpload(c, ctx, "unsupported_file_encoding", "unsupported file encoding", { fileSizeBytes });
+    }
+    return rejectUpload(c, ctx, "invalid_file_content", "invalid file content", { fileSizeBytes });
+  }
 }
 
 /** Remove cell-level values from parser diagnostics before returning preview to the client. */
@@ -364,23 +399,9 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
     });
   }
 
-  let csv: string;
-  try {
-    csv = await bufferToCsvString(buf, extDot);
-  } catch (err) {
-    if (err instanceof ImportBusyError) {
-      // The same answer the rate limits give, which the admin screen already words.
-      return rejectUpload(c, ctx, "import_busy", "too many requests", { fileSizeBytes: fileField.size }, 429);
-    }
-    if (err instanceof ImportRowLimitError || err instanceof ImportZipBombError) {
-      return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
-        fileSizeBytes: fileField.size,
-      });
-    }
-    return rejectUpload(c, ctx, "invalid_file_content", "invalid file content", {
-      fileSizeBytes: fileField.size,
-    });
-  }
+  const text = await readUploadText(c, ctx, buf, extDot, fileField.size);
+  if (text instanceof Response) return text;
+  const { csv, warnings } = text;
 
   const limitError = csvWithinLimits(csv);
   if (limitError === "file too large") {
@@ -402,6 +423,7 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
 
   return {
     csv,
+    warnings,
     filename,
     overwrite,
     sizeBytes: fileField.size,
@@ -430,6 +452,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
     const attributeFields = await loadImportAttributeFields(db, eventId);
     const ticketTypes = await loadImportTicketTypes(db, eventId);
     const parsed = parseAttendees(upload.csv, { attributeFields, ticketTypes });
+    const warnings = [...upload.warnings, ...parsed.warnings.map(sanitizePreviewWarning)];
     const summary = await commitImport(
       eventId,
       parsed.validRows,
@@ -453,7 +476,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       invalidCount: parsed.invalidRows.length,
       invalidRows: parsed.invalidRows.map((r) => r.rowIndex),
       invalidByType: groupInvalidByType(parsed.invalidRows),
-      warningCount: parsed.warnings.length,
+      warningCount: warnings.length,
       toCreate: summary.toCreate,
       toUpdate: summary.toUpdate,
       toSkip: summary.toSkip,
@@ -467,7 +490,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
         validCount: parsed.validRows.length,
         invalidRows: invalidRowsForResponse(parsed.invalidRows),
         invalidCount: parsed.invalidRows.length,
-        warnings: parsed.warnings.map(sanitizePreviewWarning),
+        warnings,
       },
       summary: {
         toCreate: summary.toCreate,

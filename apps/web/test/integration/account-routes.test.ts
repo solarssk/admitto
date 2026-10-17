@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,6 +35,8 @@ const EMAIL_OTHER = "account-other@example.com";
 const EMAIL_ADMIN = "account-admin@example.com";
 const PASSWORD = "account-pass-123";
 const NEW_PASSWORD = "account-new-pass-456";
+/** 64 hex characters, the shape of a generated password; derived here so no secret-looking value sits in the repo. */
+const LONG_GENERATED_PASSWORD = createHash("sha256").update("account-routes long password").digest("hex");
 const ADMIN_PASSWORD = "account-admin-pass-123";
 const WEBAUTHN_RP = { rpName: "Admitto", rpID: "admitto.example.com", origin: "https://admitto.example.com" };
 
@@ -383,6 +386,22 @@ describe("PATCH /api/account/password", () => {
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("password_too_common");
+  });
+
+  it("accepts a long generated new password", async () => {
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: PASSWORD,
+        new_password: LONG_GENERATED_PASSWORD,
+        new_password_confirm: LONG_GENERATED_PASSWORD,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+    expect(await verifyPassword(LONG_GENERATED_PASSWORD, dbUser!.password_hash!)).toBe(true);
+    await expectAuthFactorChangedNotification(userId, "Your password was changed");
   });
 
   it("changes hash, clears must_change_password, revokes other sessions", async () => {

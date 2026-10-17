@@ -18,11 +18,13 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 - Start every Activity label with a capital letter, also for an action type the list does not know ([#1743](https://github.com/solarssk/admitto/pull/1743))
 - Show the same day labels in the cumulative charts of the wallet and mail reports for every viewer, including those far east of UTC ([#1743](https://github.com/solarssk/admitto/pull/1743))
+- Read CSV files with semicolons, tabs or Windows-1250 letters (Polish Excel), and refuse UTF-16 and NUL files with a message to save as CSV UTF-8 ([#1742](https://github.com/solarssk/admitto/pull/1742))
 - Show one "archived" bar above every page of an archived event, with "Restore event" for a Superadmin ([#1687](https://github.com/solarssk/admitto/pull/1687))
 - Remove the repeated "archived" line from the other Event settings tabs and the image library ([#1686](https://github.com/solarssk/admitto/pull/1686))
 - Remove the "archived" note from the Check-in settings tab and centre its switches on their labels ([#1685](https://github.com/solarssk/admitto/pull/1685))
 - Return 400 instead of a server error for unreadable pinned-note, key-contact and link requests, and stop an empty pinned-note request from clearing the note ([#1700](https://github.com/solarssk/admitto/pull/1700))
 - Fit the staff top bar on a phone so the account menu stays open ([#1698](https://github.com/solarssk/admitto/pull/1698))
+- Accept long generated passwords, such as 64 hex characters or two UUIDs, instead of refusing them as too common or calling them weak ([#1741](https://github.com/solarssk/admitto/pull/1741))
 
 ### Security
 
@@ -34,6 +36,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - End the identity provider's session when a user signs out of an SSO session, in every browser ([#1694](https://github.com/solarssk/admitto/pull/1694))
 - Make SSO sign-in stricter: bound provider replies, require ID token claims and log the reason a sign-in failed ([#1696](https://github.com/solarssk/admitto/pull/1696))
 - Read an XLSX import in a separate process with fixed memory and time limits; a stopped file is logged as `xlsx_decode_stopped` ([#1716](https://github.com/solarssk/admitto/pull/1716))
+- Send `Cache-Control: no-store` on every API answer, except the live check-in stream, so a shared check-in tablet's browser is told to keep none ([#1741](https://github.com/solarssk/admitto/pull/1741))
 
 ## [0.7.5] - 2026-10-14
 
