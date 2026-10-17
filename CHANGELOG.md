@@ -15,6 +15,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Fixed
 
+- Read CSV files with semicolons, tabs or Windows-1250 letters (Polish Excel), and refuse UTF-16 and NUL files with a message to save as CSV UTF-8 ([#1742](https://github.com/solarssk/admitto/pull/1742))
 - Show one "archived" bar above every page of an archived event, with "Restore event" for a Superadmin ([#1687](https://github.com/solarssk/admitto/pull/1687))
 - Remove the repeated "archived" line from the other Event settings tabs and the image library ([#1686](https://github.com/solarssk/admitto/pull/1686))
 - Remove the "archived" note from the Check-in settings tab and centre its switches on their labels ([#1685](https://github.com/solarssk/admitto/pull/1685))
