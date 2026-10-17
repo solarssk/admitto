@@ -34,7 +34,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 - [Outbound HTTP (SSRF mitigation)](#outbound-http-ssrf-mitigation)
 - [Data protection in operations](#data-protection-in-operations)
 - [Known scope limits (MVP)](#known-scope-limits-mvp)
-  - [Multiple instance superadmins (v0.4.10+)](#multiple-instance-superadmins-v0410)
+  - [Multiple instance superadmins](#multiple-instance-superadmins)
   - [Offboarding runbook for OIDC-managed elevated roles](#offboarding-runbook-for-oidc-managed-elevated-roles)
   - [Penetration test verification (operator checklist)](#penetration-test-verification-operator-checklist)
 - [Related documents](#related-documents)
@@ -172,8 +172,6 @@ An exception to the table above, for check-in tablets that sit idle between shif
 
 - It is the `operator_event_day_sessions` system setting (`OPERATOR_EVENT_DAY_SESSIONS`), on by default.
 - A value that is set but is not a boolean turns it off rather than leaving it on. That covers an environment value other than true, false, 1 or 0, and a hand-edited row.
-- The older settings `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS` are not read. An instance that had set the old value to 0 gets the event-day session until this switch is turned off.
-- A session that was issued with the older **Keep me signed in** checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window. Revoke such sessions from **Active sessions** if that matters.
 
 **Why this is acceptable.** OWASP ASVS 7.1.1 asks for a documented, risk-based decision. The guidance considered:
 
@@ -474,12 +472,12 @@ These are separate from rate limits.
 - The app takes the **rightmost** hop that is not inside `TRUSTED_PROXY_CIDRS`, so a client-supplied prefix in an appended chain is ignored.
 - Every proxy in a multi-proxy chain must be listed in `TRUSTED_PROXY_CIDRS`. Otherwise the nearest unlisted proxy is taken for the client, and everyone behind it shares one rate-limit bucket.
 
-**Hardening (v0.4.5+).** Malformed or non-IP first hops fall back to the TCP remote address instead of a shared `"unknown"` bucket, which previously allowed cross-client rate-limit interference.
+**Malformed forwarded headers.** Malformed or non-IP first hops fall back to the TCP remote address, so one client cannot interfere with another client's rate limit.
 
-**Hardening (v0.4.13+): what changed.**
+**Peer allowlist.**
 
-- `TRUSTED_PROXY_CIDRS` adds a peer allowlist.
-- Previously, `TRUST_PROXY=true` trusted forwarded headers from **any** direct connection. So a client that reached the app directly (misconfigured port exposure, or from elsewhere on the same network) could forge its own rate-limit IP, CSRF origin, and cookie `Secure` flag.
+- `TRUSTED_PROXY_CIDRS` is a peer allowlist. Forwarded headers are trusted only when the direct connection comes from an address inside it.
+- So a client that reaches the app directly (misconfigured port exposure, or from elsewhere on the same network) cannot forge its own rate-limit IP, CSRF origin, or cookie `Secure` flag.
 
 **Residual risk.**
 
@@ -521,16 +519,16 @@ Admin UI discover/test requires a **superadmin** session (or a Cloudflare Access
   remains required.
 - **Where to set it:** on `app`.
 
-**Mail transport destinations (v0.4.13+).**
+**Mail transport destinations.**
 
-- The same class of guard now also covers the SMTP host, the Power Automate webhook URL, and the bounce-detection IMAP host.
+- The same class of guard also covers the SMTP host, the Power Automate webhook URL, and the bounce-detection IMAP host.
 - Each is checked against a private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the server connects.
 - The real connection is pinned to the already-validated address, closing the same DNS-rebinding gap the OIDC guard closes.
 
-Separately, event-level dedicated mail transport now also requires superadmin (matching the organization-wide Mail settings page).
+Separately, event-level dedicated mail transport also requires superadmin (matching the organization-wide Mail settings page).
 
-- It can no longer silently send the organization's real SMTP password or Power Automate key to a connection target the event override changed.
-- Saving or sending now requires that override to also supply its own credential.
+- It cannot silently send the organization's real SMTP password or Power Automate key to a connection target the event override changed.
+- Saving or sending requires that override to also supply its own credential.
 
 **Self-hosted private MTA allowlist:**
 
@@ -591,7 +589,7 @@ Separately, event-level dedicated mail transport now also requires superadmin (m
   - `EmailDelivery.rendered_html` / `rendered_subject` are nullified best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days by default.
   - `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides that window for the worker, `admitto retention run` and the standalone `nullify-delivery-snapshots` command alike.
   - Preview with `docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots --dry-run`.
-- **Container privilege (v0.4.13+):**
+- **Container privilege:**
   - The production image runs as the unprivileged `node` user (UID 1000) for `migrate`, `app`, and `worker`.
   - Schema migration is a one-shot `migrate` compose service; database dumps are **not** written during migrate.
   - Operators take a pre-upgrade dump, and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount. So a compromised application process cannot read or tamper with those dumps.
@@ -621,7 +619,7 @@ Be explicit with auditors about what is **out of product scope** today:
   - If a user is removed from a group in the identity provider, an already-active elevated Admitto session persists until the next OIDC login, session expiry, or session revocation.
   - For deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS` to **8h or less** (`28800000`) so the stale-session window is bounded.
 
-### Multiple instance superadmins (v0.4.10+)
+### Multiple instance superadmins
 
 - Admitto allows more than one active `superadmin@instance` assignment (admin UI, CLI bootstrap, or OIDC group mapping).
 - First-run `POST /setup` still creates exactly one user when the database is empty. Concurrent setup submissions surface `409 already_initialized` for the loser.
@@ -630,7 +628,7 @@ Be explicit with auditors about what is **out of product scope** today:
 
 ### Offboarding runbook for OIDC-managed elevated roles
 
-1. Remove the user from the relevant group in the IdP **only after** another active instance superadmin exists (see [Multiple instance superadmins](#multiple-instance-superadmins-v0410)).
+1. Remove the user from the relevant group in the IdP **only after** another active instance superadmin exists (see [Multiple instance superadmins](#multiple-instance-superadmins)).
 2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
 3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by current IdP group membership.
 4. Immediate access removal depends on the auth mode:

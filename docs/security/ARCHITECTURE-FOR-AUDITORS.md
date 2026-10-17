@@ -34,7 +34,7 @@ Admitto supports **internal corporate events**:
 5. Check-in on event day (operator UI).
 6. Export lists for reporting.
 
-**Planned (not required for initial go-live):** an external, self-service registration/ingest API, and RSVP/calendar-invite flows.
+**Planned:** an external, self-service registration/ingest API, and RSVP/calendar-invite flows.
 
 **Out of MVP scope:** public self-registration portal, payments, CRM, vendor-hosted SaaS.
 
@@ -94,7 +94,7 @@ flowchart LR
   Ingest[External registration source\nplanned, not built] -.-> Core
 ```
 
-**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped. See VERSIONING.md and the release tag for maturity status: shipped is not the same as production-ready for a first event.
+**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped. See VERSIONING.md and the release tag for maturity status: shipped is not the same as production-ready.
 
 **Planned:** a self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control. Mention it to auditors as **planned**, not as existing.
 
@@ -141,7 +141,7 @@ The table below lists every event that causes Admitto to do something. It is for
 **Container image**
 
 - It is a multi-arch image with a build-provenance attestation and a BuildKit SBOM attestation.
-- Release SBOMs carry a Sigstore signature and, from v0.7.4, a provenance file (see "Verifying a release" in SECURITY.md).
+- Release SBOMs carry a Sigstore signature and a provenance file (see "Verifying a release" in SECURITY.md).
 - Git tags are created by CI and are not GPG/SSH-signed.
 - CI scanning is documented in SECURITY.md.
 
@@ -219,4 +219,4 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Fuzzing (ClusterFuzzLite) | `.github/workflows/cflite_pr.yml`, `.github/workflows/cflite_batch.yml` |
 | Dependency and licence review, secret scan | `.github/workflows/ci.yml` jobs `dependency-review` and `secret-scan` |
 
-Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) - prefer that file over this table when answering audit questionnaires.
+**CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) - prefer that file over this table when answering audit questionnaires.

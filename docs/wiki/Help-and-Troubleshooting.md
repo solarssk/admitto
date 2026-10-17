@@ -20,8 +20,7 @@ Start with the page for the failed workflow:
 
 ## Report a product problem
 
-1. Record the Admitto version and build commit shown in the interface (sidebar footer), for example `v0.7.4 · 68e3f79`. The commit should match the commit of that release's tag on GitHub.
-   - One exception: the footer of version 0.7.3 shows `8d64005`, a later commit, because of a release pipeline error that was fixed in 0.7.4. The running code is still the 0.7.3 release.
+1. Record the Admitto version and build commit shown in the interface (sidebar footer), for example `vX.Y.Z · 68e3f79`. The commit should match the commit of that release's tag on GitHub.
 2. Optional: open **Organisation settings → Health check**, use **Copy for GitHub Issue**, and paste the snapshot into the bug form. Remove any remaining secrets or personal data before posting.
 3. Record the page, the approximate time, the expected result and the safe error text.
 4. Remove attendee data, addresses, ticket links, QR values, secrets and provider responses.

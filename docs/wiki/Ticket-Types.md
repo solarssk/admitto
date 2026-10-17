@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Create the event's ticket-type catalog (label + colour). Free-text guest types are no longer used; attendee forms, imports, filters, check-in, and reports read only from this catalog.
+Create the event's ticket-type catalog (label + colour). Attendee forms, imports, filters, check-in, and reports read only from this catalog.
 
 ## Before you start
 
