@@ -98,7 +98,7 @@ Sessions are **server-side**: the cookie holds an opaque token, and only its has
 
 Signing out (`POST /api/auth/logout` from the staff app, or `POST /logout` from the server-rendered pages) revokes the session. It intentionally does **not** clear the `admitto_trusted_device` cookie or its database row.
 
-So a **"Remember this device"** trust now lasts for its full window (`trusted_device_days`, 30 days by default), however many times the user signs out and back in on that browser. It is cleared only by one of:
+So a **"Remember this device"** trust lasts for its full window (`trusted_device_days`, 30 days by default), however many times the user signs out and back in on that browser. It is cleared only by one of:
 
 - the trust window expiring,
 - a password change,
@@ -106,7 +106,7 @@ So a **"Remember this device"** trust now lasts for its full window (`trusted_de
 - an admin-initiated reset, or
 - the account's own **"Forget all trusted devices"** action (My account → Two-factor authentication's options menu).
 
-> **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears remembered-device trust.
+> **Shared check-in devices.** On shared operator tablets, signing out alone does not clear remembered-device trust.
 >
 > - The trust is scoped to that specific account (`validateTrustedDevice` rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the device next.
 > - It does, however, let the *same* account skip MFA again on that device until the trust window expires.
@@ -116,29 +116,24 @@ So a **"Remember this device"** trust now lasts for its full window (`trusted_de
 > - Set `trusted_device_days` to a short value, or `0` to disable the feature entirely.
 > - Use **"Forget all trusted devices"** or an admin-initiated reset to clear trust sooner.
 
-#### Session idle timeout (v0.4.13+)
+#### Session idle timeout
 
-Before v0.4.13 a session only expired on an absolute lifetime (admin default: 7 days), with no inactivity check. A stolen or left-open admin browser tab stayed authenticated for up to a week.
-
-Now a `full`-stage session also ends once `now - last_seen_at` exceeds a configurable idle window. It uses the same env-lock pattern as the absolute-lifetime settings.
+A `full`-stage session ends once `now - last_seen_at` exceeds a configurable idle window, as well as at its absolute lifetime. This limits how long a stolen or left-open admin browser tab stays authenticated. The idle window uses the same env-lock pattern as the absolute-lifetime settings.
 
 | Role | Idle timeout env var | Idle default | Absolute default |
 |------|----------------------|---------------|-------------------|
-| Admin | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | 30 min | 12h (down from 7 days) |
+| Admin | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | 30 min | 12h |
 | Operator | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | 2h | 12h |
 
 - Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a sane threshold.
 - The API rejects a save where the idle timeout would exceed that role's own absolute lifetime.
 
-**The 12h admin default and its migration.**
+**The admin absolute lifetime.**
 
-- The 12h admin default only applies while no `session_ttl` row exists.
-- The 2FA migration (`20260614130000_2fa_totp`) seeded a row holding 7 days, so until `20261001150000_reset_seeded_admin_session_ttl` every instance ran with 7 days.
-- That migration moves a row that still holds exactly 7 days to 12h and leaves any other value alone.
-- Sessions already issued keep their own end time (the 30 min idle timeout ends most of them sooner).
-- An instance that chose 7 days on purpose has to set it again in Settings → Security.
+- The 12h admin default only applies while no `session_ttl` row exists. A value stored in Settings → Security is kept as it is.
+- An instance that wants a different lifetime, for example 7 days, sets it in Settings → Security.
 
-#### Operator event-day session (replaces the v0.7.4 "Keep me signed in" checkbox)
+#### Operator event-day session
 
 An exception to the table above, for check-in tablets that sit idle between shifts and are handed to staff who are not expected to make security choices.
 
@@ -174,20 +169,20 @@ An exception to the table above, for check-in tablets that sit idle between shif
 
 - It is the `operator_event_day_sessions` system setting (`OPERATOR_EVENT_DAY_SESSIONS`), on by default.
 - A value that is set but is not a boolean turns it off rather than leaving it on. That covers an environment value other than true, false, 1 or 0, and a hand-edited row.
-- It replaces `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS`, which are no longer read. So an instance that had set the old value to 0 gets the event-day session until the new switch is turned off.
-- **Transition:** a session issued with the v0.7.4 checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window. Revoke such sessions from **Active sessions** if that matters.
+- The older settings `operator_remember_me_days` and `OPERATOR_REMEMBER_ME_DAYS` are not read. An instance that had set the old value to 0 gets the event-day session until this switch is turned off.
+- A session that was issued with the older **Keep me signed in** checkbox keeps its original end time (up to 14 days) and, while the switch is on, no inactivity window. Revoke such sessions from **Active sessions** if that matters.
 
 **Why this is acceptable.** OWASP ASVS 7.1.1 asks for a documented, risk-based decision. The guidance considered:
 
 - NIST SP 800-63B-4 allows up to 30 days at AAL1 (password only) with an optional inactivity timeout, and 24 hours with a 1 hour inactivity timeout at AAL2. It recommends that "remember me" style persistence be limited.
-- This exception stays within the AAL1 bound. It ends at most about 30 hours after sign-in (sooner for most sign-ins; later only when an overnight event itself ends after 06:00). That is down from the 3 to 14 days the v0.7.4 checkbox allowed.
+- This exception stays within the AAL1 bound. It ends at most about 30 hours after sign-in (sooner for most sign-ins; later only when an overnight event itself ends after 06:00).
 - Admin and Superadmin limits are unchanged.
 
 **Accepted risk.** Operator accounts have no MFA by design (a superadmin can add the `operator` role to the required-MFA list in Settings → Security). So a lost or stolen tablet that is signed in on event day stays signed in until the end of that day or until someone revokes the session.
 
 ### Passwords and sign-in protection
 
-#### Password blocklist (v0.4.13+)
+#### Password blocklist
 
 - It applies to every place a password is set or changed: first-run setup, forced change, self-service Account change, and admin-initiated create/reset.
 - A password needs at least 12 characters, and it is rejected if it is on a built-in list of 143 very common passwords.
