@@ -15,7 +15,7 @@ const BYTE_ORDER_MARK = 0xfeff;
 
 /** The first line that is not blank, without its line break. A header cell with a line break in it is not expected. */
 function firstNonBlankLine(csv: string): string {
-  let start = csv.charCodeAt(0) === BYTE_ORDER_MARK ? 1 : 0;
+  let start = csv.codePointAt(0) === BYTE_ORDER_MARK ? 1 : 0;
   while (start < csv.length) {
     const lineEnd = csv.indexOf("\n", start);
     const end = lineEnd === -1 ? csv.length : lineEnd;
