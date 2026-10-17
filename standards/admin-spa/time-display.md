@@ -10,7 +10,7 @@ Staff read these screens together, on calls and in screenshots. A time has to be
 
 | The time is | Show | Use |
 |---|---|---|
-| An action whose zone Admitto stored (an Activity entry, a delivery that an admin sent, who created or archived an event) | That zone, with its offset: "15:00 UTC+2" | `formatActorTime(iso, actorZone)` |
+| An action whose zone Admitto stored (an Activity entry, a delivery or an import that an admin queued, who created or archived an event) | That zone, with its offset: "15:00 UTC+2" | `formatActorTime(iso, actorZone)` |
 | Anything with no stored zone (a worker run, a provider's value, an attendee's action, a note) | UTC: "13:00 UTC" | `formatActorTime(iso, null)` or `formatUtcDateTime(iso)` |
 | A fact about the event or its venue: the event's own date, a check-in (admission) time, a report that lists admissions or groups by day | The date as it was set, or the time in the event's zone with its offset | `formatEventCalendarDate(event.date)`, `formatEventDateTime(iso, event.timezone)`, `formatEventTime` |
 | A table of logs, with a UTC time and a line under it | UTC on top. The line under it shows the actor's zone when stored. Where none is stored, a table shows the viewer's zone labelled "Your local time", or no line | `formatUtcPrimaryTime(iso)` and `ActorOrViewerLocalTimeLine` |

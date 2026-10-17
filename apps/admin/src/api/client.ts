@@ -382,6 +382,8 @@ export interface ImportHistoryEntry {
   /** Terminal AdminJob status (succeeded imports and failed/reclaimed jobs). */
   status: "succeeded" | "failed";
   error: string | null;
+  /** IANA zone of the browser that queued the import, when captured; missing shows the time in UTC. */
+  client_timezone?: string | null;
 }
 
 /** Recent import jobs for the event (newest first), including failed/reclaimed. */

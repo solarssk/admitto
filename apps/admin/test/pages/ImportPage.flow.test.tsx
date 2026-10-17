@@ -924,17 +924,28 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(screen.getByText("171")).toBeTruthy();
   });
 
-  it("shows the time of an import in UTC: the history keeps no zone for it", async () => {
+  it("shows the time of an import in the zone it was queued from, and in UTC when none was stored", async () => {
     setPreferredLocale("en-GB");
     try {
       fetchEventCustomFields.mockResolvedValue([]);
-      fetchImportHistory.mockResolvedValue([
-        { id: "log-2", created_at: "2026-06-07T10:00:00.000Z", filename: "late_list.csv", created: 1, updated: 0, skipped: 0, status: "succeeded", error: null },
-      ]);
+      const entry = (id: string, filename: string, clientTimezone: string | null) => ({
+        id,
+        created_at: "2026-06-07T10:00:00.000Z",
+        filename,
+        created: 1,
+        updated: 0,
+        skipped: 0,
+        status: "succeeded" as const,
+        error: null,
+        client_timezone: clientTimezone,
+      });
+      fetchImportHistory.mockResolvedValue([entry("log-2", "kolkata.csv", "Asia/Kolkata"), entry("log-3", "unzoned.csv", null)]);
       renderPage();
 
-      expect(await screen.findByText("late_list.csv")).toBeTruthy();
-      expect(document.querySelector(".import-history__date")?.textContent).toBe("07 Jun 2026, 10:00 UTC");
+      expect(await screen.findByText("unzoned.csv")).toBeTruthy();
+      const dateOf = (filename: string) => screen.getByText(filename).closest("tr")?.querySelector(".import-history__date")?.textContent;
+      expect(dateOf("kolkata.csv")).toBe("07 Jun 2026, 15:30 UTC+5:30");
+      expect(dateOf("unzoned.csv")).toBe("07 Jun 2026, 10:00 UTC");
     } finally {
       setPreferredLocale(null);
     }

@@ -6,7 +6,7 @@ import { RefreshWarning } from "../components/RefreshWarning.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { useCardLoad } from "../hooks/useCardLoad.js";
 import type { ListLoad } from "../hooks/useListLoad.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { formatActorTime } from "../utils/event-dates.js";
 import { ImportHistorySkeleton } from "./ImportHistorySkeleton.js";
 import "../attendees/attendees.css";
 import "../pages/import.css";
@@ -30,7 +30,7 @@ function ImportHistoryTable({ entries }: Readonly<{ entries: readonly ImportHist
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.id}>
-              <td className="import-history__date">{formatUtcDateTime(entry.created_at)}</td>
+              <td className="import-history__date">{formatActorTime(entry.created_at, entry.client_timezone)}</td>
               <td className="import-history__file">{entry.filename ?? <span className="import-sample__empty">-</span>}</td>
               <td
                 className={
@@ -52,7 +52,7 @@ function ImportHistoryTable({ entries }: Readonly<{ entries: readonly ImportHist
 
 /**
  * "Import history" card from the design mockup: recent commits with their outcome counts, read from the audit log (no
- * dedicated table). Timestamps are UTC: the history response keeps no zone for an import.
+ * dedicated table). Timestamps show the zone the import was queued from, with its offset, and UTC when none was stored (formatActorTime).
  * It follows the loading standard of a list in a card (`useListLoad` and `useCardLoad`): a placeholder with the table's own
  * shape for the first read, an error with a busy Retry that stays on screen until the answer is in, and the rows kept,
  * blocked and dimmed, while the refresh that follows an import runs (a refresh that fails keeps them and says so).
