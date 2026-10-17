@@ -1310,363 +1310,389 @@ Each entry is one line that starts with a verb and links to the pull request wit
 ## [0.4.5] - 2026-06-24
 
 ### Added
-- MFA enrollment split into three steps: TOTP QR/setup-key confirm → dedicated backup-codes page → full session; new `backup_codes_required` session stage and DB migration
-- `POST /mfa/enroll/backup-codes` route and `handleTotpBackupCodesComplete` API endpoint; session promoted to `FULL` only after backup-codes acknowledgment
-- 6-digit centered OTP input field with auto-focus, paste support, keyboard navigation, and backup-recovery-code toggle
-- `GET /` smart redirect: authenticated users land on `/admin` (or `/operator`), unauthenticated users on `/login`
-- Admitto favicon set: SVG, 32 × 32 PNG, Apple touch icon, and ICO fallback served from `/favicon.*`
-- SSO button label per identity provider (`login_button_label`); default falls back to "Continue with SSO"
-- Admin sidebar: checkmark brand mark (correct `admitto-mark.svg`), `All events` + `Settings` items always pinned to footer
-- Settings sub-navigation: horizontal tab bar (General · Identity providers · Cloudflare Access) rendered on both SPA and SSR settings pages
-- Identity-provider and Cloudflare Access admin pages rendered with full sidebar shell matching the SPA layout (sticky layout, design-system CSS tokens)
-- Event card: date icon, location pin icon, attendee count stat with user icon; hover lift effect
-- Event overview landing page at `/admin/events/:id/overview` with quick stats and navigation links to live admin sections
-- Shared admin shell (`StaffShell`): sidebar with independent scroll, slim topbar, optional settings subnav, and mobile drawer navigation
-- Staff topbar: mailer status indicator (configured dot + provider label), role badge (SA/AD/OP), icon-only sign out
-- Sidebar footer: **Users & roles** link for org admins and superadmins (page ships in a follow-up PR)
-- Dev-only demo bar (`import.meta.env.DEV`) to trigger sample toasts from the admin shell
-- Admin check-in v2: split layout with scan bar, connection banner, stats/progress sidebar, color-dot recent scans, and fullscreen camera overlay with QR viewfinder
-- Create event UI: `POST /api/admin/events`, New event modal (title, slug, date, location), redirect to attendees after create
-- Events picker visual polish: active status badge, responsive 2/3-column grid, empty state with Create event CTA
-- Attendees v2: `rsvp_status` migration, wider list table (STATUS/MAIL/CHECK-IN/actions), manual `POST /attendees`, full attendee detail page with activity log, Add attendee modal
-- Event settings page at `/admin/events/:id/settings`: edit title, date, location, capacity; superadmin PII CSV export; archive/unarchive from danger zone; `capacity` field on Event
+
+- Split MFA enrollment into three steps: TOTP confirm, a dedicated backup-codes page, then a full session (`backup_codes_required` stage) ([#128](https://github.com/solarssk/admitto/pull/128))
+- Add a centred 6-digit OTP field with auto-focus, paste support and a backup-recovery-code toggle ([#128](https://github.com/solarssk/admitto/pull/128))
+- Redirect `GET /` by session: authenticated users to `/admin` or `/operator`, everyone else to `/login` ([#128](https://github.com/solarssk/admitto/pull/128))
+- Add the Admitto favicon set (SVG, PNG, Apple touch icon, ICO) served from `/favicon.*` ([#128](https://github.com/solarssk/admitto/pull/128))
+- Add a per-provider SSO button label (`login_button_label`), defaulting to "Continue with SSO" ([#128](https://github.com/solarssk/admitto/pull/128))
+- Use the checkmark brand mark in the admin sidebar, and pin "All events" and "Settings" to the footer ([#128](https://github.com/solarssk/admitto/pull/128))
+- Add the Settings sub-navigation (General, Identity providers, Cloudflare Access), and render the identity admin pages in the full sidebar shell ([#128](https://github.com/solarssk/admitto/pull/128), [#129](https://github.com/solarssk/admitto/pull/129))
+- Add date, location and attendee count to event cards, with a hover lift ([#128](https://github.com/solarssk/admitto/pull/128))
+- Add the event overview landing page at `/admin/events/:id/overview` with quick stats and links ([#129](https://github.com/solarssk/admitto/pull/129))
+- Add the shared admin shell (`StaffShell`): an independently scrolling sidebar, a slim topbar, an optional settings subnav and a mobile drawer ([#129](https://github.com/solarssk/admitto/pull/129))
+- Add a mailer status indicator, a role badge and an icon-only sign out to the staff topbar ([#132](https://github.com/solarssk/admitto/pull/132))
+- Add a Users & roles link to the sidebar footer for org admins and superadmins ([#132](https://github.com/solarssk/admitto/pull/132))
+- Add a dev-only demo bar to trigger sample toasts ([#132](https://github.com/solarssk/admitto/pull/132))
+- Add check-in v2: a split layout with scan bar, connection banner, stats sidebar, recent scans and a fullscreen camera overlay ([#133](https://github.com/solarssk/admitto/pull/133))
+- Add the Create event UI: `POST /api/admin/events` and a New event modal ([#134](https://github.com/solarssk/admitto/pull/134))
+- Polish the events picker: active badge, responsive grid and an empty state with a Create event button ([#134](https://github.com/solarssk/admitto/pull/134))
+- Add Attendees v2: a wider table, manual `POST /attendees`, a full attendee detail page with activity log, an Add attendee modal and an `rsvp_status` migration ([#135](https://github.com/solarssk/admitto/pull/135))
+- Add the event settings page at `/admin/events/:id/settings`: title, date, location, capacity, superadmin PII CSV export and archive ([#136](https://github.com/solarssk/admitto/pull/136))
 
 ### Changed
-- `GET /api/admin/me` includes `mailer_status` (provider presence only — no credentials); `/api/auth/me` unchanged for operator sessions
-- Toast stack position: top-right below the staff topbar (`--topbar-h`) instead of bottom-right
-- Admin check-in: keyboard wedge `inputMode="none"`, auto-submit for long tokens, Esc to clear result state
-- README: local dev onboarding (`Run locally`), Node `engines` alignment, `infra/` vs `deploy/` distinction; new [`apps/admin/README.md`](apps/admin/README.md)
-- Admin Vite dev proxy: forward `/mfa` to `@admitto/web` so MFA enrollment works on `:5173`
-- Login page `<title>` fixed to "Admitto"; added `application-name`, `og:site_name`, and `description` meta tags for password-manager naming
-- MFA page heading changed from `<h1>` to `<p class="auth-page-action">` to preserve correct document semantics; Admitto brand uses `<h1>`
-- CSRF fix: Nginx forwards `$http_host` (with port) in `Host` and `X-Forwarded-Host` headers so `127.0.0.1:8080` logins no longer return 403
-- Superadmin instance settings at `/admin/settings` with branding panel — live theme preview, anti-lockout guards, and links to OIDC / Cloudflare Access admin pages (#96)
-- Settings → Mail transport panel: configure provider, masked secrets, env-locked fields, and test send (#99)
-- Settings → Sessions and Security panels: list/revoke staff sessions, bulk operator revoke, session TTL and MFA policy; `GET`/`PATCH /api/admin/system-settings` (#112)
-- Event archiving: `Event.archived_at` hides completed events from default lists; superadmin archive/unarchive; archived events read-only on admin mutating APIs; Active/Archived tabs; check-in stays available (ADR 0022) (#116)
-- Admin shell layout: single main scroll region (subnav + page content), `100dvh` viewport, Overview in live event sidebar segments; events picker opens archived tab when no active events remain; active event cards are fully clickable
-- MFA enrollment and verify: step progress indicator (`Step X of 3`), no OTP autofocus on the QR step, auto-submit after six digits, and submit loading state on auth forms
-- Settings horizontal subnav uses consistent styling across SPA and SSR; Identity providers and Cloudflare Access open via full-page navigation to SSR admin pages
-- Admin sidebar chrome trimmed: redundant context labels and duplicate Instance settings header action removed
-- `@admitto/ui` design system: `Spinner`, `EmptyState`, `Skeleton`, and `ToastProvider` / `useToast` (#120)
-- Admin app root wrapped with `ToastProvider`; recoverable `ErrorBoundary` on render errors (#97, #120)
-- Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard; attendee drawer discard confirmation; check-in stats admitted/total (#121)
-- `POST /mfa/enroll/download-codes` — backup codes as `.txt` during enrollment (#117)
-- Check-in: `NoteModal` replaces `window.prompt` for attendee notes (#114)
-- Runtime upgraded to Node 24 LTS; React 18 → 19 across admin and web (#111, #110)
-- Login, MFA, and superadmin identity-provider HTML pages aligned with Admitto design tokens (#117)
-- OIDC group mapping role picker uses a select; provider list supports inline enable/disable (#117)
-- Cloudflare Access admin form shows status badge, fall-through explanation, and enable warning (#117)
-- Requirements and Communication panels use `ConfirmDialog` instead of native `window.confirm` (#97)
+
+- Include `mailer_status` (provider presence only, no credentials) in `GET /api/admin/me` ([#132](https://github.com/solarssk/admitto/pull/132))
+- Move the toast stack to the top right, below the staff topbar ([#132](https://github.com/solarssk/admitto/pull/132))
+- Make the check-in keyboard wedge input `inputMode="none"`, auto-submit long tokens and clear the result state with Esc ([#133](https://github.com/solarssk/admitto/pull/133))
+- Document local dev onboarding in the README and a new `apps/admin/README.md` ([#131](https://github.com/solarssk/admitto/pull/131))
+- Forward `/mfa` through the admin Vite dev proxy, so MFA enrollment works on `:5173` ([#131](https://github.com/solarssk/admitto/pull/131))
+- Set the login page title to "Admitto" and add meta tags for password-manager naming ([#128](https://github.com/solarssk/admitto/pull/128))
+- Use a paragraph instead of `<h1>` for the MFA page heading, keeping Admitto as the `<h1>` ([#128](https://github.com/solarssk/admitto/pull/128))
+- Forward `$http_host` from Nginx in `Host` and `X-Forwarded-Host`, so `127.0.0.1:8080` logins no longer return 403 ([#128](https://github.com/solarssk/admitto/pull/128))
+- Add superadmin instance settings at `/admin/settings` with a branding panel, live theme preview and anti-lockout guards ([#96](https://github.com/solarssk/admitto/pull/96))
+- Add the Settings Mail transport panel: provider, masked secrets, env-locked fields and test send ([#99](https://github.com/solarssk/admitto/pull/99))
+- Add the Settings Sessions and Security panels: list and revoke staff sessions, bulk operator revoke, session TTL and MFA policy (`/api/admin/system-settings`) ([#112](https://github.com/solarssk/admitto/pull/112))
+- Add event archiving (`Event.archived_at`): superadmin archive and unarchive, read-only archived events, Active and Archived tabs, and check-in stays available ([#116](https://github.com/solarssk/admitto/pull/116))
+- Use a single main scroll region in the admin shell, and add Overview to the live event sidebar ([#129](https://github.com/solarssk/admitto/pull/129))
+- Show a "Step X of 3" indicator and auto-submit after six digits in MFA enrollment and verify ([#129](https://github.com/solarssk/admitto/pull/129))
+- Trim redundant context labels and the duplicate Instance settings action from the sidebar ([#129](https://github.com/solarssk/admitto/pull/129))
+- Add `Spinner`, `EmptyState`, `Skeleton` and `ToastProvider` / `useToast` to `@admitto/ui` ([#120](https://github.com/solarssk/admitto/pull/120))
+- Wrap the admin app in `ToastProvider` and add a recoverable `ErrorBoundary` ([#97](https://github.com/solarssk/admitto/pull/97), [#120](https://github.com/solarssk/admitto/pull/120))
+- Add admin UX micro-fixes: import column reference and CSV template, delivery log purpose filter, compose dirty-state guard, attendee drawer discard confirmation and check-in admitted/total stats ([#121](https://github.com/solarssk/admitto/pull/121))
+- Add `POST /mfa/enroll/download-codes` to download backup codes as `.txt` during enrollment ([#117](https://github.com/solarssk/admitto/pull/117))
+- Replace `window.prompt` for attendee notes with `NoteModal` in check-in ([#114](https://github.com/solarssk/admitto/pull/114))
+- Upgrade the runtime to Node 24 LTS and React 18 to 19 across admin and web ([#111](https://github.com/solarssk/admitto/pull/111), [#110](https://github.com/solarssk/admitto/pull/110))
+- Align the login, MFA and superadmin identity-provider HTML pages with the Admitto design tokens ([#117](https://github.com/solarssk/admitto/pull/117))
+- Use a select for the OIDC group mapping role, and add inline enable and disable to the provider list ([#117](https://github.com/solarssk/admitto/pull/117))
+- Show a status badge, a fall-through explanation and an enable warning on the Cloudflare Access admin form ([#117](https://github.com/solarssk/admitto/pull/117))
+- Use `ConfirmDialog` instead of `window.confirm` in Requirements and Communication ([#97](https://github.com/solarssk/admitto/pull/97))
 
 ### Fixed
-- Guest ticket page now prints correctly (white background, no wallet buttons, no shadows)
-- Export: sanitize dynamic attribute column headers against formula injection (#97)
-- Local dev: login/MFA CSRF when `Origin`/`Referer` absent (Safari); admin SPA dist path after `npm run build -w @admitto/admin` (#115)
-- Admin page shell document title uses event name prefix without regressing the visible `h1` (#118)
-- SSO failure on `/login` shows a dedicated fallback banner; removed placeholder “SSO coming soon” when no IdP is configured (#117)
-- Check-in card coloured left border per scan status (#114)
-- Login page title and heading: “Sign in to Admitto” (#114)
-- Sidebar Overview section shows “Soon” until built (v1.0) (#114)
-- Settings subnav active tab uses path prefix matching instead of exact pathname equality
-- Sidebar “Soon” badges render with correct styling (`.nav-item--soon`, `.nav-item__badge`)
-- Global link hover underline no longer appears on sidebar brand, navigation items, or button-styled links (SPA and SSR settings shell)
-- OIDC admin form: URL fields use `type="url"`; group→role mapping rows can be added/removed; scope type select; SSO button live preview on provider form; failed save re-renders submitted mapping drafts
-- Cloudflare Access settings: clearer operator copy and field hints; test action labeled “Test connection”
-- Events picker: search by title/location; content width capped at 1100px; grid capped at three columns on wide screens
-- Check-in camera: removed fullscreen toggle (browser instability); debounce repeated ZXing decodes; extract ticket token from QR URLs with trailing slash or query (`packages/tickets`)
-- Check-in invalid/revoked scans show dedicated feedback card instead of silent failure
-- Requirements: `@admitto/ui` Switch missing thumb restored; item table uses name + auto-generated key; drawer layout cleanup
-- Event picker cards: removed hover lift/underline noise
-- Vercel Git deploys disabled via root `vercel.json` (self-hosted Docker only)
+
+- Print the guest ticket page correctly: white background, no wallet buttons, no shadows ([#127](https://github.com/solarssk/admitto/pull/127))
+- Sanitize dynamic attribute column headers in exports against formula injection ([#97](https://github.com/solarssk/admitto/pull/97))
+- Fix the local dev login and MFA CSRF check when `Origin` and `Referer` are absent (Safari), and the admin SPA dist path ([#115](https://github.com/solarssk/admitto/pull/115))
+- Use the event name prefix in the admin page title without regressing the visible `h1` ([#118](https://github.com/solarssk/admitto/pull/118))
+- Show a fallback banner when SSO fails on `/login`, and drop the "SSO coming soon" placeholder ([#117](https://github.com/solarssk/admitto/pull/117))
+- Colour the check-in card's left border by scan status ([#114](https://github.com/solarssk/admitto/pull/114))
+- Title the login page "Sign in to Admitto" ([#114](https://github.com/solarssk/admitto/pull/114))
+- Mark the sidebar Overview section "Soon" until it is built ([#114](https://github.com/solarssk/admitto/pull/114))
+- Fix the Settings subnav active tab, the "Soon" badge styling and unwanted link hover underlines in the sidebar ([#129](https://github.com/solarssk/admitto/pull/129))
+- Polish the OIDC admin form: `type="url"` fields, add and remove mapping rows, a scope select, a live SSO button preview and kept drafts after a failed save ([#130](https://github.com/solarssk/admitto/pull/130))
+- Clarify the Cloudflare Access settings copy, and label the action "Test connection" ([#130](https://github.com/solarssk/admitto/pull/130))
+- Add search to the events picker, and cap its content width and columns ([#130](https://github.com/solarssk/admitto/pull/130))
+- Remove the check-in camera fullscreen toggle, debounce repeated ZXing decodes, and extract ticket tokens from QR URLs with a trailing slash or query ([#133](https://github.com/solarssk/admitto/pull/133))
+- Show a dedicated feedback card for invalid and revoked check-in scans ([#114](https://github.com/solarssk/admitto/pull/114))
+- Restore the missing Switch thumb, show Requirements items with a name and generated key, and clean up the drawer layout ([#129](https://github.com/solarssk/admitto/pull/129))
+- Remove hover lift and underline noise from event picker cards ([#129](https://github.com/solarssk/admitto/pull/129))
+- Disable Vercel Git deploys with a root `vercel.json` (self-hosted Docker only)
 
 ### Security
-- Branding `font_family_name` allowlist on save and ticket-page render (blocks CSS/HTML injection via custom fonts) (#96)
-- `deploy/validate-env.sh` pre-flight for `deploy/.env`; production boot fails fast when `REDIS_URL` is missing, unauthenticated, or `ENCRYPTION_KEY` is invalid
-- PENtest hardening: structured audit events for rate limits, MFA, OIDC login, logout, admin 403, and settings changes — ISO `ts` on each event (#123)
-- Production `BASE_URL` must use `https://` (except `localhost` / `127.0.0.1` smoke) (#123)
-- OIDC ID token verification restricts JWT algorithms to RS/ES/PS family (no `none`) (#123)
-- Deploy Redis requires `REDIS_PASSWORD`; compose wires authenticated `REDIS_URL` (#123)
-- Nginx proxy baseline security headers (HSTS, nosniff, frame deny); Docker bridge gateway for RealIP behind NPM (#123)
-- `/healthz` and `/readyz` responses include baseline security headers (#123)
-- GitHub Releases for `v0.x.y` are **pre-release** until `v1.0.0`; `publish-container` sets the flag automatically (#123)
-- PENtest follow-up: rate limits on MFA enroll, `/healthz`, admin import/template preview, and OIDC provider discover/test; OIDC outbound fetch resolves DNS before connect; malformed `X-Forwarded-For` falls back to socket IP (no shared `unknown` bucket)
-- `docs/security/SECURITY-CONTROLS.md`: rate-limit matrix, `TRUST_PROXY` trust model, SSRF/DNS-rebind guards, PEN retest checklist for operators
+
+- Allow-list the branding `font_family_name` on save and ticket page render, to block CSS and HTML injection via custom fonts ([#96](https://github.com/solarssk/admitto/pull/96))
+- Add the `deploy/validate-env.sh` pre-flight; production boot fails fast when `REDIS_URL` is missing or unauthenticated, or `ENCRYPTION_KEY` is invalid ([#125](https://github.com/solarssk/admitto/pull/125))
+- Add structured audit events for rate limits, MFA, OIDC login, logout, admin 403 and settings changes ([#123](https://github.com/solarssk/admitto/pull/123))
+- Require `https://` for the production `BASE_URL`, except `localhost` and `127.0.0.1` smoke tests ([#123](https://github.com/solarssk/admitto/pull/123))
+- Restrict OIDC ID token verification to RS, ES and PS JWT algorithms (no `none`) ([#123](https://github.com/solarssk/admitto/pull/123))
+- Require `REDIS_PASSWORD` in the deploy Redis, and wire an authenticated `REDIS_URL` in compose ([#123](https://github.com/solarssk/admitto/pull/123))
+- Add baseline security headers (HSTS, nosniff, frame deny) to the Nginx proxy, and use the Docker bridge gateway for RealIP behind NPM ([#123](https://github.com/solarssk/admitto/pull/123))
+- Add baseline security headers to `/healthz` and `/readyz` ([#123](https://github.com/solarssk/admitto/pull/123))
+- Mark GitHub Releases for `v0.x.y` as pre-release until `v1.0.0` ([#123](https://github.com/solarssk/admitto/pull/123))
+- Rate-limit MFA enroll, `/healthz`, admin import and template preview, and OIDC discover and test; resolve DNS before OIDC outbound fetches; fall back to the socket IP for a malformed `X-Forwarded-For` ([#126](https://github.com/solarssk/admitto/pull/126))
+- Document the rate-limit matrix, the `TRUST_PROXY` trust model, SSRF and DNS-rebinding guards and the pen-test retest checklist in `docs/security/SECURITY-CONTROLS.md` ([#126](https://github.com/solarssk/admitto/pull/126))
 
 ## [0.4.4] - 2026-06-19
 
 ### Security
-- Bump transitive `undici` 6.26.0 → 6.27.0; addresses CVE-2026-12151 (high), CVE-2026-9679 (moderate), CVE-2026-11525 and CVE-2026-6733 (low) (#94)
+
+- Bump the transitive `undici` 6.26.0 to 6.27.0 (CVE-2026-12151 high, CVE-2026-9679 moderate, CVE-2026-11525 and CVE-2026-6733 low) ([#94](https://github.com/solarssk/admitto/pull/94))
 
 ### Fixed
-- Container publish workflow: `workflow_dispatch` on branch refs runs scan-only (Trivy SARIF, CRITICAL gate) without SBOM path or Docker metadata failures (#93)
-- GHCR push, provenance attestation, and release SBOM restricted to `refs/tags/v*.*.*` semver refs; semver-shaped branch names can no longer trigger a publish
+
+- Run the container publish workflow scan-only (Trivy SARIF, CRITICAL gate) on `workflow_dispatch` for branch refs ([#93](https://github.com/solarssk/admitto/pull/93))
+- Restrict the GHCR push, provenance attestation and release SBOM to `refs/tags/v*.*.*` semver refs ([#93](https://github.com/solarssk/admitto/pull/93))
 
 ## [0.4.3] - 2026-06-19
 
 ### Added
-- Attendee list export to CSV, XLSX, and PDF with check-off column and formula-injection sanitization (#88)
-- Dynamic custom attributes in admin drawer: edit fields driven by `EventItem.config.contents` instead of hardcoded `shirt_size` (ADR 0030, #91)
-- Export columns follow `EventItem.config.contents` definitions; check-in parity preserved
-- `security/SECURITY-CONTROLS.md`: configurable security capabilities table with TOTP and OIDC implementation detail
-- `CORPORATE-DEPLOYMENT.md`: self-hosted model, customer-hosted stack, no SaaS
-- `ARCHITECTURE-FOR-AUDITORS.md`: scope, generic exposure overview, roadmap flows
-- `GDPR-ONE-PAGER.md`, `SUBPROCESSORS.md`: purposes, retention, subprocessor template, DSAR options
-- `DSAR-PROCEDURE.md`: organizer-mediated access and erasure template (Option B)
-- `INCIDENT-RESPONSE.md`: rotation, rollback, severity template; GDPR Art. 33/34 72-hour breach notification
-- Zod validation on `custom_data_fields` keys; stable export column order (`orderBy: key`)
-- Duplicate Excel headers disambiguated as `Label (source_field)`; PDF column widths scale down when many attributes exceed printable width
-- Export integration tests use isolated events
+
+- Export the attendee list to CSV, XLSX and PDF with a check-off column and formula-injection sanitization ([#88](https://github.com/solarssk/admitto/pull/88))
+- Drive the custom attributes in the admin drawer from `EventItem.config.contents` instead of a hardcoded `shirt_size` ([#91](https://github.com/solarssk/admitto/pull/91))
+- Follow `EventItem.config.contents` in the export columns ([#91](https://github.com/solarssk/admitto/pull/91))
+- Add the corporate readiness docs: `SECURITY-CONTROLS.md`, `CORPORATE-DEPLOYMENT.md`, `ARCHITECTURE-FOR-AUDITORS.md`, `GDPR-ONE-PAGER.md`, `SUBPROCESSORS.md`, `DSAR-PROCEDURE.md` and `INCIDENT-RESPONSE.md` ([#90](https://github.com/solarssk/admitto/pull/90))
+- Validate `custom_data_fields` keys with Zod, and keep a stable export column order ([#91](https://github.com/solarssk/admitto/pull/91))
+- Disambiguate duplicate Excel headers as `Label (source_field)`, and scale PDF column widths down when many attributes exceed the page ([#91](https://github.com/solarssk/admitto/pull/91), [#88](https://github.com/solarssk/admitto/pull/88))
+- Use isolated events in the export integration tests ([#92](https://github.com/solarssk/admitto/pull/92))
 
 ### Changed
-- `DATA-PROTECTION.md` updated with legal basis note (LIA for legitimate interest)
+
+- Add a legal basis note (LIA for legitimate interest) to `DATA-PROTECTION.md` ([#90](https://github.com/solarssk/admitto/pull/90))
 
 ### Fixed
-- Drawer degrades gracefully when event-items API fails
+
+- Degrade the drawer gracefully when the event-items API fails ([#92](https://github.com/solarssk/admitto/pull/92))
 
 ### Security
-- Removed `|| true` from Semgrep CI step — SAST findings now block pull requests (baseline verified at 0 findings before merge)
+
+- Make Semgrep SAST findings block pull requests, by removing `|| true` from the CI step ([#90](https://github.com/solarssk/admitto/pull/90))
 
 ## [0.4.2] - 2026-06-19
 
 ### Added
-- Admin attendee table with pagination, search, status and ticket-type filters, and badge parity with operator UI
-- Edit drawer: change guest fields in-place, view communication history, resend ticket email
-- CSV and XLSX import: canonical column headers, row preview and validation errors, overwrite toggle, agency UUID/QR payload support
-- Event-day configuration: event items (gift bag, badge, headset), `ops_config` toggles, content fields linked to attendee data
-- Admin mail UI: edit MJML/HTML templates, preview with sample data, send a test message
-- Delivery log: browsable per event (status, retries; no rendered HTML in list views)
-- `GET /readyz` token-protected readiness check for database, Redis, and migration status (ADR 0026)
-- Pre-migration database backup on container start when pending migrations exist (ADR 0027)
-- CI guard against destructive migration SQL; rollback runbook; smoke test for backup path
-- Trivy image scan and CycloneDX SBOM in CI; `SECURITY.md` updated
-- Export also matches selected fields inside `custom_data` JSON
+
+- Add the admin attendee table with pagination, search, and status and ticket-type filters ([#70](https://github.com/solarssk/admitto/pull/70))
+- Add an edit drawer to change guest fields in place, view the communication history and resend the ticket email ([#70](https://github.com/solarssk/admitto/pull/70))
+- Import attendees from CSV and XLSX in the admin: canonical headers, row preview and validation errors, an overwrite toggle and agency UUID or QR payload support ([#71](https://github.com/solarssk/admitto/pull/71))
+- Add event-day configuration: event items (gift bag, badge, headset), `ops_config` toggles and content fields linked to attendee data ([#72](https://github.com/solarssk/admitto/pull/72))
+- Add admin mail UI: edit MJML or HTML templates, preview with sample data and send a test message ([#75](https://github.com/solarssk/admitto/pull/75))
+- Add a browsable per-event delivery log (status and retries, no rendered HTML in list views) ([#75](https://github.com/solarssk/admitto/pull/75))
+- Add the token-protected `GET /readyz` readiness check for database, Redis and migration status ([#73](https://github.com/solarssk/admitto/pull/73))
+- Take a pre-migration database backup on container start when migrations are pending ([#81](https://github.com/solarssk/admitto/pull/81))
+- Add a CI guard against destructive migration SQL, a rollback runbook and a backup smoke test ([#81](https://github.com/solarssk/admitto/pull/81))
+- Add a Trivy image scan and a CycloneDX SBOM to CI ([#79](https://github.com/solarssk/admitto/pull/79))
+- Match selected `custom_data` fields in exports ([#82](https://github.com/solarssk/admitto/pull/82))
 
 ### Changed
-- Backend routes are event-scoped (wrong event returns 403) with CSRF on mutating calls
-- Migrations apply automatically on container start (fail-fast); no manual `migrate deploy` for operators
-- Requires Node ≥ 22.13 for exceljs ↔ uuid interop (`require(esm)`)
+
+- Scope backend routes by event (the wrong event returns 403), with CSRF on mutating calls ([#70](https://github.com/solarssk/admitto/pull/70))
+- Apply migrations automatically on container start, with no manual `migrate deploy` ([#81](https://github.com/solarssk/admitto/pull/81))
+- Require Node 22.13 or later for the exceljs and uuid interop ([#83](https://github.com/solarssk/admitto/pull/83))
 
 ### Fixed
-- Concurrent edits: second save on the same guest returns a clear stale-write response instead of silently overwriting (ADR 0028)
-- Request body limits and safe error messages on mail endpoints; export-only dev sink for local mail testing (ADR 0029)
-- Transitive `uuid` forced to 14.0.0 (#13); patch bumps for vitest, eslint, argon2
+
+- Return a stale-write response on a second save of the same guest instead of overwriting it ([#80](https://github.com/solarssk/admitto/pull/80))
+- Add request body limits and safe error messages to the mail endpoints, and an export-only dev sink for local mail testing ([#76](https://github.com/solarssk/admitto/pull/76), [#77](https://github.com/solarssk/admitto/pull/77))
+- Force the transitive `uuid` to 14.0.0, and bump the vitest, eslint and argon2 patch versions ([#83](https://github.com/solarssk/admitto/pull/83), [#84](https://github.com/solarssk/admitto/pull/84))
 
 ### Database migrations
-- `20260618120000_event_item_contents` — metadata for configurable event-item content
-- `20260618140000_attendee_updated_at` — `updated_at` on attendees for optimistic locking
+
+- `20260618120000_event_item_contents`: metadata for configurable event-item content
+- `20260618140000_attendee_updated_at`: `updated_at` on attendees for optimistic locking
 
 ## [0.4.1] - 2026-06-17
 
 ### Added
-- Attendee card after scan or manual lookup: guest name, company, ticket type, check-in status, warnings, item rows, recent notes, audit context; stacks on narrow screens (< 1024 px)
-- Item fulfilment at the door: gift bag (shirt size shown on row), badge (auto-issue on check-in when configured), headset (issue and return)
-- Every item and check-in change logged in `AttendeeActionLog` (who, session, device, IP)
-- Manual lookup by name or email: PII in request body (not URL); also matches `company` and `department` inside `custom_data`
-- Scan history sidebar with admitted count; operator notes (max 2 000 characters, author + timestamp)
-- Per-tablet undo of last check-in: rolls back admission and auto-issued badge; requires device label at login
-- Opt-in camera QR decode via dynamically loaded `@zxing/browser`; USB keyboard wedge remains primary scan path
+
+- Add the attendee card after a scan or manual lookup: name, company, ticket type, check-in status, warnings, item rows, recent notes and audit context ([#67](https://github.com/solarssk/admitto/pull/67))
+- Add item fulfilment at the door: gift bag, badge (auto-issued on check-in when configured) and headset (issue and return) ([#67](https://github.com/solarssk/admitto/pull/67))
+- Log every item and check-in change in `AttendeeActionLog` (who, session, device, IP) ([#67](https://github.com/solarssk/admitto/pull/67))
+- Add manual lookup by name or email with the request in the body, not the URL, also matching `company` and `department` in `custom_data` ([#67](https://github.com/solarssk/admitto/pull/67))
+- Add a scan history sidebar with the admitted count, and operator notes of up to 2,000 characters with author and time ([#67](https://github.com/solarssk/admitto/pull/67))
+- Add a per-tablet undo of the last check-in, which rolls back the admission and the auto-issued badge ([#67](https://github.com/solarssk/admitto/pull/67))
+- Add opt-in camera QR decoding with a dynamically loaded `@zxing/browser`, keeping the USB keyboard wedge as the primary scan path ([#67](https://github.com/solarssk/admitto/pull/67))
 
 ### Changed
-- Manual lookup uses the same admit path as scan — no double admission on repeat tap (CAS)
-- Undo hidden when session has no device label (matches server 409 response)
+
+- Use the same admit path for manual lookup as for a scan, so a repeat tap cannot admit twice ([#67](https://github.com/solarssk/admitto/pull/67))
+- Hide undo when the session has no device label, matching the server's 409 ([#68](https://github.com/solarssk/admitto/pull/68))
 
 ### Database migrations
-- `20260617120000_event_day_ops` — `custom_data`, `ops_config`, event items, item states, notes, action log
-- `20260617130000_attendee_note_body_check` — DB CHECK on note body length
+
+- `20260617120000_event_day_ops`: `custom_data`, `ops_config`, event items, item states, notes and action log
+- `20260617130000_attendee_note_body_check`: DB CHECK on note body length
 
 ## [0.4.0] - 2026-06-17
 
 ### Added
-- `@admitto/ui` design system: tokens, status badges, 13 React primitives, theme vars with anti-lockout branding fallback
-- Admin and operator shells served from the same origin as the API; role-based redirect to correct surface after login
-- Auth-aware heartbeat (`ConnectionStateProvider`) so tablets know when the server session is alive
-- Staff SPA at `/admin`, `/operator`; public ticket page `/t` reskinned to match
-- Scanner-first check-in entry: autofocus buffer, Enter to submit, refocus after each scan, ~300 ms duplicate debounce
-- Scan result card with status badge; shared check-in route for admin and operator URLs
-- Self-hosted Tabler Icons and Inter font — no runtime dependency on jsDelivr or Google Fonts (ADR 0012)
-- Defense-in-depth headers on staff SPA shell (CSP, `nosniff`, `no-referrer`, `frame-ancestors 'none'`) (ADR 0017)
+
+- Add the `@admitto/ui` design system: tokens, status badges, 13 React primitives and theme variables with an anti-lockout branding fallback ([#56](https://github.com/solarssk/admitto/pull/56), [#60](https://github.com/solarssk/admitto/pull/60))
+- Serve the admin and operator shells from the API origin, with a role-based redirect after login ([#56](https://github.com/solarssk/admitto/pull/56))
+- Add an auth-aware heartbeat (`ConnectionStateProvider`), so tablets know when the server session is alive ([#56](https://github.com/solarssk/admitto/pull/56))
+- Add the staff SPA at `/admin` and `/operator`, and reskin the public ticket page `/t` to match ([#56](https://github.com/solarssk/admitto/pull/56))
+- Add a scanner-first check-in entry: autofocus buffer, Enter to submit, refocus after each scan and a ~300 ms duplicate debounce ([#59](https://github.com/solarssk/admitto/pull/59))
+- Add a scan result card with a status badge, and a shared check-in route for admin and operator URLs ([#59](https://github.com/solarssk/admitto/pull/59))
+- Self-host Tabler Icons and the Inter font, with no runtime dependency on jsDelivr or Google Fonts ([#62](https://github.com/solarssk/admitto/pull/62))
+- Add defense-in-depth headers to the staff SPA shell (CSP, `nosniff`, `no-referrer`, `frame-ancestors 'none'`) ([#61](https://github.com/solarssk/admitto/pull/61))
 
 ### Changed
-- Semantic theme tokens replace hardcoded hex in `components.css` and `ticket.css`
-- `Tabs` reconciles `active` when the `tabs` prop changes after mount
+
+- Replace hardcoded hex colours in `components.css` and `ticket.css` with semantic theme tokens ([#60](https://github.com/solarssk/admitto/pull/60))
+- Make `Tabs` reconcile `active` when its `tabs` prop changes after mount ([#60](https://github.com/solarssk/admitto/pull/60))
 
 ### Fixed
-- Controlled redirects when post-login path resolution fails (no HTTP 500 on auth edge cases)
+
+- Redirect in a controlled way when post-login path resolution fails, instead of an HTTP 500 ([#57](https://github.com/solarssk/admitto/pull/57))
 
 ## [0.3.7] - 2026-06-16
 
 ### Added
-- `scripts/release-tag.sh` for signed annotated tags (`git tag -s`) with pre-push checks
-- `VERSIONING.md` with SSH/GPG signing setup and release steps including GitHub Release
-- Re-signed tags `v0.3.3`–`v0.3.6` on GitHub (verified: true); future tags use the script
+
+- Add `scripts/release-tag.sh` for signed annotated tags, and `VERSIONING.md` with the signing setup and release steps; re-sign the tags `v0.3.3` to `v0.3.6` ([#54](https://github.com/solarssk/admitto/pull/54))
 
 ## [0.3.6] - 2026-06-16
 
 ### Added
-- Multi-stage production Docker image for `apps/web`; migrations run on container start
-- `deploy/docker-compose.yml`: app + Postgres + Redis + nginx (loopback `:8080`; app internal `:3000`)
-- `GET /healthz` with database ping for Docker health checks
-- CI `docker-build` job; `publish-container` pushes `ghcr.io/solarssk/admitto:0.x.y` and rolling `:0.x` on each semver tag (ADR 0018)
-- Optional `deploy-smoke` `workflow_dispatch`
+
+- Add a multi-stage production Docker image for `apps/web`, running migrations on container start ([#52](https://github.com/solarssk/admitto/pull/52))
+- Add `deploy/docker-compose.yml` with the app, Postgres, Redis and nginx ([#52](https://github.com/solarssk/admitto/pull/52))
+- Add `GET /healthz` with a database ping for Docker health checks ([#52](https://github.com/solarssk/admitto/pull/52))
+- Add a CI `docker-build` job, and `publish-container` pushing `ghcr.io/solarssk/admitto:0.x.y` and a rolling `:0.x` on each semver tag ([#52](https://github.com/solarssk/admitto/pull/52), [#53](https://github.com/solarssk/admitto/pull/53))
+- Add an optional `deploy-smoke` `workflow_dispatch` ([#52](https://github.com/solarssk/admitto/pull/52))
 
 ## [0.3.5] - 2026-06-15
 
 ### Added
-- Cloudflare Access JWT validation on `/admin*` and `/api/admin*`; missing JWT redirects to `/login`, not 401 (ADR 0017)
-- Per-request CF identity resolution via `ExternalIdentity` seam — no long-lived Admitto session for CF logins
-- Superadmin UI to configure team domain, audience, JWKS test; env locks override DB as kill switch
-- Group-to-role mapping synced on each valid CF JWT; boot fail-fast when CF Access enabled without team domain/AUD
-- `CF_ACCESS_ENABLED=false` env override as emergency kill switch
+
+- Validate the Cloudflare Access JWT on `/admin*` and `/api/admin*`; a missing JWT redirects to `/login` ([#50](https://github.com/solarssk/admitto/pull/50))
+- Resolve the Cloudflare identity per request through the `ExternalIdentity` seam, with no long-lived Admitto session for CF logins ([#50](https://github.com/solarssk/admitto/pull/50))
+- Add a superadmin UI for the team domain, audience and JWKS test; environment locks override the database as a kill switch ([#50](https://github.com/solarssk/admitto/pull/50))
+- Sync the group-to-role mapping on each valid CF JWT, and fail boot fast when CF Access is enabled without a team domain or AUD ([#50](https://github.com/solarssk/admitto/pull/50))
+- Add the `CF_ACCESS_ENABLED=false` environment override as an emergency kill switch ([#50](https://github.com/solarssk/admitto/pull/50))
 
 ### Database migrations
-- `20260615200000_cf_access_settings` — system settings defaults for CF Access keys
+
+- `20260615200000_cf_access_settings`: system settings defaults for CF Access keys
 
 ## [0.3.4] - 2026-06-15
 
 ### Added
-- OIDC login (Authentik-first): Authorization Code + PKCE; full ID token validation (JWKS, issuer, audience, nonce)
-- JIT provisioning: new OIDC users get zero roles unless a configured group-to-role rule matches (fail-closed)
-- Account linking: explicit `?link=1` step-up (password + TOTP when required); `link_step_up_at` on OAuth state (5 min TTL)
-- `OidcRoleGrant` tracks OIDC-provisioned roles; demotion revokes grants without touching manual `RoleAssignment` rows
-- Superadmin UI for OIDC provider config; client secrets encrypted at rest; SSRF guards on discovery URLs
-- `resolveOrCreateUserFromExternalIdentity` shared seam for Cloudflare Access
+
+- Add OIDC login (Authentik-first): Authorization Code with PKCE and full ID token validation (JWKS, issuer, audience, nonce) ([#47](https://github.com/solarssk/admitto/pull/47))
+- Provision new OIDC users with no roles unless a configured group-to-role rule matches (fail closed) ([#47](https://github.com/solarssk/admitto/pull/47))
+- Require an explicit `?link=1` step-up (password, and TOTP when required) to link an account, with `link_step_up_at` on the OAuth state (5 minute TTL) ([#47](https://github.com/solarssk/admitto/pull/47))
+- Track OIDC-provisioned roles in `OidcRoleGrant`; a demotion revokes grants without touching manual `RoleAssignment` rows ([#47](https://github.com/solarssk/admitto/pull/47))
+- Add a superadmin UI for OIDC provider config, with client secrets encrypted at rest and SSRF guards on discovery URLs ([#47](https://github.com/solarssk/admitto/pull/47))
+- Add the shared `resolveOrCreateUserFromExternalIdentity` seam for Cloudflare Access ([#47](https://github.com/solarssk/admitto/pull/47))
 
 ### Changed
-- SMTP adapter requires TLS 1.2+ (`minVersion: "TLSv1.2"`)
-- Check-in history `limit` clamped to 1–100 at HTTP and domain layers
+
+- Require TLS 1.2 or later in the SMTP adapter ([#48](https://github.com/solarssk/admitto/pull/48))
+- Clamp the check-in history `limit` to 1 to 100 at the HTTP and domain layers ([#48](https://github.com/solarssk/admitto/pull/48))
 
 ### Fixed
-- Duplicate `RoleAssignment` rows removed; partial unique indexes on scoped and instance roles
-- OIDC provider save resolves HTTP endpoints before DB transaction (no network I/O inside transactions)
-- Idempotent grant creation under concurrent OIDC logins (`P2002` → safe no-op)
-- `prisma migrate deploy` on `admitto_auth_test` before auth integration tests in CI
+
+- Remove duplicate `RoleAssignment` rows, and add partial unique indexes on scoped and instance roles ([#48](https://github.com/solarssk/admitto/pull/48))
+- Resolve HTTP endpoints before the database transaction when an OIDC provider is saved ([#48](https://github.com/solarssk/admitto/pull/48))
+- Make grant creation idempotent under concurrent OIDC logins (`P2002` becomes a safe no-op) ([#48](https://github.com/solarssk/admitto/pull/48))
+- Run `prisma migrate deploy` on `admitto_auth_test` before the auth integration tests in CI
 
 ### Database migrations
-- `20260615120000_oidc_linking` — `IdentityProvider`, `ExternalIdentity`, OAuth state tables
-- `20260615140000_oidc_hardening` — schema and index hardening
-- `20260615160000_oidc_scope_normalization` — scope normalization for group-to-role mappings
-- `20260615170000_oidc_link_step_up` — `link_step_up_at` on OAuth state
-- `20260615180000_oidc_role_grants` — `OidcRoleGrant` + group mapping tables
-- `20260615190000_role_assignment_unique` — dedup, partial unique indexes, grant repoint, FK cascade
+
+- `20260615120000_oidc_linking`: `IdentityProvider`, `ExternalIdentity` and OAuth state tables
+- `20260615140000_oidc_hardening`: schema and index hardening
+- `20260615160000_oidc_scope_normalization`: scope normalization for group-to-role mappings
+- `20260615170000_oidc_link_step_up`: `link_step_up_at` on OAuth state
+- `20260615180000_oidc_role_grants`: `OidcRoleGrant` and group mapping tables
+- `20260615190000_role_assignment_unique`: dedup, partial unique indexes, grant repoint and FK cascade
 
 ## [0.3.3] - 2026-06-14
 
 ### Added
-- TOTP 2FA for admin and superadmin roles; operators unchanged (full session after password, no MFA friction on event day)
-- Partial session stages: `mfa_pending` and `enrollment_required` gate privileged routes until TOTP completes
-- Backup recovery codes (argon2id-hashed, one-time use)
-- Optional trusted-device cookie (hash-only in DB); skips TOTP on known browsers; revoked on logout, MFA reset, and session revoke
-- Break-glass CLI: `reset-mfa`, `generate-emergency-recovery` (superadmin@instance only, audit log)
-- `SystemSettings`: session TTL, operator session TTL, trusted device days, `mfa_required_roles` (env lock → DB → default)
+
+- Add TOTP 2FA for admin and superadmin roles; operators are unchanged ([#39](https://github.com/solarssk/admitto/pull/39))
+- Add the partial session stages `mfa_pending` and `enrollment_required`, which gate privileged routes until TOTP completes ([#39](https://github.com/solarssk/admitto/pull/39))
+- Add one-time backup recovery codes, hashed with argon2id ([#39](https://github.com/solarssk/admitto/pull/39))
+- Add an optional trusted-device cookie (hash-only in the database) that skips TOTP on known browsers, and is revoked on logout, MFA reset and session revoke ([#39](https://github.com/solarssk/admitto/pull/39))
+- Add the break-glass CLI commands `reset-mfa` and `generate-emergency-recovery` (superadmin@instance only, audited) ([#39](https://github.com/solarssk/admitto/pull/39))
+- Add `SystemSettings` for session TTL, operator session TTL, trusted device days and `mfa_required_roles` (environment lock, then database, then default) ([#39](https://github.com/solarssk/admitto/pull/39))
 
 ### Security
-- CSRF origin check honours `X-Forwarded-Proto` and `X-Forwarded-Host` only when `TRUST_PROXY=true` (aligned with rate-limit client-IP policy)
-- TOTP replay protection: `last_totp_time_step` + otplib `afterTimeStep`; conditional DB update guards parallel replay
+
+- Honour `X-Forwarded-Proto` and `X-Forwarded-Host` in the CSRF origin check only when `TRUST_PROXY=true` ([#46](https://github.com/solarssk/admitto/pull/46))
+- Add TOTP replay protection (`last_totp_time_step` and otplib `afterTimeStep`), with a conditional update that guards against parallel replay ([#46](https://github.com/solarssk/admitto/pull/46))
 
 ### Changed
-- Dependency updates: `hono` 4.12.25, `@hono/node-server` 2.0.4, `redis` 6.0.0, `zod` 4.4.3, `@typescript-eslint/parser` 8.61.0, CodeQL action SHA bump
-- `RedisRateLimitStore` adapted for redis v6 (`withAbortSignal()`, two-arg `eval()`)
+
+- Update dependencies: `hono` 4.12.25, `@hono/node-server` 2.0.4, `redis` 6.0.0, `zod` 4.4.3, `@typescript-eslint/parser` 8.61.0 and the CodeQL action SHA ([#46](https://github.com/solarssk/admitto/pull/46))
+- Adapt `RedisRateLimitStore` to redis v6 (`withAbortSignal()`, two-argument `eval()`) ([#46](https://github.com/solarssk/admitto/pull/46))
 
 ### Database migrations
-- `20260614130000_2fa_totp` — `Session.stage`, `UserMfaMethod`, `TrustedDevice`, `SystemSettings` seed; active elevated sessions re-staged
-- `20260614210000_totp_replay_protection` — `UserMfaMethod.last_totp_time_step`
+
+- `20260614130000_2fa_totp`: `Session.stage`, `UserMfaMethod`, `TrustedDevice`, a `SystemSettings` seed, and re-staged active elevated sessions
+- `20260614210000_totp_replay_protection`: `UserMfaMethod.last_totp_time_step`
 
 ## [0.3.2] - 2026-06-14
 
 ### Added
-- Server-rendered operator auth: `GET/POST /login`, `GET /operator`, `POST /logout`
-- Session cookie (`httpOnly`, `SameSite=Lax`); optional device label; CSRF on login/logout and `POST /api/checkin/scan`
-- Login rate limits: IP-based and per-email on failed attempts
-- `Attendee.public_ref` (unique, non-guessable) for agency ticket URLs
-- Public routes `/t/:slug/a/:ref` and `/q/:slug/a/:ref.png` resolve by `public_ref`, not internal `Attendee.id`
-- Backfill on deploy: agency attendees without `public_ref` receive one automatically
-- `scripts/test-web-like-ci.sh` for local CI parity; test contract in `apps/web/test/README.md`
+
+- Add server-rendered operator login and logout with a `httpOnly`, `SameSite=Lax` session cookie, CSRF, a device label, and IP and per-email login rate limits ([#35](https://github.com/solarssk/admitto/pull/35))
+- Add `Attendee.public_ref` for agency ticket URLs: `/t/:slug/a/:ref` and `/q/:slug/a/:ref.png` resolve by it instead of the internal id, with a backfill on deploy ([#35](https://github.com/solarssk/admitto/pull/35))
+- Add `scripts/test-web-like-ci.sh` for local CI parity, and a test contract in `apps/web/test/README.md` ([#37](https://github.com/solarssk/admitto/pull/37))
 
 ### Changed
-- Default `ALLOW_CHECKIN_BEARER=false`; session + event scope required for scan and history; Bearer token is break-glass only
-- Per-operator scan/history rate limits applied after authentication (not shared with unauthenticated IP quota)
-- Integration tests stabilized: Vitest unit (no Postgres) vs integration (one `globalSetup` with `migrate deploy`); integration files under `test/integration/`
+
+- Default `ALLOW_CHECKIN_BEARER=false`: scan and history need a session and event scope, and the Bearer token is break-glass only ([#35](https://github.com/solarssk/admitto/pull/35))
+- Apply per-operator scan and history rate limits after authentication, separate from the unauthenticated IP quota ([#35](https://github.com/solarssk/admitto/pull/35))
+- Stabilise the integration tests: Vitest unit tests without Postgres, and integration tests with one `globalSetup` running `migrate deploy` ([#37](https://github.com/solarssk/admitto/pull/37))
 
 ### Fixed
-- CI failures from shared `admitto_web_test` DB (`P3005`, Prisma segfault on repeated `force-reset`): fixture cleanup instead of per-file DB resets
+
+- Fix CI failures from the shared `admitto_web_test` database (`P3005`, Prisma segfault) by cleaning up fixtures instead of resetting the database per file ([#36](https://github.com/solarssk/admitto/pull/36))
 
 ## [0.3.1] - 2026-06-14
 
 ### Added
-- Local `User` accounts with argon2id password hashing and `is_active` state
-- Break-glass superadmin bootstrap CLI: `npm run auth:bootstrap` (password from stdin, not argv)
-- `@admitto/auth` package: login, logout, session validation, password verification, auth audit logging, capability-aware authorization helpers
-- HTTP auth endpoints: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
-- Event-scoped check-in RBAC: `superadmin@instance` (all events), `admin@organization` (org events), `operator@event` (assigned event only)
-- DB-backed `Session` records: opaque high-entropy tokens (only `token_hash` stored), expiry, single-session revoke, event-scoped bulk revoke
-- Role-sensitive session lifetimes: shorter for operators, longer for admin and superadmin
+
+- Add local `User` accounts with argon2id password hashing and an `is_active` state ([#33](https://github.com/solarssk/admitto/pull/33))
+- Add the break-glass superadmin bootstrap CLI `npm run auth:bootstrap` (password from stdin, not argv) ([#33](https://github.com/solarssk/admitto/pull/33))
+- Add the `@admitto/auth` package: login, logout, session validation, password verification, auth audit logging and capability-aware authorization ([#33](https://github.com/solarssk/admitto/pull/33))
+- Add `POST /api/auth/login`, `POST /api/auth/logout` and `GET /api/auth/me` ([#33](https://github.com/solarssk/admitto/pull/33))
+- Add event-scoped check-in RBAC: `superadmin@instance`, `admin@organization` and `operator@event` ([#33](https://github.com/solarssk/admitto/pull/33))
+- Add DB-backed `Session` records with opaque tokens (only `token_hash` stored), expiry, single-session revoke and event-scoped bulk revoke ([#33](https://github.com/solarssk/admitto/pull/33))
+- Use role-sensitive session lifetimes: shorter for operators, longer for admin and superadmin ([#33](https://github.com/solarssk/admitto/pull/33))
 
 ### Changed
-- `/api/checkin/*` extended to accept a valid session or the transitional legacy Bearer token; ADR 0003 deploy policy preserved
+
+- Accept a valid session or the transitional legacy Bearer token on `/api/checkin/*` ([#33](https://github.com/solarssk/admitto/pull/33))
 
 ### Security
-- Uniform unauthorized responses for bad email and bad password to reduce user enumeration risk
-- Dummy verification path for missing users; structured login audit logs without password or session token leakage
-- Login rate limiting; `httpOnly` session cookie with `SameSite=Lax` and `Secure` outside development
+
+- Return uniform unauthorized responses for a bad email and a bad password, to reduce user enumeration ([#33](https://github.com/solarssk/admitto/pull/33))
+- Add a dummy verification path for missing users, and structured login audit logs without password or session token leakage ([#33](https://github.com/solarssk/admitto/pull/33))
+- Rate-limit logins, and use a `httpOnly`, `SameSite=Lax` session cookie that is `Secure` outside development ([#33](https://github.com/solarssk/admitto/pull/33))
 
 ## [0.3.0] - 2026-06-13
 
 ### Added
-- Provider-level test-send: one message per event without triggering bulk delivery
-- Read-only mail config inspection with masked secrets
-- Delivery log listing without exposing full rendered HTML bodies
-- Redis-backed shared rate limiting on public `/t/*` and `/q/*` routes; in-memory fallback when Redis is not configured
+
+- Add a provider-level test send (one message per event), read-only mail config inspection with masked secrets, and a delivery log without full rendered HTML bodies ([#31](https://github.com/solarssk/admitto/pull/31))
+- Add Redis-backed shared rate limiting on the public `/t/*` and `/q/*` routes, with an in-memory fallback without Redis ([#32](https://github.com/solarssk/admitto/pull/32))
 
 ### Changed
-- Rate limiting fails open when Redis is configured but unavailable — ticket access prioritized over strict limiting during an outage
+
+- Let rate limiting fail open when Redis is configured but unavailable, so ticket access takes priority during an outage ([#32](https://github.com/solarssk/admitto/pull/32))
 
 ## [0.2.4] - 2026-06-11
 
 ### Fixed
-- Defensive DB `CHECK` constraints on `RoleAssignment`
-- Crypto key-version behavior hardened
-- Seed fails predictably when encryption is misconfigured
+
+- Add defensive CHECK constraints on `RoleAssignment`, harden the crypto key-version behaviour, and make the seed fail predictably when encryption is misconfigured ([#24](https://github.com/solarssk/admitto/pull/24))
 
 ## [0.2.3] - 2026-06-11
 
 ### Added
-- `Organization` as the tenant boundary; `organization_id` threaded through the event and delivery model
-- Role and scope groundwork: `superadmin`, `admin`, `operator`
-- Attendee ticket tokens encrypted at rest via `@admitto/crypto` (AES-256-GCM, ADR 0006)
+
+- Add `Organization` as the tenant boundary, with `organization_id` through the event and delivery model ([#23](https://github.com/solarssk/admitto/pull/23))
+- Add role and scope groundwork: `superadmin`, `admin` and `operator` ([#23](https://github.com/solarssk/admitto/pull/23))
+- Encrypt attendee ticket tokens at rest via `@admitto/crypto` (AES-256-GCM) ([#23](https://github.com/solarssk/admitto/pull/23))
 
 ## [0.2.2] - 2026-06-11
 
 ### Added
-- Docker Compose for local development with PostgreSQL
-- CI service wiring for real database path
-- Relational constraints preventing cross-event check-in mistakes at the DB layer
+
+- Add Docker Compose with PostgreSQL for local development, and CI service wiring for the real database path ([#22](https://github.com/solarssk/admitto/pull/22))
+- Add relational constraints that prevent cross-event check-in mistakes at the database layer ([#22](https://github.com/solarssk/admitto/pull/22))
 
 ### Changed
-- Standardized on PostgreSQL as the single database engine across development, CI, and production (ADR 0004)
+
+- Standardise on PostgreSQL as the single database engine for development, CI and production ([#22](https://github.com/solarssk/admitto/pull/22))
 
 ## [0.2.1] - 2026-06-11
 
 ### Added
-- Atomic single-use check-in: one QR/token cannot admit twice (CAS, ADR 0001)
-- Recent check-in history endpoint
-- Temporary operator Bearer gate on `/api/checkin/*`
+
+- Add atomic single-use check-in, so one QR code or token cannot admit twice (CAS) ([#21](https://github.com/solarssk/admitto/pull/21))
+- Add a recent check-in history endpoint ([#21](https://github.com/solarssk/admitto/pull/21))
+- Add a temporary operator Bearer gate on `/api/checkin/*` ([#21](https://github.com/solarssk/admitto/pull/21))
 
 ## [0.2.0] - 2026-06-08
 
 ### Added
-- CSV/XLSX attendee import with agency UUID preservation
-- Internal QR/token issuance; agency UUID/external payload support
-- Public ticket page (`/t/:slug`) and hosted QR image routes (`/q/:slug`)
-- Split between internally generated token-based tickets and agency-provided identifiers
+
+- Add CSV and XLSX attendee import with agency UUID preservation ([#19](https://github.com/solarssk/admitto/pull/19))
+- Add internal QR and token issuance, with agency UUID and external payload support ([#20](https://github.com/solarssk/admitto/pull/20))
+- Add the public ticket page (`/t/:slug`) and hosted QR image routes (`/q/:slug`) ([#20](https://github.com/solarssk/admitto/pull/20))
+- Separate internally generated token-based tickets from agency-provided identifiers ([#20](https://github.com/solarssk/admitto/pull/20))
 
 ## [0.1.0] - 2026-06-08
 
 ### Added
-- Monorepo setup with initial DB schema and package boundaries
-- CI pipeline and basic security baseline (CodeQL, Semgrep, gitleaks, npm audit, Dependabot)
-- Mail adapter groundwork
-- Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
+
+- Set up the monorepo with the initial DB schema and package boundaries ([#4](https://github.com/solarssk/admitto/pull/4))
+- Add the CI pipeline and a basic security baseline (CodeQL, Semgrep, gitleaks, npm audit, Dependabot) ([#1](https://github.com/solarssk/admitto/pull/1), [#14](https://github.com/solarssk/admitto/pull/14), [#15](https://github.com/solarssk/admitto/pull/15))
+- Add mail adapter groundwork ([#5](https://github.com/solarssk/admitto/pull/5))
+- Record the Gate 0 outcome: Power Automate as the MVP mail path, with Graph and SMTP as future re-validation candidates
 
 [Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.5...HEAD
 [0.7.5]: https://github.com/solarssk/admitto/compare/v0.7.4...v0.7.5
