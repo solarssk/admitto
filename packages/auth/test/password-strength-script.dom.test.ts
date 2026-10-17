@@ -9,6 +9,7 @@ import {
   PASSWORD_STRENGTH_STRONG,
   PASSWORD_STRENGTH_WEAK,
 } from "../src/password-strength-fixtures.js";
+import { HEX, generatedText } from "./generated-passwords.js";
 
 const SCRIPT_NONCE = "dGVzdC1zY3JpcHQtbm9uY2U=";
 
@@ -87,6 +88,24 @@ describe("passwordStrengthAuthScript in a DOM (jsdom)", () => {
     setInput(password, PASSWORD_STRENGTH_WEAK);
 
     expect(PASSWORD_STRENGTH_WEAK.length).toBeGreaterThanOrEqual(PASSWORD_MIN_LENGTH);
+    expect(meter().getAttribute("aria-label")).toBe(
+      "Password strength: Weak. Avoid repeated or sequential characters for a stronger score.",
+    );
+  });
+
+  it("does not call a long generated password weak", () => {
+    const password = document.getElementById("password") as HTMLInputElement;
+    setInput(password, generatedText(HEX, 64, 1));
+
+    expect(meter().querySelector(".auth-password-strength__label")?.textContent).not.toBe("Weak");
+    expect(meter().getAttribute("aria-label")).not.toContain("repeated or sequential");
+  });
+
+  it("still calls a long repeated pattern weak", () => {
+    const password = document.getElementById("password") as HTMLInputElement;
+    setInput(password, "ab".repeat(30));
+
+    expect(meter().querySelector(".auth-password-strength__label")?.textContent).toBe("Weak");
     expect(meter().getAttribute("aria-label")).toBe(
       "Password strength: Weak. Avoid repeated or sequential characters for a stronger score.",
     );

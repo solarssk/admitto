@@ -188,7 +188,8 @@ An exception to the table above, for check-in tablets that sit idle between shif
 
 - It applies to every place a password is set or changed: first-run setup, forced change, self-service Account change, and admin-initiated create/reset.
 - A password needs at least 12 characters, and it is rejected if it is on a built-in list of 143 very common passwords.
-- Trivial patterns are rejected too: a password made of very few distinct characters (such as `aaaaaaaaaaaa` or `ababababab`), or a simple ascending/descending run of six or more characters.
+- A password with very few different characters is rejected, such as `aaaaaaaaaaaa` or `ababababab`. "Very few" means the number of different characters is at most a quarter of the password's length and at most 6. A 12-character password therefore needs at least 4 different characters, and a long generated password such as 64 hex characters or two UUIDs is accepted.
+- A simple ascending or descending run of six or more characters is rejected too, such as `abcdefghijkl`.
 - It is enforced server-side, not just by the strength meter shown while typing.
 - The basis is NIST SP 800-63B-4 §3.1.1.2, which requires checking candidates against a blocklist instead of relying on character-composition rules.
 

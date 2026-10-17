@@ -20,6 +20,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Remove the "archived" note from the Check-in settings tab and centre its switches on their labels ([#1685](https://github.com/solarssk/admitto/pull/1685))
 - Return 400 instead of a server error for unreadable pinned-note, key-contact and link requests, and stop an empty pinned-note request from clearing the note ([#1700](https://github.com/solarssk/admitto/pull/1700))
 - Fit the staff top bar on a phone so the account menu stays open ([#1698](https://github.com/solarssk/admitto/pull/1698))
+- Accept long generated passwords, such as 64 hex characters or two UUIDs, instead of refusing them as too common or calling them weak ([#1741](https://github.com/solarssk/admitto/pull/1741))
 
 ### Security
 

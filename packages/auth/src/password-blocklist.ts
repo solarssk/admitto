@@ -204,18 +204,33 @@ export function isPasswordBlocklisted(password: string): boolean {
 }
 
 /**
- * Whether `password` is almost entirely a single repeated character (e.g.
+ * The most different characters a password may use and still count as "a few
+ * repeated characters". Without it a long generated password would be refused:
+ * the share of different characters falls as a password grows, and 64 hex
+ * characters, two UUIDs or 40 digits can use at most 16, 17 or 10 different ones.
+ * Up to 27 characters a quarter of the length is the stricter limit, so the cap
+ * changes nothing there. `hasNearZeroEntropy` (the strength meter) repeats the
+ * number; keep them equal.
+ */
+const MAX_REPEATED_CHARACTERS = 6;
+
+/**
+ * Whether `password` is almost entirely a few repeated characters (e.g.
  * "aaaaaaaaaaaa", "ababababab") or a simple ascending/descending run of
  * character codes (e.g. "abcdefghijkl", "23456789"). Both pass a naive
  * length check yet contribute close to zero guessing resistance, so NIST SP
  * 800-63B-4 treats them alongside blocklist matches rather than relying on
  * character-composition rules.
+ *
+ * "A few" means at most a quarter of the characters are different and at most
+ * `MAX_REPEATED_CHARACTERS` are.
  */
 export function hasTrivialCharacterPattern(password: string): boolean {
   if (password.length === 0) return false;
   const lower = password.toLowerCase();
-  const uniqueRatio = new Set(lower).size / lower.length;
-  if (uniqueRatio <= 0.25) return true;
+  const distinct = new Set(lower).size;
+  const uniqueRatio = distinct / lower.length;
+  if (uniqueRatio <= 0.25 && distinct <= MAX_REPEATED_CHARACTERS) return true;
   return isSimpleCharacterRun(lower);
 }
 
