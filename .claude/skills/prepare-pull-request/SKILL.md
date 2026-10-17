@@ -15,7 +15,7 @@ The rules live in the linked files; this page only orders the steps. If a link a
 
 ## 2. CHANGELOG
 
-When the change is operator-facing (a feature, a fix or a security change someone running Admitto would notice), add a bullet under `[Unreleased]` as part of the change, not at the end. Chores, tests, CI and agent-instruction changes get none. Rules and the release steps: [AGENTS.md, Changelog and releases](../../../AGENTS.md#changelog-and-releases).
+When the change is operator-facing (a feature, a fix or a security change someone running Admitto would notice), add a bullet under `[Unreleased]` as part of the change, not at the end: one line in the imperative, about 25 words at most, ending with a link to the pull request (add the link once the pull request has a number). Chores, tests, CI and agent-instruction changes get none. Rules and the release steps: [AGENTS.md, Changelog and releases](../../../AGENTS.md#changelog-and-releases).
 
 ## 3. The pull request body
 
