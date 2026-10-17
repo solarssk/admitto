@@ -217,7 +217,7 @@ Brute force is mitigated instead by:
 **Security alerts** (Organisation Settings → Notifications):
 
 - Repeated failed sign-ins on an admin or superadmin account also raise a security alert: an in-app notification and an email to the organisation's admins, plus the organisation's optional Discord, Slack or generic-JSON webhook.
-- Each alert type is switchable (all on by default).
+- Each of these channels can be switched on or off separately for each alert type (all on by default).
 - The same mechanism alerts on emergency two-factor bypass use, login or security settings changes, an admin sign-in from a new country and an admin or superadmin role being granted.
 - It also sends mandatory self-alerts to the account owner: a password or two-factor change, a sign-in from a new location, and a reused two-factor code.
 - Repeated failed MFA codes (`auth.mfa.repeated_failures`) are audit-only and send no notification.
