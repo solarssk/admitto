@@ -135,12 +135,17 @@ describe("EventRegistrationSettings", () => {
 
   it("accepts every mode and access method, and several methods at once", async () => {
     for (const mode of REGISTRATION_MODE) {
-      await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { mode } });
+      const saved = await prisma.eventRegistrationSettings.update({
+        where: { event_id: EVENT_ID },
+        data: { mode },
+      });
+      expect(saved.mode).toBe(mode);
     }
-    await prisma.eventRegistrationSettings.update({
+    const saved = await prisma.eventRegistrationSettings.update({
       where: { event_id: EVENT_ID },
       data: { access_methods: [...REGISTRATION_ACCESS_METHOD] },
     });
+    expect(saved.access_methods).toEqual([...REGISTRATION_ACCESS_METHOD]);
   });
 
   it("rejects an unknown mode, an unknown access method and a negative companion limit", async () => {

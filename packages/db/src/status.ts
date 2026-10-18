@@ -201,7 +201,6 @@ export const REGISTRATION_MAIL_TEMPLATE_NAME = [
   'ticket',
 ] as const satisfies RegistrationMailTemplateName[];
 
-/** RegistrationMail.status uses the EmailDelivery vocabulary (RegistrationMail_status_check). */
-export type RegistrationMailStatus = EmailDeliveryStatus;
-
+/** RegistrationMail.status uses the EmailDelivery vocabulary (RegistrationMail_status_check), so
+ * the type is `EmailDeliveryStatus`. */
 export const REGISTRATION_MAIL_STATUS = EMAIL_DELIVERY_STATUS;

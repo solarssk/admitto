@@ -48,7 +48,6 @@ export {
   type RegistrationMode,
   type RegistrationAccessMethod,
   type RegistrationMailTemplateName,
-  type RegistrationMailStatus,
 } from './status.js';
 
 export {
