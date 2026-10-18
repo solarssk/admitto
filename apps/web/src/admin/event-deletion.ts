@@ -35,6 +35,7 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, lockAttendeeJobQueue, writeAdminAuditLog } from "@admitto/tickets";
+import { DEFAULT_TEMPLATE_NAME, SYSTEM_TEMPLATE_NAMES } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import { deleteEventJobFilesBestEffort } from "./purge-export-files.js";
@@ -86,11 +87,15 @@ export async function countEventActivitySignals(
     db.ticketType.count({ where: { event_id: eventId, key: { not: STANDARD_TICKET_TYPE_KEY } } }),
     db.eventContact.count({ where: { event_id: eventId } }),
     db.eventResource.count({ where: { event_id: eventId } }),
-    // A saved `ticket` row is only an event-local override of the built-in default. It cannot
-    // be deleted on its own, but permanent event deletion can safely discard it. Only additional
-    // templates represent retained event content.
+    // A saved `ticket` row, or a registration-* system mail, is only an event-local override of a
+    // built-in default. Permanent event deletion can safely discard it (a `ticket` one cannot be
+    // deleted on its own). Only additional templates represent retained event content.
     db.mailTemplate.count({
-      where: { scope_type: "event", scope_id: eventId, name: { not: "ticket" } },
+      where: {
+        scope_type: "event",
+        scope_id: eventId,
+        name: { notIn: [DEFAULT_TEMPLATE_NAME, ...SYSTEM_TEMPLATE_NAMES] },
+      },
     }),
   ]);
   return {

@@ -9,7 +9,11 @@ import {
   DEFAULT_BODY_MJML,
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_TEMPLATE_NAME,
+  SYSTEM_TEMPLATE_NAMES,
   assertValidTemplate,
+  disallowedPlaceholdersForTemplate,
+  isReservedTemplateName,
+  isSystemTemplateName,
   assertRenderableCompiledHtml,
   compileTemplate,
   findMissingRequiredPlaceholders,
@@ -179,7 +183,11 @@ function disallowedWalletPlaceholders(event: EventWalletToggles): Set<string> {
  * `requireTicketPlaceholders` (default true) gates the ticket_url/qr_image_url check: it only
  * makes sense for the one template ticket delivery actually sends (name === DEFAULT_TEMPLATE_NAME)
  * - callers editing any other named template (a reminder, a wallet nudge, a general announcement)
- * pass false, since those have no reason to embed a ticket link or QR code at all. */
+ * pass false, since those have no reason to embed a ticket link or QR code at all.
+ *
+ * `templateName` (the row being saved or previewed) pulls the ticket, QR and wallet placeholders
+ * back out of the whitelist for a system mail (registration-*), which goes out before an
+ * attendee, and so a ticket, exists - the same `disallowed` mechanism as the wallet toggles. */
 async function collectTemplateSourceErrors(
   db: PrismaClient,
   eventId: string,
@@ -188,7 +196,12 @@ async function collectTemplateSourceErrors(
   {
     checkWalletAvailability = true,
     requireTicketPlaceholders = true,
-  }: { checkWalletAvailability?: boolean; requireTicketPlaceholders?: boolean } = {},
+    templateName,
+  }: {
+    checkWalletAvailability?: boolean;
+    requireTicketPlaceholders?: boolean;
+    templateName?: string;
+  } = {},
 ): Promise<string[]> {
   const errors: string[] = [];
   const { names: extraAllowed } = await resolveEventImageAssetVars(eventId, db);
@@ -197,6 +210,9 @@ async function collectTemplateSourceErrors(
         await db.event.findUniqueOrThrow({ where: { id: eventId }, select: WALLET_PLACEHOLDER_SELECT }),
       )
     : new Set<string>();
+  for (const name of (templateName ? disallowedPlaceholdersForTemplate(templateName) : undefined) ?? []) {
+    disallowed.add(name);
+  }
 
   for (const unknown of validateTemplate({ subject, body }, extraAllowed, disallowed)) {
     errors.push(`Unknown placeholder: ${unknown}`);
@@ -920,8 +936,14 @@ export async function handleExportEventDeliveries(c: Context, db: PrismaClient):
 const MAX_TEMPLATES_PER_EVENT = 10;
 const CREATE_TEMPLATE_MAX_ATTEMPTS = 5;
 
-/** Slug names reserved for system templates; custom create must not claim them. */
-const RESERVED_CUSTOM_TEMPLATE_NAMES = new Set(["ticket"]);
+/** Event templates that count toward the cap: system mails (registration-*) are the product's own
+ * and do not use up the organizer's ten. */
+const FREE_TEMPLATE_WHERE = (eventId: string) =>
+  ({
+    scope_type: "event",
+    scope_id: eventId,
+    name: { notIn: [...SYSTEM_TEMPLATE_NAMES] },
+  }) satisfies Prisma.MailTemplateWhereInput;
 
 class TemplateLimitReachedError extends Error {
   constructor() {
@@ -1005,8 +1027,7 @@ async function uniqueTemplateName(
   let n = 2;
   while (true) {
     const reserved =
-      options?.reserveSemanticNames === true &&
-      RESERVED_CUSTOM_TEMPLATE_NAMES.has(candidate);
+      options?.reserveSemanticNames === true && isReservedTemplateName(candidate);
     const exists =
       reserved ||
       !!(await db.mailTemplate.findUnique({
@@ -1082,6 +1103,9 @@ export type EventTemplateListItemDto = {
   template_format: TemplateFormat;
   subject_template: string;
   updated_at: string;
+  /** A system mail (registration-*): not a free template, so not counted toward the cap and not
+   * offered for bulk send. */
+  is_system: boolean;
 };
 
 export type EventTemplateDetailDto = EventTemplateListItemDto & {
@@ -1121,6 +1145,7 @@ export async function handleListEventTemplates(c: Context, db: PrismaClient): Pr
     template_format: row.template_format as TemplateFormat,
     subject_template: row.subject_template,
     updated_at: row.updated_at.toISOString(),
+    is_system: isSystemTemplateName(row.name),
   }));
 
   return c.json({ items });
@@ -1149,6 +1174,7 @@ export async function handleGetEventTemplateById(c: Context, db: PrismaClient): 
     body_template: row.body_template,
     compiled_html_template: row.compiled_html_template,
     updated_at: row.updated_at.toISOString(),
+    is_system: isSystemTemplateName(row.name),
   };
 
   return c.json(dto);
@@ -1215,6 +1241,7 @@ export async function handlePutEventTemplateById(
 
   const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
     requireTicketPlaceholders: existing.name === DEFAULT_TEMPLATE_NAME,
+    templateName: existing.name,
   });
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
@@ -1299,6 +1326,7 @@ export async function handlePatchEventTemplateMetadata(
     template_format: updated.template_format as TemplateFormat,
     subject_template: updated.subject_template,
     updated_at: updated.updated_at.toISOString(),
+    is_system: isSystemTemplateName(updated.name),
   } satisfies EventTemplateListItemDto);
 }
 
@@ -1320,9 +1348,7 @@ function createEventTemplateRow(
     // that handler's check and this create (Postgres default isolation is READ COMMITTED).
     await acquireEventImageAssetsLock(tx, eventId);
 
-    const eventCount = await tx.mailTemplate.count({
-      where: { scope_type: "event", scope_id: eventId },
-    });
+    const eventCount = await tx.mailTemplate.count({ where: FREE_TEMPLATE_WHERE(eventId) });
     if (eventCount >= MAX_TEMPLATES_PER_EVENT) {
       throw new TemplateLimitReachedError();
     }
@@ -1394,9 +1420,7 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const count = await db.mailTemplate.count({
-    where: { scope_type: "event", scope_id: eventId },
-  });
+  const count = await db.mailTemplate.count({ where: FREE_TEMPLATE_WHERE(eventId) });
   if (count >= MAX_TEMPLATES_PER_EVENT) {
     return c.json({ error: "template_limit_reached", limit: MAX_TEMPLATES_PER_EVENT }, 422);
   }
@@ -1442,6 +1466,7 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
           body_template: created.body_template,
           compiled_html_template: created.compiled_html_template,
           updated_at: created.updated_at.toISOString(),
+          is_system: isSystemTemplateName(created.name),
         } satisfies EventTemplateDetailDto,
         201,
       );
@@ -1500,6 +1525,7 @@ export async function handlePreviewEventTemplateById(
   const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
     checkWalletAvailability: false,
     requireTicketPlaceholders: existing.name === DEFAULT_TEMPLATE_NAME,
+    templateName: existing.name,
   });
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
