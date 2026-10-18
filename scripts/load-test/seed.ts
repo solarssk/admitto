@@ -53,7 +53,8 @@ const event = await prisma.event.create({
 });
 
 // Per-run tag so the seed can run again against the same database (emails are unique).
-const runTag = Date.now();
+// The workflow passes the tag so sse-listeners.mjs can rebuild the listener e-mails without reading them from the seed file.
+const runTag = process.env.LOAD_TEST_RUN_TAG ?? Date.now();
 type Account = { email: string; password: string };
 
 async function createOperators(
