@@ -7,7 +7,9 @@
  *
  * Refuses to run without E2E_SEED_ALLOW_WRITE=true (same deliberate opt-in as
  * apps/admin/e2e/seed.ts): it writes fixed-password accounts into whatever DATABASE_URL is set.
- * Arguments rather than env vars on purpose, so this stays out of the deploy env catalog.
+ * Needs LOAD_TEST_LISTENER_PASSWORD (the listeners' shared password) and optionally LOAD_TEST_RUN_TAG
+ * in the environment; the workflow sets both. Counts and the output path are arguments, so only
+ * these two load-test variables sit outside the deploy env catalog.
  */
 import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -39,6 +41,9 @@ if (
     "Usage: seed.ts <operators> <attendees> <contested> <listeners> <out.json>",
   );
 }
+
+const listenerPassword = process.env.LOAD_TEST_LISTENER_PASSWORD;
+if (!listenerPassword) throw new Error("LOAD_TEST_LISTENER_PASSWORD is required");
 
 const org = await prisma.organization.create({
   data: { name: "Load Test Org", slug: `load-test-org-${Date.now()}` },
@@ -87,8 +92,6 @@ async function createOperators(
 // One account per k6 VU; listeners are separate accounts for the SSE stream check (the stream is
 // capped at 3 concurrent connections per operator per event). The listeners share a password the
 // workflow passes in the environment, so it never travels through the seed file.
-const listenerPassword = process.env.LOAD_TEST_LISTENER_PASSWORD;
-if (!listenerPassword) throw new Error("LOAD_TEST_LISTENER_PASSWORD is required");
 const operators = await createOperators("operator", operatorCount);
 const listeners = (
   await createOperators("listener", listenerCount, listenerPassword)
