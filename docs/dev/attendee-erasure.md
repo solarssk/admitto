@@ -791,6 +791,11 @@ A pass whose request left no trace on the row at all. Only a request from before
 - **New column or table on an attendee?**
   - `packages/tickets/test/erasure-inventory.test.ts` fails until you decide what erasure does with it (cleared, kept, deleted).
   - Add the behaviour to `eraseAttendees` and its test too.
+- **A guest's registration is personal data too.**
+  - A `Registration` (the form submission) holds the name, address, answers and a companion of a person who may never become an attendee, and of an accepted one it keeps a copy after the attendee is erased.
+  - The inventory records `deleted` for every column, and `attendee_id` is a real relation so that the test finds the table. Whatever erases or removes an attendee must delete the registration as well: the one linked by `attendee_id`, and the one in the same event with the same address.
+  - `RegistrationMail` has no address or text of its own and goes with its registration (cascade).
+  - A new column on `Registration` gets its decision in the same pull request.
 - **Never reuse an erased row.**
   - `erased_at` is the marker. `status` is not (it drives capacity and issuing).
   - Code that sends, issues, edits or checks in an attendee must refuse an erased one.

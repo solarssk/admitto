@@ -152,3 +152,56 @@ export const ADMIN_JOB_STATUS = [
   'succeeded',
   'failed',
 ] as const satisfies AdminJobStatus[];
+
+/**
+ * Registration.status values (guest registration, D-B2). Backed by the CHECK constraint
+ * Registration_status_check. A deleted registration is a deleted row, not a status.
+ * - awaiting_email: the guest has not confirmed the address yet (no seat, no ticket)
+ * - pending: waits for an organiser's decision
+ * - waitlist: no free seat, kept in order of arrival
+ * - accepted: an Attendee exists (Registration.attendee_id is set exactly then)
+ * - rejected: turned down by an organiser
+ */
+export type RegistrationStatus = 'awaiting_email' | 'pending' | 'waitlist' | 'accepted' | 'rejected';
+
+export const REGISTRATION_STATUS = [
+  'awaiting_email',
+  'pending',
+  'waitlist',
+  'accepted',
+  'rejected',
+] as const satisfies RegistrationStatus[];
+
+/** EventRegistrationSettings.mode values; null (or no settings row) means registration is off. */
+export type RegistrationMode = 'automatic' | 'approval';
+
+export const REGISTRATION_MODE = ['automatic', 'approval'] as const satisfies RegistrationMode[];
+
+/** EventRegistrationSettings.access_methods entries (D-C1; exactly one per event in 0.8). */
+export type RegistrationAccessMethod = 'link' | 'password' | 'sso';
+
+export const REGISTRATION_ACCESS_METHOD = ['link', 'password', 'sso'] as const satisfies RegistrationAccessMethod[];
+
+/**
+ * RegistrationMail.template_name values (D-D1). 'ticket' only triggers the normal ticket send;
+ * the other four are the system templates (SYSTEM_TEMPLATE_NAMES in @admitto/mail-templates).
+ */
+export type RegistrationMailTemplateName =
+  | 'registration-confirm'
+  | 'registration-received'
+  | 'registration-waitlist'
+  | 'registration-rejected'
+  | 'ticket';
+
+export const REGISTRATION_MAIL_TEMPLATE_NAME = [
+  'registration-confirm',
+  'registration-received',
+  'registration-waitlist',
+  'registration-rejected',
+  'ticket',
+] as const satisfies RegistrationMailTemplateName[];
+
+/** RegistrationMail.status uses the EmailDelivery vocabulary (RegistrationMail_status_check). */
+export type RegistrationMailStatus = EmailDeliveryStatus;
+
+export const REGISTRATION_MAIL_STATUS = EMAIL_DELIVERY_STATUS;

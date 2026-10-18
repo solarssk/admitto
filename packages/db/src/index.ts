@@ -44,6 +44,11 @@ export {
   type AttendeeActionType,
   type AdminJobType,
   type AdminJobStatus,
+  type RegistrationStatus,
+  type RegistrationMode,
+  type RegistrationAccessMethod,
+  type RegistrationMailTemplateName,
+  type RegistrationMailStatus,
 } from './status.js';
 
 export {
@@ -59,6 +64,11 @@ export {
   MAX_ATTENDEE_NOTE_LENGTH,
   ADMIN_JOB_TYPE,
   ADMIN_JOB_STATUS,
+  REGISTRATION_STATUS,
+  REGISTRATION_MODE,
+  REGISTRATION_ACCESS_METHOD,
+  REGISTRATION_MAIL_TEMPLATE_NAME,
+  REGISTRATION_MAIL_STATUS,
 } from './status.js';
 
 export {
