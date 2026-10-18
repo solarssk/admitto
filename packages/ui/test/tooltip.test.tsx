@@ -320,6 +320,23 @@ describe("Tooltip", () => {
       expect(showTooltip().style.width).toBe("121px");
     });
 
+    it("adds the padding of a border-box bubble to its longest line", () => {
+      stubRects({ top: 200, bottom: 230, left: 100, right: 160 }, { width: 220, height: 40 });
+      Range.prototype.getClientRects = rects([120]);
+      const real = window.getComputedStyle.bind(window);
+      vi.spyOn(window, "getComputedStyle").mockImplementation((el) => {
+        const style = real(el);
+        return el.getAttribute("role") === "tooltip" ? ({ boxSizing: "border-box", paddingLeft: "8px", paddingRight: "8px" } as CSSStyleDeclaration) : style;
+      });
+      expect(showTooltip().style.width).toBe("137px");
+    });
+
+    it("does nothing for a bubble with no text to measure", () => {
+      stubRects({ top: 200, bottom: 230, left: 100, right: 160 }, { width: 220, height: 40 });
+      Range.prototype.getClientRects = rects([]);
+      expect(showTooltip().style.width).toBe("");
+    });
+
     it("leaves a bubble whose text fills it as it is", () => {
       stubRects({ top: 200, bottom: 230, left: 100, right: 160 }, { width: 100, height: 40 });
       Range.prototype.getClientRects = rects([100]);
