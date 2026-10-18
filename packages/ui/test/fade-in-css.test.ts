@@ -38,6 +38,12 @@ describe("content fade-in and held skeleton CSS (jsdom does not load the stylesh
     for (const selector of [".content > *", "dialog[open],"]) expect(reduced).toContain(selector);
   });
 
+  it("fades the content of every tab in the same way, next to the strip or as a tabpanel, with zero specificity and not under prefers-reduced-motion", () => {
+    expect(css).toMatch(/:where\(\.scroll-fade-tabs, \.at-tabs\) ~ \*,\s*:where\(\[role="tabpanel"\]\)\s*\{\s*animation:\s*at-fade-in 0\.15s/);
+    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)", css.indexOf("@keyframes at-dialog-panel-in")));
+    for (const selector of [":where(.scroll-fade-tabs, .at-tabs) ~ *", ':where([role="tabpanel"])']) expect(reduced).toContain(selector);
+  });
+
   it("holds a skeleton's space without painting it (and without exposing it to assistive tech)", () => {
     expect(declarationsOf(".at-loading-hold {")).toMatch(/visibility:\s*hidden/);
   });

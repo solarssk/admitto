@@ -296,4 +296,39 @@ describe("Tooltip", () => {
     expect([400 - 36 - 5, 440 + 5]).toContain(top);
     vi.unstubAllGlobals();
   });
+
+  describe("shrinking to the text", () => {
+    const rects = (widths: number[]) => () => widths.map((width) => ({ width })) as unknown as DOMRectList;
+
+    afterEach(() => {
+      delete (Range.prototype as unknown as { getClientRects?: unknown }).getClientRects;
+    });
+
+    function showTooltip() {
+      render(
+        <Tooltip content="This event is archived. Editing is disabled.">
+          <button>Do thing</button>
+        </Tooltip>,
+      );
+      fireEvent.focus(screen.getByRole("button", { name: "Do thing" }));
+      return screen.getByRole("tooltip");
+    }
+
+    it("narrows a bubble to its longest line, so wrapped text leaves no empty strip on the right", () => {
+      stubRects({ top: 200, bottom: 230, left: 100, right: 160 }, { width: 220, height: 40 });
+      Range.prototype.getClientRects = rects([120, 96]);
+      expect(showTooltip().style.width).toBe("121px");
+    });
+
+    it("leaves a bubble whose text fills it as it is", () => {
+      stubRects({ top: 200, bottom: 230, left: 100, right: 160 }, { width: 100, height: 40 });
+      Range.prototype.getClientRects = rects([100]);
+      expect(showTooltip().style.width).toBe("");
+    });
+
+    it("leaves the width to the stylesheet where a range cannot be measured", () => {
+      stubRects({ top: 200, bottom: 230, left: 100, right: 160 }, { width: 220, height: 40 });
+      expect(showTooltip().style.width).toBe("");
+    });
+  });
 });

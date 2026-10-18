@@ -207,7 +207,8 @@ export function EventsPickerPage() {
         ]}
       />
 
-      <section className="events-picker-body" aria-label="Event list">
+      {/* Keyed by the tab so that choosing the other list fades it in like every other tab content. */}
+      <section key={tab} className="events-picker-body" aria-label="Event list">
         {body}
       </section>
 

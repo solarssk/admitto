@@ -72,11 +72,13 @@ describe("the baseline: running text runs to the edge of its column, short stand
     expect(sets(bodyOf(base, "body"), "text-wrap", "pretty")).toBe(true);
   });
 
-  it("balances the texts that stand alone: headings, titles, an empty state, a toast and a tooltip", () => {
+  it("balances the texts that stand alone: headings, titles, an empty state and a toast", () => {
     const selector = base.find((r) => r.media === null && r.selector.startsWith("h1, h2, h3, h4, h5, h6,"))?.selector ?? "";
-    for (const part of ["h1", "h6", ".at-card__title", ".at-pageheader__title", ".at-empty-state__title", ".at-empty-state__desc", ".at-toast", '[role="tooltip"]']) {
+    for (const part of ["h1", "h6", ".at-card__title", ".at-pageheader__title", ".at-empty-state__title", ".at-empty-state__desc", ".at-toast"]) {
       expect(selector, part).toContain(part);
     }
+    // A tooltip box is as wide as the unbroken text, so balancing its lines only leaves an empty strip on the right.
+    expect(selector).not.toContain("tooltip");
     expect(sets(bodyOf(base, selector), "text-wrap", "balance")).toBe(true);
   });
 
@@ -280,7 +282,7 @@ describe("the pieces of the second review round (Reports chart, Danger zone, tab
 
   it("brings a notice into a dialog with the dialog, without a slide of its own, and not at all for reduced motion", () => {
     expect(bodyOf(loader, "dialog[open] .at-notice")).toMatch(/animation:\s*at-fade-in 0\.15s/);
-    expect(bodyOf(loader, ".at-fade-in, .content > *, dialog[open], dialog[open] .at-notice, dialog[open] > :not(.at-modal-backdrop, [class*=\"backdrop\"])", "@media (prefers-reduced-motion: reduce)")).toMatch(/animation:\s*none/);
+    expect(bodyOf(loader, ".at-fade-in, .content > *, :where(.scroll-fade-tabs, .at-tabs) ~ *, :where([role=\"tabpanel\"]), dialog[open], dialog[open] .at-notice, dialog[open] > :not(.at-modal-backdrop, [class*=\"backdrop\"])", "@media (prefers-reduced-motion: reduce)")).toMatch(/animation:\s*none/);
   });
 
   it("keeps the text under the wallet preview clear of the stacked layers that peek out under the card", () => {
