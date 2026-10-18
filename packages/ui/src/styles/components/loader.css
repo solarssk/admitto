@@ -235,6 +235,17 @@
   animation: at-fade-in 0.15s ease-out backwards;
 }
 
+/* Choosing a tab fades the new content in the same way wherever the tabs are (the attendee page, Users & roles, the Settings
+   tabs, Communication, Account): content that is mounted when its tab is chosen enters when it is added, and a panel that stays
+   mounted hidden enters when it is shown again (a box that goes from `display: none` to shown starts its animation again).
+   A panel that has the tabpanel role takes it too, for the pages whose panels are not next to the strip (Account).
+   `:where` keeps the specificity at zero, so content that animates on its own (a Notice, a loaded panel with `at-fade-in`) keeps
+   what it has. */
+:where(.scroll-fade-tabs, .at-tabs) ~ *,
+:where([role="tabpanel"]) {
+  animation: at-fade-in 0.15s ease-out backwards;
+}
+
 /* A dialog fades in with its dimmed backdrop over 150ms and its panel rises a few pixels over 180ms, instead of appearing in
    one frame. Leaving is done in script (`installDialogExitFade`, apps/admin): a dialog is removed from the page when it
    closes, so there is nothing left for CSS to animate. */
@@ -266,6 +277,8 @@ dialog[open] .at-notice {
 @media (prefers-reduced-motion: reduce) {
   .at-fade-in,
   .content > *,
+  :where(.scroll-fade-tabs, .at-tabs) ~ *,
+  :where([role="tabpanel"]),
   dialog[open],
   dialog[open] .at-notice,
   dialog[open] > :not(.at-modal-backdrop, [class*="backdrop"]) {

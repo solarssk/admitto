@@ -8,6 +8,11 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ## [Unreleased]
 
+### Fixed
+
+- Fade the content of every tab in, the same way: attendee page, Users & roles, Settings, Event settings, Account, events list ([#1746](https://github.com/solarssk/admitto/pull/1746))
+- Fit a tooltip to its longest line, so it no longer has an empty strip on its right ([#1746](https://github.com/solarssk/admitto/pull/1746))
+
 ## [0.7.6] - 2026-10-18
 
 ### Changed

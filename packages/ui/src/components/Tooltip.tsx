@@ -30,6 +30,23 @@ export interface TooltipProps {
   anchor?: string;
 }
 
+/**
+ * Narrows the bubble to its longest line. The bubble is as wide as the unbroken text, up to its maximum, and a text that then
+ * wraps is left with an empty strip on the right of its lines (no CSS makes a box shrink to wrapped text). Measured from the
+ * text itself; skipped where a browser cannot measure a range (jsdom).
+ */
+function fitToLongestLine(bubble: HTMLElement): void {
+  bubble.style.width = "";
+  const range = document.createRange();
+  range.selectNodeContents(bubble);
+  if (typeof range.getClientRects !== "function") return;
+  const longest = Math.max(0, ...Array.from(range.getClientRects(), (rect) => rect.width));
+  const style = getComputedStyle(bubble);
+  const padding = style.boxSizing === "border-box" ? Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight) : 0;
+  const fit = Math.ceil(longest + padding) + 1;
+  if (longest > 0 && fit < bubble.getBoundingClientRect().width) bubble.style.width = `${fit}px`;
+}
+
 const MARGIN = 5;
 const VIEWPORT_PADDING = 8;
 
@@ -77,6 +94,7 @@ export function Tooltip({ content, children, className, axis = "vertical", ancho
     if (!trigger || !bubble) return;
 
     const triggerRect = (anchor ? trigger.querySelector(anchor) : null)?.getBoundingClientRect() ?? trigger.getBoundingClientRect();
+    fitToLongestLine(bubble);
     const bubbleRect = bubble.getBoundingClientRect();
 
     if (axis === "horizontal") {
