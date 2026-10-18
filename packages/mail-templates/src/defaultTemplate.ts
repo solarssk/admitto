@@ -184,6 +184,16 @@ export function defaultTemplateLabel(name: string): string {
 
 const builtinCache = new Map<string, Promise<ResolvedTemplate>>();
 
+async function compileBuiltin(source: ReturnType<typeof getBuiltinTemplateSource>): Promise<ResolvedTemplate> {
+  const compiledHtmlTemplate = await compileTemplate(source.body, source.format);
+  return {
+    subjectTemplate: source.subject,
+    compiledHtmlTemplate,
+    templateFormat: source.format,
+    source: "builtin",
+  };
+}
+
 /** Pre-compiled built-in default (compiled once per name, lazily). `ticket` unless a name is
  * given. @throws UnknownBuiltinTemplateError for a name with no default. */
 export async function getBuiltinTemplate(
@@ -192,12 +202,7 @@ export async function getBuiltinTemplate(
   const cached = builtinCache.get(name);
   if (cached) return cached;
   const source = getBuiltinTemplateSource(name);
-  const compiling = (async (): Promise<ResolvedTemplate> => ({
-    subjectTemplate: source.subject,
-    compiledHtmlTemplate: await compileTemplate(source.body, source.format),
-    templateFormat: source.format,
-    source: "builtin",
-  }))().catch((err: unknown) => {
+  const compiling = compileBuiltin(source).catch((err: unknown) => {
     builtinCache.delete(name);
     throw err;
   });
