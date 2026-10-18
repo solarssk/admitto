@@ -262,3 +262,4 @@ export type {
 export type { EventOpsConfig } from "./ops-config.js";
 
 export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "./event-capacity.js";
+export { activeAttendeeWhere, countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "./event-seats.js";

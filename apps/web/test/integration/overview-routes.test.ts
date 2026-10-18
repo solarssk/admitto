@@ -8,7 +8,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import type { EventOverviewResponse } from "../../src/admin/overview-routes.js";
-import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
+import { CAPACITY_EXCLUDED_STATUSES, countActiveAttendees, countSeatsInUse } from "../../src/admin/event-capacity.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
@@ -895,6 +895,35 @@ describe("GET /api/admin/events/:eventId/overview", () => {
         data: { status: prior.status },
       });
     }
+  });
+
+  it("counts seats equal to the old active head count, with revoked and cancelled excluded", async () => {
+    const legacyCount = () =>
+      prisma.attendee.count({
+        where: { event_id: EVENT_MAIN, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
+      });
+    const before = await legacyCount();
+    expect(before).toBeGreaterThan(0);
+    expect(await countSeatsInUse(prisma, EVENT_MAIN)).toBe(before);
+    expect(await countActiveAttendees(prisma, EVENT_MAIN)).toBe(before);
+
+    const prior = await prisma.attendee.findMany({
+      where: { id: { in: [ATT_MAIN[0]!, ATT_MAIN[1]!] } },
+      select: { id: true, status: true },
+    });
+    try {
+      await prisma.attendee.update({ where: { id: ATT_MAIN[0]! }, data: { status: "revoked" } });
+      await prisma.attendee.update({ where: { id: ATT_MAIN[1]! }, data: { status: "cancelled" } });
+      expect(await countSeatsInUse(prisma, EVENT_MAIN)).toBe(before - 2);
+      expect(await countSeatsInUse(prisma, EVENT_MAIN)).toBe(await legacyCount());
+      // Heads and seats are separate functions that agree until a companion holds a second seat.
+      expect(await countActiveAttendees(prisma, EVENT_MAIN)).toBe(before - 2);
+    } finally {
+      for (const row of prior) {
+        await prisma.attendee.update({ where: { id: row.id }, data: { status: row.status } });
+      }
+    }
+    expect(await countSeatsInUse(prisma, EVENT_EMPTY)).toBe(0);
   });
 
   it("aggregates email delivery stats", async () => {

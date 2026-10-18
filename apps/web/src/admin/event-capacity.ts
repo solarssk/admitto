@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
+import { countSeatsInUse } from "@admitto/tickets";
 
 type CapacityDb = PrismaClient | Prisma.TransactionClient;
 
@@ -9,27 +10,9 @@ type CapacityDb = PrismaClient | Prisma.TransactionClient;
 // apps/web callers keep importing from this module.
 export { CAPACITY_EXCLUDED_STATUSES };
 
-/** Prisma where-clause for attendees that consume event capacity. */
-function activeAttendeeWhere(eventId: string) {
-  return {
-    event_id: eventId,
-    status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
-  };
-}
-
 export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "@admitto/tickets";
 
-/** Count attendees that consume event capacity (excludes revoked and cancelled). */
-export function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {
-  return db.attendee.count({ where: activeAttendeeWhere(eventId) });
-}
-
-/** Admitted attendees that still consume capacity (same scope as countActiveAttendees). */
-export function countActiveAdmittedAttendees(db: CapacityDb, eventId: string): Promise<number> {
-  return db.attendee.count({
-    where: { ...activeAttendeeWhere(eventId), admitted_at: { not: null } },
-  });
-}
+export { countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "@admitto/tickets";
 
 /** Audit metadata when a superadmin bypasses capacity with `?force=1`. */
 export type CapacityOverrideMeta = {
@@ -64,7 +47,7 @@ export async function assertEventCapacityForIncoming(
   });
   if (event?.capacity == null) return null;
 
-  const current = await countActiveAttendees(db, eventId);
+  const current = await countSeatsInUse(db, eventId);
   const projected = current + incomingCount;
   if (projected <= event.capacity) return null;
 
