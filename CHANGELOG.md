@@ -8,6 +8,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-10-18
+
 ### Fixed
 
 - Fade the content of every tab in, the same way: attendee page, Users & roles, Settings, Event settings, Account, events list ([#1746](https://github.com/solarssk/admitto/pull/1746))
@@ -1707,7 +1709,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add mail adapter groundwork ([#5](https://github.com/solarssk/admitto/pull/5))
 - Record the Gate 0 outcome: Power Automate as the MVP mail path, with Graph and SMTP as future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.7...HEAD
+[0.7.7]: https://github.com/solarssk/admitto/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/solarssk/admitto/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/solarssk/admitto/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/solarssk/admitto/compare/v0.7.3...v0.7.4
