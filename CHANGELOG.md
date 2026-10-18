@@ -8,6 +8,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-10-18
+
 ### Changed
 
 - Show times with no recorded time zone in UTC, the same for every viewer: Wallet card, Activity, delivery history, notes, import history, Recent activity ([#1743](https://github.com/solarssk/admitto/pull/1743))
@@ -1700,7 +1702,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add mail adapter groundwork ([#5](https://github.com/solarssk/admitto/pull/5))
 - Record the Gate 0 outcome: Power Automate as the MVP mail path, with Graph and SMTP as future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/solarssk/admitto/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/solarssk/admitto/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/solarssk/admitto/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/solarssk/admitto/compare/v0.7.2...v0.7.3
