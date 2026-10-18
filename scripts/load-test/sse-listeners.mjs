@@ -7,14 +7,18 @@
  * SIGTERM, then writes the counts to the output file. The workflow compares them with the number
  * of VALID check-ins in the database: every stream must have received exactly that many.
  *
- * Usage: BASE_URL=... node scripts/load-test/sse-listeners.mjs <seed.json> <out.json>
+ * Usage: BASE_URL=... LOAD_TEST_LISTENER_PASSWORD=... LOAD_TEST_RUN_TAG=... node scripts/load-test/sse-listeners.mjs <seed.json> <out.json>
  */
 import { readFile, writeFile } from "node:fs/promises";
 
 const BASE_URL = process.env.BASE_URL;
+const PASSWORD = process.env.LOAD_TEST_LISTENER_PASSWORD;
+const RUN_TAG = process.env.LOAD_TEST_RUN_TAG;
 const [seedPath, outPath] = process.argv.slice(2);
-if (!BASE_URL || !seedPath || !outPath) {
-  console.error("BASE_URL, <seed.json> and <out.json> are required");
+if (!BASE_URL || !PASSWORD || !RUN_TAG || !seedPath || !outPath) {
+  console.error(
+    "BASE_URL, LOAD_TEST_LISTENER_PASSWORD, LOAD_TEST_RUN_TAG, <seed.json> and <out.json> are required",
+  );
   process.exit(2);
 }
 
@@ -26,12 +30,13 @@ if (!/^[A-Za-z0-9_-]+$/.test(eventId))
 const streamUrl = `${BASE_URL}/api/checkin/events/${encodeURIComponent(eventId)}/stream`;
 const stop = new AbortController();
 
-async function login({ email, password }) {
+// The accounts seed.ts created, rebuilt from the run tag so nothing read from the seed file is sent to the server.
+async function login(i) {
+  const email = `load.listener.${RUN_TAG}.${i}@example.com`;
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: origin },
-    // codeql[js/file-access-to-http]: the throwaway accounts the seed step wrote are sent to the server under test, on purpose
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password: PASSWORD }),
   });
   if (!res.ok) throw new Error(`login failed for ${email}: ${res.status}`);
   const cookie = res.headers.getSetCookie().find((c) => /session/i.test(c));
@@ -91,7 +96,10 @@ async function listen(label, cookie) {
 }
 
 const sessions = await Promise.all(
-  seed.listeners.map(async (account, i) => ({ i, cookie: await login(account) })),
+  Array.from({ length: Number(seed.listeners.length) }, async (_, i) => ({
+    i,
+    cookie: await login(i),
+  })),
 );
 const running = sessions.flatMap(({ i, cookie }) =>
   [0, 1, 2].map((n) => listen(`listener${i}-stream${n}`, cookie)),

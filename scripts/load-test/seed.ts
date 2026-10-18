@@ -7,7 +7,9 @@
  *
  * Refuses to run without E2E_SEED_ALLOW_WRITE=true (same deliberate opt-in as
  * apps/admin/e2e/seed.ts): it writes fixed-password accounts into whatever DATABASE_URL is set.
- * Arguments rather than env vars on purpose, so this stays out of the deploy env catalog.
+ * Needs LOAD_TEST_LISTENER_PASSWORD (the listeners' shared password) and LOAD_TEST_RUN_TAG
+ * in the environment; the workflow sets both. Counts and the output path are arguments, so only
+ * these two load-test variables sit outside the deploy env catalog.
  */
 import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -40,6 +42,13 @@ if (
   );
 }
 
+const listenerPassword = process.env.LOAD_TEST_LISTENER_PASSWORD;
+// Per-run tag so the seed can run again against the same database (emails are unique); the workflow
+// passes it so sse-listeners.mjs can rebuild the listener e-mails without reading them from the seed file.
+const runTag = process.env.LOAD_TEST_RUN_TAG;
+if (!listenerPassword || !runTag)
+  throw new Error("LOAD_TEST_LISTENER_PASSWORD and LOAD_TEST_RUN_TAG are required");
+
 const org = await prisma.organization.create({
   data: { name: "Load Test Org", slug: `load-test-org-${Date.now()}` },
 });
@@ -52,18 +61,17 @@ const event = await prisma.event.create({
   },
 });
 
-// Per-run tag so the seed can run again against the same database (emails are unique).
-const runTag = Date.now();
 type Account = { email: string; password: string };
 
 async function createOperators(
   kind: string,
   count: number,
+  fixedPassword?: string,
 ): Promise<Account[]> {
   const accounts: Account[] = [];
   for (let i = 0; i < count; i++) {
     const email = `load.${kind}.${runTag}.${i}@example.com`;
-    const password = randomBytes(18).toString("base64");
+    const password = fixedPassword ?? randomBytes(18).toString("base64");
     const user = await createUser(prisma, { // NOSONAR - sequential on purpose: password hashing per account would otherwise spike CPU and the DB pool
       email,
       password,
@@ -83,9 +91,12 @@ async function createOperators(
 }
 
 // One account per k6 VU; listeners are separate accounts for the SSE stream check (the stream is
-// capped at 3 concurrent connections per operator per event).
+// capped at 3 concurrent connections per operator per event). The listeners share a password the
+// workflow passes in the environment, so it never travels through the seed file.
 const operators = await createOperators("operator", operatorCount);
-const listeners = await createOperators("listener", listenerCount);
+const listeners = (
+  await createOperators("listener", listenerCount, listenerPassword)
+).map(({ email }) => ({ email }));
 
 await prisma.attendee.createMany({
   data: Array.from({ length: attendeeCount }, (_, i) => ({
