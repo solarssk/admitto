@@ -121,6 +121,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   source_provider_unavailable:
     "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",
   stale_write: "Someone else changed this record. Reload and try again.",
+  system_template_not_sendable: "This is a system email and cannot be sent in bulk.",
   template_in_use: "This template already has deliveries and cannot be deleted.",
   template_limit_reached: "Template limit reached for this event.",
   template_name_conflict: "A template with this name already exists.",
