@@ -34,9 +34,9 @@ Admitto supports **internal corporate events**:
 5. Check-in on event day (operator UI).
 6. Export lists for reporting.
 
-**Planned:** an external, self-service registration/ingest API, and RSVP/calendar-invite flows.
+**Not built, not scheduled:** an external registration/ingest API, and RSVP/calendar-invite flows.
 
-**Out of MVP scope:** public self-registration portal, payments, CRM, vendor-hosted SaaS.
+**Out of MVP scope:** payments, CRM, vendor-hosted SaaS.
 
 ---
 
@@ -91,12 +91,12 @@ flowchart LR
   Guest[Guest] --> Checkin[Check-in\nscan or manual lookup]
   Checkin --> Core
   Core --> Export[Organizer export\n/ reports]
-  Ingest[External registration source\nplanned, not built] -.-> Core
+  Ingest[External registration source\nnot built, not scheduled] -.-> Core
 ```
 
 **Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped. See VERSIONING.md and the release tag for maturity status: shipped is not the same as production-ready.
 
-**Planned:** a self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control. Mention it to auditors as **planned**, not as existing.
+**Not built:** an external registration/ingest API (a third-party system submitting attendees directly into Admitto without staff re-keying them) is not scheduled and is not a deployed control. Mention it to auditors as **not existing**.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
 customer process (today, via staff-driven CSV/XLSX import).
