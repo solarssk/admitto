@@ -10,7 +10,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Added
 
-- Add rate limits for the upcoming public registration form, tunable with `RATE_LIMIT_OVERRIDES` (`registration:page`, `registration:submit`, `registration:confirm`, `registration:password`, `registration:event`, `registration:mail-recipient`)
+- Add rate limits for the upcoming public registration form, tunable with `RATE_LIMIT_OVERRIDES` (`registration:page`, `registration:submit`, `registration:confirm`, `registration:password`, `registration:event`, `registration:mail-recipient`) ([#1753](https://github.com/solarssk/admitto/pull/1753))
 
 ## [0.7.7] - 2026-10-18
 
