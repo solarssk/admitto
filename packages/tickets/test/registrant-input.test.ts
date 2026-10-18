@@ -33,9 +33,9 @@ describe("registrantNameSchema", () => {
     ["tab", "Ann\tBob"],
     ["DEL", "Ann\u007f"],
     ["C1 control", "Ann\u0085"],
-    ["right-to-left override U+202E", "Ann‮txt.exe"],
-    ["bidi isolate U+2067", "Ann⁧Bob"],
-    ["left-to-right mark", "Ann‎Bob"],
+    ["right-to-left override U+202E", "Ann\u202etxt.exe"],
+    ["bidi isolate U+2067", "Ann\u2067Bob"],
+    ["left-to-right mark", "Ann\u200eBob"],
     ["zero-width space", "An​n"],
     ["zero-width joiner", "An‍n"],
     ["word joiner", "An⁠n"],
@@ -114,7 +114,7 @@ describe("registrantEmailSchema", () => {
     ["CRLF header injection", "a@example.com\r\nBcc: b@example.com"],
     ["LF", "a@example.com\n"],
     ["NUL", "a\u0000@example.com"],
-    ["bidi override", "a@example.com‮"],
+    ["bidi override", "a@example.com\u202e"],
     ["zero-width space", "a​@example.com"],
     ["a lone surrogate", "a\uD800@example.com"],
     ["a non-ASCII look-alike", "аnn@example.com"],
@@ -128,7 +128,7 @@ describe("registrantEmailSchema", () => {
     const local = "a".repeat(64);
     const domain = `${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(57)}.com`;
     const address = `${local}@${domain}`;
-    expect(address.length).toBe(254);
+    expect(address).toHaveLength(254);
     expect(registrantEmailSchema.safeParse(address).success).toBe(true);
   });
 
@@ -252,7 +252,7 @@ describe("buildRegistrantCustomData", () => {
   it.each([
     ["NUL", "a\u0000b"],
     ["CRLF", "a\r\nb"],
-    ["U+202E", "a‮b"],
+    ["U+202E", "a\u202eb"],
     ["zero-width space", "a​b"],
     ["a lone surrogate", LONE_HIGH],
   ])("refuses %s in a text answer", (_label, value) => {

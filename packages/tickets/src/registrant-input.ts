@@ -54,24 +54,27 @@ function isInvisibleBmp(unit: number): boolean {
   return false;
 }
 
-/** True when `value` holds a C0 or C1 control (NUL, CR, LF, tab, DEL...), an invisible or
- * bidi-reordering character, a Unicode tag character, or a UTF-16 surrogate that is not half of
- * a valid pair. A loop, not a regex: no backtracking, no control characters in a pattern. */
+/** A UTF-16 unit that is a C0 or C1 control (NUL, CR, LF, tab, DEL...), a surrogate that is not half
+ * of a valid pair, or an invisible or bidi-reordering character. */
+function isForbiddenUnit(unit: number): boolean {
+  if (unit < 0x20 || (unit >= 0x7f && unit <= 0x9f)) return true;
+  if (unit >= 0xd800 && unit <= 0xdfff) return true;
+  return isInvisibleBmp(unit);
+}
+
+/** True when `value` holds a forbidden character: see `isForbiddenUnit`, plus a Unicode tag
+ * character. `codePointAt` returns a whole code point for a valid pair and the bare unit for a
+ * lone surrogate, so a surrogate left in `isForbiddenUnit` is always a lone one. A loop, not a
+ * regex: no backtracking, no control characters in a pattern. */
 function hasForbiddenCharacter(value: string): boolean {
   for (let i = 0; i < value.length; i += 1) {
-    const unit = value.charCodeAt(i);
-    if (unit < 0x20 || (unit >= 0x7f && unit <= 0x9f)) return true;
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = value.charCodeAt(i + 1);
-      // NaN at the end of the string fails both comparisons: a trailing high surrogate is lone.
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
-      const codePoint = value.codePointAt(i) ?? 0;
+    const codePoint = value.codePointAt(i) ?? 0;
+    if (codePoint > 0xffff) {
       if (codePoint >= 0xe0000 && codePoint <= 0xe007f) return true;
       i += 1;
-      continue;
+    } else if (isForbiddenUnit(codePoint)) {
+      return true;
     }
-    if (unit >= 0xdc00 && unit <= 0xdfff) return true;
-    if (isInvisibleBmp(unit)) return true;
   }
   return false;
 }
@@ -79,8 +82,7 @@ function hasForbiddenCharacter(value: string): boolean {
 function codePointLength(value: string): number {
   let length = 0;
   for (let i = 0; i < value.length; i += 1) {
-    const unit = value.charCodeAt(i);
-    if (unit >= 0xd800 && unit <= 0xdbff) i += 1;
+    if ((value.codePointAt(i) ?? 0) > 0xffff) i += 1;
     length += 1;
   }
   return length;
