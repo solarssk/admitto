@@ -7,7 +7,7 @@
  *
  * Refuses to run without E2E_SEED_ALLOW_WRITE=true (same deliberate opt-in as
  * apps/admin/e2e/seed.ts): it writes fixed-password accounts into whatever DATABASE_URL is set.
- * Needs LOAD_TEST_LISTENER_PASSWORD (the listeners' shared password) and optionally LOAD_TEST_RUN_TAG
+ * Needs LOAD_TEST_LISTENER_PASSWORD (the listeners' shared password) and LOAD_TEST_RUN_TAG
  * in the environment; the workflow sets both. Counts and the output path are arguments, so only
  * these two load-test variables sit outside the deploy env catalog.
  */
@@ -43,7 +43,11 @@ if (
 }
 
 const listenerPassword = process.env.LOAD_TEST_LISTENER_PASSWORD;
-if (!listenerPassword) throw new Error("LOAD_TEST_LISTENER_PASSWORD is required");
+// Per-run tag so the seed can run again against the same database (emails are unique); the workflow
+// passes it so sse-listeners.mjs can rebuild the listener e-mails without reading them from the seed file.
+const runTag = process.env.LOAD_TEST_RUN_TAG;
+if (!listenerPassword || !runTag)
+  throw new Error("LOAD_TEST_LISTENER_PASSWORD and LOAD_TEST_RUN_TAG are required");
 
 const org = await prisma.organization.create({
   data: { name: "Load Test Org", slug: `load-test-org-${Date.now()}` },
@@ -57,9 +61,6 @@ const event = await prisma.event.create({
   },
 });
 
-// Per-run tag so the seed can run again against the same database (emails are unique).
-// The workflow passes the tag so sse-listeners.mjs can rebuild the listener e-mails without reading them from the seed file.
-const runTag = process.env.LOAD_TEST_RUN_TAG ?? Date.now();
 type Account = { email: string; password: string };
 
 async function createOperators(
