@@ -10,7 +10,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Security
 
-- Add a strict nonce-based security policy and a uniform not-found page for the coming public registration form ([#PR](https://github.com/solarssk/admitto/pull/PR))
+- Add a strict nonce-based security policy and a uniform not-found page for the coming public registration form ([#1752](https://github.com/solarssk/admitto/pull/1752))
 
 ## [0.7.7] - 2026-10-18
 
