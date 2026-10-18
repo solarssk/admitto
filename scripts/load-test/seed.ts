@@ -59,11 +59,12 @@ type Account = { email: string; password: string };
 async function createOperators(
   kind: string,
   count: number,
+  fixedPassword?: string,
 ): Promise<Account[]> {
   const accounts: Account[] = [];
   for (let i = 0; i < count; i++) {
     const email = `load.${kind}.${runTag}.${i}@example.com`;
-    const password = randomBytes(18).toString("base64");
+    const password = fixedPassword ?? randomBytes(18).toString("base64");
     const user = await createUser(prisma, { // NOSONAR - sequential on purpose: password hashing per account would otherwise spike CPU and the DB pool
       email,
       password,
@@ -83,9 +84,14 @@ async function createOperators(
 }
 
 // One account per k6 VU; listeners are separate accounts for the SSE stream check (the stream is
-// capped at 3 concurrent connections per operator per event).
+// capped at 3 concurrent connections per operator per event). The listeners share a password the
+// workflow passes in the environment, so it never travels through the seed file.
+const listenerPassword = process.env.LOAD_TEST_LISTENER_PASSWORD;
+if (!listenerPassword) throw new Error("LOAD_TEST_LISTENER_PASSWORD is required");
 const operators = await createOperators("operator", operatorCount);
-const listeners = await createOperators("listener", listenerCount);
+const listeners = (
+  await createOperators("listener", listenerCount, listenerPassword)
+).map(({ email }) => ({ email }));
 
 await prisma.attendee.createMany({
   data: Array.from({ length: attendeeCount }, (_, i) => ({

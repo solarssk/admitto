@@ -97,6 +97,9 @@ jobs:
       # the 512 attendees are the contested set, the rest are admitted once each; 2 more accounts
       # listen to the live check-in stream.
       # Runs from apps/web because tsx is installed there, not hoisted to the repo root.
+      - name: Pick a throwaway password for the stream listeners
+        # Shared by seed.ts and sse-listeners.mjs through the environment, not the seed file.
+        run: echo "LOAD_TEST_LISTENER_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
       - name: Seed operators and attendees
         working-directory: apps/web
         run: node --import tsx ../../scripts/load-test/seed.ts 9 512 12 2 "$RUNNER_TEMP/load-seed.json"

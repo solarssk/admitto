@@ -5,3 +5,5 @@ semgrep==1.180.0
 # NOTE: semgrep-requirements.txt hand-pins pyjwt==2.15.0 (security fixes), outside semgrep's own
 # `pyjwt~=2.13.0` range. Regenerating with pip-compile reverts it to 2.13.0 until semgrep relaxes
 # that range - see the --no-deps note in semgrep.yml before regenerating.
+# The .txt also hand-pins mcp==1.30.0 (fixes GHSA-84m7-p3x7-pcfv) while semgrep 1.180.0 declares
+# `mcp==1.29.0`; same --no-deps reason, and `semgrep scan` never starts an MCP server.

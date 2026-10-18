@@ -7,14 +7,17 @@
  * SIGTERM, then writes the counts to the output file. The workflow compares them with the number
  * of VALID check-ins in the database: every stream must have received exactly that many.
  *
- * Usage: BASE_URL=... node scripts/load-test/sse-listeners.mjs <seed.json> <out.json>
+ * Usage: BASE_URL=... LOAD_TEST_LISTENER_PASSWORD=... node scripts/load-test/sse-listeners.mjs <seed.json> <out.json>
  */
 import { readFile, writeFile } from "node:fs/promises";
 
 const BASE_URL = process.env.BASE_URL;
+const PASSWORD = process.env.LOAD_TEST_LISTENER_PASSWORD;
 const [seedPath, outPath] = process.argv.slice(2);
-if (!BASE_URL || !seedPath || !outPath) {
-  console.error("BASE_URL, <seed.json> and <out.json> are required");
+if (!BASE_URL || !PASSWORD || !seedPath || !outPath) {
+  console.error(
+    "BASE_URL, LOAD_TEST_LISTENER_PASSWORD, <seed.json> and <out.json> are required",
+  );
   process.exit(2);
 }
 
@@ -26,12 +29,11 @@ if (!/^[A-Za-z0-9_-]+$/.test(eventId))
 const streamUrl = `${BASE_URL}/api/checkin/events/${encodeURIComponent(eventId)}/stream`;
 const stop = new AbortController();
 
-async function login({ email, password }) {
+async function login({ email }) {
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: origin },
-    // codeql[js/file-access-to-http]: the throwaway accounts the seed step wrote are sent to the server under test, on purpose
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password: PASSWORD }),
   });
   if (!res.ok) throw new Error(`login failed for ${email}: ${res.status}`);
   const cookie = res.headers.getSetCookie().find((c) => /session/i.test(c));
