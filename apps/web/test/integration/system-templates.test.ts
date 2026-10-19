@@ -205,6 +205,19 @@ describe("system (registration-*) mail templates", () => {
     expect(res.status).toBe(200);
   });
 
+  it("refuses the registration-only placeholders on a new free-form template at preflight", async () => {
+    const res = await api("/templates", {
+      method: "POST",
+      body: {
+        label: "Free with contact",
+        template_format: "html",
+        subject_template: "Hello",
+        body_template: "<p>{{contact_line}} {{confirm_url}}</p>",
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("keeps requiring ticket_url on the ticket template and still allows it there", async () => {
     const row = await insertSystemRow("ticket");
     const without = await api(`/templates/${row.id}`, {

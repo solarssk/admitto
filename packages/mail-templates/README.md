@@ -29,7 +29,8 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 | `apple_wallet_url`, `google_wallet_url` | Optional add-to-wallet links, filled per attendee when the event has wallet configured and that platform enabled (they open the Admitto redirect route that creates or reuses the pass); empty otherwise |
 | `download_page_url` | Reserved - always empty today |
 | `confirm_url` | Signed e-mail confirmation link of a guest registration (`buildConfirmUrl` in `@admitto/mail-delivery`). An optional URL placeholder, not required; only `registration-confirm` carries a value |
-| `contact_name`, `contact_email` | Who the guest writes to: the first event contact with an e-mail by `sort_order`, else the organization's support contact (`resolveEventContactVars`). Empty when neither exists. Real ticket sends do not fill them yet |
+| `contact_name`, `contact_email` | Who the guest writes to: the first event contact with an e-mail by `sort_order`, else the organization's support contact (`resolveEventContactVars`). Empty when neither exists. Refused at save time outside registration mails |
+| `contact_line` | The whole sentence "Questions? Contact NAME at EMAIL.", or empty when there is no contact. Every built-in registration body uses it. Refused at save time outside registration mails |
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.
 

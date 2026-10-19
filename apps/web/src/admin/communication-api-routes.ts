@@ -210,7 +210,8 @@ async function collectTemplateSourceErrors(
         await db.event.findUniqueOrThrow({ where: { id: eventId }, select: WALLET_PLACEHOLDER_SELECT }),
       )
     : new Set<string>();
-  for (const name of (templateName ? disallowedPlaceholdersForTemplate(templateName) : undefined) ?? []) {
+  // No name means a ticket or a new free-form template: both refuse the registration-only values.
+  for (const name of disallowedPlaceholdersForTemplate(templateName ?? DEFAULT_TEMPLATE_NAME)) {
     disallowed.add(name);
   }
 
