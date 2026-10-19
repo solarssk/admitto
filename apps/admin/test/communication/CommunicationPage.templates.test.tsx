@@ -555,6 +555,36 @@ describe("CommunicationPage templates", () => {
     expect(screen.getByRole("button", { name: "Template, Reminder" })).toBeTruthy();
   });
 
+  it("keeps a registration template out of the Send tab's picker and replaces the send form with a note", async () => {
+    const systemRow = {
+      ...reminderRow,
+      id: "tpl-sys",
+      name: "registration-received",
+      label: "Registration: received",
+      is_system: true,
+    };
+    fetchEventTemplates.mockResolvedValue([ticketRow, systemRow]);
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) =>
+      id === "tpl-sys"
+        ? { ...systemRow, body_template: "<p>Received</p>", compiled_html_template: "<p>Received</p>" }
+        : { ...ticketRow, body_template: "<p>Ticket</p>", compiled_html_template: "<p>Ticket</p>" },
+    );
+
+    await renderTemplatesTab();
+    await selectTemplate("Registration: received");
+    await waitFor(() => {
+      expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-sys");
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
+
+    expect(await screen.findByText(/cannot be sent in bulk/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    expect(screen.queryByRole("button", { name: "Registration: received" })).toBeNull();
+  });
+
   it("disables Edit with an explanatory tooltip for the virtual ticket entry, enables it for a real template", async () => {
     fetchEventTemplates.mockResolvedValue([reminderRow]);
 

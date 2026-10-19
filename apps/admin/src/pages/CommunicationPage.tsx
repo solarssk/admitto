@@ -685,6 +685,9 @@ function SendTab({
   }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
 
   const templateDescription = activeTemplateDescription(activeKey, templates);
+  // The selection is shared with the Templates tab: a registration template opened there is not
+  // one this tab can send (the server answers 422), so say so instead of offering a doomed send.
+  const activeIsSystem = templates.find((t) => t.id === activeKey)?.is_system === true;
 
   return (
     <div className="communication-send-tab">
@@ -735,13 +738,24 @@ function SendTab({
         </Card>
       )}
 
-      <CommunicationSendPanel
-        event={event}
-        eventId={eventId}
-        templateId={sendTemplateId}
-        snapshotMissing={editorSnapshotMissing}
-        isDirty={isDirty}
-      />
+      {activeIsSystem ? (
+        isActive && (
+          <Card title="Send">
+            <Notice variant="info">
+              Registration messages are sent automatically and cannot be sent in bulk. Pick another
+              template above to send.
+            </Notice>
+          </Card>
+        )
+      ) : (
+        <CommunicationSendPanel
+          event={event}
+          eventId={eventId}
+          templateId={sendTemplateId}
+          snapshotMissing={editorSnapshotMissing}
+          isDirty={isDirty}
+        />
+      )}
     </div>
   );
 }
