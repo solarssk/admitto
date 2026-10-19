@@ -33,7 +33,7 @@ Open **Organisation settings**. Save one area at a time and verify the visible r
 
 One consolidated tab for organisation name, logo, colour palette, built-in fonts and custom font uploads, with one shared Save and Reset.
 
-- **Theme by surface:** the Admin panel's colour and font pick are the instance's base. The Ticket page can keep matching the Admin panel automatically (**Same as Admin panel**), or use its own colour and font, independently of each other. The Registration form's controls are reserved for a future registration surface and stay disabled.
+- **Theme by surface:** the Admin panel's colour and font pick are the instance's base. The Ticket page can keep matching the Admin panel automatically (**Same as Admin panel**), or use its own colour and font, independently of each other. The Registration form's controls are not available yet and stay disabled.
 - **Logo upload:** uploading a logo opens an adjust popup, so you can trim margins before saving. Transparent PNG and WebP keep their transparency.
 - **Re-crop behaviour:** **Edit image** restores the last crop and zoom after Save and reload, because Admitto keeps the full upload for re-edit. Organisation logos uploaded before crop persistence need one full-file upload the first time you re-crop. Later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto.
 
