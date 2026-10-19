@@ -64,6 +64,14 @@ describe("registrantNameSchema", () => {
     expect(registrantNameSchema.safeParse(value).success).toBe(false);
   });
 
+  it.each(["Ann:", "Ann: Bob", ":x", "12:30", "-:x", "Dr. :x"])("accepts a colon that is not part of a scheme: %s", (value) => {
+    expect(registrantNameSchema.safeParse(value).success).toBe(true);
+  });
+
+  it("finds a scheme later in the text, after an earlier colon that is not one", () => {
+    expect(registrantNameSchema.safeParse("Ann: see https:evil.example").success).toBe(false);
+  });
+
   it("counts code points, so 100 emoji fit and 101 do not", () => {
     expect(registrantNameSchema.safeParse("😀".repeat(100)).success).toBe(true);
     expect(registrantNameSchema.safeParse("😀".repeat(101)).success).toBe(false);

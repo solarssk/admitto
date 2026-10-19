@@ -125,14 +125,31 @@ export const registrantNameSchema = registrantTextSchema(REGISTRANT_NAME_MAX).re
   "invalid_name",
 );
 
-const URL_SCHEME = /[a-z][a-z0-9+.-]*:\S/;
+const SCHEME_CHARACTERS = /[a-z0-9+.-]/;
+
+/** True for `scheme:` followed by text: a colon right after a run of scheme characters that holds a
+ * letter, then a non-space. One pass over the string; a regex for this backtracks. */
+function hasSchemeColon(lower: string): boolean {
+  for (let colon = lower.indexOf(":"); colon !== -1; colon = lower.indexOf(":", colon + 1)) {
+    const next = lower.charAt(colon + 1);
+    if (next === "" || /\s/.test(next)) continue;
+    let start = colon;
+    let hasLetter = false;
+    while (start > 0 && SCHEME_CHARACTERS.test(lower.charAt(start - 1))) {
+      start -= 1;
+      if (lower.charAt(start) >= "a" && lower.charAt(start) <= "z") hasLetter = true;
+    }
+    if (start < colon && hasLetter) return true;
+  }
+  return false;
+}
 
 function looksLikeLinkOrAddress(value: string): boolean {
   if (value.includes("@") || value.includes("://")) return true;
   const lower = value.toLowerCase();
   // Any `scheme:` followed by text: `https:evil.example` is a link to a URL parser even without
   // the slashes, and so are `mailto:`, `javascript:` and `data:`.
-  return lower.includes("www.") || URL_SCHEME.test(lower);
+  return lower.includes("www.") || hasSchemeColon(lower);
 }
 
 /** An e-mail address as stored: trimmed, lower case, at most 254 characters, a valid address, and
