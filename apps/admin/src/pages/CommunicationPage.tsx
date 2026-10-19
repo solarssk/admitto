@@ -12,6 +12,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
+import { disallowedPlaceholdersForTemplate } from "@admitto/mail-templates/systemTemplates";
 import { useBlocker, useOutletContext, useParams, useSearchParams } from "react-router";
 import type { EditorView, ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
@@ -738,16 +739,17 @@ function SendTab({
         </Card>
       )}
 
-      {activeIsSystem ? (
-        isActive && (
-          <Card title="Send">
-            <Notice variant="info">
-              Registration messages are sent automatically and cannot be sent in bulk. Pick another
-              template above to send.
-            </Notice>
-          </Card>
-        )
-      ) : (
+      {/* Stays mounted either way: unmounting it would abort the status poll of a bulk send that
+          is still running when the operator opens a registration template on the Templates tab. */}
+      {activeIsSystem && isActive && (
+        <Card title="Send">
+          <Notice variant="info">
+            Registration messages are sent automatically and cannot be sent in bulk. Pick another
+            template above to send.
+          </Notice>
+        </Card>
+      )}
+      <div hidden={activeIsSystem}>
         <CommunicationSendPanel
           event={event}
           eventId={eventId}
@@ -755,7 +757,7 @@ function SendTab({
           snapshotMissing={editorSnapshotMissing}
           isDirty={isDirty}
         />
-      )}
+      </div>
     </div>
   );
 }
@@ -2080,7 +2082,9 @@ function CommunicationPageBody({
                 event={event}
                 activeKey={activeKey}
                 activeTemplateName={activeTemplateName}
-                allowedPlaceholders={allowedPlaceholders}
+                allowedPlaceholders={allowedPlaceholders.filter(
+                  (p) => !disallowedPlaceholdersForTemplate(activeTemplateName).has(p),
+                )}
                 imagePlaceholders={imagePlaceholders}
                 // Backend only enforces ticket_url/qr_image_url for the "ticket" template
                 // (see requireTicketPlaceholders, communication-api-routes.ts) - the "required"
