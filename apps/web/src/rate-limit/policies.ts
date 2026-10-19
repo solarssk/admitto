@@ -61,12 +61,15 @@ function authUserScopedPolicy(
   };
 }
 
-/** Shared shape for anonymous routes limited per client IP. */
+/** Shared shape for anonymous routes limited per client IP. `log` false is the variant without
+ * `logOnExceeded`, for routes anyone can hammer: every rejected request would otherwise write an
+ * audit entry and push real diagnostics out of the 1000-entry system-log buffer. */
 function ipScopedPolicy(
   keyPrefix: string,
   scope: RateLimitScope,
   max: number,
   windowMs = 60_000,
+  log: { keyHint?: string } | false = {},
 ): RatePolicy {
   return {
     checks: [
@@ -74,7 +77,7 @@ function ipScopedPolicy(
         keyOf: (c) => `${keyPrefix}:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs,
         max,
-        logOnExceeded: { scope },
+        ...(log ? { logOnExceeded: { scope, ...log } } : {}),
       },
     ],
   };
@@ -97,6 +100,13 @@ export const INLINE_RATE_LIMITS = {
   /** Per-event ceiling on signature-verified PassCreator deliveries (retryEnabled bursts of one
    * event must not throttle another's). Checked by the webhook handler after verification. */
   "wallet:webhook-event": { windowMs: 60_000, max: 120 },
+  /** Per-event ceiling on public registrations. Checked by the handler only after the event is
+   * found (so the key is a real event id, never a caller-chosen slug) and after the bot
+   * challenge has passed, so a bot without a valid token cannot spend it. */
+  "registration:event": { windowMs: 60_000, max: 600 },
+  /** Mails to one address (HMAC of the lowercased address), instance-wide, across all events.
+   * Gates only the queueing of a registration mail; the response to the registrant is unchanged. */
+  "registration:mail-recipient": { windowMs: 24 * 3_600_000, max: 3 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -840,6 +850,19 @@ export const RATE_POLICIES = {
     ],
   },
   "checkin:stream": checkinStreamPolicy(CHECKIN_STREAM_LIMITS),
+  /** Public registration form (`/r/*`). Per IP, collapsed to the /64 for IPv6, and deliberately
+   * generous: the audience is staff of one company behind one NAT (see `public:tq`). The real
+   * brakes are the bot challenge and the per-address mail limit. No slug in any key: the slug is a
+   * caller-chosen path segment, so a per-slug bucket would let anyone starve an event and mint
+   * unbounded keys. The per-event ceiling is `registration:event` (inline, after the challenge).
+   * Page, submit and confirm are quiet (no `logOnExceeded`): see {@link ipScopedPolicy}. */
+  "registration:page": ipScopedPolicy("registration:page", "registration", 300, 60_000, false),
+  "registration:submit": ipScopedPolicy("registration:submit", "registration", 120, 60_000, false),
+  "registration:confirm": ipScopedPolicy("registration:confirm", "registration", 120, 60_000, false),
+  /** Shared event password: guessing it is the one anonymous attempt worth an audit entry. */
+  "registration:password": ipScopedPolicy("registration:password", "registration", 10, 15 * 60_000, {
+    keyHint: "password",
+  }),
 } as const satisfies Record<string, RatePolicy>;
 
 // Operator overrides (RATE_LIMIT_OVERRIDES) are applied once, here, before any middleware reads a
@@ -1015,9 +1038,9 @@ export async function checkAccountPasswordRateLimit(
  * app's existing {@link getEncryptionKey}, domain-separated by prefixing the input (not deriving
  * a new key) - the standard, safe way to reuse one HMAC key for more than one purpose without a
  * key-derivation step this codebase doesn't otherwise have. */
-function hashRecipientForRateLimit(recipientEmail: string): string {
+function hashRecipientForRateLimit(recipientEmail: string, purpose = "mail-test-recipient"): string {
   return createHmac("sha256", getEncryptionKey())
-    .update(`mail-test-recipient:${recipientEmail.toLowerCase()}`)
+    .update(`${purpose}:${recipientEmail.toLowerCase()}`)
     .digest("hex");
 }
 
@@ -1045,6 +1068,29 @@ export async function checkMailTestRecipientRateLimit(
     return false;
   }
   return true;
+}
+
+/** Per-event ceiling on public registrations (inline, not middleware). Call it only after the bot
+ * challenge has passed and the event is found: the key is `event.id`, never the slug from the URL.
+ * False when the event's budget is spent. Silent: every use would otherwise write an audit entry. */
+export async function checkRegistrationEventRateLimit(
+  store: RateLimitStore,
+  eventId: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:event"];
+  return (await store.hit(`registration:event:${eventId}`, windowMs, max)).allowed;
+}
+
+/** Instance-wide budget of registration mails to one address (inline, not middleware). The
+ * address enters the store only as a keyed hash. False means "do not queue the mail"; the caller
+ * still answers the registrant exactly as before. Silent, like {@link checkRegistrationEventRateLimit}. */
+export async function checkRegistrationMailRecipientRateLimit(
+  store: RateLimitStore,
+  recipientEmail: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:mail-recipient"];
+  const tag = hashRecipientForRateLimit(recipientEmail.trim(), "registration-mail-recipient");
+  return (await store.hit(`registration:mail-recipient:${tag}`, windowMs, max)).allowed;
 }
 
 /** {@link checkMailTestRecipientRateLimit} plus the "resolve IP, and on failure return the 429"

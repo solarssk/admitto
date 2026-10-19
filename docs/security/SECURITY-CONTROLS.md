@@ -303,6 +303,7 @@ Application throttles use a fixed window (default **60 seconds** unless noted).
 
 - `REDIS_URL` (with a password of at least 16 characters) is required outside development and test. The application refuses to boot without it, so limits are shared across replicas and survive restarts.
 - Only development and test runs fall back to an in-memory store per process.
+- If Redis becomes unreachable while running, the store falls back to an in-memory limiter per process and logs a warning. Limits keep being enforced (per process, not shared); no route fails open or closed on this.
 
 **Retuning limits.**
 
@@ -334,12 +335,23 @@ Application throttles use a fixed window (default **60 seconds** unless noted).
 | all `/api/account/*` routes except the notification unread-count poll (see the third note) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
+| `GET /r/:slug` (public registration form) | client IP | 300 / 60 s | no |
+| `POST /r/:slug` (registration submit) | client IP; then event, after the bot challenge | 120 / 60 s; 600 / 60 s per event | no |
+| `GET`/`POST /r/:slug/confirm/:token` (address confirmation) | client IP | 120 / 60 s | no |
+| registration password check | client IP | 10 / 15 min | no |
+| registration mail to one address | address (keyed hash), whole instance | 3 / 24 h | no |
 
 Notes on the rows above:
 
 - **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
 - **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
 - **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
+- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event` and `registration:mail-recipient` limits, exist before the routes that use them; the routes arrive with the registration form.
+  - **Per IP, generous on purpose.** The audience is staff of one company, often behind one NAT, so the per-IP numbers are high (compare `/t`, 500 / 60 s) and an IPv6 client is keyed by its /64 network. The bot challenge and the per-address mail limit are the real brakes. Raise or lower them with `RATE_LIMIT_OVERRIDES`, for example `{"registration:submit":{"max":30}}`.
+  - **No slug in any key.** The slug is a caller-chosen path segment, so a bucket per slug would let anyone starve an event and create unbounded keys. The per-event ceiling (`registration:event`) is keyed by event id and is counted only after the bot challenge has passed and the event is found.
+  - **Quiet when exceeded.** Page, submit and confirm do not write an `auth.rate_limit.exceeded` entry, because anyone can trigger them and would flush the 1000-entry system-log buffer. Only the password limit does (scope `registration`), as an attempt to guess the shared event password is worth a trace.
+  - **Mail per address.** Counts only the queueing of a registration mail; the registrant gets the same answer either way. The address enters the store only as a keyed hash, with a prefix of its own, so it never matches the test-send tag of the same address.
+  - **Redis unreachable.** The limits keep applying per process and a warning is logged (see **Store: Redis**). They neither fail open nor fail closed. With several app replicas the effective limit is multiplied by their number until Redis is back.
 
 ### Check-in live updates (SSE stream)
 
@@ -432,6 +444,7 @@ These are separate from rate limits.
 - **Templates:** template JSON is sized for a body field of at most 200k characters.
 - **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 - **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
+- **`POST /r/:slug` (registration submit):** at most 64 KB (`MAX_REGISTRATION_BODY_BYTES`), `413 request too large`. Order: cross-site check, IP limiter, body cap, then parsing, so a chunked body without `Content-Length` is capped too and oversized requests are still counted. The cross-site check only stops browsers posting from another site; the bot challenge and the limits are the defence against scripts.
 - **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
 - **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).
 - The check-in routes and `POST /api/ops/system-logs` both answer `413 request too large`.
