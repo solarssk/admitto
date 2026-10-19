@@ -59,7 +59,7 @@ jobs:
             exit 1
           fi
       - name: Guard MCP security floor
-        # Same reason as the PyJWT guard above: semgrep 1.180.0 declares `mcp==1.29.0`, which has
+        # Same reason as the PyJWT guard above: semgrep 1.181.0 declares `mcp==1.29.0`, which has
         # an open advisory (GHSA-84m7-p3x7-pcfv), so a pip-compile regeneration silently restores it.
         run: |
           version=$(sed -n 's/^mcp==\([0-9.]*\).*/\1/p' .github/workflows/semgrep-requirements.txt)
