@@ -3,6 +3,16 @@ import type { PrismaClient } from "@admitto/db";
 export interface ContactTemplateVars {
   contact_name: string;
   contact_email: string;
+  /** A whole sentence, or "" when there is no contact, so a mail never reads "Contact  at .". */
+  contact_line: string;
+}
+
+function withLine(name: string, email: string): ContactTemplateVars {
+  return {
+    contact_name: name,
+    contact_email: email,
+    contact_line: email ? `Questions? Contact ${name} at ${email}.` : "",
+  };
 }
 
 /**
@@ -20,7 +30,7 @@ export async function resolveEventContactVars(
     select: { name: true, email: true },
   });
   if (contact?.email) {
-    return { contact_name: contact.name, contact_email: contact.email };
+    return withLine(contact.name, contact.email);
   }
 
   const event = await prisma.event.findUnique({
@@ -33,10 +43,7 @@ export async function resolveEventContactVars(
   });
   const org = event?.organization;
   if (org?.support_contact_email) {
-    return {
-      contact_name: org.support_contact_name || org.name,
-      contact_email: org.support_contact_email,
-    };
+    return withLine(org.support_contact_name || org.name, org.support_contact_email);
   }
-  return { contact_name: "", contact_email: "" };
+  return withLine("", "");
 }

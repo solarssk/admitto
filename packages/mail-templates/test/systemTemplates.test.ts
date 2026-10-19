@@ -75,15 +75,21 @@ describe("system template names", () => {
       "qr_image_url",
       "ticket_url",
     ]);
-    expect(disallowedPlaceholdersForTemplate("registration-waitlist")).toBe(SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS);
-    expect(disallowedPlaceholdersForTemplate("ticket")).toBeUndefined();
-    expect(disallowedPlaceholdersForTemplate("reminder")).toBeUndefined();
+    expect(disallowedPlaceholdersForTemplate("registration-confirm")).toBe(SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS);
+    expect(disallowedPlaceholdersForTemplate("registration-waitlist").has("confirm_url")).toBe(true);
+    expect(disallowedPlaceholdersForTemplate("registration-waitlist").has("contact_line")).toBe(false);
+    for (const name of ["ticket", "reminder"]) {
+      const set = disallowedPlaceholdersForTemplate(name);
+      for (const token of ["confirm_url", "contact_name", "contact_email", "contact_line"]) {
+        expect(set.has(token)).toBe(true);
+      }
+    }
   });
 });
 
 describe("new placeholders", () => {
   it("are whitelisted, and only confirm_url is a (non-required) URL placeholder", () => {
-    for (const name of ["confirm_url", "contact_name", "contact_email"]) {
+    for (const name of ["confirm_url", "contact_name", "contact_email", "contact_line"]) {
       expect(ALLOWED_PLACEHOLDERS.has(name)).toBe(true);
     }
     expect(URL_PLACEHOLDERS.has("confirm_url")).toBe(true);
@@ -122,7 +128,7 @@ describe("built-in registry", () => {
     expect(validateTemplate({ subject: source.subject, body: source.body }, undefined, forbidden)).toEqual([]);
     const tokens = [...extractPlaceholderTokens(source.subject), ...extractPlaceholderTokens(source.body)];
     expect(tokens.filter((t) => forbidden.has(t))).toEqual([]);
-    expect(tokens).toEqual(expect.arrayContaining(["event_name", "first_name", "contact_name", "contact_email"]));
+    expect(tokens).toEqual(expect.arrayContaining(["event_name", "first_name", "contact_line"]));
 
     const compiled = await getBuiltinTemplate(name);
     expect(compiled.source).toBe("builtin");
@@ -195,8 +201,17 @@ describe("setMailTemplate on a system name", () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  it("accepts confirm_url and gives a new row its built-in label", async () => {
-    await setMailTemplate(scope, { subject: "S", body: '<a href="{{confirm_url}}">x</a>', format: "html" }, prisma);
+  it("refuses confirm_url outside registration-confirm", async () => {
+    await expect(
+      setMailTemplate(scope, { subject: "S", body: '<a href="{{confirm_url}}">x</a>', format: "html" }, prisma),
+    ).rejects.toBeInstanceOf(UnknownPlaceholdersError);
+    await expect(
+      setMailTemplate({ ...scope, name: "ticket" }, { subject: "S", body: "{{contact_line}}", format: "html" }, prisma),
+    ).rejects.toBeInstanceOf(UnknownPlaceholdersError);
+  });
+
+  it("accepts the contact line and gives a new row its built-in label", async () => {
+    await setMailTemplate(scope, { subject: "S", body: "<p>{{contact_line}}</p>", format: "html" }, prisma);
     expect(upsert).toHaveBeenCalledTimes(1);
     const arg = upsert.mock.calls[0] as unknown as [{ create: { label: string } }];
     expect(arg[0].create.label).toBe("Registration: received");
@@ -227,6 +242,7 @@ describe("resolveEventContactVars", () => {
     expect(await resolveEventContactVars("evt-1", prisma)).toEqual({
       contact_name: "Ann",
       contact_email: "ann@example.com",
+      contact_line: "Questions? Contact Ann at ann@example.com.",
     });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -241,16 +257,18 @@ describe("resolveEventContactVars", () => {
     expect(await resolveEventContactVars("evt-1", named.prisma)).toEqual({
       contact_name: "Help",
       contact_email: "h@example.com",
+      contact_line: "Questions? Contact Help at h@example.com.",
     });
     const unnamed = contactPrisma(null, { name: "Org", support_contact_name: null, support_contact_email: "h@example.com" });
     expect(await resolveEventContactVars("evt-1", unnamed.prisma)).toEqual({
       contact_name: "Org",
       contact_email: "h@example.com",
+      contact_line: "Questions? Contact Org at h@example.com.",
     });
   });
 
   it("is empty when neither exists", async () => {
     const none = contactPrisma(null, { name: "Org", support_contact_name: null, support_contact_email: null });
-    expect(await resolveEventContactVars("evt-1", none.prisma)).toEqual({ contact_name: "", contact_email: "" });
+    expect(await resolveEventContactVars("evt-1", none.prisma)).toEqual({ contact_name: "", contact_email: "", contact_line: "" });
   });
 });

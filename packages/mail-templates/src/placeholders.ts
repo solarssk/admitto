@@ -27,6 +27,7 @@ export const ALLOWED_PLACEHOLDERS = new Set([
   "confirm_url",
   "contact_name",
   "contact_email",
+  "contact_line",
 ]);
 
 /** Placeholders validated as http(s) URLs at render time. */

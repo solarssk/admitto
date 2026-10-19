@@ -52,6 +52,7 @@ export interface TemplateVars {
    * support contact. See resolveEventContactVars. */
   contact_name?: string;
   contact_email?: string;
+  contact_line?: string;
   // Per-event custom image asset tokens (branding asset library, v0.4.13 batch 05) - dynamic
   // {{token}} names decided by the admin at upload time, not known ahead of time like the
   // fields above. See resolveEventImageAssetVars in branding.ts.

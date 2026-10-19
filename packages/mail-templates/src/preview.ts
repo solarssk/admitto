@@ -102,6 +102,7 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   confirm_url: "https://tickets.example.com/r/sample-event/confirm/sample-id.sample-mac",
   contact_name: "Sample Organizer",
   contact_email: "organizer@example.com",
+  contact_line: "Questions? Contact Sample Organizer at organizer@example.com.",
 };
 
 type EventForBaseTemplateVars = {

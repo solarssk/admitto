@@ -42,8 +42,25 @@ export const SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS: ReadonlySet<string> = new S
   "download_page_url",
 ]);
 
-/** Placeholders a template of this name must not use (empty for every non-system name). Pass it
+/** Only the confirmation mail carries a confirmation link. */
+const NON_CONFIRM_SYSTEM_FORBIDDEN: ReadonlySet<string> = new Set([
+  ...SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS,
+  "confirm_url",
+]);
+
+/** The ticket and free-form mails are sent without registration values, so a template using them
+ * would render blank text or a stripped link: refuse it at save time instead. */
+const NON_REGISTRATION_FORBIDDEN: ReadonlySet<string> = new Set([
+  "confirm_url",
+  "contact_name",
+  "contact_email",
+  "contact_line",
+]);
+
+/** Placeholders a template of this name must not use (registration values are refused outside registration mails). Pass it
  * as the `disallowed` argument of `validateTemplate` / `assertValidTemplate`. */
-export function disallowedPlaceholdersForTemplate(name: string): ReadonlySet<string> | undefined {
-  return isSystemTemplateName(name) ? SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS : undefined;
+export function disallowedPlaceholdersForTemplate(name: string): ReadonlySet<string> {
+  if (name === "registration-confirm") return SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS;
+  if (isSystemTemplateName(name)) return NON_CONFIRM_SYSTEM_FORBIDDEN;
+  return NON_REGISTRATION_FORBIDDEN;
 }

@@ -72,7 +72,7 @@ ${paragraphs}${button}
           {{event_date}} · {{event_location}}
         </mj-text>
         <mj-text align="center" font-size="14px" color="#666666">
-          Questions? Contact {{contact_name}} at {{contact_email}}.
+          {{contact_line}}
         </mj-text>
       </mj-column>
     </mj-section>

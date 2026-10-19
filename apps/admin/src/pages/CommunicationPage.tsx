@@ -570,12 +570,13 @@ function resolveSendTemplateId(
  * needing a text label to say so. */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
+  forSend = false,
 ): Array<{ id: string; label: string; icon: string }> {
   return [
     ...(!templates.some((t) => t.name === "ticket")
       ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
       : []),
-    ...templates.map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
+    ...templates.filter((t) => !(forSend && t.is_system)).map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
   ];
 }
 
@@ -710,7 +711,7 @@ function SendTab({
                 searchPlaceholder="Search templates…"
                 emptyLabel="No templates found"
                 value={activeKey}
-                options={templatePickerOptions(templates)}
+                options={templatePickerOptions(templates, true)}
                 hint={templateDescription ?? undefined}
                 onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
               />
