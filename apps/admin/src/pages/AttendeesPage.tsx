@@ -1452,25 +1452,25 @@ export function AttendeesPage() {
   const listFailure = useRetryKeepingError(loadError, loadList);
 
   // EventLayout stays mounted across in-event navigation and only re-fetches its own event on an
-  // eventId change, so its cached active_attendee_count can be wrong by the time this page (re-)
+  // eventId change, so its cached seats_in_use can be wrong by the time this page (re-)
   // mounts, in two different ways: (1) reached via the events picker, whose EventCard snapshot
-  // never computes active_attendee_count at all (only the single-event fetch does); (2) reached
+  // never computes seats_in_use at all (only the single-event fetch does); (2) reached
   // by navigating back from a sibling route (e.g. AttendeeDetailPage deleting or restoring an
   // attendee) that changed the capacity-consuming population without refreshing the layout's
   // event. Unconditionally refreshing once per mount covers both, rather than trying to track
   // "is this specific count stale" or teach every capacity-changing sibling mutation to refresh
   // the layout itself. Skipped for an unlimited event (capacity null), where the count is moot.
-  // Keyed on event.id, not on capacity/active_attendee_count themselves, so this runs once per
+  // Keyed on event.id, not on capacity/seats_in_use themselves, so this runs once per
   // event entry, not again after refreshEvent's own update changes those same fields.
   useEffect(() => {
     if (event.capacity != null) {
       void refreshEvent?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on event identity, not on capacity/active_attendee_count (see comment above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on event identity, not on capacity/seats_in_use (see comment above)
   }, [event.id, refreshEvent]);
 
   // reloadToken bumps after every attendee mutation on this page (create, delete, bulk actions,
-  // restore, …) - re-fetching the event alongside keeps active_attendee_count in sync with
+  // restore, …) - re-fetching the event alongside keeps seats_in_use in sync with
   // capacity so the Add attendee button's disabled state below reflects reality without an
   // extra round-trip per handler. Skips the initial mount: the effect above (or EventLayout's own
   // fallback fetch) already covers getting a fresh count once, before any mutation has happened.
@@ -2261,15 +2261,15 @@ export function AttendeesPage() {
     (row) => selectedIds.has(row.id) && row.wallet_status !== null,
   ).length;
 
-  // Undefined active_attendee_count reads as "not full" rather than blocking the button on a
+  // Undefined seats_in_use reads as "not full" rather than blocking the button on a
   // guess - the effect above fetches it as soon as it's missing, so this only stays undefined
   // for the brief window before that fetch resolves. The server remains the source of truth
   // either way and still rejects over capacity with the same event_full error AddAttendeeModal
   // now shows correctly.
   const atCapacity =
-    event.capacity != null && (event.active_attendee_count ?? 0) >= event.capacity;
+    event.capacity != null && (event.seats_in_use ?? 0) >= event.capacity;
   const capacityTooltip = atCapacity
-    ? `Event is at capacity (${event.active_attendee_count}/${event.capacity}). Free a slot or increase capacity to add more attendees.`
+    ? `Event is at capacity (${event.seats_in_use}/${event.capacity}). Free a slot or increase capacity to add more attendees.`
     : undefined;
 
   if (!eventId) return <p>Missing event.</p>;
