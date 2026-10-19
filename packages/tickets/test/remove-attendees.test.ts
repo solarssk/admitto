@@ -99,6 +99,32 @@ describe("removeAttendees", () => {
     expect(await prisma.attendeeNote.count({ where: { attendee_id: keep.id } })).toBe(1);
   });
 
+  it("deletes the registrations of the removed attendee, accepted and same-address, and no one else's", async () => {
+    const a = await createAttendee();
+    const base = { first_name: "Guest", last_name: "Test", name: "Guest Test" };
+    const accepted = await prisma.registration.create({
+      data: { ...base, event_id: EVENT_ID, email: `before-edit-${a.email}`, status: "accepted", attendee_id: a.id },
+    });
+    await prisma.registrationMail.create({
+      data: { registration_id: accepted.id, event_id: EVENT_ID, template_name: "ticket" },
+    });
+    const unlinked = await prisma.registration.create({
+      data: { ...base, event_id: EVENT_ID, email: a.email.toLowerCase(), status: "pending" },
+    });
+    const otherEvent = await prisma.registration.create({
+      data: { ...base, event_id: OTHER_EVENT_ID, email: a.email.toLowerCase(), status: "pending" },
+    });
+    const stranger = await prisma.registration.create({
+      data: { ...base, event_id: EVENT_ID, email: "registration-stranger@example.com", status: "waitlist" },
+    });
+
+    await remove([a.id]);
+
+    expect(await prisma.registration.count({ where: { id: { in: [accepted.id, unlinked.id] } } })).toBe(0);
+    expect(await prisma.registrationMail.count({ where: { registration_id: accepted.id } })).toBe(0);
+    expect(await prisma.registration.count({ where: { id: { in: [otherEvent.id, stranger.id] } } })).toBe(2);
+  });
+
   it("answers not found for ids that are not attendees of the event, and leaves those attendees alone", async () => {
     const mine = await createAttendee();
     const elsewhere = await createAttendee(OTHER_EVENT_ID);

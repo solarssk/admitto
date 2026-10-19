@@ -51,6 +51,16 @@ const INVENTORY: Record<string, ModelInventory> = {
   AttendeeActionLog: {
     deleted: "id event_id attendee_id action_type actor_user_id session_id device_id ip metadata created_at client_timezone",
   },
+  // A guest's submission through the registration form (the accepted one points at the attendee).
+  // The whole row goes with the person: name, address, answers and the companion are all personal
+  // data, and nothing else reads them once the attendee is erased.
+  // Deleted by attendee_id and, for a pending, waitlisted or rejected row of the same
+  // person, by the event and the normalised address (scrubAttendeeTraces). RegistrationMail hangs off the
+  // registration (no address or text of its own) and goes with it.
+  Registration: {
+    deleted:
+      "id event_id email first_name last_name name company department custom_data companions status confirm_expires_at email_verified_at decided_at decided_by locale accepted_at consents attendee_id created_at updated_at",
+  },
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

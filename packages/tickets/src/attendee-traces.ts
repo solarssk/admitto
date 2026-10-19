@@ -87,6 +87,16 @@ export async function scrubAttendeeTraces(
   await stopOpenAttendeeJobs(tx, eventId);
   await invalidateEventExports(tx, eventId);
   const attendeeList = Prisma.join([...attendeeIds]);
+  // The guest's registration holds their original name, address, answers, consents and companion; its
+  // queued mail goes with it (cascade). The accepted one points at the attendee, but a pending, waitlisted
+  // or rejected one from the same person has no attendee, only the address, so both are matched. The
+  // addresses are lower case and trimmed, the form the registration's own CHECK keeps.
+  await tx.registration.deleteMany({
+    where: {
+      event_id: eventId,
+      OR: [{ attendee_id: { in: [...attendeeIds] } }, ...(emails.length > 0 ? [{ email: { in: [...emails] } }] : [])],
+    },
+  });
   if (emails.length > 0) {
     await tx.$executeRaw`
       UPDATE "EmailDelivery" SET
