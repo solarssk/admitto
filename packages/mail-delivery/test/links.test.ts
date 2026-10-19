@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAttendeeMailLinks } from "../src/links.js";
+import { signRegistrationConfirm, verifyRegistrationConfirm } from "@admitto/crypto";
+import { buildAttendeeMailLinks, buildConfirmUrl } from "../src/links.js";
 
 const BASE = "https://tickets.example.com";
 const EVENT = {
@@ -114,5 +115,28 @@ describe("buildAttendeeMailLinks", () => {
         BASE,
       ),
     ).toThrow("missing public_ref");
+  });
+});
+
+describe("buildConfirmUrl", () => {
+  it("builds /r/{slug}/confirm/{id}.{mac} on the guest origin", () => {
+    const url = buildConfirmUrl(BASE, "summer-gala", "reg_1");
+    expect(url).toBe(
+      `${BASE}/r/summer-gala/confirm/reg_1.${signRegistrationConfirm("reg_1")}`,
+    );
+    const [registrationId, mac] = url.split("/confirm/")[1]!.split(".");
+    expect(verifyRegistrationConfirm(registrationId!, mac!)).toBe(true);
+  });
+
+  it("gives the same link every time for the same registration, and ignores a trailing slash", () => {
+    expect(buildConfirmUrl(`${BASE}/`, "summer-gala", "reg_1")).toBe(
+      buildConfirmUrl(BASE, "summer-gala", "reg_1"),
+    );
+  });
+
+  it("gives another registration another link", () => {
+    expect(buildConfirmUrl(BASE, "summer-gala", "reg_2")).not.toBe(
+      buildConfirmUrl(BASE, "summer-gala", "reg_1"),
+    );
   });
 });

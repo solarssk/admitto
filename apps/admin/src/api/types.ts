@@ -896,6 +896,8 @@ export interface MailTemplateListItem {
   template_format: "mjml" | "html";
   subject_template: string;
   updated_at: string;
+  /** Registration system template: editable, but never offered for bulk send. */
+  is_system?: boolean;
 }
 
 /** Full template row from GET .../templates/:id. */

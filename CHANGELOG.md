@@ -8,6 +8,10 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ## [Unreleased]
 
+### Added
+
+- Add the groundwork for guest registration mails: four English default messages, a signed email-confirmation link, and `confirm_url`, `contact_name` and `contact_email` variables ([#1749](https://github.com/solarssk/admitto/pull/1749))
+
 ## [0.7.7] - 2026-10-18
 
 ### Fixed

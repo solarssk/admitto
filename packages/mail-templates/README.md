@@ -28,12 +28,22 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 | `logo_url`, `header_image_url` | Optional URLs - empty omits `src`/`href` (no `src=""`) |
 | `apple_wallet_url`, `google_wallet_url` | Optional add-to-wallet links, filled per attendee when the event has wallet configured and that platform enabled (they open the Admitto redirect route that creates or reuses the pass); empty otherwise |
 | `download_page_url` | Reserved - always empty today |
+| `confirm_url` | Signed e-mail confirmation link of a guest registration (`buildConfirmUrl` in `@admitto/mail-delivery`). An optional URL placeholder, not required; only `registration-confirm` carries a value |
+| `contact_name`, `contact_email` | Who the guest writes to: the first event contact with an e-mail by `sort_order`, else the organization's support contact (`resolveEventContactVars`). Empty when neither exists. Refused at save time outside registration mails |
+| `contact_line` | The whole sentence "Questions? Contact NAME at EMAIL.", or empty when there is no contact. Every built-in registration body uses it. Refused at save time outside registration mails |
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.
 
 - Placeholders in HTML attributes must use **quoted** values (`alt="{{first_name}}"`, not `alt={{first_name}}`).
 - Unquoted attribute placeholders are rejected at save and render time (spaces in attendee data can break out of the attribute).
 - Placeholders inside HTML or Outlook `<!--[if mso]>` conditional comments are also rejected (use live markup outside conditionals).
+
+## System templates (registration mails)
+
+`SYSTEM_TEMPLATE_NAMES` lists the mails a guest gets before an attendee exists: `registration-confirm`, `registration-received`, `registration-waitlist`, `registration-rejected`. Each has an English built-in default; an organizer's override is an ordinary `MailTemplate` row under the same name. `ticket` is not one of them: it stays the one template ticket delivery sends.
+
+- Ask `isSystemTemplateName(name)`, not a literal. A system row is flagged `is_system` in the template list, is not counted toward the ten-template cap, is refused by bulk send (422) and does not block permanent event deletion. `isReservedTemplateName` also covers `ticket`, for a free template's name.
+- A system template cannot use `ticket_url`, `qr_image_url`, `apple_wallet_url`, `google_wallet_url` or `download_page_url` (`SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS`). `setMailTemplate` and `createMailTemplate` apply it through `disallowedPlaceholdersForTemplate(name)`; the admin routes pass the same set to template validation.
 
 ## Template formats
 
@@ -46,7 +56,8 @@ Empty optional URL placeholders strip `src`, `href`, `action`, and `background` 
 
 ## Scope resolution
 
-- Templates: the default `ticket` template resolves `resolveTemplate(eventId)` → event → organization → built-in default. Events and organizations can also hold additional named templates; `resolveTemplateById(templateId, eventId, prisma)` loads one that belongs to the event or its organization (otherwise `TemplateNotFoundError`).
+- Templates: the default `ticket` template resolves `resolveTemplate(eventId)` → event → organization → built-in default. Both `resolveTemplate` and `resolveTemplateForEvent` take an optional last `name` argument (default `ticket`), so every existing caller is unchanged. Events and organizations can also hold additional named templates; `resolveTemplateById(templateId, eventId, prisma)` loads one that belongs to the event or its organization (otherwise `TemplateNotFoundError`).
+- Built-in defaults are a registry by name (`getBuiltinTemplate(name = "ticket")`, source and label through `getBuiltinTemplateSource`). A name with no default throws `UnknownBuiltinTemplateError`; it never falls back to the ticket mail.
 - Branding URLs: `resolveBranding(eventId)` → event → organization → empty (columns on `Organization` / `Event`).
 
 - `event_date` and `event_hours` are display text, not ISO dates.

@@ -12,6 +12,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
+import { disallowedPlaceholdersForTemplate } from "@admitto/mail-templates/systemTemplates";
 import { useBlocker, useOutletContext, useParams, useSearchParams } from "react-router";
 import type { EditorView, ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
@@ -570,12 +571,13 @@ function resolveSendTemplateId(
  * needing a text label to say so. */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
+  forSend = false,
 ): Array<{ id: string; label: string; icon: string }> {
   return [
     ...(!templates.some((t) => t.name === "ticket")
       ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
       : []),
-    ...templates.map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
+    ...templates.filter((t) => !(forSend && t.is_system)).map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
   ];
 }
 
@@ -684,6 +686,9 @@ function SendTab({
   }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
 
   const templateDescription = activeTemplateDescription(activeKey, templates);
+  // The selection is shared with the Templates tab: a registration template opened there is not
+  // one this tab can send (the server answers 422), so say so instead of offering a doomed send.
+  const activeIsSystem = templates.find((t) => t.id === activeKey)?.is_system === true;
 
   return (
     <div className="communication-send-tab">
@@ -710,7 +715,7 @@ function SendTab({
                 searchPlaceholder="Search templates…"
                 emptyLabel="No templates found"
                 value={activeKey}
-                options={templatePickerOptions(templates)}
+                options={templatePickerOptions(templates, true)}
                 hint={templateDescription ?? undefined}
                 onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
               />
@@ -734,13 +739,25 @@ function SendTab({
         </Card>
       )}
 
-      <CommunicationSendPanel
-        event={event}
-        eventId={eventId}
-        templateId={sendTemplateId}
-        snapshotMissing={editorSnapshotMissing}
-        isDirty={isDirty}
-      />
+      {/* Stays mounted either way: unmounting it would abort the status poll of a bulk send that
+          is still running when the operator opens a registration template on the Templates tab. */}
+      {activeIsSystem && isActive && (
+        <Card title="Send">
+          <Notice variant="info">
+            Registration messages are sent automatically and cannot be sent in bulk. Pick another
+            template above to send.
+          </Notice>
+        </Card>
+      )}
+      <div hidden={activeIsSystem}>
+        <CommunicationSendPanel
+          event={event}
+          eventId={eventId}
+          templateId={sendTemplateId}
+          snapshotMissing={editorSnapshotMissing}
+          isDirty={isDirty}
+        />
+      </div>
     </div>
   );
 }
@@ -2065,7 +2082,9 @@ function CommunicationPageBody({
                 event={event}
                 activeKey={activeKey}
                 activeTemplateName={activeTemplateName}
-                allowedPlaceholders={allowedPlaceholders}
+                allowedPlaceholders={allowedPlaceholders.filter(
+                  (p) => !disallowedPlaceholdersForTemplate(activeTemplateName).has(p),
+                )}
                 imagePlaceholders={imagePlaceholders}
                 // Backend only enforces ticket_url/qr_image_url for the "ticket" template
                 // (see requireTicketPlaceholders, communication-api-routes.ts) - the "required"
