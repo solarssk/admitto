@@ -3,17 +3,17 @@ import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
-import { isReservedCustomDataSourceField, writeBulkActionLog } from "@admitto/tickets";
+import {
+  MAX_CUSTOM_FIELDS_PER_EVENT,
+  isReservedCustomDataSourceField,
+  writeBulkActionLog,
+} from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
   countAttendeesByCustomFieldValue,
   requireEventId,
 } from "./admin-helpers.js";
-
-/** Per-event cap on custom attendee data field definitions - same placement/rationale as
- * MAX_IMAGE_ASSETS_PER_EVENT (bounds growth, generous for real use). */
-export const MAX_CUSTOM_FIELDS_PER_EVENT = 20;
 
 /** Thrown when the per-event cap is still exceeded on the transaction-scoped recheck (two
  * concurrent creates could otherwise both pass the earlier, non-transactional count check before

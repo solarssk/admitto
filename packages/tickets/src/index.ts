@@ -112,6 +112,20 @@ export {
   assertCustomDataMeetsRequirements,
 } from "./validate-custom-data.js";
 export {
+  MAX_CUSTOM_FIELDS_PER_EVENT,
+  REGISTRANT_EMAIL_MAX,
+  REGISTRANT_NAME_MAX,
+  REGISTRANT_TEXT_MAX,
+  RegistrantInputError,
+  buildRegistrantCustomData,
+  normalizeRegistrantText,
+  pickRegistrantProfileFields,
+  registrantEmailSchema,
+  registrantNameSchema,
+  registrantTextSchema,
+} from "./registrant-input.js";
+export type { RegistrantFormField, RegistrantProfileFields } from "./registrant-input.js";
+export {
   RESERVED_CUSTOM_DATA_SOURCE_FIELDS,
   isReservedCustomDataSourceField,
   filterCustomDataAttributeFields,
