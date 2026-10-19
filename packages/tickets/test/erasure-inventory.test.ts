@@ -53,7 +53,9 @@ const INVENTORY: Record<string, ModelInventory> = {
   },
   // A guest's submission through the registration form (the accepted one points at the attendee).
   // The whole row goes with the person: name, address, answers and the companion are all personal
-  // data, and nothing else reads them once the attendee is erased. RegistrationMail hangs off the
+  // data, and nothing else reads them once the attendee is erased.
+  // Deleted by attendee_id and, for a pending, waitlisted or rejected row of the same
+  // person, by the event and the normalised address (scrubAttendeeTraces). RegistrationMail hangs off the
   // registration (no address or text of its own) and goes with it.
   Registration: {
     deleted:

@@ -266,7 +266,7 @@ describe("eraseAttendees: what hangs off the attendee", () => {
     expect(await prisma.attendeeActionLog.findUnique({ where: { id: eventLevel.id } })).not.toBeNull();
   });
 
-  it("deletes the accepted registration of the erased attendee only, with its queued mail", async () => {
+  it("deletes the registrations of the erased attendee (accepted and same-address), with their mail, and no one else's", async () => {
     const a = await createAttendee(WARSAW_EVENT);
     const other = await createAttendee(WARSAW_EVENT);
     const registrations: string[] = [];
@@ -288,8 +288,32 @@ describe("eraseAttendees: what hangs off the attendee", () => {
       registrations.push(registration.id);
     }
 
+    // A pending registration from the same person has no attendee, only the address.
+    const unlinked = await prisma.registration.create({
+      data: {
+        event_id: WARSAW_EVENT,
+        email: ` ${a.email.toUpperCase()}`.trim().toLowerCase(),
+        first_name: "Guest",
+        last_name: "Again",
+        name: "Guest Again",
+        status: "pending",
+      },
+    });
+    const stranger = await prisma.registration.create({
+      data: {
+        event_id: WARSAW_EVENT,
+        email: "stranger@example.com",
+        first_name: "Str",
+        last_name: "Anger",
+        name: "Str Anger",
+        status: "waitlist",
+      },
+    });
+
     await erase(WARSAW_EVENT, [a.id]);
 
+    expect(await prisma.registration.count({ where: { id: unlinked.id } })).toBe(0);
+    expect(await prisma.registration.count({ where: { id: stranger.id } })).toBe(1);
     expect(await prisma.registration.count({ where: { id: registrations[0] } })).toBe(0);
     expect(await prisma.registrationMail.count({ where: { registration_id: registrations[0] } })).toBe(0);
     expect(await prisma.registration.count({ where: { id: registrations[1] } })).toBe(1);
