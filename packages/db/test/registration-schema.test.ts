@@ -25,7 +25,7 @@ let prisma: PrismaClient;
 let n = 0;
 
 /** Runs a raw statement that must fail with this Postgres error code on this constraint. */
-async function expectViolation(action: () => Promise<unknown>, code: "23514" | "23505", name: string): Promise<void> {
+async function expectViolation(action: () => Promise<unknown>, code: "23514" | "23505" | "23503", name: string): Promise<void> {
   try {
     await action();
   } catch (err) {
@@ -222,7 +222,28 @@ describe("Registration constraints", () => {
     await expectViolation(
       () => insertRegistration({ status: "accepted", attendeeId }),
       "23505",
-      "Registration_attendee_id_key",
+      "Registration_attendee_id_event_id_key",
+    );
+  });
+
+  it("refuses an attendee of another event on a registration", async () => {
+    const attendeeId = await createAttendee("other-event-attendee@example.com");
+    await expectViolation(
+      () => insertRegistration({ status: "accepted", attendeeId, event: OTHER_EVENT_ID }),
+      "23503",
+      "Registration_attendee_id_event_id_fkey",
+    );
+  });
+
+  it("refuses a queued mail whose event is not its registration's event", async () => {
+    const registrationId = await insertRegistration({ email: "mail-event@example.com" });
+    await expectViolation(
+      () =>
+        prisma.$executeRaw`
+          INSERT INTO "RegistrationMail" ("id", "registration_id", "event_id", "template_name", "updated_at")
+          VALUES ('mail-cross-event', ${registrationId}, ${OTHER_EVENT_ID}, 'registration-received', now())`,
+      "23503",
+      "RegistrationMail_registration_id_event_id_fkey",
     );
   });
 

@@ -197,6 +197,9 @@ export async function eraseAttendees(
   const [notes, actionLogs] = await Promise.all([
     tx.attendeeNote.deleteMany({ where: { event_id: eventId, attendee_id: { in: erasedIds } } }),
     tx.attendeeActionLog.deleteMany({ where: { event_id: eventId, attendee_id: { in: erasedIds } } }),
+    // The accepted registration holds the guest's original name, address, answers and consents.
+    // Its queued mail goes with it (cascade).
+    tx.registration.deleteMany({ where: { event_id: eventId, attendee_id: { in: erasedIds } } }),
   ]);
 
   const checkIns = await tx.$executeRaw`

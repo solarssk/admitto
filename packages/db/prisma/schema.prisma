@@ -886,14 +886,19 @@ model Registration {
   accepted_at        DateTime?
   consents           Json               @default("{}")
   // Set exactly while status = accepted. Named attendee_id on purpose: the erasure inventory
-  // test finds every table that points at an attendee by this column and relation.
-  attendee_id        String?            @unique
-  attendee           Attendee?          @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
+  // test finds every table that points at an attendee by this column and relation. The key is
+  // composite with event_id, so the attendee must belong to the registration's own event.
+  attendee_id        String?
+  attendee           Attendee?          @relation(fields: [attendee_id, event_id], references: [id, event_id], onDelete: Cascade)
   created_at         DateTime           @default(now())
   updated_at         DateTime           @updatedAt
   mails              RegistrationMail[]
 
   @@unique([event_id, email])
+  // One registration per attendee (the composite key above already pins the attendee to this event).
+  @@unique([attendee_id, event_id])
+  // Target of RegistrationMail's composite key: a mail row cannot name another event's registration.
+  @@unique([id, event_id])
   @@index([event_id, status, created_at, id])
 }
 
@@ -908,7 +913,7 @@ model Registration {
 model RegistrationMail {
   id                  String       @id @default(cuid())
   registration_id     String
-  registration        Registration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
+  registration        Registration @relation(fields: [registration_id, event_id], references: [id, event_id], onDelete: Cascade)
   event_id            String
   event               Event        @relation(fields: [event_id], references: [id], onDelete: Cascade)
   template_name       String

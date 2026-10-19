@@ -71,13 +71,16 @@ CREATE TABLE "RegistrationMail" (
 CREATE UNIQUE INDEX "EventRegistrationSettings_event_id_key" ON "EventRegistrationSettings"("event_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Registration_attendee_id_key" ON "Registration"("attendee_id");
+CREATE UNIQUE INDEX "Registration_attendee_id_event_id_key" ON "Registration"("attendee_id", "event_id");
 
 -- CreateIndex
 CREATE INDEX "Registration_event_id_status_created_at_id_idx" ON "Registration"("event_id", "status", "created_at", "id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Registration_event_id_email_key" ON "Registration"("event_id", "email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Registration_id_event_id_key" ON "Registration"("id", "event_id");
 
 -- CreateIndex
 CREATE INDEX "RegistrationMail_event_id_queued_at_idx" ON "RegistrationMail"("event_id", "queued_at");
@@ -92,10 +95,10 @@ ALTER TABLE "EventRegistrationSettings" ADD CONSTRAINT "EventRegistrationSetting
 ALTER TABLE "Registration" ADD CONSTRAINT "Registration_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Registration" ADD CONSTRAINT "Registration_attendee_id_fkey" FOREIGN KEY ("attendee_id") REFERENCES "Attendee"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Registration" ADD CONSTRAINT "Registration_attendee_id_event_id_fkey" FOREIGN KEY ("attendee_id", "event_id") REFERENCES "Attendee"("id", "event_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RegistrationMail" ADD CONSTRAINT "RegistrationMail_registration_id_fkey" FOREIGN KEY ("registration_id") REFERENCES "Registration"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "RegistrationMail" ADD CONSTRAINT "RegistrationMail_registration_id_event_id_fkey" FOREIGN KEY ("registration_id", "event_id") REFERENCES "Registration"("id", "event_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RegistrationMail" ADD CONSTRAINT "RegistrationMail_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
