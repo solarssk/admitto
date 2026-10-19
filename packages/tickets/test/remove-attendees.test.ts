@@ -103,7 +103,7 @@ describe("removeAttendees", () => {
     const a = await createAttendee();
     const base = { first_name: "Guest", last_name: "Test", name: "Guest Test" };
     const accepted = await prisma.registration.create({
-      data: { ...base, event_id: EVENT_ID, email: a.email.toLowerCase(), status: "accepted", attendee_id: a.id },
+      data: { ...base, event_id: EVENT_ID, email: `before-edit-${a.email}`, status: "accepted", attendee_id: a.id },
     });
     await prisma.registrationMail.create({
       data: { registration_id: accepted.id, event_id: EVENT_ID, template_name: "ticket" },

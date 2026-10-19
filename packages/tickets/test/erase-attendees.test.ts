@@ -274,7 +274,9 @@ describe("eraseAttendees: what hangs off the attendee", () => {
       const registration = await prisma.registration.create({
         data: {
           event_id: WARSAW_EVENT,
-          email: attendee.email.toLowerCase(),
+          // The address the guest registered with, before the attendee's own address was edited:
+          // the unlinked registration below takes the current one (the pair is unique per event).
+          email: `before-edit-${attendee.email}`,
           first_name: "Guest",
           last_name: "Test",
           name: "Guest Test",
