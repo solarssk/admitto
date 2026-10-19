@@ -43,6 +43,11 @@ describe("registrantNameSchema", () => {
     ["soft hyphen", "An­n"],
     ["line separator", "Ann Bob"],
     ["tag character", "Ann\u{E0041}"],
+    ["combining grapheme joiner U+034F", "Ad\u034Fmin"],
+    ["variation selector U+FE0F", "Ann\uFE0F"],
+    ["Hangul filler U+3164", "Ann\u3164"],
+    ["a scheme without slashes", "https:evil.example"],
+    ["an uppercase scheme without slashes", "HTTP:evil.example"],
     ["lone high surrogate", LONE_HIGH],
     ["lone low surrogate", LONE_LOW],
     ["trailing high surrogate", "Ann\uD83D"],

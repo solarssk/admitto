@@ -47,6 +47,11 @@ const INVISIBLE_BMP_RANGES: readonly (readonly [number, number])[] = [
   [0xfffe, 0xffff],
 ];
 
+/** Every code point Unicode marks default-ignorable: it renders as nothing, so two different
+ * strings can look the same. Covers the combining grapheme joiner (U+034F), the variation
+ * selectors, fillers and tag characters that a hand-written range list misses. */
+const DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
+
 function isInvisibleBmp(unit: number): boolean {
   for (const [from, to] of INVISIBLE_BMP_RANGES) {
     if (unit >= from && unit <= to) return true;
@@ -67,6 +72,7 @@ function isForbiddenUnit(unit: number): boolean {
  * lone surrogate, so a surrogate left in `isForbiddenUnit` is always a lone one. A loop, not a
  * regex: no backtracking, no control characters in a pattern. */
 function hasForbiddenCharacter(value: string): boolean {
+  if (DEFAULT_IGNORABLE.test(value)) return true;
   for (let i = 0; i < value.length; i += 1) {
     const codePoint = value.codePointAt(i) ?? 0;
     if (codePoint > 0xffff) {
@@ -119,10 +125,14 @@ export const registrantNameSchema = registrantTextSchema(REGISTRANT_NAME_MAX).re
   "invalid_name",
 );
 
+const URL_SCHEME = /[a-z][a-z0-9+.-]*:\S/;
+
 function looksLikeLinkOrAddress(value: string): boolean {
   if (value.includes("@") || value.includes("://")) return true;
   const lower = value.toLowerCase();
-  return lower.includes("www.") || /\b(?:mailto|javascript|data):/.test(lower);
+  // Any `scheme:` followed by text: `https:evil.example` is a link to a URL parser even without
+  // the slashes, and so are `mailto:`, `javascript:` and `data:`.
+  return lower.includes("www.") || URL_SCHEME.test(lower);
 }
 
 /** An e-mail address as stored: trimmed, lower case, at most 254 characters, a valid address, and
