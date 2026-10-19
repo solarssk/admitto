@@ -38,7 +38,7 @@
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
     "@hono/node-server": "^2.1.1",
-    "@prisma/client": "^7.10.0",
+    "@prisma/client": "^7.10.1",
     "@simplewebauthn/server": "^14.0.3",
     "@tabler/icons-webfont": "3.48.0",
     "dejavu-fonts-ttf": "^2.37.3",
