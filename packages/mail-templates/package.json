@@ -37,10 +37,10 @@
     "parse5": "8.0.1"
   },
   "devDependencies": {
-    "@prisma/client": "^7.10.0",
+    "@prisma/client": "^7.10.1",
     "@types/mjml": "^5.0.0",
     "@types/node": "^24.19.1",
-    "prisma": "^7.10.0",
+    "prisma": "^7.10.1",
     "typescript": "^7.0.2"
   }
 }
