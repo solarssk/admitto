@@ -99,6 +99,9 @@ export interface EventDto {
   /** Active (non-revoked/cancelled) attendee count against `capacity` - only set on the
    * single-event fetch (GET /api/admin/events/:eventId), not the picker list. */
   active_attendee_count?: number;
+  /** Seats held against `capacity` (what "full" and "over the limit" compare against); same
+   * single-event-fetch scope as `active_attendee_count`. */
+  seats_in_use?: number;
   archived_at: string | null;
   created_at?: string;
   created_by_display_name?: string | null;
@@ -893,6 +896,8 @@ export interface MailTemplateListItem {
   template_format: "mjml" | "html";
   subject_template: string;
   updated_at: string;
+  /** Registration system template: editable, but never offered for bulk send. */
+  is_system?: boolean;
 }
 
 /** Full template row from GET .../templates/:id. */

@@ -20,6 +20,7 @@ Orchestrates ticket email delivery. The steps:
 - `retryDelivery(deliveryId, prisma, env?, deps?, options?)`
 - `recordTicketViewed(attendeeId, eventId, prisma)`
 - `buildAttendeeMailLinks`, `mapSendResultToDelivery`, `claimInitialDelivery`
+- `buildConfirmUrl(guestOrigin, slug, registrationId)` - the signed guest e-mail confirmation link `{origin}/r/{slug}/confirm/{registrationId}.{mac}` (mac from `@admitto/crypto`; the same registration always gets the same link)
 
 ### Operator preflight
 

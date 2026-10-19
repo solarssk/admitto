@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@admitto/db";
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, signRegistrationConfirm } from "@admitto/crypto";
 import { validateHttpUrl } from "@admitto/mail-templates";
 
 /** Attendee fields required to build mail ticket/QR links. */
@@ -118,4 +118,15 @@ export async function resolveAttendeeMailLinks(
   }
 
   return buildAttendeeMailLinks(attendee, attendee.event, baseUrl, plaintextToken);
+}
+
+/**
+ * Absolute e-mail confirmation link of a guest registration:
+ * `{guestOrigin}/r/{slug}/confirm/{registrationId}.{mac}`. Stateless and deterministic - the same
+ * registration id always gives the same link, so a re-sent mail repeats it. Verification and the
+ * 24 h expiry belong to the confirm route (`verifyRegistrationConfirm` in `@admitto/crypto`).
+ */
+export function buildConfirmUrl(guestOrigin: string, slug: string, registrationId: string): string {
+  const root = guestOrigin.replace(/\/$/, "");
+  return `${root}/r/${slug}/confirm/${registrationId}.${signRegistrationConfirm(registrationId)}`;
 }

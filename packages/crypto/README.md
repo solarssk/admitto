@@ -45,3 +45,7 @@ npm test -w @admitto/crypto
 ```
 
 Vitest sets a fixed 32-byte test key via `vitest.config.ts`; do not use that value in production.
+
+## Registration confirmation signature
+
+`signRegistrationConfirm(registrationId)` returns `base64url(HMAC-SHA256(ENCRYPTION_KEY, "registration-confirm:" + registrationId))`, and `verifyRegistrationConfirm(registrationId, mac)` checks it in constant time. It is the stateless part of the guest e-mail confirmation link (`/r/{slug}/confirm/{registrationId}.{mac}`): the same registration always gets the same link, and nothing is stored. The signature carries no expiry, so the caller checks the registration's own `confirm_expires_at`.

@@ -25,7 +25,7 @@ This file holds what applies to **every** change. Area-specific rules live in [s
 
 Admitto is a self-hostable **internal event access gateway**: attendee import (CSV/XLSX, agency UUIDs), QR tickets, M365 mail, check-in for operators, admin tooling. Tabler-based staff SPA; OIDC-ready auth.
 
-**Out of scope for MVP:** payments, public registration UI inside Admitto (intake is planned as MS Forms → `/api/ingest` - not yet built), full CRM, drag-and-drop mail builder, native `.pkpass` (PassCreator first).
+**Out of scope for MVP:** payments, full CRM, drag-and-drop mail builder, native `.pkpass` (PassCreator first).
 
 ## Working style
 
