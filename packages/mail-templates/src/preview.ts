@@ -99,6 +99,10 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   download_page_url: "",
   ticket_type: "General",
   event_hours: "10:00 - 17:00",
+  confirm_url: "https://tickets.example.com/r/sample-event/confirm/sample-id.sample-mac",
+  contact_name: "Sample Organizer",
+  contact_email: "organizer@example.com",
+  contact_line: "Questions? Contact Sample Organizer at organizer@example.com.",
 };
 
 type EventForBaseTemplateVars = {

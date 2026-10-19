@@ -64,7 +64,21 @@ export {
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_BODY_MJML,
   getBuiltinTemplate,
+  getBuiltinTemplateSource,
+  defaultTemplateLabel,
+  UnknownBuiltinTemplateError,
 } from "./defaultTemplate.js";
+export type { BuiltinTemplateSource } from "./defaultTemplate.js";
+export {
+  SYSTEM_TEMPLATE_NAMES,
+  SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS,
+  isSystemTemplateName,
+  isReservedTemplateName,
+  disallowedPlaceholdersForTemplate,
+} from "./systemTemplates.js";
+export type { SystemTemplateName } from "./systemTemplates.js";
+export { resolveEventContactVars } from "./contactVars.js";
+export type { ContactTemplateVars } from "./contactVars.js";
 export {
   DEFAULT_TEMPLATE_NAME,
   resolveTemplate,

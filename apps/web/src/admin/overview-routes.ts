@@ -3,6 +3,7 @@ import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { activeAttendeeWhere } from "@admitto/tickets";
 import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
 import { loadRecentImportBatches } from "./import-api-routes.js";
 import { buildEverInstalledWalletFilter } from "./wallet-lifecycle-filter.js";
@@ -187,8 +188,7 @@ async function loadWalletInstalledCount(
   if (configured === 0) return null;
   return db.attendee.count({
     where: {
-      event_id: eventId,
-      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+      ...activeAttendeeWhere(eventId),
       AND: [buildEverInstalledWalletFilter()],
     },
   });
