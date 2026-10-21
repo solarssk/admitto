@@ -28,6 +28,7 @@ import {
   type WalletPassProvider,
 } from "@admitto/wallet";
 import {
+  eventCustomFieldOrderBy,
   loadEventCustomDataFields,
   buildCustomDataFromInput,
   validateCustomDataPatch,
@@ -683,6 +684,7 @@ async function parseListQuery(
   const customFieldDefs = await db.eventCustomField.findMany({
     where: { event_id: eventId },
     select: { source_field: true, type: true, options: true },
+    orderBy: eventCustomFieldOrderBy(),
   });
   const customFields = parseCustomFieldFilters(c, customFieldDefs);
   const sortByRaw = c.req.query("sortBy");

@@ -13,6 +13,7 @@ import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   buildExportColumnLabels,
   countPendingGraceInactivePasses,
+  eventCustomFieldOrderBy,
   loadEventTicketTypes,
   writeBulkActionLog,
   type TicketTypeInfo,
@@ -1459,8 +1460,8 @@ async function loadCustomFieldReportsAggregates(
     db.attendee.count({ where: { event_id: eventId } }),
     db.eventCustomField.findMany({
       where: { event_id: eventId },
-      // Same order as the Requirements page's own field list (event-custom-fields-routes.ts).
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      // Same order as the field list and every other reader (eventCustomFieldOrderBy).
+      orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
 
@@ -3014,7 +3015,7 @@ async function exportCustomFieldReportsCsv(
     loadEventTicketTypes(db, eventId),
     db.eventCustomField.findMany({
       where: { event_id: eventId },
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
 

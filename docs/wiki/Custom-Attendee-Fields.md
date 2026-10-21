@@ -47,6 +47,17 @@ The field appears in supported attendee and import workflows with the label, typ
 - Renaming or removing a Select option is a real content change, not a display tweak. Any attendee currently holding that exact value stops matching it and needs to be reassigned.
 - Clearing an option's text down to nothing has the same effect as removing it.
 
+**Order of fields**
+
+- An event's fields have one order. It is the same in the field list, the attendee forms, imports and exports, the Reports tab and the registration form.
+- A new field goes to the end of the list.
+
+**Registration form**
+
+- The registration form asks a guest only for the fields that are set to appear on it. A field that was created before the registration form is not on it.
+- A guest cannot answer a field that is not on the form. For that reason, once an event accepts registrations, a field cannot be **Required** and also left off the form. Admitto refuses to save that combination. Put the field on the form, or clear **Required**.
+- An event that does not accept registrations is not affected.
+
 ## What changes after this action
 
 The field becomes part of the event's attendee data. Editing its label, description, type, required state, or options affects later data entry and validation. Existing values are not rewritten automatically.
@@ -65,6 +76,7 @@ The field becomes part of the event's attendee data. Editing its label, descript
 | **A Select field cannot be saved** | Add at least one option |
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
 | **The field cannot be deleted** | Remove its use from event items first |
+| **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
 | **An attendee's Select value now shows as unset** | Someone renamed or removed the option it used to match. Open the attendee and choose a current option to reassign it. The confirmation shown when the option was edited names which attendees were affected |
 
 **A Select field's Save button is off, or its options say "Unknown"**

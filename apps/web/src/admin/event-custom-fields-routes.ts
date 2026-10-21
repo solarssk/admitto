@@ -5,8 +5,10 @@ import { z } from "zod";
 import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
 import {
   MAX_CUSTOM_FIELDS_PER_EVENT,
+  eventCustomFieldOrderBy,
   isReservedCustomDataSourceField,
   writeBulkActionLog,
+  type OpsAuditContext,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -25,11 +27,25 @@ class FieldLimitReachedError extends Error {}
  * after the initial check. Caught below and mapped to the same 409 response. */
 class FieldInUseError extends Error {}
 
-/** Serializes create/delete for one event's custom-field registry against each other, and against
- * event-items-api-routes.ts's content_fields validation - without this, a concurrent "attach field
- * X to an item" and "delete field X" could interleave so the delete's in-use scan runs before the
- * item's write commits, leaving content_fields pointing at a source_field that no longer exists
- * (same pattern as acquireEventImageAssetsLock in event-image-assets-routes.ts). */
+/** Thrown when a save would leave a field Required while the registration form does not ask it,
+ * in an event that takes registrations. Mapped to 422 `required_field_not_on_form`. */
+class RequiredFieldNotOnFormError extends Error {}
+
+/** Thrown when a PATCH finds its field gone once it holds the lock (a delete committed after the
+ * first read). Answered like any field the event does not have: 403. */
+class FieldGoneError extends Error {}
+
+/** Thrown when a reorder lists other ids than the event's fields have now: one was added or
+ * deleted since the client loaded the list, or never belonged to this event. Mapped to 409
+ * `stale_write`: reload and try again. */
+class FieldSetChangedError extends Error {}
+
+/** Serializes the writes to one event's custom-field registry (create, update, delete, reorder)
+ * against each other, and against event-items-api-routes.ts's content_fields validation - without
+ * this, a concurrent "attach field X to an item" and "delete field X" could interleave so the
+ * delete's in-use scan runs before the item's write commits, leaving content_fields pointing at a
+ * source_field that no longer exists (same pattern as acquireEventImageAssetsLock in
+ * event-image-assets-routes.ts). */
 export async function acquireEventCustomFieldsLock(
   tx: Prisma.TransactionClient,
   eventId: string,
@@ -58,6 +74,9 @@ const createFieldSchema = z
     description: z.string().trim().max(500).optional(),
     type: z.enum(["text", "select", "boolean"]).optional(),
     required: z.boolean().optional(),
+    // Whether the registration form asks guests this question. Left out = off, as for every field
+    // that existed before the form; the Registration page sends true for a field it creates.
+    show_on_form: z.boolean().optional(),
     options: z.array(optionValueField).max(20).optional(),
   })
   .strict()
@@ -79,6 +98,7 @@ const patchFieldSchema = z
     description: z.union([z.string().trim().max(500), z.null()]).optional(),
     type: z.enum(["text", "select", "boolean"]).optional(),
     required: z.boolean().optional(),
+    show_on_form: z.boolean().optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
     // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
     options: z.union([z.array(optionValueField).max(20), z.null()]).optional(),
@@ -88,6 +108,12 @@ const patchFieldSchema = z
     message: "select type requires options",
   });
 
+/** `ids` are the event's field ids in the order they should appear, all of them and each once.
+ * The cap is a bound on the work, not a rule: the exact-set check in the handler decides. */
+const reorderFieldsSchema = z
+  .object({ ids: z.array(z.string().min(1).max(128)).max(100) })
+  .strict();
+
 /** Admin API shape for a single event custom field. */
 export type EventCustomFieldDto = {
   id: string;
@@ -96,20 +122,26 @@ export type EventCustomFieldDto = {
   description: string | null;
   type: "text" | "select" | "boolean";
   required: boolean;
+  show_on_form: boolean;
+  display_order: number | null;
   options: string[] | null;
   created_at: string;
 };
 
-function serializeCustomField(row: {
+type CustomFieldRow = {
   id: string;
   source_field: string;
   label: string;
   description: string | null;
   type: string;
   required: boolean;
+  show_on_form: boolean;
+  display_order: number | null;
   options: Prisma.JsonValue;
   created_at: Date;
-}): EventCustomFieldDto {
+};
+
+function serializeCustomField(row: CustomFieldRow): EventCustomFieldDto {
   const options = Array.isArray(row.options)
     ? row.options.filter((o): o is string => typeof o === "string")
     : null;
@@ -120,9 +152,46 @@ function serializeCustomField(row: {
     description: row.description,
     type: row.type as EventCustomFieldDto["type"],
     required: row.required,
+    show_on_form: row.show_on_form,
+    display_order: row.display_order,
     options: options && options.length > 0 ? options : null,
     created_at: row.created_at.toISOString(),
   };
+}
+
+type FieldDb = PrismaClient | Prisma.TransactionClient;
+type FormFlags = { required: boolean; show_on_form: boolean };
+
+/** True when the event takes registrations through the public form: it has a registration mode.
+ * Without one (no settings row, or a row with mode null) the form does not exist, and the field
+ * API keeps behaving as it did before the form. */
+async function eventAcceptsRegistrations(db: FieldDb, eventId: string): Promise<boolean> {
+  const settings = await db.eventRegistrationSettings.findUnique({
+    where: { event_id: eventId },
+    select: { mode: true },
+  });
+  return settings?.mode != null;
+}
+
+/** Refuses to save a Required field that the registration form does not ask: a guest could never
+ * answer it, and every later edit of that attendee would be refused for the missing value. Only
+ * for an event that takes registrations, and only when the save itself changes `required` or
+ * `show_on_form` (`previous` null = a new field): a field that already was in that state, e.g. one
+ * the import made Required before the form existed, can still be renamed or retyped. The
+ * enable-registration gate checks those. */
+async function assertRequiredFieldStaysOnForm(
+  db: FieldDb,
+  eventId: string,
+  next: FormFlags,
+  previous: FormFlags | null,
+): Promise<void> {
+  if (!next.required || next.show_on_form) return;
+  if (previous?.required === next.required && previous.show_on_form === next.show_on_form) return;
+  if (await eventAcceptsRegistrations(db, eventId)) throw new RequiredFieldNotOnFormError();
+}
+
+function requiredFieldNotOnFormResponse(c: Context): Response {
+  return c.json({ error: "required_field_not_on_form" }, 422);
 }
 
 /** GET /api/admin/events/:eventId/custom-fields */
@@ -136,13 +205,44 @@ export async function handleListEventCustomFields(c: Context, db: PrismaClient):
 
   const rows = await db.eventCustomField.findMany({
     where: { event_id: eventId },
-    // Same tiebreaker as loadEventCustomDataFields (packages/tickets) — rows from the same
-    // createMany share an identical created_at, so id (a per-process monotonic cuid) resolves
-    // ties back to insertion order deterministically.
-    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    // The one order every reader of the registry uses (loadEventCustomDataFields, the exports and
+    // the reports), so a reorder shows the same everywhere.
+    orderBy: eventCustomFieldOrderBy(),
   });
 
   return c.json({ items: rows.map(serializeCustomField) });
+}
+
+/** The row a POST writes: the validated body with its defaults filled in. */
+function newFieldData(
+  eventId: string,
+  input: z.infer<typeof createFieldSchema>,
+): Prisma.EventCustomFieldUncheckedCreateInput & FormFlags {
+  return {
+    event_id: eventId,
+    source_field: input.source_field,
+    label: input.label,
+    description: input.description ?? null,
+    type: input.type ?? "text",
+    required: input.required ?? false,
+    show_on_form: input.show_on_form ?? false,
+    options: input.options ?? Prisma.JsonNull,
+  };
+}
+
+function fieldLimitReachedResponse(c: Context): Response {
+  return c.json({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT }, 422);
+}
+
+/** The answer to a failed create when the failure is a known refusal; any other error is thrown
+ * again. */
+function createFieldFailure(c: Context, err: unknown): Response {
+  if (err instanceof FieldLimitReachedError) return fieldLimitReachedResponse(c);
+  if (err instanceof RequiredFieldNotOnFormError) return requiredFieldNotOnFormResponse(c);
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    return c.json({ error: "source_field_conflict" }, 409);
+  }
+  throw err;
 }
 
 /** POST /api/admin/events/:eventId/custom-fields */
@@ -168,12 +268,10 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
 
   const count = await db.eventCustomField.count({ where: { event_id: eventId } });
   if (count >= MAX_CUSTOM_FIELDS_PER_EVENT) {
-    return c.json(
-      { error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT },
-      422,
-    );
+    return fieldLimitReachedResponse(c);
   }
 
+  const data = newFieldData(eventId, parsed.data);
   try {
     const created = await db.$transaction(async (tx) => {
       // Recheck the cap inside the transaction: the earlier count() above is a fast-path
@@ -186,17 +284,8 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
       if (recount >= MAX_CUSTOM_FIELDS_PER_EVENT) {
         throw new FieldLimitReachedError();
       }
-      const row = await tx.eventCustomField.create({
-        data: {
-          event_id: eventId,
-          source_field: parsed.data.source_field,
-          label: parsed.data.label,
-          description: parsed.data.description ?? null,
-          type: parsed.data.type ?? "text",
-          required: parsed.data.required ?? false,
-          options: parsed.data.options ?? Prisma.JsonNull,
-        },
-      });
+      await assertRequiredFieldStaysOnForm(tx, eventId, data, null);
+      const row = await tx.eventCustomField.create({ data });
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_custom_field_created",
@@ -207,24 +296,43 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
     });
     return c.json(serializeCustomField(created), 201);
   } catch (err) {
-    if (err instanceof FieldLimitReachedError) {
-      return c.json(
-        { error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT },
-        422,
-      );
-    }
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return c.json({ error: "source_field_conflict" }, 409);
-    }
-    throw err;
+    return createFieldFailure(c, err);
   }
 }
 
 /** Load a custom field scoped to event; null when missing or cross-event (caller returns 403). */
-async function loadCustomFieldInEvent(db: PrismaClient, eventId: string, fieldId: string) {
+async function loadCustomFieldInEvent(db: FieldDb, eventId: string, fieldId: string) {
   const row = await db.eventCustomField.findUnique({ where: { id: fieldId } });
   if (row?.event_id !== eventId) return null;
   return row;
+}
+
+/** What the patch changes on the row, key by key; a key the patch leaves out stays untouched. */
+function fieldPatchData(patch: z.infer<typeof patchFieldSchema>): Prisma.EventCustomFieldUpdateInput {
+  const data: Prisma.EventCustomFieldUpdateInput = {};
+  if (patch.label !== undefined) data.label = patch.label;
+  if (patch.description !== undefined) data.description = patch.description;
+  if (patch.type !== undefined) data.type = patch.type;
+  if (patch.required !== undefined) data.required = patch.required;
+  if (patch.show_on_form !== undefined) data.show_on_form = patch.show_on_form;
+  if (patch.options !== undefined) data.options = patch.options ?? Prisma.JsonNull;
+  return data;
+}
+
+/** The two flags as they will be once the patch is applied to `current`. */
+function mergedFormFlags(current: FormFlags, patch: z.infer<typeof patchFieldSchema>): FormFlags {
+  return {
+    required: patch.required ?? current.required,
+    show_on_form: patch.show_on_form ?? current.show_on_form,
+  };
+}
+
+/** The answer to a failed PATCH when the failure is a known refusal; any other error is thrown
+ * again. */
+function patchFieldFailure(c: Context, err: unknown): Response {
+  if (err instanceof RequiredFieldNotOnFormError) return requiredFieldNotOnFormResponse(c);
+  if (err instanceof FieldGoneError) return c.json({ error: "forbidden" }, 403);
+  throw err;
 }
 
 /** PATCH /api/admin/events/:eventId/custom-fields/:fieldId */
@@ -253,28 +361,109 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const data: Prisma.EventCustomFieldUpdateInput = {};
-  if (parsed.data.label !== undefined) data.label = parsed.data.label;
-  if (parsed.data.description !== undefined) data.description = parsed.data.description;
-  if (parsed.data.type !== undefined) data.type = parsed.data.type;
-  if (parsed.data.required !== undefined) data.required = parsed.data.required;
-  if (parsed.data.options !== undefined) data.options = parsed.data.options ?? Prisma.JsonNull;
-
+  const data = fieldPatchData(parsed.data);
   if (Object.keys(data).length === 0) {
     return c.json(serializeCustomField(existing));
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const row = await tx.eventCustomField.update({ where: { id: fieldId }, data });
+  try {
+    const updated = await db.$transaction(async (tx) => {
+      // Under the lock, and from a fresh read: the Required-on-form check below has to judge the
+      // flags this update replaces, not those a save that committed a moment ago has changed
+      // (two PATCHes that each flip one flag would otherwise both pass and leave both flipped).
+      await acquireEventCustomFieldsLock(tx, eventId);
+      const current = await loadCustomFieldInEvent(tx, eventId, fieldId);
+      if (!current) throw new FieldGoneError();
+      await assertRequiredFieldStaysOnForm(tx, eventId, mergedFormFlags(current, parsed.data), current);
+      const row = await tx.eventCustomField.update({ where: { id: fieldId }, data });
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "event_custom_field_updated",
+        audit: adminAuditFromContext(c),
+        metadata: { source_field: row.source_field },
+      });
+      return row;
+    });
+    return c.json(serializeCustomField(updated));
+  } catch (err) {
+    return patchFieldFailure(c, err);
+  }
+}
+
+/** Gives the event's fields the positions 0, 1, 2... in the order of `ids`, and returns them in
+ * that order. Writes only the rows whose position differs, and writes the audit entry only when
+ * something did: asking for the order that already is stored changes and records nothing. */
+async function renumberCustomFields(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  ids: readonly string[],
+  audit: OpsAuditContext,
+): Promise<CustomFieldRow[]> {
+  const rows = await tx.eventCustomField.findMany({ where: { event_id: eventId } });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ordered: CustomFieldRow[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) throw new FieldSetChangedError();
+    ordered.push(row);
+  }
+  // Every listed id is a field of this event and none is listed twice, so equal sizes mean equal sets.
+  if (ordered.length !== rows.length) throw new FieldSetChangedError();
+
+  let moved = 0;
+  for (const [position, row] of ordered.entries()) {
+    if (row.display_order === position) continue;
+    await tx.eventCustomField.update({ where: { id: row.id }, data: { display_order: position } });
+    moved += 1;
+  }
+  if (moved > 0) {
     await writeBulkActionLog(tx, {
       event_id: eventId,
-      action_type: "event_custom_field_updated",
-      audit: adminAuditFromContext(c),
-      metadata: { source_field: row.source_field },
+      action_type: "event_custom_fields_reordered",
+      audit,
+      metadata: { source_fields: ordered.map((row) => row.source_field) },
     });
-    return row;
-  });
-  return c.json(serializeCustomField(updated));
+  }
+  return ordered.map((row, position) => ({ ...row, display_order: position }));
+}
+
+/** PUT /api/admin/events/:eventId/custom-fields/order - body `{ ids }`: the ids of all the event's
+ * fields, in the order they should appear. One request, one transaction under the event's
+ * custom-fields lock, so a reorder is never half applied and two at once leave the order of the
+ * one that ran last. It also numbers fields that had no position yet (every field created since
+ * the last reorder), so the result is always 0, 1, 2... with no gap and no repeat. A list that is
+ * not exactly the fields the event has now answers 409 `stale_write`: the caller reloads. */
+export async function handleReorderEventCustomFields(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+
+  const parsed = reorderFieldsSchema.safeParse(body);
+  if (!parsed.success || new Set(parsed.data.ids).size !== parsed.data.ids.length) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+  const { ids } = parsed.data;
+
+  try {
+    const items = await db.$transaction(async (tx) => {
+      await acquireEventCustomFieldsLock(tx, eventId);
+      return renumberCustomFields(tx, eventId, ids, adminAuditFromContext(c));
+    });
+    return c.json({ items: items.map(serializeCustomField) });
+  } catch (err) {
+    if (err instanceof FieldSetChangedError) return c.json({ error: "stale_write" }, 409);
+    throw err;
+  }
 }
 
 /** GET /api/admin/events/:eventId/custom-fields/:fieldId/option-usage — how many attendees
