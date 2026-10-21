@@ -189,6 +189,78 @@
   color: var(--text-muted);
 }
 
+/* The Registration page's card has one more column, the "On the form" switch, and two more buttons in each row, the arrows
+   that order the fields; the others make room for them. */
+.requirements-item-form-col {
+  width: 7rem;
+  white-space: nowrap;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.requirements-section--registration .requirements-item-status-col {
+  width: 6rem;
+}
+
+.requirements-section--registration .requirements-item-actions {
+  width: 9.25rem;
+}
+
+/* A field's name and description are the question a guest reads, so here they wrap and the row grows, never cut to an
+   ellipsis or to two lines as on Requirements. */
+.requirements-section--registration .requirements-item-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.requirements-section--registration .requirements-item-desc {
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+/* What the table can hold depends on the width of the card, not of the screen (the menu takes another share of the screen at
+   each width), so the table's wrap is a container, and the columns that matter least go as it narrows: Required first, then
+   the description (both are in the edit dialog). The container is the wrap, not the section: a container holds the fixed
+   dialogs of the card inside its own box. */
+.requirements-section--registration .attendees-table-wrap {
+  container-type: inline-size;
+}
+
+@container (max-width: 719px) {
+  .requirements-section--registration .requirements-item-status-col {
+    display: none;
+  }
+}
+
+@container (max-width: 559px) {
+  .requirements-section--registration .requirements-item-desc-col {
+    display: none;
+  }
+
+  /* The name takes what the switch and the buttons leave (it is 28% on a wide card, which here is a column of a few letters). */
+  .requirements-section--registration .table th:first-child,
+  .requirements-section--registration .table td:first-child {
+    width: auto;
+  }
+}
+
+@container (max-width: 439px) {
+  /* A phone: the switch is what this card is for, so it stays, and the four buttons go two by two next to it. */
+  .requirements-section--registration .requirements-item-form-col {
+    width: 4.5rem;
+  }
+
+  .requirements-section--registration .requirements-item-actions {
+    width: 5.5rem;
+  }
+
+  .requirements-section--registration .requirements-item-actions__wrap {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
 .requirements-contents-row {
   display: flex;
   flex-direction: column;
