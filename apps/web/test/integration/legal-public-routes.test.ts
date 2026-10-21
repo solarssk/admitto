@@ -340,6 +340,25 @@ describe("limits and failures", () => {
     expect(blocked.headers.getSetCookie()).toEqual([]);
   });
 
+  it("shows tabs between an event's published texts only, and none for an event with one text", async () => {
+    const res = await get(`/legal/${SLUG}/privacy-notice`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const nav = html.match(/<nav class="legal__tabs"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(nav).toContain(`href="/legal/${SLUG}/privacy-notice" aria-current="page"`);
+    expect(nav).toContain(`href="/legal/${SLUG}/consent-photos"`);
+    expect(nav).toContain("I agree to be photographed");
+    // The drafts of the same event are not there.
+    expect(nav).not.toContain("event-terms");
+    expect(nav).not.toContain("Newsletter");
+    expect(nav.match(/class="legal__tab"/g)).toHaveLength(2);
+
+    const single = await get(`/legal/${SLUG_OTHER}/privacy-notice`);
+    expect(await single.text()).not.toContain("<nav");
+    // Another event's texts never appear as tabs.
+    expect(nav).not.toContain(SLUG_OTHER);
+  });
+
   it("answers a database failure with the standard error page, naming nothing", async () => {
     const failing = new Proxy(prisma, {
       get(target, property, receiver) {

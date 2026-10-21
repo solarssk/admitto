@@ -282,6 +282,7 @@ An event can carry its own privacy notice, event terms and extra consents. An ev
 | Limits | A title of up to 200 characters, a text of up to 100 000 characters, a request body of up to 512 KB, and up to 10 extra consents per event. |
 | Audit | Saving, publishing, withdrawing and deleting a text write an entry to the audit log (event, kind and key). The text is never written there. |
 | Reach | A published text is served whatever the event's registration setting is, and for an archived event too, so a guest can read again what they were told and accepted. A draft is never served. |
+| Tabs | When an event has two or more published texts, each page shows tabs to the others (title and link only, read in the same query as the text). A draft and the texts of another event never appear, and a page with a single text has no tabs. |
 | Gate | The registration settings, which come in a later change, must call the gate in the transaction that turns registration on: it answers 409 `legal_documents_missing` until the privacy notice, the terms and every extra consent the event asks for are published. Already today, a text that registration needs cannot be withdrawn or deleted while registration is on (409 `legal_document_in_use`). The gate and the withdrawal take one lock per event, so they cannot interleave. |
 | Rate limit | The pages share the per-IP bucket of the registration form's page (300 / 60 s, see [Public and authentication](#public-and-authentication)). |
 

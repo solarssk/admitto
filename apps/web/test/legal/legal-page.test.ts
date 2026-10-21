@@ -15,6 +15,7 @@ const PAGE: PublishedLegalPage = {
   contentHtml: '<h2>Who we are</h2><p>Text with <a href="https://example.com/p">a link</a>.</p>',
   eventTitle: "Summit 2026",
   logoUrl: null,
+  tabs: [],
 };
 
 describe("renderLegalDocumentPage", () => {
@@ -53,6 +54,37 @@ describe("renderLegalDocumentPage", () => {
     expect(withLogo).not.toContain("admitto-mark.svg");
   });
 
+  it("shows tabs between the event's published texts, with the open one marked", () => {
+    const html = renderLegalDocumentPage({
+      ...PAGE,
+      tabs: [
+        { kind: "privacy_notice", title: "Privacy notice", path: "/legal/summit-2026/privacy-notice", current: true },
+        { kind: "event_terms", title: "Event terms", path: "/legal/summit-2026/event-terms", current: false },
+        { kind: "consent", title: "Photo consent", path: "/legal/summit-2026/consent-photos", current: false },
+      ],
+    });
+    expect(html).toContain('<nav class="legal__tabs" aria-label="Legal texts of this event">');
+    const nav = html.match(/<nav[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(nav.match(/class="legal__tab"/g)).toHaveLength(3);
+    expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(html).toContain('<a class="legal__tab" href="/legal/summit-2026/privacy-notice" aria-current="page">');
+    expect(html).toContain('href="/legal/summit-2026/consent-photos"><svg');
+    expect(html.indexOf("<nav")).toBeGreaterThan(html.indexOf("</header>"));
+    expect(html.indexOf("<nav")).toBeLessThan(html.indexOf('class="legal__event"'));
+  });
+
+  it("prints no tabs for a single text, and escapes a tab's title", () => {
+    expect(renderLegalDocumentPage(PAGE)).not.toContain("<nav");
+    const one = { kind: "privacy_notice" as const, title: "Only", path: "/legal/s/privacy-notice", current: true };
+    expect(renderLegalDocumentPage({ ...PAGE, tabs: [one] })).not.toContain("<nav");
+    const html = renderLegalDocumentPage({
+      ...PAGE,
+      tabs: [one, { kind: "consent", title: '<img src=x onerror="1">', path: "/legal/s/consent-a", current: false }],
+    });
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x onerror=&quot;1&quot;&gt;");
+  });
+
   it("is the same page for the same text", () => {
     expect(renderLegalDocumentPage(PAGE)).toBe(renderLegalDocumentPage({ ...PAGE }));
   });
@@ -73,6 +105,7 @@ const STORED = {
     logo_url: null,
     header_image_url: null,
     organization: { logo_url: "https://cdn.example.com/org.png", header_image_url: null },
+    legal_documents: [{ kind: "event_terms", key: "", title: "Event terms" }],
   },
 };
 
@@ -93,7 +126,47 @@ describe("loadPublishedLegalPage", () => {
       contentHtml: "<p>Terms</p>",
       eventTitle: "Summit 2026",
       logoUrl: "https://cdn.example.com/org.png",
+      tabs: [],
     });
+  });
+
+  it("builds the tabs in reading order from the event's published texts, the page's own marked", async () => {
+    const { db, findFirst } = fakeDb({
+      ...STORED,
+      event: {
+        ...STORED.event,
+        legal_documents: [
+          { kind: "consent", key: "photos", title: "Photo consent" },
+          { kind: "event_terms", key: "", title: "Event terms" },
+          { kind: "consent", key: "news", title: "Newsletter" },
+          { kind: "privacy_notice", key: "", title: "Privacy notice" },
+        ],
+      },
+    });
+    const page = await loadPublishedLegalPage(db, "summit-2026", "event-terms");
+    expect(page?.tabs).toEqual([
+      { kind: "privacy_notice", title: "Privacy notice", path: "/legal/summit-2026/privacy-notice", current: false },
+      { kind: "event_terms", title: "Event terms", path: "/legal/summit-2026/event-terms", current: true },
+      { kind: "consent", title: "Newsletter", path: "/legal/summit-2026/consent-news", current: false },
+      { kind: "consent", title: "Photo consent", path: "/legal/summit-2026/consent-photos", current: false },
+    ]);
+    expect(findFirst.mock.calls[0]![0]).toMatchObject({
+      select: { event: { select: { legal_documents: { where: { published_at: { not: null } } } } } },
+    });
+  });
+
+  it("ignores a text of a kind it does not know when it builds the tabs", async () => {
+    const { db } = fakeDb({
+      ...STORED,
+      event: {
+        ...STORED.event,
+        legal_documents: [
+          { kind: "event_terms", key: "", title: "Event terms" },
+          { kind: "something_else", key: "", title: "Unknown" },
+        ],
+      },
+    });
+    await expect(loadPublishedLegalPage(db, "summit-2026", "event-terms")).resolves.toMatchObject({ tabs: [] });
   });
 
   it("returns null when there is no such published text", async () => {
