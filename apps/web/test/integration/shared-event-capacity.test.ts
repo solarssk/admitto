@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { commitImport, executeImportCommit, ImportCapacityExceededError } from "@admitto/import";
-import { eraseAttendees } from "@admitto/tickets";
+import { admitRegistrations, eraseAttendees } from "@admitto/tickets";
 import { handleCreateEventAttendee, handlePatchEventAttendee } from "../../src/admin/attendees-api-routes.js";
 
 let db: PrismaClient;
@@ -47,10 +47,13 @@ afterEach(async () => {
   await db.event.delete({ where: { id: eventId } });
   await db.user.delete({ where: { id: userId } });
   await db.organization.delete({ where: { id: orgId } });
+  // The clients a test opened (the paused and the observed one) are done: only the shared client stays, so that this
+  // file does not hold a connection per pair of writers until its end.
+  await Promise.all(clients.splice(1).map((client) => client.$disconnect()));
 });
 afterAll(async () => { await Promise.all(clients.map((client) => client.$disconnect())); });
 
-type Writer = "manual" | "import" | "direct";
+type Writer = "manual" | "import" | "direct" | "registration";
 async function write(kind: Writer, client = db, force = false, targetEventId = eventId): Promise<"created" | "event_full"> {
   const email = `capacity-entry-${++sequence}@example.com`;
   if (kind === "manual") {
@@ -68,6 +71,19 @@ async function write(kind: Writer, client = db, force = false, targetEventId = e
     expect(response.status).toBe(409);
     expect((await response.json() as { code: string }).code).toBe("event_full");
     return "event_full";
+  }
+  if (kind === "registration") {
+    // An organiser admits a guest's registration: the shared function of @admitto/tickets, under the same lock.
+    const registration = await client.registration.create({
+      data: {
+        event_id: targetEventId, email, first_name: "Synthetic", last_name: "Registration",
+        name: "Synthetic Registration", status: "pending",
+      },
+    });
+    const result = await admitRegistrations(client, { eventId: targetEventId, ids: [registration.id], actor: { operator: userId } });
+    if (result.status === "not_enough_seats") return "event_full";
+    expect(result.outcomes[0]?.outcome).toBe("accepted");
+    return "created";
   }
   try {
     const result = kind === "direct"
@@ -157,7 +173,11 @@ async function completedOrBlocked(completed: () => boolean, pid: () => number | 
 }
 
 describe("shared final event capacity (real migrated PostgreSQL)", () => {
-  it.each([["manual", "import"], ["import", "manual"], ["manual", "manual"], ["import", "import"], ["manual", "direct"], ["direct", "manual"], ["direct", "direct"]] as const)("serializes %s followed by %s at the last place", async (firstKind, secondKind) => {
+  it.each([
+    ["manual", "import"], ["import", "manual"], ["manual", "manual"], ["import", "import"], ["manual", "direct"], ["direct", "manual"], ["direct", "direct"],
+    ["registration", "manual"], ["manual", "registration"], ["registration", "import"], ["import", "registration"],
+    ["registration", "direct"], ["direct", "registration"], ["registration", "registration"],
+  ] as const)("serializes %s followed by %s at the last place", async (firstKind, secondKind) => {
     const paused = pauseCapacityRead();
     const first = Promise.allSettled([write(firstKind, paused.client)]);
     await paused.reached;
