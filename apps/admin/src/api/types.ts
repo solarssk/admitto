@@ -1384,6 +1384,24 @@ export interface SaveWeatherSettingsBody {
   apiKey?: string | null;
 }
 
+/** GET /api/admin/registration/turnstile: the Cloudflare Turnstile keys of guest registration. The
+ * secret key is write-only, so only whether one is saved comes back. `ready` means both keys are
+ * saved and readable, `incomplete` that one is missing, `unreadable` that a saved secret cannot be
+ * decrypted (the ENCRYPTION_KEY changed). */
+export type RegistrationTurnstileStatus = "ready" | "incomplete" | "unreadable";
+
+export interface RegistrationTurnstileDto {
+  site_key: string | null;
+  secret_set: boolean;
+  status: RegistrationTurnstileStatus;
+}
+
+/** `null` clears a key, a string sets it, leaving a key out keeps it. */
+export interface SaveRegistrationTurnstileBody {
+  site_key?: string | null;
+  secret_key?: string | null;
+}
+
 export interface SaveMapsSettingsBody {
   enabled?: boolean;
   tileUrl?: string | null;

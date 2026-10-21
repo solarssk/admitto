@@ -39,6 +39,8 @@ import {
   resolveEffectiveWeatherConfig,
 } from "../weather/weather-org-settings.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { getEnabledAccessMethods } from "../registration/access-methods.js";
+import { describeTurnstileSettings } from "../registration/turnstile-settings.js";
 
 export type { HealthOverallStatus, HealthRowStatus };
 
@@ -1567,6 +1569,57 @@ function buildGroup(
   };
 }
 
+/**
+ * Cloudflare Turnstile keys for the public registration form (D-C2). Passive, like Wallet: it says
+ * what is saved, not whether Cloudflare accepts it. The warning is for the case that otherwise
+ * stays silent: an event has registration on by public link or password, no usable keys are saved,
+ * and so the form is closed. Archived events are not counted. Replaces a log line per request, which anonymous traffic could
+ * use to flush the system log (SEC-18).
+ */
+async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
+  const label = "Bot protection, Turnstile";
+  const row = (
+    status: HealthRowStatus,
+    summary: string,
+    entries: Array<[string, string | undefined | null]>,
+  ): HealthCheckRow => ({
+    id: "registration_captcha",
+    label,
+    status,
+    summary,
+    details: detailsFromEntries([["status", status], ...entries, ["last_checked", checkedAt]]),
+  });
+
+  const settings = await describeTurnstileSettings(db);
+  if (settings.state === "ready") return row("ok", "Configured", [["configured", "yes"]]);
+  if (settings.state === "unreadable") {
+    return row("degraded", "The saved secret key cannot be read", [
+      ["configured", "yes"],
+      ["reason", "secret_unreadable"],
+    ]);
+  }
+
+  // Only now does it matter whether anything is waiting for the keys: a form that a guest reaches by
+  // a public link or a password, for a method the administrator has not turned off for everyone (an
+  // event keeps its own list when a method is turned off, and a form behind a disabled method is closed
+  // anyway). SSO needs no challenge, so an event that only offers SSO is no reason to warn.
+  const challenged = (await getEnabledAccessMethods(db)).filter((method) => method === "link" || method === "password");
+  if (challenged.length === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
+  const events = await db.eventRegistrationSettings.count({
+    where: { mode: { not: null }, access_methods: { hasSome: challenged }, event: { archived_at: null } },
+  });
+  if (events === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
+  return row(
+    "degraded",
+    `Registration by link or password is on for ${events} event${events === 1 ? "" : "s"}, but the keys are not set`,
+    [
+      ["configured", "no"],
+      ["reason", "keys_missing"],
+      ["events_with_registration", String(events)],
+    ],
+  );
+}
+
 /** Soft external check: per-event bounce-ingest last runs (does not affect /healthz). */
 async function bounceIngestRow(
   db: PrismaClient,
@@ -1688,6 +1741,18 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
+  const registrationCaptchaFallback: HealthCheckRow = {
+    id: "registration_captcha",
+    label: "Bot protection, Turnstile",
+    status: "degraded",
+    summary: "Could not evaluate bot protection",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const [
     setup,
     gauges,
@@ -1699,6 +1764,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     cfAccess,
     address,
     weather,
+    registrationCaptcha,
     dbProbe,
     engine,
     fileStorage,
@@ -1723,6 +1789,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
           ["last_checked", checkedAt],
         ]),
       })),
+      registrationCaptchaRow(deps.db, checkedAt).catch(() => registrationCaptchaFallback),
       checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
       readPostgresEngine(deps.db),
       fileStorageRow(env, checkedAt, live),
@@ -1755,6 +1822,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     weather,
     ...idpRows,
     cfAccess,
+    registrationCaptcha,
   ];
 
   const groups = [

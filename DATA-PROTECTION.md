@@ -398,6 +398,7 @@ The subprocessors depend on your configuration:
 - optional CDN/WAF
 - optional geocoding (Nominatim) and weather (MET Norway or Open-Meteo) lookups. These send venue coordinates or search text and a User-Agent carrying the instance's Support contact, but never attendee data.
 - when Wallet is enabled, the configured wallet pass provider (PassCreator, for Apple/Google Wallet)
+- when the public registration form is set up, Cloudflare Turnstile. A visitor's browser sends Cloudflare its IP address and browser signals when the form opens, and the server sends the secret key and the challenge token to check the result. Turnstile receives none of the form's content. Name Cloudflare in the privacy notice of the form.
 
 Template: [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md).
 

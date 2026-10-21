@@ -14,7 +14,7 @@ const plain = decrypt(payload);
 ```
 
 - `encryptToString` / `decryptFromString` store `{ ciphertext, iv, authTag, keyVersion }` as a single JSON string. The values are base64 strings, with a 12-byte `iv`, a 16-byte `authTag`, and `keyVersion` `1` or `2`.
-- It is used for `Attendee.token_enc`, IdP `client_secret`, TOTP secrets, mail provider credentials, wallet API keys, IMAP bounce-ingest passwords, the weather API key and the notification webhook URL.
+- It is used for `Attendee.token_enc`, IdP `client_secret`, TOTP secrets, mail provider credentials, wallet API keys, IMAP bounce-ingest passwords, the weather API key, the Turnstile secret key and the notification webhook URL.
 
 ## Contexts and errors
 
@@ -22,7 +22,7 @@ const plain = decrypt(payload);
 
 - Both functions take an optional `context` string.
 - With one, the value is written as `keyVersion` `2`, and the context is authenticated as AES-GCM additional data (not stored). So a ciphertext moved into a column with another purpose does not decrypt.
-- TOTP secrets, IdP client secrets, mail credentials, event wallet API keys, the IMAP bounce password and the notification webhook URL use it. `SECRET_CONTEXTS` holds the per-column strings. `rebindToContext` upgrades a stored legacy value, and `npm run db:rebind-secret-contexts` uses it.
+- TOTP secrets, IdP client secrets, mail credentials, event wallet API keys, the IMAP bounce password, the Turnstile secret key and the notification webhook URL use it. `SECRET_CONTEXTS` holds the per-column strings. `rebindToContext` upgrades a stored legacy value, and `npm run db:rebind-secret-contexts` uses it.
 - Without one, `keyVersion` `1` is written.
 - Version `1` values decrypt with or without a context, so existing rows keep working. But a build older than this change cannot read version `2` values (no rollback for those rows).
 

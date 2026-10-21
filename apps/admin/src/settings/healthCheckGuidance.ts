@@ -200,6 +200,31 @@ function cloudflareAccessGuidance(check: HealthCheckRowDto): HealthCheckGuidance
   return null;
 }
 
+/** Only reached for a degraded row. The registration form is closed in both states, so a guest sees
+ * nothing but a form that never opens; this row is where the superadmin finds out why. */
+function registrationCaptchaGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  const link = { label: "Open External services", to: "/admin/settings?tab=external" };
+  const reason = detailValue(check, "reason");
+  if (check.status !== "degraded") return null;
+  if (reason === "keys_missing") {
+    return {
+      cause: "Registration by public link or password is switched on for at least one event, but the Turnstile site key or secret key is not saved.",
+      impact: "That registration form stays closed, so guests cannot sign up.",
+      nextStep: "Save both Turnstile keys under Guest registration in External services.",
+      link,
+    };
+  }
+  if (reason === "secret_unreadable") {
+    return {
+      cause: "The saved Turnstile secret key was probably encrypted with a different ENCRYPTION_KEY.",
+      impact: "Registration forms that use a public link or a password stay closed, so guests cannot sign up.",
+      nextStep: "Enter the secret key again under Guest registration in External services, or restore the previous ENCRYPTION_KEY.",
+      link,
+    };
+  }
+  return null;
+}
+
 /** `not_a_directory`/`not_writable` (both original) and `cannot_create_directory` (added later
  * by #1477's canCreateUploadDir(), after this guidance table was first drafted) all describe the
  * same underlying problem - no working upload folder - so they share one message. */
@@ -368,6 +393,7 @@ const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheck
   ["mail_delivery_queue", mailDeliveryQueueGuidance],
   ["email_sending", emailSendingGuidance],
   ["cloudflare_access", cloudflareAccessGuidance],
+  ["registration_captcha", registrationCaptchaGuidance],
   ["file_storage", fileStorageGuidance],
   ["address_lookup", addressLookupGuidance],
   ["weather", weatherGuidance],

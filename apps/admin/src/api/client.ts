@@ -87,6 +87,8 @@ import type {
   ExternalServicesConnectionTestResponse,
   SaveWeatherSettingsBody,
   SaveMapsSettingsBody,
+  RegistrationTurnstileDto,
+  SaveRegistrationTurnstileBody,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -2425,6 +2427,16 @@ export async function saveMapsSettings(
   const res = await fetch("/api/admin/external-services/maps", jsonPutInit(body));
   const data = await parseJson<{ maps: ExternalServicesResponse["maps"] }>(res);
   return data.maps;
+}
+
+export async function fetchRegistrationTurnstile(signal?: AbortSignal): Promise<RegistrationTurnstileDto> {
+  const res = await fetch("/api/admin/registration/turnstile", { credentials: "same-origin", signal });
+  return parseJson<RegistrationTurnstileDto>(res);
+}
+
+export async function saveRegistrationTurnstile(body: SaveRegistrationTurnstileBody): Promise<RegistrationTurnstileDto> {
+  const res = await fetch("/api/admin/registration/turnstile", jsonPutInit(body));
+  return parseJson<RegistrationTurnstileDto>(res);
 }
 
 /** Probe weather provider from a draft (no persist). */
