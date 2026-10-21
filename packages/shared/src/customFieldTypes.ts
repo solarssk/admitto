@@ -16,6 +16,12 @@ export const EVENT_CUSTOM_FIELD_TYPES = [
 
 export type EventCustomFieldType = (typeof EVENT_CUSTOM_FIELD_TYPES)[number];
 
+/** The types a person types or picks freely (everything except a choice among options and yes/no).
+ * A list filter for these is a "contains" text box, not a list of options. */
+export function isFreeInputCustomFieldType(type: string): boolean {
+  return type === "text" || type === "long_text" || type === "date" || type === "datetime" || type === "phone";
+}
+
 /** Longest `text` answer, in characters. */
 export const EVENT_CUSTOM_FIELD_TEXT_MAX = 100;
 /** Longest `long_text` answer, in characters. */

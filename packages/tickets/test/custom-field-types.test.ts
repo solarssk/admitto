@@ -171,6 +171,12 @@ describe("the types that existed before", () => {
     expect(normalize(field("text"), "a".repeat(100))).toBe("a".repeat(100));
   });
 
+  it("cuts that text after 100 characters counted in code points, never inside an emoji", () => {
+    expect(normalize(field("text"), "😀".repeat(101))).toBe("😀".repeat(100));
+    // The 100th character is an emoji whose first UTF-16 unit is the 100th unit: it stays whole.
+    expect(normalize(field("text"), `${"a".repeat(99)}😀b`)).toBe(`${"a".repeat(99)}😀`);
+  });
+
   it("treats a type it does not know like text", () => {
     expect(normalize(field("weird" as EventCustomFieldType), "a".repeat(150))).toHaveLength(100);
   });

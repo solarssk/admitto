@@ -4,6 +4,7 @@ import {
   EVENT_CUSTOM_FIELD_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TYPES,
   eventCustomFieldRulesMaxLength,
+  isFreeInputCustomFieldType,
 } from "../src/customFieldTypes.js";
 
 describe("EVENT_CUSTOM_FIELD_TYPES", () => {
@@ -26,5 +27,12 @@ describe("eventCustomFieldRulesMaxLength", () => {
     for (const type of ["date", "datetime", "select", "boolean", "unknown", ""]) {
       expect(eventCustomFieldRulesMaxLength(type)).toBeNull();
     }
+  });
+});
+
+describe("isFreeInputCustomFieldType", () => {
+  it("is true for the types a person types, false for a choice, yes/no and anything unknown", () => {
+    for (const type of ["text", "long_text", "date", "datetime", "phone"]) expect(isFreeInputCustomFieldType(type)).toBe(true);
+    for (const type of ["select", "boolean", "unknown", ""]) expect(isFreeInputCustomFieldType(type)).toBe(false);
   });
 });

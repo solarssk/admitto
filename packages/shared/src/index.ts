@@ -19,6 +19,7 @@ export {
   EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TYPES,
+  isFreeInputCustomFieldType,
   eventCustomFieldRulesMaxLength,
   type EventCustomFieldRules,
   type EventCustomFieldType,

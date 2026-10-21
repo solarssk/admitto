@@ -1,10 +1,12 @@
 import { EVENT_CUSTOM_FIELD_TEXT_MAX, eventCustomFieldRulesMaxLength } from "@admitto/shared";
 import { customDataValue } from "./custom-data.js";
 import {
+  codePointLength,
   normalizeDateAnswer,
   normalizeDateTimeAnswer,
   normalizeLongTextAnswer,
   normalizePhoneAnswer,
+  truncateToCodePoints,
 } from "./custom-field-formats.js";
 import { breaksFieldRules } from "./custom-field-rules.js";
 import type { EventItemContent } from "./types.js";
@@ -45,7 +47,7 @@ function normalizeByType(field: EventItemContent, type: string, trimmed: string)
     case "long_text":
       return normalizeLongTextAnswer(trimmed);
     default:
-      return trimmed.slice(0, EVENT_CUSTOM_FIELD_TEXT_MAX);
+      return truncateToCodePoints(trimmed, EVENT_CUSTOM_FIELD_TEXT_MAX);
   }
 }
 
@@ -100,7 +102,7 @@ function assertStoredCustomDataValid(
  * holds at most the short text limit: it is refused, never cut. (The import reads whole files, so it
  * cuts a text answer in normalizeCustomDataFieldValue instead.) */
 function assertWithinAnswerLimit(field: EventItemContent, key: string, value: string): void {
-  if (field.type !== "long_text" && value.trim().length > EVENT_CUSTOM_FIELD_TEXT_MAX) {
+  if (field.type !== "long_text" && codePointLength(value.trim()) > EVENT_CUSTOM_FIELD_TEXT_MAX) {
     throw new Error(`validation_failed:${key}`);
   }
 }

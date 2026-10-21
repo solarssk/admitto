@@ -485,6 +485,14 @@ describe("buildRegistrantCustomData: the other answer types", () => {
     }
   });
 
+  it("counts a short text answer in code points: 100 emoji fit, 101 do not", () => {
+    const fields = [field({ source_field: "mood" })];
+    // 100 emoji are 200 UTF-16 units, and still the 100 characters the limit is written in.
+    const hundred = "\u{1F600}".repeat(100);
+    expect(buildRegistrantCustomData(fields, { mood: hundred })).toEqual({ mood: hundred });
+    expect(() => buildRegistrantCustomData(fields, { mood: "\u{1F600}".repeat(101) })).toThrow(RegistrantInputError);
+  });
+
   it("refuses over-long text on a rule's maximum, not by cutting it", () => {
     const fields = [field({ source_field: "code", rules: { max_length: 5 } })];
     expect(buildRegistrantCustomData(fields, { code: "abcde" })).toEqual({ code: "abcde" });

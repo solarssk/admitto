@@ -11,6 +11,15 @@ export function codePointLength(value: string): number {
   return length;
 }
 
+/** `value` cut to its first `max` code points, never through the middle of a surrogate pair. */
+export function truncateToCodePoints(value: string, max: number): string {
+  let end = 0;
+  for (let length = 0; end < value.length && length < max; length += 1) {
+    end += (value.codePointAt(end) ?? 0) > 0xffff ? 2 : 1;
+  }
+  return value.slice(0, end);
+}
+
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
