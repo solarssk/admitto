@@ -1,6 +1,7 @@
 import { Prisma } from "@admitto/db/client";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
 import { passIsStillToDelete, reservedPassId } from "./erase-wallet-passes.js";
+import { lockRegistrationQueue } from "./registration-lock.js";
 import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 export type RemoveAttendeesParams = {
@@ -44,6 +45,9 @@ export type RemoveAttendeesResult = {
     emailDeliveries: number;
     walletPasses: number;
     checkIns: number;
+    /** Guest registrations deleted with their queued mail: the one an attendee was accepted from, and those of the
+     * event with one of the attendee's addresses that no attendee was accepted from (see scrubAttendeeTraces). */
+    registrations: number;
   };
   /**
    * The passes of the removed attendees that were still at the wallet provider (a provider id, not
@@ -65,11 +69,12 @@ export type RemoveAttendeesResult = {
    */
   untrackedWalletTargets: RemoveUntrackedWalletTarget[];
   /**
-   * The addresses the removed attendees had, lower-cased: the current one and the one their first
-   * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
-   * that are not keyed by attendee (see scrubImportJobResults). Attendees that were erased before
-   * have a placeholder address and add nothing. They are personal data: used in memory by the
-   * caller within the same request, never logged, audited or stored.
+   * The addresses the removed attendees had, lower-cased: the current one, the one their first
+   * ticket mail went to and the ones their activity log records an edit from or to (see
+   * collectAttendeeAddresses), for scrubbing event-level copies of them that are not keyed by
+   * attendee (see scrubImportJobResults). Attendees that were erased before have a placeholder
+   * address and add nothing. They are personal data: used in memory by the caller within the same
+   * request, never logged, audited or stored.
    */
   previousEmails: string[];
   /**
@@ -81,9 +86,10 @@ export type RemoveAttendeesResult = {
 
 /**
  * Removes attendees from an event for good (the hard delete, for mistakes: a duplicate, a test
- * person, a wrong import). The row goes with its deliveries, wallet pass and check-ins, and with
- * everything that hangs off it by cascade (notes, the per-attendee activity log, item hand-outs),
- * so Reports change; the copies of the identity that live elsewhere are scrubbed too (see
+ * person, a wrong import). The row goes with its deliveries, wallet pass, check-ins and the
+ * registration it was accepted from, and with everything that hangs off it by cascade (notes, the
+ * per-attendee activity log, item hand-outs), so Reports change; the copies of the identity that
+ * live elsewhere are scrubbed too, registrations with one of the person's addresses among them (see
  * scrubAttendeeTraces). Runs inside the caller's transaction so the removal and its audit entry
  * commit together.
  *
@@ -105,7 +111,7 @@ export async function removeAttendees(
   const empty: RemoveAttendeesResult = {
     removedIds: [],
     notFoundIds: requestedIds,
-    counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
+    counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0, registrations: 0 },
     walletTargets: [],
     untrackedWalletTargets: [],
     previousEmails: [],
@@ -120,6 +126,10 @@ export async function removeAttendees(
   // person had before would otherwise finish unseen). Taken later, this transaction could already hold rows that
   // another erasure or an import needs while it waits for these locks, and they would deadlock.
   await lockOpenAttendeeJobs(tx, eventId);
+  // Then the registration queue, still before any attendee (the order is in lockRegistrationQueue): a transaction
+  // that admits, confirms or deletes a registration of the event finishes first, and none starts until this one has
+  // committed, so a registration with the person's address can neither be missed nor turned into an attendee again.
+  await lockRegistrationQueue(tx, eventId);
 
   const found = await tx.$queryRaw<{ id: string; email: string; erased_at: Date | null }[]>`
     SELECT "id", "email", "erased_at" FROM "Attendee"
@@ -136,7 +146,7 @@ export async function removeAttendees(
     attendees: found.filter((row) => row.erased_at === null),
   });
 
-  const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
+  const [emailDeliveries, walletPasses, checkIns, acceptedRegistrations] = await Promise.all([
     tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
     // RETURNING, like the attendee delete below: the ids (the provider's, or the one reserved for the
     // pass) of exactly the rows this statement deletes are the ones to delete at the provider afterwards.
@@ -145,6 +155,9 @@ export async function removeAttendees(
       RETURNING "attendee_id", "provider_pass_id", "user_provided_id", "left_behind_pass_id", "status", "provider_removed_at"
     `,
     tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
+    // The registration an attendee was accepted from (its queued mail goes by cascade). The cascade of the attendee
+    // row would delete it too, but without a count; the registrations that share an address go in scrubAttendeeTraces.
+    tx.registration.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
   ]);
 
   // RETURNING instead of deleteMany, which reports only a count: the audit entry must name exactly
@@ -156,7 +169,7 @@ export async function removeAttendees(
   const removedIds = deleted.map((row) => row.id);
   const removed = new Set(removedIds);
 
-  await scrubAttendeeTraces(tx, { eventId, attendeeIds: removedIds, emails: previousEmails });
+  const traces = await scrubAttendeeTraces(tx, { eventId, attendeeIds: removedIds, emails: previousEmails });
 
   return {
     removedIds,
@@ -165,6 +178,7 @@ export async function removeAttendees(
       emailDeliveries: emailDeliveries.count,
       walletPasses: walletPasses.length,
       checkIns: checkIns.count,
+      registrations: acceptedRegistrations.count + traces.registrations,
     },
     walletTargets: walletPasses.flatMap((pass) =>
       pass.provider_pass_id && !pass.provider_removed_at

@@ -33,6 +33,7 @@ export {
   stopOpenAttendeeJobs,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
+export { lockRegistrationQueue, tryLockRegistrationQueue } from "./registration-lock.js";
 export type {
   RemoveAttendeesParams,
   RemoveAttendeesResult,

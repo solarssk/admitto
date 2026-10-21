@@ -561,7 +561,7 @@ describe("eraseAttendees: which attendees it touches", () => {
       erasedIds: [],
       alreadyErasedIds: [a.id],
       notFoundIds: [],
-      counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0 },
+      counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0, registrations: 0 },
       walletTargets: [],
     });
   });
