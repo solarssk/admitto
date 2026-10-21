@@ -48,6 +48,7 @@
     "ip-location-api": "5.0.2",
     "pdfkit": "^0.20.2",
     "redis": "^6.2.1",
+    "sanitize-html": "^2.18.1",
     "sharp": "^0.35.5",
     "zod": "^4.6.4"
   },
@@ -55,7 +56,9 @@
     "@testcontainers/redis": "^12.2.0",
     "@types/node": "^24.19.1",
     "@types/pdfkit": "^0.17.6",
+    "@types/sanitize-html": "^2.16.2",
     "jose": "^6.2.10",
+    "parse5": "8.0.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "undici": "^8.11.2"

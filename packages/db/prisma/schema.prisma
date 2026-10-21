@@ -121,6 +121,7 @@ model Event {
   registration_settings        EventRegistrationSettings?
   registrations                Registration[]
   registration_mails           RegistrationMail[]
+  legal_documents              LegalDocument[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -933,6 +934,35 @@ model RegistrationMail {
   @@unique([registration_id, template_name])
   // Per-event daily cap on queued mail.
   @@index([event_id, queued_at])
+}
+
+// A legal text of ONE event (v0.8, D-F2): the privacy notice a guest reads, the event terms a guest
+// accepts, and any extra consent the event asks for. Never organisation-wide and never inherited:
+// every event configures its own. One current text per (event, kind, key) and no history (D-F1);
+// a Registration records only when its terms were accepted (D-F3), not which text. A text is not
+// personal data, so it has no attendee_id and no erasure inventory entry.
+// kind: privacy_notice | event_terms | consent. key is the consent key (what
+// EventRegistrationSettings.consent_keys and Registration.consents name) and empty for the other two.
+// Constraints in migration SQL: LegalDocument_kind_check, _key_iff_consent, _key_format,
+// _title_not_blank, _published_not_blank.
+model LegalDocument {
+  id           String    @id @default(cuid())
+  event_id     String
+  event        Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  kind         String
+  key          String    @default("")
+  title        String
+  // HTML after apps/web/src/legal/sanitize-legal-html.ts. The only writer sanitises, so this is
+  // never the markup as received.
+  content_html String    @db.Text
+  // null = a draft: /legal/* answers 404 for it. Set when published, kept while the text is edited.
+  published_at DateTime?
+  // Staff user id (no FK, like AdminAuditLog.actor_user_id).
+  updated_by   String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  @@unique([event_id, kind, key])
 }
 
 // Dedup marker for processed IMAP messages (source of truth — not IMAP \Seen).

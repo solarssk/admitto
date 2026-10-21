@@ -850,7 +850,8 @@ export const RATE_POLICIES = {
     ],
   },
   "checkin:stream": checkinStreamPolicy(CHECKIN_STREAM_LIMITS),
-  /** Public registration form (`/r/*`). Per IP, collapsed to the /64 for IPv6, and deliberately
+  /** Public registration form (`/r/*`) and the legal texts it links to (`/legal/*`, one bucket for
+   * both: one visitor, one budget for reading). Per IP, collapsed to the /64 for IPv6, and deliberately
    * generous: the audience is staff of one company behind one NAT (see `public:tq`). The real
    * brakes are the bot challenge and the per-address mail limit. No slug in any key: the slug is a
    * caller-chosen path segment, so a per-slug bucket would let anyone starve an event and mint

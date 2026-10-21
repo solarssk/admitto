@@ -796,6 +796,10 @@ A pass whose request left no trace on the row at all. Only a request from before
   - The inventory records `deleted` for every column, and `attendee_id` is a real relation so that the test finds the table. Whatever erases or removes an attendee must delete the registration as well: the one linked by `attendee_id`, and the one in the same event with the same address.
   - `RegistrationMail` has no address or text of its own and goes with its registration (cascade).
   - A new column on `Registration` gets its decision in the same pull request.
+- **A legal text is not attendee data.**
+  - A `LegalDocument` (an event's privacy notice, terms and extra consents) has no `attendee_id`, so the inventory test does not list it and erasure does not touch it.
+  - Keep it that way. A text is written once for the event, never per guest, and holds no guest's name or address (no placeholders are filled in). A registration records only when the terms were accepted, not which text.
+  - It goes with its event (cascade). `updated_by` is a staff user id, like `AdminAuditLog.actor_user_id`.
 - **Never reuse an erased row.**
   - `erased_at` is the marker. `status` is not (it drives capacity and issuing).
   - Code that sends, issues, edits or checks in an attendee must refuse an erased one.
