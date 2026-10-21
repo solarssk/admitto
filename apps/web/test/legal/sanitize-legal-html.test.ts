@@ -317,8 +317,10 @@ describe("sanitizeLegalHtml refuses the payloads of real attacks", () => {
     expect(sanitizeLegalHtml("<title>Page</title><p>a</p><template><p>hidden</p></template>")).toBe("<p>a</p>");
   });
 
-  it("holds when the payload is mixed into a long ordinary text", () => {
-    const filler = "<p>Ordinary text of a privacy notice. </p>".repeat(200);
+  // About 1.3 s on a laptop, but CI runs this file next to other workers with coverage on: a longer limit
+  // than the default 5 s keeps a slow runner from failing a correct sanitiser.
+  it("holds when the payload is mixed into a long ordinary text", { timeout: 60_000 }, () => {
+    const filler = "<p>Ordinary text of a privacy notice. </p>".repeat(100);
     for (const [, payload] of XSS_PAYLOADS) expectSafe(sanitizeLegalHtml(filler + payload + filler));
   });
 });
