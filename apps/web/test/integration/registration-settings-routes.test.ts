@@ -314,6 +314,8 @@ describe("registration_captcha in the Health check", () => {
   // have left an event with registration on, so start each test with this file's own event only.
   beforeEach(async () => {
     await prisma.eventRegistrationSettings.deleteMany({ where: { event_id: { not: EVENT_ID } } });
+    // The row only counts methods the administrator has turned on for everyone.
+    await put("/api/admin/registration/access-methods", { methods: ["link", "password"] });
   });
 
   it("stays quiet until an event uses registration, warns then, and is ok with the keys", async () => {
@@ -350,6 +352,26 @@ describe("registration_captcha in the Health check", () => {
     expect(await healthRow()).toMatchObject({ status: "not_configured" });
 
     await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { access_methods: ["password"] } });
+    expect(await healthRow()).toMatchObject({ status: "degraded" });
+  });
+
+  it("does not count a method the administrator turned off for everyone, even when the event still lists it", async () => {
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+    await prisma.eventRegistrationSettings.upsert({
+      where: { event_id: EVENT_ID },
+      create: { event_id: EVENT_ID, mode: "automatic", access_methods: ["link"] },
+      update: { mode: "automatic", access_methods: ["link"] },
+    });
+    expect(await healthRow()).toMatchObject({ status: "degraded" });
+
+    await put("/api/admin/registration/access-methods", { methods: [] });
+    expect(await healthRow()).toMatchObject({ status: "not_configured" });
+
+    // Only the other challenged method is on: the event's own list has no overlap with it.
+    await put("/api/admin/registration/access-methods", { methods: ["password"] });
+    expect(await healthRow()).toMatchObject({ status: "not_configured" });
+
+    await put("/api/admin/registration/access-methods", { methods: ["link"] });
     expect(await healthRow()).toMatchObject({ status: "degraded" });
   });
 

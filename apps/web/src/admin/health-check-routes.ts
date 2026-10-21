@@ -39,6 +39,7 @@ import {
   resolveEffectiveWeatherConfig,
 } from "../weather/weather-org-settings.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { getEnabledAccessMethods } from "../registration/access-methods.js";
 import { describeTurnstileSettings } from "../registration/turnstile-settings.js";
 
 export type { HealthOverallStatus, HealthRowStatus };
@@ -1599,10 +1600,13 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
   }
 
   // Only now does it matter whether anything is waiting for the keys: a form that a guest reaches by
-  // a public link or a password. SSO needs no challenge, so an event that only offers SSO is no reason
-  // to warn.
+  // a public link or a password, for a method the administrator has not turned off for everyone (an
+  // event keeps its own list when a method is turned off, and a form behind a disabled method is closed
+  // anyway). SSO needs no challenge, so an event that only offers SSO is no reason to warn.
+  const challenged = (await getEnabledAccessMethods(db)).filter((method) => method === "link" || method === "password");
+  if (challenged.length === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
   const events = await db.eventRegistrationSettings.count({
-    where: { mode: { not: null }, access_methods: { hasSome: ["link", "password"] }, event: { archived_at: null } },
+    where: { mode: { not: null }, access_methods: { hasSome: challenged }, event: { archived_at: null } },
   });
   if (events === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
   return row(

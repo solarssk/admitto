@@ -115,6 +115,7 @@ vi.mock("@admitto/auth", async (importOriginal) => {
 import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
+import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import {
   canCreateUploadDir,
   collectAdminHealth,
@@ -1360,8 +1361,15 @@ describe("collectAdminHealth", () => {
       return { row, report };
     }
 
-    const keys = (value: string | null) => ({
-      systemSettings: { findUnique: vi.fn().mockResolvedValue(value === null ? null : { key: "k", value_json: value }) },
+    // The settings table answers two keys here: the access methods the administrator enabled (both challenged
+    // ones by default), and the Turnstile keys for anything else.
+    const keys = (value: string | null, enabledMethods: string[] = ["link", "password"]) => ({
+      systemSettings: {
+        findUnique: vi.fn(async ({ where }: { where: { key: string } }) => {
+          if (where.key === ACCESS_METHODS_SETTINGS_KEY) return { key: where.key, value_json: JSON.stringify(enabledMethods) };
+          return value === null ? null : { key: where.key, value_json: value };
+        }),
+      },
     });
     const events = (count: number) => ({ eventRegistrationSettings: { count: vi.fn().mockResolvedValue(count) } });
 
@@ -1399,6 +1407,21 @@ describe("collectAdminHealth", () => {
       expect(count).toHaveBeenCalledWith({
         where: { mode: { not: null }, access_methods: { hasSome: ["link", "password"] }, event: { archived_at: null } },
       });
+    });
+
+    it("looks only at the challenged methods the administrator turned on, and at no event when none is on", async () => {
+      const count = vi.fn().mockResolvedValue(2);
+      const { row } = await captchaRow({ ...keys(null, ["password", "sso"]), eventRegistrationSettings: { count } });
+      expect(row.status).toBe("degraded");
+      expect(count).toHaveBeenCalledWith({
+        where: { mode: { not: null }, access_methods: { hasSome: ["password"] }, event: { archived_at: null } },
+      });
+
+      count.mockClear();
+      const off = await captchaRow({ ...keys(null, ["sso"]), eventRegistrationSettings: { count } });
+      expect(off.row.status).toBe("not_configured");
+      expect(off.row.summary).toBe("Not configured");
+      expect(count).not.toHaveBeenCalled();
     });
 
     it("is ok with both keys saved, and does not look at the events", async () => {
