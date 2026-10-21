@@ -61,7 +61,7 @@ describe("legal document refs", () => {
 
   it("use the same key rule as the database constraint, read from the migration itself", () => {
     const migration = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../../../../packages/db/prisma/migrations/20261021110000_add_legal_document/migration.sql"),
+      join(dirname(fileURLToPath(import.meta.url)), "../../../../packages/db/prisma/migrations/20261021130000_add_legal_document/migration.sql"),
       "utf8",
     );
     const sqlPattern = /CONSTRAINT "LegalDocument_key_format"\s+CHECK \("key" = '' OR "key" ~ '([^']+)'\)/.exec(migration)?.[1];

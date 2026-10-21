@@ -190,17 +190,26 @@ model EventImageAsset {
 // an EventItem now only holds `content_fields: string[]` referencing rows here, used purely to
 // say "show this field as an operator hint on this item" (packages/tickets/event-item-contents.ts).
 model EventCustomField {
-  id           String   @id @default(cuid())
-  event_id     String
-  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  source_field String
-  label        String
-  description  String?
-  type         String   @default("text")
-  options      Json?
-  required     Boolean  @default(false)
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  event_id      String
+  event         Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  source_field  String
+  label         String
+  description   String?
+  type          String   @default("text")
+  options       Json?
+  required      Boolean  @default(false)
+  // Whether the public registration form (v0.8) asks guests this question (D-E1). False for every
+  // field that existed before the form; the field editor on the Registration page creates new
+  // ones with true. A field off the form is still part of the attendee record.
+  show_on_form  Boolean  @default(false)
+  // Position among the event's fields, counted from 0. Null = not placed yet, listed after every
+  // placed field (oldest first). Only the reorder endpoint writes it: it renumbers the whole list
+  // under the event's custom-fields lock. Readers sort through eventCustomFieldOrderBy in
+  // @admitto/tickets, never with their own orderBy.
+  display_order Int?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   @@unique([event_id, source_field])
   @@index([event_id])

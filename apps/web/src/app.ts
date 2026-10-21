@@ -255,6 +255,7 @@ import {
   handleListEventCustomFields,
   handleCreateEventCustomField,
   handlePatchEventCustomField,
+  handleReorderEventCustomFields,
   handleDeleteEventCustomField,
   handleGetEventCustomFieldOptionUsage,
 } from "./admin/event-custom-fields-routes.js";
@@ -1986,6 +1987,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventCustomField(c, db)),
+  );
+  app.put(
+    "/api/admin/events/:eventId/custom-fields/order",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleReorderEventCustomFields(c, db)),
   );
   app.patch(
     "/api/admin/events/:eventId/custom-fields/:fieldId",
