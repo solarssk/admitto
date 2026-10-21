@@ -105,7 +105,7 @@ describe("hasNoRules", () => {
 describe("eventCustomFieldRulesFitType", () => {
   const EVERY_RULE = [
     { min_length: 1 },
-    { max_length: 1 },
+    { max_length: 9 },
     { digits_only: true },
     { digits_only: false },
     { example: "x" },
