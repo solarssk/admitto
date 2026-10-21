@@ -64,18 +64,18 @@ export function parseRegistrationSearch(raw: string): string[] | null {
 
 export interface RegistrationListFilter {
   /** One of the five states; left out, every state. */
-  status?: RegistrationStatus | undefined;
+  status?: RegistrationStatus;
   /** Only registrations made more than this long ago (`created_at`). */
-  olderThan?: RegistrationAgeFilter | undefined;
+  olderThan?: RegistrationAgeFilter;
   /** From `parseRegistrationSearch`: each word must be in the first name, the last name or the address. */
-  words?: readonly string[] | undefined;
+  words?: readonly string[];
 }
 
 /** A filter as it arrives from a query string or a body, before it is checked. */
 export interface RegistrationFilterInput {
-  status?: string | undefined;
-  olderThan?: string | undefined;
-  q?: string | undefined;
+  status?: string;
+  olderThan?: string;
+  q?: string;
 }
 
 /** The names of the request parameters a filter can refuse. */
