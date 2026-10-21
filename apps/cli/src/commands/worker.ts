@@ -29,6 +29,7 @@ import {
   resolveDeliverySnapshotRetentionDays,
   sweepExpiredRegistrations,
   workerHeartbeatStaleMs,
+  type SweepExpiredRegistrationsResult,
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
@@ -182,6 +183,21 @@ async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Pr
 }
 
 /**
+ * The clean-up of expired registrations, which never stops the sending of registration mail. The two do not depend on
+ * each other (a confirmation link is checked when it is opened, swept or not), so a sweep that fails, say behind the
+ * lock of a long erasure, is logged by its class and the mail still goes out, instead of stopping the confirmation
+ * mail of every event on every tick.
+ */
+async function sweepExpiredRegistrationsOrLog(db: PrismaClient): Promise<SweepExpiredRegistrationsResult> {
+  try {
+    return await sweepExpiredRegistrations(db);
+  } catch (err) {
+    log("registration_mail", `sweep FAILED error_class=${err instanceof Error ? err.name : "unknown"}`);
+    return { deleted: 0, eventIds: [], more: false };
+  }
+}
+
+/**
  * Guest registration mail (D-D1, D-D2): sends what a registration queued, hands `ticket` rows to the usual ticket
  * send, and deletes registrations that were never confirmed within 24 hours (the only automatic deletion of them).
  *
@@ -198,7 +214,7 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
     return false;
   }
   try {
-    const expired = await sweepExpiredRegistrations(db);
+    const expired = await sweepExpiredRegistrationsOrLog(db);
     const baseUrl = await resolveWorkerBaseUrl(db, "registration_mail");
     const drained = baseUrl
       ? await drainRegistrationMails(db, process.env, {}, { baseUrl, limit: DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT })

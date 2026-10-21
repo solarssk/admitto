@@ -360,10 +360,35 @@ describe("runWorkerTick - the registration mail job", () => {
   });
 
   it("logs an error that is no Error as unknown", async () => {
-    sweepExpiredRegistrations.mockRejectedValue("gina@example.com");
+    drainRegistrationMails.mockRejectedValue("gina@example.com");
 
     await tick();
 
     expect(registrationLines()).toEqual([expect.stringMatching(/FAILED error_class=unknown$/)]);
+  });
+
+  it("does not let a failed clean-up stop the mail: it logs the class of the failure and the drain still runs", async () => {
+    sweepExpiredRegistrations.mockRejectedValue(Object.assign(new Error("lock wait for gina@example.com"), { name: "TransactionTimeout" }));
+    drainRegistrationMails.mockResolvedValue({ claimed: 2, sent: 2, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });
+
+    await expect(tick()).resolves.toBe(false);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/sweep FAILED error_class=TransactionTimeout$/),
+      expect.stringMatching(/ok claimed=2 sent=2 failed=0 cancelled=0 skipped=0 expired=0$/),
+    ]);
+    expect(logLines.join("\n")).not.toContain("example.com");
+    expect(vi.mocked(publishActivityChanged)).toHaveBeenCalledWith(["evt1"]);
+  });
+
+  it("logs a clean-up failure that is no Error as unknown, and goes on", async () => {
+    sweepExpiredRegistrations.mockRejectedValue("gina@example.com");
+
+    await tick();
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([expect.stringMatching(/sweep FAILED error_class=unknown$/), expect.stringMatching(/idle$/)]);
+    expect(logLines.join("\n")).not.toContain("example.com");
   });
 });
