@@ -52,6 +52,13 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("Check the form and try again.");
   });
 
+  it("explains a Required field that the registration form does not ask, and what to do", () => {
+    const err = new ApiError(422, "required_field_not_on_form", "required_field_not_on_form");
+    expect(operatorApiErrorMessage(err, "Failed to save field.")).toBe(
+      "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",
+    );
+  });
+
   it("explains the bulk-send rate limit", () => {
     expect(
       operatorApiErrorMessage(new ApiError(429, "bulk_send_rate_limited", "bulk_send_rate_limited"), "Send failed."),
