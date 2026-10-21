@@ -112,6 +112,8 @@ export const CODE_MESSAGES: Record<string, string> = {
     "You must change your password before continuing. Update it in Account or go to /change-password.",
   password_too_common: "This password is too common or predictable. Choose a different one.",
   required_custom_data_field_missing: "A required custom field is missing.",
+  required_field_not_on_form:
+    "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",
   reserved_token: "This name is already used as a built-in placeholder. Choose a different name.",
   resend_skipped: "Ticket email was not sent.",
   save_failed: "Save failed. Try again.",

@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
+import type { RegistrantFormField } from "./registrant-input.js";
 import type { EventItemContent } from "./types.js";
 
 type CustomFieldDb = PrismaClient | Prisma.TransactionClient;
@@ -11,33 +12,66 @@ export class UnknownContentFieldError extends Error {
   }
 }
 
+/** The one order of an event's custom attendee fields, for every reader: the staff field list, the
+ * Add attendee form, import and export columns, the field reports and the registration form.
+ * `display_order` ascending, a field that has none after every field that has one, then oldest
+ * first. Rows from the same createMany share an identical created_at (single-statement `now()`),
+ * so the last key, `id` (a per-process monotonic cuid), settles those ties to insertion order
+ * every time instead of leaving them to whatever scan order Postgres picks. A function, not a
+ * shared array: Prisma takes the array as given, and no caller may change the rule for the rest. */
+export function eventCustomFieldOrderBy(): Prisma.EventCustomFieldOrderByWithRelationInput[] {
+  return [{ display_order: { sort: "asc", nulls: "last" } }, { created_at: "asc" }, { id: "asc" }];
+}
+
+type CustomFieldRow = {
+  label: string;
+  source_field: string;
+  type: string;
+  required: boolean;
+  options: Prisma.JsonValue;
+  show_on_form: boolean;
+};
+
+function readEventCustomFieldRows(db: CustomFieldDb, eventId: string): Promise<CustomFieldRow[]> {
+  return db.eventCustomField.findMany({
+    where: { event_id: eventId },
+    orderBy: eventCustomFieldOrderBy(),
+  });
+}
+
+function toFieldContent(row: CustomFieldRow): EventItemContent {
+  const field: EventItemContent = {
+    label: row.label,
+    source_field: row.source_field,
+    type: row.type as EventItemContent["type"],
+  };
+  if (row.required) field.required = true;
+  if (Array.isArray(row.options)) {
+    const options = row.options.filter((o): o is string => typeof o === "string");
+    if (options.length > 0) field.options = options;
+  }
+  return field;
+}
+
 /** Reads an event's custom-field registry rows - the single source of truth for custom-data
  * field definitions, consumed by the check-in operator card, attendee edit/create, CSV/XLSX
- * import, and export alike. */
+ * import, and export alike. In the order of {@link eventCustomFieldOrderBy}. */
 export async function loadEventCustomDataFields(
   db: CustomFieldDb,
   eventId: string,
 ): Promise<EventItemContent[]> {
-  const rows = await db.eventCustomField.findMany({
-    where: { event_id: eventId },
-    // Rows from the same createMany share an identical created_at (single-statement `now()`),
-    // so created_at alone leaves ties to whatever scan order Postgres picks - id (a per-process
-    // monotonic cuid) makes ties resolve to insertion order deterministically.
-    orderBy: [{ created_at: "asc" }, { id: "asc" }],
-  });
-  return rows.map((row): EventItemContent => {
-    const field: EventItemContent = {
-      label: row.label,
-      source_field: row.source_field,
-      type: row.type as EventItemContent["type"],
-    };
-    if (row.required) field.required = true;
-    if (Array.isArray(row.options)) {
-      const options = row.options.filter((o): o is string => typeof o === "string");
-      if (options.length > 0) field.options = options;
-    }
-    return field;
-  });
+  return (await readEventCustomFieldRows(db, eventId)).map(toFieldContent);
+}
+
+/** The same fields in the same order, each with the one flag the public registration form needs:
+ * `show_on_form`. Every field is returned, those off the form too: `buildRegistrantCustomData`
+ * drops their keys itself, and a renderer takes the ones to draw with `show_on_form`. */
+export async function loadRegistrantFormFields(
+  db: CustomFieldDb,
+  eventId: string,
+): Promise<RegistrantFormField[]> {
+  const rows = await readEventCustomFieldRows(db, eventId);
+  return rows.map((row) => ({ ...toFieldContent(row), show_on_form: row.show_on_form }));
 }
 
 /** Reject an EventItem's `content_fields` if any entry isn't in the event's registry. */
