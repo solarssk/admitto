@@ -516,15 +516,20 @@ function setupToInstanceUrlRow(check: SetupCheckResult, checkedAt: string): Heal
   };
 }
 
+/** The two queues a row of this shape reports: ticket mail (`EmailDelivery`) and guest registration mail. */
+type MailQueueIdentity = { id: string; label: string };
+const TICKET_MAIL_QUEUE: MailQueueIdentity = { id: "mail_delivery_queue", label: "Mail delivery queue" };
+const REGISTRATION_MAIL_QUEUE: MailQueueIdentity = { id: "registration_mail", label: "Registration mail queue" };
+
 function mailQueueRow(
   queued: number,
   failedRetryable: number,
   checkedAt: string,
+  { id, label }: MailQueueIdentity = TICKET_MAIL_QUEUE,
 ): HealthCheckRow {
-  const label = "Mail delivery queue";
   if (queued < 0 || failedRetryable < 0) {
     return {
-      id: "mail_delivery_queue",
+      id,
       label,
       status: "degraded",
       summary: "Could not read queue depth",
@@ -543,7 +548,7 @@ function mailQueueRow(
         ? `Needs attention · ${queued.toLocaleString("en")} queued · ${failures}`
         : `Queue empty · ${failures}`;
     return {
-      id: "mail_delivery_queue",
+      id,
       label,
       status: "degraded",
       summary,
@@ -558,7 +563,7 @@ function mailQueueRow(
   }
   if (queued >= MAIL_QUEUE_DEGRADED_THRESHOLD) {
     return {
-      id: "mail_delivery_queue",
+      id,
       label,
       status: "degraded",
       summary: `Falling behind · ${queued.toLocaleString("en")} queued`,
@@ -574,7 +579,7 @@ function mailQueueRow(
   const summary =
     queued === 0 ? "Queue empty" : `Running · ${queued.toLocaleString("en")} queued`;
   return {
-    id: "mail_delivery_queue",
+    id,
     label,
     status: "ok",
     summary,
@@ -1620,6 +1625,18 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
   );
 }
 
+/**
+ * What the guest registration mail queue holds (`RegistrationMail`, v0.8), counted like the ticket mail queue: rows
+ * waiting, and failed rows the worker will try again. Counts only: no address, no text of an error.
+ */
+async function registrationMailCounts(db: PrismaClient): Promise<{ queued: number; failedRetryable: number }> {
+  const [queued, failedRetryable] = await Promise.all([
+    db.registrationMail.count({ where: { status: "queued" } }),
+    db.registrationMail.count({ where: { status: "failed", retryable: true } }),
+  ]);
+  return { queued, failedRetryable };
+}
+
 /** Soft external check: per-event bounce-ingest last runs (does not affect /healthz). */
 async function bounceIngestRow(
   db: PrismaClient,
@@ -1765,6 +1782,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     address,
     weather,
     registrationCaptcha,
+    registrationMail,
     dbProbe,
     engine,
     fileStorage,
@@ -1790,6 +1808,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
         ]),
       })),
       registrationCaptchaRow(deps.db, checkedAt).catch(() => registrationCaptchaFallback),
+      registrationMailCounts(deps.db).catch(() => ({ queued: -1, failedRetryable: -1 })),
       checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
       readPostgresEngine(deps.db),
       fileStorageRow(env, checkedAt, live),
@@ -1807,6 +1826,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       : setupLookupFailedRow("data_encryption", "Data encryption", checkedAt),
     backgroundWorker,
     mailQueueRow(gauges.email_deliveries_queued, gauges.email_deliveries_failed_retryable, checkedAt),
+    mailQueueRow(registrationMail.queued, registrationMail.failedRetryable, checkedAt, REGISTRATION_MAIL_QUEUE),
     setup
       ? setupToInstanceUrlRow(setup.base_url, checkedAt)
       : setupLookupFailedRow("instance_url", "Instance URL", checkedAt),
