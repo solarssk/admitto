@@ -5,6 +5,13 @@ export type {
   DrainPendingDeliveriesOptions,
   DrainPendingDeliveriesResult,
 } from "./drain.js";
+export { drainRegistrationMails, DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT } from "./registration-mail-drain.js";
+export type {
+  DrainRegistrationMailsOptions,
+  DrainRegistrationMailsResult,
+} from "./registration-mail-drain.js";
+export { sweepExpiredRegistrations, REGISTRATION_EXPIRY_BATCH_SIZE } from "./registration-mail-sweep.js";
+export type { SweepExpiredRegistrationsResult } from "./registration-mail-sweep.js";
 export { cancelBulkSendBatch } from "./cancel.js";
 export type { CancelBulkSendBatchResult } from "./cancel.js";
 export {

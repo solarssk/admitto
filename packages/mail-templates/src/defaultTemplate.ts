@@ -37,7 +37,11 @@ export const DEFAULT_BODY_MJML = `<mjml>
 </mjml>`;
 
 /** One registration mail in the shared skeleton: greeting, paragraphs, optional button, and the
- * contact line every guest mail carries (D-B12). Only the wording differs between the four. */
+ * contact line every guest mail carries (D-B12). Only the wording differs between the four.
+ *
+ * The greeting names no one. Until a guest has confirmed the address, anyone can type any name for it,
+ * so the worker renders `first_name`, `last_name` and `full_name` empty in a mail to such an address
+ * (registration-mail-render.ts in `@admitto/mail-delivery`): "Hi {{first_name}}," would read "Hi ,". */
 function registrationMjml(input: {
   paragraphs: readonly string[];
   button?: { href: string; label: string };
@@ -65,7 +69,7 @@ function registrationMjml(input: {
           {{event_name}}
         </mj-text>
         <mj-text padding-bottom="16px">
-          Hi {{first_name}},
+          Hello,
         </mj-text>
 ${paragraphs}${button}
         <mj-text align="center" font-size="14px" color="#666666" padding-top="16px">
@@ -79,6 +83,9 @@ ${paragraphs}${button}
   </mj-body>
 </mjml>`;
 }
+
+/** For a mail that can reach an address nobody has confirmed: whoever typed it was not necessarily its owner. */
+const IGNORE_IF_NOT_YOU = "If you did not register for {{event_name}}, you can ignore this email.";
 
 /** A built-in mail: source text plus the label a fresh override row starts with. */
 export interface BuiltinTemplateSource {
@@ -113,6 +120,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
       body: registrationMjml({
         paragraphs: [
           "Thank you for registering for {{event_name}}. Please confirm your email address to finish your registration. The link works for 24 hours.",
+          IGNORE_IF_NOT_YOU,
         ],
         button: { href: "{{confirm_url}}", label: "Confirm email address" },
       }),
@@ -127,6 +135,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
       body: registrationMjml({
         paragraphs: [
           "Thank you for registering for {{event_name}}. The organizers review every registration, and we will email you as soon as there is a decision.",
+          IGNORE_IF_NOT_YOU,
         ],
       }),
       format: "mjml",
@@ -141,6 +150,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
         paragraphs: [
           "{{event_name}} is full at the moment, so your registration is on the waiting list.",
           "If the organizers can offer you a place, we will email you.",
+          IGNORE_IF_NOT_YOU,
         ],
       }),
       format: "mjml",

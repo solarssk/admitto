@@ -128,7 +128,7 @@ describe("built-in registry", () => {
     expect(validateTemplate({ subject: source.subject, body: source.body }, undefined, forbidden)).toEqual([]);
     const tokens = [...extractPlaceholderTokens(source.subject), ...extractPlaceholderTokens(source.body)];
     expect(tokens.filter((t) => forbidden.has(t))).toEqual([]);
-    expect(tokens).toEqual(expect.arrayContaining(["event_name", "first_name", "contact_line"]));
+    expect(tokens).toEqual(expect.arrayContaining(["event_name", "contact_line"]));
 
     const compiled = await getBuiltinTemplate(name);
     expect(compiled.source).toBe("builtin");
@@ -140,6 +140,22 @@ describe("built-in registry", () => {
       DEFAULT_SAMPLE_VARS,
     );
     expect(rendered.html).not.toMatch(/\{\{/);
+  });
+
+  it("greets no one by name, because a mail to an unconfirmed address is rendered without the guest's names", () => {
+    for (const name of SYSTEM_TEMPLATE_NAMES) {
+      const source = getBuiltinTemplateSource(name);
+      const tokens = [...extractPlaceholderTokens(source.subject), ...extractPlaceholderTokens(source.body)];
+      expect(tokens.filter((token) => ["first_name", "last_name", "full_name"].includes(token))).toEqual([]);
+      expect(source.body).toContain("Hello,");
+    }
+  });
+
+  it("tells whoever did not register to ignore the three mails that can reach an unconfirmed address", () => {
+    for (const name of ["registration-confirm", "registration-received", "registration-waitlist"] as const) {
+      expect(getBuiltinTemplateSource(name).body).toContain("you can ignore this email");
+    }
+    expect(getBuiltinTemplateSource("registration-rejected").body).not.toContain("you can ignore this email");
   });
 
   it("puts the confirm button only in registration-confirm", () => {

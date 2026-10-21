@@ -3,8 +3,8 @@
  *
  *   admitto worker
  *
- * Jobs: mail_delivery drain, import/export/wallet_push/wallet_message AdminJobs, bounce ingest,
- * wallet_sync, retention.
+ * Jobs: mail_delivery drain, registration_mail drain, import/export/wallet_push/wallet_message
+ * AdminJobs, bounce ingest, wallet_sync, retention.
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
@@ -19,12 +19,15 @@ import {
 import { purgeNotifications, resolveNotificationRetentionDays } from "@admitto/notifications";
 import {
   DEFAULT_MAIL_DRAIN_LIMIT,
+  DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT,
   assertValidBounceIngestTickSecondsEnv,
   drainPendingDeliveries,
+  drainRegistrationMails,
   ingestBounces,
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
   resolveDeliverySnapshotRetentionDays,
+  sweepExpiredRegistrations,
   workerHeartbeatStaleMs,
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
@@ -135,12 +138,12 @@ export async function ensureNotifyClient(
   }
 }
 
-async function resolveWorkerBaseUrl(db: PrismaClient): Promise<string | undefined> {
+async function resolveWorkerBaseUrl(db: PrismaClient, job = "mail_delivery"): Promise<string | undefined> {
   try {
     return await resolveInstanceBaseUrl(db, process.env);
   } catch (err) {
     if (err instanceof InstanceUrlRequiredError) {
-      log("mail_delivery", "skip drain: instance URL not configured");
+      log(job, "skip drain: instance URL not configured");
       return undefined;
     }
     throw err;
@@ -176,6 +179,60 @@ async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Pr
   } finally {
     await locks.release("mail_delivery");
   }
+}
+
+/**
+ * Guest registration mail (D-D1, D-D2): sends what a registration queued, hands `ticket` rows to the usual ticket
+ * send, and deletes registrations that were never confirmed within 24 hours (the only automatic deletion of them).
+ *
+ * The log line holds the counts of the tick and nothing else. An error is logged as its class only: the text of a
+ * database or provider error can carry the address of a guest, and the rows record their own failures as fixed
+ * categories (packages/mail-delivery/src/registration-mail-reasons.ts).
+ *
+ * @returns true when the tick filled its batch or its clean-up stopped at its limit, so more likely remains.
+ */
+async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
+  const acquired = await locks.tryAcquire("registration_mail");
+  if (!acquired) {
+    log("registration_mail", "skipped (lock held)");
+    return false;
+  }
+  try {
+    const expired = await sweepExpiredRegistrations(db);
+    const baseUrl = await resolveWorkerBaseUrl(db, "registration_mail");
+    const drained = baseUrl
+      ? await drainRegistrationMails(db, process.env, {}, { baseUrl, limit: DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT })
+      : { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] };
+    if (drained.claimed === 0 && expired.deleted === 0) {
+      log("registration_mail", "idle");
+      return false;
+    }
+    log(
+      "registration_mail",
+      `ok claimed=${drained.claimed} sent=${drained.sent} failed=${drained.failed} cancelled=${drained.cancelled} skipped=${drained.skipped} expired=${expired.deleted}`,
+    );
+    await publishActivityChanged([...new Set([...drained.eventIds, ...expired.eventIds])]);
+    return drained.claimed >= DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT || expired.more;
+  } catch (err) {
+    throw new Error(`error_class=${err instanceof Error ? err.name : "unknown"}`);
+  } finally {
+    await locks.release("registration_mail");
+  }
+}
+
+/**
+ * The ticket drain and the registration mail drain share one slot of the tick, one after the other. The mail
+ * provider's rate limit is per mailer (per transporter), so a second drain running beside the first, each with its own
+ * mailer, would double the pace. Running it after the ticket drain, every tick and never skipped for a backlog of
+ * tickets, keeps a bulk send from starving the confirmation mails, whose link expires after 24 hours, while a flood
+ * of registrations cannot take the quota ticket mail needs (its own limit is 20 a tick, against 50 for tickets).
+ *
+ * @returns true when either drain filled its batch.
+ */
+async function runMailJobs(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
+  const ticketsHaveMore = await runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks), false);
+  const registrationsHaveMore = await runJobSafely("registration_mail", () => runRegistrationMailJob(db, locks), false);
+  return ticketsHaveMore || registrationsHaveMore;
 }
 
 /** Refreshes the worker heartbeat every 60s while `fn` runs. import/export/wallet_push each have
@@ -481,7 +538,7 @@ export async function runWorkerTick(
     walletCleanupHasMore,
     walletMessageHasMore,
   ] = await Promise.all([
-    runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks), false),
+    runMailJobs(db, locks),
     runJobSafely("import", () => runImportJob(db, locks), false),
     runJobSafely("export", () => runExportJob(db, locks), false),
     runJobSafely("wallet_push", () => runWalletPushJob(db, locks), false),
@@ -526,10 +583,30 @@ export async function runWorkerTick(
 }
 
 /**
+ * The least time between the starts of two ticks that a wake notification may cause. Every guest registration queues
+ * mail and so wakes the worker, and a steady stream of them, as a form that is open to many people brings, would
+ * otherwise keep the loop running one tick after another with no pause. A backlog that a tick leaves is not held to
+ * this: it is drained at once, because there is work to do.
+ */
+export const WORKER_MIN_WAKE_INTERVAL_MS = 2_000;
+
+/**
+ * A wake that comes soon after the tick began waits out the rest of the interval. A notification that arrives
+ * meanwhile is latched by the notify client, so the next wait returns at once and nothing is lost.
+ */
+async function waitOutWakeInterval(tickStartedAt: number, minIntervalMs: number, signal: { stopped: boolean }): Promise<void> {
+  const remaining = minIntervalMs - (Date.now() - tickStartedAt);
+  if (remaining > 0 && !signal.stopped) await sleep(remaining, signal);
+}
+
+/**
  * Long-running worker. Resolves when SIGTERM/SIGINT handled (or fatal lock client error).
  * Does not disconnect Prisma (caller owns that).
  */
-export async function runWorker(db: PrismaClient): Promise<void> {
+export async function runWorker(
+  db: PrismaClient,
+  options: { minWakeIntervalMs?: number } = {},
+): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
@@ -538,6 +615,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   assertValidBounceIngestTickSecondsEnv(process.env);
   const tickSeconds = parseBounceIngestTickSeconds(process.env);
   const tickMs = tickSeconds * 1000;
+  const minWakeIntervalMs = options.minWakeIntervalMs ?? WORKER_MIN_WAKE_INTERVAL_MS;
   const locks = await openWorkerLockClient(databaseUrl);
   let notify = await ensureNotifyClient(databaseUrl, null);
   const signal = { stopped: false };
@@ -559,12 +637,13 @@ export async function runWorker(db: PrismaClient): Promise<void> {
 
   log(
     "heartbeat",
-    `starting tick=${tickSeconds}s host=${osHostname()} notify=${notify ? "on" : "off"} (mail_delivery + import + export + wallet_push + wallet_message + bounce + wallet_sync + retention)`,
+    `starting tick=${tickSeconds}s host=${osHostname()} notify=${notify ? "on" : "off"} (mail_delivery + registration_mail + import + export + wallet_push + wallet_message + bounce + wallet_sync + retention)`,
   );
 
   try {
     // Each tick is awaited fully before sleep; SIGTERM during a tick finishes the tick, then exits.
     while (!signal.stopped) {
+      const tickStartedAt = Date.now();
       const mightHaveMore = await runWorkerTick(db, locks, retention);
       if (signal.stopped) break;
       // A batch bigger than one tick's per-type limit (e.g. mail sent to hundreds of
@@ -574,6 +653,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
       notify = await ensureNotifyClient(databaseUrl, notify); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       if (notify) {
         await notify.waitForWakeOrTimeout(tickMs, signal); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
+        await waitOutWakeInterval(tickStartedAt, minWakeIntervalMs, signal); // NOSONAR - worker loop: the interval between ticks
       } else {
         await sleep(tickMs, signal); // NOSONAR - worker loop: each tick waits for the previous wake or timeout
       }
