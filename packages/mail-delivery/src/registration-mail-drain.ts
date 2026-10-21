@@ -134,7 +134,8 @@ class EventMailContext {
   ) {}
 
   private loadFacts(): Promise<EventMailFacts> {
-    return (this.facts ??= loadEventMailFacts(this.prisma, this.eventId, this.baseUrl, this.env));
+    this.facts ??= loadEventMailFacts(this.prisma, this.eventId, this.baseUrl, this.env);
+    return this.facts;
   }
 
   private loadTemplate(name: string): Promise<ResolvedTemplate> {
@@ -149,9 +150,10 @@ class EventMailContext {
   }
 
   private openMailer(): Promise<MailerAdapter> {
-    return (this.mailer ??= resolveMailConfig(this.eventId, this.prisma, this.env).then((config) =>
+    this.mailer ??= resolveMailConfig(this.eventId, this.prisma, this.env).then((config) =>
       createMailer(config, { exportSink: this.deps.exportSink }),
-    ));
+    );
+    return this.mailer;
   }
 
   /** Everything a mail of this template needs, read before the last check so that nothing slow separates it from the send. */
@@ -288,9 +290,9 @@ async function processRow(context: EventMailContext, row: QueuedRegistrationMail
     const outcome = await withDeliveryOwnership(row.id, async (assertOwned) => {
       try {
         return await runRow(context, row, assertOwned);
-      } catch (thrown) {
+      } catch (error_) {
         await assertOwned();
-        return await recordFailure(context.prisma, row, thrown);
+        return await recordFailure(context.prisma, row, error_);
       }
     });
     // undefined: another sender holds the row.
@@ -309,8 +311,8 @@ async function processRow(context: EventMailContext, row: QueuedRegistrationMail
  */
 export async function drainRegistrationMails(
   prisma: PrismaClient,
-  env: NodeJS.ProcessEnv = process.env,
-  deps: MailDeliveryDeps = {},
+  env: NodeJS.ProcessEnv,
+  deps: MailDeliveryDeps,
   options: DrainRegistrationMailsOptions,
 ): Promise<DrainRegistrationMailsResult> {
   const limit = options.limit !== undefined && options.limit > 0 ? Math.floor(options.limit) : DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT;
