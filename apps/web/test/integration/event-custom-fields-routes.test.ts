@@ -130,6 +130,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // The registration settings rows are instance-wide state (the Health check counts them): leave none behind.
+  await prisma?.eventRegistrationSettings.deleteMany({ where: { event_id: { in: [EVENT_CF_REG, EVENT_CF_REG_OFF] } } });
   await prisma?.$disconnect();
 });
 

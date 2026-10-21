@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient, resolveInstanceOrganizationId } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -309,6 +309,12 @@ describe("registration_captcha in the Health check", () => {
     const report = (await res.json()) as { groups: Array<{ id: string; checks: Array<{ id: string; status: string; summary: string }> }> };
     return report.groups.find((group) => group.id === "external")!.checks.find((check) => check.id === "registration_captcha")!;
   };
+
+  // The row counts every event of the instance. Another test file that ran earlier in this worker's schema may
+  // have left an event with registration on, so start each test with this file's own event only.
+  beforeEach(async () => {
+    await prisma.eventRegistrationSettings.deleteMany({ where: { event_id: { not: EVENT_ID } } });
+  });
 
   it("stays quiet until an event uses registration, warns then, and is ok with the keys", async () => {
     await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
