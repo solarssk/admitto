@@ -132,20 +132,25 @@ function LinkForm({ editor, onClose }: Readonly<{ editor: Editor; onClose: () =>
     onClose();
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Enter" && event.target === inputRef.current) {
+  function onEscape(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  }
+
+  function onFieldKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
       event.preventDefault();
       apply();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
+    } else {
+      onEscape(event);
     }
   }
 
   return (
-    // The keys are handled on the group, so Enter in the field applies the link and Escape leaves without it.
-    <div className="legal-link-form" role="group" aria-label="Link" onKeyDown={onKeyDown}>
+    // Enter in the field applies the link, and Escape in the field or on a button leaves without it.
+    <fieldset className="legal-link-form" aria-label="Link">
       <Input
         ref={inputRef}
         label="Link address"
@@ -155,25 +160,26 @@ function LinkForm({ editor, onClose }: Readonly<{ editor: Editor; onClose: () =>
         placeholder="https://example.com"
         value={address}
         error={error ?? undefined}
+        onKeyDown={onFieldKeyDown}
         onChange={(event) => {
           setAddress(event.target.value);
           setError(null);
         }}
       />
       <div className="legal-link-form__actions">
-        <Button type="button" size="sm" onClick={apply}>
+        <Button type="button" size="sm" onClick={apply} onKeyDown={onEscape}>
           Apply
         </Button>
         {inLink && (
-          <Button type="button" size="sm" variant="secondary" onClick={remove}>
+          <Button type="button" size="sm" variant="secondary" onClick={remove} onKeyDown={onEscape}>
             Remove link
           </Button>
         )}
-        <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+        <Button type="button" size="sm" variant="ghost" onClick={onClose} onKeyDown={onEscape}>
           Cancel
         </Button>
       </div>
-    </div>
+    </fieldset>
   );
 }
 
@@ -198,7 +204,7 @@ function Toolbar({ editor, disabled }: Readonly<{ editor: Editor; disabled: bool
 
   return (
     <>
-      <div role="group" aria-label="Text formatting" className="legal-toolbar">
+      <fieldset aria-label="Text formatting" className="legal-toolbar">
         <ToolbarButton
           label="Heading"
           icon="h-2"
@@ -241,7 +247,7 @@ function Toolbar({ editor, disabled }: Readonly<{ editor: Editor; disabled: bool
           disabled={disabled}
           onClick={() => (linkOpen ? closeLink() : setLinkOpen(true))}
         />
-      </div>
+      </fieldset>
       {linkOpen && !disabled && <LinkForm editor={editor} onClose={closeLink} />}
     </>
   );
