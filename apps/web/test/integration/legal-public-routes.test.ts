@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -359,7 +359,16 @@ describe("limits and failures", () => {
       skipCheckinBootValidation: true,
       adminDistRoot,
     });
-    const res = await brokenApp.request(`/legal/${SLUG}/privacy-notice`);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let res: Response;
+    try {
+      res = await brokenApp.request(`/legal/${SLUG}/privacy-notice`);
+      // Nothing from the exception reaches the process log either, only its class.
+      expect(logged).toHaveBeenCalled();
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-host");
+    } finally {
+      logged.mockRestore();
+    }
     expect(res.status).toBe(500);
     const html = await res.text();
     expect(html).toContain("Something went wrong");

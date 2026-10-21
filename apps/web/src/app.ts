@@ -3103,7 +3103,7 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       page = await loadPublishedLegalPage(db, c.req.param("eventSlug"), c.req.param("ref"));
     } catch (err) {
-      console.error("loadPublishedLegalPage failed:", err);
+      console.error("loadPublishedLegalPage failed:", { reason: err instanceof Error ? err.name : "unknown" });
       recordSystemLog({
         level: "error",
         source: "api",
