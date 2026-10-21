@@ -719,6 +719,11 @@ export interface EventCustomFieldDto {
   description: string | null;
   type: EventCustomFieldType;
   required: boolean;
+  /** Whether the public registration form asks guests this question. */
+  show_on_form: boolean;
+  /** Position among the event's fields, from 0; null = not placed yet (listed last). The list
+   * endpoint already returns the fields in order, so a screen has no need to sort by this. */
+  display_order: number | null;
   options: string[] | null;
   created_at: string;
 }
@@ -740,6 +745,8 @@ export interface CreateEventCustomFieldBody {
   description?: string;
   type?: EventCustomFieldType;
   required?: boolean;
+  /** Left out = off. The Registration page sends true for the fields it creates. */
+  show_on_form?: boolean;
   options?: string[];
 }
 
@@ -750,6 +757,7 @@ export interface UpdateEventCustomFieldPatch {
   description?: string | null;
   type?: EventCustomFieldType;
   required?: boolean;
+  show_on_form?: boolean;
   /** null clears a previous select's options; omit to leave options untouched. */
   options?: string[] | null;
 }

@@ -255,9 +255,21 @@ import {
   handleListEventCustomFields,
   handleCreateEventCustomField,
   handlePatchEventCustomField,
+  handleReorderEventCustomFields,
   handleDeleteEventCustomField,
   handleGetEventCustomFieldOptionUsage,
 } from "./admin/event-custom-fields-routes.js";
+import {
+  handleListLegalDocuments,
+  handleGetLegalDocument,
+  handlePutLegalDocument,
+  handlePublishLegalDocument,
+  handleUnpublishLegalDocument,
+  handleDeleteLegalDocument,
+} from "./admin/legal-documents-routes.js";
+import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
+import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
+import { respondRegistrationNotFound } from "./registration-page-security.js";
 import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
@@ -842,6 +854,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const templateBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_BODY_BYTES,
     onError: (c) => c.json({ error: "template too large" }, 400),
+  });
+  const legalDocumentBodyLimit = bodyLimit({
+    maxSize: MAX_LEGAL_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
@@ -1972,6 +1988,12 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventCustomField(c, db)),
   );
+  app.put(
+    "/api/admin/events/:eventId/custom-fields/order",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleReorderEventCustomFields(c, db)),
+  );
   app.patch(
     "/api/admin/events/:eventId/custom-fields/:fieldId",
     jsonPostCsrf,
@@ -1983,6 +2005,33 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleDeleteEventCustomField(c, db)),
+  );
+  app.get("/api/admin/events/:eventId/legal-documents", staffAdminGate, (c) => handleListLegalDocuments(c, db));
+  app.get("/api/admin/events/:eventId/legal-documents/:ref", staffAdminGate, (c) => handleGetLegalDocument(c, db));
+  app.put(
+    "/api/admin/events/:eventId/legal-documents/:ref",
+    jsonPostCsrf,
+    staffAdminGate,
+    legalDocumentBodyLimit,
+    guardArchivedEvent((c) => handlePutLegalDocument(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/legal-documents/:ref/publish",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePublishLegalDocument(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/legal-documents/:ref/unpublish",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleUnpublishLegalDocument(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/legal-documents/:ref",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteLegalDocument(c, db)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
@@ -3024,6 +3073,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);
   app.use("/m/*", publicRateLimit);
+  // Legal texts of an event, read by a guest before registering. The same per-IP bucket as the
+  // registration form's page: one visitor, one budget for reading.
+  app.use("/legal/*", rateLimit(rateLimitStore, "registration:page"));
 
   // Public static map PNG for tickets / mail {{event_map_url}} - event-scoped, no token
   // (venue coordinates are intended for attendees). Filename is "{eventId}.png".
@@ -3048,6 +3100,27 @@ export function createApp(options: CreateAppOptions = {}) {
     c.header("X-Content-Type-Options", "nosniff");
     c.header("X-Robots-Tag", "noindex, nofollow");
     return c.body(new Uint8Array(result.png), 200);
+  });
+
+  // A published legal text. Anything else (no such event, no such text, a draft, a ref that is not
+  // one) is the same 404, byte for byte, so the response does not say which events exist or what
+  // they have written. No cookie is read or set; the headers are the ticket page's zero-script ones.
+  app.get("/legal/:eventSlug/:ref", async (c) => {
+    let page;
+    try {
+      page = await loadPublishedLegalPage(db, c.req.param("eventSlug"), c.req.param("ref"));
+    } catch (err) {
+      console.error("loadPublishedLegalPage failed:", { reason: err instanceof Error ? err.name : "unknown" });
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "legal_page_failed",
+        fields: { route: "/legal/:eventSlug/:ref" },
+      });
+      return renderPublicHtmlError(c, 500);
+    }
+    if (!page) return respondRegistrationNotFound(c);
+    return respondLegalPage(c, page, await loadOptionalBrandingTheme());
   });
 
   /**

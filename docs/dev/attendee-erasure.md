@@ -821,6 +821,10 @@ A pass whose request left no trace on the row at all. Only a request from before
   - Never take it while you hold an event, attendee or registration row (step 6). It would wait for an erasure that waits for that row.
   - So the clean-up of expired registrations locks no row before the lock (not even with `FOR UPDATE SKIP LOCKED`). It reads the events that have expired ones with a plain query. Then, one transaction per event, it takes the lock and deletes them with the expiry checked again. A transaction that covers several events takes their locks in the order of their ids.
   - Tests: `registration-erasure.test.ts` (two transactions, each side first, and the send of a mail), and `event-deletion.test.ts` for the deletion of an event.
+- **A legal text is not attendee data.**
+  - A `LegalDocument` (an event's privacy notice, terms and extra consents) has no `attendee_id`, so the inventory test does not list it and erasure does not touch it.
+  - Keep it that way. A text is written once for the event, never per guest, and holds no guest's name or address (no placeholders are filled in). A registration records only when the terms were accepted, not which text.
+  - It goes with its event (cascade). `updated_by` is a staff user id, like `AdminAuditLog.actor_user_id`.
 - **Never reuse an erased row.**
   - `erased_at` is the marker. `status` is not (it drives capacity and issuing).
   - Code that sends, issues, edits or checks in an attendee must refuse an erased one.

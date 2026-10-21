@@ -44,6 +44,7 @@
 | `Attendee.custom_data` (event-specific custom fields, e.g. dietary, accessibility, shirt size, emergency contact) | Event-specific attendee data collection (Requirements page → Custom attendee fields), aggregated in Reports' **Custom fields** tab | Personal data. **May hold GDPR Art. 9 special-category data** if staff configure such a field. See **Admin audit trail** below for how edits to this field are (deliberately, only partially) audited |
 | Guest registrations (`Registration`: name, email, company, department, answers to the event's questions, an optional companion's name and answers, when the terms and each extra consent were accepted) | Taking a guest's registration through the event form before, and whether, they become an attendee | Personal data, also of people who never become attendees (not confirmed, waiting, rejected) and of a third party (the companion). Answers may hold GDPR Art. 9 special-category data if staff configure such a question. Erasure decision: every column is deleted with the row, see [the erasure rules](docs/dev/attendee-erasure.md#rules-for-code). Database backups hold these rows like any other attendee data |
 | Registration mail queue (`RegistrationMail`) | Sending the mails a registration triggers | Holds no address and no text, only the template name, status and a sanitised error. It is read together with the `Registration` row and deleted with it |
+| Legal texts of an event (`LegalDocument`: privacy notice, event terms, extra consents) | Showing guests what they read and accept before they register | Not personal data: written once for the event, no guest's data and no per-guest copy. Erasure decision: nothing to erase, see [the erasure rules](docs/dev/attendee-erasure.md#rules-for-code). Deleted with the event |
 
 **Central audit log, attendee creation**
 
@@ -209,7 +210,7 @@ above is about:
 
 ## Central admin audit log (`AdminAuditLog`)
 
-Separate from the per-attendee `AttendeeActionLog` above: a single, instance-wide, **superadmin-only** table (Organisation settings → Logs → **Audit**) that already records event/user/session/settings actions.
+Separate from the per-attendee `AttendeeActionLog` above: a single, instance-wide, **superadmin-only** table (Organisation settings → Logs → **Audit**) that already records event/user/session/settings actions. Saving, publishing, withdrawing and deleting a legal text of an event are among them (`legal_document_saved`, `legal_document_published`, `legal_document_unpublished`, `legal_document_deleted`); the entry holds the event id, the kind and the key of the text, never the text.
 
 - Attendee **creation** writes here too. Unlike the per-attendee log, it deliberately includes the attendee's name and email in `metadata`, plus the event's title (not just its opaque id).
 - An **erasure** or a **removal** (`attendee_erased` / `attendees_bulk_erased`, told apart by `metadata.method`) records the event, the attendee ids, the counts and, for a removal, a reason code, never a name or an email. It also blanks the name and email in that attendee's creation entry.

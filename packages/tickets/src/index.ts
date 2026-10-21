@@ -99,7 +99,9 @@ export {
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
 export {
+  eventCustomFieldOrderBy,
   loadEventCustomDataFields,
+  loadRegistrantFormFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
   findConflictingContentField,

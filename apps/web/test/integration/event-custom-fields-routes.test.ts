@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -8,6 +8,7 @@ import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 import { createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { bootSingleOrgFixture } from "../helpers/boot-single-org-fixture.js";
+import { acquireEventCustomFieldsLock } from "../../src/admin/event-custom-fields-routes.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -15,6 +16,12 @@ const sameOrigin = { Origin: "http://localhost" };
 const ORG_CF = "org-custom-fields";
 const EVENT_CF = "evt-custom-fields";
 const EVENT_CF_OTHER = "evt-custom-fields-other";
+// The registration form's fields (0.8): one event for order and reorder tests, three that differ
+// only in their registration settings (a mode, a settings row with mode null, an archived event).
+const EVENT_CF_ORDER = "evt-custom-fields-order";
+const EVENT_CF_REG = "evt-custom-fields-registration";
+const EVENT_CF_REG_OFF = "evt-custom-fields-registration-off";
+const EVENT_CF_ARCHIVED = "evt-custom-fields-archived";
 
 const EMAIL_ADMIN = "custom-fields-admin@example.com";
 const EMAIL_OP = "custom-fields-op@example.com";
@@ -31,7 +38,14 @@ let opCookie = "";
 // EVENT_CF/EVENT_CF_OTHER, and delete it at the end of the test - include those ids here too so
 // an aborted run (which skips that cleanup) doesn't leave orphaned rows breaking the next run's
 // prisma.event.create with a unique-constraint error.
-const EXTRA_FIXTURE_EVENT_IDS = ["evt-custom-fields-limit", "evt-custom-fields-lock-race"];
+const EXTRA_FIXTURE_EVENT_IDS = [
+  "evt-custom-fields-limit",
+  "evt-custom-fields-lock-race",
+  EVENT_CF_ORDER,
+  EVENT_CF_REG,
+  EVENT_CF_REG_OFF,
+  EVENT_CF_ARCHIVED,
+];
 
 async function seed(client: PrismaClient) {
   const fixtureEventIds = [EVENT_CF, EVENT_CF_OTHER, ...EXTRA_FIXTURE_EVENT_IDS];
@@ -64,6 +78,43 @@ async function seed(client: PrismaClient) {
         date: new Date("2026-10-02"),
         organization_id: ORG_CF,
       },
+      {
+        id: EVENT_CF_ORDER,
+        title: "Custom Fields Order Event",
+        slug: "custom-fields-order-event",
+        date: new Date("2026-10-03"),
+        organization_id: ORG_CF,
+      },
+      {
+        id: EVENT_CF_REG,
+        title: "Custom Fields Registration Event",
+        slug: "custom-fields-registration-event",
+        date: new Date("2026-10-04"),
+        organization_id: ORG_CF,
+      },
+      {
+        id: EVENT_CF_REG_OFF,
+        title: "Custom Fields Registration Off Event",
+        slug: "custom-fields-registration-off-event",
+        date: new Date("2026-10-05"),
+        organization_id: ORG_CF,
+      },
+      {
+        id: EVENT_CF_ARCHIVED,
+        title: "Custom Fields Archived Event",
+        slug: "custom-fields-archived-event",
+        date: new Date("2026-10-06"),
+        archived_at: new Date("2026-10-07"),
+        organization_id: ORG_CF,
+      },
+    ],
+  });
+  // Registration is on for EVENT_CF_REG only. EVENT_CF_REG_OFF has a settings row whose mode is
+  // null (off), and every other event has no row at all: both must behave as before the form.
+  await client.eventRegistrationSettings.createMany({
+    data: [
+      { event_id: EVENT_CF_REG, mode: "automatic", access_methods: ["link"] },
+      { event_id: EVENT_CF_REG_OFF, mode: null },
     ],
   });
 
@@ -710,5 +761,507 @@ describe("DELETE /api/admin/events/:eventId/custom-fields/:fieldId", () => {
       (finalItem?.config as { content_fields?: string[] } | null)?.content_fields ?? [];
     const danglingReference = fieldStillExists === null && finalContentFields.includes("race_attach_field");
     expect(danglingReference).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The registration form's two columns: show_on_form and display_order (v0.8).
+// ---------------------------------------------------------------------------------------------
+
+type FieldItem = {
+  id: string;
+  source_field: string;
+  label: string;
+  required: boolean;
+  show_on_form: boolean;
+  display_order: number | null;
+};
+
+const jsonAdmin = () => ({ Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin });
+
+async function listItems(eventId: string): Promise<FieldItem[]> {
+  const res = await app.request(`/api/admin/events/${eventId}/custom-fields`, { headers: { Cookie: adminCookie } });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { items: FieldItem[] }).items;
+}
+
+function createField(eventId: string, body: Record<string, unknown>): Promise<Response> {
+  return Promise.resolve(
+    app.request(`/api/admin/events/${eventId}/custom-fields`, {
+      method: "POST",
+      headers: jsonAdmin(),
+      body: JSON.stringify({ label: `Field ${String(body.source_field)}`, ...body }),
+    }),
+  );
+}
+
+function patchField(eventId: string, fieldId: string, body: Record<string, unknown>): Promise<Response> {
+  return Promise.resolve(
+    app.request(`/api/admin/events/${eventId}/custom-fields/${fieldId}`, {
+      method: "PATCH",
+      headers: jsonAdmin(),
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+function reorder(eventId: string, ids: unknown, headers: Record<string, string> = jsonAdmin()): Promise<Response> {
+  return Promise.resolve(
+    app.request(`/api/admin/events/${eventId}/custom-fields/order`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ ids }),
+    }),
+  );
+}
+
+/** Replaces the event's fields with ones named by `slugs`, created one minute apart in that order. */
+async function seedFields(eventId: string, slugs: readonly string[]): Promise<Map<string, string>> {
+  await prisma.eventCustomField.deleteMany({ where: { event_id: eventId } });
+  const start = Date.UTC(2026, 0, 1);
+  await prisma.eventCustomField.createMany({
+    data: slugs.map((slug, index) => ({
+      event_id: eventId,
+      source_field: slug,
+      label: `Field ${slug}`,
+      created_at: new Date(start + index * 60_000),
+    })),
+  });
+  const rows = await prisma.eventCustomField.findMany({ where: { event_id: eventId } });
+  return new Map(rows.map((row) => [row.source_field, row.id]));
+}
+
+function idsOf(fields: Map<string, string>, slugs: readonly string[]): string[] {
+  return slugs.map((slug) => {
+    const id = fields.get(slug);
+    if (!id) throw new Error(`no seeded field ${slug}`);
+    return id;
+  });
+}
+
+const slugsOf = (items: readonly FieldItem[]) => items.map((item) => item.source_field);
+const positionsOf = (items: readonly FieldItem[]) => items.map((item) => item.display_order);
+
+async function reorderLogCount(eventId: string): Promise<number> {
+  return prisma.attendeeActionLog.count({ where: { event_id: eventId, action_type: "event_custom_fields_reordered" } });
+}
+
+/** The registration-form tests start from an event with no fields and no reorder in its audit log. */
+async function resetFormFixtures(): Promise<void> {
+  await prisma.eventCustomField.deleteMany({ where: { event_id: { in: [EVENT_CF_ORDER, EVENT_CF_REG, EVENT_CF_REG_OFF] } } });
+  await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+}
+
+describe("the order of the field list", () => {
+  beforeEach(resetFormFixtures);
+
+  it("lists fields by display_order, those without one after them (oldest first), and shows both new columns", async () => {
+    const start = Date.UTC(2026, 0, 1);
+    await prisma.eventCustomField.createMany({
+      data: [
+        { event_id: EVENT_CF_ORDER, source_field: "late_placed", label: "Late placed", display_order: 1, created_at: new Date(start + 5 * 60_000) },
+        { event_id: EVENT_CF_ORDER, source_field: "unplaced_new", label: "Unplaced new", created_at: new Date(start + 4 * 60_000) },
+        { event_id: EVENT_CF_ORDER, source_field: "early_placed", label: "Early placed", display_order: 0, show_on_form: true, created_at: new Date(start + 6 * 60_000) },
+        { event_id: EVENT_CF_ORDER, source_field: "unplaced_old", label: "Unplaced old", created_at: new Date(start + 3 * 60_000) },
+      ],
+    });
+
+    const items = await listItems(EVENT_CF_ORDER);
+
+    expect(slugsOf(items)).toEqual(["early_placed", "late_placed", "unplaced_old", "unplaced_new"]);
+    expect(positionsOf(items)).toEqual([0, 1, null, null]);
+    expect(items.map((item) => item.show_on_form)).toEqual([true, false, false, false]);
+  });
+
+  it("lists the same order as the custom-fields report and its CSV export", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["alpha", "bravo", "charlie"]);
+    const wanted = ["charlie", "alpha", "bravo"];
+    expect((await reorder(EVENT_CF_ORDER, idsOf(fields, wanted))).status).toBe(200);
+
+    expect(slugsOf(await listItems(EVENT_CF_ORDER))).toEqual(wanted);
+
+    const report = await app.request(`/api/admin/events/${EVENT_CF_ORDER}/reports/custom-fields`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(report.status).toBe(200);
+    const reportBody = (await report.json()) as { fields: { source_field: string }[] };
+    expect(reportBody.fields.map((field) => field.source_field)).toEqual(wanted);
+
+    const csv = await app.request(`/api/admin/events/${EVENT_CF_ORDER}/reports/export?format=csv&report=customfields`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(csv.status).toBe(200);
+    const header = (await csv.text()).replace(/^\uFEFF/, "").split("\r\n")[0];
+    expect(header).toBe('"Name","Email","Ticket type","Field charlie","Field alpha","Field bravo"');
+  });
+});
+
+describe("show_on_form on create and update", () => {
+  beforeEach(resetFormFixtures);
+
+  it("is off and unplaced for a field created without it, as every field was before the form", async () => {
+    const res = await createField(EVENT_CF_ORDER, { source_field: "plain" });
+    expect(res.status).toBe(201);
+    const row = (await res.json()) as FieldItem;
+    expect(row.show_on_form).toBe(false);
+    expect(row.display_order).toBeNull();
+  });
+
+  it("is on for a field created with show_on_form true, which the Registration page sends", async () => {
+    const res = await createField(EVENT_CF_ORDER, { source_field: "asked", show_on_form: true });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as FieldItem).show_on_form).toBe(true);
+    expect((await prisma.eventCustomField.findFirstOrThrow({ where: { event_id: EVENT_CF_ORDER } })).show_on_form).toBe(true);
+  });
+
+  it("refuses a show_on_form that is not a boolean, and a display_order in the body (only the reorder writes it)", async () => {
+    expect((await createField(EVENT_CF_ORDER, { source_field: "bad_flag", show_on_form: "yes" })).status).toBe(400);
+    expect((await createField(EVENT_CF_ORDER, { source_field: "bad_order", display_order: 3 })).status).toBe(400);
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_ORDER, source_field: "patch_me", label: "Patch me" },
+    });
+    expect((await patchField(EVENT_CF_ORDER, created.id, { show_on_form: 1 })).status).toBe(400);
+    expect((await patchField(EVENT_CF_ORDER, created.id, { display_order: 0 })).status).toBe(400);
+  });
+
+  it("turns the flag on and off with a PATCH that changes nothing else", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_ORDER, source_field: "toggle", label: "Toggle", required: false },
+    });
+
+    const on = await patchField(EVENT_CF_ORDER, created.id, { show_on_form: true });
+    expect(on.status).toBe(200);
+    expect(((await on.json()) as FieldItem).show_on_form).toBe(true);
+
+    const off = await patchField(EVENT_CF_ORDER, created.id, { show_on_form: false });
+    expect(((await off.json()) as FieldItem).show_on_form).toBe(false);
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: created.id } })).label).toBe("Toggle");
+  });
+
+  it("appends a field created after a reorder to the end, unplaced", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["one", "two"]);
+    expect((await reorder(EVENT_CF_ORDER, idsOf(fields, ["two", "one"]))).status).toBe(200);
+
+    expect((await createField(EVENT_CF_ORDER, { source_field: "three" })).status).toBe(201);
+
+    const items = await listItems(EVENT_CF_ORDER);
+    expect(slugsOf(items)).toEqual(["two", "one", "three"]);
+    expect(positionsOf(items)).toEqual([0, 1, null]);
+  });
+});
+
+describe("a Required field that the registration form would not ask", () => {
+  beforeEach(resetFormFixtures);
+
+  it("is refused on create when the event has a registration mode (422), and nothing is created", async () => {
+    for (const body of [
+      { source_field: "needed", required: true },
+      { source_field: "needed", required: true, show_on_form: false },
+    ]) {
+      const res = await createField(EVENT_CF_REG, body);
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as { error: string }).error).toBe("required_field_not_on_form");
+    }
+    expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_CF_REG } })).toBe(0);
+  });
+
+  it("is refused for the approval mode as well", async () => {
+    await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_CF_REG }, data: { mode: "approval" } });
+    try {
+      expect((await createField(EVENT_CF_REG, { source_field: "needed", required: true })).status).toBe(422);
+    } finally {
+      await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_CF_REG }, data: { mode: "automatic" } });
+    }
+  });
+
+  it("is accepted on create when it is on the form, or when it is optional", async () => {
+    expect((await createField(EVENT_CF_REG, { source_field: "asked_required", required: true, show_on_form: true })).status).toBe(201);
+    expect((await createField(EVENT_CF_REG, { source_field: "hidden_optional", required: false })).status).toBe(201);
+    expect((await createField(EVENT_CF_REG, { source_field: "hidden_optional_explicit", required: false, show_on_form: false })).status).toBe(201);
+  });
+
+  it("is accepted as in 0.7.5 when the event has no registration mode: a settings row with mode null, or no row", async () => {
+    for (const eventId of [EVENT_CF_REG_OFF, EVENT_CF_ORDER]) {
+      const created = await createField(eventId, { source_field: "needed", required: true });
+      expect(created.status).toBe(201);
+      const field = (await created.json()) as FieldItem;
+      expect(field.required).toBe(true);
+      expect(field.show_on_form).toBe(false);
+
+      expect((await patchField(eventId, field.id, { required: false })).status).toBe(200);
+      expect((await patchField(eventId, field.id, { required: true })).status).toBe(200);
+      expect((await patchField(eventId, field.id, { required: true, show_on_form: false })).status).toBe(200);
+    }
+  });
+
+  it("is refused on PATCH when it makes a hidden field Required (422), and the field stays as it was", async () => {
+    const hidden = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "hidden", label: "Hidden", required: false, show_on_form: false },
+    });
+    const res = await patchField(EVENT_CF_REG, hidden.id, { required: true });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: string }).error).toBe("required_field_not_on_form");
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: hidden.id } })).required).toBe(false);
+  });
+
+  it("is refused on PATCH when it takes a Required field off the form (422)", async () => {
+    const asked = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "asked", label: "Asked", required: true, show_on_form: true },
+    });
+    const res = await patchField(EVENT_CF_REG, asked.id, { show_on_form: false });
+    expect(res.status).toBe(422);
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: asked.id } })).show_on_form).toBe(true);
+  });
+
+  it("is accepted on PATCH when the same request puts the field on the form, or makes it optional", async () => {
+    const hidden = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "hidden", label: "Hidden" },
+    });
+    expect((await patchField(EVENT_CF_REG, hidden.id, { required: true, show_on_form: true })).status).toBe(200);
+    expect((await patchField(EVENT_CF_REG, hidden.id, { required: false, show_on_form: false })).status).toBe(200);
+  });
+
+  it("leaves a field that already was Required and off the form editable, since that is not enforced backwards", async () => {
+    // What an import or an older version left behind. The enable-registration gate reports these.
+    const legacy = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "legacy", label: "Legacy", required: true, show_on_form: false },
+    });
+    expect((await patchField(EVENT_CF_REG, legacy.id, { label: "Legacy renamed" })).status).toBe(200);
+    expect((await patchField(EVENT_CF_REG, legacy.id, { required: true })).status).toBe(200);
+    expect((await patchField(EVENT_CF_REG, legacy.id, { type: "boolean" })).status).toBe(200);
+    expect((await patchField(EVENT_CF_REG, legacy.id, { required: false })).status).toBe(200);
+  });
+
+  it("never ends Required and off the form when two saves each change one flag at once (lock)", async () => {
+    const field = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "flip", label: "Flip", required: false, show_on_form: true },
+    });
+    for (let round = 0; round < 6; round += 1) {
+      await prisma.eventCustomField.update({ where: { id: field.id }, data: { required: false, show_on_form: true } });
+
+      const [hide, require] = await Promise.all([
+        patchField(EVENT_CF_REG, field.id, { show_on_form: false }),
+        patchField(EVENT_CF_REG, field.id, { required: true }),
+      ]);
+
+      // Either order is legal, but whichever ran second would have produced the bad pair.
+      expect([hide.status, require.status].sort()).toEqual([200, 422]);
+      const row = await prisma.eventCustomField.findUniqueOrThrow({ where: { id: field.id } });
+      expect(row.required && !row.show_on_form).toBe(false);
+    }
+  });
+});
+
+describe("a save that waits for the custom-fields lock", () => {
+  beforeEach(resetFormFixtures);
+
+  it("answers 403 when the field was deleted while it waited, like any field the event does not have", async () => {
+    const field = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "doomed", label: "Doomed" },
+    });
+    let save: Promise<Response> | undefined;
+    await prisma.$transaction(async (tx) => {
+      await acquireEventCustomFieldsLock(tx, EVENT_CF_REG);
+      // The save passes its first read, then queues behind this transaction's lock.
+      save = patchField(EVENT_CF_REG, field.id, { label: "Too late" });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await tx.eventCustomField.delete({ where: { id: field.id } });
+    });
+
+    const res = await save;
+    expect(res?.status).toBe(403);
+    expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_CF_REG } })).toBe(0);
+  });
+});
+
+describe("PUT /api/admin/events/:eventId/custom-fields/order", () => {
+  beforeEach(resetFormFixtures);
+
+  it("returns 403 for an operator, who has access to this event but is not its administrator", async () => {
+    const res = await reorder(EVENT_CF, [], { Cookie: opCookie, "Content-Type": "application/json", ...sameOrigin });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a request from another origin, and changes nothing", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["a", "b"]);
+    const res = await reorder(EVENT_CF_ORDER, idsOf(fields, ["b", "a"]), {
+      Cookie: adminCookie,
+      "Content-Type": "application/json",
+      Origin: "https://evil.example",
+    });
+    expect(res.status).toBe(403);
+    expect(positionsOf(await listItems(EVENT_CF_ORDER))).toEqual([null, null]);
+  });
+
+  it("returns 403 event_archived for an archived event", async () => {
+    const res = await reorder(EVENT_CF_ARCHIVED, []);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("event_archived");
+  });
+
+  it("returns 400 for a body that is not JSON, and for a list that is not a list of distinct ids", async () => {
+    const notJson = await app.request(`/api/admin/events/${EVENT_CF_ORDER}/custom-fields/order`, {
+      method: "PUT",
+      headers: jsonAdmin(),
+      body: "{not valid json",
+    });
+    expect(notJson.status).toBe(400);
+    expect(((await notJson.json()) as { error: string }).error).toBe("invalid json");
+
+    const fields = await seedFields(EVENT_CF_ORDER, ["a", "b"]);
+    const [a, b] = idsOf(fields, ["a", "b"]);
+    for (const ids of ["a", [1, 2], [a, a], [a, ""], Array.from({ length: 101 }, (_, i) => `id-${i}`)]) {
+      const res = await reorder(EVENT_CF_ORDER, ids);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe("validation_failed");
+    }
+    const extraKey = await app.request(`/api/admin/events/${EVENT_CF_ORDER}/custom-fields/order`, {
+      method: "PUT",
+      headers: jsonAdmin(),
+      body: JSON.stringify({ ids: [a, b], also: true }),
+    });
+    expect(extraKey.status).toBe(400);
+    const noIds = await app.request(`/api/admin/events/${EVENT_CF_ORDER}/custom-fields/order`, {
+      method: "PUT",
+      headers: jsonAdmin(),
+      body: JSON.stringify({}),
+    });
+    expect(noIds.status).toBe(400);
+  });
+
+  it("reorders in one request: the answer, the list and the rows all hold 0..n-1 in the new order", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["alpha", "bravo", "charlie", "delta"]);
+    const wanted = ["delta", "alpha", "charlie", "bravo"];
+
+    const res = await reorder(EVENT_CF_ORDER, idsOf(fields, wanted));
+
+    expect(res.status).toBe(200);
+    const answer = ((await res.json()) as { items: FieldItem[] }).items;
+    expect(slugsOf(answer)).toEqual(wanted);
+    expect(positionsOf(answer)).toEqual([0, 1, 2, 3]);
+    const listed = await listItems(EVENT_CF_ORDER);
+    expect(slugsOf(listed)).toEqual(wanted);
+    expect(positionsOf(listed)).toEqual([0, 1, 2, 3]);
+    const stored = await prisma.eventCustomField.findMany({ where: { event_id: EVENT_CF_ORDER }, orderBy: { display_order: "asc" } });
+    expect(stored.map((row) => row.display_order)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("numbers the fields that had no position, so the result has no gap and no repeat", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["old_1", "old_2"]);
+    await prisma.eventCustomField.update({ where: { id: idsOf(fields, ["old_1"])[0]! }, data: { display_order: 7 } });
+    await createField(EVENT_CF_ORDER, { source_field: "new_1" });
+    await createField(EVENT_CF_ORDER, { source_field: "new_2" });
+    const all = new Map((await listItems(EVENT_CF_ORDER)).map((item) => [item.source_field, item.id]));
+
+    const res = await reorder(EVENT_CF_ORDER, idsOf(all, ["new_2", "old_2", "old_1", "new_1"]));
+
+    expect(res.status).toBe(200);
+    const items = ((await res.json()) as { items: FieldItem[] }).items;
+    expect(slugsOf(items)).toEqual(["new_2", "old_2", "old_1", "new_1"]);
+    expect(positionsOf(items)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("accepts an empty list for an event with no fields", async () => {
+    const res = await reorder(EVENT_CF_ORDER, []);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [] });
+    expect(await reorderLogCount(EVENT_CF_ORDER)).toBe(0);
+  });
+
+  it("records one audit entry naming the fields in order, and none when the order is already stored", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["a", "b", "c"]);
+    const wanted = ["c", "a", "b"];
+
+    expect((await reorder(EVENT_CF_ORDER, idsOf(fields, wanted))).status).toBe(200);
+    expect(await reorderLogCount(EVENT_CF_ORDER)).toBe(1);
+    const log = await prisma.attendeeActionLog.findFirstOrThrow({
+      where: { event_id: EVENT_CF_ORDER, action_type: "event_custom_fields_reordered" },
+    });
+    expect(log.attendee_id).toBeNull();
+    expect(log.metadata).toEqual({ source_fields: wanted });
+
+    expect((await reorder(EVENT_CF_ORDER, idsOf(fields, wanted))).status).toBe(200);
+    expect(await reorderLogCount(EVENT_CF_ORDER)).toBe(1);
+  });
+
+  it("answers 409 stale_write and changes nothing when the list is not the event's fields now", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["a", "b", "c"]);
+    const [a, b, c] = idsOf(fields, ["a", "b", "c"]);
+    const foreign = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_OTHER, source_field: "foreign", label: "Foreign" },
+    });
+    try {
+      for (const ids of [[a, b], [a, b, c, "no-such-field"], [a, b, foreign.id], [c, b, a, foreign.id]]) {
+        const res = await reorder(EVENT_CF_ORDER, ids);
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as { error: string }).error).toBe("stale_write");
+      }
+      expect(positionsOf(await listItems(EVENT_CF_ORDER))).toEqual([null, null, null]);
+      expect(await reorderLogCount(EVENT_CF_ORDER)).toBe(0);
+      expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: foreign.id } })).display_order).toBeNull();
+    } finally {
+      await prisma.eventCustomField.delete({ where: { id: foreign.id } });
+    }
+  });
+
+  it("leaves one of two reorders sent at once, whole: 0..n-1 and exactly the order of the one that ran last", async () => {
+    const fields = await seedFields(EVENT_CF_ORDER, ["a", "b", "c", "d", "e"]);
+    const first = idsOf(fields, ["e", "d", "c", "b", "a"]);
+    const second = idsOf(fields, ["c", "a", "e", "b", "d"]);
+
+    for (let round = 0; round < 8; round += 1) {
+      const [x, y] = await Promise.all([reorder(EVENT_CF_ORDER, first), reorder(EVENT_CF_ORDER, second)]);
+      expect([x.status, y.status]).toEqual([200, 200]);
+
+      const items = await listItems(EVENT_CF_ORDER);
+      expect(positionsOf(items)).toEqual([0, 1, 2, 3, 4]);
+      const ids = items.map((item) => item.id);
+      expect([first, second]).toContainEqual(ids);
+    }
+  });
+
+  it("is serialised with a delete: no 500, and no field is left that the answer did not number", async () => {
+    for (let round = 0; round < 4; round += 1) {
+      const fields = await seedFields(EVENT_CF_ORDER, ["a", "b", "c", "d"]);
+      const all = idsOf(fields, ["d", "c", "b", "a"]);
+      const doomed = idsOf(fields, ["c"])[0]!;
+
+      const [moved, removed] = await Promise.all([
+        reorder(EVENT_CF_ORDER, all),
+        app.request(`/api/admin/events/${EVENT_CF_ORDER}/custom-fields/${doomed}`, {
+          method: "DELETE",
+          headers: { Cookie: adminCookie, ...sameOrigin },
+        }),
+      ]);
+
+      expect(removed.status).toBe(200);
+      expect([200, 409]).toContain(moved.status);
+      const left = await listItems(EVENT_CF_ORDER);
+      expect(slugsOf(left)).not.toContain("c");
+      const placed = left.map((item) => item.display_order).filter((value) => value !== null);
+      expect(new Set(placed).size).toBe(placed.length);
+    }
+  });
+
+  it("is serialised with a create: a field made meanwhile either waits its turn at the end, or the reorder is told to reload", async () => {
+    for (let round = 0; round < 4; round += 1) {
+      const fields = await seedFields(EVENT_CF_ORDER, ["a", "b", "c"]);
+      const wanted = ["c", "b", "a"];
+
+      const [moved, made] = await Promise.all([
+        reorder(EVENT_CF_ORDER, idsOf(fields, wanted)),
+        createField(EVENT_CF_ORDER, { source_field: "fresh" }),
+      ]);
+
+      expect(made.status).toBe(201);
+      expect([200, 409]).toContain(moved.status);
+      const items = await listItems(EVENT_CF_ORDER);
+      if (moved.status === 200) {
+        expect(slugsOf(items)).toEqual([...wanted, "fresh"]);
+        expect(positionsOf(items)).toEqual([0, 1, 2, null]);
+      } else {
+        expect(slugsOf(items)).toEqual(["a", "b", "c", "fresh"]);
+      }
+    }
   });
 });

@@ -93,6 +93,15 @@ export const CODE_MESSAGES: Record<string, string> = {
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
   legacy_name_requires_both_fields:
     "This attendee doesn't have separate first and last names yet. Set both fields together.",
+  legal_document_empty:
+    "There is no text left to save once unsupported formatting is removed. Write some text before saving.",
+  legal_document_in_use:
+    "Registration is on for this event and needs this text. Turn registration off first, then withdraw or delete it.",
+  legal_document_limit_reached: "This event has reached its limit of extra consents.",
+  legal_document_unsupported:
+    "This text has a structure that cannot be saved safely. Simplify its formatting, or paste it as plain text.",
+  legal_documents_missing:
+    "Registration needs a published privacy notice, published event terms and every extra consent you chose. Publish the missing texts first.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
   mfa_recent_required: "Confirm your sign-in again to remember this device.",
   manual_lookup_disabled: "Manual lookup is disabled for this event. Use QR scan only.",
@@ -112,6 +121,8 @@ export const CODE_MESSAGES: Record<string, string> = {
     "You must change your password before continuing. Update it in Account or go to /change-password.",
   password_too_common: "This password is too common or predictable. Choose a different one.",
   required_custom_data_field_missing: "A required custom field is missing.",
+  required_field_not_on_form:
+    "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",
   reserved_token: "This name is already used as a built-in placeholder. Choose a different name.",
   resend_skipped: "Ticket email was not sent.",
   save_failed: "Save failed. Try again.",
