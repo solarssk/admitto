@@ -97,7 +97,8 @@ function endOfString(css: string, start: number): number {
  * brace inside `url("...")` does not count. */
 function closingBrace(css: string, open: number): number {
   let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
+  let i = open;
+  while (i < css.length) {
     const ch = css.charAt(i);
     if (ch === '"' || ch === "'") {
       i = endOfString(css, i);
@@ -107,6 +108,7 @@ function closingBrace(css: string, open: number): number {
       depth -= 1;
       if (depth === 0) return i;
     }
+    i += 1;
   }
   throw new Error("Unbalanced braces in the product CSS");
 }
@@ -184,12 +186,16 @@ function isClassCharacter(ch: string): boolean {
 function classesOf(selector: string): string[] {
   const text = withoutConditions(selector);
   const names: string[] = [];
-  for (let i = 0; i < text.length; i += 1) {
-    if (text.charAt(i) !== ".") continue;
+  let i = 0;
+  while (i < text.length) {
+    if (text.charAt(i) !== ".") {
+      i += 1;
+      continue;
+    }
     let end = i + 1;
     while (end < text.length && isClassCharacter(text.charAt(end))) end += 1;
     if (end > i + 1) names.push(text.slice(i + 1, end));
-    i = end - 1;
+    i = end;
   }
   return names;
 }
@@ -285,8 +291,7 @@ export function buildGuestPageProductCss(read: (relativePath: string) => string)
   for (const file of WHOLE_FILES) {
     sections.push(`/* ${file} */`, ...pickRules(read(file), null));
   }
-  sections.push(`/* ${COMPONENTS_FILE}: the rules of the classes the guest pages use */`);
-  sections.push(...pickRules(read(COMPONENTS_FILE), allowed));
+  sections.push(`/* ${COMPONENTS_FILE}: the rules of the classes the guest pages use */`, ...pickRules(read(COMPONENTS_FILE), allowed));
   return sections.join("\n");
 }
 
@@ -298,7 +303,7 @@ export function renderGeneratedModule(css: string): string {
     "// apps/web/test/unit/guest-page-css.test.ts fails when it no longer matches those files.",
     "export const GUEST_PAGE_PRODUCT_CSS = [",
     ...lines,
-    '].join("\\n");',
+    String.raw`].join("\n");`,
     "",
   ].join("\n");
 }

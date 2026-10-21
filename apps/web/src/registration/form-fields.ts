@@ -211,7 +211,7 @@ const QUESTION_RENDERERS: ReadonlyMap<FormQuestionType, (question: FormQuestion,
 /** True for a type of answer the page can draw. The model refuses to open a form that has a required
  * question this says no to. */
 export function canDrawQuestion(type: string): type is FormQuestionType {
-  return [...QUESTION_RENDERERS.keys()].some((known) => known === type);
+  return QUESTION_RENDERERS.has(type as FormQuestionType);
 }
 
 /** An optional Yes/No question is a row of its own; a run of them is grouped in one block. */
@@ -283,7 +283,7 @@ function submitLabel(mode: RegistrationFormModel["mode"]): string {
 
 /** "Before you send": the terms, the extra consents, the challenge, the button and the privacy link. */
 export function renderAgreement(model: RegistrationFormModel): string {
-  const checks = [renderTermsRow(model), ...model.consents.map(renderConsentRow)].join("");
+  const checks = [renderTermsRow(model), ...model.consents.map((consent, index) => renderConsentRow(consent, index))].join("");
   const button = `<button class="at-btn at-btn--primary at-btn--block at-btn--lg" type="submit" id="reg-submit" disabled>${icon("send", "ic reg-btn-icon")}<span id="reg-submit-label">${esc(submitLabel(model.mode))}</span></button>`;
   const fine = `<p class="reg-fine">How we use your details is in the ${legalLink(model.privacyPath, "privacy notice")}.</p>`;
   return `<div class="reg-section"><p class="reg-section__label">Before you send</p><div class="reg-checks">${checks}</div>${renderChallenge(model)}${button}${fine}</div>`;

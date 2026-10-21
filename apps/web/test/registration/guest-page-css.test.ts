@@ -42,7 +42,7 @@ describe("the product stylesheet of the guest pages is the product's own CSS", (
       const target = join(dir, "guest-page-css.generated.ts");
       writeGuestPageCss(productStylesRoot(), target);
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- files this test just wrote and the committed copy
-      expect(readFileSync(target, "utf8") === readFileSync(generatedModulePath(), "utf8")).toBe(true);
+      expect(readFileSync(target, "utf8")).toBe(readFileSync(generatedModulePath(), "utf8"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -191,7 +191,7 @@ describe("buildGuestPageProductCss, on a stylesheet written for the test", () =>
 
   it("copies the token files whole, in order, with their comments gone", () => {
     const lines = buildGuestPageProductCss((relativePath) => `/* ${relativePath} */ :root { --x: "${relativePath}"; }`).split("\n");
-    expect(lines.filter((line) => line.startsWith("/* tokens/")).length).toBe(5);
+    expect(lines.filter((line) => line.startsWith("/* tokens/"))).toHaveLength(5);
     expect(lines.filter((line) => line.startsWith(":root")).slice(0, 2)).toEqual([
       ':root { --x: "tokens/colors.css"; }',
       ':root { --x: "tokens/typography.css"; }',
