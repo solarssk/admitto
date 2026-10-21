@@ -256,7 +256,7 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus } from "@admitto/db/status";
+import type { AttendeeStatus, LegalDocumentKind } from "@admitto/db/status";
 import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 
 /** See WalletPassApiFields - shared with apps/web's own mirror of this same wire shape
@@ -1400,6 +1400,56 @@ export interface RegistrationTurnstileDto {
 export interface SaveRegistrationTurnstileBody {
   site_key?: string | null;
   secret_key?: string | null;
+}
+
+/** One legal text of an event (`/api/admin/events/:eventId/legal-documents`): the privacy notice, the event
+ * terms or an extra consent. `ref` names it in the address (`privacy-notice`, `event-terms`, `consent-<key>`). */
+export interface LegalDocumentDto {
+  id: string;
+  ref: string;
+  kind: LegalDocumentKind;
+  /** The consent key; null for the privacy notice and the terms. */
+  key: string | null;
+  title: string;
+  published: boolean;
+  published_at: string | null;
+  updated_at: string;
+  /** The page a guest reads. It answers 404 until the text is published. */
+  public_path: string;
+  /** True for the privacy notice, the terms and a consent the event asks for. */
+  required: boolean;
+}
+
+/** One text with its cleaned HTML, which can differ from what was sent. */
+export interface LegalDocumentWithContentDto extends LegalDocumentDto {
+  content_html: string;
+}
+
+/** The limits an editor keeps to, from the server. */
+export interface LegalDocumentLimitsDto {
+  title_chars: number;
+  content_chars: number;
+  consents: number;
+}
+
+/** A text that registration still needs published before it can be turned on. */
+export interface LegalDocumentMissingDto {
+  ref: string;
+  kind: LegalDocumentKind;
+  key: string | null;
+}
+
+/** GET /api/admin/events/:eventId/legal-documents */
+export interface LegalDocumentsListResponse {
+  items: LegalDocumentDto[];
+  missing: LegalDocumentMissingDto[];
+  limits: LegalDocumentLimitsDto;
+}
+
+/** PUT /api/admin/events/:eventId/legal-documents/:ref */
+export interface SaveLegalDocumentBody {
+  title: string;
+  content_html: string;
 }
 
 export interface SaveMapsSettingsBody {

@@ -205,6 +205,13 @@ const ADMIN_SURFACES: {
     data: () => [],
     blocking: true,
   },
+  {
+    // Its Legal tab: the list of the event's legal texts. The editor, and the code it needs, load only when a text is opened.
+    name: "admin-registration-legal",
+    path: (i) => `/admin/events/${i.event}/registration?tab=legal`,
+    data: (i) => [`/api/admin/events/${i.event}/legal-documents`],
+    blocking: true,
+  },
 ];
 
 test("admin pages", async ({ page, baseURL }, testInfo) => {

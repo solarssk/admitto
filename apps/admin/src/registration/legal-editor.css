@@ -1,0 +1,127 @@
+/* The visual editor of a legal text: its toolbar, the link field and the writing surface. */
+
+.legal-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.legal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* A button that is on (a heading, bold, a list, the link the caret is in) is tinted, as the tabs of the page are. */
+.legal-toolbar__button[aria-pressed="true"] {
+  background: var(--primary-tint);
+  color: var(--primary);
+}
+
+.legal-link-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* White, not the sunken grey: the red of an error message is 4.5:1 on white and just under it on the grey. */
+  background: var(--surface-card);
+}
+
+.legal-link-form .at-field {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* The buttons sit level with the field's box, not its label. */
+.legal-link-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-self: flex-end;
+}
+
+/* The writing surface looks like the product's own input: the same border, radius and focus ring. */
+.legal-editor-surface {
+  min-height: 16rem;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.legal-editor-surface:hover {
+  border-color: var(--at-gray-400);
+}
+
+.legal-editor-surface:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.legal-editor-surface .ProseMirror {
+  min-height: 14rem;
+  outline: none;
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.legal-editor-surface .ProseMirror[aria-readonly="true"] {
+  color: var(--text-secondary);
+}
+
+/* The elements a legal text can have, set the way the public page sets them (apps/web/src/legal/legal-page.ts). */
+.legal-editor-surface .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.legal-editor-surface .ProseMirror > :last-child {
+  margin-bottom: 0;
+}
+
+.legal-editor-surface .ProseMirror p,
+.legal-editor-surface .ProseMirror ul,
+.legal-editor-surface .ProseMirror ol {
+  margin: 0 0 0.75em;
+}
+
+.legal-editor-surface .ProseMirror h2 {
+  margin: 1.5em 0 0.5em;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-snug);
+}
+
+.legal-editor-surface .ProseMirror h3 {
+  margin: 1.25em 0 0.5em;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-snug);
+}
+
+.legal-editor-surface .ProseMirror ul,
+.legal-editor-surface .ProseMirror ol {
+  padding-left: 1.5em;
+}
+
+.legal-editor-surface .ProseMirror li > p {
+  margin: 0;
+}
+
+.legal-editor-surface .ProseMirror li > ul,
+.legal-editor-surface .ProseMirror li > ol {
+  margin: 0.25em 0 0;
+}
+
+.legal-editor-surface .ProseMirror a {
+  color: var(--text-link);
+  text-underline-offset: 2px;
+}
+
+/* A link in the editor is words to edit, not something to click (the editor does not follow it). */
+.legal-editor-surface .ProseMirror a {
+  cursor: text;
+}
