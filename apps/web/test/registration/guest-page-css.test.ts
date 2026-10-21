@@ -270,6 +270,28 @@ describe("the text on the send button, for the organisation's accent colour", ()
     }
   });
 
+  it("is black on a mid-tone accent, where neither white nor the dark ink reaches 4.5 to 1", () => {
+    for (const primary of ["#777777", "#3b82f6", "#808080", "#4a90d9"]) {
+      expect(contrastRatio(primary, "#ffffff"), `white on ${primary}`).toBeLessThan(4.5);
+      expect(contrastRatio(primary, "#1d273b"), `dark ink on ${primary}`).toBeLessThan(4.5);
+      expect(inkOnPrimaryRule({ primary }), primary).toBe(":root { --text-on-primary: #000000; }");
+      expect(contrastRatio(primary, "#000000"), `black on ${primary}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("always gives a text colour that reaches 4.5 to 1, whatever the accent is", () => {
+    const steps = Array.from({ length: 16 }, (_, i) => i * 17);
+    for (const r of steps) {
+      for (const g of steps) {
+        for (const b of steps) {
+          const primary = `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+          const ink = /--text-on-primary: (#[0-9a-f]{6})/.exec(inkOnPrimaryRule({ primary }))?.[1] ?? "#ffffff";
+          expect(contrastRatio(primary, ink), `${ink} on ${primary}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
   it("follows the accent chosen for the ticket page, which is the one the guest pages use", () => {
     expect(inkOnPrimaryRule({ primary: "#066fd1", ticket_primary: "#f5c400" })).not.toBe("");
     expect(inkOnPrimaryRule({ primary: "#f5c400", ticket_primary: "#066fd1" })).toBe("");

@@ -269,14 +269,17 @@ describe("scripts, nonce and what the page loads", () => {
     expect(first.replaceAll("Zmlyc3Q=", "NONCE")).toBe(second.replaceAll("c2Vjb25k", "NONCE"));
   });
 
-  it("has no inline event handler, no javascript: link and no inline style", () => {
+  it("has no inline event handler, no javascript:, data: or vbscript: link and no inline style", () => {
     const html = render();
     const doc = documentOf(html);
     for (const el of doc.querySelectorAll("*") as Iterable<Dom>) {
       for (const attribute of [...el.attributes]) {
         expect(attribute.name.startsWith("on"), `${el.tagName} ${attribute.name}`).toBe(false);
         if (["href", "src", "action"].includes(attribute.name)) {
-          expect(attribute.value.trim().toLowerCase().startsWith("javascript:")).toBe(false);
+          const value = attribute.value.trim().toLowerCase();
+          for (const scheme of ["javascript:", "data:", "vbscript:"]) {
+            expect(value.startsWith(scheme), `${el.tagName} ${attribute.name} ${scheme}`).toBe(false);
+          }
         }
       }
     }

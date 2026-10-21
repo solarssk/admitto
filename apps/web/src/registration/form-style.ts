@@ -109,6 +109,8 @@ export function contrastRatio(a: string, b: string): number {
 const WHITE = "#ffffff";
 /** Dark ink for a light brand colour: the product's own `--at-ink`. */
 const DARK_INK = "#1d273b";
+/** For the mid-tone accents, a mid blue or a grey, where neither white nor the dark ink reaches AA. */
+const BLACK = "#000000";
 /** WCAG AA for the 14 px and 18 px text of a button. */
 const MIN_TEXT_CONTRAST = 4.5;
 
@@ -116,11 +118,15 @@ const MIN_TEXT_CONTRAST = 4.5;
  * The accent colour of the organisation can be any colour it likes, a light one too. The product
  * writes white on it (`--text-on-primary`), so a pale accent would leave the send button unreadable on
  * the one page every guest sees. When white would not reach AA on the accent, the text on it is the
- * product's dark ink instead. Empty when white is fine, which is the default blue.
+ * product's dark ink instead, and black when the dark ink does not reach AA either. White reaches AA
+ * up to a relative luminance of 0.183 and black from 0.175, so one of the three always does. Empty
+ * when white is fine, which is the default blue.
  */
 export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
   const primary = resolveThemeVars({ ...theme, primary: theme?.ticket_primary ?? theme?.primary })["--primary"];
-  return contrastRatio(primary, WHITE) >= MIN_TEXT_CONTRAST ? "" : `:root { --text-on-primary: ${DARK_INK}; }`;
+  if (contrastRatio(primary, WHITE) >= MIN_TEXT_CONTRAST) return "";
+  const ink = contrastRatio(primary, DARK_INK) >= MIN_TEXT_CONTRAST ? DARK_INK : BLACK;
+  return `:root { --text-on-primary: ${ink}; }`;
 }
 
 /** The whole stylesheet of a guest page, for the instance branding `theme`. */
