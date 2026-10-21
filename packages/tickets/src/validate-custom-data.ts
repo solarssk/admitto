@@ -92,7 +92,13 @@ function assertStoredCustomDataValid(
   for (const field of fields) {
     const raw = ownCustomDataValue(values, field.source_field);
     if (raw) {
-      normalizeCustomDataFieldValue(field, raw);
+      const canonical = normalizeCustomDataFieldValue(field, raw);
+      // A field retyped to `phone` can still hold "+48 600-100-200". That is a number, but not in the form a phone
+      // number is stored in: an edit would keep it as typed, and the list filter, which looks for digits and a +,
+      // would not find it. Like an answer that no longer fits the type, it is refused until it is entered again.
+      if (field.type === "phone" && canonical !== null && canonical !== raw) {
+        throw new Error(`invalid_custom_data_value:${field.source_field}`);
+      }
     }
   }
   assertRequiredFieldsPresent(fields, values);

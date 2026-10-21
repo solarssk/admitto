@@ -64,6 +64,9 @@ describe("eventCustomFieldRulesSchema", () => {
   it("takes an example of 1 to 100 characters on one plain line", () => {
     expect(parse({ example: "a".repeat(100) }).success).toBe(true);
     expect(parse({ example: "+48 600 100 200 (Łódź)" }).success).toBe(true);
+    // The limit is in characters, not UTF-16 units: 100 emoji are 200 units and still fit.
+    expect(parse({ example: "\u{1F600}".repeat(100) }).success).toBe(true);
+    expect(parse({ example: "\u{1F600}".repeat(101) }).success).toBe(false);
     for (const example of [
       "",
       "   ",
@@ -138,6 +141,22 @@ describe("eventCustomFieldRulesFitType", () => {
     expect(eventCustomFieldRulesFitType("phone", { max_length: 16 })).toBe(true);
     expect(eventCustomFieldRulesFitType("phone", { max_length: 17 })).toBe(false);
     expect(eventCustomFieldRulesFitType("phone", { min_length: 17 })).toBe(false);
+  });
+
+  it("refuses phone rules that no number can meet: a phone number has 3 to 16 characters, 3 to 15 with digits only", () => {
+    expect(eventCustomFieldRulesFitType("phone", { max_length: 2 })).toBe(false);
+    expect(eventCustomFieldRulesFitType("phone", { digits_only: true, min_length: 16 })).toBe(false);
+    expect(eventCustomFieldRulesFitType("phone", { digits_only: true, max_length: 2 })).toBe(false);
+    expect(eventCustomFieldRulesFitType("phone", { max_length: 3 })).toBe(true);
+    expect(eventCustomFieldRulesFitType("phone", { min_length: 16 })).toBe(true);
+    expect(eventCustomFieldRulesFitType("phone", { digits_only: true, min_length: 15 })).toBe(true);
+    expect(eventCustomFieldRulesFitType("phone", { digits_only: true, min_length: 3, max_length: 15 })).toBe(true);
+    expect(eventCustomFieldRulesFitType("phone", { min_length: 4, max_length: 9 })).toBe(true);
+  });
+
+  it("leaves a text field's short length rules alone: only a phone number has a shortest length", () => {
+    expect(eventCustomFieldRulesFitType("text", { max_length: 2 })).toBe(true);
+    expect(eventCustomFieldRulesFitType("long_text", { max_length: 1 })).toBe(true);
   });
 });
 

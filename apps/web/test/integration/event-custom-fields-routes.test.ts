@@ -1412,7 +1412,7 @@ describe("the format rules of a field", () => {
     expect(await fieldCount()).toBe(0);
   });
 
-  it("refuses a length longer than the type can hold: 100 for text, 16 for phone, 1000 for long text", async () => {
+  it("refuses a length longer than the type can hold (100 for text, 16 for phone, 1000 for long text), and phone rules no number can meet", async () => {
     const cases = [
       ["text", { max_length: 100 }, 201],
       ["text", { max_length: 101 }, 422],
@@ -1421,6 +1421,10 @@ describe("the format rules of a field", () => {
       ["phone", { max_length: 16 }, 201],
       ["phone", { max_length: 17 }, 422],
       ["phone", { min_length: 17 }, 422],
+      ["phone", { max_length: 2 }, 422],
+      ["phone", { max_length: 3 }, 201],
+      ["phone", { digits_only: true, min_length: 16 }, 422],
+      ["phone", { min_length: 16 }, 201],
     ] as const;
     for (const [index, [type, rules, status]] of cases.entries()) {
       const res = await createField(EVENT_CF_ORDER, { source_field: `cap_${index}`, type, rules });

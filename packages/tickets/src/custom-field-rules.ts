@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  CONTACT_PHONE_MIN_DIGITS,
   EVENT_CUSTOM_FIELD_EXAMPLE_MAX,
   EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
   eventCustomFieldRulesMaxLength,
@@ -26,7 +27,9 @@ export const eventCustomFieldRulesSchema = z
       .string()
       .trim()
       .min(1)
-      .max(EVENT_CUSTOM_FIELD_EXAMPLE_MAX)
+      // A code point takes at most two UTF-16 units, so a longer string is over the limit without counting.
+      .max(EVENT_CUSTOM_FIELD_EXAMPLE_MAX * 2)
+      .refine((value) => codePointLength(value) <= EVENT_CUSTOM_FIELD_EXAMPLE_MAX, { message: "example is too long" })
       .refine((value) => !FORBIDDEN_IN_EXAMPLE.test(value), { message: "invalid example" })
       .optional(),
   })
@@ -40,13 +43,24 @@ export function hasNoRules(rules: EventCustomFieldRules | null | undefined): boo
   return !rules || Object.keys(rules).length === 0;
 }
 
+/** True when some phone number can meet the length rules. A phone number is stored as an optional + and
+ * 3 to 15 digits, so it has 3 to 16 characters (`cap`), and `digits_only` refuses the +, which leaves 3 to 15.
+ * Rules no number can meet would refuse every answer to a field, and every save while it is required. */
+function somePhoneMeetsLengthRules(rules: EventCustomFieldRules, cap: number): boolean {
+  const longest = rules.digits_only ? cap - 1 : cap;
+  const shortest = Math.max(rules.min_length ?? 1, CONTACT_PHONE_MIN_DIGITS);
+  return shortest <= Math.min(rules.max_length ?? longest, longest);
+}
+
 /** True when `rules` can be kept on a field of this type: a type that takes no rules (every type
- * but `text`, `long_text` and `phone`) gets none, and no length is longer than the type can hold. */
+ * but `text`, `long_text` and `phone`) gets none, no length is longer than the type can hold, and
+ * a phone field's rules leave some number that meets them. */
 export function eventCustomFieldRulesFitType(type: string, rules: EventCustomFieldRules | null | undefined): boolean {
   if (!rules || hasNoRules(rules)) return true;
   const cap = eventCustomFieldRulesMaxLength(type);
   if (cap === null) return false;
-  return [rules.min_length, rules.max_length].every((length) => length === undefined || length <= cap);
+  const withinCap = [rules.min_length, rules.max_length].every((length) => length === undefined || length <= cap);
+  return withinCap && (type !== "phone" || somePhoneMeetsLengthRules(rules, cap));
 }
 
 /** The rules stored on a field row, or undefined when it has none. A stored value that is not a

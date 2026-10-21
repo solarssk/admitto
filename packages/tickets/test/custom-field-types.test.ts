@@ -314,6 +314,22 @@ describe("the validators that run on stored data", () => {
     expect(() => assertCustomDataMeetsRequirements([plate], { plate: "123" })).not.toThrow();
   });
 
+  it("refuses a stored phone number that is not in the stored form, which a field retyped to phone can hold, until it is entered again", () => {
+    const phone = field("phone", { source_field: "phone" });
+    expect(() => validateCustomDataPatch([phone, note], { phone: "+48 600-100-200" }, { note: "x" })).toThrow(
+      "invalid_custom_data_value:phone",
+    );
+    expect(() => assertCustomDataMeetsRequirements([phone], { phone: "600 100 200" })).toThrow(
+      "invalid_custom_data_value:phone",
+    );
+    expect(() => assertCustomDataMeetsRequirements([phone], { phone: "+48600100200" })).not.toThrow();
+    expect(() => assertCustomDataMeetsRequirements([phone], {})).not.toThrow();
+    // Entering it again is the way out, and what is stored is then the stored form.
+    expect(validateCustomDataPatch([phone], { phone: "+48 600-100-200" }, { phone: "+48 600 100 200" })).toEqual({
+      phone: "+48600100200",
+    });
+  });
+
   it("refuses a stored answer that is no longer a date", () => {
     const date = field("date", { source_field: "arrival" });
     expect(() => assertCustomDataMeetsRequirements([date], { arrival: "soon" })).toThrow(
