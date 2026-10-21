@@ -400,13 +400,14 @@ async function writePositions(
 ): Promise<number> {
   if (orderedIds.length === 0) return 0;
   const wanted = Prisma.join(orderedIds.map((id, position) => Prisma.sql`(${id}::text, ${position}::int)`));
-  return tx.$executeRaw`
+  const changed = await tx.$executeRaw`
     UPDATE "EventCustomField" AS field
     SET "display_order" = wanted."position", "updated_at" = NOW()
     FROM (VALUES ${wanted}) AS wanted("id", "position")
     WHERE field."id" = wanted."id" AND field."event_id" = ${eventId}
       AND field."display_order" IS DISTINCT FROM wanted."position"
   `;
+  return changed;
 }
 
 /** Gives the event's fields the positions 0, 1, 2... in the order of `ids`, and returns them in
