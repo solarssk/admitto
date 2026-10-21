@@ -1,8 +1,10 @@
 import { Prisma } from "@admitto/db/client";
 
 /** The advisory-lock key of an event's registration queue: one expression for every way of taking it. */
-const registrationQueueKey = (eventId: string): Prisma.Sql =>
-  Prisma.sql`hashtextextended(${`registration-queue:${eventId}`}, 0)`;
+const registrationQueueKey = (eventId: string): Prisma.Sql => {
+  const lockName = "registration-queue:" + eventId;
+  return Prisma.sql`hashtextextended(${lockName}, 0)`;
+};
 
 /**
  * The registration queue of an event: an advisory lock on the event, held until the transaction ends, that lets one
