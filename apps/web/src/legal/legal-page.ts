@@ -52,22 +52,21 @@ type SiblingRow = { kind: string; key: string; title: string };
 
 /** The tabs for a page, or none when the event has only this one published text. Drafts are never in `rows`. */
 function buildTabs(eventSlug: string, current: LegalDocumentRef, rows: readonly SiblingRow[]): LegalPageTab[] {
-  const known = rows.filter((row) => TAB_RANK.has(row.kind));
-  if (known.length < 2) return [];
-  return known
-    .sort(
-      (a, b) =>
-        (TAB_RANK.get(a.kind) ?? 0) - (TAB_RANK.get(b.kind) ?? 0) || a.key.localeCompare(b.key) || a.title.localeCompare(b.title),
-    )
-    .map((row) => {
-      const doc = { kind: row.kind as LegalDocumentRef["kind"], key: row.key };
-      return {
-        kind: doc.kind,
-        title: row.title,
-        path: legalDocumentPath(eventSlug, doc),
-        current: doc.kind === current.kind && doc.key === current.key,
-      };
-    });
+  const ranked = rows.flatMap((row) => {
+    const rank = TAB_RANK.get(row.kind);
+    return rank === undefined ? [] : [{ row, rank }];
+  });
+  if (ranked.length < 2) return [];
+  ranked.sort((a, b) => a.rank - b.rank || a.row.key.localeCompare(b.row.key) || a.row.title.localeCompare(b.row.title));
+  return ranked.map(({ row }) => {
+    const doc = { kind: row.kind as LegalDocumentRef["kind"], key: row.key };
+    return {
+      kind: doc.kind,
+      title: row.title,
+      path: legalDocumentPath(eventSlug, doc),
+      current: doc.kind === current.kind && doc.key === current.key,
+    };
+  });
 }
 
 /**
@@ -151,18 +150,23 @@ const LEGAL_PAGE_CSS = `
 `;
 
 /** Tabler-style line icons, fixed markup for each kind of text (nothing from the database goes in). */
-const TAB_ICONS: ReadonlyMap<string, string> = new Map([
-  ["privacy_notice", '<path d="M12 3l8 3v6c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2l4-4"/>'],
-  ["event_terms", '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h6"/>'],
-  ["consent", '<circle cx="12" cy="12" r="9"/><path d="M9 12l2 2l4-4"/>'],
-]);
+function tabIconPaths(kind: LegalDocumentRef["kind"]): string {
+  switch (kind) {
+    case "privacy_notice":
+      return '<path d="M12 3l8 3v6c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2l4-4"/>';
+    case "event_terms":
+      return '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h6"/>';
+    case "consent":
+      return '<circle cx="12" cy="12" r="9"/><path d="M9 12l2 2l4-4"/>';
+  }
+}
 
 /** The tabs between an event's published texts; nothing when there is only one. */
 function renderTabs(tabs: readonly LegalPageTab[]): string {
   if (tabs.length < 2) return "";
   const links = tabs
     .map((tab) => {
-      const icon = `<svg class="legal__tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICONS.get(tab.kind) ?? ""}</svg>`;
+      const icon = `<svg class="legal__tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${tabIconPaths(tab.kind)}</svg>`;
       const current = tab.current ? ' aria-current="page"' : "";
       return `<a class="legal__tab" href="${esc(tab.path)}"${current}>${icon}<span>${esc(tab.title)}</span></a>`;
     })
