@@ -1342,7 +1342,7 @@ describe("collectAdminHealth", () => {
   });
 
   describe("registration_mail row", () => {
-    async function registrationMailRow(registrationMail: { count: ReturnType<typeof vi.fn> }) {
+    async function registrationMailRow(registrationMail: { count: ReturnType<typeof vi.fn> }, now?: () => Date) {
       collectSetupChecks.mockResolvedValue(okSetup);
       collectGauges.mockResolvedValue({
         email_deliveries_queued: 0,
@@ -1355,14 +1355,18 @@ describe("collectAdminHealth", () => {
         db: healthDb({ registrationMail }),
         rateLimitStore: {} as never,
         env: envWithUpload(),
+        ...(now ? { now } : {}),
       });
       const core = report.groups[0]!.checks;
       return { report, core, row: core.find((c) => c.id === "registration_mail")! };
     }
 
-    /** Answers the two counts the row asks for: waiting rows, then failed rows that will be tried again. */
-    const counts = (queued: number, failedRetryable: number) => ({
-      count: vi.fn(async ({ where }: { where: { status: string } }) => (where.status === "queued" ? queued : failedRetryable)),
+    /** Answers the three counts the row asks for: waiting rows, failed rows that will be tried again, and failed rows that will not. */
+    const counts = (queued: number, failedRetryable: number, failedTerminal = 0) => ({
+      count: vi.fn(async ({ where }: { where: { status: string; retryable?: boolean } }) => {
+        if (where.status === "queued") return queued;
+        return where.retryable === false ? failedTerminal : failedRetryable;
+      }),
     });
 
     it("is an empty queue next to the ticket mail queue, and says nothing while nothing waits", async () => {
@@ -1374,20 +1378,25 @@ describe("collectAdminHealth", () => {
         expect.arrayContaining([
           { key: "queued", value: "0" },
           { key: "failed_retryable", value: "0" },
+          { key: "failed_terminal", value: "0" },
           { key: "degraded_threshold", value: String(MAIL_QUEUE_DEGRADED_THRESHOLD) },
         ]),
       );
       expect(report.overall).toBe("ok");
     });
 
-    it("counts the waiting rows and the failed rows that will be tried again, and only those", async () => {
+    it("counts the waiting rows, the failed rows that will be tried again, and the ones that failed for good in the last week", async () => {
       const registrationMail = counts(3, 0);
 
-      const { row } = await registrationMailRow(registrationMail);
+      const { row } = await registrationMailRow(registrationMail, () => new Date("2026-10-21T12:00:00.000Z"));
 
       expect(row).toMatchObject({ status: "ok", summary: "Running · 3 queued" });
+      expect(registrationMail.count).toHaveBeenCalledTimes(3);
       expect(registrationMail.count).toHaveBeenCalledWith({ where: { status: "queued" } });
       expect(registrationMail.count).toHaveBeenCalledWith({ where: { status: "failed", retryable: true } });
+      expect(registrationMail.count).toHaveBeenCalledWith({
+        where: { status: "failed", retryable: false, updated_at: { gte: new Date("2026-10-14T12:00:00.000Z") } },
+      });
     });
 
     it("needs attention when a mail failed and will be tried again, even while others wait", async () => {
@@ -1396,6 +1405,29 @@ describe("collectAdminHealth", () => {
       expect(row.status).toBe("degraded");
       expect(row.summary).toBe("Needs attention · 4 queued · 2 retryable failures");
       expect(report.overall).toBe("degraded");
+    });
+
+    it("needs attention when a mail failed for good, even though the queue is empty: nothing else shows it", async () => {
+      const { row, report } = await registrationMailRow(counts(0, 0, 2));
+
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Queue empty · 2 failed, not retried");
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "failed_terminal", value: "2" }]));
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("names every kind of failure, and what is queued, when there are several", async () => {
+      expect((await registrationMailRow(counts(4, 0, 1))).row.summary).toBe("Needs attention · 4 queued · 1 failed, not retried");
+      expect((await registrationMailRow(counts(0, 2, 1))).row.summary).toBe("Queue empty · 2 retryable failures · 1 failed, not retried");
+      expect((await registrationMailRow(counts(4, 2, 1))).row.summary).toBe(
+        "Needs attention · 4 queued · 2 retryable failures · 1 failed, not retried",
+      );
+    });
+
+    it("keeps the failures that were not retried in the details of a queue that is falling behind", async () => {
+      const { row } = await registrationMailRow(counts(MAIL_QUEUE_DEGRADED_THRESHOLD, 0, 0));
+
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "failed_terminal", value: "0" }]));
     });
 
     it("falls behind at the queue depth where the ticket mail queue does", async () => {
@@ -1419,6 +1451,7 @@ describe("collectAdminHealth", () => {
         "status",
         "queued",
         "failed_retryable",
+        "failed_terminal",
         "degraded_threshold",
         "last_checked",
       ]);

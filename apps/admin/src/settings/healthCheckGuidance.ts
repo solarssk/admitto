@@ -126,9 +126,19 @@ function mailDeliveryQueueGuidance(check: HealthCheckRowDto): HealthCheckGuidanc
 }
 
 /** Only reached for a degraded row. The guest waits for these emails (the confirmation link, the notice that a
- * registration arrived), and an unconfirmed registration is deleted after 24 hours. */
+ * registration arrived), and an unconfirmed registration is deleted after 24 hours. A mail the worker gave up on
+ * comes first: it needs a person, where the others sort themselves out. */
 function registrationMailGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   if (check.status !== "degraded") return null;
+  const failedTerminal = Number(detailValue(check, "failed_terminal"));
+  if (Number.isFinite(failedTerminal) && failedTerminal > 0) {
+    return {
+      cause: "The mail service refused some registration emails, or their text could not be used, and the worker has stopped trying them.",
+      impact:
+        "Those guests did not receive their email. Without the confirmation link a registration cannot be confirmed, and it is deleted after 24 hours.",
+      nextStep: "Check that Email sending works and that the registration email texts are valid, then contact the guests or ask them to register again.",
+    };
+  }
   const failedRetryable = Number(detailValue(check, "failed_retryable"));
   if (Number.isFinite(failedRetryable) && failedRetryable > 0) {
     return {

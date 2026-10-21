@@ -31,15 +31,16 @@ export function isReservedTemplateName(name: string): boolean {
   return name === DEFAULT_TEMPLATE_NAME || isSystemTemplateName(name);
 }
 
-/** Ticket, QR and wallet links belong to an Attendee. A registration mail goes out before one
- * exists, so these have no value there: `render.ts` would throw `MissingRequiredPlaceholderError`
- * on an empty `ticket_url`, and a wallet or download link would be dead. */
+/** Ticket, QR and wallet links and the ticket type belong to an Attendee. A registration mail goes out
+ * before one exists, so these have no value there: `render.ts` would throw `MissingRequiredPlaceholderError`
+ * on an empty `ticket_url`, a wallet or download link would be dead, and `ticket_type` would render as blank text. */
 export const SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS: ReadonlySet<string> = new Set([
   "ticket_url",
   "qr_image_url",
   "apple_wallet_url",
   "google_wallet_url",
   "download_page_url",
+  "ticket_type",
 ]);
 
 /** Only the confirmation mail carries a confirmation link. */

@@ -63,10 +63,12 @@ describe("formatHealthDetailLabel / formatHealthDetailValue", () => {
   it("uses friendly labels and units for known keys", () => {
     expect(formatHealthDetailLabel("latency_ms")).toBe("Latency");
     expect(formatHealthDetailLabel("failed_retryable")).toBe("Failed retryable");
+    expect(formatHealthDetailLabel("failed_terminal")).toBe("Failed, not retried");
     expect(formatHealthDetailLabel("custom_key")).toBe("custom key");
     expect(formatHealthDetailValue("latency_ms", "12")).toBe("12 ms");
     expect(formatHealthDetailValue("latency_ms", "slow")).toBe("slow");
     expect(formatHealthDetailValue("queued", "3")).toBe("3 messages");
+    expect(formatHealthDetailValue("failed_terminal", "2")).toBe("2 messages");
     expect(formatHealthDetailValue("max_zoom", "19")).toBe("z19");
     expect(formatHealthDetailValue("max_zoom", "n/a")).toBe("n/a");
     expect(formatHealthDetailValue("provider", "smtp")).toBe("smtp");
@@ -87,6 +89,30 @@ describe("formatHealthCheckMarkdown", () => {
     expect(md).not.toContain("secret.example.com");
     expect(md).toContain("Latency: 4 ms");
     expect(md).toContain("queued: 218 messages");
+  });
+
+  it("keeps the count of registration mails that failed for good: a number, nothing about a guest", () => {
+    const md = formatHealthCheckMarkdown({
+      ...sample,
+      groups: [
+        {
+          ...sample.groups[0]!,
+          checks: [
+            {
+              id: "registration_mail",
+              label: "Registration mail queue",
+              status: "degraded",
+              summary: "Queue empty · 2 failed, not retried",
+              details: [
+                { key: "queued", value: "0" },
+                { key: "failed_terminal", value: "2" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(md).toContain("Failed, not retried: 2 messages");
   });
 
   it("escapes Markdown and HTML control characters in values", () => {
@@ -124,6 +150,7 @@ describe("formatHealthCheckMarkdown", () => {
   it("formats non-numeric detail values without units and labels all row statuses", () => {
     expect(formatHealthDetailValue("queued", "n/a")).toBe("n/a");
     expect(formatHealthDetailValue("failed_retryable", "n/a")).toBe("n/a");
+    expect(formatHealthDetailValue("failed_terminal", "n/a")).toBe("n/a");
     expect(formatHealthDetailValue("degraded_threshold", "n/a")).toBe("n/a");
 
     const md = formatHealthCheckMarkdown({

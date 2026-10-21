@@ -191,6 +191,18 @@ describe("system (registration-*) mail templates", () => {
     },
   );
 
+  it("refuses {{ticket_type}} on a registration-* template too: a guest has no ticket type yet, so it would render blank", async () => {
+    const row = await insertSystemRow("registration-received");
+    const body = { body_template: "<p>Hi {{first_name}}, your {{ticket_type}} place</p>", template_format: "html" };
+
+    const put = await api(`/templates/${row.id}`, { method: "PUT", body });
+    expect(put.status).toBe(400);
+    expect(await put.json()).toEqual({ error: "template_validation_failed", errors: ["Unknown placeholder: ticket_type"] });
+
+    const preview = await api(`/templates/${row.id}/preview`, { method: "POST", body });
+    expect(preview.status).toBe(400);
+  });
+
   it("accepts confirm_url and the contact placeholders on a registration-* template", async () => {
     const row = await insertSystemRow("registration-confirm");
     const res = await api(`/templates/${row.id}`, {

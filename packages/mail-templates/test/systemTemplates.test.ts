@@ -67,12 +67,13 @@ describe("system template names", () => {
     expect(isReservedTemplateName("registration_received")).toBe(false);
   });
 
-  it("forbid the ticket, QR and wallet placeholders for system names only", () => {
+  it("forbid the ticket, QR, wallet and ticket type placeholders for system names only", () => {
     expect([...SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS].sort()).toEqual([
       "apple_wallet_url",
       "download_page_url",
       "google_wallet_url",
       "qr_image_url",
+      "ticket_type",
       "ticket_url",
     ]);
     expect(disallowedPlaceholdersForTemplate("registration-confirm")).toBe(SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS);

@@ -170,6 +170,23 @@ describe("healthCheckGuidance", () => {
     expect(guidance).toBe(UNRECOGNISED_STATE_GUIDANCE);
   });
 
+  it("gives registration_mail degraded with failed_terminal>0 the guidance for a mail nobody will retry, before the retry guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_mail", "degraded", [
+        { key: "failed_retryable", value: "3" },
+        { key: "failed_terminal", value: "2" },
+        { key: "queued", value: "0" },
+        { key: "degraded_threshold", value: "50" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      cause: "The mail service refused some registration emails, or their text could not be used, and the worker has stopped trying them.",
+      impact:
+        "Those guests did not receive their email. Without the confirmation link a registration cannot be confirmed, and it is deleted after 24 hours.",
+      nextStep: "Check that Email sending works and that the registration email texts are valid, then contact the guests or ask them to register again.",
+    });
+  });
+
   it("gives registration_mail degraded with failed_retryable>0 the retry guidance, and its own words for a guest", () => {
     const guidance = healthCheckGuidance(
       checkRow("registration_mail", "degraded", [
@@ -594,6 +611,7 @@ describe("healthCheckGuidance", () => {
         { key: "degraded_threshold", value: "50" },
       ]),
       checkRow("registration_mail", "degraded", [{ key: "failed_retryable", value: "2" }]),
+      checkRow("registration_mail", "degraded", [{ key: "failed_terminal", value: "2" }]),
       checkRow("registration_mail", "degraded", [
         { key: "queued", value: "80" },
         { key: "degraded_threshold", value: "50" },
