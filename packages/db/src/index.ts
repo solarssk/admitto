@@ -48,6 +48,7 @@ export {
   type RegistrationMode,
   type RegistrationAccessMethod,
   type RegistrationMailTemplateName,
+  type LegalDocumentKind,
 } from './status.js';
 
 export {
@@ -68,6 +69,7 @@ export {
   REGISTRATION_ACCESS_METHOD,
   REGISTRATION_MAIL_TEMPLATE_NAME,
   REGISTRATION_MAIL_STATUS,
+  LEGAL_DOCUMENT_KIND,
 } from './status.js';
 
 export {

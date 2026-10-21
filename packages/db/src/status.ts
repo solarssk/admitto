@@ -204,3 +204,13 @@ export const REGISTRATION_MAIL_TEMPLATE_NAME = [
 /** RegistrationMail.status uses the EmailDelivery vocabulary (RegistrationMail_status_check), so
  * the type is `EmailDeliveryStatus`. */
 export const REGISTRATION_MAIL_STATUS = EMAIL_DELIVERY_STATUS;
+
+/**
+ * LegalDocument.kind values (D-F2), backed by the CHECK constraint LegalDocument_kind_check.
+ * - privacy_notice: information the guest reads (no checkbox)
+ * - event_terms: the terms the guest accepts when registering (Registration.accepted_at)
+ * - consent: an extra consent for one purpose, with its own checkbox (Registration.consents)
+ */
+export type LegalDocumentKind = 'privacy_notice' | 'event_terms' | 'consent';
+
+export const LEGAL_DOCUMENT_KIND = ['privacy_notice', 'event_terms', 'consent'] as const satisfies LegalDocumentKind[];

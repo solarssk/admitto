@@ -757,7 +757,7 @@ Key points for this deployment model:
 - Origin invariant: reachable only via Cloudflare or WireGuard tunnel
 - Pre-linking staff identities and selecting the direct OIDC source before enabling `CF_ACCESS_ENABLED`
 
-Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
+Public attendee paths (`/t/*`, `/q/*`, `/legal/*`) must stay bypassed at Cloudflare.
 
 ## Admitto worker (mail, import/export, bounce, retention)
 

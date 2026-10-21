@@ -13,6 +13,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add rate limits for the upcoming public registration form, tunable with `RATE_LIMIT_OVERRIDES` (`registration:page`, `registration:submit`, `registration:confirm`, `registration:password`, `registration:event`, `registration:mail-recipient`) ([#1753](https://github.com/solarssk/admitto/pull/1753))
 - Add the groundwork for guest registration mails: four English default messages, a signed email-confirmation link, and `confirm_url`, `contact_name` and `contact_email` variables ([#1749](https://github.com/solarssk/admitto/pull/1749))
 - Add a Turnstile card to Organisation settings > External services and a "Bot protection" row to the Health check, for the coming guest registration form ([#1767](https://github.com/solarssk/admitto/pull/1767))
+- Add legal texts per event (privacy notice, event terms, extra consents) with an admin API and public pages at /legal, for the coming registration form ([#1769](https://github.com/solarssk/admitto/pull/1769))
 - Give attendee fields a saved order and a registration-form setting, and refuse a Required field the form would not ask ([#1766](https://github.com/solarssk/admitto/pull/1766))
 
 ### Security

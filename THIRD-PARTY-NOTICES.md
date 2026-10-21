@@ -51,3 +51,9 @@ This file is informational. Prefer package-local license files in `node_modules`
 - Packages: `@floating-ui/dom`, `@floating-ui/core`, `@floating-ui/utils`
 - License: MIT
 - Notes: Positioning engine for the staff app's menus and pickers (`apps/admin/src/components/useDropdownMenu.ts`), bundled unmodified into the served admin SPA. Retain the packages' own `LICENSE` files when redistributing.
+
+## sanitize-html
+
+- Packages: `sanitize-html` and the packages it brings: `htmlparser2` with `domhandler`, `domutils`, `dom-serializer`, `domelementtype` and `entities`, plus `launder` (with `dayjs`), `parse-srcset`, `is-plain-object`, `escape-string-regexp` and `postcss`
+- License: MIT for `sanitize-html`, `htmlparser2`, `dom-serializer`, `launder`, `dayjs`, `parse-srcset`, `is-plain-object`, `escape-string-regexp` and `postcss`; BSD-2-Clause for `domhandler`, `domutils`, `domelementtype` and `entities`
+- Notes: Cleans the HTML of an event's legal texts on the server when an admin saves them (`apps/web/src/legal/sanitize-legal-html.ts`). It runs in the production image and is not part of the admin app's bundle. Retain the packages' own `LICENSE` files when redistributing.

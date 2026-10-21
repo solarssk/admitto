@@ -23,6 +23,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
   - [Implemented in codebase](#implemented-in-codebase)
   - [SSO and two-factor authentication](#sso-and-two-factor-authentication)
 - [Authorization (RBAC)](#authorization-rbac)
+- [Legal texts of an event](#legal-texts-of-an-event)
 - [Optional hardening (customer choice)](#optional-hardening-customer-choice)
 - [Rate limiting](#rate-limiting)
   - [Public and authentication](#public-and-authentication)
@@ -268,6 +269,26 @@ Access checks are enforced on API routes and staff UI entry points.
 
 ---
 
+## Legal texts of an event
+
+An event can carry its own privacy notice, event terms and extra consents. An event admin writes them and anonymous guests read them on public pages, so the whole path treats them as content from a signed-in user that is shown to strangers.
+
+| Control | What it does |
+|---------|--------------|
+| Access | `/api/admin/events/:eventId/legal-documents` needs an admin of the event's organisation or a superadmin, checked on the server. An operator gets 403, and so does an admin of another organisation. Writes are refused for an archived event. |
+| Sanitiser | The HTML is cleaned once, on save, with an allowlist ([`sanitize-legal-html.ts`](../../apps/web/src/legal/sanitize-legal-html.ts), built on `sanitize-html`): paragraphs, headings h2 to h4, bold, italic, lists, quotes, rules and links. There is no `style`, `class`, `id`, event handler, image, table, form or frame. A link must be an absolute http, https or mailto URL without a user name or password; any other link becomes plain text. Only the cleaned HTML is stored and served. Cleaning is repeated until the result stops changing; a text that has not settled after four passes is refused (422 `legal_document_unsupported`). |
+| Page headers | `GET /legal/<event slug>/<text>` has the zero-script headers of the ticket page: `script-src 'none'`, `connect-src 'none'`, `form-action 'none'`, `frame-ancestors 'none'`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `noindex`. It reads and sets no cookie. This is the second layer behind the sanitiser. |
+| One 404 | An event that does not exist, a text that does not exist, a draft and a malformed address all get the same 404, byte for byte, as the registration form's not-found page. A draft cannot be previewed at its public address, not even by a signed-in admin. |
+| Limits | A title of up to 200 characters, a text of up to 100 000 characters, a request body of up to 512 KB, and up to 10 extra consents per event. |
+| Audit | Saving, publishing, withdrawing and deleting a text write an entry to the audit log (event, kind and key). The text is never written there. |
+| Reach | A published text is served whatever the event's registration setting is, and for an archived event too, so a guest can read again what they were told and accepted. A draft is never served. |
+| Gate | The registration settings, which come in a later change, must call the gate in the transaction that turns registration on: it answers 409 `legal_documents_missing` until the privacy notice, the terms and every extra consent the event asks for are published. Already today, a text that registration needs cannot be withdrawn or deleted while registration is on (409 `legal_document_in_use`). The gate and the withdrawal take one lock per event, so they cannot interleave. |
+| Rate limit | The pages share the per-IP bucket of the registration form's page (300 / 60 s, see [Public and authentication](#public-and-authentication)). |
+
+A legal text holds no guest data and has no per-guest copy: a registration records only when its terms were accepted, not which text. What the text says about the organisation is what the organisation wrote. It is deleted with its event.
+
+---
+
 ## Optional hardening (customer choice)
 
 Organizations with stricter policies often add controls **outside** the application:
@@ -336,6 +357,7 @@ Application throttles use a fixed window (default **60 seconds** unless noted).
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
 | `GET /r/:slug` (public registration form) | client IP | 300 / 60 s | no |
+| `GET /legal/:eventSlug/:text` (legal text of an event) | client IP, the same bucket as the registration form's page | 300 / 60 s | no |
 | `POST /r/:slug` (registration submit) | client IP; then event, after the bot challenge | 120 / 60 s; 600 / 60 s per event | no |
 | `GET`/`POST /r/:slug/confirm/:token` (address confirmation) | client IP | 120 / 60 s | no |
 | registration password check | client IP | 10 / 15 min | no |
@@ -346,7 +368,7 @@ Notes on the rows above:
 - **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
 - **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
 - **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
-- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event` and `registration:mail-recipient` limits, exist before the routes that use them; the routes arrive with the registration form.
+- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event` and `registration:mail-recipient` limits, exist before the routes that use them; the routes arrive with the registration form. Only `registration:page` is in use so far, on the legal text pages.
   - **Per IP, generous on purpose.** The audience is staff of one company, often behind one NAT, so the per-IP numbers are high (compare `/t`, 500 / 60 s) and an IPv6 client is keyed by its /64 network. The bot challenge and the per-address mail limit are the real brakes. Raise or lower them with `RATE_LIMIT_OVERRIDES`, for example `{"registration:submit":{"max":30}}`.
   - **No slug in any key.** The slug is a caller-chosen path segment, so a bucket per slug would let anyone starve an event and create unbounded keys. The per-event ceiling (`registration:event`) is keyed by event id and is counted only after the bot challenge has passed and the event is found.
   - **Quiet when exceeded.** Page, submit and confirm do not write an `auth.rate_limit.exceeded` entry, because anyone can trigger them and would flush the 1000-entry system-log buffer. Only the password limit does (scope `registration`), as an attempt to guess the shared event password is worth a trace.
@@ -445,6 +467,7 @@ These are separate from rate limits.
 - **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 - **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
 - **`POST /r/:slug` (registration submit):** at most 64 KB (`MAX_REGISTRATION_BODY_BYTES`), `413 request too large`. Order: cross-site check, IP limiter, body cap, then parsing, so a chunked body without `Content-Length` is capped too and oversized requests are still counted. The cross-site check only stops browsers posting from another site; the bot challenge and the limits are the defence against scripts.
+- **`PUT …/legal-documents/:ref` (legal text):** at most 512 KB (`MAX_LEGAL_BODY_BYTES`), `400 request too large`, after the cross-site check and the sign-in. The text itself is limited to 100 000 characters.
 - **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
 - **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).
 - The check-in routes and `POST /api/ops/system-logs` both answer `413 request too large`.
