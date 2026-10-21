@@ -30,6 +30,7 @@ type CustomFieldRow = {
   required: boolean;
   options: Prisma.JsonValue;
   show_on_form: boolean;
+  description: string | null;
 };
 
 function readEventCustomFieldRows(db: CustomFieldDb, eventId: string): Promise<CustomFieldRow[]> {
@@ -63,15 +64,21 @@ export async function loadEventCustomDataFields(
   return (await readEventCustomFieldRows(db, eventId)).map(toFieldContent);
 }
 
-/** The same fields in the same order, each with the one flag the public registration form needs:
- * `show_on_form`. Every field is returned, those off the form too: `buildRegistrantCustomData`
- * drops their keys itself, and a renderer takes the ones to draw with `show_on_form`. */
+/** The same fields in the same order, each with what the public registration form needs:
+ * `show_on_form` and the organiser's `description` (left out when empty). Every field is returned,
+ * those off the form too: `buildRegistrantCustomData` drops their keys itself, and a renderer takes
+ * the ones to draw with `pickRegistrantFormFields`. */
 export async function loadRegistrantFormFields(
   db: CustomFieldDb,
   eventId: string,
 ): Promise<RegistrantFormField[]> {
   const rows = await readEventCustomFieldRows(db, eventId);
-  return rows.map((row) => ({ ...toFieldContent(row), show_on_form: row.show_on_form }));
+  return rows.map((row) => {
+    const field: RegistrantFormField = { ...toFieldContent(row), show_on_form: row.show_on_form };
+    const description = row.description?.trim();
+    if (description) field.description = description;
+    return field;
+  });
 }
 
 /** Reject an EventItem's `content_fields` if any entry isn't in the event's registry. */

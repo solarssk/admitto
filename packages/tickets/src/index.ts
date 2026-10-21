@@ -122,6 +122,7 @@ export {
   RegistrantInputError,
   buildRegistrantCustomData,
   normalizeRegistrantText,
+  pickRegistrantFormFields,
   pickRegistrantProfileFields,
   registrantEmailSchema,
   registrantNameSchema,

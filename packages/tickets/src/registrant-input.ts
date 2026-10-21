@@ -171,11 +171,26 @@ export const registrantEmailSchema = z
 
 /** A custom field as the public form sees it: the registry row plus the two columns that decide
  * whether an anonymous registrant may answer it. `applies_to` is absent until companions exist and
- * then means `guest`. */
+ * then means `guest`. `description` is the organiser's note shown under the question; absent when
+ * the field has none. */
 export type RegistrantFormField = EventItemContent & {
   show_on_form: boolean;
   applies_to?: "guest" | "companion";
+  description?: string;
 };
+
+/** The fields a registrant is asked: those on the form (`show_on_form`) for `appliesTo`, without the
+ * names of the fixed columns. The form draws exactly these and {@link buildRegistrantCustomData}
+ * reads exactly these, so what a guest sees is what the server accepts. */
+export function pickRegistrantFormFields<T extends RegistrantFormField>(
+  fields: readonly T[],
+  appliesTo: "guest" | "companion" = "guest",
+): T[] {
+  // company and department are fixed fields now, never custom_data (see pickRegistrantProfileFields).
+  return filterCustomDataAttributeFields(
+    fields.filter((field) => field.show_on_form && (field.applies_to ?? "guest") === appliesTo),
+  );
+}
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -226,10 +241,7 @@ export function buildRegistrantCustomData(
     throw new RegistrantInputError();
   }
 
-  // company and department are fixed fields now, never custom_data (see pickRegistrantProfileFields).
-  const onForm = filterCustomDataAttributeFields(
-    fields.filter((field) => field.show_on_form && (field.applies_to ?? "guest") === appliesTo),
-  );
+  const onForm = pickRegistrantFormFields(fields, appliesTo);
   const answers: Record<string, unknown> = {};
   for (const field of onForm) {
     const answer = input ? answerFor(field, ownValue(input, field.source_field)) : undefined;
