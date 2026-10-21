@@ -5,6 +5,7 @@ import { handleGetRegistrationForm } from "../../src/registration/form-routes.js
 import { loadRegistrationPage, type RegistrationPageState } from "../../src/registration/form-model.js";
 import { renderRegistrationNotFound } from "../../src/registration-page-security.js";
 import { closedModel, formModel } from "../helpers/registration-form-fixtures.js";
+import { headersOf } from "../helpers/response-headers.js";
 
 vi.mock("../../src/registration/form-model.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/registration/form-model.js")>()),
@@ -23,14 +24,6 @@ const get = (path = "/r/northwind-summit") => app.request(`https://tickets.examp
 
 function answer(state: RegistrationPageState) {
   loadPage.mockResolvedValue(state);
-}
-
-function headersOf(res: Response): Record<string, string> {
-  const out: Record<string, string> = {};
-  res.headers.forEach((value, name) => {
-    if (name !== "date") out[name] = value;
-  });
-  return out;
 }
 
 const nonceOf = (res: Response) => /script-src 'nonce-([^']+)'/.exec(res.headers.get("content-security-policy") ?? "")?.[1];

@@ -10,6 +10,7 @@ import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-metho
 import { renderRegistrationNotFound } from "../../src/registration-page-security.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { documentOf, type Dom } from "../helpers/registration-form-fixtures.js";
+import { directive, headersOf } from "../helpers/response-headers.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
@@ -114,20 +115,6 @@ afterAll(async () => {
 });
 
 const get = (path: string, init: RequestInit = {}) => app.request(path, init);
-
-function headersOf(res: Response): Record<string, string> {
-  const out: Record<string, string> = {};
-  res.headers.forEach((value, name) => {
-    if (name !== "date") out[name] = value;
-  });
-  return out;
-}
-
-const directive = (csp: string, name: string) =>
-  csp
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part === name || part.startsWith(`${name} `));
 
 /** The page with the response's own nonce replaced, so two responses can be compared. */
 async function bodyWithoutNonce(res: Response): Promise<string> {
