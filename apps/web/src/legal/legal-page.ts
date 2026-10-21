@@ -17,10 +17,18 @@ import { renderAdmittoFaviconLink } from "../favicon.js";
 import { isSecureRequest } from "../is-secure-request.js";
 import { buildTicketPageStyles } from "../ticket-inline-styles.js";
 import { esc, getTicketPageSecurityHeaders } from "../ticket-page.js";
-import { parseLegalDocumentRef } from "./legal-documents.js";
+import { legalDocumentPath, parseLegalDocumentRef, type LegalDocumentRef } from "./legal-documents.js";
 
 /** Longest event slug (`Event.slug` is capped at 80); anything longer cannot name an event. */
 const MAX_EVENT_SLUG_CHARS = 80;
+
+/** One tab of the page: a published text of the same event. */
+export type LegalPageTab = {
+  kind: LegalDocumentRef["kind"];
+  title: string;
+  path: string;
+  current: boolean;
+};
 
 /** A published text with what the page around it shows. */
 export type PublishedLegalPage = {
@@ -29,7 +37,38 @@ export type PublishedLegalPage = {
   eventTitle: string;
   /** The event's logo, else the organisation's; null shows the Admitto mark. */
   logoUrl: string | null;
+  /** The event's published texts, in reading order, when there are two or more; else empty (no tabs). */
+  tabs: readonly LegalPageTab[];
 };
+
+/** Reading order of the tabs: the notice, the terms, then the extra consents by key. */
+const TAB_RANK: ReadonlyMap<string, number> = new Map([
+  ["privacy_notice", 0],
+  ["event_terms", 1],
+  ["consent", 2],
+]);
+
+type SiblingRow = { kind: string; key: string; title: string };
+
+/** The tabs for a page, or none when the event has only this one published text. Drafts are never in `rows`. */
+function buildTabs(eventSlug: string, current: LegalDocumentRef, rows: readonly SiblingRow[]): LegalPageTab[] {
+  const known = rows.filter((row) => TAB_RANK.has(row.kind));
+  if (known.length < 2) return [];
+  return known
+    .sort(
+      (a, b) =>
+        (TAB_RANK.get(a.kind) ?? 0) - (TAB_RANK.get(b.kind) ?? 0) || a.key.localeCompare(b.key) || a.title.localeCompare(b.title),
+    )
+    .map((row) => {
+      const doc = { kind: row.kind as LegalDocumentRef["kind"], key: row.key };
+      return {
+        kind: doc.kind,
+        title: row.title,
+        path: legalDocumentPath(eventSlug, doc),
+        current: doc.kind === current.kind && doc.key === current.key,
+      };
+    });
+}
 
 /**
  * The published text a URL names, or null for every other case: an event that does not exist, a text
@@ -54,6 +93,11 @@ export async function loadPublishedLegalPage(
           logo_url: true,
           header_image_url: true,
           organization: { select: { logo_url: true, header_image_url: true } },
+          // The event's other published texts, for the tabs. Only published ones: a draft is not on the page.
+          legal_documents: {
+            where: { published_at: { not: null } },
+            select: { kind: true, key: true, title: true },
+          },
         },
       },
     },
@@ -64,6 +108,7 @@ export async function loadPublishedLegalPage(
     contentHtml: row.content_html,
     eventTitle: row.event.title,
     logoUrl: resolveTicketLogoUrl(row.event),
+    tabs: buildTabs(eventSlug, doc, row.event.legal_documents),
   };
 }
 
@@ -72,6 +117,12 @@ export async function loadPublishedLegalPage(
 const LEGAL_PAGE_CSS = `
 .ticket--legal { width: min(760px, 100%); }
 .ticket__body--legal { padding: 24px 32px 32px; text-align: left; }
+.legal__tabs { display: flex; flex-wrap: wrap; gap: 0 4px; padding: 0 16px; border-bottom: 1px solid var(--border, #e6e7e9); }
+.legal__tab { display: inline-flex; align-items: center; gap: 6px; padding: 12px 10px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--text-secondary, #475569); font-size: 0.8125rem; font-weight: 500; text-decoration: none; }
+.legal__tab:hover { color: var(--text-primary, #1d273b); }
+.legal__tab[aria-current="page"] { color: var(--primary, #066fd1); border-bottom-color: var(--primary, #066fd1); }
+.legal__tab:focus-visible { outline: 2px solid var(--primary, #066fd1); outline-offset: -2px; border-radius: 4px; }
+.legal__tab-icon { width: 15px; height: 15px; flex: none; }
 .legal__event { margin: 0 0 4px; color: var(--text-muted, #64748b); font-size: 0.875rem; overflow-wrap: anywhere; }
 .legal__title { margin: 0 0 24px; font-size: 1.5rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .legal__content { font-size: 1rem; line-height: 1.6; overflow-wrap: anywhere; }
@@ -89,13 +140,35 @@ const LEGAL_PAGE_CSS = `
 .legal__content a { color: var(--primary, #066fd1); text-underline-offset: 2px; }
 @media (max-width: 480px) {
   .ticket__body--legal { padding: 20px 16px 24px; }
+  .legal__tabs { padding: 0 8px; }
 }
 @media print {
+  .legal__tabs { display: none; }
   .ticket--legal { width: 100%; }
   .ticket__body--legal { padding: 0; }
   .legal__content a { color: inherit; }
 }
 `;
+
+/** Tabler-style line icons, fixed markup for each kind of text (nothing from the database goes in). */
+const TAB_ICONS: ReadonlyMap<string, string> = new Map([
+  ["privacy_notice", '<path d="M12 3l8 3v6c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2l4-4"/>'],
+  ["event_terms", '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h6"/>'],
+  ["consent", '<circle cx="12" cy="12" r="9"/><path d="M9 12l2 2l4-4"/>'],
+]);
+
+/** The tabs between an event's published texts; nothing when there is only one. */
+function renderTabs(tabs: readonly LegalPageTab[]): string {
+  if (tabs.length < 2) return "";
+  const links = tabs
+    .map((tab) => {
+      const icon = `<svg class="legal__tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICONS.get(tab.kind) ?? ""}</svg>`;
+      const current = tab.current ? ' aria-current="page"' : "";
+      return `<a class="legal__tab" href="${esc(tab.path)}"${current}>${icon}<span>${esc(tab.title)}</span></a>`;
+    })
+    .join("");
+  return `<nav class="legal__tabs" aria-label="Legal texts of this event">${links}</nav>`;
+}
 
 /** The page, as a whole HTML document. `theme` is the instance branding, as on the ticket page. */
 export function renderLegalDocumentPage(page: PublishedLegalPage, theme?: BrandingTheme | null): string {
@@ -116,6 +189,7 @@ export function renderLegalDocumentPage(page: PublishedLegalPage, theme?: Brandi
     <header class="ticket__top">
       <div class="ticket__brand">${brand}</div>
     </header>
+    ${renderTabs(page.tabs)}
     <div class="ticket__body ticket__body--legal">
       <p class="legal__event">${esc(page.eventTitle)}</p>
       <h1 class="legal__title">${esc(page.title)}</h1>
