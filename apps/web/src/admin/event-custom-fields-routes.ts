@@ -390,9 +390,28 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
   }
 }
 
+/** Writes the positions 0, 1, 2... of `orderedIds` in one statement and returns how many rows it
+ * changed: only a row whose position differs is touched. One statement instead of one update per
+ * field, which would be a round trip each. */
+async function writePositions(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  orderedIds: readonly string[],
+): Promise<number> {
+  if (orderedIds.length === 0) return 0;
+  const wanted = Prisma.join(orderedIds.map((id, position) => Prisma.sql`(${id}::text, ${position}::int)`));
+  return tx.$executeRaw`
+    UPDATE "EventCustomField" AS field
+    SET "display_order" = wanted."position", "updated_at" = NOW()
+    FROM (VALUES ${wanted}) AS wanted("id", "position")
+    WHERE field."id" = wanted."id" AND field."event_id" = ${eventId}
+      AND field."display_order" IS DISTINCT FROM wanted."position"
+  `;
+}
+
 /** Gives the event's fields the positions 0, 1, 2... in the order of `ids`, and returns them in
- * that order. Writes only the rows whose position differs, and writes the audit entry only when
- * something did: asking for the order that already is stored changes and records nothing. */
+ * that order. Writes the audit entry only when a position changed: asking for the order that
+ * already is stored changes and records nothing. */
 async function renumberCustomFields(
   tx: Prisma.TransactionClient,
   eventId: string,
@@ -410,12 +429,7 @@ async function renumberCustomFields(
   // Every listed id is a field of this event and none is listed twice, so equal sizes mean equal sets.
   if (ordered.length !== rows.length) throw new FieldSetChangedError();
 
-  let moved = 0;
-  for (const [position, row] of ordered.entries()) {
-    if (row.display_order === position) continue;
-    await tx.eventCustomField.update({ where: { id: row.id }, data: { display_order: position } });
-    moved += 1;
-  }
+  const moved = await writePositions(tx, eventId, ids);
   if (moved > 0) {
     await writeBulkActionLog(tx, {
       event_id: eventId,
