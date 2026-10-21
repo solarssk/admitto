@@ -361,6 +361,18 @@ describe("registration_captcha in the Health check", () => {
 });
 
 describe("access methods, end to end", () => {
+  // SSO counts as available when ANY identity provider is enabled. A provider that another test file left in this
+  // worker's schema would make "no provider" untrue here, so park the others for the length of this block.
+  let parked: string[] = [];
+  beforeAll(async () => {
+    const others = await prisma.identityProvider.findMany({ where: { enabled: true, issuer: { not: IDP_ISSUER } }, select: { id: true } });
+    parked = others.map((row) => row.id);
+    await prisma.identityProvider.updateMany({ where: { id: { in: parked } }, data: { enabled: false } });
+  });
+  afterAll(async () => {
+    await prisma.identityProvider.updateMany({ where: { id: { in: parked } }, data: { enabled: true } });
+  });
+
   it("start empty and unavailable", async () => {
     await cleanSettings();
     const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
