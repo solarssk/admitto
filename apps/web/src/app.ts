@@ -267,6 +267,11 @@ import {
   handleUnpublishLegalDocument,
   handleDeleteLegalDocument,
 } from "./admin/legal-documents-routes.js";
+import {
+  handleCountEventRegistrations,
+  handleGetEventRegistration,
+  handleListEventRegistrations,
+} from "./admin/registrations-api-routes.js";
 import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
@@ -2064,6 +2069,18 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleDeleteLegalDocument(c, db)),
+  );
+  // Guest registrations of an event, read only (the decisions and the deletion are other routes).
+  // The list shares the attendee search budget: it is the same kind of search over an event's people.
+  // `counts` is registered before `:id`, which would otherwise take it for an id.
+  app.get("/api/admin/events/:eventId/registrations", staffAdminGate, adminAttendeesSearchRateLimit, (c) =>
+    handleListEventRegistrations(c, db),
+  );
+  app.get("/api/admin/events/:eventId/registrations/counts", staffAdminGate, (c) =>
+    handleCountEventRegistrations(c, db),
+  );
+  app.get("/api/admin/events/:eventId/registrations/:id", staffAdminGate, (c) =>
+    handleGetEventRegistration(c, db),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
