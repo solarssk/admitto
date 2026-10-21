@@ -16,7 +16,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add legal texts per event (privacy notice, event terms, extra consents) with an admin API and public pages at /legal, for the coming registration form ([#1769](https://github.com/solarssk/admitto/pull/1769))
 - Give attendee fields a saved order and a registration-form setting, and refuse a Required field the form would not ask ([#1766](https://github.com/solarssk/admitto/pull/1766))
 - Show tabs between an event's published legal texts on the public /legal pages ([#1770](https://github.com/solarssk/admitto/pull/1770))
-- Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on
+- Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on ([#1776](https://github.com/solarssk/admitto/pull/1776))
 
 ### Security
 
