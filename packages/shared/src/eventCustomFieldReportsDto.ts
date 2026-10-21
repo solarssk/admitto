@@ -8,7 +8,8 @@
  * per field, since a field's meaning is admin-defined and can't be known ahead of time. `select`
  * and `boolean` fields chart as a category distribution (including an explicit "not answered"
  * bucket so percentages always sum to 100); `text` fields are free-form and don't bucket
- * meaningfully, so they only carry a fill-rate stat. */
+ * meaningfully, so they only carry a fill-rate stat. `type` is that chart kind, not the field's own
+ * type: every free-input type (text, long text, date, date and time, phone) is charted as `text`. */
 export interface EventCustomFieldReportsResponse {
   total_attendees: number;
   fields: Array<{

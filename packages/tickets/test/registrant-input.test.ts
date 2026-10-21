@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_CUSTOM_FIELDS_PER_EVENT,
+  REGISTRANT_LONG_TEXT_MAX,
   RegistrantInputError,
   buildRegistrantCustomData,
+  normalizeRegistrantLongText,
   normalizeRegistrantText,
   pickRegistrantProfileFields,
   registrantEmailSchema,
@@ -350,5 +352,169 @@ describe("pickRegistrantProfileFields", () => {
   it("refuses a body that is not a plain object", () => {
     expect(() => pickRegistrantProfileFields({ company: true, department: true }, [])).toThrow(RegistrantInputError);
     expect(() => pickRegistrantProfileFields({ company: true, department: true }, null)).toThrow(RegistrantInputError);
+  });
+});
+
+describe("normalizeRegistrantLongText", () => {
+  it("keeps a line break and writes every kind of it as one line feed", () => {
+    expect(normalizeRegistrantLongText("one\ntwo\r\nthree\rfour", 100)).toBe("one\ntwo\nthree\nfour");
+  });
+
+  it("trims, composes to NFC and counts code points like the short text does", () => {
+    expect(normalizeRegistrantLongText("  Zoe\u0308\n  ", 100)).toBe("Zo\u00eb");
+    expect(normalizeRegistrantLongText("😀\n😀", 3)).toBe("😀\n😀");
+    expect(normalizeRegistrantLongText("😀\n😀😀", 3)).toBeNull();
+  });
+
+  it.each([
+    ["NUL", "a\u0000b"],
+    ["tab", "a\tb"],
+    ["vertical tab", "a\u000bb"],
+    ["form feed", "a\u000cb"],
+    ["DEL", "a\u007fb"],
+    ["C1 control", "a\u0085b"],
+    ["line separator", "a\u2028b"],
+    ["paragraph separator", "a\u2029b"],
+    ["U+202E", "a\u202eb"],
+    ["zero-width space", "a\u200bb"],
+    ["a lone surrogate", LONE_HIGH],
+  ])("still refuses %s", (_label, value) => {
+    expect(normalizeRegistrantLongText(value, 100)).toBeNull();
+  });
+
+  it("refuses text over the limit and anything that is not a string", () => {
+    expect(normalizeRegistrantLongText("a".repeat(11), 10)).toBeNull();
+    expect(normalizeRegistrantLongText(5, 10)).toBeNull();
+    expect(normalizeRegistrantLongText(undefined, 10)).toBeNull();
+  });
+
+  it("leaves the short text as it was: a line break is still refused there", () => {
+    expect(normalizeRegistrantText("one\ntwo", 100)).toBeNull();
+    expect(normalizeRegistrantText("one\r\ntwo", 100)).toBeNull();
+  });
+});
+
+const ANSWER_FIELDS: RegistrantFormField[] = [
+  field({ source_field: "notes", type: "long_text" }),
+  field({ source_field: "arrival", type: "date" }),
+  field({ source_field: "arrives_at", type: "datetime" }),
+  field({ source_field: "phone", type: "phone", required: true }),
+  field({ source_field: "plate", rules: { digits_only: true, min_length: 3, max_length: 6, example: "123456" } }),
+  field({ source_field: "hidden_notes", type: "long_text", show_on_form: false }),
+];
+
+const PHONE = { phone: "+48 600 100 200" };
+
+describe("buildRegistrantCustomData: the other answer types", () => {
+  it("stores a long text with its line breaks, a date, a date and time and the canonical phone number", () => {
+    expect(
+      buildRegistrantCustomData(ANSWER_FIELDS, {
+        notes: "Two seats,\r\nplease.",
+        arrival: "2026-11-04",
+        arrives_at: "2026-11-04T10:30",
+        ...PHONE,
+      }),
+    ).toEqual({
+      notes: "Two seats,\nplease.",
+      arrival: "2026-11-04",
+      arrives_at: "2026-11-04T10:30",
+      phone: "+48600100200",
+    });
+  });
+
+  it("accepts a long text of exactly 1000 characters, spaces around it included, and refuses 1001", () => {
+    expect(REGISTRANT_LONG_TEXT_MAX).toBe(1000);
+    const exact = buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes: `  ${"a".repeat(1000)}\n  ` });
+    expect(exact?.notes).toBe("a".repeat(1000));
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes: "a".repeat(1001) })).toThrow(
+      RegistrantInputError,
+    );
+  });
+
+  it("counts a long text in characters: 1000 emoji fit, 1001 do not", () => {
+    expect(buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes: "😀".repeat(1000) })?.notes).toBe("😀".repeat(1000));
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes: "😀".repeat(1001) })).toThrow(
+      RegistrantInputError,
+    );
+  });
+
+  it("refuses an enormous long text without walking it", () => {
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes: "a".repeat(5_000_000) })).toThrow(
+      RegistrantInputError,
+    );
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes: `${"a".repeat(1000)}${" ".repeat(1500)}` })).toThrow(
+      RegistrantInputError,
+    );
+  });
+
+  it.each([
+    ["NUL", "a\u0000b"],
+    ["tab", "a\tb"],
+    ["U+202E", "a\u202eb"],
+    ["zero-width space", "a\u200bb"],
+    ["a lone surrogate", LONE_HIGH],
+  ])("refuses %s in a long text", (_label, notes) => {
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, notes })).toThrow(RegistrantInputError);
+  });
+
+  it("refuses a date that does not exist, in a shape that is not YYYY-MM-DD, or not a string", () => {
+    for (const arrival of ["2026-02-30", "04.11.2026", "2026-11-04T10:30", 20261104, true, ["2026-11-04"]]) {
+      expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, arrival })).toThrow(RegistrantInputError);
+    }
+  });
+
+  it("refuses a date and time with a zone, with seconds, or on a day that does not exist", () => {
+    for (const arrives_at of ["2026-11-04T10:30Z", "2026-11-04T10:30:00", "2026-11-04 10:30", "2026-02-30T10:00", "2026-11-04T24:00"]) {
+      expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, arrives_at })).toThrow(RegistrantInputError);
+    }
+  });
+
+  it("refuses a phone number that is not one, and a phone number that is required but missing", () => {
+    for (const phone of ["call me", "12", "1234567890123456", "+48+600"]) {
+      expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { phone })).toThrow(RegistrantInputError);
+    }
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, {})).toThrow(RegistrantInputError);
+    expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { phone: "  " })).toThrow(RegistrantInputError);
+  });
+
+  it("holds a text answer to the field's rules", () => {
+    expect(buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, plate: "123" })?.plate).toBe("123");
+    expect(buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, plate: "123456" })?.plate).toBe("123456");
+    for (const plate of ["12", "1234567", "12a456", "123 45"]) {
+      expect(() => buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, plate })).toThrow(RegistrantInputError);
+    }
+  });
+
+  it("refuses over-long text on a rule's maximum, not by cutting it", () => {
+    const fields = [field({ source_field: "code", rules: { max_length: 5 } })];
+    expect(buildRegistrantCustomData(fields, { code: "abcde" })).toEqual({ code: "abcde" });
+    expect(() => buildRegistrantCustomData(fields, { code: "abcdef" })).toThrow(RegistrantInputError);
+  });
+
+  it("never reads the example, and leaves out what the form does not ask", () => {
+    expect(buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, plate: "999", hidden_notes: "x" })).toEqual({
+      phone: "+48600100200",
+      plate: "999",
+    });
+  });
+
+  it("reads these types for a companion too, when the field is the companion's", () => {
+    const fields = [
+      field({ source_field: "companion_phone", type: "phone", applies_to: "companion" }),
+      field({ source_field: "phone", type: "phone" }),
+    ];
+    expect(buildRegistrantCustomData(fields, { companion_phone: "(22) 123-45-67", phone: "x" }, "companion")).toEqual({
+      companion_phone: "221234567",
+    });
+  });
+
+  it("gives the same fixed code for every one of these refusals", () => {
+    try {
+      buildRegistrantCustomData(ANSWER_FIELDS, { ...PHONE, arrival: "2026-02-30" });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(RegistrantInputError);
+      expect((error as Error).message).toBe("validation_failed");
+    }
   });
 });
