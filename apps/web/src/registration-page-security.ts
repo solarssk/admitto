@@ -4,7 +4,7 @@ import { isSecureRequest } from "./is-secure-request.js";
 import { buildTicketFontSrc, buildTicketImgSrc, getTicketPageSecurityHeaders, renderNotFound } from "./ticket-page.js";
 
 /** The only origin the Cloudflare Turnstile widget needs (script and iframe). */
-const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
 export interface RegistrationPageSecurityOptions {
   /** True only when the instance has Turnstile keys configured. Without keys the form is closed

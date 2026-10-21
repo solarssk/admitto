@@ -36,6 +36,7 @@ npm run start -w @admitto/web
 | `/readyz` | `OPS_HEALTH_TOKEN` (Bearer or `X-Ops-Token`; at least 32 characters) | Detailed readiness + gauges (rate-limited; disabled when the token is unset or shorter) |
 | `/t/*`, `/q/*` | none | Attendee ticket page + hosted QR PNG (rate-limited); agency (Mode B) tickets use `/t/:eventSlug/a/:ref` and `/q/:eventSlug/a/:ref.png`, addressed by `public_ref` |
 | `/m/:filename`, `/uploads/*` | none | Bundled mail assets (rate-limited) and uploaded branding files |
+| `/r/:eventSlug` | none | Guest registration form of an event: server-rendered, one script under a per-response nonce, Cloudflare Turnstile, no cookie, rate-limited (`registration:page`). Silent until an event turns registration on: an unknown event, registration off, an archived event, a way in other than the public link, or an event that is not ready all answer the same 404. Once the event is over it says registration is closed. The slug is in the address, so it is not a secret. The page's own script sends the form as JSON (contract in `src/registration/form-contract.ts`); that request is not an API for other clients |
 | `/legal/:eventSlug/:text` | none | Published legal text of an event (privacy notice, terms, extra consent), static and rate-limited. A draft, an unknown event and an unknown text all answer the same 404 |
 | `/setup`, `/change-password` | none until the first superadmin exists / session (forced change) | First-run setup, server-rendered forced password change |
 | `/login`, `/mfa/*`, `/logout` | session / partial | Staff local login + MFA (TOTP, passkeys, backup codes) |
@@ -53,6 +54,10 @@ Path classification for Cloudflare Access: [`deploy/README.md`](../../deploy/REA
 Staff entry smoke matrix (manual QA): [`deploy/staff-entry-smoke-matrix.md`](../../deploy/staff-entry-smoke-matrix.md).
 
 **Rate limits and abuse controls** (full matrix for auditors): [`docs/security/SECURITY-CONTROLS.md`](../../docs/security/SECURITY-CONTROLS.md#rate-limiting).
+
+## Guest page stylesheet
+
+The guest pages (the registration form) are rendered on the server and have no bundler, so they carry a copy of the product's tokens and of the component rules they use: `src/registration/guest-page-css.generated.ts`, built from `packages/ui/src/styles`. After a change there, run `npm run guest-css -w @admitto/web` and commit the result. `test/registration/guest-page-css.test.ts` fails until you do. When a page starts to use another `at-` class, add it to `GUEST_PAGE_COMPONENT_CLASSES` in `src/scripts/guest-page-css.ts` first.
 
 ## Tests
 
