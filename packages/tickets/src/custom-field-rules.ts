@@ -57,7 +57,7 @@ export function readStoredFieldRules(stored: unknown): EventCustomFieldRules | u
   return parsed.success && !hasNoRules(parsed.data) ? parsed.data : undefined;
 }
 
-const ASCII_DIGITS_ONLY = /^[0-9]+$/;
+const ASCII_DIGITS_ONLY = /^\d+$/;
 
 /** True when `value`, as it would be stored, breaks one of the rules. `digits_only` allows 0 to 9
  * and nothing else; the lengths are in code points. */
