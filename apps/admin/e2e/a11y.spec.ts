@@ -197,10 +197,18 @@ const ADMIN_SURFACES: {
     ],
     blocking: true,
   },
+  {
+    // Not in the menu yet, so it is reached by its address. Its tabs are placeholders that read
+    // nothing from the API (the event itself is read by the page frame, as for every page).
+    name: "admin-registration",
+    path: (i) => `/admin/events/${i.event}/registration`,
+    data: () => [],
+    blocking: true,
+  },
 ];
 
 test("admin pages", async ({ page, baseURL }, testInfo) => {
-  // Six pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
+  // Seven pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
   test.setTimeout(180_000);
   // Re-seed first: it resets the admin's MFA (a retry after a failed attempt could not enrol TOTP
   // again otherwise) and puts the attendee back to "not admitted", the state whose "Not yet" item
