@@ -33,6 +33,7 @@ On this page:
 | Email deliveries | Kept as rows for the Mail report, without recipient, subject, body, provider message id and error text. Mail still waiting to go out is cancelled first. |
 | Wallet pass | Links, device and tokens cleared. Provider ids stay until the pass is deleted at the provider. A row that holds only the id reserved for a pass (its provider id was never saved) also stays, until the provider has answered for that id ([Passes still at the provider](#passes-still-at-the-provider)). |
 | Central audit log | The "created manually" entry loses the name and email it recorded. |
+| Guest registrations | Deleted with their queued mail: the one the person was accepted from, and every one in the event with one of their addresses that no other attendee was accepted from. |
 
 ## The API
 
@@ -219,13 +220,13 @@ More about what is sent:
    - A pass whose row has no provider id is deleted by the id reserved for it ([A pass with no provider id on its row](#a-pass-with-no-provider-id-on-its-row), below).
 2. **Then, in one transaction:**
    - The attendee rows are locked in id order.
-   - Their deliveries, wallet pass and check-ins are deleted.
+   - Their deliveries, wallet pass, check-ins and the registration they were accepted from are deleted.
    - The attendee rows are deleted. Notes, the per-attendee activity log and item hand-outs go by cascade.
-   - The copies of the identity elsewhere are scrubbed (`scrubAttendeeTraces`, shared with the erasure). That means the address on other attendees' deliveries that staff addressed to this person, and the name and address in the creation entry of the central audit log. The saved import results are scrubbed too (`scrubImportJobResults`).
+   - The copies of the identity elsewhere are scrubbed (`scrubAttendeeTraces`, shared with the erasure). That means the address on other attendees' deliveries that staff addressed to this person, the name and address in the creation entry of the central audit log, and the registrations of the event with one of the person's addresses that no other attendee was accepted from. The saved import results are scrubbed too (`scrubImportJobResults`).
    - The audit entries are written, in the event's activity log and in the central admin audit log.
 3. **After the commit,** the files that the event's exports and imports left in storage are deleted ([Files left in storage](#files-left-in-storage)).
 
-The audit entries use the action names of an erasure (`attendee_erased`, `attendees_bulk_erased`). They are told apart by `metadata.method` (`"remove"`). They carry the reason code, the ids and the counts (`removed: { emailDeliveries, walletPasses, checkIns }`), never a name, an address or a note.
+The audit entries use the action names of an erasure (`attendee_erased`, `attendees_bulk_erased`). They are told apart by `metadata.method` (`"remove"`). They carry the reason code, the ids and the counts (`removed: { emailDeliveries, walletPasses, checkIns, registrations }`), never a name, an address or a note.
 
 ### Passes the first delete could not see or reach
 
@@ -435,7 +436,7 @@ Lock order:
 
 - The erasure takes the rows of the open jobs before it locks an attendee (`lockOpenAttendeeJobs`, as the first statement of `eraseAttendees` and `removeAttendees`, after the queue lock).
 - So an import that is running is waited for (an erasure can wait as long as the import runs, within the statement limit of the database). Nothing is written by an import while an erasure of the event works. An import that would create somebody from an address the person had before cannot finish unseen.
-- Every transaction takes these locks in the same order (the queue, the job rows, then the attendees), so the waits cannot end in a cycle.
+- Every transaction takes these locks in the same order (the queue, the job rows, then the attendees, with the other locks of [Rules for code](#rules-for-code) in between), so the waits cannot end in a cycle.
 
 A job that finished before:
 
@@ -495,7 +496,7 @@ Why it is safe:
 - It fails closed. The keys that jobs name are read before the listing, so a file written later is younger than the grace. The key is looked up again right before each delete, so a job that was given it meanwhile keeps its file.
 - A file deleted here that was about to be named after all ends as a job whose file is gone. A download answers that with `404 not_ready`, an import fails on it, and the purge counts it as deleted (a missing file is not an error).
 - It never touches a file that a job names, so the file of a job created after an erasure stays.
-- It writes no job row and takes no lock, so the erasure's lock order (the queue, the job rows, then the attendees) is unchanged.
+- It writes no job row and takes no lock, so the erasure's lock order ([Rules for code](#rules-for-code)) is unchanged.
 - The erasure does not run it, for the reason given under "Writing" above.
 
 Reporting:
@@ -517,9 +518,12 @@ So the transaction does this, in order:
 
 1. It takes the queue lock exclusively. No job can be created until it ends, so none appears behind the read of the rows.
 2. It locks the rows of the event's jobs. An import holds its job row for the whole of its transaction and then needs the event row for the people it inserts. So the deletion takes the two in the same order and waits for a running import, whose people then make the event undeletable.
-3. It locks the event row. A job that is being created for the event holds a share of it through its foreign key. So the deletion waits for that job and deletes it with the rest, and a job that starts later finds the event gone and deletes its own file.
-4. It deletes the jobs with `RETURNING "storage_key"` (exactly the rows that went, as of the moment they went).
-5. It writes those keys into its audit entry (`jobFileKeys`: a key is organisation, event and a random name, no personal data).
+3. It takes the registration queue of the event (`lockRegistrationQueue`). A transaction that is changing a registration (an admission) holds the registration and then needs a share of the event row for the attendee it inserts. So the deletion waits for it before the event row, and that attendee then makes the event undeletable.
+4. It locks the event row. A job that is being created for the event holds a share of it through its foreign key. So the deletion waits for that job and deletes it with the rest, and a job that starts later finds the event gone and deletes its own file.
+5. It deletes the jobs with `RETURNING "storage_key"` (exactly the rows that went, as of the moment they went).
+6. It writes those keys into its audit entry (`jobFileKeys`: a key is organisation, event and a random name, no personal data).
+
+The guest registrations of the event and their queued mail go with it (cascade). They do not keep an event from being deleted. The audit entry says how many went (`registrationsDeleted`, `registrationMailsDeleted`, counts only, and only when there were any).
 
 After the commit, the files are deleted.
 
@@ -793,9 +797,30 @@ A pass whose request left no trace on the row at all. Only a request from before
   - Add the behaviour to `eraseAttendees` and its test too.
 - **A guest's registration is personal data too.**
   - A `Registration` (the form submission) holds the name, address, answers and a companion of a person who may never become an attendee, and of an accepted one it keeps a copy after the attendee is erased.
-  - The inventory records `deleted` for every column, and `attendee_id` is a real relation so that the test finds the table. Whatever erases or removes an attendee must delete the registration as well: the one linked by `attendee_id`, and the one in the same event with the same address.
+  - The inventory records `deleted` for every column, and `attendee_id` is a real relation so that the test finds the table. Whatever erases or removes an attendee must delete the registration as well: the one linked by `attendee_id`, and the ones in the same event with one of the person's addresses (`collectAttendeeAddresses`, see "How an address is matched" below).
+  - A registration that another attendee was accepted from is that attendee's, even with the same address (two attendees can hold one address in two spellings). It goes when that attendee is erased or removed.
   - `RegistrationMail` has no address or text of its own and goes with its registration (cascade).
   - A new column on `Registration` gets its decision in the same pull request.
+- **Taking locks: one order.**
+  - A transaction that takes several of these locks takes them in this order. A step it does not need is skipped, never taken later.
+    1. The attendee job queue of the event (`lockAttendeeJobQueue`). An event deletion takes `lockEventForScopedWrite` before it.
+    2. The rows of the event's open export and import jobs (`lockOpenAttendeeJobs`). An import holds its own job row.
+    3. The ticket-type catalog of the event (`acquireEventTicketTypesLock`).
+    4. The capacity of the event (`acquireEventCapacityLock`). In `runEventCapacityTransaction`, take the registration queue at the start of `work`, never in `prepare`: `prepare` runs before the capacity lock.
+    5. The registration queue of the event (`lockRegistrationQueue`, [`registration-lock.ts`](../../packages/tickets/src/registration-lock.ts)).
+    6. Rows: the event row (an event deletion), registrations before their mail, attendees in id order, and then what belongs to an attendee (deliveries, the wallet pass, check-ins).
+  - One known exception, which cannot close a cycle: at its end an erasure or a removal updates the rows of finished exports and imports (`invalidateEventExports`, `scrubImportJobResults`), after its attendees. Their other writers are single statements, or an event deletion, which takes the job queue exclusively first, as the erasure does.
+  - Who takes the registration queue:
+    - an erasure and a removal, right after the job locks (`scrubAttendeeTraces` takes it again before it deletes registrations, only so that the delete never runs without it)
+    - the deletion of an event, before the event row
+    - every transaction that inserts, changes or deletes a `Registration` or `RegistrationMail` row: a submission, a confirmation, an admission or a rejection, a deletion by staff, the clean-up of expired ones
+    - the last check before a registration mail is sent, in a short transaction of its own, never held across the send
+  - The write of a send's result does not take it. It is one conditional update of the mail's own row, waits for nothing else, and finds no row when the registration went meanwhile.
+  - A request that must not wait with a pooled connection (a guest's submission) uses `tryLockRegistrationQueue`, the same key without waiting, in the same place of the order. On `false` it ends its transaction and tries again later.
+  - Why one lock for the whole event: an erasure finds a person's registrations by the addresses on their attendee row, which it can trust only once it holds that row (an edit can change an address until then). An admission locks a registration first and writes the attendee afterwards. Rows taken in those two orders deadlock, and for an action under the GDPR that is a server error. Under the lock, one such transaction of the event runs at a time.
+  - Never take it while you hold an event, attendee or registration row (step 6). It would wait for an erasure that waits for that row.
+  - So the clean-up of expired registrations locks no row before the lock (not even with `FOR UPDATE SKIP LOCKED`). It reads the events that have expired ones with a plain query. Then, one transaction per event, it takes the lock and deletes them with the expiry checked again. A transaction that covers several events takes their locks in the order of their ids.
+  - Tests: `registration-erasure.test.ts` (two transactions, each side first, and the send of a mail), and `event-deletion.test.ts` for the deletion of an event.
 - **A legal text is not attendee data.**
   - A `LegalDocument` (an event's privacy notice, terms and extra consents) has no `attendee_id`, so the inventory test does not list it and erasure does not touch it.
   - Keep it that way. A text is written once for the event, never per guest, and holds no guest's name or address (no placeholders are filled in). A registration records only when the terms were accepted, not which text.
@@ -870,10 +895,16 @@ A pass whose request left no trace on the row at all. Only a request from before
     - A longer address that merely ends or starts with it is another address and is left alone. Examples: `banana@x.com`, `_a@x.com`, `=a@x.com`, `o'brien@x.com` for `brien@x.com`, and `a@x.com.au` for `a@x.com`.
     - The one judgement call is a quote mark right before it. It is a valid character of a local part, but it is read as a quote, because an erased address left behind in quotes is the worse mistake.
     - A mail that staff sent to the person's address on behalf of another attendee (the resend override) loses that address in the erasure itself.
-    - The addresses that are matched, in saved import results and on those mails, are the one the person has now and the one their first ticket mail went to (`collectAttendeeAddresses` in `attendee-traces.ts`, read before the deliveries are emptied or deleted). An address that was edited earlier survives only there.
+    - The addresses that are matched, in saved import results, on those mails and on guest registrations, are these (`collectAttendeeAddresses` in `attendee-traces.ts`, read before the deliveries and the activity log are emptied or deleted):
+      - the one the person has now
+      - the one their first ticket mail went to
+      - the ones an edit of their profile replaced or set, as their activity log records it
+    - An address that was edited earlier survives only in those places.
     - Only the first mail counts, since it always goes to the profile address while a resend can go to an address that staff typed in.
-    - An address is left out when it is not safely the person's alone (another attendee of the event holds it now, or the first mail of another attendee went to it too). So mail that is theirs is never blanked or cancelled.
-    - An address edited twice, or seen only in a resend, is not found.
+    - An older address is left out when it is not safely the person's alone. That is when another attendee of the event holds it now, or had it before (their first mail went to it, or their activity log records an edit from or to it). So mail that is theirs is never blanked or cancelled, and a registration with that address is kept.
+    - An address that was on the profile only by mistake (a typo that staff corrected) counts as the person's too, unless another attendee had it. A registration of another guest, who is not an attendee, with that address is deleted with the erasure or the removal.
+    - The current address is the person's without that check. When two attendees of the event hold one address in two spellings (one with capitals), the other attendee's own mail to it is blanked too, and cancelled while it waits. Their registration stays.
+    - An address seen only in a resend is not found, and nor is an edit that the activity log does not record.
 - **Reports, the delivery log and Custom fields do not know about erased attendees yet.**
   - The Reports tabs and their CSV exports, the delivery log and the Custom fields tab show the placeholder name and no address for them.
   - The custom-field answers (deleted at erasure) land in "not answered".
@@ -884,7 +915,8 @@ A pass whose request left no trace on the row at all. Only a request from before
   - The last check before a message goes to the mailer (`readDeliveriesBeforeSend`: a retry, the worker, a synchronous send) reads the delivery under the attendee's row lock. So an erasure that is still open is waited for, and a message never starts for someone it is erasing.
   - That holds for a message that staff sent to another attendee's address (the resend override) as well. The delivery belongs to an attendee who is not being erased, but erasing the person who holds that address cancels and empties it. So the check also locks that person's row (found by the address in the delivery's event, whatever its case or padding), in the same statement and in id order, which cannot deadlock with an erasure.
   - One case stays open: a resend that staff address to this person's email while the erasure is still running. It is created after the erasure has cancelled the waiting ones, and once the erasure commits nothing links the address to the person any more. So that mail goes to an address staff typed.
-  - Apart from that, the gap between the check and the mailer call is the only one left.
+  - A second, narrower one: the check waits for whoever holds the address now, not for an erasure of somebody who only had it before (their first mail, an edit). So a resend to such an older address can leave while that erasure runs.
+  - Apart from those, the gap between the check and the mailer call is the only one left.
 - **A pass update or a push message already with the wallet provider** when the erasure runs still arrives, and the pass is deleted right after.
   - The last check before one is sent reads the attendee under their row lock (`attendeeIsLive` and `liveAttendeeIds` in [`lock-check.ts`](../../packages/tickets/src/lock-check.ts): the pass update, and each batch of a message to many passes).
   - So an erasure that is still open is waited for, and nothing starts for someone it is erasing.

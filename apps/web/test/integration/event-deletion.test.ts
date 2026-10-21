@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
-import { drainExportJobs, lockAttendeeJobQueue } from "@admitto/tickets";
+import { drainExportJobs, lockAttendeeJobQueue, lockRegistrationQueue } from "@admitto/tickets";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
@@ -793,5 +793,127 @@ describe("files the event's jobs left in storage", () => {
         fields: expect.objectContaining({ eventId, failed: 1, keys: [stuck.key] }),
       }),
     );
+  });
+});
+
+describe("guest registrations of the event", () => {
+  const guest = { first_name: "Guest", last_name: "Example", name: "Guest Example" };
+  /** A registration of the event, with the columns its status needs (the CHECK constraints of the migration apply). */
+  const registration = (eventId: string, email: string, status: string) =>
+    prisma.registration.create({
+      data: {
+        ...guest,
+        event_id: eventId,
+        email,
+        status,
+        confirm_expires_at: status === "awaiting_email" ? new Date(Date.now() + 86_400_000) : null,
+      },
+    });
+  const mail = (registrationId: string, eventId: string, templateName: string) =>
+    prisma.registrationMail.create({ data: { registration_id: registrationId, event_id: eventId, template_name: templateName } });
+  const latestDeletionEntry = () =>
+    prisma.adminAuditLog.findFirstOrThrow({
+      where: { organization_id: ORG_DEL, action_type: "event_deleted" },
+      orderBy: { created_at: "desc" },
+    });
+
+  it("deletes them and their queued mail with the event, says how many in the audit entry, and keeps another event's", async () => {
+    const eventId = await createEvent({});
+    const otherId = await createEvent({});
+    const awaiting = await registration(eventId, "reg-awaiting@example.com", "awaiting_email");
+    await mail(awaiting.id, eventId, "registration-confirm");
+    const pending = await registration(eventId, "reg-pending@example.com", "pending");
+    await mail(pending.id, eventId, "registration-confirm");
+    await mail(pending.id, eventId, "registration-received");
+    const waitlisted = await registration(eventId, "reg-waitlist@example.com", "waitlist");
+    await mail(waitlisted.id, eventId, "registration-waitlist");
+    const rejected = await registration(eventId, "reg-rejected@example.com", "rejected");
+    await mail(rejected.id, eventId, "registration-rejected");
+    const kept = await registration(otherId, "reg-pending@example.com", "pending");
+    await mail(kept.id, otherId, "registration-received");
+
+    // Registrations do not keep an event: one with only waiting guests is deleted like an empty one.
+    const res = await deleteEventRequest(eventId, superCookie);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.registration.count({ where: { event_id: eventId } })).toBe(0);
+    expect(await prisma.registrationMail.count({ where: { event_id: eventId } })).toBe(0);
+    expect(await prisma.registration.count({ where: { id: kept.id } })).toBe(1);
+    expect(await prisma.registrationMail.count({ where: { registration_id: kept.id } })).toBe(1);
+    // Counts only: no address or name of a guest.
+    const audit = await latestDeletionEntry();
+    expect(audit.metadata).toEqual({
+      eventId,
+      eventTitle: expect.any(String),
+      registrationsDeleted: 4,
+      registrationMailsDeleted: 5,
+    });
+  });
+
+  it("writes no registration counts into the audit entry of an event that had none", async () => {
+    const eventId = await createEvent({});
+
+    expect((await deleteEventRequest(eventId, superCookie)).status).toBe(200);
+
+    const audit = await latestDeletionEntry();
+    expect(audit.metadata).not.toHaveProperty("registrationsDeleted");
+    expect(audit.metadata).not.toHaveProperty("registrationMailsDeleted");
+  });
+
+  it("waits for a transaction that is accepting a registration, before it locks the event row, and then finds the event not deletable instead of deadlocking", async () => {
+    const eventId = await createEvent({});
+    const pending = await registration(eventId, `${eventId}@example.com`, "pending");
+    // What an admission does: the registration queue of the event, the registration, then the attendee, whose insert
+    // needs a share of the event row. Had the deletion locked the event row first, it would wait for the registration
+    // (its cascade deletes it) while the admission waited for the event row.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let held!: () => void;
+    const heldPromise = new Promise<void>((resolve) => (held = resolve));
+    const admitting = prisma.$transaction(
+      async (tx) => {
+        await lockRegistrationQueue(tx, eventId);
+        await tx.$queryRaw`SELECT "id" FROM "Registration" WHERE "id" = ${pending.id} FOR UPDATE`;
+        held();
+        await gate;
+        const attendee = await tx.attendee.create({
+          data: { event_id: eventId, email: `${eventId}@example.com`, name: guest.name, first_name: guest.first_name, last_name: guest.last_name },
+        });
+        await tx.registration.update({ where: { id: pending.id }, data: { status: "accepted", attendee_id: attendee.id } });
+      },
+      { timeout: 30_000 },
+    );
+    await heldPromise;
+
+    const deleting = Promise.resolve(deleteEventRequest(eventId, superCookie));
+    try {
+      // The deletion waits for the registration queue of this event (its advisory lock, found by its key: the
+      // integration workers share one database, so the text of a waiting statement could be another file's).
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*)::bigint AS "waiting"
+            FROM pg_locks l, (SELECT hashtextextended(${`registration-queue:${eventId}`}, 0) AS "k") wanted
+            WHERE l.locktype = 'advisory' AND NOT l.granted AND l.objsubid = 1
+              AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND l.classid = ((wanted."k" >> 32) & 4294967295)::oid
+              AND l.objid = (wanted."k" & 4294967295)::oid
+          `;
+          expect(Number(rows[0]?.waiting ?? 0)).toBeGreaterThan(0);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+      // It waits before the row of the event: a probe that would have to wait for that row answers at once.
+      await prisma.$queryRaw`SELECT 1 FROM "Event" WHERE "id" = ${eventId} FOR UPDATE NOWAIT`;
+    } finally {
+      release();
+    }
+    await admitting;
+    const res = await deleting;
+
+    // No transaction was aborted as a deadlock victim: the admission committed, and its attendee keeps the event.
+    expect(res.status).toBe(409);
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({ status: "accepted" });
   });
 });
