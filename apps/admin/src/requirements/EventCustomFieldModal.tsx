@@ -49,7 +49,7 @@ function formFromField(field: EventCustomFieldDto): FormState {
 }
 
 /** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
-export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOnForm = false }: EventCustomFieldModalProps) {
+export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOnForm = false }: Readonly<EventCustomFieldModalProps>) {
   const { addToast } = useToast();
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
