@@ -254,7 +254,38 @@ describe("healthCheckGuidance", () => {
     });
   });
 
-  it.each(["identity_provider_idp-1", "cloudflare_access", "address_lookup", "bounce_ingest", "background_worker", "wallet_passes", "weather", "email_sending", "mail_delivery_queue"])(
+  it("gives registration_captcha degraded/reason=keys_missing the save-the-keys guidance with a link", () => {
+    expect(
+      healthCheckGuidance(checkRow("registration_captcha", "degraded", [{ key: "reason", value: "keys_missing" }])),
+    ).toEqual({
+      cause: "Registration by public link or password is switched on for at least one event, but the Turnstile site key or secret key is not saved.",
+      impact: "That registration form stays closed, so guests cannot sign up.",
+      nextStep: "Save both Turnstile keys under Guest registration in External services.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    });
+  });
+
+  it("gives registration_captcha degraded/reason=secret_unreadable the enter-it-again guidance with a link", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_captcha", "degraded", [{ key: "reason", value: "secret_unreadable" }]),
+    );
+    expect(guidance?.cause).toContain("ENCRYPTION_KEY");
+    expect(guidance?.impact).toBe("Registration forms that use a public link or a password stay closed, so guests cannot sign up.");
+    expect(guidance?.nextStep).toContain("Enter the secret key again");
+    expect(guidance?.link).toEqual({ label: "Open External services", to: "/admin/settings?tab=external" });
+  });
+
+  it("says nothing for a registration_captcha row that is ok or not configured", () => {
+    expect(healthCheckGuidance(checkRow("registration_captcha", "ok"))).toBeNull();
+    expect(healthCheckGuidance(checkRow("registration_captcha", "not_configured"))).toBeNull();
+  });
+
+  it("gives a registration_captcha row in a state it does not know the unrecognised-state guidance", () => {
+    expect(healthCheckGuidance(checkRow("registration_captcha", "degraded"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
+    expect(healthCheckGuidance(checkRow("registration_captcha", "down"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
+  });
+
+  it.each(["identity_provider_idp-1", "cloudflare_access", "address_lookup", "bounce_ingest", "background_worker", "wallet_passes", "weather", "email_sending", "mail_delivery_queue", "registration_captcha"])(
     "gives %s degraded/reason=lookup_failed the shared could-not-read guidance",
     (id) => {
       const guidance = healthCheckGuidance(

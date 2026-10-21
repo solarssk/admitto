@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExternalServicesPanel } from "../../src/settings/ExternalServicesPanel.js";
 import { hangUntilAborted, renderWithToastAndRouter, isOff } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
-import type { ExternalServicesResponse } from "../../src/api/types.js";
+import type { ExternalServicesResponse, RegistrationTurnstileDto } from "../../src/api/types.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
   return {
     ...actual,
     fetchExternalServices: vi.fn(),
+    fetchRegistrationTurnstile: vi.fn(),
+    saveRegistrationTurnstile: vi.fn(),
     saveWeatherSettings: vi.fn(),
     saveMapsSettings: vi.fn(),
     testWeatherConnection: vi.fn(),
@@ -21,13 +23,17 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 import {
   ApiError,
   fetchExternalServices,
+  fetchRegistrationTurnstile,
   saveMapsSettings,
+  saveRegistrationTurnstile,
   saveWeatherSettings,
   testMapsConnection,
   testWeatherConnection,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchExternalServices);
+const mockFetchTurnstile = vi.mocked(fetchRegistrationTurnstile);
+const mockSaveTurnstile = vi.mocked(saveRegistrationTurnstile);
 const mockSaveWeather = vi.mocked(saveWeatherSettings);
 const mockSaveMaps = vi.mocked(saveMapsSettings);
 const mockTestWeather = vi.mocked(testWeatherConnection);
@@ -70,8 +76,20 @@ function sampleResponse(
   };
 }
 
+function sampleTurnstile(overrides: Partial<RegistrationTurnstileDto> = {}): RegistrationTurnstileDto {
+  return { site_key: null, secret_set: false, status: "incomplete", ...overrides };
+}
+
+const READY_TURNSTILE = sampleTurnstile({ site_key: "0x4AAAAAAAsite", secret_set: true, status: "ready" });
+
 beforeEach(() => {
   mockFetch.mockResolvedValue(sampleResponse());
+  mockFetchTurnstile.mockResolvedValue(sampleTurnstile());
+  mockSaveTurnstile.mockImplementation(async (body) => ({
+    site_key: body.site_key === undefined ? null : body.site_key,
+    secret_set: body.secret_key !== null && body.secret_key !== undefined,
+    status: "ready",
+  }));
   mockSaveWeather.mockImplementation(async (body) => ({
     ...sampleResponse().weather,
     enabled: body.enabled ?? true,
@@ -918,5 +936,137 @@ describe("ExternalServicesPanel", () => {
       await Promise.resolve();
     });
     expect(screen.queryByText("Could not load external services")).toBeNull();
+  });
+});
+
+describe("ExternalServicesPanel, guest registration card", () => {
+  const card = () => screen.getByText("Guest registration").closest(".at-card") as HTMLElement;
+
+  /** Opens the secret field, types a value and confirms it, as the mail and wallet panels do. */
+  function typeSecret(value: string) {
+    fireEvent.click(within(card()).getByRole("button", { name: "Set" }));
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-secret-key"), { target: { value } });
+  }
+
+  it("shows the card with its two keys, closed until both are saved", async () => {
+    await renderLoaded();
+    expect(within(card()).getByText("Not set up")).toBeTruthy();
+    expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("");
+    expect(within(card()).getByText("Not set")).toBeTruthy();
+    expect(card().textContent).toMatch(/public link or password form stays closed/);
+    expect(card().textContent).toMatch(/privacy notice/);
+  });
+
+  it("shows the saved site key and says the secret is set, without any value for it", async () => {
+    mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
+    await renderLoaded();
+    expect(within(card()).getByText("Ready")).toBeTruthy();
+    expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("0x4AAAAAAAsite");
+    expect(within(card()).getByText(/set$/)).toBeTruthy();
+    expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
+    expect(within(card()).getByRole("button", { name: "Change" })).toBeTruthy();
+  });
+
+  it("warns when the saved secret cannot be read", async () => {
+    mockFetchTurnstile.mockResolvedValue(sampleTurnstile({ site_key: "0x4AAAAAAAsite", secret_set: true, status: "unreadable" }));
+    await renderLoaded();
+    expect(within(card()).getByText("Needs attention")).toBeTruthy();
+    expect(within(card()).getByText(/cannot be read, probably because ENCRYPTION_KEY changed/)).toBeTruthy();
+  });
+
+  it("saves a new site key and secret with the one Save, then shows the card as ready", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "  0x4AAAAAAAsite " } });
+    typeSecret("0x4AAAAAAAsecret");
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("External services saved."));
+    expect(mockSaveTurnstile).toHaveBeenCalledWith({ site_key: "0x4AAAAAAAsite", secret_key: "0x4AAAAAAAsecret" });
+    expect(mockSaveWeather).not.toHaveBeenCalled();
+    expect(mockSaveMaps).not.toHaveBeenCalled();
+    await waitFor(() => expect(within(card()).getByText("Ready")).toBeTruthy());
+    // The typed secret is gone from the screen once saved.
+    expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
+    expect(document.body.textContent).not.toContain("0x4AAAAAAAsecret");
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+  });
+
+  it("sends only the site key when only it changed", async () => {
+    mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "0x4AAAAAAAnew" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockSaveTurnstile).toHaveBeenCalledWith({ site_key: "0x4AAAAAAAnew" }));
+  });
+
+  it("clears the secret with null when Clear is chosen and saved", async () => {
+    mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
+    await renderLoaded();
+    fireEvent.click(within(card()).getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockSaveTurnstile).toHaveBeenCalledWith({ secret_key: null }));
+  });
+
+  it("clears the site key when its field is emptied", async () => {
+    mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockSaveTurnstile).toHaveBeenCalledWith({ site_key: null }));
+  });
+
+  it("blocks Save for a malformed site key or secret, and says what is wrong", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "has space" } });
+    typeSecret("two words");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText("The site key can only contain letters, digits, hyphens and underscores.")).toBeTruthy();
+      expect(screen.getByText("Enter the secret key without spaces.")).toBeTruthy();
+    });
+    expect(mockSaveTurnstile).not.toHaveBeenCalled();
+  });
+
+  it("discards a typed key when Reset is chosen", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "0x4AAAAAAAdraft" } });
+    typeSecret("draftSecret");
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("");
+    expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+  });
+
+  it("toasts an operator-safe error when saving the keys fails, and keeps what was typed", async () => {
+    mockSaveTurnstile.mockRejectedValueOnce(new ApiError(500, "secret_internal_detail"));
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "0x4AAAAAAAsite" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save guest registration settings/));
+    expect(screen.queryByText("secret_internal_detail")).toBeNull();
+    expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("0x4AAAAAAAsite");
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
+  });
+
+  it("saves the keys together with a weather change, and reports a failure of only one of them", async () => {
+    mockSaveWeather.mockRejectedValueOnce(new ApiError(500, "wx_secret"));
+    await renderLoaded();
+    fireEvent.click(el<HTMLInputElement>("external-weather-enabled"));
+    fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "0x4AAAAAAAsite" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const toast = screen.getByTestId("at-toast").textContent ?? "";
+      expect(toast).toMatch(/Failed to save weather settings/);
+      expect(toast).not.toMatch(/guest registration/);
+    });
+    expect(mockSaveTurnstile).toHaveBeenCalledWith({ site_key: "0x4AAAAAAAsite" });
+  });
+
+  it("shows the load error and a Retry when the keys cannot be read", async () => {
+    mockFetchTurnstile.mockRejectedValueOnce(new ApiError(403, "forbidden"));
+    renderWithToastAndRouter(<ExternalServicesPanel />);
+    await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByText("Could not load external services")).toBeTruthy();
+    expect(document.getElementById("external-turnstile-site-key")).toBeNull();
   });
 });

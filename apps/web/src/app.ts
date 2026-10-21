@@ -340,6 +340,13 @@ import {
   handlePostMapsTest,
 } from "./admin/external-services-routes.js";
 import {
+  handleDeleteRegistrationTurnstile,
+  handleGetRegistrationAccessMethods,
+  handleGetRegistrationTurnstile,
+  handlePutRegistrationAccessMethods,
+  handlePutRegistrationTurnstile,
+} from "./admin/registration-settings-routes.js";
+import {
   handleGetNotificationSettings,
   handlePutNotificationSettings,
   handlePostNotificationSettingsTest,
@@ -1909,6 +1916,31 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     (c) => handlePostMapsTest(c, db),
+  );
+  // Guest registration instance settings: the Turnstile keys and the access methods. Superadmin
+  // only; the handlers check the role themselves, the gate only proves a staff session.
+  app.get("/api/admin/registration/turnstile", staffAdminGate, (c) =>
+    handleGetRegistrationTurnstile(c, db),
+  );
+  app.put(
+    "/api/admin/registration/turnstile",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationTurnstile(c, db),
+  );
+  app.delete("/api/admin/registration/turnstile", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteRegistrationTurnstile(c, db),
+  );
+  app.get("/api/admin/registration/access-methods", staffAdminGate, (c) =>
+    handleGetRegistrationAccessMethods(c, db),
+  );
+  app.put(
+    "/api/admin/registration/access-methods",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationAccessMethods(c, db),
   );
   app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
     handleGetNotificationSettings(c, db),

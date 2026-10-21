@@ -40,6 +40,7 @@ const DETAIL_LABELS: Record<string, string> = {
   wallet_enabled_events: "Events with Wallet on",
   configured_events: "Events fully set up",
   wallet_incomplete_events: "Events not fully set up",
+  events_with_registration: "Events with registration on",
   failed_retryable: "Failed retryable",
   degraded_threshold: "Degraded threshold",
   live_check: "Live check",

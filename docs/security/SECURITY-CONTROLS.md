@@ -573,6 +573,17 @@ Separately, event-level dedicated mail transport also requires superadmin (match
 - There is no allowlist escape hatch for this destination.
 - The Send test action is rate limited per user.
 
+**Bot challenge destination (registration form).** The Cloudflare Turnstile check of the public registration form (`apps/web/src/registration/bot-challenge.ts`) posts the saved secret key and the guest's token to one fixed address, `https://challenges.cloudflare.com/turnstile/v0/siteverify`.
+
+- The address is a constant. No setting and no request can change it, so there is nothing for an SSRF guard or a DNS pin to protect.
+- A redirect fails the call, so the secret key never follows one to another host.
+- The whole exchange, answer included, gets 5 s, with no retry (a token works once). The answer is read up to 16 KB.
+- The visitor's IP address is not sent. The token and the secret key are never logged, and the check writes no log line of its own.
+- **The check fails closed.** Missing keys, a database that cannot be read, a network error, a timeout, a non-2xx answer, a body that is not the expected JSON, a token solved on another host and a token made for another event each refuse the submission. Only a confirmed pass lets it through. Without both keys, a form that uses a public link or a password is closed, also on `localhost`.
+- **Test keys.** Cloudflare's published test keys cannot pass: they answer for `example.com` and carry no event binding. A local run needs a real widget that lists `localhost` as a hostname.
+- **Egress.** The `app` container needs outbound HTTPS to `challenges.cloudflare.com`. Where egress is filtered, allow that host, or the form answers 503.
+- The keys are set by a superadmin only (Organisation Settings → External services). The secret key is stored encrypted, shown to no one after saving, and every change is in the audit log with field names only.
+
 **PassCreator call pacing** (not SSRF: availability and abuse hardening). Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`. It paces requests proactively, rather than reacting to a 429 after PassCreator's own limit is already exceeded.
 
 - **Spacing.** At least 150ms between calls, across every caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save.
@@ -591,7 +602,7 @@ Separately, event-level dedicated mail transport also requires superadmin (match
 ## Data protection in operations
 
 - **Ticket / QR payload:** opaque random identifier - no attendee name or email embedded in the QR.
-- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key supplied at deploy time via environment variable.
+- **Integration credentials** (mail, OIDC, Wallet/PassCreator, the Turnstile secret key): stored encrypted in the application database; key supplied at deploy time via environment variable.
 - **Logs:**
   - They are intended for operations, not analytics.
   - Attendee-facing data (recipient addresses, import content) and secrets are never logged in full.
