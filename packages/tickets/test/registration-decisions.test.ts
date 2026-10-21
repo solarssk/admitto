@@ -362,7 +362,7 @@ describe("rejectRegistrations (D-B8)", () => {
     const logs = await db.attendeeActionLog.findMany({ where: { event_id: eventId } });
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ action_type: "registration_rejected", actor_user_id: actor.operator, attendee_id: null });
-    expect(logs[0]?.metadata).toEqual({ count: 2, registration_ids: rows.map((row) => row.id).sort(), notify: false });
+    expect(logs[0]?.metadata).toEqual({ count: 2, registration_ids: rows.map((row) => row.id), notify: false });
     expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(0);
   });
 
