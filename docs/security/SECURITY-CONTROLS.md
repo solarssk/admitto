@@ -580,7 +580,7 @@ Separately, event-level dedicated mail transport also requires superadmin (match
 - The whole exchange, answer included, gets 5 s, with no retry (a token works once). The answer is read up to 16 KB.
 - The visitor's IP address is not sent. The token and the secret key are never logged, and the check writes no log line of its own.
 - **The check fails closed.** Missing keys, a database that cannot be read, a network error, a timeout, a non-2xx answer, a body that is not the expected JSON, a token solved on another host and a token made for another event each refuse the submission. Only a confirmed pass lets it through. Without both keys, a form that uses a public link or a password is closed, also on `localhost`.
-- **Test keys.** Cloudflare's published test keys cannot pass: they answer for `example.com` and carry no event binding. A local run needs a real widget that lists `localhost` as a hostname.
+- **Test keys.** Cloudflare's published test keys cannot open the form. The always-pass secret answers for `example.com` with no event binding, and the check refuses it as a configuration problem (503). A local run needs a real widget that lists `localhost` as a hostname.
 - **Egress.** The `app` container needs outbound HTTPS to `challenges.cloudflare.com`. Where egress is filtered, allow that host, or the form answers 503.
 - The keys are set by a superadmin only (Organisation Settings → External services). The secret key is stored encrypted, shown to no one after saving, and every change is in the audit log with field names only.
 

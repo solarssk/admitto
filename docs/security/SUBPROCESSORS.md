@@ -94,7 +94,7 @@ This page lists **categories of third parties** that *may* process personal data
 - **Purpose:** tells people from bots on the public registration form, so that automated sign-ups cannot fill the event or send mail to addresses they do not own.
 - **Data from the guest's browser:** when the form opens, the browser loads Cloudflare's script and sends Cloudflare the visitor's IP address, user agent and other browser and connection details, and the result of the challenge. This happens before the guest has typed anything.
 - **Data from the server:** the secret key and the challenge token, to check the result. The server does not send the visitor's IP address.
-- **Not sent to Turnstile:** the form itself. Turnstile receives no name, email or answers. If the instance sits behind Cloudflare as a CDN or an access gateway, that traffic is covered by the Edge / CDN row instead.
+- **Not sent to Turnstile:** the form itself. Turnstile receives no name, email or answers. If the instance sits behind a Cloudflare CDN, proxy or access gateway, the whole form passes through that service instead, name, email and answers included. List it under Edge / CDN or Zero Trust / access gateway.
 - **When:** only for forms that guests reach by a public link or a password, and only while both keys are saved. Without the keys those forms are closed and nothing loads from Cloudflare.
 - **Your duty:** name Cloudflare in the privacy notice shown on the registration form, and have the agreement with Cloudflare that your legal team requires, for example a DPA.
 

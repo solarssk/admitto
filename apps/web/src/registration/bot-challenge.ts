@@ -42,8 +42,8 @@ const MAX_SITEVERIFY_RESPONSE_BYTES = 16 * 1024;
  * - `rejected`: Cloudflare says the token is invalid, expired or already used.
  * - `wrong_host`: solved on a host that is not the instance's (or the event's own address).
  * - `wrong_binding`: solved for another event.
- * - `secret_rejected`: Cloudflare refused the saved secret key, or the saved keys are Cloudflare's
- *   own test keys, which can never pass. The guest did nothing wrong.
+ * - `secret_rejected`: Cloudflare refused the saved secret key, or the saved secret is Cloudflare's
+ *   always-pass test key, which can never open the form. The guest did nothing wrong.
  * - `unavailable`: no usable answer (network error, timeout, non-2xx, malformed or oversized body).
  */
 export type BotChallengeFailure =
@@ -115,8 +115,9 @@ function hostnameOf(raw: string): string | null {
 /**
  * The host names a genuine challenge can have been solved on, from configuration: the instance URL
  * (the URL the app was started with, else `BASE_URL`, else the saved instance URL) and, when the
- * event has a verified address of its own (D-C6), that. Nothing here reads a request. Without a
- * usable instance URL its host is left out, so the check refuses instead of guessing.
+ * event has a verified address of its own (D-C6), that. Nothing here reads a request. With no
+ * instance URL configured, outside development and test, the instance host is left out and the
+ * check refuses; in development and test the instance is assumed at localhost, as for ticket links.
  */
 export async function resolveChallengeHosts(
   db: PrismaClient,
@@ -144,8 +145,11 @@ function expectedHostSet(hosts: readonly string[]): Set<string> {
   return set;
 }
 
-/** Cloudflare marks an answer given for one of its published test keys. Saved by mistake, such
- * keys close the form for everyone, which is an operator problem, not the guest's. */
+/** Cloudflare marks an answer given for one of its published test keys. Only a PASS is read this
+ * way. Saved by mistake, the always-pass test secret closes the form for everyone, which is an
+ * operator problem and not the guest's. A refusal that carries the marker stays the guest's refusal:
+ * it is not known whether Cloudflare marks the refusal of a made-up token, and a visitor must not be
+ * able to raise `secret_rejected` at will. */
 function usesTestingKey(fields: Record<string, unknown>): boolean {
   const metadata = fields["metadata"];
   return (
@@ -214,8 +218,8 @@ function judge(answer: SiteverifyAnswer, hosts: Set<string>, cdata: string): Bot
   if (codes.some((code) => SECRET_ERROR_CODES.has(code))) return { ok: false, reason: "secret_rejected" };
   // A non-2xx answer never passes, whatever its body says.
   if (!answer.ok || codes.some((code) => SERVICE_ERROR_CODES.has(code))) return { ok: false, reason: "unavailable" };
-  if (usesTestingKey(fields)) return { ok: false, reason: "secret_rejected" };
   if (fields["success"] !== true) return { ok: false, reason: "rejected" };
+  if (usesTestingKey(fields)) return { ok: false, reason: "secret_rejected" };
 
   const hostname = fields["hostname"];
   if (typeof hostname !== "string") return { ok: false, reason: "unavailable" };

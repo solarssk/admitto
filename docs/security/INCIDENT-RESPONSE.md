@@ -64,7 +64,7 @@ Treat any secret exposed in logs, tickets or version control as **compromised**.
 | Redis password | Change `REDIS_PASSWORD` and the password inside `REDIS_URL` together. Then recreate `redis`, `app` and `worker` |
 | Wallet provider (PassCreator) API key | Rotate it at the provider. Then paste the new key in Event Settings → Wallet, for each event |
 | SSO client secret | Rotate it at the identity provider. Then update the provider under Settings → Identity |
-| Turnstile secret key | Rotate it in the Cloudflare dashboard. Then save the new secret under Organisation Settings → External services → Guest registration. Until you do, the registration form cannot check guests and refuses them |
+| Turnstile secret key | Rotate it in the Cloudflare dashboard, and make sure the old secret no longer works. Then save the new secret under Organisation Settings → External services → Guest registration. Until you do, forms that use a public link or a password cannot check guests and refuse them |
 | Alert webhook URL | Regenerate it at Discord, Slack or the receiving service. Then update Organisation Settings → Notifications. The URL is itself a bearer-style secret |
 | Emergency check-in token | Change `CHECKIN_OPERATOR_TOKEN` (or leave `ALLOW_CHECKIN_BEARER` unset). Recreate `app` |
 | Monitoring token | Regenerate it and update your observability tools |

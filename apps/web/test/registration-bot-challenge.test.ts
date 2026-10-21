@@ -261,9 +261,14 @@ describe("verifyTurnstileToken", () => {
       metadata: { result_with_testing_key: true },
     };
 
-    it("never open the form, and are told apart from a guest's mistake", async () => {
+    it("never open the form: the always-pass answer is told apart from a guest's mistake", async () => {
       expect(await verify(() => json(PASS_DUMMY))).toEqual(refusal("secret_rejected"));
-      expect(await verify(() => json(FAIL_DUMMY))).toEqual(refusal("secret_rejected"));
+    });
+
+    it("leave a refusal that carries the marker as the guest's refusal", async () => {
+      // Only a pass is read through the marker, so no visitor can raise `secret_rejected` at will.
+      expect(await verify(() => json(FAIL_DUMMY))).toEqual(refusal("rejected"));
+      expect(await verify(() => json({ ...FAIL_DUMMY, "error-codes": ["timeout-or-duplicate"] }))).toEqual(refusal("rejected"));
     });
 
     it("stay refused even for an instance that is served from example.com", async () => {
@@ -427,7 +432,16 @@ describe("resolveChallengeHosts", () => {
     }
   });
 
-  it("leaves out the instance host when there is no usable instance URL, so the check refuses", async () => {
+  it("assumes the instance at localhost in development and test only, as for ticket links", async () => {
+    expect(await resolveChallengeHosts(db(), { env: { NODE_ENV: "development" } as NodeJS.ProcessEnv })).toEqual(["localhost"]);
+    expect(await resolveChallengeHosts(db(), { env: { NODE_ENV: "test" } as NodeJS.ProcessEnv })).toEqual(["localhost"]);
+    // A configured URL always wins over the assumption.
+    expect(
+      await resolveChallengeHosts(db(), { env: { NODE_ENV: "development", BASE_URL: "http://dev.example.com:3000" } as NodeJS.ProcessEnv }),
+    ).toEqual(["dev.example.com"]);
+  });
+
+  it("leaves out the instance host when there is no usable instance URL outside development, so the check refuses", async () => {
     expect(await resolveChallengeHosts(db(), { env: production })).toEqual([]);
     expect(await resolveChallengeHosts(db(), { env: production, eventHost: "party.example.org" })).toEqual(["party.example.org"]);
     const result = await verifyTurnstileToken(SECRET, { ...INPUT, expectedHosts: [] }, { fetch: fakeFetch(() => json(GENUINE)).fetch });

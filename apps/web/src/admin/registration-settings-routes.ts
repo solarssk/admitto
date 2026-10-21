@@ -171,7 +171,8 @@ export async function handlePutRegistrationAccessMethods(c: Context, db: PrismaC
   if (parsed.response) return parsed.response;
 
   const organizationId = await resolveInstanceOrganizationId(db, process.env);
-  await db.$transaction(async (tx) => {
+  // The answer is read in the same transaction, so a 500 always means that nothing was saved.
+  const availability = await db.$transaction(async (tx) => {
     const methods = await setEnabledAccessMethods(tx, parsed.data.methods);
     await writeAdminAuditLog(tx, {
       organizationId,
@@ -182,6 +183,7 @@ export async function handlePutRegistrationAccessMethods(c: Context, db: PrismaC
       actionType: "registration_access_methods_updated",
       metadata: { methods },
     });
+    return resolveAccessMethodAvailability(tx);
   });
-  return c.json(serializeAvailability(await resolveAccessMethodAvailability(db)));
+  return c.json(serializeAvailability(availability));
 }
