@@ -24,6 +24,7 @@ const ADMIN_TABLER_ICON_CLASSES = [
   "chevron-right",
   "circle-check",
   "circle-x",
+  "clipboard-check",
   "clipboard-list",
   "clock",
   "clock-exclamation",
