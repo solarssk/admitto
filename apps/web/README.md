@@ -36,6 +36,7 @@ npm run start -w @admitto/web
 | `/readyz` | `OPS_HEALTH_TOKEN` (Bearer or `X-Ops-Token`; at least 32 characters) | Detailed readiness + gauges (rate-limited; disabled when the token is unset or shorter) |
 | `/t/*`, `/q/*` | none | Attendee ticket page + hosted QR PNG (rate-limited); agency (Mode B) tickets use `/t/:eventSlug/a/:ref` and `/q/:eventSlug/a/:ref.png`, addressed by `public_ref` |
 | `/m/:filename`, `/uploads/*` | none | Bundled mail assets (rate-limited) and uploaded branding files |
+| `/legal/:eventSlug/:text` | none | Published legal text of an event (privacy notice, terms, extra consent), static and rate-limited. A draft, an unknown event and an unknown text all answer the same 404 |
 | `/setup`, `/change-password` | none until the first superadmin exists / session (forced change) | First-run setup, server-rendered forced password change |
 | `/login`, `/mfa/*`, `/logout` | session / partial | Staff local login + MFA (TOTP, passkeys, backup codes) |
 | `/api/auth/*` | varies | JSON auth API |

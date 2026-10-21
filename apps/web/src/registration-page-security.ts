@@ -1,4 +1,6 @@
+import type { Context } from "hono";
 import type { BrandingTheme } from "@admitto/auth";
+import { isSecureRequest } from "./is-secure-request.js";
 import { buildTicketFontSrc, buildTicketImgSrc, getTicketPageSecurityHeaders, renderNotFound } from "./ticket-page.js";
 
 /** The only origin the Cloudflare Turnstile widget needs (script and iframe). */
@@ -59,4 +61,12 @@ export function renderRegistrationNotFound(secure: boolean): {
   html: string;
 } {
   return { status: 404, headers: getTicketPageSecurityHeaders(null, null, secure), html: renderNotFound(null) };
+}
+
+/** {@link renderRegistrationNotFound} as the answer to a request: the one 404 of the registration
+ * and legal routes, so each of them answers a miss with the same status, headers and bytes. */
+export function respondRegistrationNotFound(c: Context): Response {
+  const notFound = renderRegistrationNotFound(isSecureRequest(c));
+  for (const [name, value] of Object.entries(notFound.headers)) c.header(name, value);
+  return c.html(notFound.html, notFound.status);
 }
