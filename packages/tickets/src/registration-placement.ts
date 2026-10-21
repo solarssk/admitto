@@ -207,6 +207,12 @@ async function insertAwaitingEmail(context: SubmissionContext): Promise<void> {
  * Both are read for every address, so the work does not tell a known address from a new one.
  * An existing registration is never changed by a new submission: what the guest typed would otherwise replace
  * answers that someone else gave, and the owner of the address would then confirm them.
+ *
+ * The attendee read is a snapshot, not a guard: staff adding or importing an attendee, or editing an attendee's
+ * address, in a transaction that commits after this read can leave an attendee and a registration with the same
+ * address side by side (the two tables share no key, and a guest's submission must not wait for staff, so it does
+ * not take the attendee rows). That is allowed. Admission settles it: `admitRegistrations` answers
+ * `already_attendee` and deletes the registration (D-B13), and a mail that is still queued for it is cancelled.
  */
 async function addressHasAPlace(context: SubmissionContext): Promise<boolean> {
   const { tx, eventId, now, registrant } = context;
