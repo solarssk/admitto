@@ -57,7 +57,7 @@ export type AdmitRegistrationsResult =
   | { status: "done"; outcomes: AdmitOutcome[] }
   | { status: "not_enough_seats"; free: number; needed: number };
 
-const admittableStatuses: readonly string[] = ["pending", "waitlist", "rejected"];
+const admittableStatuses: ReadonlySet<string> = new Set(["pending", "waitlist", "rejected"]);
 
 type Sorted = {
   outcomes: Map<string, AdmitOutcome>;
@@ -76,7 +76,7 @@ function sortRequested(ids: readonly string[], rows: Map<string, LockedRegistrat
       sorted.outcomes.set(id, { id, outcome: "gone" });
     } else if (row.status === "accepted") {
       sorted.outcomes.set(id, { id, outcome: "already_decided" });
-    } else if (!admittableStatuses.includes(row.status)) {
+    } else if (!admittableStatuses.has(row.status)) {
       // Waiting for the guest to confirm the address: there is nothing to decide yet.
       sorted.outcomes.set(id, { id, outcome: "awaiting_email" });
     } else if (heldAddresses.has(row.email)) {
@@ -150,7 +150,7 @@ async function admitInTransaction(
   // rows in id order (step 6), and only then the attendees that are inserted.
   await lockRegistrationQueue(tx, eventId);
   const event = await readEventState(tx, eventId);
-  if (!event || event.archived_at !== null) {
+  if (event?.archived_at !== null) {
     return { status: "done", outcomes: ids.map((id) => ({ id, outcome: "closed" })) };
   }
   const rows = new Map((await lockRegistrationsForUpdate(tx, eventId, ids)).map((row) => [row.id, row]));
@@ -209,12 +209,12 @@ export type RejectOutcome = {
 
 export type RejectRegistrationsResult = { outcomes: RejectOutcome[] };
 
-const rejectableStatuses: readonly string[] = ["pending", "waitlist"];
+const rejectableStatuses: ReadonlySet<string> = new Set(["pending", "waitlist"]);
 
 function classifyForRejection(row: LockedRegistration | undefined): RejectOutcome["outcome"] {
   if (!row) return "gone";
   if (row.status === "awaiting_email") return "awaiting_email";
-  return rejectableStatuses.includes(row.status) ? "rejected" : "already_decided";
+  return rejectableStatuses.has(row.status) ? "rejected" : "already_decided";
 }
 
 async function rejectInTransaction(
@@ -223,7 +223,7 @@ async function rejectInTransaction(
 ): Promise<RejectRegistrationsResult> {
   await lockRegistrationQueue(tx, eventId);
   const event = await readEventState(tx, eventId);
-  if (!event || event.archived_at !== null) {
+  if (event?.archived_at !== null) {
     return { outcomes: ids.map((id) => ({ id, outcome: "closed" })) };
   }
   const rows = new Map((await lockRegistrationsForUpdate(tx, eventId, ids)).map((row) => [row.id, row]));
@@ -258,7 +258,7 @@ export async function rejectRegistrations(
   const ids = [...new Set(params.ids)];
   if (ids.length === 0) return { outcomes: [] };
   const now = params.now ?? new Date();
-  return db.$transaction(
+  return await db.$transaction(
     (tx) => rejectInTransaction(tx, { eventId: params.eventId, ids, actor: params.actor, notify: params.notify ?? false, now }),
     DECISION_TRANSACTION_OPTIONS,
   );
