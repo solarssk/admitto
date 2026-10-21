@@ -299,7 +299,7 @@ export async function handlePublishLegalDocument(c: Context, db: PrismaClient): 
   const { target, actor } = write;
 
   const row = await runLocked(db, target, async (tx, existing) => {
-    if (!existing || existing.published_at !== null) return existing;
+    if (existing?.published_at !== null) return existing;
     const published = await tx.legalDocument.update({
       where: { id: existing.id },
       data: { published_at: new Date(), updated_by: actor.operator },
@@ -319,7 +319,7 @@ export async function handleUnpublishLegalDocument(c: Context, db: PrismaClient)
   const { target, actor } = write;
 
   const outcome = await runLocked(db, target, async (tx, existing) => {
-    if (!existing || existing.published_at === null) return { kind: "done" as const, row: existing };
+    if (!existing?.published_at) return { kind: "done" as const, row: existing };
     if (await registrationNeedsLegalDocument(tx, target.eventId, target.doc)) return { kind: "in_use" as const };
     const draft = await tx.legalDocument.update({
       where: { id: existing.id },
