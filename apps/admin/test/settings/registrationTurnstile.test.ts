@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RegistrationTurnstileDto } from "../../src/api/types.js";
 import {
+  TURNSTILE_SECRET_KEY_EMPTY_ERROR,
   TURNSTILE_SECRET_KEY_ERROR,
   TURNSTILE_SITE_KEY_ERROR,
   buildTurnstileSaveBody,
@@ -72,7 +73,12 @@ describe("turnstileValidationErrors", () => {
   });
 
   it("refuses a secret that is empty or has spaces, but only while it is being replaced", () => {
-    for (const value of ["", "   ", "two words", "a".repeat(513)]) {
+    for (const value of ["", "   "]) {
+      expect(turnstileValidationErrors(draft({ secret: { mode: "replace", value } }))).toEqual([
+        TURNSTILE_SECRET_KEY_EMPTY_ERROR,
+      ]);
+    }
+    for (const value of ["two words", "a".repeat(513)]) {
       expect(turnstileValidationErrors(draft({ secret: { mode: "replace", value } }))).toEqual([
         TURNSTILE_SECRET_KEY_ERROR,
       ]);

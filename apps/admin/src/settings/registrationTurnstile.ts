@@ -15,6 +15,7 @@ const SECRET_KEY_PATTERN = /^[\x21-\x7E]{1,512}$/;
 export const TURNSTILE_SITE_KEY_ERROR =
   "The site key can only contain letters, digits, hyphens and underscores.";
 export const TURNSTILE_SECRET_KEY_ERROR = "Enter the secret key without spaces.";
+export const TURNSTILE_SECRET_KEY_EMPTY_ERROR = "Enter the secret key, or choose Cancel to keep the saved one.";
 
 export function turnstileDraftFrom(dto: RegistrationTurnstileDto): TurnstileDraft {
   return { siteKey: dto.site_key ?? "", secret: { mode: "idle", value: "" } };
@@ -29,8 +30,10 @@ export function turnstileValidationErrors(draft: TurnstileDraft): string[] {
   const errors: string[] = [];
   const siteKey = draft.siteKey.trim();
   if (siteKey !== "" && !SITE_KEY_PATTERN.test(siteKey)) errors.push(TURNSTILE_SITE_KEY_ERROR);
-  if (draft.secret.mode === "replace" && !SECRET_KEY_PATTERN.test(draft.secret.value.trim())) {
-    errors.push(TURNSTILE_SECRET_KEY_ERROR);
+  if (draft.secret.mode === "replace") {
+    const typed = draft.secret.value.trim();
+    if (typed.length === 0) errors.push(TURNSTILE_SECRET_KEY_EMPTY_ERROR);
+    else if (!SECRET_KEY_PATTERN.test(typed)) errors.push(TURNSTILE_SECRET_KEY_ERROR);
   }
   return errors;
 }
