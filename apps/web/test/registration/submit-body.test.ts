@@ -149,8 +149,8 @@ describe("checkSubmission: the fixed fields", () => {
     ["an address", "ada@example.com"],
     ["more than 100 characters", tooLong],
     ["a control character", "Ada\u0000"],
-    ["a right-to-left override", "Ada‮Evil"],
-    ["a zero-width character", "Ada​Evil"],
+    ["a right-to-left override", "Ada\u202eEvil"],
+    ["a zero-width character", "Ada\u200bEvil"],
     ["a number", 7],
     ["an object", { first_name: "Ada" }],
     ["nothing", undefined],
@@ -192,7 +192,7 @@ describe("checkSubmission: the fixed fields", () => {
 
   it("refuses company and department that are hostile when the event asks for them", () => {
     expect(refusals(envelopeOf({ company: "x".repeat(101) }))).toEqual({ company: SUBMIT_MESSAGES.company });
-    expect(refusals(envelopeOf({ department: "a‮b" }))).toEqual({ department: SUBMIT_MESSAGES.department });
+    expect(refusals(envelopeOf({ department: "a\u202eb" }))).toEqual({ department: SUBMIT_MESSAGES.department });
     expect(refusals(envelopeOf({ company: 3 }))).toEqual({ company: SUBMIT_MESSAGES.company });
   });
 });
@@ -352,7 +352,7 @@ describe("the sentences", () => {
       "Ünïcödé 🎉 marker",
       "line one\nline two marker",
       "x".repeat(2000),
-      "‮marker",
+      "\u202emarker",
       "'; DROP TABLE users; -- marker",
     ];
     const fixed = new Set<string>([
