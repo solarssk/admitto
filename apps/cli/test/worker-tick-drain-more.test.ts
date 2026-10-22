@@ -293,6 +293,49 @@ describe("runWorkerTick - the registration mail job", () => {
     expect(locks.release).toHaveBeenCalledWith("registration_mail");
   });
 
+  it("sends only while no other worker sends ticket mail: it holds the ticket mail lock for the drain and lets go of it", async () => {
+    const held: string[] = [];
+    const locks = {
+      ...fakeLocks(),
+      tryAcquire: vi.fn(async (job: string) => {
+        held.push(`+${job}`);
+        return true;
+      }),
+      release: vi.fn(async (job: string) => {
+        held.push(`-${job}`);
+      }),
+    };
+    drainRegistrationMails.mockImplementation(async () => {
+      held.push("drain");
+      return idleDrain;
+    });
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    // The registration job takes its own lock, then the ticket mail lock for the drain only, and lets both go.
+    const registration = held.slice(held.indexOf("+registration_mail"), held.indexOf("-registration_mail") + 1);
+    expect(registration).toEqual(["+registration_mail", "+mail_delivery", "drain", "-mail_delivery", "-registration_mail"]);
+  });
+
+  it("does not send, and cleans up all the same, while another worker holds the ticket mail lock", async () => {
+    const locks = {
+      ...fakeLocks(),
+      // The ticket job and the registration job both ask for it; another worker has it for the whole tick.
+      tryAcquire: vi.fn(async (job: string) => job !== "mail_delivery"),
+    };
+    sweepExpiredRegistrations.mockResolvedValue({ deleted: 2, eventIds: ["evt1"], more: false });
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(drainRegistrationMails).not.toHaveBeenCalled();
+    expect(sweepExpiredRegistrations).toHaveBeenCalledOnce();
+    expect(registrationLines().some((line) => line.includes("skipped (lock held)"))).toBe(true);
+    expect(registrationLines().some((line) => line.includes("ok claimed=0") && line.includes("expired=2"))).toBe(true);
+    // A lock it never got is not released, and its own lock is.
+    expect(locks.release).not.toHaveBeenCalledWith("mail_delivery");
+    expect(locks.release).toHaveBeenCalledWith("registration_mail");
+  });
+
   it("is skipped, with nothing read or deleted, while another worker holds its lock, and never releases a lock it did not get", async () => {
     const locks = { ...fakeLocks(), tryAcquire: vi.fn(async (job: string) => job !== "registration_mail") };
 

@@ -198,6 +198,33 @@ async function sweepExpiredRegistrationsOrLog(db: PrismaClient): Promise<SweepEx
   }
 }
 
+const NO_REGISTRATION_DRAIN = { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] };
+
+/**
+ * Runs the send of registration mail while no other worker sends ticket mail. The provider's rate limit is per mailer,
+ * so two workers sending at once, a second replica started by accident, would double the pace even though each worker
+ * runs its own two drains one after the other. The ticket mail lock, held here for the length of the drain, keeps them
+ * one at a time across workers. Gives null, having sent nothing, while another worker holds it.
+ */
+async function whileNoOtherWorkerSendsTickets<T>(locks: WorkerLockClient, run: () => Promise<T>): Promise<T | null> {
+  if (!(await locks.tryAcquire("mail_delivery"))) {
+    log("registration_mail", "skipped (lock held)");
+    return null;
+  }
+  try {
+    return await run();
+  } finally {
+    await locks.release("mail_delivery");
+  }
+}
+
+async function drainRegistrationMailsOfTheTick(db: PrismaClient) {
+  const baseUrl = await resolveWorkerBaseUrl(db, "registration_mail");
+  return baseUrl
+    ? await drainRegistrationMails(db, process.env, {}, { baseUrl, limit: DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT })
+    : NO_REGISTRATION_DRAIN;
+}
+
 /**
  * Guest registration mail (D-D1, D-D2): sends what a registration queued, hands `ticket` rows to the usual ticket
  * send, and deletes registrations that were never confirmed within 24 hours (the only automatic deletion of them).
@@ -216,10 +243,7 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
   }
   try {
     const expired = await sweepExpiredRegistrationsOrLog(db);
-    const baseUrl = await resolveWorkerBaseUrl(db, "registration_mail");
-    const drained = baseUrl
-      ? await drainRegistrationMails(db, process.env, {}, { baseUrl, limit: DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT })
-      : { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] };
+    const drained = (await whileNoOtherWorkerSendsTickets(locks, () => drainRegistrationMailsOfTheTick(db))) ?? NO_REGISTRATION_DRAIN;
     if (drained.claimed === 0 && expired.deleted === 0) {
       log("registration_mail", "idle");
       return false;
@@ -243,6 +267,7 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
  * mailer, would double the pace. Running it after the ticket drain, every tick and never skipped for a backlog of
  * tickets, keeps a bulk send from starving the confirmation mails, whose link expires after 24 hours, while a flood
  * of registrations cannot take the quota ticket mail needs (its own limit is 20 a tick, against 50 for tickets).
+ * Across workers the two take turns by the ticket mail lock (see whileNoOtherWorkerSendsTickets).
  *
  * @returns true when either drain filled its batch.
  */
