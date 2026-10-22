@@ -38,7 +38,7 @@ The field appears in supported attendee and import workflows with the label, typ
 - Select values must match an allowed option.
 - A field used by an event item cannot be deleted until that reference is removed.
 
-**Types of answer**
+### Types of answer
 
 | Type | The attendee enters | In the attendee form |
 |---|---|---|
@@ -52,7 +52,7 @@ The field appears in supported attendee and import workflows with the label, typ
 
 The registration form for guests asks the same types in its own way. See [Registration Form Fields](Registration-Form-Fields). The exact limits are in the [Validation Reference](Validation-Reference).
 
-**Format rules**
+### Format rules
 
 Text, long text and phone fields can limit what an answer looks like. Open **Format rules** in the field editor. All the rules are optional, and you never type a pattern.
 
@@ -69,7 +69,7 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 - The editor checks the rules before you save. It refuses a length above what the type holds (100 for text, 1000 for long text, 16 for a phone number), a shortest answer longer than the longest, and phone lengths that no number can meet. The line under the two length boxes says which.
 - Date, Date and time, Single choice and Yes / No fields take no format rules. When you change a field to one of them, its format rules are removed. An icon and a condition that the field has stay.
 
-**Icon, condition and suggestions**
+### Icon, condition and suggestions
 
 Under **Registration form** in the field editor, every field can have an icon and a condition. A Text field can also have suggestions. All three are optional, and none of them changes what an answer may be.
 
