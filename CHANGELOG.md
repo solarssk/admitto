@@ -22,6 +22,10 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add long text, date, date and time and phone questions to the registration form, with the field's rules as hints ([#1783](https://github.com/solarssk/admitto/pull/1783))
 - Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
+### Changed
+
+- Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, instead of one long column ([#1784](https://github.com/solarssk/admitto/pull/1784))
+
 ### Fixed
 
 - Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))

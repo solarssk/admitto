@@ -26,7 +26,7 @@ function LongTextInput({ field, value, disabled, onChange }: Readonly<CustomData
   const hint = answerHint(field);
   const describedBy = [hint ? `${fieldId}-hint` : null, `${fieldId}-count`].filter(Boolean).join(" ");
   return (
-    <div className="at-field">
+    <div className="at-field custom-data-field--wide">
       <label className="at-label" htmlFor={fieldId}>
         {customDataFieldLabel(field)}
       </label>

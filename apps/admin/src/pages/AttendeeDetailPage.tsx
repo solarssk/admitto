@@ -135,6 +135,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
 import "../attendees/attendees.css";
+import "../attendees/attendee-fields-grid.css";
 
 const TAB_IDS = ["overview", "activity", "notes"] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -3041,121 +3042,127 @@ export function AttendeeDetailPage() {
               className="attendee-form__fieldset-wrapper"
             >
               <fieldset className="attendee-form__fieldset" disabled={isEventArchived(event)}>
-                <div className="at-field">
-                  <label className="at-label" htmlFor="attendee-edit-rsvp-status">
-                    Attendance
-                  </label>
-                  <SearchableSelect
-                    id="attendee-edit-rsvp-status"
-                    label="Attendance"
-                    placeholder="Select attendance…"
-                    searchPlaceholder="Search attendance…"
-                    emptyLabel="No attendance options found"
-                    showLabel={false}
-                    value={form.rsvp_status}
-                    options={RSVP_STATUS_OPTIONS}
-                    onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                <div className="attendee-fields-grid">
+                  <div className="at-field attendee-fields-grid__full">
+                    <label className="at-label" htmlFor="attendee-edit-rsvp-status">
+                      Attendance
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-rsvp-status"
+                      label="Attendance"
+                      placeholder="Select attendance…"
+                      searchPlaceholder="Search attendance…"
+                      emptyLabel="No attendance options found"
+                      showLabel={false}
+                      value={form.rsvp_status}
+                      options={RSVP_STATUS_OPTIONS}
+                      onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                    />
+                  </div>
+                  <div className="attendee-fields-grid__full">
+                    <Input
+                      label="Email"
+                      type="text"
+                      inputMode="email"
+                      icon={<i className="ti ti-mail" aria-hidden="true" />}
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      required
+                      {...NO_AUTOFILL_PROPS}
+                    />
+                  </div>
+                  {emailChanged && (
+                    <Notice variant="warning" className="attendee-form__warn">
+                      This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                    </Notice>
+                  )}
+                  {emailConflict && (
+                    <Notice variant="error" role="alert" className="attendee-fields-grid__full">
+                      This email is already used by another attendee in this event. Use a different email address.
+                    </Notice>
+                  )}
+                  <Input
+                    label="First name"
+                    icon={<i className="ti ti-user" aria-hidden="true" />}
+                    value={form.first_name}
+                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                    required
+                    {...NO_AUTOFILL_PROPS}
                   />
+                  <Input
+                    label="Last name"
+                    icon={<i className="ti ti-user" aria-hidden="true" />}
+                    value={form.last_name}
+                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                    required
+                    {...NO_AUTOFILL_PROPS}
+                  />
+                  <Input
+                    label="Company"
+                    icon={<i className="ti ti-building" aria-hidden="true" />}
+                    value={form.company}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                  />
+                  <Input
+                    label="Department"
+                    icon={<i className="ti ti-sitemap" aria-hidden="true" />}
+                    value={form.department}
+                    onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  />
+                  <div className="at-field">
+                    <label className="at-label" htmlFor="attendee-edit-ticket-type">
+                      Ticket type
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-ticket-type"
+                      label="Ticket type"
+                      placeholder="Select ticket type…"
+                      searchPlaceholder="Search ticket types…"
+                      emptyLabel="No ticket types found"
+                      showLabel={false}
+                      value={form.ticket_type}
+                      options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
+                      onChange={(id) => setForm({ ...form, ticket_type: id })}
+                    />
+                  </div>
+                  {ticketTypesError && (
+                    <Notice
+                      variant="error"
+                      role="alert"
+                      className="attendee-fields-grid__full"
+                      actionBusy={ticketTypesRetry.busy}
+                      action={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          loading={ticketTypesRetry.busy}
+                          onClick={ticketTypesRetry.retry}
+                        >
+                          Retry
+                        </Button>
+                      }
+                    >
+                      {ticketTypesError}
+                    </Notice>
+                  )}
+                  {attributeFields.map((field) => (
+                    <CustomDataFieldInput
+                      key={field.source_field}
+                      field={field}
+                      eventTimeZone={event.timezone}
+                      value={form.customFields[field.source_field] ?? ""}
+                      disabled={saving || reloading || staleWrite}
+                      onChange={(next) =>
+                        setForm({
+                          ...form,
+                          customFields: { ...form.customFields, [field.source_field]: next },
+                        })
+                      }
+                    />
+                  ))}
+              
                 </div>
-                <Input
-                  label="Email"
-                  type="text"
-                  inputMode="email"
-                  icon={<i className="ti ti-mail" aria-hidden="true" />}
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                {emailChanged && (
-                  <Notice variant="warning" className="attendee-form__warn">
-                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                  </Notice>
-                )}
-                {emailConflict && (
-                  <Notice variant="error" role="alert">
-                    This email is already used by another attendee in this event. Use a different email address.
-                  </Notice>
-                )}
-                <Input
-                  label="First name"
-                  icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.first_name}
-                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                <Input
-                  label="Last name"
-                  icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.last_name}
-                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                <Input
-                  label="Company"
-                  icon={<i className="ti ti-building" aria-hidden="true" />}
-                  value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                />
-                <Input
-                  label="Department"
-                  icon={<i className="ti ti-sitemap" aria-hidden="true" />}
-                  value={form.department}
-                  onChange={(e) => setForm({ ...form, department: e.target.value })}
-                />
-                <div className="at-field">
-                  <label className="at-label" htmlFor="attendee-edit-ticket-type">
-                    Ticket type
-                  </label>
-                  <SearchableSelect
-                    id="attendee-edit-ticket-type"
-                    label="Ticket type"
-                    placeholder="Select ticket type…"
-                    searchPlaceholder="Search ticket types…"
-                    emptyLabel="No ticket types found"
-                    showLabel={false}
-                    value={form.ticket_type}
-                    options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
-                    onChange={(id) => setForm({ ...form, ticket_type: id })}
-                  />
-                </div>
-                {ticketTypesError && (
-                  <Notice
-                    variant="error"
-                    role="alert"
-                    actionBusy={ticketTypesRetry.busy}
-                    action={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        loading={ticketTypesRetry.busy}
-                        onClick={ticketTypesRetry.retry}
-                      >
-                        Retry
-                      </Button>
-                    }
-                  >
-                    {ticketTypesError}
-                  </Notice>
-                )}
-                {attributeFields.map((field) => (
-                  <CustomDataFieldInput
-                    key={field.source_field}
-                    field={field}
-                    eventTimeZone={event.timezone}
-                    value={form.customFields[field.source_field] ?? ""}
-                    disabled={saving || reloading || staleWrite}
-                    onChange={(next) =>
-                      setForm({
-                        ...form,
-                        customFields: { ...form.customFields, [field.source_field]: next },
-                      })
-                    }
-                  />
-                ))}
               </fieldset>
             </Tooltip>
             <div className="attendee-form__actions">

@@ -967,6 +967,20 @@ describe("AddAttendeeModal: the answer types of a custom field", () => {
     });
   });
 
+  it("lays the fields out in two columns, with the email and a long text across both", async () => {
+    await openWith(FIELDS);
+
+    const grid = document.querySelector(".add-attendee-modal__fields") as HTMLElement;
+    expect(grid.classList.contains("attendee-fields-grid")).toBe(true);
+    // The email is the one field of the top of the form that takes a whole row; the other short fields share rows.
+    const whole = grid.querySelector(".attendee-fields-grid__full") as HTMLElement;
+    expect(whole.contains(screen.getByLabelText("Email *"))).toBe(true);
+    expect(whole.contains(screen.getByLabelText("First name *"))).toBe(false);
+    // A long text takes a row for itself; a short answer does not.
+    expect(screen.getByLabelText("Abstract").closest(".at-field")?.classList.contains("custom-data-field--wide")).toBe(true);
+    expect(screen.getByLabelText("Postcode").closest(".at-field")?.classList.contains("custom-data-field--wide")).toBe(false);
+  });
+
   it("sends nothing for an answer left empty, of any of the types", async () => {
     mockCreateAttendee.mockResolvedValueOnce({} as never);
     await openWith(FIELDS);

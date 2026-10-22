@@ -19,6 +19,7 @@ import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import "./add-attendee-modal.css";
+import "./attendee-fields-grid.css";
 
 type AddAttendeeModalProps = {
   eventId: string;
@@ -48,7 +49,7 @@ function add409ErrorMessage(err: ApiError): string {
 /** The dialog's fields while they load: the five text fields and the ticket type, drawn over the (still invisible) real ones. */
 function FieldsSkeleton() {
   return (
-    <div className="add-attendee-modal__fields-skeleton">
+    <div className="add-attendee-modal__fields-skeleton attendee-fields-grid">
       {Array.from({ length: 6 }, (_, i) => (
         <div className="add-attendee-modal__skeleton-field" key={i}>
           <Skeleton variant="rect" width="28%" height={14} />
@@ -284,7 +285,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop />
-      <div ref={panelRef} className="add-attendee-modal__panel">
+      <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--w720">
       <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
@@ -338,24 +339,26 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
           </Notice>
         )}
         <div
-          className={`add-attendee-modal__fields ${fieldsHeld ? "at-loading-hold" : "at-fade-in"}`}
+          className={`add-attendee-modal__fields attendee-fields-grid ${fieldsHeld ? "at-loading-hold" : "at-fade-in"}`}
           aria-busy={fieldsHeld || undefined}
         >
           {fieldsHeld && fieldsGate.showIndicator && <FieldsSkeleton />}
-          <Input
-            label="Email *"
-            type="text"
-            inputMode="email"
-            required
-            icon={<i className="ti ti-mail" aria-hidden="true" />}
-            value={email}
-            disabled={submitting}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setError(null);
-            }}
-            {...NO_AUTOFILL_PROPS}
-          />
+          <div className="attendee-fields-grid__full">
+            <Input
+              label="Email *"
+              type="text"
+              inputMode="email"
+              required
+              icon={<i className="ti ti-mail" aria-hidden="true" />}
+              value={email}
+              disabled={submitting}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
+              {...NO_AUTOFILL_PROPS}
+            />
+          </div>
           <Input
             label="First name *"
             required
