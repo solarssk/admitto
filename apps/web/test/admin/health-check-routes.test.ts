@@ -493,6 +493,10 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
     eventRegistrationSettings: {
       count: vi.fn().mockResolvedValue(0),
     },
+    // Guest registration mail: an empty queue, so its row is "Queue empty" and leaves the overall verdict alone.
+    registrationMail: {
+      count: vi.fn().mockResolvedValue(0),
+    },
     // Batch form only: the wallet counts run as [count, count] in one transaction.
     $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
     ...overrides,
@@ -1335,6 +1339,123 @@ describe("collectAdminHealth", () => {
     const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
     expect(wallet?.status).toBe("degraded");
     expect(wallet?.summary).toBe("Could not evaluate wallet configuration");
+  });
+
+  describe("registration_mail row", () => {
+    async function registrationMailRow(registrationMail: { count: ReturnType<typeof vi.fn> }, now?: () => Date) {
+      collectSetupChecks.mockResolvedValue(okSetup);
+      collectGauges.mockResolvedValue({
+        email_deliveries_queued: 0,
+        email_deliveries_failed_retryable: 0,
+        bounce_ingest_enabled: 0,
+        bounce_ingest_problem: 0,
+      });
+      stubHappyPathMailAndIdp();
+      const report = await collectAdminHealth({
+        db: healthDb({ registrationMail }),
+        rateLimitStore: {} as never,
+        env: envWithUpload(),
+        ...(now ? { now } : {}),
+      });
+      const core = report.groups[0]!.checks;
+      return { report, core, row: core.find((c) => c.id === "registration_mail")! };
+    }
+
+    /** Answers the three counts the row asks for: waiting rows, failed rows that will be tried again, and failed rows that will not. */
+    const counts = (queued: number, failedRetryable: number, failedTerminal = 0) => ({
+      count: vi.fn(async ({ where }: { where: { status: string; retryable?: boolean } }) => {
+        if (where.status === "queued") return queued;
+        return where.retryable === false ? failedTerminal : failedRetryable;
+      }),
+    });
+
+    it("is an empty queue next to the ticket mail queue, and says nothing while nothing waits", async () => {
+      const { row, core, report } = await registrationMailRow(counts(0, 0));
+
+      expect(row).toMatchObject({ label: "Registration mail queue", status: "ok", summary: "Queue empty" });
+      expect(core.map((c) => c.id).slice(core.findIndex((c) => c.id === "mail_delivery_queue"))[1]).toBe("registration_mail");
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "queued", value: "0" },
+          { key: "failed_retryable", value: "0" },
+          { key: "failed_terminal", value: "0" },
+          { key: "degraded_threshold", value: String(MAIL_QUEUE_DEGRADED_THRESHOLD) },
+        ]),
+      );
+      expect(report.overall).toBe("ok");
+    });
+
+    it("counts the waiting rows, the failed rows that will be tried again, and the ones that failed for good in the last week", async () => {
+      const registrationMail = counts(3, 0);
+
+      const { row } = await registrationMailRow(registrationMail, () => new Date("2026-10-21T12:00:00.000Z"));
+
+      expect(row).toMatchObject({ status: "ok", summary: "Running · 3 queued" });
+      expect(registrationMail.count).toHaveBeenCalledTimes(3);
+      expect(registrationMail.count).toHaveBeenCalledWith({ where: { status: "queued" } });
+      expect(registrationMail.count).toHaveBeenCalledWith({ where: { status: "failed", retryable: true } });
+      expect(registrationMail.count).toHaveBeenCalledWith({
+        where: { status: "failed", retryable: false, updated_at: { gte: new Date("2026-10-14T12:00:00.000Z") } },
+      });
+    });
+
+    it("needs attention when a mail failed and will be tried again, even while others wait", async () => {
+      const { row, report } = await registrationMailRow(counts(4, 2));
+
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Needs attention · 4 queued · 2 retryable failures");
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("needs attention when a mail failed for good, even though the queue is empty: nothing else shows it", async () => {
+      const { row, report } = await registrationMailRow(counts(0, 0, 2));
+
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Queue empty · 2 failed, not retried");
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "failed_terminal", value: "2" }]));
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("names every kind of failure, and what is queued, when there are several", async () => {
+      expect((await registrationMailRow(counts(4, 0, 1))).row.summary).toBe("Needs attention · 4 queued · 1 failed, not retried");
+      expect((await registrationMailRow(counts(0, 2, 1))).row.summary).toBe("Queue empty · 2 retryable failures · 1 failed, not retried");
+      expect((await registrationMailRow(counts(4, 2, 1))).row.summary).toBe(
+        "Needs attention · 4 queued · 2 retryable failures · 1 failed, not retried",
+      );
+    });
+
+    it("keeps the failures that were not retried in the details of a queue that is falling behind", async () => {
+      const { row } = await registrationMailRow(counts(MAIL_QUEUE_DEGRADED_THRESHOLD, 0, 0));
+
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "failed_terminal", value: "0" }]));
+    });
+
+    it("falls behind at the queue depth where the ticket mail queue does", async () => {
+      const { row } = await registrationMailRow(counts(MAIL_QUEUE_DEGRADED_THRESHOLD, 0));
+
+      expect(row).toMatchObject({ status: "degraded", summary: `Falling behind · ${MAIL_QUEUE_DEGRADED_THRESHOLD} queued` });
+    });
+
+    it("says the depth could not be read when the counts fail, and does not fail the report", async () => {
+      const { row, report } = await registrationMailRow({ count: vi.fn().mockRejectedValue(new Error("db down")) });
+
+      expect(row).toMatchObject({ status: "degraded", summary: "Could not read queue depth" });
+      expect(row.details).not.toEqual(expect.arrayContaining([expect.objectContaining({ key: "queued" })]));
+      expect(report.groups.map((group) => group.id)).toEqual(["core", "external"]);
+    });
+
+    it("holds counts and nothing else: no address and no text of an error", async () => {
+      const { row } = await registrationMailRow(counts(1, 1));
+
+      expect(row.details.map((detail) => detail.key)).toEqual([
+        "status",
+        "queued",
+        "failed_retryable",
+        "failed_terminal",
+        "degraded_threshold",
+        "last_checked",
+      ]);
+    });
   });
 
   describe("registration_captcha row", () => {

@@ -18,7 +18,7 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 
 | Placeholder | Notes |
 |-------------|-------|
-| `first_name`, `last_name`, `full_name`, `email` | Attendee |
+| `first_name`, `last_name`, `full_name`, `email` | Attendee. In a registration mail the three names stay empty until the guest has confirmed the address or staff have decided about the registration ([System templates](#system-templates-registration-mails)) |
 | `ticket_type` | The attendee's ticket type label (from the event's ticket-type catalog) |
 | `event_hours` | Event hours range with the time zone abbreviation, for example "10:00 - 17:00 CEST"; empty when the event has no hours |
 | `event_name`, `event_date`, `event_location`, `event_address`, `directions_text`, `accessibility_text` | Event location text; `event_location` is the venue name |
@@ -43,7 +43,22 @@ URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in 
 `SYSTEM_TEMPLATE_NAMES` lists the mails a guest gets before an attendee exists: `registration-confirm`, `registration-received`, `registration-waitlist`, `registration-rejected`. Each has an English built-in default; an organizer's override is an ordinary `MailTemplate` row under the same name. `ticket` is not one of them: it stays the one template ticket delivery sends.
 
 - Ask `isSystemTemplateName(name)`, not a literal. A system row is flagged `is_system` in the template list, is not counted toward the ten-template cap, is refused by bulk send (422) and does not block permanent event deletion. `isReservedTemplateName` also covers `ticket`, for a free template's name.
-- A system template cannot use `ticket_url`, `qr_image_url`, `apple_wallet_url`, `google_wallet_url` or `download_page_url` (`SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS`). `setMailTemplate` and `createMailTemplate` apply it through `disallowedPlaceholdersForTemplate(name)`; the admin routes pass the same set to template validation.
+- The body of `registration-confirm` must hold `{{confirm_url}}` (`requiredPlaceholdersForTemplate`, checked by the admin routes with `findMissingRequiredPlaceholders`): a confirmation mail without its link is of no use to the guest. A stored template that lost it fails its queue row for good when the worker renders it.
+- A system template cannot use `ticket_url`, `qr_image_url`, `apple_wallet_url`, `google_wallet_url`, `download_page_url` or `ticket_type` (`SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS`). `setMailTemplate` and `createMailTemplate` apply it through `disallowedPlaceholdersForTemplate(name)`; the admin routes pass the same set to template validation.
+
+What the worker fills in when it sends a registration mail (`drainRegistrationMails` in `@admitto/mail-delivery`):
+
+| Placeholder | Value |
+|---|---|
+| `event_name`, `event_date`, `event_hours`, `event_location` and the other place and map placeholders, `logo_url`, `header_image_url`, the event's image tokens | As in every other mail |
+| `contact_name`, `contact_email`, `contact_line` | `resolveEventContactVars` |
+| `confirm_url` | `registration-confirm` only: the signed link of the registration. Empty in the other three |
+| `email` | The address the mail goes to |
+| `first_name`, `last_name`, `full_name` | The guest's names **only when the address is theirs**: `email_verified_at` is set, or staff decided about the registration (`decided_by`). Before that they are empty |
+| `ticket_url`, `qr_image_url`, the wallet links, `download_page_url`, `ticket_type` | Always empty, and refused when a template is saved. A template that already holds `{{ticket_url}}` fails its own queue row for good, and the other rows go on |
+
+- Until an address is confirmed, anyone can type any text for any address. So an unconfirmed guest's names never reach a subject or a body, even from an edited template. The built-in mails greet with "Hello," for that reason. Write an edited greeting so that it reads well without a name.
+- A registration mail is rendered with `renderTemplate`, the full placeholder check, at the moment it is sent, from the template as it is then. A template that cannot be rendered fails that one row.
 
 ## Template formats
 

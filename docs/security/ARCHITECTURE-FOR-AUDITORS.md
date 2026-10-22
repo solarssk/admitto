@@ -75,7 +75,7 @@ The application and background worker are separate processes from the same conta
 0042), not the same process under different threads.
 
 - Only the application accepts inbound HTTP traffic. The worker has no listening port and is not reachable from the edge.
-- The worker runs scheduled and queued jobs against the same database: mail delivery drain, bounce ingest, attendee import commit, export jobs, wallet sync and the event-wide wallet jobs, wallet pass expiry, and retention purges.
+- The worker runs scheduled and queued jobs against the same database: mail delivery drain, guest registration mail (and the deletion of guest registrations that are not confirmed within 24 hours), bounce ingest, attendee import commit, export jobs, wallet sync and the event-wide wallet jobs, wallet pass expiry, and retention purges.
 - It coordinates through PostgreSQL: session advisory locks so each job class runs once at a time, and LISTEN/NOTIFY wake-ups when work is queued.
 - It also coordinates, best effort, through Redis: pub/sub so a worker-driven change reflects live in an open admin session without a refresh, and the shared pacing of PassCreator calls.
 

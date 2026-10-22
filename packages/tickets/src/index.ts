@@ -33,7 +33,8 @@ export {
   stopOpenAttendeeJobs,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
-export { lockRegistrationQueue, tryLockRegistrationQueue } from "./registration-lock.js";
+export { lockRegistrationQueue, lockRegistrationsForUpdate, tryLockRegistrationQueue } from "./registration-lock.js";
+export type { LockedRegistration } from "./registration-lock.js";
 export type {
   RemoveAttendeesParams,
   RemoveAttendeesResult,
@@ -136,6 +137,26 @@ export {
   registrantTextSchema,
 } from "./registrant-input.js";
 export type { RegistrantFormField, RegistrantProfileFields } from "./registrant-input.js";
+export {
+  MAX_REGISTRATION_BULK_IDS,
+  REGISTRATION_AGE_FILTERS,
+  REGISTRATION_SEARCH_MAX_LENGTH,
+  REGISTRATION_SEARCH_MAX_WORDS,
+  canRetryRegistrationMail,
+  isRegistrationAgeFilter,
+  isRegistrationStatus,
+  parseRegistrationFilter,
+  parseRegistrationSearch,
+  registrationAgeCutoff,
+  registrationListWhere,
+} from "./registration-list.js";
+export type {
+  RegistrationAgeFilter,
+  RegistrationFilterField,
+  RegistrationFilterInput,
+  RegistrationFilterResult,
+  RegistrationListFilter,
+} from "./registration-list.js";
 export {
   RESERVED_CUSTOM_DATA_SOURCE_FIELDS,
   isReservedCustomDataSourceField,
@@ -286,5 +307,40 @@ export type {
 } from "./types.js";
 export type { EventOpsConfig } from "./ops-config.js";
 
-export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "./event-capacity.js";
+export {
+  acquireEventCapacityLock,
+  eventCapacityLockKey,
+  EVENT_CAPACITY_TRANSACTION_OPTIONS,
+  EventLockBusyError,
+  runEventCapacityTransaction,
+  tryAcquireEventCapacityLock,
+} from "./event-capacity.js";
+export type { EventCapacityTransactionOptions } from "./event-capacity.js";
+export { runPublicWrite } from "./public-write-gate.js";
+export type { PublicWriteOptions, PublicWriteResult } from "./public-write-gate.js";
+export { enqueueRegistrationMail, enqueueRegistrationMails, registrationMailFor } from "./registration-mail-queue.js";
+export type { RegistrationMailEntry, RegistrationMailMoment } from "./registration-mail-queue.js";
+export { seatsNeeded } from "./registration-seats.js";
+export type { PlacedStatus } from "./registration-seats.js";
+export { createAttendeeFromRegistration } from "./registration-attendee.js";
+export type { RegistrationAttendeeSource } from "./registration-attendee.js";
+export { REGISTRATION_CONFIRM_WINDOW_MS, confirmRegistrationAddress, placeRegistration } from "./registration-placement.js";
+export type {
+  ConfirmRegistrationInput,
+  ConfirmRegistrationResult,
+  PlaceRegistrationInput,
+  PlaceRegistrationResult,
+  PlacementOptions,
+  RegistrantSubmission,
+} from "./registration-placement.js";
+export { admitRegistrations, rejectRegistrations } from "./registration-decisions.js";
+export type {
+  AdmitOutcome,
+  AdmitRegistrationsParams,
+  AdmitRegistrationsResult,
+  RejectOutcome,
+  RejectRegistrationsParams,
+  RejectRegistrationsResult,
+  StaffActor,
+} from "./registration-decisions.js";
 export { activeAttendeeWhere, countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "./event-seats.js";

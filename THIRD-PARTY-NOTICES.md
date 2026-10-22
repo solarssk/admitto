@@ -57,3 +57,9 @@ This file is informational. Prefer package-local license files in `node_modules`
 - Packages: `sanitize-html` and the packages it brings: `htmlparser2` with `domhandler`, `domutils`, `dom-serializer`, `domelementtype` and `entities`, plus `launder` (with `dayjs`), `parse-srcset`, `is-plain-object`, `escape-string-regexp` and `postcss`
 - License: MIT for `sanitize-html`, `htmlparser2`, `dom-serializer`, `launder`, `dayjs`, `parse-srcset`, `is-plain-object`, `escape-string-regexp` and `postcss`; BSD-2-Clause for `domhandler`, `domutils`, `domelementtype` and `entities`
 - Notes: Cleans the HTML of an event's legal texts on the server when an admin saves them (`apps/web/src/legal/sanitize-legal-html.ts`). It runs in the production image and is not part of the admin app's bundle. Retain the packages' own `LICENSE` files when redistributing.
+
+## Tiptap and ProseMirror
+
+- Packages: `@tiptap/core`, `@tiptap/react`, `@tiptap/pm`, the Tiptap extensions the editor uses (`@tiptap/extension-document`, `-paragraph`, `-text`, `-heading`, `-bold`, `-list`, `-link` and `@tiptap/extensions`) and the packages they bring: the `prosemirror-*` packages with `orderedmap` and `rope-sequence`, `linkifyjs` and `fast-equals`; `@tiptap/extension-bubble-menu` and `@tiptap/extension-floating-menu` come with `@tiptap/react` as optional packages and are not imported
+- License: MIT
+- Notes: The visual editor of an event's legal texts (headings, bold, lists and links), read only when a text is opened (`apps/admin/src/registration/LegalHtmlEditor.tsx`) and bundled unmodified into the served admin SPA. Retain the packages' own `LICENSE` files when redistributing.

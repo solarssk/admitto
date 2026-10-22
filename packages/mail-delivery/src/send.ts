@@ -46,6 +46,12 @@ export interface SendTicketEmailsOptions {
   /** MailTemplate row id; falls back to event/org ticket template when omitted. */
   templateId?: string;
   purpose?: "initial" | "resend";
+  /**
+   * A send that nobody asked for by hand (the registration mail drain handing a ticket over). An initial send to an
+   * attendee whose ticket is out already is skipped (`already_sent`), never turned into a resend: that fallback is for an
+   * explicit action of staff only.
+   */
+  automated?: boolean;
   /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
   recipientEmail?: string;
   /** Resolved public instance URL (env BASE_URL or DB instance_url). */
@@ -516,7 +522,8 @@ export async function deliverPendingBatch(mailer: MailerAdapter, pending: Pendin
  * Skips individual attendees on not_issuable, token/link build errors, or an in-flight duplicate
  * — does not abort the batch. purpose:"initial" against an attendee who already had a successful
  * ticket when the request began falls back to a resend rather than skipping, since that only
- * happens on an explicit send action (e.g. checkbox selection), not an automated sweep. A ticket
+ * happens on an explicit send action (e.g. checkbox selection), not an automated send (`automated`
+ * skips such an attendee instead). A ticket
  * that another request completes after this one began is a concurrent duplicate and is skipped.
  */
 export async function sendTicketEmails(
@@ -535,9 +542,9 @@ export async function sendTicketEmails(
     throw new Error("recipientEmail requires exactly one attendeeId");
   }
 
-  // The first await on purpose (see loadAttendeesWithCompletedInitial); only an initial send needs it.
+  // The first await on purpose (see loadAttendeesWithCompletedInitial); only an explicit initial send needs it.
   const completedBeforeRequest =
-    purpose === "initial"
+    purpose === "initial" && options.automated !== true
       ? await loadAttendeesWithCompletedInitial(prisma, eventId, options.attendeeIds)
       : new Set<string>();
 

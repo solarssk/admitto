@@ -21,6 +21,7 @@
 - [Importing Attendees](Importing-Attendees)
 - [Ticket Types](Ticket-Types)
 - [Custom Attendee Fields](Custom-Attendee-Fields)
+- [Legal Texts and Consents](Legal-Texts-and-Consents)
 
 **Requirements and Fulfilment**
 

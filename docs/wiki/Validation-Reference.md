@@ -136,13 +136,13 @@ See [Identity and SSO](Identity-and-SSO) and [Cloudflare Access - Identity Linki
 | Field | Requirement |
 |---|---|
 | First name, last name | Required, up to 100 characters each |
-| Email | Required, a real-looking address, up to 254 characters |
+| Email | Required, a real-looking address, up to 254 characters. It is saved in lower case: `Jan@Example.com` becomes `jan@example.com` |
 | Company, department | Optional, up to 200 characters each |
 | Ticket type | Must exist in the event's current ticket-type catalog. This is checked again at the moment you save, in case the type was deleted in the meantime |
 
 | Rule | What you'll see |
 |---|---|
-| An attendee's email must be unique within the event | "This email is already registered for this event." |
+| An attendee's email must be unique within the event. Capital letters do not make a different address | "This email is already registered for this event." |
 | Adding a new attendee also checks the event's capacity limit. Once the event is full, the Attendees page's **Add attendee** button is disabled with a tooltip that shows the same count, so you normally see this before you open the form | "Event is at capacity ({current}/{capacity}). Free a slot or increase capacity before adding this attendee." |
 | If two staff members edit the same attendee at once, the second save is rejected instead of silently overwriting the first change | "Someone else changed this record. Reload and try again." |
 

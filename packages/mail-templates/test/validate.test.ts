@@ -23,4 +23,11 @@ describe("findMissingRequiredPlaceholders", () => {
       findMissingRequiredPlaceholders("Subject", "<a href=\"{{ticket_url}}\">Ticket</a>"),
     ).toEqual(["qr_image_url"]);
   });
+
+  it("checks the placeholders it is given instead of the ticket's", () => {
+    const confirm = new Set(["confirm_url"]);
+    expect(findMissingRequiredPlaceholders("", "<p>Hello</p>", confirm)).toEqual(["confirm_url"]);
+    expect(findMissingRequiredPlaceholders("", "<a href=\"{{confirm_url}}\">Confirm</a>", confirm)).toEqual([]);
+    expect(findMissingRequiredPlaceholders("Subject", "<p>Hello</p>", new Set())).toEqual([]);
+  });
 });

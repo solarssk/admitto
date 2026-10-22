@@ -125,6 +125,42 @@ function mailDeliveryQueueGuidance(check: HealthCheckRowDto): HealthCheckGuidanc
   return null;
 }
 
+/** Only reached for a degraded row. The guest waits for these emails (the confirmation link, the notice that a
+ * registration arrived), and an unconfirmed registration is deleted after 24 hours. A mail the worker gave up on
+ * comes first: it needs a person, where the others sort themselves out. */
+function registrationMailGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  if (check.status !== "degraded") return null;
+  const failedTerminal = Number(detailValue(check, "failed_terminal"));
+  if (Number.isFinite(failedTerminal) && failedTerminal > 0) {
+    return {
+      cause: "The mail service refused some registration emails, or their text could not be used, and the worker has stopped trying them.",
+      impact:
+        "Those guests did not receive their email. Without the confirmation link a registration cannot be confirmed, and it is deleted after 24 hours.",
+      nextStep: "Check that Email sending works and that the registration email texts are valid, then contact the guests or ask them to register again.",
+    };
+  }
+  const failedRetryable = Number(detailValue(check, "failed_retryable"));
+  if (Number.isFinite(failedRetryable) && failedRetryable > 0) {
+    return {
+      cause: "The mail service did not accept some registration emails, or could not be reached.",
+      impact:
+        "Some guests have not received their registration email yet, and a confirmation link stops working after 24 hours. The worker retries automatically, a limited number of times.",
+      nextStep: "If the number does not go down, check that the worker is running and that Email sending works.",
+    };
+  }
+  const queued = Number(detailValue(check, "queued"));
+  const threshold = Number(detailValue(check, "degraded_threshold"));
+  if (Number.isFinite(queued) && Number.isFinite(threshold) && queued >= threshold) {
+    return {
+      cause: "More registration emails were queued than the worker has sent so far.",
+      impact:
+        "Guests are waiting for their emails, and a confirmation link stops working after 24 hours. This is normal right after many people registered at once.",
+      nextStep: "If the number does not go down, check the Background worker, Email sending and Instance URL rows.",
+    };
+  }
+  return null;
+}
+
 function emailSendingGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
   if (check.status === "down" && detailValue(check, "live_check") === "failed") {
     return {
@@ -391,6 +427,7 @@ const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheck
   ["data_encryption", dataEncryptionGuidance],
   ["background_worker", backgroundWorkerGuidance],
   ["mail_delivery_queue", mailDeliveryQueueGuidance],
+  ["registration_mail", registrationMailGuidance],
   ["email_sending", emailSendingGuidance],
   ["cloudflare_access", cloudflareAccessGuidance],
   ["registration_captcha", registrationCaptchaGuidance],
@@ -438,9 +475,10 @@ export function healthCheckGuidance(check: HealthCheckRowDto): HealthCheckGuidan
   if (check.status === "degraded") {
     // mail_delivery_queue's own "could not read queue depth" state has no reason key at all -
     // it signals the same failure with a missing `queued` detail instead (health-check-routes.ts
-    // mailQueueRow(), the `queued < 0` branch). mailDeliveryQueueGuidance() above already
-    // returned non-null for every other degraded state, all of which set `queued`.
-    if (check.id === "mail_delivery_queue" && detailValue(check, "queued") === undefined) {
+    // mailQueueRow(), the `queued < 0` branch), and so does registration_mail, which uses the same
+    // row. The guidance above already returned non-null for every other degraded state, all of
+    // which set `queued`.
+    if ((check.id === "mail_delivery_queue" || check.id === "registration_mail") && detailValue(check, "queued") === undefined) {
       return LOOKUP_FAILED_GUIDANCE;
     }
   }
