@@ -131,9 +131,11 @@ export {
   buildRegistrantCustomData,
   normalizeRegistrantLongText,
   normalizeRegistrantText,
+  pickRegistrantFormFields,
   pickRegistrantProfileFields,
   registrantEmailSchema,
   registrantNameSchema,
+  registrantRawLimit,
   registrantTextSchema,
 } from "./registrant-input.js";
 export type { RegistrantFormField, RegistrantProfileFields } from "./registrant-input.js";

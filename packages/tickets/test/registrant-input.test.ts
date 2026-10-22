@@ -6,15 +6,32 @@ import {
   buildRegistrantCustomData,
   normalizeRegistrantLongText,
   normalizeRegistrantText,
+  pickRegistrantFormFields,
   pickRegistrantProfileFields,
   registrantEmailSchema,
   registrantNameSchema,
+  registrantRawLimit,
   registrantTextSchema,
   type RegistrantFormField,
 } from "../src/registrant-input.js";
 
 const LONE_HIGH = "ab\uD800cd";
 const LONE_LOW = "ab\uDC00cd";
+
+describe("registrantRawLimit", () => {
+  it("is 1000 for a text of up to 500 characters and twice the limit above that", () => {
+    expect(registrantRawLimit(100)).toBe(1000);
+    expect(registrantRawLimit(254)).toBe(1000);
+    expect(registrantRawLimit(500)).toBe(1000);
+    expect(registrantRawLimit(600)).toBe(1200);
+  });
+
+  it("is exactly how much raw text normalizeRegistrantText looks at", () => {
+    const limit = registrantRawLimit(100);
+    expect(normalizeRegistrantText(`${" ".repeat(limit - 100)}${"x".repeat(100)}`, 100)).toBe("x".repeat(100));
+    expect(normalizeRegistrantText(`${" ".repeat(limit - 99)}${"x".repeat(100)}`, 100)).toBeNull();
+  });
+});
 
 describe("registrantNameSchema", () => {
   it("trims, composes to NFC and keeps ordinary names (accents, apostrophes, non-Latin)", () => {
@@ -176,6 +193,36 @@ const FIELDS: RegistrantFormField[] = [
   field({ source_field: "plus_one_diet", applies_to: "companion" }),
   field({ source_field: "company" }),
 ];
+
+describe("pickRegistrantFormFields", () => {
+  it("is the fields on the form for a guest, in their order, without a fixed column's name", () => {
+    expect(pickRegistrantFormFields(FIELDS).map((f) => f.source_field)).toEqual(["diet", "size", "parking"]);
+  });
+
+  it("is the companion's fields for a companion", () => {
+    expect(pickRegistrantFormFields(FIELDS, "companion").map((f) => f.source_field)).toEqual(["plus_one_diet"]);
+  });
+
+  it("keeps what the field carries, the organiser's note too, and hands back a new array", () => {
+    const withNote = [field({ source_field: "diet", description: "Allergies, please." })];
+    const picked = pickRegistrantFormFields(withNote);
+    expect(picked).toEqual(withNote);
+    expect(picked).not.toBe(withNote);
+    expect(picked[0]).toBe(withNote[0]);
+  });
+
+  it("names exactly the answers buildRegistrantCustomData reads, so the form cannot ask what the server drops", () => {
+    const answerTo = { text: "x", select: "S", boolean: "true" } as const;
+    const everything = Object.fromEntries(FIELDS.map((f) => [f.source_field, answerTo[f.type ?? "text"]]));
+    const kept = Object.keys(buildRegistrantCustomData(FIELDS, everything) ?? {});
+    expect(kept.sort()).toEqual(pickRegistrantFormFields(FIELDS).map((f) => f.source_field).sort());
+  });
+
+  it("never offers a prototype key or the name of a fixed column, and keeps a question called like a form control", () => {
+    const risky = ["__proto__", "constructor", "prototype", "email", "first_name", "department", "terms", "consents"].map((source_field) => field({ source_field }));
+    expect(pickRegistrantFormFields(risky).map((f) => f.source_field)).toEqual(["terms", "consents"]);
+  });
+});
 
 describe("buildRegistrantCustomData", () => {
   it("keeps answers to form fields and nothing else", () => {

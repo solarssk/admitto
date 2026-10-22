@@ -275,6 +275,7 @@ import {
 import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
+import { handleGetRegistrationForm } from "./registration/form-routes.js";
 import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
@@ -3150,6 +3151,19 @@ export function createApp(options: CreateAppOptions = {}) {
     c.header("X-Robots-Tag", "noindex, nofollow");
     return c.body(new Uint8Array(result.png), 200);
   });
+
+  // The guest registration form of an event (D-C2: the public link, with the Turnstile challenge).
+  // Silent until an event turns registration on: an unknown slug, registration off, an archived
+  // event, a method other than the link (the password and the company sign-in answer the same
+  // 404 until 111 and 118) and an event that is not ready all answer one 404, byte for byte. Its
+  // own budget per visitor (`registration:page`), shared with /legal. POST /r/:slug is 95c.
+  app.get("/r/:slug", rateLimit(rateLimitStore, "registration:page"), (c) =>
+    handleGetRegistrationForm(c, {
+      db,
+      loadTheme: loadOptionalBrandingTheme,
+      serverError: (ctx) => renderPublicHtmlError(ctx, 500),
+    }),
+  );
 
   // A published legal text. Anything else (no such event, no such text, a draft, a ref that is not
   // one) is the same 404, byte for byte, so the response does not say which events exist or what

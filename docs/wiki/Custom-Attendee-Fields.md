@@ -57,6 +57,10 @@ The field appears in supported attendee and import workflows with the label, typ
 - The registration form asks a guest only for the fields that are set to appear on it. A field that was created before the registration form is not on it.
 - A guest cannot answer a field that is not on the form. For that reason, once an event accepts registrations, a field cannot be **Required** and also left off the form. Admitto refuses to save that combination. Put the field on the form, or clear **Required**.
 - An event that does not accept registrations is not affected.
+- The label is the question the guest reads, so write it as a question. The description is shown under the field as a hint.
+- A **Text** field is a box for a short answer of up to 100 characters. A **Select** field is a list, and the guest picks one option.
+- An optional **Yes/No** field is a checkbox. A guest who leaves it unticked sends no answer, so Admitto does not record a "No". A **Required** Yes/No field is a list of Yes and No instead, because the guest has to answer.
+- A guest cannot send the form until every **Required** field is answered.
 
 ## What changes after this action
 

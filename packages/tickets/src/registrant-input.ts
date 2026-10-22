@@ -22,12 +22,13 @@ export const REGISTRANT_TEXT_MAX = EVENT_CUSTOM_FIELD_TEXT_MAX;
 export const REGISTRANT_LONG_TEXT_MAX = EVENT_CUSTOM_FIELD_LONG_TEXT_MAX;
 /** Longest raw string looked at before any normalisation, for a text of up to 500 characters:
  * hostile input is refused outright instead of being walked, normalised and then rejected. A text
- * that may be longer gets twice its own limit (see rawLimit). */
+ * that may be longer gets twice its own limit (see registrantRawLimit). */
 const REGISTRANT_RAW_MAX = 1000;
 
 /** Longest raw string looked at for a text that may hold `max` characters: REGISTRANT_RAW_MAX, or
- * twice `max` when that is more (a character is at most two UTF-16 units). */
-function rawLimit(max: number): number {
+ * twice `max` when that is more (a character is at most two UTF-16 units). Public for a form's `maxlength`: the
+ * browser counts UTF-16 units of the raw text, so this is the one cap that never blocks an answer the server takes. */
+export function registrantRawLimit(max: number): number {
   return Math.max(REGISTRANT_RAW_MAX, max * 2);
 }
 
@@ -99,7 +100,7 @@ function hasForbiddenCharacter(value: string, allowLineBreak: boolean): boolean 
 }
 
 function cleanRegistrantText(raw: unknown, max: number, allowLineBreaks: boolean): string | null {
-  if (typeof raw !== "string" || raw.length > rawLimit(max)) return null;
+  if (typeof raw !== "string" || raw.length > registrantRawLimit(max)) return null;
   // A line break of any kind becomes one `\n` first, so a CRLF is counted and kept as one.
   const text = allowLineBreaks ? raw.replaceAll(/\r\n?/g, "\n") : raw;
   // Checked before normalising: NFC leaves a lone surrogate or a control character as it was, and
@@ -187,11 +188,26 @@ export const registrantEmailSchema = z
 
 /** A custom field as the public form sees it: the registry row plus the two columns that decide
  * whether an anonymous registrant may answer it. `applies_to` is absent until companions exist and
- * then means `guest`. */
+ * then means `guest`. `description` is the organiser's note shown under the question; absent when
+ * the field has none. */
 export type RegistrantFormField = EventItemContent & {
   show_on_form: boolean;
   applies_to?: "guest" | "companion";
+  description?: string;
 };
+
+/** The fields a registrant is asked: those on the form (`show_on_form`) for `appliesTo`, without the
+ * names of the fixed columns. The form draws exactly these and {@link buildRegistrantCustomData}
+ * reads exactly these, so what a guest sees is what the server accepts. */
+export function pickRegistrantFormFields<T extends RegistrantFormField>(
+  fields: readonly T[],
+  appliesTo: "guest" | "companion" = "guest",
+): T[] {
+  // company and department are fixed fields now, never custom_data (see pickRegistrantProfileFields).
+  return filterCustomDataAttributeFields(
+    fields.filter((field) => field.show_on_form && (field.applies_to ?? "guest") === appliesTo),
+  );
+}
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -247,10 +263,7 @@ export function buildRegistrantCustomData(
     throw new RegistrantInputError();
   }
 
-  // company and department are fixed fields now, never custom_data (see pickRegistrantProfileFields).
-  const onForm = filterCustomDataAttributeFields(
-    fields.filter((field) => field.show_on_form && (field.applies_to ?? "guest") === appliesTo),
-  );
+  const onForm = pickRegistrantFormFields(fields, appliesTo);
   const answers: Record<string, unknown> = {};
   for (const field of onForm) {
     const answer = input ? answerFor(field, ownValue(input, field.source_field)) : undefined;
