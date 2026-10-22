@@ -16,7 +16,7 @@
  * The questions are drawn by type. {@link QUESTION_RENDERERS} is the one place that knows which
  * types the page can draw: a new type of answer is added there and in {@link FormQuestionType}.
  */
-import { REGISTRANT_EMAIL_MAX, REGISTRANT_NAME_MAX, REGISTRANT_TEXT_MAX } from "@admitto/tickets";
+import { REGISTRANT_EMAIL_MAX, REGISTRANT_NAME_MAX, REGISTRANT_TEXT_MAX, registrantRawLimit } from "@admitto/tickets";
 import { esc } from "../ticket-page.js";
 import {
   ERROR_KEY_CHALLENGE,
@@ -89,13 +89,13 @@ interface TextFieldSpec {
 }
 
 /**
- * The `maxlength` of a text input. The browser counts the UTF-16 units of what is typed, while the server counts the
- * characters (code points) of the trimmed, composed text, so a value equal to the server's limit would stop a valid
- * answer of 100 emoji at 50 and let leading spaces eat the allowance. Twice the limit never blocks a valid answer and
- * still stops a huge paste; the server holds the exact limit. An address keeps its own limit: it is plain ASCII.
+ * The `maxlength` of a text input: the longest raw text the server looks at (`registrantRawLimit`). The browser counts the
+ * UTF-16 units of what is typed, while the server counts the characters (code points) of the trimmed, composed text, so a
+ * smaller cap would block some answer the server takes (100 emoji, a name with spaces around it). The exact limit is the
+ * server's, which answers on the field; the cap only stops a huge paste.
  */
 function nativeMaxLength(spec: TextFieldSpec): number {
-  return spec.kind === "email" ? spec.maxLength : spec.maxLength * 2;
+  return registrantRawLimit(spec.maxLength);
 }
 
 function renderTextField(spec: TextFieldSpec): string {

@@ -1,3 +1,4 @@
+import { REGISTRANT_EMAIL_MAX, REGISTRANT_NAME_MAX, REGISTRANT_TEXT_MAX, normalizeRegistrantText, registrantRawLimit } from "@admitto/tickets";
 import { describe, expect, it } from "vitest";
 import { botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
@@ -106,15 +107,27 @@ describe("the organiser's questions", () => {
   it("shows a question's note under its field, and gives a text question the product's input", () => {
     const plate = doc.querySelector("[data-custom=plate]");
     expect(textOf(plate.querySelector(".reg-slot__hint"))).toBe("The venue uses it at the gate.");
-    // The browser counts UTF-16 units, the server characters: twice the limit never refuses a valid answer of 100 emoji.
-    expect(plate.querySelector("input.at-input")?.getAttribute("maxlength")).toBe("200");
+    // The browser counts UTF-16 units of the raw text, the server characters of the trimmed text: the cap is the server's raw limit.
+    expect(plate.querySelector("input.at-input")?.getAttribute("maxlength")).toBe(String(registrantRawLimit(REGISTRANT_TEXT_MAX)));
   });
 
-  it("stops a name at twice its limit in the browser and an address at its own, the server holds the exact limits", () => {
+  it("caps every text input at the longest raw text the server looks at, the server holds the exact limits", () => {
     const doc2 = documentOf(render());
-    expect(doc2.querySelector("input[name=first_name]")?.getAttribute("maxlength")).toBe("200");
-    expect(doc2.querySelector("input[name=last_name]")?.getAttribute("maxlength")).toBe("200");
-    expect(doc2.querySelector("input[name=email]")?.getAttribute("maxlength")).toBe("254");
+    expect(doc2.querySelector("input[name=first_name]")?.getAttribute("maxlength")).toBe(String(registrantRawLimit(REGISTRANT_NAME_MAX)));
+    expect(doc2.querySelector("input[name=last_name]")?.getAttribute("maxlength")).toBe(String(registrantRawLimit(REGISTRANT_NAME_MAX)));
+    expect(doc2.querySelector("input[name=email]")?.getAttribute("maxlength")).toBe(String(registrantRawLimit(REGISTRANT_EMAIL_MAX)));
+  });
+
+  it("does not block an answer padded with spaces that the server takes", () => {
+    const doc2 = documentOf(render());
+    const padded = (max: number) => `${" ".repeat(150)}${"x".repeat(max)}`;
+    const capOf = (name: string) => Number(doc2.querySelector(`input[name=${name}]`)?.getAttribute("maxlength"));
+    // The server trims the padding off and takes the 100 characters (and the 254 of an address)...
+    expect(normalizeRegistrantText(padded(REGISTRANT_NAME_MAX), REGISTRANT_NAME_MAX)).toBe("x".repeat(REGISTRANT_NAME_MAX));
+    expect(normalizeRegistrantText(padded(REGISTRANT_EMAIL_MAX), REGISTRANT_EMAIL_MAX)).toBe("x".repeat(REGISTRANT_EMAIL_MAX));
+    // ... so the browser must let the whole padded text be typed.
+    expect(padded(REGISTRANT_NAME_MAX).length).toBeLessThanOrEqual(capOf("first_name"));
+    expect(padded(REGISTRANT_EMAIL_MAX).length).toBeLessThanOrEqual(capOf("email"));
   });
 
   it("has no section when the event asks nothing more", () => {

@@ -10,12 +10,28 @@ import {
   pickRegistrantProfileFields,
   registrantEmailSchema,
   registrantNameSchema,
+  registrantRawLimit,
   registrantTextSchema,
   type RegistrantFormField,
 } from "../src/registrant-input.js";
 
 const LONE_HIGH = "ab\uD800cd";
 const LONE_LOW = "ab\uDC00cd";
+
+describe("registrantRawLimit", () => {
+  it("is 1000 for a text of up to 500 characters and twice the limit above that", () => {
+    expect(registrantRawLimit(100)).toBe(1000);
+    expect(registrantRawLimit(254)).toBe(1000);
+    expect(registrantRawLimit(500)).toBe(1000);
+    expect(registrantRawLimit(600)).toBe(1200);
+  });
+
+  it("is exactly how much raw text normalizeRegistrantText looks at", () => {
+    const limit = registrantRawLimit(100);
+    expect(normalizeRegistrantText(`${" ".repeat(limit - 100)}${"x".repeat(100)}`, 100)).toBe("x".repeat(100));
+    expect(normalizeRegistrantText(`${" ".repeat(limit - 99)}${"x".repeat(100)}`, 100)).toBeNull();
+  });
+});
 
 describe("registrantNameSchema", () => {
   it("trims, composes to NFC and keeps ordinary names (accents, apostrophes, non-Latin)", () => {
