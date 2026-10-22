@@ -14,9 +14,22 @@
  * described by its slot (`aria-describedby`), which is how a screen reader hears the error.
  *
  * The questions are drawn by type. {@link QUESTION_RENDERERS} is the one place that knows which
- * types the page can draw: a new type of answer is added there and in {@link FormQuestionType}.
+ * types the page can draw: a new type of answer is added there (and to `EVENT_CUSTOM_FIELD_TYPES`).
+ *
+ * The format rules of a question (`rules`) are hints here and nothing more: a length, "digits only"
+ * and an example are printed in the question's message slot, and "digits only" sets `inputmode` for a
+ * numeric keypad. There is no `pattern`, `minlength`, `min` or `max` on any control, because a browser
+ * rule would block a send in a way the server does not; the server is the one judge of an answer.
+ * A control's `maxlength` is the longest raw text the server looks at, never less.
  */
-import { REGISTRANT_EMAIL_MAX, REGISTRANT_NAME_MAX, REGISTRANT_TEXT_MAX, registrantRawLimit } from "@admitto/tickets";
+import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
+import {
+  REGISTRANT_EMAIL_MAX,
+  REGISTRANT_LONG_TEXT_MAX,
+  REGISTRANT_NAME_MAX,
+  REGISTRANT_TEXT_MAX,
+  registrantRawLimit,
+} from "@admitto/tickets";
 import { esc } from "../ticket-page.js";
 import {
   ERROR_KEY_CHALLENGE,
@@ -32,8 +45,8 @@ import { checkTick, icon, type GuestIcon } from "./form-icons.js";
 import type { FormConsent, FormQuestion, RegistrationFormModel } from "./form-model.js";
 import { botChallengeCData } from "./bot-challenge.js";
 
-/** The kinds of answer the page can draw. */
-export type FormQuestionType = "text" | "select" | "boolean";
+/** The kinds of answer the page can draw: the types a custom field can have. */
+export type FormQuestionType = EventCustomFieldType;
 
 type Attribute = readonly [name: string, value: string | true | undefined];
 
@@ -74,13 +87,20 @@ function fieldAttrs(errorKey: string, kind: string, required: boolean, message: 
 interface TextFieldSpec {
   id: string;
   errorKey: string;
-  kind: "name" | "email" | "text";
+  kind: "name" | "email" | "text" | "phone" | "date" | "datetime";
   label: string;
   required: boolean;
+  /** What to say when the field is required and empty. */
   message: string;
+  /** What to say when the answer is not one: a date or time the browser cannot read, or an answer the server refused.
+   * Absent: the page shows the message the server sends for the field. Always a text the page wrote itself. */
+  invalid?: string;
   note: string | null;
-  maxLength: number;
-  inputType?: "text" | "email";
+  /** The longest answer in characters, as the server counts them. Absent for a date or a time, whose control has no length. */
+  maxLength?: number;
+  inputType?: "text" | "email" | "tel" | "date" | "datetime-local";
+  /** `numeric` for an answer that is digits only. */
+  inputMode?: "numeric";
   autocomplete?: string;
   placeholder?: string;
   leadingIcon?: GuestIcon;
@@ -94,17 +114,17 @@ interface TextFieldSpec {
  * smaller cap would block some answer the server takes (100 emoji, a name with spaces around it). The exact limit is the
  * server's, which answers on the field; the cap only stops a huge paste.
  */
-function nativeMaxLength(spec: TextFieldSpec): number {
-  return registrantRawLimit(spec.maxLength);
+function nativeMaxLength(spec: TextFieldSpec): string | undefined {
+  return spec.maxLength === undefined ? undefined : String(registrantRawLimit(spec.maxLength));
 }
 
 function renderTextField(spec: TextFieldSpec): string {
   const input = `<input class="at-input" id="${spec.id}" name="${spec.id.slice(2)}"${attrs([
     ["type", spec.inputType ?? "text"],
     ["autocomplete", spec.autocomplete ?? "off"],
-    ["maxlength", String(nativeMaxLength(spec))],
+    ["maxlength", nativeMaxLength(spec)],
     ["placeholder", spec.placeholder],
-    ["inputmode", spec.inputType === "email" ? "email" : undefined],
+    ["inputmode", spec.inputMode ?? (spec.inputType === "email" ? "email" : undefined)],
     ["autocapitalize", spec.inputType === "email" ? "none" : undefined],
     ["spellcheck", spec.inputType === "email" ? "false" : undefined],
     ["required", spec.required ? true : undefined],
@@ -114,7 +134,10 @@ function renderTextField(spec: TextFieldSpec): string {
   const control = spec.leadingIcon
     ? `<div class="at-inputgroup">${icon(spec.leadingIcon, "ic at-inputgroup__icon")}${input}</div>`
     : `<div class="at-control">${input}</div>`;
-  const wrapper = fieldAttrs(spec.errorKey, spec.kind, spec.required, spec.message, [["data-custom", spec.answerKey]]);
+  const wrapper = fieldAttrs(spec.errorKey, spec.kind, spec.required, spec.message, [
+    ["data-custom", spec.answerKey],
+    ["data-invalid", spec.invalid],
+  ]);
   return `<div class="at-field"${wrapper}>${labelOf(spec.id, spec.label, spec.required)}${control}${slot(spec.id, spec.note)}</div>`;
 }
 
@@ -165,17 +188,134 @@ function questionKeyAttrs(question: FormQuestion, kind: string, message: string 
   return fieldAttrs(customDataErrorKey(question.key), kind, question.required, message, [["data-custom", question.key]]);
 }
 
-function renderTextQuestion(question: FormQuestion, id: string): string {
+/** What the renderers know about the event besides the question. */
+export interface QuestionContext {
+  /** The IANA time zone the event's clock times are in. */
+  timeZone: string;
+}
+
+type QuestionRenderer = (question: FormQuestion, id: string, context: QuestionContext) => string;
+
+/** "1 digit", "6 digits". */
+function countOf(count: number, unit: "digit" | "character"): string {
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
+/** What the length rules and "digits only" ask for, in words ("3 to 6 digits"), or null when they ask for nothing. */
+function lengthClause(rules: EventCustomFieldRules): string | null {
+  const unit = rules.digits_only ? "digit" : "character";
+  const { min_length: min, max_length: max } = rules;
+  if (min !== undefined && max !== undefined) return min === max ? `exactly ${countOf(min, unit)}` : `${min} to ${countOf(max, unit)}`;
+  if (min !== undefined) return `at least ${countOf(min, unit)}`;
+  if (max !== undefined) return `up to ${countOf(max, unit)}`;
+  return rules.digits_only ? "digits only" : null;
+}
+
+/** The rules of a question as a hint, or null when there is nothing to say. Only a hint: the server decides. */
+function rulesHint(rules: EventCustomFieldRules | null): string | null {
+  if (!rules) return null;
+  const length = lengthClause(rules);
+  const parts: string[] = [];
+  if (length) parts.push(`${length.charAt(0).toUpperCase()}${length.slice(1)}.`);
+  if (rules.example) parts.push(`For example: ${rules.example}`);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/** The note under a question: the organiser's own words, then what its rules ask, then anything its type adds. */
+function questionNote(question: FormQuestion, ...more: readonly string[]): string | null {
+  const lines = [question.description, rulesHint(question.rules), ...more].filter((line): line is string => Boolean(line));
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/** A numeric keypad for an answer that is digits only. */
+function inputModeOf(question: FormQuestion): "numeric" | undefined {
+  return question.rules?.digits_only ? "numeric" : undefined;
+}
+
+/**
+ * What the page says when a long text, a date, a time or a phone number is not accepted: when the browser
+ * cannot read a date or time, and when the server refuses the answer. It is the page's own sentence and
+ * the server's text for the field is not shown, so nothing a response carries reaches the page. Absent for
+ * the other types, which show the message the server sends.
+ */
+function invalidMessage(question: FormQuestion): string | undefined {
+  const clause = question.rules ? lengthClause(question.rules) : null;
+  switch (question.type) {
+    case "long_text": {
+      const limit = clause ?? "up to " + countOf(REGISTRANT_LONG_TEXT_MAX, "character");
+      return `Check your answer. Use ${limit}.`;
+    }
+    case "date":
+      return "Enter a valid date.";
+    case "datetime":
+      return "Enter a valid date and time.";
+    case "phone":
+      return clause ? `Enter a valid phone number. Use ${clause}.` : "Enter a valid phone number.";
+    default:
+      return undefined;
+  }
+}
+
+/** A one-line control for a question: the spec of a fixed field, filled in from the question. */
+function questionField(question: FormQuestion, id: string, own: Pick<TextFieldSpec, "kind" | "message"> & Partial<TextFieldSpec>): string {
   return renderTextField({
     id,
     errorKey: customDataErrorKey(question.key),
-    kind: "text",
     label: question.label,
     required: question.required,
-    message: "Answer this question.",
-    note: question.description,
-    maxLength: REGISTRANT_TEXT_MAX,
+    note: questionNote(question),
+    inputMode: inputModeOf(question),
     answerKey: question.key,
+    ...own,
+  });
+}
+
+function renderTextQuestion(question: FormQuestion, id: string): string {
+  return questionField(question, id, { kind: "text", message: "Answer this question.", maxLength: REGISTRANT_TEXT_MAX });
+}
+
+/** A long text is a box of several lines. Line breaks are kept; the server counts the characters. */
+function renderLongTextQuestion(question: FormQuestion, id: string): string {
+  const textarea = `<textarea class="at-textarea" id="${id}" name="${id.slice(2)}"${attrs([
+    ["rows", "4"],
+    ["maxlength", String(registrantRawLimit(REGISTRANT_LONG_TEXT_MAX))],
+    ["inputmode", inputModeOf(question)],
+    ["required", question.required ? true : undefined],
+    ["aria-describedby", `m-${id}`],
+    ["data-control", true],
+  ])}></textarea>`;
+  const wrapper = fieldAttrs(customDataErrorKey(question.key), "longtext", question.required, "Answer this question.", [
+    ["data-custom", question.key],
+    ["data-invalid", invalidMessage(question)],
+  ]);
+  return `<div class="at-field"${wrapper}>${labelOf(id, question.label, question.required)}${textarea}${slot(id, questionNote(question))}</div>`;
+}
+
+/** A date is the browser's own date control, which gives `YYYY-MM-DD`. */
+function renderDateQuestion(question: FormQuestion, id: string): string {
+  return questionField(question, id, { kind: "date", message: "Enter a date.", invalid: invalidMessage(question), inputType: "date" });
+}
+
+/** A date and time is the browser's own control, which gives `YYYY-MM-DDTHH:mm` with no zone. The answer is
+ * read as the clock of the event, so the note names the event's time zone. */
+function renderDateTimeQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
+  return questionField(question, id, {
+    kind: "datetime",
+    message: "Enter a date and time.",
+    invalid: invalidMessage(question),
+    inputType: "datetime-local",
+    note: questionNote(question, `Time in the event's time zone (${context.timeZone}).`),
+  });
+}
+
+/** A phone number is typed freely; the server accepts spaces, dashes, dots, brackets and a leading + and keeps the digits. */
+function renderPhoneQuestion(question: FormQuestion, id: string): string {
+  return questionField(question, id, {
+    kind: "phone",
+    message: "Enter a phone number.",
+    invalid: invalidMessage(question),
+    maxLength: REGISTRANT_TEXT_MAX,
+    inputType: "tel",
   });
 }
 
@@ -209,11 +349,12 @@ function renderBooleanQuestion(question: FormQuestion, id: string): string {
 }
 
 /** How to draw each kind of question. A kind that is not here is not drawn (see `canDrawQuestion`). */
-const QUESTION_RENDERERS: ReadonlyMap<FormQuestionType, (question: FormQuestion, id: string) => string> = new Map<
-  FormQuestionType,
-  (question: FormQuestion, id: string) => string
->([
+const QUESTION_RENDERERS: ReadonlyMap<FormQuestionType, QuestionRenderer> = new Map<FormQuestionType, QuestionRenderer>([
   ["text", renderTextQuestion],
+  ["long_text", renderLongTextQuestion],
+  ["date", renderDateQuestion],
+  ["datetime", renderDateTimeQuestion],
+  ["phone", renderPhoneQuestion],
   ["select", renderSelectQuestion],
   ["boolean", renderBooleanQuestion],
 ]);
@@ -230,7 +371,7 @@ function isOptionRow(question: FormQuestion): boolean {
 }
 
 /** The "Additional details" section: the organiser's questions, in their order. Empty without questions. */
-export function renderQuestions(questions: readonly FormQuestion[]): string {
+export function renderQuestions(questions: readonly FormQuestion[], context: QuestionContext): string {
   if (questions.length === 0) return "";
   const parts: string[] = [];
   let run: string[] = [];
@@ -241,7 +382,7 @@ export function renderQuestions(questions: readonly FormQuestion[]): string {
   questions.forEach((question, index) => {
     const draw = QUESTION_RENDERERS.get(question.type);
     if (!draw) return;
-    const html = draw(question, `f-q${index}`);
+    const html = draw(question, `f-q${index}`, context);
     if (isOptionRow(question)) {
       run.push(html);
       return;

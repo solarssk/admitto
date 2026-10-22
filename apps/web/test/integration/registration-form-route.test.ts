@@ -261,16 +261,70 @@ describe("the organiser's questions", () => {
 
   it("does not draw a question of a kind it cannot draw, and refuses the form when that question is required", async () => {
     const optional = await addEvent("reg94b-unknown-optional", { settings: { mode: "approval" } });
-    await addField(optional, { source_field: "later", label: "A kind not built yet", type: "long_text" });
+    await addField(optional, { source_field: "later", label: "A kind not built yet", type: "multi_select" });
     await addField(optional, { source_field: "plain", label: "A plain question" });
     const doc = documentOf(await (await get("/r/reg94b-unknown-optional")).text());
     expect([...doc.querySelectorAll("[data-custom]")].map((el: Dom) => el.getAttribute("data-custom"))).toEqual(["plain"]);
 
     const required = await addEvent("reg94b-unknown-required", { settings: { mode: "approval" } });
-    await addField(required, { source_field: "later", label: "A kind not built yet", type: "long_text", required: true });
+    await addField(required, { source_field: "later", label: "A kind not built yet", type: "multi_select", required: true });
     const res = await get("/r/reg94b-unknown-required");
     expect(res.status).toBe(404);
     expect(await res.text()).toBe(renderRegistrationNotFound(false).html);
+  });
+
+  it("opens a form whose required questions are a long text, a date, a date and time and a phone number, and draws them in the saved order", async () => {
+    const id = await addEvent("reg113c-kinds", { settings: { mode: "approval" } });
+    await addField(id, { source_field: "extension", label: "Desk extension", type: "phone", required: true, display_order: 3, rules: { digits_only: true, min_length: 3, max_length: 6, example: "1234" } });
+    await addField(id, { source_field: "why", label: "Why do you attend?", type: "long_text", required: true, display_order: 0, description: "A few lines.", rules: { min_length: 20, max_length: 500 } });
+    await addField(id, { source_field: "flight", label: "Departure flight", type: "datetime", required: true, display_order: 2 });
+    await addField(id, { source_field: "checkin", label: "Check-in date", type: "date", required: true, display_order: 1 });
+    const res = await get("/r/reg113c-kinds");
+    expect(res.status).toBe(200);
+    const doc = documentOf(await res.text());
+    expect([...doc.querySelectorAll("[data-custom]")].map((el: Dom) => el.getAttribute("data-custom"))).toEqual(["why", "checkin", "flight", "extension"]);
+    const control = (key: string) => doc.querySelector(`[data-custom=${key}] [data-control]`);
+    expect(control("why").tagName).toBe("TEXTAREA");
+    expect(control("checkin").getAttribute("type")).toBe("date");
+    expect(control("flight").getAttribute("type")).toBe("datetime-local");
+    expect(control("extension").getAttribute("type")).toBe("tel");
+    expect(control("extension").getAttribute("inputmode")).toBe("numeric");
+    for (const key of ["why", "checkin", "flight", "extension"]) expect(control(key).hasAttribute("required"), key).toBe(true);
+    const hint = (key: string) => doc.querySelector(`[data-custom=${key}] .reg-slot__hint`)?.textContent;
+    expect(hint("why")).toBe("A few lines.\n20 to 500 characters.");
+    expect(hint("flight")).toBe("Time in the event's time zone (Europe/Warsaw).");
+    expect(hint("checkin")).toBeUndefined();
+    expect(hint("extension")).toBe("3 to 6 digits. For example: 1234");
+    expect(doc.querySelector("[data-custom=extension]").getAttribute("data-invalid")).toBe("Enter a valid phone number. Use 3 to 6 digits.");
+  });
+
+  it("shows no rule a type does not take, and none that cannot be read, and still draws the question", async () => {
+    const id = await addEvent("reg113c-rules", { settings: { mode: "approval" } });
+    await addField(id, { source_field: "day", label: "A date", type: "date", display_order: 0, rules: { digits_only: true, example: "never shown" } });
+    await addField(id, { source_field: "broken", label: "A phone", type: "phone", display_order: 1, rules: { nothing_like_a_rule: 5 } });
+    await addField(id, { source_field: "none", label: "A long text", type: "long_text", display_order: 2 });
+    const doc = documentOf(await (await get("/r/reg113c-rules")).text());
+    expect([...doc.querySelectorAll("[data-custom]")].map((el: Dom) => el.getAttribute("data-custom"))).toEqual(["day", "broken", "none"]);
+    expect(doc.body.textContent).not.toContain("never shown");
+    expect(doc.querySelectorAll("[data-custom] .reg-slot__hint")).toHaveLength(0);
+    expect(doc.querySelectorAll("[data-custom] [inputmode]")).toHaveLength(0);
+  });
+
+  it("prints the organiser's note and example as text, never as markup", async () => {
+    const payload = '<img src=x onerror=alert(1)>"\'</style></script>';
+    const id = await addEvent("reg113c-xss", { settings: { mode: "approval" } });
+    await addField(id, { source_field: "mobile", label: payload, type: "phone", display_order: 0, description: payload, rules: { example: payload } });
+    await addField(id, { source_field: "when", label: payload, type: "datetime", display_order: 1 });
+    const res = await get("/r/reg113c-xss");
+    const html = await res.text();
+    const doc = documentOf(html);
+    expect(res.status).toBe(200);
+    expect(doc.querySelectorAll("script")).toHaveLength(2);
+    expect(doc.querySelectorAll("[onerror], [onload]")).toHaveLength(0);
+    expect(html).not.toContain("<img src=x onerror");
+    expect(doc.querySelector("[data-custom=mobile] .reg-slot__hint").textContent).toBe(`${payload}\nFor example: ${payload}`);
+    expect(doc.querySelector("[data-custom=when] .reg-slot__hint").textContent).toBe("Time in the event's time zone (Europe/Warsaw).");
+    expect(doc.querySelector("[data-custom=when] .at-label").textContent).toBe(payload);
   });
 
   it("refuses an event whose slug is not in the shape the create-event form allows, however ready it is", async () => {

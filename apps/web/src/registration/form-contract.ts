@@ -15,6 +15,9 @@
  * - `400` or `422` with `{ errors: { <field>: <message> } }`: the page shows each message under its
  *   field, focuses the first one and keeps what the guest typed. The fields are named by
  *   {@link RegistrationSubmitErrorKey} and {@link customDataErrorKey}. A message is shown as text.
+ *   For the answer to a long text, a date, a date and time or a phone number only the key counts: the
+ *   page says a sentence of its own for it (the field carries it as `data-invalid`) and ignores the
+ *   message, so nothing the server sends for those fields reaches the page.
  * - `429` or `503`: the page says "Try again in a moment." Any other status gets a general message.
  */
 
@@ -27,9 +30,13 @@ export interface RegistrationSubmitBody {
   company?: string;
   /** Only when the event asks for it (`ask_department`). */
   department?: string;
-  /** Answers to the questions on the form, by the field's `source_field`. Every value is a string
-   * (`"true"` for a ticked Yes/No question). A question the guest did not answer is not in the
-   * object, and the object is left out when there is none. */
+  /** Answers to the questions on the form, by the field's `source_field`. Every value is a string,
+   * trimmed at both ends: `"true"` for a ticked Yes/No question; a long text with its line breaks as
+   * `\n`; a date as `YYYY-MM-DD`; a date and time as `YYYY-MM-DDTHH:mm`, a clock time with no zone that
+   * the server reads in the event's time zone; a phone number as the guest typed it (the server keeps
+   * an optional `+` and the digits). A question the guest did not answer is not in the object, and the
+   * object is left out when there is none. The page checks that a required question has an answer and
+   * that a date or time is complete, and no format or rule of a question: the server judges every answer. */
   custom_data?: Record<string, string>;
   /** Always `true`: the page does not send a form whose terms are not accepted. */
   terms: boolean;

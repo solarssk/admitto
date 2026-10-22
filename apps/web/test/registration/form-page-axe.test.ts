@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
-import { closedModel, formModel } from "../helpers/registration-form-fixtures.js";
+import { closedModel, formModel, requiredNewKinds } from "../helpers/registration-form-fixtures.js";
 
 // axe-core checks the markup of the page the way an audit tool does: labels, ARIA attributes and
 // their targets, landmarks, headings, duplicate ids. jsdom has no layout, so the colour contrast
@@ -75,6 +75,36 @@ describe("axe-core finds nothing to report", () => {
     fillValid(window);
     window.document.getElementById("reg-submit").click();
     await vi.waitFor(() => expect(window.document.querySelectorAll(".has-error")).toHaveLength(2), { timeout: 4000, interval: 10 });
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("on a form whose long text, date, time and phone questions are required, with every one of them left empty", async () => {
+    const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }));
+    window.document.getElementById("reg-submit").click();
+    for (const id of ["f-q0", "f-q1", "f-q2", "f-q3"]) expect(window.document.getElementById(id).getAttribute("aria-invalid"), id).toBe("true");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("on a form whose newer questions the server refused, with the page's own sentences under them", async () => {
+    const errors = { "custom_data.why": "x", "custom_data.checkin": "x", "custom_data.flight": "x", "custom_data.extension": "x" };
+    const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }), {
+      status: 422,
+      body: { errors },
+    });
+    const set = (id: string, value: string) => {
+      window.document.getElementById(id).value = value;
+    };
+    set("f-first_name", "Anna");
+    set("f-last_name", "Kowalska");
+    set("f-email", "anna.kowalska@contoso.example");
+    set("f-q0", "A reason of more than twenty characters");
+    set("f-q1", "2027-05-13");
+    set("f-q2", "2027-05-15T07:45");
+    set("f-q3", "12");
+    window.document.getElementById("f-terms").checked = true;
+    window.admittoTurnstileDone("token");
+    window.document.getElementById("reg-submit").click();
+    await vi.waitFor(() => expect(window.document.querySelectorAll(".has-error")).toHaveLength(4), { timeout: 4000, interval: 10 });
     expect(await violations(window)).toEqual([]);
   });
 
