@@ -15,6 +15,22 @@
   }
 }
 
+/* A phone number: the country picker keeps its width and the number takes the rest of the row, as in the staff phone fields
+   (.overview-contact-modal__phone-row). */
+.custom-data-field__phone-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.custom-data-field__phone-row > .phone-country-select {
+  flex: 0 0 8.5rem;
+}
+
+.custom-data-field__phone-row > .at-field:not(.phone-country-select) {
+  flex: 1;
+  min-width: 0;
+}
+
 /* The hint (what the field asks for) on the left and the count on the right of one line. With no hint, the count is still at the
    right. When both do not fit, the hint wraps in its own column and the count keeps its width. */
 .custom-data-field__meta {

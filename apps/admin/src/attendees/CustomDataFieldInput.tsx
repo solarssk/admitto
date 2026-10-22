@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { CONTACT_PHONE_MAX_LENGTH, sanitizeContactPhoneInput } from "@admitto/shared";
 import { Input, type InputProps } from "@admitto/ui";
 import { DatePicker } from "../components/DatePicker.js";
+import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { TimeInput } from "../components/TimeInput.js";
+import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
+import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 import { answerHint, codePointLength, joinDateTime, longTextLimit, splitDateTime } from "./answerFormat.js";
 import { customDataFieldLabel, type CustomDataFieldDef } from "./customData.js";
 import "./custom-data-field-input.css";
@@ -85,6 +89,61 @@ function DateTimeInput({ field, value, disabled, onChange, eventTimeZone }: Read
         />
       </div>
       {hint ? <span className="at-hint">{hint}</span> : null}
+    </div>
+  );
+}
+
+/** A phone number, in the picker the staff phone fields use: a country code with its flag, and the number beside it. The answer is
+ * still one value, the code and the digits (`+48600100200`). With no code picked the number is typed whole, and may start with a +. */
+function PhoneInput({ field, value, disabled, onChange }: Readonly<CustomDataFieldInputProps>) {
+  const fieldId = `custom-field-${field.source_field}`;
+  const hint = answerHint(field);
+  // What was typed stays as typed: the answer holds only the digits, and is empty while a code is picked and no number is.
+  const [typed, setTyped] = useState(() => ({ ...splitPhoneForPicker(value), answer: value }));
+  // An answer the form changed (cleared, or another attendee's) takes the place of what was typed.
+  if (value !== typed.answer) setTyped({ ...splitPhoneForPicker(value), answer: value });
+  const change = (dialCode: string, nationalNumber: string): void => {
+    const answer = composePhoneE164(dialCode, nationalNumber);
+    setTyped({ dialCode, nationalNumber, answer });
+    onChange(answer);
+  };
+  return (
+    <div className="at-field">
+      <label className="at-label" htmlFor={fieldId}>
+        {customDataFieldLabel(field)}
+      </label>
+      <div className="custom-data-field__phone-row">
+        <PhoneCountrySelect
+          id={`${fieldId}-country`}
+          label={`${field.label} country code`}
+          value={typed.dialCode}
+          disabled={disabled}
+          // The picker supplies the country code, so a typed "+" has no place in the number.
+          onChange={(code) => change(code, sanitizeContactPhoneInput(typed.nationalNumber, !code))}
+        />
+        <Input
+          id={fieldId}
+          type="tel"
+          inputMode="tel"
+          maxLength={CONTACT_PHONE_MAX_LENGTH}
+          value={typed.nationalNumber}
+          disabled={disabled}
+          required={field.required}
+          aria-describedby={hint ? `${fieldId}-hint` : undefined}
+          onChange={(e) => {
+            // A number typed or pasted with its country code sets the picker, instead of becoming a second code after the one picked.
+            const text = sanitizeContactPhoneInput(e.target.value, true);
+            const next = text.startsWith("+") ? splitPhoneForPicker(text) : { dialCode: typed.dialCode, nationalNumber: text };
+            change(next.dialCode, next.nationalNumber);
+          }}
+          {...NO_AUTOFILL_PROPS}
+        />
+      </div>
+      {hint ? (
+        <span id={`${fieldId}-hint`} className="at-hint">
+          {hint}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -177,6 +236,8 @@ export function CustomDataFieldInput(props: Readonly<CustomDataFieldInputProps>)
 
   if (type === "long_text") return <LongTextInput {...props} />;
   if (type === "datetime") return <DateTimeInput {...props} />;
+  // A field that asks for digits only has no + to take a country code, so it keeps the plain line.
+  if (type === "phone" && !field.rules?.digits_only) return <PhoneInput {...props} />;
   if (type === "date") {
     return (
       <DatePicker

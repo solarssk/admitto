@@ -938,7 +938,7 @@ describe("AddAttendeeModal: the answer types of a custom field", () => {
     expect(screen.getByText("Digits only, exactly 5 characters, for example 01234.")).toBeTruthy();
   });
 
-  it("sends every answer in the form the API takes: the long text as typed, a date, a date and time and a postcode as the server stores them, a phone number as typed", async () => {
+  it("sends every answer in the form the API takes: the long text as typed, a date, a date and time and a postcode as the server stores them, a phone number as its code and its digits", async () => {
     mockCreateAttendee.mockResolvedValueOnce({} as never);
     await openWith(FIELDS);
     fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "Line one\nLine two" } });
@@ -961,7 +961,7 @@ describe("AddAttendeeModal: the answer types of a custom field", () => {
         abstract: "Line one\nLine two",
         arrival_day: "2026-11-04",
         arrival: "2026-11-05T10:30",
-        mobile: "+1 555 0100",
+        mobile: "+15550100",
         postcode: "01234",
       },
     });

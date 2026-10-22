@@ -45,7 +45,7 @@ The field appears in supported attendee and import workflows with the label, typ
 | Long text | A longer answer, up to 1000 characters, line breaks included | A box of several lines, with a count of the characters |
 | Date | A calendar day | The date picker |
 | Date and time | A day and a time of day. It is the time on the clock at the event, in the event's time zone | The date picker and a time field, with the time zone named under them |
-| Phone | A phone number of 3 to 15 digits | A telephone field that takes digits, spaces, dashes, dots, brackets and a leading + |
+| Phone | A phone number of 3 to 15 digits | A country picker (flag and dialling code) and a telephone field beside it. With **Digits only** set, the telephone field alone |
 | Single choice | One of the options you list | A list |
 | Yes / No | Yes or no | A list of Yes and No |
 
@@ -64,6 +64,7 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 
 - A length counts characters as a person sees them. An emoji is one character.
 - A phone number is counted the way Admitto saves it: an optional + and the digits. **Digits only** refuses a number that starts with +.
+- In the attendee form, a phone number pasted with its country code, such as +48 601 200 300, sets the country picker and fills the number box.
 - The editor checks the rules before you save. It refuses a length above what the type holds (100 for text, 1000 for long text, 16 for a phone number), a shortest answer longer than the longest, and phone lengths that no number can meet. The line under the two length boxes says which.
 - Date, Date and time, Single choice and Yes / No fields take no rules. When you change a field to one of them, its rules are removed.
 

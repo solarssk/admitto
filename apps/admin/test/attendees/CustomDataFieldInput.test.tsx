@@ -264,9 +264,15 @@ describe("CustomDataFieldInput: date and time", () => {
 describe("CustomDataFieldInput: phone", () => {
   const mobile = { type: "phone" as const, label: "Mobile", source_field: "mobile" };
   const box = () => screen.getByLabelText("Mobile") as HTMLInputElement;
+  const picker = () => screen.getByRole("button", { name: /^Mobile country code/ }) as HTMLButtonElement;
+  const pick = (country: string) => {
+    fireEvent.click(picker());
+    fireEvent.click(screen.getByRole("button", { name: country }));
+  };
 
-  it("is a telephone box, named by its label, with what a number is under it", () => {
+  it("is the picker of the staff phone fields and a telephone box beside it, with what a number is under it", () => {
     renderInput(mobile);
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, no code selected");
     expect(box().type).toBe("tel");
     expect(box().inputMode).toBe("tel");
     expect(box().autocomplete).toBe("off");
@@ -274,27 +280,84 @@ describe("CustomDataFieldInput: phone", () => {
     expect(screen.getByText("A phone number with 3 to 15 digits.")).toBeTruthy();
   });
 
+  it("answers with the code and the digits of the number once a country is picked, and shows the number as it was typed", () => {
+    const onChange = renderInput(mobile);
+    pick("Poland +48");
+    expect(onChange).toHaveBeenLastCalledWith("");
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, Poland +48");
+    fireEvent.change(box(), { target: { value: "600 100-200" } });
+    expect(onChange).toHaveBeenLastCalledWith("+48600100200");
+    expect(box().value).toBe("600 100-200");
+  });
+
+  it("opens on a saved number split into its code and the rest", () => {
+    renderInput(mobile, "+48600100200");
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, Poland +48");
+    expect(box().value).toBe("600100200");
+  });
+
+  it("keeps a saved number that has no code whole in the number box", () => {
+    renderInput(mobile, "600100200");
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, no code selected");
+    expect(box().value).toBe("600100200");
+  });
+
   it("takes only what a number is written with: letters are dropped, and a + only at the start", () => {
     const onChange = renderInput(mobile);
-    fireEvent.change(box(), { target: { value: "+48 (600) 100-200 ext" } });
-    expect(onChange).toHaveBeenLastCalledWith("+48 (600) 100-200 ");
     fireEvent.change(box(), { target: { value: "ab12" } });
     expect(onChange).toHaveBeenLastCalledWith("12");
-    fireEvent.change(box(), { target: { value: "+48 600 100 200" } });
-    expect(onChange).toHaveBeenLastCalledWith("+48 600 100 200");
     fireEvent.change(box(), { target: { value: "48+600" } });
     expect(onChange).toHaveBeenLastCalledWith("48600");
+    fireEvent.change(box(), { target: { value: "+48 (600) 100-200 ext" } });
+    expect(onChange).toHaveBeenLastCalledWith("+48600100200");
+    expect(box().value).toBe("(600) 100-200");
+  });
+
+  it("reads a number typed or pasted with its country code as the code and the number, not as a second code after the one picked", () => {
+    const onChange = renderInput(mobile);
+    pick("Germany +49");
+    fireEvent.change(box(), { target: { value: "+48 601 200 300" } });
+    expect(onChange).toHaveBeenLastCalledWith("+48601200300");
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, Poland +48");
+    expect(box().value).toBe("601 200 300");
+  });
+
+  it("keeps a + that no country code follows in the number, with no code picked", () => {
+    const onChange = renderInput(mobile);
+    pick("Germany +49");
+    fireEvent.change(box(), { target: { value: "+" } });
+    expect(onChange).toHaveBeenLastCalledWith("+");
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, no code selected");
+    expect(box().value).toBe("+");
+  });
+
+  it("takes an answer the form changed: a cleared form clears the picker too", () => {
+    const field = { ...baseField, ...mobile } as EventCustomFieldDto;
+    const { rerender } = render(<CustomDataFieldInput field={field} value="+48600100200" onChange={vi.fn()} />);
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, Poland +48");
+    rerender(<CustomDataFieldInput field={field} value="" onChange={vi.fn()} />);
+    expect(picker().getAttribute("aria-label")).toBe("Mobile country code, no code selected");
+    expect(box().value).toBe("");
   });
 
   it("says the rules and the example of the field", () => {
-    renderInput({ ...mobile, rules: { digits_only: true, max_length: 9, example: "600100200" } });
-    expect(screen.getByText("A phone number with 3 to 15 digits, digits only, at most 9 characters, for example 600100200.")).toBeTruthy();
+    renderInput({ ...mobile, rules: { max_length: 12, example: "+48600100200" } });
+    expect(screen.getByText("A phone number with 3 to 15 digits, at most 12 characters, for example +48600100200.")).toBeTruthy();
   });
 
   it("marks a required field in its label, and is off when the form is", () => {
     renderInput({ ...mobile, required: true }, "", { disabled: true });
-    expect(screen.getByLabelText("Mobile *")).toBeTruthy();
     expect((screen.getByLabelText("Mobile *") as HTMLInputElement).disabled).toBe(true);
+    expect(picker().disabled).toBe(true);
+  });
+
+  it("is a plain telephone line, with no picker, for a field that asks for digits only: its answer has no + for a code", () => {
+    const onChange = renderInput({ ...mobile, rules: { digits_only: true, max_length: 9, example: "600100200" } });
+    expect(screen.queryByRole("button", { name: /country code/ })).toBeNull();
+    expect(box().type).toBe("tel");
+    expect(screen.getByText("A phone number with 3 to 15 digits, digits only, at most 9 characters, for example 600100200.")).toBeTruthy();
+    fireEvent.change(box(), { target: { value: "+48 600 100" } });
+    expect(onChange).toHaveBeenLastCalledWith("+48 600 100");
   });
 });
 

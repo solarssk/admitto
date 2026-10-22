@@ -1148,8 +1148,9 @@ describe("AttendeeDetailPage: the answer types of a custom field", () => {
     expect((screen.getByLabelText("Arrival, date") as HTMLInputElement).value).toBe("04 Nov 2026");
     expect((screen.getByLabelText("Arrival, time") as HTMLInputElement).value).toBe("10:30");
     expect(screen.getByText("Time at the event (Europe/Warsaw).")).toBeTruthy();
-    expect((screen.getByLabelText("Mobile") as HTMLInputElement).value).toBe("+15550100");
+    expect((screen.getByLabelText("Mobile") as HTMLInputElement).value).toBe("5550100");
     expect((screen.getByLabelText("Mobile") as HTMLInputElement).type).toBe("tel");
+    expect(screen.getByRole("button", { name: /^Mobile country code, .+ \+1$/ })).toBeTruthy();
     expect((screen.getByLabelText("Postcode") as HTMLInputElement).value).toBe("01234");
     expect(screen.getByText("Digits only, exactly 5 characters, for example 01234.")).toBeTruthy();
   });
@@ -1161,7 +1162,7 @@ describe("AttendeeDetailPage: the answer types of a custom field", () => {
     fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "One\nTwo\nThree" } });
     typeAndLeave("Arrival day", "2026-12-24");
     typeAndLeave("Arrival, time", "0915");
-    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "+1 555 0199" } });
+    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "555 0199" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
@@ -1173,7 +1174,7 @@ describe("AttendeeDetailPage: the answer types of a custom field", () => {
           abstract: "One\nTwo\nThree",
           arrival_day: "2026-12-24",
           arrival: "2026-11-04T09:15",
-          mobile: "+1 555 0199",
+          mobile: "+15550199",
         },
       }),
     );
@@ -1200,7 +1201,7 @@ describe("AttendeeDetailPage: the answer types of a custom field", () => {
 
   it.each([
     ["a date and time with the time taken away", () => typeAndLeave("Arrival, time", ""), "Arrival needs both a date and a time."],
-    ["a phone number that is too short", () => fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "12" } }), "Mobile must be a phone number with 3 to 15 digits."],
+    ["a phone number that is too short, with the code +1 it was saved with", () => fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "2" } }), "Mobile must be a phone number with 3 to 15 digits."],
     ["a postcode that breaks its rules", () => fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "12" } }), "Postcode must be digits only, exactly 5 characters."],
     ["a long text over its limit", () => fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "x".repeat(1001) } }), "Abstract must be at most 1000 characters."],
   ])("does not save %s, and says why", async (_name, change, message) => {
