@@ -78,6 +78,21 @@ describe("axe-core finds nothing to report", () => {
     expect(await violations(window)).toEqual([]);
   });
 
+  it("on a form whose choices are opened one after the other, the short one and the one with a search box, with one marked as an error", async () => {
+    const choices = [
+      question({ key: "day", label: "Which days will you attend?", type: "select", required: true, options: ["Both days", "Day 1 only"] }),
+      question({ key: "city", label: "City", type: "select", options: ["Amsterdam", "Berlin", "Copenhagen", "Dublin", "Edinburgh", "Frankfurt", "Geneva"] }),
+    ];
+    const window = running(renderRegistrationFormPage(formModel({ questions: choices }), { nonce: NONCE }));
+    window.document.getElementById("reg-submit").click();
+    // Opening a choice moves the focus into its panel, which shuts the one that was open: one panel is open at a time.
+    window.document.getElementById("f-q0-trigger").click();
+    expect(await violations(window)).toEqual([]);
+    window.document.getElementById("f-q1-trigger").click();
+    expect(window.document.querySelectorAll("[data-picker-panel]:not([hidden])")).toHaveLength(1);
+    expect(await violations(window)).toEqual([]);
+  });
+
   it("on a form whose long text, date, time and phone questions are required, with every one of them left empty", async () => {
     const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }));
     window.document.getElementById("reg-submit").click();

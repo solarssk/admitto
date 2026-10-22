@@ -86,6 +86,12 @@ export const REGISTRATION_PAGE_CSS = `
 .combo .searchable-select__name strong { font-weight: var(--fw-semibold); color: var(--primary); }
 .combo__custom { border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); margin-top: 2px; }
 .combo .searchable-select__empty { padding: var(--space-1) var(--space-2) 0; }
+/* A choice is the product's searchable select: a button and a panel of rows. The panel opens under the button, over what follows, as the list of suggestions does. The real select is hidden (reg-sr) and holds the answer. A phone keeps the 16 px of the search box, which stops the zoom on focus. */
+.picker { position: relative; }
+.picker__panel { position: absolute; left: 0; right: 0; top: calc(100% + 4px); margin: 0; }
+@media (pointer: coarse) {
+  .picker .searchable-select__search { font-size: 16px; }
+}
 .reg-checks { display: grid; gap: var(--space-2); }
 /* The row of the terms sits in a box of its own (it has an error slot). A grid makes its tick a block like the other ticks, so the box is no taller than the tick and the rows stand one gap apart. */
 .reg-checks > [data-field] { display: grid; }

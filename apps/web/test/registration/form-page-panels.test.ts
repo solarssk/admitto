@@ -46,10 +46,12 @@ describe("an icon on a question", () => {
         }),
       ),
     );
+    // What a choice draws is the arrow of its button, not the icon of its question.
+    const drawn: Record<string, string[]> = { notes: ["#i-alert"], day: ["#i-chevron-down", "#i-alert"], badge: ["#i-chevron-down", "#i-alert"] };
     for (const key of ["notes", "day", "badge"]) {
       const field = withIcons.querySelector(`[data-custom="${key}"]`);
       expect(field.querySelector(".at-inputgroup__icon"), key).toBeNull();
-      expect(hrefs(field), key).toEqual(["#i-alert"]);
+      expect(hrefs(field), key).toEqual(drawn[key]);
     }
   });
 

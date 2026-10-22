@@ -70,6 +70,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   };
   var token = "";
   var busy = false;
+  var pickers = [];
 
   function control(box) {
     return box.querySelector("[data-control]");
@@ -80,6 +81,9 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     var text = box.querySelector("[data-msg-text]");
     box.classList.add("has-error");
     if (text) text.textContent = message;
+    // The button of a choice has no aria-invalid (a button has no such state); the message it is described by says it.
+    var picker = box.querySelector("[data-picker-trigger]");
+    if (picker) picker.classList.add("searchable-select__trigger--invalid");
     if (!ctl || ctl.tagName === "DIV") return;
     ctl.setAttribute("aria-invalid", "true");
     if (ctl.tagName === "SELECT") ctl.classList.add("at-select--invalid");
@@ -92,6 +96,8 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     var text = box.querySelector("[data-msg-text]");
     box.classList.remove("has-error");
     if (text) text.textContent = "";
+    var picker = box.querySelector("[data-picker-trigger]");
+    if (picker) picker.classList.remove("searchable-select__trigger--invalid");
     if (!ctl) return;
     ctl.removeAttribute("aria-invalid");
     ctl.classList.remove("at-input--invalid");
@@ -133,7 +139,12 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
       ctl.disabled = !on;
       if (box.hasAttribute("data-required")) ctl.required = on;
     }
-    if (!on) clearError(box);
+    var picker = box.querySelector("[data-picker-trigger]");
+    if (picker) picker.disabled = !on;
+    if (!on) {
+      clearError(box);
+      pickers.forEach(function (item) { if (item.box === box) item.close(false); });
+    }
   }
 
   // The notice at the top counts the marked fields. A question that goes away with its mark is not one any more: the
@@ -188,7 +199,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     list.forEach(function (item) { setError(item.box, item.message); });
     summaryText.textContent = list.length === 1 ? TEXT.oneField : list.length + TEXT.manyFields;
     summary.hidden = false;
-    var first = control(list[0].box);
+    var first = list[0].box.querySelector("[data-picker-trigger]") || control(list[0].box);
     if (first && first.focus) first.focus();
   }
 
@@ -453,9 +464,139 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   }
   Array.prototype.slice.call(form.querySelectorAll("[data-combo]")).forEach(setUpCombo);
 
-  // The state a browser restores into the form (a reload, the way back) can leave a condition met.
-  sync();
-  window.addEventListener("pageshow", sync);
+  // A choice is the product's searchable select: a button that shows the answer and, under it, a panel of rows, with a
+  // search box past six of them. The real select stays in the form, hidden. It holds the answer that the rest of this
+  // script reads and that a browser restores, and the panel only writes into it and tells the form that it changed.
+  function setUpPicker(wrap) {
+    var select = wrap.querySelector("select");
+    var trigger = wrap.querySelector("[data-picker-trigger]");
+    var text = wrap.querySelector("[data-picker-text]");
+    var panel = wrap.querySelector("[data-picker-panel]");
+    var search = wrap.querySelector("[data-picker-search]");
+    var none = wrap.querySelector("[data-picker-empty]");
+    var list = panel.querySelector("ul");
+    var rows = Array.prototype.slice.call(panel.querySelectorAll(".searchable-select__option"));
+    var wasOpen = false;
+
+    function nameOf(row) {
+      return row.querySelector(".searchable-select__name").textContent;
+    }
+
+    // The button says what is chosen, or the empty row's words, as a placeholder, while nothing is.
+    function refresh() {
+      var chosen = rows[0];
+      rows.forEach(function (row) {
+        var on = row.getAttribute("data-value") === select.value;
+        if (on) chosen = row;
+        if (on && select.value !== "") row.setAttribute("aria-current", "true");
+        else row.removeAttribute("aria-current");
+      });
+      text.textContent = nameOf(chosen);
+      text.className = select.value === "" ? "searchable-select__placeholder" : "searchable-select__label";
+    }
+
+    // The rows that the search box lets through. The empty row is not an answer, so a search leaves it out.
+    function filter() {
+      var needle = search ? search.value.trim().toLowerCase() : "";
+      var shown = 0;
+      rows.forEach(function (row, index) {
+        var on = index === 0 ? needle === "" : nameOf(row).toLowerCase().indexOf(needle) !== -1;
+        row.parentNode.hidden = !on;
+        if (on) shown += 1;
+      });
+      none.hidden = shown !== 0;
+    }
+
+    function visibleRows() {
+      return rows.filter(function (row) { return !row.parentNode.hidden; });
+    }
+
+    function open() {
+      if (trigger.disabled) return;
+      if (search) search.value = "";
+      filter();
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      trigger.classList.add("searchable-select__trigger--open");
+      var chosen = rows.filter(function (row) { return row.getAttribute("data-value") === select.value; })[0];
+      (search || chosen || rows[0]).focus();
+      if (panel.scrollIntoView) panel.scrollIntoView({ block: "nearest" });
+      // A phone puts its keyboard over the lower half of the page while the search box has the focus: the button goes
+      // to the top, once the keyboard is up, so that the rows stay in view above it.
+      if (search && window.matchMedia && window.matchMedia("(pointer: coarse)").matches && trigger.scrollIntoView) {
+        setTimeout(function () { if (!panel.hidden) trigger.scrollIntoView({ block: "start", behavior: "smooth" }); }, 350);
+      }
+    }
+
+    function close(back) {
+      if (panel.hidden) return;
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.classList.remove("searchable-select__trigger--open");
+      if (back) trigger.focus();
+    }
+
+    function pick(value) {
+      select.value = value;
+      close(true);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    function step(delta) {
+      var items = search ? [search].concat(visibleRows()) : visibleRows();
+      var at = items.indexOf(document.activeElement);
+      var next = at === -1 ? (delta > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, at + delta));
+      if (items[next]) items[next].focus();
+    }
+
+    // A press on the button closes the panel that the focus leaving it already closed (a browser that does not focus a
+    // button when it is pressed), so what the panel was when the press began decides what the click does.
+    trigger.addEventListener("mousedown", function () { wasOpen = !panel.hidden; });
+    trigger.addEventListener("click", function () {
+      if (wasOpen || !panel.hidden) close(false);
+      else open();
+      wasOpen = false;
+    });
+    if (search) search.addEventListener("input", filter);
+    // Keep the focus where it is while a row is pressed, so that the panel is still there for the click that follows.
+    list.addEventListener("mousedown", function (event) { event.preventDefault(); });
+    list.addEventListener("click", function (event) {
+      var row = event.target && event.target.closest ? event.target.closest(".searchable-select__option") : null;
+      if (row) pick(row.getAttribute("data-value"));
+    });
+    wrap.addEventListener("keydown", function (event) {
+      if (event.isComposing) return;
+      if (event.key === "Escape" && !panel.hidden) {
+        event.preventDefault();
+        close(true);
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (panel.hidden) open();
+        else step(event.key === "ArrowDown" ? 1 : -1);
+      } else if (event.key === "Enter" && event.target === search) {
+        // Enter in the search box picks the first row that is left, and does not send the form.
+        event.preventDefault();
+        if (visibleRows()[0]) pick(visibleRows()[0].getAttribute("data-value"));
+      }
+    });
+    wrap.addEventListener("focusout", function (event) {
+      if (!panel.hidden && !(event.relatedTarget && wrap.contains(event.relatedTarget))) close(false);
+    });
+    document.addEventListener("pointerdown", function (event) {
+      if (!panel.hidden && !wrap.contains(event.target)) close(false);
+    });
+    select.addEventListener("change", refresh);
+    pickers.push({ box: wrap.closest("[data-field]"), close: close, refresh: refresh });
+  }
+  Array.prototype.slice.call(form.querySelectorAll("[data-picker]")).forEach(setUpPicker);
+
+  // The state a browser restores into the form (a reload, the way back) can leave a choice made and a condition met.
+  function restore() {
+    pickers.forEach(function (item) { item.refresh(); });
+    sync();
+  }
+  restore();
+  window.addEventListener("pageshow", restore);
   submit.disabled = false;
 })();
 `;

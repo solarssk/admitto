@@ -423,19 +423,59 @@ function option(value: string, text: string): string {
   return `<option${attrs([["value", value]])}>${esc(text)}</option>`;
 }
 
-function renderChoice(question: FormQuestion, id: string, kind: "select" | "choice", options: string, context: QuestionContext): string {
+/** What the empty choice says: on the button while nothing is chosen, and as the first row of the panel. */
+const NO_CHOICE = "Choose one";
+
+/** Past this many options a choice has a search box in its panel, as the admin's searchable select does. */
+const SEARCH_FROM = 6;
+
+/** One answer of a choice: the value that is kept, and the words the guest reads. */
+type Choice = readonly [value: string, text: string];
+
+/**
+ * A choice, drawn as the admin's searchable select (its classes, so the same CSS): a button that shows the answer and,
+ * under it, a panel of rows, with a search box past six of them. The real `<select>` stays in the form, out of sight and
+ * hidden from assistive technology: it holds the answer, which the page script reads and a browser restores, and the
+ * panel only writes into it. The button is what a guest sees and uses, so the label, the message slot and the focus go
+ * to it. A text of the organiser's is printed as the words of its row and as the escaped `data-value` the script picks;
+ * the ids are positions, never text.
+ */
+function renderChoice(question: FormQuestion, id: string, kind: "select" | "choice", choices: readonly Choice[], context: QuestionContext): string {
   const message = kind === "select" ? "Choose one option." : "Choose Yes or No.";
-  const select = `<select class="at-select" id="${id}" name="${id.slice(2)}"${attrs([
+  const native = `<select class="at-select reg-sr" id="${id}" name="${id.slice(2)}"${attrs([
     ...stateAttrs(question.required, question.showWhen),
+    ["tabindex", "-1"],
+    ["aria-hidden", "true"],
     ["aria-describedby", `m-${id}`],
     ["aria-controls", context.panelId],
     ["data-control", true],
-  ])}>${option("", "Choose one")}${options}</select>`;
-  return `<div class="at-field"${questionKeyAttrs(question, kind, message)}>${labelOf(id, question.label, question.required)}<div class="at-control">${select}</div>${slot(id, question.description)}</div>`;
+  ])}>${option("", NO_CHOICE)}${choices.map(([value, text]) => option(value, text)).join("")}</select>`;
+  const trigger = `<button type="button" class="searchable-select__trigger" id="${id}-trigger"${attrs([
+    ["aria-expanded", "false"],
+    ["aria-controls", context.panelId ? `${id}-panel ${context.panelId}` : `${id}-panel`],
+    ["aria-labelledby", `${id}-label ${id}-text`],
+    ["aria-describedby", `m-${id}`],
+    ["disabled", question.showWhen ? true : undefined],
+    ["data-picker-trigger", true],
+  ])}><span class="searchable-select__placeholder" id="${id}-text" data-picker-text>${NO_CHOICE}</span>${icon("chevron-down", "ic searchable-select__chevron")}</button>`;
+  const rows = [["", NO_CHOICE] as const, ...choices]
+    .map(
+      ([value, text], index) =>
+        `<li><button type="button" class="searchable-select__option" id="${id}-opt${index}"${attrs([["data-value", value]])}><span class="searchable-select__name">${esc(text)}</span></button></li>`,
+    )
+    .join("");
+  const search =
+    choices.length > SEARCH_FROM
+      ? '<input type="text" class="searchable-select__search" autocomplete="off" placeholder="Search options…" aria-label="Search options" data-picker-search>'
+      : "";
+  const empty = '<li class="searchable-select__empty" data-picker-empty hidden>No options found</li>';
+  const panel = `<div class="searchable-select__panel picker__panel" id="${id}-panel" data-picker-panel hidden>${search}<ul class="searchable-select__list"${attrs([["aria-label", question.label]])}>${rows}${empty}</ul></div>`;
+  const label = `<label class="at-label" id="${id}-label" for="${id}-trigger">${esc(question.label)}${question.required ? REQUIRED_MARK : ""}</label>`;
+  return `<div class="at-field"${questionKeyAttrs(question, kind, message)}>${label}<div class="picker" data-picker>${trigger}${native}${panel}</div>${slot(id, question.description)}</div>`;
 }
 
 function renderSelectQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
-  return renderChoice(question, id, "select", question.options.map((value) => option(value, value)).join(""), context);
+  return renderChoice(question, id, "select", question.options.map((value) => [value, value] as const), context);
 }
 
 /** A Yes/No question. Optional, it is one checkbox: ticked is "true", and unticked sends nothing, so a
@@ -443,7 +483,7 @@ function renderSelectQuestion(question: FormQuestion, id: string, context: Quest
  * checkbox cannot tell "no" from "not answered", so it is a list of Yes and No. */
 function renderBooleanQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   if (question.required) {
-    return renderChoice(question, id, "choice", `${option("true", "Yes")}${option("false", "No")}`, context);
+    return renderChoice(question, id, "choice", [["true", "Yes"], ["false", "No"]], context);
   }
   const note = question.description ? `<small>${esc(question.description)}</small>` : "";
   // A row with no icon is a plain checkbox and its text, like the terms. `reg-opt--bare` lets a run that has rows with

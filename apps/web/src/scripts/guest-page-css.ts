@@ -6,8 +6,8 @@
  * this module derives it from the source files in `packages/ui/src/styles`:
  *
  * - the design tokens and the base element rules, whole;
- * - from `components.css`, and from the admin app's `searchable-select.css` (the list of suggestions under a text
- *   box is drawn with its classes, as the mockup draws it), only the rules whose every class is one the pages use
+ * - from `components.css`, and from the admin app's `searchable-select.css` (a choice and the list of suggestions
+ *   under a text box are drawn with its classes), only the rules whose every class is one the pages use
  *   ({@link GUEST_PAGE_COMPONENT_CLASSES}).
  *
  * The result is committed as `src/registration/guest-page-css.generated.ts`, which is what the server
@@ -51,7 +51,16 @@ export const GUEST_PAGE_COMPONENT_CLASSES: readonly string[] = [
   "at-notice--error",
   "at-notice__icon",
   "at-notice__body",
-  // The admin app's searchable select: the panel, the list and the rows of the list of suggestions under a text box.
+  // The admin app's searchable select: the button, the search box, the panel, the list and its rows, which a choice
+  // is drawn with, and the panel, the list and the rows of the list of suggestions under a text box.
+  "searchable-select",
+  "searchable-select__trigger",
+  "searchable-select__trigger--invalid",
+  "searchable-select__trigger--open",
+  "searchable-select__label",
+  "searchable-select__placeholder",
+  "searchable-select__chevron",
+  "searchable-select__search",
   "searchable-select__panel",
   "searchable-select__list",
   "searchable-select__option",
@@ -69,8 +78,8 @@ const WHOLE_FILES = [
 ];
 
 /** The files of component rules, which are read the same way: from `components.css`, and from the admin app's
- * own searchable select, which the suggestion list of the form is drawn with, as the mockup draws it. `path` is
- * relative to the styles folder. */
+ * own searchable select, which a choice and the suggestion list of the form are drawn with. `path` is relative to
+ * the styles folder. */
 const COMPONENT_FILES = [
   { path: "components.css", label: "components.css" },
   { path: "../../../../apps/admin/src/components/searchable-select.css", label: "apps/admin/src/components/searchable-select.css" },

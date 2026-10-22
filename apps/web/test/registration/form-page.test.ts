@@ -37,7 +37,8 @@ describe("the form's structure follows the mockup, with the product's own classe
       ".at-field > .at-label",
       ".at-field .at-control > .at-input",
       ".at-field .at-inputgroup > .at-input",
-      ".at-field .at-control > .at-select",
+      ".at-field .picker > button.searchable-select__trigger",
+      ".at-field .picker > select.at-select",
       ".at-field > textarea.at-textarea",
       "label.at-check > input[type=checkbox] + .at-check__box",
       "button.at-btn.at-btn--primary.at-btn--block.at-btn--lg[type=submit]",
@@ -547,7 +548,10 @@ describe("scripts, nonce and what the page loads", () => {
 
 describe("accessibility", () => {
   const doc = documentOf(render());
-  const controls = [...doc.querySelectorAll("form input:not([type=hidden]), form select, form textarea")] as Dom[];
+  // What a guest operates: the boxes and the buttons of the choices, not the hidden select a choice writes into, nor the search box of its panel, which has a name of its own.
+  const controls = [
+    ...doc.querySelectorAll("form input:not([type=hidden]):not([data-picker-search]), form select:not([aria-hidden=true]), form textarea, form [data-picker-trigger]"),
+  ] as Dom[];
 
   it("gives every control a label that points at it with for and id", () => {
     expect(controls.length).toBeGreaterThan(8);

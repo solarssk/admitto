@@ -13,7 +13,7 @@
 import { esc } from "../ticket-page.js";
 import type { GuestFormIcon } from "@admitto/shared";
 
-/** The symbols of the page's own markup: the notices, the send button, the closed page and the "use as written" row. */
+/** The symbols of the page's own markup: the notices, the send button, the closed page, the "use as written" row and the arrow of a choice. */
 const PAGE_ICON_PATHS = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 9h.01M11 12h1v4h1"/>',
@@ -21,6 +21,7 @@ const PAGE_ICON_PATHS = {
   send: '<path d="M10 14L21 3"/><path d="M21 3l-6.5 18a.55.55 0 0 1-1 0L10 14l-7-3.5a.55.55 0 0 1 0-1z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   tick: '<path d="M5 12l5 5l10-10"/>',
+  "chevron-down": '<path d="M6 9l6 6l6-6"/>',
 } as const;
 
 /** One symbol for each icon a question can name. Twelve are the mockup's own; `phone`, `plane`, `train` and

@@ -23,8 +23,8 @@ Guests cannot open the form yet. It opens for an event only when registration is
 | Date | The browser's date picker | One day |
 | Date and time | The browser's date and time picker | One day and a time on the clock |
 | Phone | A one-line box. A phone opens its number keypad | 3 to 15 digits, with an optional `+` at the start |
-| Single choice | A list | One of your options |
-| Yes / No | A tick box. A required one is a list of Yes and No instead | Yes or No |
+| Single choice | A button that opens a list, with a search box past six options, as in the admin | One of your options |
+| Yes / No | A tick box. A required one is a list of Yes and No instead, drawn like a single choice | Yes or No |
 
 - The label is the question, so write it as a question. A star marks a required one.
 - A guest cannot send the form until every required question is answered. A box that holds only spaces or empty lines counts as empty.

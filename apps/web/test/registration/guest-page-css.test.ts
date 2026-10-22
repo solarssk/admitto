@@ -105,8 +105,15 @@ describe("every class of the product the pages use has its rules in the styleshe
 
   it("lists the classes the page script adds, and the stylesheet has a rule for each", () => {
     const added = new Set([...REGISTRATION_FORM_SCRIPT.matchAll(/classList\.(?:add|remove|toggle)\("([\w-]+)"/g)].map((match) => match[1]!));
-    expect([...added].sort()).toEqual(["at-input--invalid", "at-select--invalid", "at-textarea--invalid", "has-error"]);
-    for (const name of [...added].filter((n) => n.startsWith("at-"))) expect(GUEST_PAGE_COMPONENT_CLASSES, name).toContain(name);
+    expect([...added].sort()).toEqual([
+      "at-input--invalid",
+      "at-select--invalid",
+      "at-textarea--invalid",
+      "has-error",
+      "searchable-select__trigger--invalid",
+      "searchable-select__trigger--open",
+    ]);
+    for (const name of [...added].filter((n) => n.startsWith("at-") || n.startsWith("searchable-select"))) expect(GUEST_PAGE_COMPONENT_CLASSES, name).toContain(name);
     expect(REGISTRATION_PAGE_CSS).toContain(".has-error .reg-slot__err { visibility: visible; }");
   });
 
@@ -132,9 +139,16 @@ describe("every class of the product the pages use has its rules in the styleshe
   });
 });
 
-describe("the list of suggestions is drawn with the product's own searchable select", () => {
-  it("copies the rules of its panel, list, rows, name and empty line from the admin app's own stylesheet", () => {
+describe("a choice and the list of suggestions are drawn with the product's own searchable select", () => {
+  it("copies the rules of its button, label, placeholder, arrow, search box, panel, list, rows, name and empty line from the admin app's own stylesheet", () => {
     for (const expected of [
+      ".searchable-select__trigger { display: flex;",
+      ".searchable-select__trigger--invalid { border-color: var(--status-error); }",
+      ".searchable-select__trigger--open .searchable-select__chevron { transform: rotate(180deg); }",
+      ".searchable-select__label { min-width: 0;",
+      ".searchable-select__placeholder { min-width: 0;",
+      ".searchable-select__chevron { margin-left: auto;",
+      ".searchable-select__search { width: 100%;",
       ".searchable-select__panel { z-index: var(--z-dropdown);",
       ".searchable-select__list { list-style: none;",
       ".searchable-select__option { display: flex;",
@@ -146,8 +160,8 @@ describe("the list of suggestions is drawn with the product's own searchable sel
     }
   });
 
-  it("leaves out what the form has no use for: the trigger, the search box, the chevron and the other panel modes", () => {
-    for (const unwanted of ["searchable-select__trigger", "searchable-select__search", "searchable-select__chevron", "searchable-select__label", "searchable-select__panel--up", "searchable-select__panel--inline", "multi-select"]) {
+  it("leaves out what the form has no use for: the other panel modes and the multi select", () => {
+    for (const unwanted of ["searchable-select__panel--up", "searchable-select__panel--inline", "multi-select"]) {
       expect(GUEST_PAGE_PRODUCT_CSS, unwanted).not.toContain(unwanted);
     }
   });
@@ -192,15 +206,15 @@ describe("buildGuestPageProductCss, on a stylesheet written for the test", () =>
   it("reads the admin's searchable select the same way: the rules of the classes the pages use, and no other", () => {
     const lines = buildGuestPageProductCss((relativePath) =>
       relativePath.endsWith("searchable-select.css")
-        ? ".searchable-select__option { a: 1; } .searchable-select__trigger { b: 2; } .searchable-select__option .searchable-select__chevron { c: 3; } .searchable-select__name, .searchable-select__label { d: 4; }"
+        ? ".searchable-select__option { a: 1; } .searchable-select__panel--up { b: 2; } .searchable-select__option .multi-select__actions { c: 3; } .searchable-select__name, .searchable-select__panel--inline { d: 4; }"
         : ":root { --x: 1; }",
     ).split("\n");
     expect(lines).toContain("/* apps/admin/src/components/searchable-select.css: the rules of the classes the guest pages use */");
     expect(lines).toContain(".searchable-select__option { a: 1; }");
     expect(lines).toContain(".searchable-select__name { d: 4; }");
-    expect(lines.join("\n")).not.toContain("trigger");
-    expect(lines.join("\n")).not.toContain("chevron");
-    expect(lines.join("\n")).not.toContain("label");
+    expect(lines.join("\n")).not.toContain("panel--up");
+    expect(lines.join("\n")).not.toContain("multi-select");
+    expect(lines.join("\n")).not.toContain("panel--inline");
   });
 
   it("copies a rule whose every class is on the list, and none whose classes are not", () => {

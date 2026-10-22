@@ -4,7 +4,7 @@ import { FORM_ICON_PATHS, checkTick, icon, renderIconSprite, type GuestIcon } fr
 import { documentOf, type Dom } from "../helpers/registration-form-fixtures.js";
 
 /** The symbols the page draws for itself, which no question can name. */
-const PAGE_ICONS = ["alert", "calendar-off", "info", "plus", "send", "tick"];
+const PAGE_ICONS = ["alert", "calendar-off", "chevron-down", "info", "plus", "send", "tick"];
 
 /** A sorted copy: `toSorted` is not in the library TypeScript builds this package against. */
 function sorted(list: readonly string[]): string[] {
